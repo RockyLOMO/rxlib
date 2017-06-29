@@ -25,7 +25,6 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
-import java.security.SecureRandom;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -225,31 +224,31 @@ public class App {
     //endregion
 
     //region Check
-    public static boolean IsNullOrEmpty(String obj) {
-        return obj == null || obj.length() == 0;
+    public static boolean isNullOrEmpty(String obj) {
+        return obj == null || obj.length() == 0 || "null".equals(obj);
     }
 
-    public static boolean IsNullOrWhiteSpace(String obj) {
-        return IsNullOrEmpty(obj) || obj.trim().length() == 0;
+    public static boolean isNullOrWhiteSpace(String obj) {
+        return isNullOrEmpty(obj) || obj.trim().length() == 0;
     }
 
-    public static boolean IsNullOrEmpty(Number num) {
+    public static boolean isNullOrEmpty(Number num) {
         return num == null || num.equals(0);
     }
 
-    public static <E> boolean IsNullOrEmpty(E[] obj) {
+    public static <E> boolean isNullOrEmpty(E[] obj) {
         return obj == null || obj.length == 0;
     }
 
-    public static <E> boolean IsNullOrEmpty(Collection<E> obj) {
+    public static <E> boolean isNullOrEmpty(Collection<E> obj) {
         return obj == null || obj.size() == 0;
     }
 
-    public static <K, V> boolean IsNullOrEmpty(Map<K, V> obj) {
+    public static <K, V> boolean isNullOrEmpty(Map<K, V> obj) {
         return obj == null || obj.size() == 0;
     }
 
-    public static <T> boolean Equals(T obj1, T obj2) {
+    public static <T> boolean equals(T obj1, T obj2) {
         if (obj1 == null) {
             if (obj2 == null) {
                 return true;
@@ -262,7 +261,7 @@ public class App {
         return obj1.equals(obj2);
     }
 
-    public static boolean Equals(String str1, String str2, boolean ignoreCase) {
+    public static boolean equals(String str1, String str2, boolean ignoreCase) {
         if (str1 == null) {
             if (str2 == null) {
                 return true;
@@ -275,19 +274,19 @@ public class App {
         return ignoreCase ? str1.equals(str2) : str1.equalsIgnoreCase(str2);
     }
 
-    public static <T> T Check(T value, T defaultVal) {
-        return Check(value, defaultVal, false);
+    public static <T> T isNull(T value, T defaultVal) {
+        return isNull(value, defaultVal, false);
     }
 
-    public static <T> T Check(T value, T defaultVal, boolean trim) {
-        if (value == null || (value instanceof String && (trim ? IsNullOrWhiteSpace(value.toString()) : IsNullOrEmpty(value.toString())))) {
+    public static <T> T isNull(T value, T defaultVal, boolean trim) {
+        if (value == null || (value instanceof String && (trim ? isNullOrWhiteSpace(value.toString()) : isNullOrEmpty(value.toString())))) {
             return defaultVal;
         }
         return value;
     }
 
-    public static <T> T Check(T value, FuncCallback2<T, T> defaultFun) {
-        if (value == null || (value.getClass().equals(String.class) && value.toString().length() == 0)) {
+    public static <T> T isNull(T value, FuncCallback2<T, T> defaultFun) {
+        if (value == null || (value instanceof String && value.toString().length() == 0)) {
             if (defaultFun != null) {
                 return defaultFun.invoke(value);
             }
@@ -296,7 +295,7 @@ public class App {
         return value;
     }
 
-    public static String StringJoin(String delimiter, Iterable<String> set) {
+    public static String stringJoin(String delimiter, Iterable<String> set) {
         StringBuilder str = new StringBuilder();
         for (String s : set) {
             if (str.length() == 0) {
@@ -309,8 +308,8 @@ public class App {
         return str.toString();
     }
 
-    public static String FilterPrivacy(String val) {
-        if (IsNullOrEmpty(val)) {
+    public static String filterPrivacy(String val) {
+        if (isNullOrEmpty(val)) {
             return "";
         }
 
@@ -340,27 +339,27 @@ public class App {
     //endregion
 
     //region Converter
-    public static <T> T Convert(Object val, Class<T> toType) {
-        return TryConvert(val, toType).Item2;
+    public static <T> T convert(Object val, Class<T> toType) {
+        return tryConvert(val, toType).Item2;
     }
 
-    public static <T> Tuple<Boolean, T> TryConvert(Object val, Class<T> toType) {
-        return TryConvert(val, toType, null);
+    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType) {
+        return tryConvert(val, toType, null);
     }
 
-    public static <T> Tuple<Boolean, T> TryConvert(Object val, Class<T> toType, T defaultVal) {
+    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType, T defaultVal) {
         if (val == null) {
             return new Tuple<>(true, null);
         }
 
         try {
-            return new Tuple<>(true, ChangeType(val, toType));
+            return new Tuple<>(true, changeType(val, toType));
         } catch (Exception ex) {
             return new Tuple<>(false, defaultVal);
         }
     }
 
-    public static <T> T ChangeType(Object value, Class<T> toType) {
+    public static <T> T changeType(Object value, Class<T> toType) {
         final Class<?> fromType;
         if (value == null || toType.isInstance(value) || toType.equals(fromType = value.getClass())) {
             return (T) value;
@@ -401,10 +400,10 @@ public class App {
                         return arg.toPattern();
                     }
                 });
-                throw new RuntimeException(String.format("仅支持 %s format的日期转换", StringJoin(",", q)), lastEx);
+                throw new RuntimeException(String.format("仅支持 %s format的日期转换", stringJoin(",", q)), lastEx);
             }
         } else {
-            toType = CheckType(toType);
+            toType = checkType(toType);
             try {
                 Method m = toType.getDeclaredMethod("valueOf", strType);
                 value = m.invoke(null, val);
@@ -417,7 +416,7 @@ public class App {
         return (T) value;
     }
 
-    private static Class CheckType(Class type) {
+    private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
         }
@@ -427,47 +426,47 @@ public class App {
         try {
             return Class.forName(newName);
         } catch (ClassNotFoundException ex) {
-            throw new RuntimeException(String.format("CheckType %s=>%s", type, newName), ex);
+            throw new RuntimeException(String.format("checkType %s=>%s", type, newName), ex);
         }
     }
 
     //region base64
     private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
 
-    public static boolean IsBase64String(String base64) {
-        if (IsNullOrEmpty(base64)) {
+    public static boolean isBase64String(String base64) {
+        if (isNullOrEmpty(base64)) {
             return false;
         }
 
         return Pattern.compile(base64Regex).matcher(base64).find();
     }
 
-    public static String ConvertToBase64String(byte[] data) {
+    public static String convertToBase64String(byte[] data) {
         byte[] ret = Base64.encodeBase64(data);
         try {
             return new String(ret, utf8);
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException("ConvertToBase64String", ex);
+            throw new RuntimeException("convertToBase64String", ex);
         }
     }
 
-    public static byte[] ConvertFromBase64String(String base64) {
+    public static byte[] convertFromBase64String(String base64) {
         byte[] ret;
         try {
             ret = base64.getBytes(utf8);
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException("ConvertFromBase64String", ex);
+            throw new RuntimeException("convertFromBase64String", ex);
         }
         return Base64.decodeBase64(ret);
     }
 
 
-    public static String SerializeToBase64(Object obj) {
-        byte[] data = Serialize(obj);
-        return ConvertToBase64String(data);
+    public static String serializeToBase64(Object obj) {
+        byte[] data = serialize(obj);
+        return convertToBase64String(data);
     }
 
-    public static byte[] Serialize(Object obj) {
+    public static byte[] serialize(Object obj) {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream out = new ObjectOutputStream(bos)) {
             out.writeObject(obj);
@@ -477,12 +476,12 @@ public class App {
         }
     }
 
-    public static Object DeserializeFromBase64(String base64) {
-        byte[] data = ConvertFromBase64String(base64);
-        return Deserialize(data);
+    public static Object deserializeFromBase64(String base64) {
+        byte[] data = convertFromBase64String(base64);
+        return deserialize(data);
     }
 
-    public static Object Deserialize(byte[] data) {
+    public static Object deserialize(byte[] data) {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
              ObjectInputStream in = new ObjectInputStream(bis)) {
             return in.readObject();
@@ -491,9 +490,9 @@ public class App {
         }
     }
 
-    public static <T> T DeepClone(T obj) {
-        byte[] data = Serialize(obj);
-        return (T) Deserialize(data);
+    public static <T> T deepClone(T obj) {
+        byte[] data = serialize(obj);
+        return (T) deserialize(data);
     }
     //endregion
 
@@ -571,7 +570,7 @@ public class App {
     //endregion
 
     //region Xml
-    public static <T> String ConvertToXml(T obj) throws JAXBException {
+    public static <T> String convertToXml(T obj) throws JAXBException {
         JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
         Marshaller marshaller = jaxbContext.createMarshaller();
         //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
@@ -585,7 +584,7 @@ public class App {
         }
     }
 
-    public static <T> T ConvertFromXml(String xml, Class<T> type) throws JAXBException {
+    public static <T> T convertFromXml(String xml, Class<T> type) throws JAXBException {
         //Class<T> type = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
         JAXBContext jaxbContext = JAXBContext.newInstance(type);
         Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
@@ -603,7 +602,7 @@ public class App {
     //region HttpClient
     private static final String UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
 
-    public static String HttpGet(String url) {
+    public static String httpGet(String url) {
         try {
             URL uri = new URL(url);
             HttpURLConnection client = (HttpURLConnection) uri.openConnection();
@@ -625,7 +624,7 @@ public class App {
         }
     }
 
-    public static String UrlEncode(String val) {
+    public static String urlEncode(String val) {
         try {
             return URLEncoder.encode(val, utf8);
         } catch (UnsupportedEncodingException ex) {
@@ -633,7 +632,7 @@ public class App {
         }
     }
 
-    public static Map<String, String> ParseQueryString(String queryString) {
+    public static Map<String, String> parseQueryString(String queryString) {
         Map<String, String> map = new LinkedHashMap<>();
         if (queryString == null) {
             return map;
@@ -653,7 +652,7 @@ public class App {
         return map;
     }
 
-    public static String BuildQueryString(String baseUrl, Map<String, String> params) {
+    public static String buildQueryString(String baseUrl, Map<String, String> params) {
         if (params == null) {
             return baseUrl;
         }
@@ -666,7 +665,7 @@ public class App {
         for (String key : params.keySet()) {
             String val = params.get(key);
             url.append(url.length() == baseUrl.length() ? c : "&")
-                    .append(UrlEncode(key)).append("=").append(val == null ? "" : UrlEncode(val));
+                    .append(urlEncode(key)).append("=").append(val == null ? "" : urlEncode(val));
         }
         return url.toString();
     }

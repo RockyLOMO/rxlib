@@ -147,7 +147,7 @@ public class EntityMapper {
                 if (value == null && skipNull) {
                     continue;
                 }
-                value = App.ChangeType(value, tArgs[0]);
+                value = App.changeType(value, tArgs[0]);
                 tMethod.invoke(to, value);
             } catch (ReflectiveOperationException ex) {
                 throw new RuntimeException(ex);
@@ -174,7 +174,7 @@ public class EntityMapper {
         for (Method method : fq) {
             try {
                 String value = (String) method.invoke(entity);
-                if (App.IsNullOrEmpty(value)) {
+                if (App.isNullOrEmpty(value)) {
                     continue;
                 }
                 method = type.getMethod(SET + method.getName().substring(3), String.class);

@@ -32,7 +32,7 @@ public class RedisClient {
             Config config = new Config();
             config.useSingleServer()
                     .setAddress(String.format("%s:%s", map.get("redis.host"), map.get("redis.port")))
-                    .setTimeout(App.Convert(map.get("redis.timeout"), Integer.class));
+                    .setTimeout(App.convert(map.get("redis.timeout"), Integer.class));
             redisson = Redisson.create(config);
         }
         return redisson;
@@ -59,7 +59,7 @@ public class RedisClient {
             Map<String, String> map = App.readSettings("app");
             JedisShardInfo config = new JedisShardInfo(map.get("redis.host"), Integer.parseInt(map.get("redis.port")));
             JedisConnectionFactory fac = new JedisConnectionFactory(config);
-            fac.setTimeout(App.Convert(map.get("redis.timeout"), Integer.class));
+            fac.setTimeout(App.convert(map.get("redis.timeout"), Integer.class));
             fac.setUsePool(true);
             Template = new RedisTemplate<>();
             Template.setConnectionFactory(fac);
@@ -67,12 +67,12 @@ public class RedisClient {
             Template.setValueSerializer(new org.springframework.data.redis.serializer.JdkSerializationRedisSerializer());
             Template.afterPropertiesSet();
         }
-        return App.Check(template, Template);
+        return App.isNull(template, Template);
     }
 
     private byte[] getKeyBytes(String key) {
         try {
-            key = App.Check(keyPrefix, "") + key;
+            key = App.isNull(keyPrefix, "") + key;
             return key.getBytes(App.utf8);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -87,7 +87,7 @@ public class RedisClient {
         getTemplate().execute(new RedisCallback() {
             public Long doInRedis(RedisConnection client) throws DataAccessException {
                 byte[] theKey = getKeyBytes(key);
-                client.set(theKey, App.Serialize(value));
+                client.set(theKey, App.serialize(value));
                 if (liveTime > 0) {
                     client.expire(theKey, liveTime);
                 }
@@ -104,7 +104,7 @@ public class RedisClient {
                 if (theVal == null || theVal.length == 0) {
                     return null;
                 }
-                return App.Deserialize(theVal);
+                return App.deserialize(theVal);
             }
         });
     }

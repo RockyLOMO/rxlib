@@ -55,8 +55,8 @@ public class RSAUtil extends App {
         PublicKey pubkey = keys.getPublic();
         PrivateKey prikey = keys.getPrivate();
 
-        String pubKeyStr = ConvertToBase64String(pubkey.getEncoded());
-        String priKeyStr = ConvertToBase64String(prikey.getEncoded());
+        String pubKeyStr = convertToBase64String(pubkey.getEncoded());
+        String priKeyStr = convertToBase64String(prikey.getEncoded());
         return new String[]{pubKeyStr, priKeyStr};
     }
 
@@ -87,14 +87,14 @@ public class RSAUtil extends App {
      */
     public static String sign(String content, String privateKey, boolean isSHA1) {
         try {
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(ConvertFromBase64String(privateKey));
+            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(convertFromBase64String(privateKey));
             KeyFactory keyf = KeyFactory.getInstance("RSA");
             PrivateKey priKey = keyf.generatePrivate(keySpec);
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initSign(priKey);
             signature.update(getContentBytes(content, utf8));
-            return ConvertToBase64String(signature.sign());
+            return convertToBase64String(signature.sign());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -129,12 +129,12 @@ public class RSAUtil extends App {
     public static boolean verify(String content, String sign, String publicKey, boolean isSHA1) {
         try {
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(ConvertFromBase64String(publicKey)));
+            PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(convertFromBase64String(publicKey)));
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initVerify(pubKey);
             signature.update(getContentBytes(content, utf8));
-            return signature.verify(ConvertFromBase64String(sign));
+            return signature.verify(convertFromBase64String(sign));
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -166,13 +166,13 @@ public class RSAUtil extends App {
     public static String encrypt(String source, String publicKey) {
         try {
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(ConvertFromBase64String(publicKey)));
+            PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(convertFromBase64String(publicKey)));
             /** 得到Cipher对象来实现对源数据的RSA加密 */
             Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
             cipher.init(Cipher.ENCRYPT_MODE, key);
             byte[] b = cipher.doFinal(source.getBytes());
             /** 执行加密操作 */
-            return ConvertToBase64String(b);
+            return convertToBase64String(b);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -184,11 +184,11 @@ public class RSAUtil extends App {
     public static String decrypt(String cryptograph, String privateKey) {
         try {
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(ConvertFromBase64String(privateKey)));
+            PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(convertFromBase64String(privateKey)));
             /** 得到Cipher对象对已用公钥加密的数据进行RSA解密 */
             Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
             cipher.init(Cipher.DECRYPT_MODE, key);
-            byte[] b = ConvertFromBase64String(cryptograph);
+            byte[] b = convertFromBase64String(cryptograph);
             /** 执行解密操作 */
             return new String(cipher.doFinal(b));
         } catch (Exception ex) {

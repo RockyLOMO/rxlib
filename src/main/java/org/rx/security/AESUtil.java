@@ -56,7 +56,7 @@ public class AESUtil extends App {
     public static String encryptToBase64(String data, String key) throws GeneralSecurityException {
         try {
             byte[] valueByte = encrypt(data.getBytes(utf8), key.getBytes(utf8));
-            return ConvertToBase64String(valueByte);
+            return convertToBase64String(valueByte);
         } catch (Exception ex) {
             throw new GeneralSecurityException(String.format("Encrypt fail! key=%s data=%s", key, data), ex);
         }
@@ -64,7 +64,7 @@ public class AESUtil extends App {
 
     public static String decryptFromBase64(String data, String key) throws GeneralSecurityException {
         try {
-            byte[] valueByte = decrypt(ConvertFromBase64String(data), key.getBytes(utf8));
+            byte[] valueByte = decrypt(convertFromBase64String(data), key.getBytes(utf8));
             return new String(valueByte, utf8);
         } catch (Exception ex) {
             throw new GeneralSecurityException(String.format("Decrypt fail! key=%s data=%s", key, data), ex);
@@ -73,8 +73,8 @@ public class AESUtil extends App {
 
     public static String encryptWithKeyBase64(String data, String key) throws GeneralSecurityException {
         try {
-            byte[] valueByte = encrypt(data.getBytes(utf8), ConvertFromBase64String(key));
-            return ConvertToBase64String(valueByte);
+            byte[] valueByte = encrypt(data.getBytes(utf8), convertFromBase64String(key));
+            return convertToBase64String(valueByte);
         } catch (Exception ex) {
             throw new GeneralSecurityException(String.format("Encrypt fail! key=%s data=%s", key, data), ex);
         }
@@ -82,7 +82,7 @@ public class AESUtil extends App {
 
     public static String decryptWithKeyBase64(String data, String key) throws GeneralSecurityException {
         try {
-            byte[] valueByte = decrypt(ConvertFromBase64String(data), ConvertFromBase64String(key));
+            byte[] valueByte = decrypt(convertFromBase64String(data), convertFromBase64String(key));
             return new String(valueByte, utf8);
         } catch (Exception ex) {
             throw new GeneralSecurityException(String.format("Decrypt fail! key=%s data=%s", key, data), ex);
@@ -103,6 +103,6 @@ public class AESUtil extends App {
     }
 
     public static String genarateRandomKeyWithBase64() {
-        return ConvertToBase64String(genarateRandomKey());
+        return convertToBase64String(genarateRandomKey());
     }
 }
