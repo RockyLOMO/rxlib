@@ -93,7 +93,7 @@ public class RSAUtil extends App {
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initSign(priKey);
-            signature.update(getContentBytes(content, utf8));
+            signature.update(getContentBytes(content, UTF8));
             return convertToBase64String(signature.sign());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -133,7 +133,7 @@ public class RSAUtil extends App {
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initVerify(pubKey);
-            signature.update(getContentBytes(content, utf8));
+            signature.update(getContentBytes(content, UTF8));
             return signature.verify(convertFromBase64String(sign));
         } catch (Exception ex) {
             throw new RuntimeException(ex);

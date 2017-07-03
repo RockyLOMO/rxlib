@@ -20,10 +20,6 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -36,28 +32,24 @@ import java.util.regex.Pattern;
  */
 public class App {
     //region Fields
-    public static final String lHome = System.getProperty("catalina.home"), utf8 = "UTF-8";
-    private static final String x2 = "logs";
-    private static final Log log1 = LogFactory.getLog("helperInfo"), log2 = LogFactory.getLog("helperError");
+    public static final String                    lHome = System.getProperty("catalina.home"), UTF8 = "UTF-8";
+    private static final String                   x2    = "logs";
+    private static final Log                      log1  = LogFactory.getLog("helperInfo"),
+            log2 = LogFactory.getLog("helperError");
     //静态不要new
-//    private static final Random rnd = new Random();
-    private static final NQuery<Class<?>> SupportTypes;
+    //    private static final Random rnd = new Random();
+    private static final NQuery<Class<?>>         SupportTypes;
     private static final NQuery<SimpleDateFormat> SupportDateFormats;
 
     static {
-        SupportTypes = new NQuery<>(new Class<?>[]{
-                String.class,
-                Boolean.class, Byte.class, Short.class, Integer.class, Long.class, Float.class, Double.class,
-                BigDecimal.class, UUID.class, Date.class,
-        });
-        SupportDateFormats = new NQuery<>(new SimpleDateFormat[]{
-                new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
-                new SimpleDateFormat("yyyyMMddHHmmss")
-        });
+        SupportTypes = new NQuery<>(new Class<?>[] { String.class, Boolean.class, Byte.class, Short.class,
+                Integer.class, Long.class, Float.class, Double.class, BigDecimal.class, UUID.class, Date.class, });
+        SupportDateFormats = new NQuery<>(new SimpleDateFormat[] { new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
+                new SimpleDateFormat("yyyyMMddHHmmss") });
     }
 
     private static Random getRandom() {
-//        return rnd;
+        //        return rnd;
         return ThreadLocalRandom.current();
     }
     //endregion
@@ -142,7 +134,8 @@ public class App {
     public static Map<String, String> readSettings(String propertiesFile) {
         Properties prop = new Properties();
         try {
-            prop.load(new InputStreamReader(App.class.getClassLoader().getResourceAsStream(propertiesFile + ".properties"), utf8));
+            prop.load(new InputStreamReader(
+                    App.class.getClassLoader().getResourceAsStream(propertiesFile + ".properties"), UTF8));
         } catch (Exception ex) {
             throw new RuntimeException("readSettings", ex);
         }
@@ -189,23 +182,9 @@ public class App {
         return ip;
     }
 
-    public static String readRequestBody(HttpServletRequest request) {
-        StringBuilder body = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(request.getInputStream(), utf8))) {
-            char[] charBuffer = new char[128];
-            int bytesRead;
-            while ((bytesRead = reader.read(charBuffer)) > 0) {
-                body.append(charBuffer, 0, bytesRead);
-            }
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
-        return body.toString();
-    }
-
     public static void check(String name, HttpServletResponse res) {
         File file = new File(String.format("%s/%s/%s", lHome, x2, name));
-        res.setCharacterEncoding(utf8);
+        res.setCharacterEncoding(UTF8);
         res.setContentType("application/octet-stream");
         res.setContentLength((int) file.length());
         res.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
@@ -279,7 +258,8 @@ public class App {
     }
 
     public static <T> T isNull(T value, T defaultVal, boolean trim) {
-        if (value == null || (value instanceof String && (trim ? isNullOrWhiteSpace(value.toString()) : isNullOrEmpty(value.toString())))) {
+        if (value == null || (value instanceof String
+                && (trim ? isNullOrWhiteSpace(value.toString()) : isNullOrEmpty(value.toString())))) {
             return defaultVal;
         }
         return value;
@@ -335,6 +315,42 @@ public class App {
         }
         String x = Strings.repeat("*", len - left - right);
         return val.substring(0, left) + x + val.substring(left + x.length());
+    }
+    //endregion
+
+    //region IO
+    public static final int  TimeoutInfinite   = -1;
+    private static final int DefaultBufferSize = 1024;
+
+    public static String readString(InputStream stream) {
+        return readString(stream, UTF8);
+    }
+
+    public static String readString(InputStream stream, String charset) {
+        StringBuilder result = new StringBuilder();
+        try (DataInputStream reader = new DataInputStream(stream)) {
+            byte[] buffer = new byte[DefaultBufferSize];
+            int read;
+            while ((read = reader.read(buffer)) > 0) {
+                result.append(new String(buffer, 0, read, charset));
+            }
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+        return result.toString();
+    }
+
+    public static void writeString(OutputStream stream, String value) {
+        writeString(stream, value, UTF8);
+    }
+
+    public static void writeString(OutputStream stream, String value, String charset) {
+        try (DataOutputStream writer = new DataOutputStream(stream)) {
+            byte[] data = value.getBytes(charset);
+            writer.write(data);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
     //endregion
 
@@ -444,7 +460,7 @@ public class App {
     public static String convertToBase64String(byte[] data) {
         byte[] ret = Base64.encodeBase64(data);
         try {
-            return new String(ret, utf8);
+            return new String(ret, UTF8);
         } catch (UnsupportedEncodingException ex) {
             throw new RuntimeException("convertToBase64String", ex);
         }
@@ -453,13 +469,12 @@ public class App {
     public static byte[] convertFromBase64String(String base64) {
         byte[] ret;
         try {
-            ret = base64.getBytes(utf8);
+            ret = base64.getBytes(UTF8);
         } catch (UnsupportedEncodingException ex) {
             throw new RuntimeException("convertFromBase64String", ex);
         }
         return Base64.decodeBase64(ret);
     }
-
 
     public static String serializeToBase64(Object obj) {
         byte[] data = serialize(obj);
@@ -468,7 +483,7 @@ public class App {
 
     public static byte[] serialize(Object obj) {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-             ObjectOutputStream out = new ObjectOutputStream(bos)) {
+                ObjectOutputStream out = new ObjectOutputStream(bos)) {
             out.writeObject(obj);
             return bos.toByteArray();
         } catch (IOException ex) {
@@ -483,7 +498,7 @@ public class App {
 
     public static Object deserialize(byte[] data) {
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
-             ObjectInputStream in = new ObjectInputStream(bis)) {
+                ObjectInputStream in = new ObjectInputStream(bis)) {
             return in.readObject();
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -578,7 +593,7 @@ public class App {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         marshaller.marshal(obj, stream);
         try {
-            return stream.toString(utf8);
+            return stream.toString(UTF8);
         } catch (UnsupportedEncodingException ex) {
             throw new JAXBException(ex.getCause());
         }
@@ -590,84 +605,12 @@ public class App {
         Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
         byte[] data;
         try {
-            data = xml.getBytes(utf8);
+            data = xml.getBytes(UTF8);
         } catch (UnsupportedEncodingException ex) {
             throw new JAXBException(ex.getCause());
         }
         ByteArrayInputStream stream = new ByteArrayInputStream(data);
         return (T) unmarshaller.unmarshal(stream);
-    }
-    //endregion
-
-    //region HttpClient
-    private static final String UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
-
-    public static String httpGet(String url) {
-        try {
-            URL uri = new URL(url);
-            HttpURLConnection client = (HttpURLConnection) uri.openConnection();
-            client.setRequestMethod("GET");
-            client.setRequestProperty("User-Agent", UserAgent);
-
-            int resCode = client.getResponseCode();
-
-            StringBuilder resText = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()))) {
-                String line;
-                while ((line = in.readLine()) != null) {
-                    resText.append(line);
-                }
-            }
-            return resText.toString();
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static String urlEncode(String val) {
-        try {
-            return URLEncoder.encode(val, utf8);
-        } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static Map<String, String> parseQueryString(String queryString) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (queryString == null) {
-            return map;
-        }
-
-        String[] pairs = queryString.split("&");
-        try {
-            for (String pair : pairs) {
-                int idx = pair.indexOf("=");
-                String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), utf8) : pair;
-                String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), utf8) : null;
-                map.put(key, value);
-            }
-        } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException(ex);
-        }
-        return map;
-    }
-
-    public static String buildQueryString(String baseUrl, Map<String, String> params) {
-        if (params == null) {
-            return baseUrl;
-        }
-        if (baseUrl == null) {
-            baseUrl = "";
-        }
-
-        String c = baseUrl.indexOf("?") == -1 ? "?" : "&";
-        StringBuilder url = new StringBuilder(baseUrl);
-        for (String key : params.keySet()) {
-            String val = params.get(key);
-            url.append(url.length() == baseUrl.length() ? c : "&")
-                    .append(urlEncode(key)).append("=").append(val == null ? "" : urlEncode(val));
-        }
-        return url.toString();
     }
     //endregion
 }

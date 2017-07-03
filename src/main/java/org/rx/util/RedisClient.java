@@ -73,7 +73,7 @@ public class RedisClient {
     private byte[] getKeyBytes(String key) {
         try {
             key = App.isNull(keyPrefix, "") + key;
-            return key.getBytes(App.utf8);
+            return key.getBytes(App.UTF8);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
