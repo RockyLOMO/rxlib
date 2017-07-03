@@ -3,10 +3,7 @@ package org.rx.util;
 import com.alibaba.fastjson.JSON;
 
 import java.io.UnsupportedEncodingException;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
+import java.net.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -64,11 +61,12 @@ public class HttpClient {
     }
     //endregion
 
-    private static final String FormMimeType = "application/x-www-form-urlencoded", JsonMimeType = "application/json";
     public static final String  GetMethod    = "GET", PostMethod = "POST";
+    private static final String FormMimeType = "application/x-www-form-urlencoded", JsonMimeType = "application/json";
     private static final String UserAgent    = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
     private String              contentType;
     private int                 timeout;
+    private String              proxyHost;
 
     public String getContentType() {
         return contentType;
@@ -84,6 +82,14 @@ public class HttpClient {
 
     public void setTimeout(int timeout) {
         this.timeout = timeout;
+    }
+
+    public String getProxyHost() {
+        return proxyHost;
+    }
+
+    public void setProxyHost(String proxyHost) {
+        this.proxyHost = proxyHost;
     }
 
     public HttpClient() {
@@ -115,7 +121,9 @@ public class HttpClient {
         try {
             String charset = App.UTF8;
             URL uri = new URL(url);
-            HttpURLConnection client = (HttpURLConnection) uri.openConnection();
+            HttpURLConnection client = (HttpURLConnection) (proxyHost != null
+                    ? uri.openConnection(new Proxy(Proxy.Type.HTTP, App.parseSocketAddress(proxyHost)))
+                    : uri.openConnection());
             client.setDoOutput(true);
             client.setDoInput(true);
             client.setUseCaches(false);

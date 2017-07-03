@@ -20,12 +20,15 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
+
+import static org.valid4j.Assertive.*;
 
 /**
  * Created by wangxiaoming on 2016/1/25.
@@ -351,6 +354,13 @@ public class App {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
+    }
+
+    public static InetSocketAddress parseSocketAddress(String sockAddr) {
+        require(sockAddr != null, "sockAddr is null");
+
+        String[] arr = sockAddr.split(":");
+        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
     //endregion
 
