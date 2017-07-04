@@ -2,12 +2,16 @@ package org.rx.util;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import org.rx.common.Func1;
 import org.rx.common.Tuple;
+import org.springframework.core.ParameterNameDiscoverer;
+import org.springframework.core.PrioritizedParameterNameDiscoverer;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,7 +20,8 @@ import java.util.Map;
  */
 public class RestClient {
     private static class DynamicProxy implements InvocationHandler {
-        private String baseUrl, proxyHost;
+        private String                  baseUrl, proxyHost;
+        private ParameterNameDiscoverer parameterNameDiscoverer = new PrioritizedParameterNameDiscoverer();
 
         private DynamicProxy(String baseUrl, String proxyHost) {
             this.baseUrl = baseUrl;
@@ -25,20 +30,21 @@ public class RestClient {
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-            String apiName = method.getName(),
+            String apiPath = method.getName(),
                     httpMethod = App.isNullOrEmpty(args) ? HttpClient.GetMethod : HttpClient.PostMethod;
             boolean isFormParam = args != null && args.length > 1;
             RestMethod restMethod = method.getDeclaredAnnotation(RestMethod.class);
             if (restMethod != null) {
-                if (!App.isNullOrEmpty(restMethod.apiName())) {
-                    apiName = restMethod.apiName();
+                String temp = App.isNull(restMethod.path(), restMethod.value());
+                if (!App.isNullOrEmpty(temp)) {
+                    apiPath = temp;
                 }
-                if (!App.isNullOrEmpty(restMethod.httpMethod())) {
-                    httpMethod = restMethod.httpMethod();
+                if (!App.isNullOrEmpty(restMethod.method())) {
+                    httpMethod = restMethod.method();
                 }
                 isFormParam = restMethod.isFormParam();
             }
-            String url = String.format("%s/%s", baseUrl, apiName);
+            String url = String.format("%s/%s", baseUrl, apiPath);
             HttpClient client = new HttpClient();
             client.setProxyHost(proxyHost);
             if (App.equals(httpMethod, HttpClient.GetMethod, true)) {
@@ -46,6 +52,11 @@ public class RestClient {
             }
 
             Parameter[] parameters = method.getParameters();
+            String[] parameterNames = parameterNameDiscoverer.getParameterNames(method);
+            Func1<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
+                    && parameters.length == parameterNames.length ? parameterNames[offset]
+                            : parameters[offset].getName();
+            System.out.println(method.getDeclaringClass().getName() + " pNames: " + Arrays.toString(parameterNames));
             if (!isFormParam && parameters.length == 1) {
                 return setResult(method, client.httpPost(url, args[0]));
             }
@@ -54,8 +65,9 @@ public class RestClient {
                 JSONObject jsonEntity = new JSONObject();
                 for (int i = 0; i < parameters.length; i++) {
                     Parameter p = parameters[i];
-                    RestParameter restParameter = p.getDeclaredAnnotation(RestParameter.class);
-                    jsonEntity.put(restParameter != null ? restParameter.name() : p.getName(), args[i]);
+                    RestParam restParam = p.getDeclaredAnnotation(RestParam.class);
+                    jsonEntity.put(restParam != null ? App.isNull(restParam.name(), restParam.value()) : func.invoke(i),
+                            args[i]);
                 }
                 return setResult(method, client.httpPost(url, jsonEntity));
             }
@@ -63,8 +75,9 @@ public class RestClient {
             Map<String, String> params = new HashMap<>();
             for (int i = 0; i < parameters.length; i++) {
                 Parameter p = parameters[i];
-                RestParameter restParameter = p.getDeclaredAnnotation(RestParameter.class);
-                params.put(restParameter != null ? restParameter.name() : p.getName(), JSON.toJSONString(args[i]));
+                RestParam restParam = p.getDeclaredAnnotation(RestParam.class);
+                params.put(restParam != null ? App.isNull(restParam.name(), restParam.value()) : func.invoke(i),
+                        JSON.toJSONString(args[i]));
             }
             return setResult(method, client.httpPost(url, params));
         }
@@ -75,6 +88,7 @@ public class RestClient {
                 return Void.TYPE;
             }
             Tuple<Boolean, ?> r = App.tryConvert(resText, returnType);
+            System.out.println(r.Item1 + "," + r.Item2 + "=>" + resText + "," + returnType);
             return r.Item1 ? r.Item2 : JSON.toJavaObject(JSON.parseObject(resText), returnType);
         }
     }

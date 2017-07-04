@@ -1,16 +1,17 @@
 import org.rx.util.RestMethod;
-import org.rx.util.RestParameter;
+import org.rx.util.RestParam;
 
 /**
  * Created by za-wangxiaoming on 2017/7/3.
  */
 public interface RestApi {
-    void m1();
+    @RestMethod(method = "GET")
+    void test();
 
-    void m2(int a);
+    int add(@RestParam("a") int a, @RestParam("b") int b);
 
-    @RestMethod(isFormParam = true)
-    String m3(@RestParameter(name = "ss") int b, String c);
+    String login(@RestParam("userId") String uid, @RestParam("pwd") String pwd);
 
-    String m4(int z);
+    @RestMethod("/add24")
+    ObjectResult add2(ObjectParam param);
 }

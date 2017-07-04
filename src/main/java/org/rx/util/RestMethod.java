@@ -9,9 +9,11 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface RestMethod {
-    String apiName() default "";
+    String value() default "";
 
-    String httpMethod() default "POST";
+    String path() default "";
+
+    String method() default "POST";
 
     boolean isFormParam() default false;
 }

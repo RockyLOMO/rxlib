@@ -1,8 +1,8 @@
 package org.rx.util;
 
-import org.rx.common.FuncCallback3;
-import org.rx.common.ActionCallback2;
-import org.rx.common.FuncCallback2;
+import org.rx.common.Func2;
+import org.rx.common.Action2;
+import org.rx.common.Func1;
 import org.rx.common.NQuery;
 import org.rx.security.MD5Util;
 
@@ -18,12 +18,12 @@ import java.util.concurrent.ConcurrentMap;
 public class EntityMapper {
     //region NestedTypes
     private static class MapEntity {
-        public FuncCallback3<String, String, Boolean> MembersMatcher;
+        public Func2<String, String, Boolean> MembersMatcher;
         public Object PostProcessor;
         public HashSet<String> IgnoreNames;
     }
 
-    private static class DefaultMatcher implements FuncCallback3<String, String, Boolean> {
+    private static class DefaultMatcher implements Func2<String, String, Boolean> {
         @Override
         public Boolean invoke(String arg1, String arg2) {
             return arg1.equals(arg2);
@@ -76,7 +76,7 @@ public class EntityMapper {
     //endregion
 
     //region MapMethods
-    public synchronized static <TF, TT> void setMembersMatcher(Class<TF> tFrom, Class<TT> tTo, FuncCallback3<String, String, Boolean> membersMatcher, ActionCallback2<TF, TT> postProcessor) {
+    public synchronized static <TF, TT> void setMembersMatcher(Class<TF> tFrom, Class<TT> tTo, Func2<String, String, Boolean> membersMatcher, Action2<TF, TT> postProcessor) {
         MapEntity map = getConfig(tFrom, tTo, putNewWhenNull);
         map.MembersMatcher = membersMatcher == null ? Default.MembersMatcher : membersMatcher;
         map.PostProcessor = postProcessor;
@@ -110,14 +110,14 @@ public class EntityMapper {
         Class<?> tFrom = from.getClass(), tTo = to.getClass();
         final MapEntity map = getConfig(tFrom, tTo, getDefaultWhenNull);
 
-        NQuery<Method> fq = new NQuery<>(tFrom.getMethods()).where(new FuncCallback2<Method, Boolean>() {
+        NQuery<Method> fq = new NQuery<>(tFrom.getMethods()).where(new Func1<Method, Boolean>() {
             @Override
             public Boolean invoke(Method arg) {
                 String fName = arg.getName();
                 return !map.IgnoreNames.contains(fName) && fName.startsWith(GET);
             }
         });
-        NQuery<Method> tq = new NQuery<>(tTo.getMethods()).where(new FuncCallback2<Method, Boolean>() {
+        NQuery<Method> tq = new NQuery<>(tTo.getMethods()).where(new Func1<Method, Boolean>() {
             @Override
             public Boolean invoke(Method arg) {
                 return arg.getName().startsWith(SET);
@@ -129,7 +129,7 @@ public class EntityMapper {
             final String tName = SET + fName.substring(3);
             //App.logInfo("EntityMapper Step1 %s", fName);
 
-            Method tMethod = tq.where(new FuncCallback2<Method, Boolean>() {
+            Method tMethod = tq.where(new Func1<Method, Boolean>() {
                 @Override
                 public Boolean invoke(Method arg) {
                     return map.MembersMatcher.invoke(tName, arg.getName());
@@ -155,7 +155,7 @@ public class EntityMapper {
         }
 
         if (map.PostProcessor != null) {
-            ActionCallback2<TF, TT> postProcessor = (ActionCallback2<TF, TT>) map.PostProcessor;
+            Action2<TF, TT> postProcessor = (Action2<TF, TT>) map.PostProcessor;
             postProcessor.invoke(from, to);
         }
         return to;
@@ -164,7 +164,7 @@ public class EntityMapper {
 
     public static void trim(Object entity) {
         Class<?> type = entity.getClass();
-        NQuery<Method> fq = new NQuery<>(type.getMethods()).where(new FuncCallback2<Method, Boolean>() {
+        NQuery<Method> fq = new NQuery<>(type.getMethods()).where(new Func1<Method, Boolean>() {
             @Override
             public Boolean invoke(Method arg) {
                 return arg.getName().startsWith(GET) && arg.getReturnType().equals(String.class);

@@ -5,7 +5,7 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.rx.common.DateTime;
-import org.rx.common.FuncCallback2;
+import org.rx.common.Func1;
 import org.rx.common.NQuery;
 import org.rx.common.Tuple;
 import org.rx.security.MD5Util;
@@ -268,7 +268,7 @@ public class App {
         return value;
     }
 
-    public static <T> T isNull(T value, FuncCallback2<T, T> defaultFun) {
+    public static <T> T isNull(T value, Func1<T, T> defaultFun) {
         if (value == null || (value instanceof String && value.toString().length() == 0)) {
             if (defaultFun != null) {
                 return defaultFun.invoke(value);
@@ -395,7 +395,7 @@ public class App {
             return (T) value.toString();
         }
 
-        if (!(SupportTypes.any(new FuncCallback2<Class<?>, Boolean>() {
+        if (!(SupportTypes.any(new Func1<Class<?>, Boolean>() {
             @Override
             public Boolean invoke(Class<?> arg) {
                 return arg.equals(fromType);
@@ -420,7 +420,7 @@ public class App {
                 }
             }
             if (value == null) {
-                NQuery<String> q = SupportDateFormats.select(new FuncCallback2<SimpleDateFormat, String>() {
+                NQuery<String> q = SupportDateFormats.select(new Func1<SimpleDateFormat, String>() {
                     @Override
                     public String invoke(SimpleDateFormat arg) {
                         return arg.toPattern();
@@ -447,7 +447,7 @@ public class App {
             return type;
         }
 
-        String pName = type.getName();
+        String pName = type.equals(int.class) ? "Integer" : type.getName();
         String newName = "java.lang." + pName.substring(0, 1).toUpperCase() + pName.substring(1, pName.length());
         try {
             return Class.forName(newName);
