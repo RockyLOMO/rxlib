@@ -2,6 +2,9 @@ package org.rx.util;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
+import net.sf.cglib.proxy.MethodProxy;
 import org.rx.common.Func1;
 import org.rx.common.Tuple;
 import org.springframework.core.ParameterNameDiscoverer;
@@ -19,7 +22,7 @@ import java.util.Map;
  * Created by za-wangxiaoming on 2017/6/30.
  */
 public class RestClient {
-    private static class DynamicProxy implements InvocationHandler {
+    private static class DynamicProxy implements InvocationHandler, MethodInterceptor {
         private String                  baseUrl, proxyHost;
         private ParameterNameDiscoverer parameterNameDiscoverer = new PrioritizedParameterNameDiscoverer();
 
@@ -30,6 +33,10 @@ public class RestClient {
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            if (method.getDeclaringClass().equals(Object.class)) {
+                return method.invoke(proxy, args);
+            }
+
             String apiPath = method.getName(),
                     httpMethod = App.isNullOrEmpty(args) ? HttpClient.GetMethod : HttpClient.PostMethod;
             boolean isFormParam = args != null && args.length > 1;
@@ -82,6 +89,11 @@ public class RestClient {
             return setResult(method, client.httpPost(url, params));
         }
 
+        @Override
+        public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+            return invoke(o, method, objects);
+        }
+
         private Object setResult(Method method, String resText) {
             Class<?> returnType = method.getReturnType();
             if (returnType.equals(Void.TYPE)) {
@@ -94,11 +106,12 @@ public class RestClient {
     }
 
     public static <T> T create(Class<? extends T> restInterface, String baseUrl) {
-        return create(restInterface, baseUrl, null);
+        return create(restInterface, baseUrl, null, true);
     }
 
-    public static <T> T create(Class<? extends T> restInterface, String baseUrl, String proxyHost) {
-        InvocationHandler handler = new DynamicProxy(baseUrl, proxyHost);
-        return (T) Proxy.newProxyInstance(handler.getClass().getClassLoader(), new Class[] { restInterface }, handler);
+    public static <T> T create(Class<? extends T> restInterface, String baseUrl, String proxyHost, boolean byCglib) {
+        DynamicProxy handler = new DynamicProxy(baseUrl, proxyHost);
+        return (T) (byCglib ? Enhancer.create(restInterface, handler)
+                : Proxy.newProxyInstance(handler.getClass().getClassLoader(), new Class[] { restInterface }, handler));
     }
 }

@@ -19,13 +19,14 @@ public class test {
     private static void testRest() {
         String proxy = null;
         //proxy = "127.0.0.1:8888";
-        RestApi client = RestClient.create(RestApi.class, "http://localhost:8081", proxy);
-        client.test();
-        client.add(1, 1);
-        client.login("Rocky", "abc123");
-        ObjectParam p = new ObjectParam();
-        p.setA(12);
-        p.setB(12);
-        client.add2(p);
+        RestApi client = RestClient.create(RestApi.class, "http://localhost:8081", proxy, true);
+        System.out.println(client.getClass());
+//        client.test();
+//        client.add(1, 1);
+//        client.login("Rocky", "abc123");
+//        ObjectParam p = new ObjectParam();
+//        p.setA(12);
+//        p.setB(12);
+//        client.add2(p);
     }
 }
