@@ -93,7 +93,8 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region JoinMethods
-    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, Func2<T, TI, Boolean> keySelector, Func2<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, Func2<T, TI, Boolean> keySelector,
+                                    Func2<T, TI, TR> resultSelector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
             for (TI ti : inner) {
@@ -234,11 +235,11 @@ public class NQuery<T> implements Iterable<T> {
     }
 
     public List<T> toList() {
-        List<T> set = new ArrayList<>();
-        for (T t : current) {
-            set.add(t);
-        }
-        return set;
+        return new ArrayList<>(current);
+    }
+
+    public Set<T> toSet() {
+        return new HashSet<>(current);
     }
 
     public <TK> Map<TK, T> toMap(Func1<T, TK> keySelector) {

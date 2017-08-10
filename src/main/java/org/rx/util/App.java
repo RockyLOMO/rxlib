@@ -20,7 +20,9 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -35,9 +37,11 @@ import static org.valid4j.Assertive.*;
  */
 public class App {
     //region Fields
-    public static final String                    lHome = System.getProperty("catalina.home"), UTF8 = "UTF-8";
-    private static final String                   x2    = "logs";
-    private static final Log                      log1  = LogFactory.getLog("helperInfo"),
+    public static final String                    CurrentPath = System.getProperty("user.dir");
+    public static final String                    TmpDirPath  = String.format("%s%srx",
+            System.getProperty("java.io.tmpdir"), File.separatorChar);
+    public static final String                    lHome       = System.getProperty("catalina.home"), UTF8 = "UTF-8";
+    private static final Log                      log1        = LogFactory.getLog("helperInfo"),
             log2 = LogFactory.getLog("helperError");
     //静态不要new
     //    private static final Random rnd = new Random();
@@ -186,7 +190,7 @@ public class App {
     }
 
     public static void check(String name, HttpServletResponse res) {
-        File file = new File(String.format("%s/%s/%s", lHome, x2, name));
+        File file = new File(String.format("%s/logs/%s", lHome, name));
         res.setCharacterEncoding(UTF8);
         res.setContentType("application/octet-stream");
         res.setContentLength((int) file.length());
@@ -356,11 +360,52 @@ public class App {
         }
     }
 
+    public static void createDirectory(String dirPath) {
+        File dir = new File(dirPath);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+    }
+
     public static InetSocketAddress parseSocketAddress(String sockAddr) {
         require(sockAddr != null, "sockAddr is null");
 
         String[] arr = sockAddr.split(":");
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    public static void setHttpProxy(String sockAddr) {
+        setHttpProxy(sockAddr, null, null, null);
+    }
+
+    public static void setHttpProxy(String sockAddr, List<String> nonProxyHosts, String userName, String password) {
+        InetSocketAddress ipe = parseSocketAddress(sockAddr);
+        Properties prop = System.getProperties();
+        prop.setProperty("http.proxyHost", ipe.getAddress().getHostAddress());
+        prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));
+        prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
+        prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
+        if (!isNullOrEmpty(nonProxyHosts)) {
+            //如"localhost|192.168.0.*"
+            prop.setProperty("http.nonProxyHosts", stringJoin("|", nonProxyHosts));
+        }
+        if (userName != null && password != null) {
+            Authenticator.setDefault(new UserAuthenticator(userName, password));
+        }
+    }
+
+    static class UserAuthenticator extends Authenticator {
+        private String userName;
+        private String password;
+
+        public UserAuthenticator(String userName, String password) {
+            this.userName = userName;
+            this.password = password;
+        }
+
+        protected PasswordAuthentication getPasswordAuthentication() {
+            return new PasswordAuthentication(userName, password.toCharArray());
+        }
     }
     //endregion
 
