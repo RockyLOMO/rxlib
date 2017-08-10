@@ -1,5 +1,6 @@
 import com.alibaba.fastjson.JSON;
 import lombok.Data;
+import org.rx.common.Func1;
 import org.rx.util.BeanMapper;
 import org.rx.util.RestClient;
 
@@ -45,6 +46,7 @@ public class test {
         private int     age;
         private boolean sex;
         private Long    money;
+        private Long    kids;
     }
 
     @Data
@@ -54,23 +56,26 @@ public class test {
         private int        luckyNum;
         private BigDecimal money;
         private String     info;
+        private Long       kids;
     }
 
     private static void testMap() {
         BeanMapper mapper = new BeanMapper();
-        mapper.setConfig(SourceBean.class, TargetBean.class, targetName -> {
-switch (targetName){
-    case "setInfo":
-
-        break;
-}
-        }, "setLuckyNum");
+        mapper.setConfig(SourceBean.class, TargetBean.class, p -> {
+            switch (p) {
+                case "setInfo":
+                    return "getName";
+            }
+            return null;
+        }, null, "setLuckyNum");
 
         SourceBean f = new SourceBean();
-        f.setName("HW");
+        f.setName("HW ");
         f.setAge(100);
         f.setMoney(200L);
-        TargetBean t = mapper.map(f, TargetBean.class);
+        TargetBean t = new TargetBean();
+        t.setKids(10L);
+        mapper.map(f, t, BeanMapper.MapFlags.TrimString | BeanMapper.MapFlags.SkipNull);
         System.out.println(t);
     }
 }

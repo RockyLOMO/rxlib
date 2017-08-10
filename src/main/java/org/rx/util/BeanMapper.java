@@ -1,50 +1,61 @@
 package org.rx.util;
 
-import com.alibaba.fastjson.JSON;
 import net.sf.cglib.beans.BeanCopier;
-import net.sf.cglib.beans.BeanMap;
-import net.sf.cglib.reflect.FastMethod;
-import org.apache.commons.codec.digest.Crypt;
 import org.rx.common.*;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * JAVA Bean操作类 Created by za-wangxiaoming on 2017/7/25.
  */
 public class BeanMapper {
-    private static class Node {
-        public BeanCopier            copier;
+    public class MapFlags {
+        public static final int SkipNull   = 1;
+        public static final int TrimString = 1 << 1;
+    }
+
+    private static class MapConfig {
+        public final BeanCopier      copier;
         public volatile boolean      isCheck;
         public Set<String>           ignoreMethods;
         public Func1<String, String> methodMatcher;
-    }
+        public Action2               postProcessor;
 
-    private static Map<UUID, Node>                       config      = new ConcurrentHashMap<>();
-    private static Map<Class, Tuple<UUID, List<Method>>> methodCache = new ConcurrentHashMap<>();
-
-    private Node getConfig(Class from, Class to) {
-        UUID k = App.hash(from.getName() + to.getName());
-        Node node = config.get(k);
-        if (node == null) {
-            config.put(k, node = new Node());
-            node.copier = BeanCopier.create(from, to, true);
+        public MapConfig(BeanCopier copier) {
+            this.copier = copier;
         }
-        return node;
     }
 
-    private Tuple<UUID, List<Method>> getMethods(Class to) {
-        Tuple<UUID, List<Method>> result = methodCache.get(to);
+    private static class CacheItem {
+        public final UUID         key;
+        public final List<Method> setters;
+        public final List<Method> getters;
+
+        public CacheItem(UUID key, List<Method> setters, List<Method> getters) {
+            this.key = key;
+            this.setters = setters;
+            this.getters = getters;
+        }
+    }
+
+    private static Map<UUID, MapConfig>  config      = new ConcurrentHashMap<>();
+    private static Map<Class, CacheItem> methodCache = new ConcurrentHashMap<>();
+
+    private MapConfig getConfig(Class from, Class to) {
+        UUID k = App.hash(from.getName() + to.getName());
+        MapConfig mapConfig = config.get(k);
+        if (mapConfig == null) {
+            config.put(k, mapConfig = new MapConfig(BeanCopier.create(from, to, true)));
+        }
+        return mapConfig;
+    }
+
+    private CacheItem getMethods(Class to) {
+        CacheItem result = methodCache.get(to);
         if (result == null) {
             List<Method> setters = Arrays.stream(to.getMethods())
                     .filter(p -> p.getName().startsWith("set") && p.getParameterCount() == 1)
@@ -52,11 +63,13 @@ public class BeanMapper {
             List<Method> getters = Arrays.stream(to.getMethods()).filter(
                     p -> !"getClass".equals(p.getName()) && p.getName().startsWith("get") && p.getParameterCount() == 0)
                     .collect(Collectors.toList());
-            List<Method> methods = setters.stream()
-                    .filter(p21 -> getters.stream()
-                            .anyMatch(p22 -> p21.getName().substring(3).equals(p22.getName().substring(3))))
+            List<Method> s2 = setters.stream().filter(
+                    ps -> getters.stream().anyMatch(pg -> ps.getName().substring(3).equals(pg.getName().substring(3))))
                     .collect(Collectors.toList());
-            methodCache.put(to, result = new Tuple<>(genKey(to, toMethodNames(methods)), methods));
+            List<Method> g2 = getters.stream().filter(
+                    pg -> s2.stream().anyMatch(ps -> pg.getName().substring(3).equals(ps.getName().substring(3))))
+                    .collect(Collectors.toList());
+            methodCache.put(to, result = new CacheItem(genKey(to, toMethodNames(s2)), s2, g2));
         }
         return result;
     }
@@ -72,75 +85,112 @@ public class BeanMapper {
         return App.hash(k.toString());
     }
 
-    public synchronized void setConfig(Class from, Class to, Func1<String, String> methodMatcher,
-                                       String... ignoreMethods) {
-        Node config = getConfig(from, to);
+    public synchronized BeanMapper setConfig(Class from, Class to, Func1<String, String> methodMatcher,
+                                             Action2 postProcessor, String... ignoreMethods) {
+        MapConfig config = getConfig(from, to);
         config.methodMatcher = methodMatcher;
+        config.postProcessor = postProcessor;
         config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+        return this;
+    }
+
+    public <TF, TT> TT[] mapToArray(Collection<TF> fromSet, Class<TT> toType) {
+        List<TT> toSet = new ArrayList<>();
+        for (Object o : fromSet) {
+            toSet.add(map(o, toType));
+        }
+        TT[] x = (TT[]) Array.newInstance(toType, toSet.size());
+        toSet.toArray(x);
+        return x;
     }
 
     public <T> T map(Object source, Class<T> targetType) {
         try {
-            return map(source, targetType.newInstance());
+            return map(source, targetType.newInstance(), 0);
         } catch (ReflectiveOperationException ex) {
             throw new BeanMapException(ex);
         }
     }
 
-    public <T> T map(Object source, T target) {
+    public <T> T map(Object source, T target, int flags) {
         Class from = source.getClass(), to = target.getClass();
-        Node config = getConfig(from, to);
+        MapConfig config = getConfig(from, to);
+        final CacheItem tmc = getMethods(to);
         Set<String> targetMethods = new HashSet<>();
         config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
-            targetMethods.add(methodName.toString());
+            String mName = methodName.toString();
+            targetMethods.add(mName);
+            if (checkSkip(sourceValue, mName, checkFlag(flags, MapFlags.SkipNull), config)) {
+                String fn = mName.substring(3);
+                Method gm = tmc.getters.stream().filter(p -> p.getName().endsWith(fn)).findFirst().get();
+                return invoke(gm, target);
+            }
+            if (checkFlag(flags, MapFlags.TrimString) && sourceValue instanceof String) {
+                sourceValue = ((String) sourceValue).trim();
+            }
             return App.changeType(sourceValue, targetMethodType);
         });
-        final Tuple<UUID, List<Method>> tmc = getMethods(to);
         Set<String> copiedNames = targetMethods;
         if (config.ignoreMethods != null) {
             copiedNames.addAll(config.ignoreMethods);
         }
-        Set<String> allNames = toMethodNames(tmc.Item2),
+        Set<String> allNames = toMethodNames(tmc.setters),
                 missedNames = new NQuery<>(allNames).except(copiedNames).toSet();
         if (config.methodMatcher != null) {
-            final Tuple<UUID, List<Method>> fmc = getMethods(from);
+            final CacheItem fmc = getMethods(from);
             for (String missedName : missedNames) {
-                try {
-                    Object val = null;
-                    String fromName = config.methodMatcher.invoke(missedName);
-                    if (fromName != null) {
-                        Method fm = fmc.Item2.stream().filter(p -> p.getName().equals(fromName)).findFirst()
-                                .orElse(null);
-                        if (fm != null) {
-                            fm.setAccessible(true);
-                            val = fm.invoke(source);
-                        }
-                    }
-                    if (val == null) {
-                        throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
-                                allNames, missedNames);
-                    }
-                    Method tm = tmc.Item2.stream().filter(p -> p.getName().equals(missedName)).findFirst().get();
-                    tm.setAccessible(true);
-                    tm.invoke(target, val);
-                    copiedNames.add(missedName);
-                    missedNames.remove(missedName);
-                } catch (ReflectiveOperationException ex) {
-                    throw new BeanMapException(ex);
+                Method fm;
+                String fromName = config.methodMatcher.invoke(missedName);
+                if (fromName == null || (fm = fmc.getters.stream().filter(p -> p.getName().equals(fromName)).findFirst()
+                        .orElse(null)) == null) {
+                    throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
+                            allNames, missedNames);
                 }
+                Object sourceValue = invoke(fm, source);
+                if (checkFlag(flags, MapFlags.SkipNull) && sourceValue == null) {
+                    continue;
+                }
+                if (checkFlag(flags, MapFlags.TrimString) && sourceValue instanceof String) {
+                    sourceValue = ((String) sourceValue).trim();
+                }
+                Method tm = tmc.setters.stream().filter(p -> p.getName().equals(missedName)).findFirst().get();
+                invoke(tm, target, sourceValue);
+                copiedNames.add(missedName);
+                missedNames.remove(missedName);
             }
         }
         if (!config.isCheck) {
             synchronized (config) {
                 UUID k = genKey(to, copiedNames);
-                App.logInfo("check %s %s", k, tmc.Item1);
-                if (!k.equals(tmc.Item1)) {
+                App.logInfo("check %s %s", k, tmc.key);
+                if (!k.equals(tmc.key)) {
                     throw new BeanMapException(String.format("Map %s to %s missed method %s..", from.getSimpleName(),
                             to.getSimpleName(), String.join(", ", missedNames)), allNames, missedNames);
                 }
                 config.isCheck = true;
             }
         }
+        if (config.postProcessor != null) {
+            config.postProcessor.invoke(source, target);
+        }
         return target;
+    }
+
+    private Object invoke(Method method, Object obj, Object... args) {
+        try {
+            method.setAccessible(true);//nonCheck
+            return method.invoke(obj, args);
+        } catch (ReflectiveOperationException ex) {
+            throw new BeanMapException(ex);
+        }
+    }
+
+    private boolean checkSkip(Object sourceValue, String methodName, boolean skipNull, MapConfig config) {
+        return (skipNull && sourceValue == null)
+                || (config.ignoreMethods != null && config.ignoreMethods.contains(methodName));
+    }
+
+    private boolean checkFlag(int flags, int value) {
+        return (flags & value) == value;
     }
 }
