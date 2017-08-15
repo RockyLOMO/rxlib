@@ -13,9 +13,11 @@ import java.util.stream.Collectors;
  * JAVA Bean操作类 Created by za-wangxiaoming on 2017/7/25.
  */
 public class BeanMapper {
-    public class MapFlags {
-        public static final int SkipNull   = 1;
-        public static final int TrimString = 1 << 1;
+    public class Flags {
+        public static final int SkipNull         = 1;
+        public static final int TrimString       = 1 << 1;
+        public static final int ValidateBean     = 1 << 2;
+        public static final int NonCheckAllMatch = 1 << 3;
     }
 
     private static class MapConfig {
@@ -120,12 +122,12 @@ public class BeanMapper {
         config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
             String mName = methodName.toString();
             targetMethods.add(mName);
-            if (checkSkip(sourceValue, mName, checkFlag(flags, MapFlags.SkipNull), config)) {
+            if (checkSkip(sourceValue, mName, checkFlag(flags, Flags.SkipNull), config)) {
                 String fn = mName.substring(3);
                 Method gm = tmc.getters.stream().filter(p -> p.getName().endsWith(fn)).findFirst().get();
                 return invoke(gm, target);
             }
-            if (checkFlag(flags, MapFlags.TrimString) && sourceValue instanceof String) {
+            if (checkFlag(flags, Flags.TrimString) && sourceValue instanceof String) {
                 sourceValue = ((String) sourceValue).trim();
             }
             return App.changeType(sourceValue, targetMethodType);
@@ -147,10 +149,10 @@ public class BeanMapper {
                             allNames, missedNames);
                 }
                 Object sourceValue = invoke(fm, source);
-                if (checkFlag(flags, MapFlags.SkipNull) && sourceValue == null) {
+                if (checkFlag(flags, Flags.SkipNull) && sourceValue == null) {
                     continue;
                 }
-                if (checkFlag(flags, MapFlags.TrimString) && sourceValue instanceof String) {
+                if (checkFlag(flags, Flags.TrimString) && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
                 }
                 Method tm = tmc.setters.stream().filter(p -> p.getName().equals(missedName)).findFirst().get();
@@ -159,7 +161,7 @@ public class BeanMapper {
                 missedNames.remove(missedName);
             }
         }
-        if (!config.isCheck) {
+        if (!checkFlag(flags, Flags.NonCheckAllMatch) && !config.isCheck) {
             synchronized (config) {
                 UUID k = genKey(to, copiedNames);
                 App.logInfo("check %s %s", k, tmc.key);

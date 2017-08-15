@@ -1,14 +1,10 @@
-import com.alibaba.fastjson.JSON;
 import lombok.Data;
-import org.rx.common.Func1;
 import org.rx.util.BeanMapper;
 import org.rx.util.RestClient;
 
 import java.io.File;
 import java.math.BigDecimal;
-import java.util.HashSet;
 import java.util.Random;
-import java.util.Set;
 
 /**
  * Created by za-wangxiaoming on 2017/6/28.
@@ -75,7 +71,7 @@ public class test {
         f.setMoney(200L);
         TargetBean t = new TargetBean();
         t.setKids(10L);
-        mapper.map(f, t, BeanMapper.MapFlags.TrimString | BeanMapper.MapFlags.SkipNull);
+        mapper.map(f, t, BeanMapper.Flags.TrimString | BeanMapper.Flags.SkipNull);
         System.out.println(t);
     }
 }

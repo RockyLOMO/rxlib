@@ -1,7 +1,6 @@
 package org.rx.util;
 
 import com.google.common.base.Strings;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.rx.common.DateTime;
@@ -513,7 +512,7 @@ public class App {
     }
 
     public static String convertToBase64String(byte[] data) {
-        byte[] ret = Base64.encodeBase64(data);
+        byte[] ret = Base64.getEncoder().encode(data);
         try {
             return new String(ret, UTF8);
         } catch (UnsupportedEncodingException ex) {
@@ -522,13 +521,13 @@ public class App {
     }
 
     public static byte[] convertFromBase64String(String base64) {
-        byte[] ret;
+        byte[] data;
         try {
-            ret = base64.getBytes(UTF8);
+            data = base64.getBytes(UTF8);
         } catch (UnsupportedEncodingException ex) {
             throw new RuntimeException("convertFromBase64String", ex);
         }
-        return Base64.decodeBase64(ret);
+        return Base64.getDecoder().decode(data);
     }
 
     public static String serializeToBase64(Object obj) {
