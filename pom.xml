@@ -10,14 +10,14 @@
         <version>9</version>
     </parent>
 
-    <groupId>org.rx</groupId>
+    <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
     <version>1.0.2-SNAPSHOT</version>
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
     <organization>
-        <name>apache.org</name>
+        <name>com.github.rockylomo</name>
     </organization>
     <licenses>
         <license>
