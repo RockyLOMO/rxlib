@@ -35,6 +35,11 @@ public class StringBuilder {
         return this;
     }
 
+    public StringBuilder appendLine() {
+        append(System.lineSeparator());
+        return this;
+    }
+
     public StringBuilder appendLine(Object obj) {
         buffer.append(prefix).append(obj).append(System.lineSeparator());
         return this;

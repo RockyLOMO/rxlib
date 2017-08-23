@@ -63,7 +63,7 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region PRMethods
-    public NQuery<T> where(Func1<T, Boolean> selector) {
+    public NQuery<T> where(Func<T, Boolean> selector) {
         List<T> result = new ArrayList<>();
         for (T t : current) {
             if (selector.invoke(t)) {
@@ -73,7 +73,7 @@ public class NQuery<T> implements Iterable<T> {
         return new NQuery<>(result);
     }
 
-    public <TR> NQuery<TR> select(Func1<T, TR> selector) {
+    public <TR> NQuery<TR> select(Func<T, TR> selector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
             result.add(selector.invoke(t));
@@ -81,7 +81,7 @@ public class NQuery<T> implements Iterable<T> {
         return new NQuery<>(result);
     }
 
-    public <TR> NQuery<TR> selectMany(Func1<T, Iterable<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(Func<T, Iterable<TR>> selector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
             for (TR tr : selector.invoke(t)) {
@@ -93,8 +93,8 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region JoinMethods
-    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, Func2<T, TI, Boolean> keySelector,
-                                    Func2<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiFunc<T, TI, Boolean> keySelector,
+                                    BiFunc<T, TI, TR> resultSelector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
             for (TI ti : inner) {
@@ -113,7 +113,7 @@ public class NQuery<T> implements Iterable<T> {
         return current.size() > 0;
     }
 
-    public boolean any(Func1<T, Boolean> selector) {
+    public boolean any(Func<T, Boolean> selector) {
         return this.where(selector).any();
     }
 
@@ -140,7 +140,7 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region OrderingMethods
-    public <TK> NQuery<T> orderBy(final Func1<T, TK> keySelector) {
+    public <TK> NQuery<T> orderBy(final Func<T, TK> keySelector) {
         List<T> result = toList();
         Collections.sort(result, new Comparator<T>() {
             @Override
@@ -156,7 +156,7 @@ public class NQuery<T> implements Iterable<T> {
         return new NQuery<>(result);
     }
 
-    public <TK> NQuery<T> orderByDescending(final Func1<T, TK> keySelector) {
+    public <TK> NQuery<T> orderByDescending(final Func<T, TK> keySelector) {
         List<T> result = toList();
         Collections.sort(result, new Comparator<T>() {
             @Override
@@ -180,7 +180,7 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region GroupingMethods
-    public <TK, TR> NQuery<TR> groupBy(Func1<T, TK> keySelector, Func1<Tuple<TK, NQuery<T>>, TR> resultSelector) {
+    public <TK, TR> NQuery<TR> groupBy(Func<T, TK> keySelector, Func<Tuple<TK, NQuery<T>>, TR> resultSelector) {
         Map<TK, List<T>> map = new HashMap<>();
         for (T t : current) {
             TK key = keySelector.invoke(t);
@@ -191,7 +191,7 @@ public class NQuery<T> implements Iterable<T> {
         }
         List<TR> result = new ArrayList<>();
         for (TK tk : map.keySet()) {
-            result.add(resultSelector.invoke(new Tuple<>(tk, new NQuery<>(map.get(tk)))));
+            result.add(resultSelector.invoke(Tuple.of(tk, new NQuery<>(map.get(tk)))));
         }
         return new NQuery<>(result);
     }
@@ -242,7 +242,7 @@ public class NQuery<T> implements Iterable<T> {
         return new HashSet<>(current);
     }
 
-    public <TK> Map<TK, T> toMap(Func1<T, TK> keySelector) {
+    public <TK> Map<TK, T> toMap(Func<T, TK> keySelector) {
         HashMap<TK, T> map = new HashMap<>();
         for (T t : current) {
             map.put(keySelector.invoke(t), t);
@@ -250,7 +250,7 @@ public class NQuery<T> implements Iterable<T> {
         return map;
     }
 
-    public <TK, TV> Map<TK, TV> toMap(Func1<T, TK> keySelector, Func1<T, TV> valueSelector) {
+    public <TK, TV> Map<TK, TV> toMap(Func<T, TK> keySelector, Func<T, TV> valueSelector) {
         HashMap<TK, TV> map = new HashMap<>();
         for (T t : current) {
             map.put(keySelector.invoke(t), valueSelector.invoke(t));

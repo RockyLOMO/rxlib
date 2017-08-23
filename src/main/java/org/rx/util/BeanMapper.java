@@ -2,12 +2,16 @@ package org.rx.util;
 
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.common.*;
+import org.rx.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+
+import static org.rx.common.Contract.require;
 
 /**
  * JAVA Bean操作类 Created by za-wangxiaoming on 2017/7/25.
@@ -21,11 +25,11 @@ public class BeanMapper {
     }
 
     private static class MapConfig {
-        public final BeanCopier      copier;
-        public volatile boolean      isCheck;
-        public Set<String>           ignoreMethods;
-        public Func1<String, String> methodMatcher;
-        public Action2               postProcessor;
+        public final BeanCopier     copier;
+        public volatile boolean     isCheck;
+        public Set<String>          ignoreMethods;
+        public Func<String, String> methodMatcher;
+        public BiConsumer           postProcessor;
 
         public MapConfig(BeanCopier copier) {
             this.copier = copier;
@@ -48,6 +52,8 @@ public class BeanMapper {
     private static Map<Class, CacheItem> methodCache = new ConcurrentHashMap<>();
 
     private MapConfig getConfig(Class from, Class to) {
+        require(from, to);
+
         UUID k = App.hash(from.getName() + to.getName());
         MapConfig mapConfig = config.get(k);
         if (mapConfig == null) {
@@ -87,8 +93,8 @@ public class BeanMapper {
         return App.hash(k.toString());
     }
 
-    public synchronized BeanMapper setConfig(Class from, Class to, Func1<String, String> methodMatcher,
-                                             Action2 postProcessor, String... ignoreMethods) {
+    public synchronized BeanMapper setConfig(Class from, Class to, Func<String, String> methodMatcher,
+                                             BiConsumer postProcessor, String... ignoreMethods) {
         MapConfig config = getConfig(from, to);
         config.methodMatcher = methodMatcher;
         config.postProcessor = postProcessor;
@@ -97,6 +103,8 @@ public class BeanMapper {
     }
 
     public <TF, TT> TT[] mapToArray(Collection<TF> fromSet, Class<TT> toType) {
+        require(fromSet, toType);
+
         List<TT> toSet = new ArrayList<>();
         for (Object o : fromSet) {
             toSet.add(map(o, toType));
@@ -107,6 +115,8 @@ public class BeanMapper {
     }
 
     public <T> T map(Object source, Class<T> targetType) {
+        require(targetType);
+
         try {
             return map(source, targetType.newInstance(), 0);
         } catch (ReflectiveOperationException ex) {
@@ -115,6 +125,8 @@ public class BeanMapper {
     }
 
     public <T> T map(Object source, T target, int flags) {
+        require(source, target);
+
         Class from = source.getClass(), to = target.getClass();
         MapConfig config = getConfig(from, to);
         final CacheItem tmc = getMethods(to);
@@ -172,8 +184,11 @@ public class BeanMapper {
                 config.isCheck = true;
             }
         }
+        if (checkFlag(flags, Flags.ValidateBean)) {
+            ValidateUtil.validateBean(target);
+        }
         if (config.postProcessor != null) {
-            config.postProcessor.invoke(source, target);
+            config.postProcessor.accept(source, target);
         }
         return target;
     }

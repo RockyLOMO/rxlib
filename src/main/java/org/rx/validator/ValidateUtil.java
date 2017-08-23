@@ -6,6 +6,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.common.Contract;
 import org.springframework.ui.Model;
 
 import javax.servlet.ServletRequest;
@@ -14,7 +15,9 @@ import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import javax.validation.executable.ExecutableValidator;
-import java.lang.reflect.*;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +26,7 @@ import java.util.stream.Collectors;
 
 /**
  * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/11
+ * http://www.cnblogs.com/pixy/p/5306567.html
  */
 @Slf4j
 public class ValidateUtil {
@@ -30,45 +34,14 @@ public class ValidateUtil {
             Model.class);
 
     /**
-     * 验证bean实体
+     * 验证bean实体 @Valid deep valid
      *
      * @param bean
      */
     public static void validateBean(Object bean) {
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
-        validateBean(validator, bean);
-    }
-
-    private static void validateBean(Validator validator, Object bean) {
         for (ConstraintViolation<Object> violation : validator.validate(bean)) {
             doThrow(violation);
-        }
-        for (Field field : bean.getClass().getDeclaredFields()) {
-            field.setAccessible(true);
-            ValidFlag attr = field.getAnnotation(ValidFlag.class);
-            if (attr == null || !hasFlags(attr.value(), ValidFlag.ParameterValues)) {
-                continue;
-            }
-            try {
-                Object subBean = field.get(bean);
-                if (subBean.getClass().isArray()) {
-                    int length = Array.getLength(subBean);
-                    for (int i = 0; i < length; i++) {
-                        validateBean(validator, Array.get(subBean, i));
-                    }
-                    return;
-                }
-                if (subBean instanceof Iterable) {
-                    Iterable tor = (Iterable) subBean;
-                    for (Object item : tor) {
-                        validateBean(validator, item);
-                    }
-                    return;
-                }
-                validateBean(validator, subBean);
-            } catch (IllegalAccessException ex) {
-                throw new RuntimeException(ex);
-            }
         }
     }
 
@@ -153,13 +126,7 @@ public class ValidateUtil {
             }
             List args = Arrays.stream(joinPoint.getArgs())
                     .filter(p -> !(SkipTypes.stream().anyMatch(p2 -> p2.isInstance(p)))).collect(Collectors.toList());
-            String argJson;
-            try {
-                argJson = JSON.toJSONString(args);
-            } catch (Exception ex) {
-                argJson = "Parameters serialize error.." + ex.getMessage();
-            }
-            msg.appendLine("begin validate args=%s..", argJson);
+            msg.appendLine("begin validate args=%s..", Contract.toJSONString(args));
 
             int flags = attr.value();
             boolean validateValues = hasFlags(flags, ValidFlag.ParameterValues);

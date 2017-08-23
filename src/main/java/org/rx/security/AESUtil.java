@@ -2,7 +2,7 @@ package org.rx.security;
 
 import org.rx.util.App;
 
-import static org.valid4j.Assertive.*;
+import static org.rx.common.Contract.require;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -19,12 +19,12 @@ public class AESUtil extends App {
      * 加密
      *
      * @param data 需要加密的内容
-     * @param key  加密密码
+     * @param key 加密密码
      * @return
      */
     public static byte[] encrypt(byte[] data, byte[] key) throws GeneralSecurityException {
-        require(data != null);
-        require(key != null && key.length == 16, "Invalid AES key length (must be 16 bytes)");
+        require(data, key);
+        require(key, p -> p.length == 16);
 
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
         byte[] enCodeFormat = secretKey.getEncoded();
@@ -38,12 +38,12 @@ public class AESUtil extends App {
      * 解密
      *
      * @param data 待解密内容
-     * @param key  解密密钥
+     * @param key 解密密钥
      * @return
      */
     public static byte[] decrypt(byte[] data, byte[] key) throws GeneralSecurityException {
-        require(data != null);
-        require(key != null && key.length == 16, "Invalid AES key length (must be 16 bytes)");
+        require(data, key);
+        require(key, p -> p.length == 16);
 
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
         byte[] enCodeFormat = secretKey.getEncoded();
@@ -54,6 +54,8 @@ public class AESUtil extends App {
     }
 
     public static String encryptToBase64(String data, String key) throws GeneralSecurityException {
+        require(data, key);
+
         try {
             byte[] valueByte = encrypt(data.getBytes(UTF8), key.getBytes(UTF8));
             return convertToBase64String(valueByte);
@@ -63,6 +65,8 @@ public class AESUtil extends App {
     }
 
     public static String decryptFromBase64(String data, String key) throws GeneralSecurityException {
+        require(data, key);
+
         try {
             byte[] valueByte = decrypt(convertFromBase64String(data), key.getBytes(UTF8));
             return new String(valueByte, UTF8);
@@ -72,6 +76,8 @@ public class AESUtil extends App {
     }
 
     public static String encryptWithKeyBase64(String data, String key) throws GeneralSecurityException {
+        require(data, key);
+
         try {
             byte[] valueByte = encrypt(data.getBytes(UTF8), convertFromBase64String(key));
             return convertToBase64String(valueByte);
@@ -81,6 +87,8 @@ public class AESUtil extends App {
     }
 
     public static String decryptWithKeyBase64(String data, String key) throws GeneralSecurityException {
+        require(data, key);
+
         try {
             byte[] valueByte = decrypt(convertFromBase64String(data), convertFromBase64String(key));
             return new String(valueByte, UTF8);

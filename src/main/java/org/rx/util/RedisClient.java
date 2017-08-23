@@ -30,8 +30,7 @@ public class RedisClient {
         if (redisson == null) {
             Map<String, String> map = App.readSettings("app");
             Config config = new Config();
-            config.useSingleServer()
-                    .setAddress(String.format("%s:%s", map.get("redis.host"), map.get("redis.port")))
+            config.useSingleServer().setAddress(String.format("%s:%s", map.get("redis.host"), map.get("redis.port")))
                     .setTimeout(App.convert(map.get("redis.timeout"), Integer.class));
             redisson = Redisson.create(config);
         }
@@ -40,8 +39,8 @@ public class RedisClient {
 
     private static RedisTemplate<String, Object> Template;
     @Autowired
-    private RedisTemplate<String, Object> template;
-    private String keyPrefix;
+    private RedisTemplate<String, Object>        template;
+    private String                               keyPrefix;
 
     public String getKeyPrefix() {
         return keyPrefix;
@@ -63,8 +62,10 @@ public class RedisClient {
             fac.setUsePool(true);
             Template = new RedisTemplate<>();
             Template.setConnectionFactory(fac);
-            Template.setKeySerializer(new org.springframework.data.redis.serializer.StringRedisSerializer(Charset.forName("UTF8")));
-            Template.setValueSerializer(new org.springframework.data.redis.serializer.JdkSerializationRedisSerializer());
+            Template.setKeySerializer(
+                    new org.springframework.data.redis.serializer.StringRedisSerializer(Charset.forName("UTF8")));
+            Template.setValueSerializer(
+                    new org.springframework.data.redis.serializer.JdkSerializationRedisSerializer());
             Template.afterPropertiesSet();
         }
         return App.isNull(template, Template);

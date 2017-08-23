@@ -5,7 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.common.Func1;
+import org.rx.common.Func;
 import org.rx.common.Tuple;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.PrioritizedParameterNameDiscoverer;
@@ -60,7 +60,7 @@ public class RestClient {
 
             Parameter[] parameters = method.getParameters();
             String[] parameterNames = parameterNameDiscoverer.getParameterNames(method);
-            Func1<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
+            Func<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
                     && parameters.length == parameterNames.length ? parameterNames[offset]
                             : parameters[offset].getName();
             System.out.println(method.getDeclaringClass().getName() + " pNames: " + Arrays.toString(parameterNames));
@@ -100,8 +100,8 @@ public class RestClient {
                 return Void.TYPE;
             }
             Tuple<Boolean, ?> r = App.tryConvert(resText, returnType);
-            System.out.println(r.Item1 + "," + r.Item2 + "=>" + resText + "," + returnType);
-            return r.Item1 ? r.Item2 : JSON.toJavaObject(JSON.parseObject(resText), returnType);
+            System.out.println(r.left + "," + r.right + "=>" + resText + "," + returnType);
+            return r.left ? r.right : JSON.toJavaObject(JSON.parseObject(resText), returnType);
         }
     }
 

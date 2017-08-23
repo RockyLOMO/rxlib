@@ -4,7 +4,7 @@ import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.rx.common.DateTime;
-import org.rx.common.Func1;
+import org.rx.common.Func;
 import org.rx.common.NQuery;
 import org.rx.common.Tuple;
 import org.rx.security.MD5Util;
@@ -16,7 +16,6 @@ import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
 import java.io.*;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.net.Authenticator;
@@ -27,9 +26,10 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-import static org.valid4j.Assertive.*;
+import static org.rx.common.Contract.require;
 
 /**
  * Created by wangxiaoming on 2016/1/25.
@@ -39,13 +39,12 @@ public class App {
     public static final String                    CurrentPath = System.getProperty("user.dir");
     public static final String                    TmpDirPath  = String.format("%s%srx",
             System.getProperty("java.io.tmpdir"), File.separatorChar);
-    public static final String                    lHome       = System.getProperty("catalina.home"), UTF8 = "UTF-8";
+    public static final String                    Catalina    = System.getProperty("catalina.home"), UTF8 = "UTF-8";
     private static final Log                      log1        = LogFactory.getLog("helperInfo"),
             log2 = LogFactory.getLog("helperError");
-    //静态不要new
-    //    private static final Random rnd = new Random();
     private static final NQuery<Class<?>>         SupportTypes;
     private static final NQuery<SimpleDateFormat> SupportDateFormats;
+    private static final String                   base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
 
     static {
         SupportTypes = new NQuery<>(new Class<?>[] { String.class, Boolean.class, Byte.class, Short.class,
@@ -55,7 +54,6 @@ public class App {
     }
 
     private static Random getRandom() {
-        //        return rnd;
         return ThreadLocalRandom.current();
     }
     //endregion
@@ -156,56 +154,6 @@ public class App {
         }
         return map;
     }
-
-    public static String getRequestIp(HttpServletRequest request) {
-        if (request == null) {
-            return "0.0.0.0";
-        }
-
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_CLIENT_IP");
-        }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("x-real-ip");
-        }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        String[] ips = ip.split(",");
-        if (ips.length > 1) {
-            ip = ips[0];
-        }
-        return ip;
-    }
-
-    public static void check(String name, HttpServletResponse res) {
-        File file = new File(String.format("%s/logs/%s", lHome, name));
-        res.setCharacterEncoding(UTF8);
-        res.setContentType("application/octet-stream");
-        res.setContentLength((int) file.length());
-        res.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
-        try (FileInputStream in = new FileInputStream(file)) {
-            OutputStream out = res.getOutputStream();
-            byte[] buffer = new byte[4096];
-            int length;
-            while ((length = in.read(buffer)) > 0) {
-                out.write(buffer, 0, length);
-            }
-            out.flush();
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
     //endregion
 
     //region Check
@@ -233,17 +181,14 @@ public class App {
         return obj == null || obj.size() == 0;
     }
 
-    public static <T> boolean equals(T obj1, T obj2) {
-        if (obj1 == null) {
-            if (obj2 == null) {
+    public static <T> boolean equals(T t1, T t2) {
+        if (t1 == null) {
+            if (t2 == null) {
                 return true;
             }
             return false;
         }
-        if (obj2 == null) {
-            return false;
-        }
-        return obj1.equals(obj2);
+        return t1.equals(t2);
     }
 
     public static boolean equals(String str1, String str2, boolean ignoreCase) {
@@ -253,45 +198,34 @@ public class App {
             }
             return false;
         }
-        if (str2 == null) {
-            return false;
-        }
         return ignoreCase ? str1.equals(str2) : str1.equalsIgnoreCase(str2);
     }
 
-    public static <T> T isNull(T value, T defaultVal) {
-        return isNull(value, defaultVal, false);
+    public static <T> T As(Object obj, Class<T> type) {
+        if (!type.isInstance(obj)) {
+            return null;
+        }
+        return (T) obj;
     }
 
-    public static <T> T isNull(T value, T defaultVal, boolean trim) {
-        if (value == null || (value instanceof String
-                && (trim ? isNullOrWhiteSpace(value.toString()) : isNullOrEmpty(value.toString())))) {
+    public static <T> T isNull(T value, T defaultVal) {
+        if (value == null) {
             return defaultVal;
         }
         return value;
     }
 
-    public static <T> T isNull(T value, Func1<T, T> defaultFun) {
-        if (value == null || (value instanceof String && value.toString().length() == 0)) {
-            if (defaultFun != null) {
-                return defaultFun.invoke(value);
+    public static <T> T isNull(T value, Supplier<T> supplier) {
+        if (value == null) {
+            if (supplier != null) {
+                value = supplier.get();
             }
-            return null;
         }
         return value;
     }
 
-    public static String stringJoin(String delimiter, Iterable<String> set) {
-        StringBuilder str = new StringBuilder();
-        for (String s : set) {
-            if (str.length() == 0) {
-                str.append(s);
-                continue;
-            }
-
-            str.append(delimiter).append(s);
-        }
-        return str.toString();
+    public static String[] split(String str, String delimiter) {
+        return str.split(Pattern.quote(delimiter));
     }
 
     public static String filterPrivacy(String val) {
@@ -333,6 +267,8 @@ public class App {
     }
 
     public static String readString(InputStream stream, String charset) {
+        require(stream, charset);
+
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
             byte[] buffer = new byte[DefaultBufferSize];
@@ -351,6 +287,8 @@ public class App {
     }
 
     public static void writeString(OutputStream stream, String value, String charset) {
+        require(stream, charset);
+
         try (DataOutputStream writer = new DataOutputStream(stream)) {
             byte[] data = value.getBytes(charset);
             writer.write(data);
@@ -367,9 +305,10 @@ public class App {
     }
 
     public static InetSocketAddress parseSocketAddress(String sockAddr) {
-        require(sockAddr != null, "sockAddr is null");
-
+        require(sockAddr);
         String[] arr = sockAddr.split(":");
+        require(arr, p -> p.length == 2);
+
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
 
@@ -386,7 +325,7 @@ public class App {
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
         if (!isNullOrEmpty(nonProxyHosts)) {
             //如"localhost|192.168.0.*"
-            prop.setProperty("http.nonProxyHosts", stringJoin("|", nonProxyHosts));
+            prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
         }
         if (userName != null && password != null) {
             Authenticator.setDefault(new UserAuthenticator(userName, password));
@@ -410,7 +349,7 @@ public class App {
 
     //region Converter
     public static <T> T convert(Object val, Class<T> toType) {
-        return tryConvert(val, toType).Item2;
+        return tryConvert(val, toType).right;
     }
 
     public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType) {
@@ -419,17 +358,20 @@ public class App {
 
     public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType, T defaultVal) {
         if (val == null) {
-            return new Tuple<>(true, null);
+            return Tuple.of(true, null);
         }
+        require(toType);
 
         try {
-            return new Tuple<>(true, changeType(val, toType));
+            return Tuple.of(true, changeType(val, toType));
         } catch (Exception ex) {
-            return new Tuple<>(false, defaultVal);
+            return Tuple.of(false, defaultVal);
         }
     }
 
     public static <T> T changeType(Object value, Class<T> toType) {
+        require(toType);
+
         final Class<?> fromType;
         if (value == null || toType.isInstance(value) || toType.equals(fromType = value.getClass())) {
             return (T) value;
@@ -439,7 +381,7 @@ public class App {
             return (T) value.toString();
         }
 
-        if (!(SupportTypes.any(new Func1<Class<?>, Boolean>() {
+        if (!(SupportTypes.any(new Func<Class<?>, Boolean>() {
             @Override
             public Boolean invoke(Class<?> arg) {
                 return arg.equals(fromType);
@@ -464,13 +406,13 @@ public class App {
                 }
             }
             if (value == null) {
-                NQuery<String> q = SupportDateFormats.select(new Func1<SimpleDateFormat, String>() {
+                NQuery<String> q = SupportDateFormats.select(new Func<SimpleDateFormat, String>() {
                     @Override
                     public String invoke(SimpleDateFormat arg) {
                         return arg.toPattern();
                     }
                 });
-                throw new RuntimeException(String.format("仅支持 %s format的日期转换", stringJoin(",", q)), lastEx);
+                throw new RuntimeException(String.format("仅支持 %s format的日期转换", String.join(",", q)), lastEx);
             }
         } else {
             toType = checkType(toType);
@@ -500,9 +442,6 @@ public class App {
         }
     }
 
-    //region base64
-    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
-
     public static boolean isBase64String(String base64) {
         if (isNullOrEmpty(base64)) {
             return false;
@@ -512,6 +451,8 @@ public class App {
     }
 
     public static String convertToBase64String(byte[] data) {
+        require(data);
+
         byte[] ret = Base64.getEncoder().encode(data);
         try {
             return new String(ret, UTF8);
@@ -521,6 +462,8 @@ public class App {
     }
 
     public static byte[] convertFromBase64String(String base64) {
+        require(base64);
+
         byte[] data;
         try {
             data = base64.getBytes(UTF8);
@@ -536,6 +479,8 @@ public class App {
     }
 
     public static byte[] serialize(Object obj) {
+        require(obj);
+
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 ObjectOutputStream out = new ObjectOutputStream(bos)) {
             out.writeObject(obj);
@@ -551,6 +496,8 @@ public class App {
     }
 
     public static Object deserialize(byte[] data) {
+        require(data);
+
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
                 ObjectInputStream in = new ObjectInputStream(bis)) {
             return in.readObject();
@@ -563,82 +510,7 @@ public class App {
         byte[] data = serialize(obj);
         return (T) deserialize(data);
     }
-    //endregion
 
-    //region Flags
-    private static final String F1 = "Flag", F2 = "Value";
-
-    public static <T extends Enum<T>> void FlagsAdd(Enum<T> src, Enum<T>... vals) {
-        int v1 = FlagsGetValue(src);
-        for (Enum<T> val : vals) {
-            v1 |= FlagsGetValue(val);
-        }
-        FlagsSetValue(src, v1);
-    }
-
-    public static <T extends Enum<T>> void FlagsRemove(Enum<T> src, Enum<T>... vals) {
-        int v1 = FlagsGetValue(src);
-        for (Enum<T> val : vals) {
-            v1 &= ~FlagsGetValue(val);
-        }
-        FlagsSetValue(src, v1);
-    }
-
-    public static <T extends Enum<T>> boolean FlagsHas(Enum<T> src, Enum<T>... vals) {
-        int v1 = FlagsGetValue(src), v2 = 0;
-        for (Enum<T> val : vals) {
-            v2 |= FlagsGetValue(val);
-        }
-        return (v1 & v2) == v2;
-    }
-
-    private static <T extends Enum<T>> int FlagsGetValue(Enum<T> src) {
-        try {
-            Field m = src.getClass().getField(F2);
-            m.setAccessible(true);
-            return m.getInt(src);
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    private static <T extends Enum<T>> void FlagsSetValue(Enum<T> src, int val) {
-        try {
-            Field m = src.getClass().getField(F2);
-            m.setAccessible(true);
-            m.setInt(src, val);
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static <T extends Enum<T>> String FlagsToString(Enum<T> src) {
-        int Value = FlagsGetValue(src);
-        try {
-            Class enumType = src.getClass();
-            Field m = enumType.getField(F1);
-            m.setAccessible(true);
-            StringBuilder str = new StringBuilder();
-            for (Object item : enumType.getEnumConstants()) {
-                int flag = m.getInt(item);
-                if (flag == 0 || (Value & flag) != flag) {
-                    continue;
-                }
-                if (str.length() == 0) {
-                    str.append(item.toString());
-                    continue;
-                }
-                str.append(", " + item.toString());
-            }
-            return str.toString();
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-    //endregion
-    //endregion
-
-    //region Xml
     public static <T> String convertToXml(T obj) throws JAXBException {
         JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
         Marshaller marshaller = jaxbContext.createMarshaller();
@@ -665,6 +537,58 @@ public class App {
         }
         ByteArrayInputStream stream = new ByteArrayInputStream(data);
         return (T) unmarshaller.unmarshal(stream);
+    }
+    //endregion
+
+    //region Servlet
+    public static String getRequestIp(HttpServletRequest request) {
+        if (request == null) {
+            return "0.0.0.0";
+        }
+
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("Proxy-Client-IP");
+        }
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("WL-Proxy-Client-IP");
+        }
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("HTTP_CLIENT_IP");
+        }
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
+        }
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("x-real-ip");
+        }
+        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        String[] ips = ip.split(",");
+        if (ips.length > 1) {
+            ip = ips[0];
+        }
+        return ip;
+    }
+
+    public static void catalina(String name, HttpServletResponse res) {
+        File file = new File(String.format("%s/logs/%s", Catalina, name));
+        res.setCharacterEncoding(UTF8);
+        res.setContentType("application/octet-stream");
+        res.setContentLength((int) file.length());
+        res.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
+        try (FileInputStream in = new FileInputStream(file)) {
+            OutputStream out = res.getOutputStream();
+            byte[] buffer = new byte[4096];
+            int length;
+            while ((length = in.read(buffer)) > 0) {
+                out.write(buffer, 0, length);
+            }
+            out.flush();
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
     //endregion
 }

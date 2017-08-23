@@ -1,9 +1,8 @@
 package org.rx.common;
 
 /**
- * Created by wangxiaoming on 2016/3/1.
+ * Created by wangxiaoming on 2016/7/28.
  */
-@FunctionalInterface
-public interface Func<T1> {
-    T1 invoke();
+public interface Func<T1, T2> {
+    T2 invoke(T1 arg);
 }
