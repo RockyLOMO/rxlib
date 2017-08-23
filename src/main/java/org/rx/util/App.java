@@ -36,6 +36,7 @@ import static org.rx.common.Contract.require;
  */
 public class App {
     //region Fields
+    public static final String                    KeyPrefix   = "_rx";
     public static final String                    CurrentPath = System.getProperty("user.dir");
     public static final String                    TmpDirPath  = String.format("%s%srx",
             System.getProperty("java.io.tmpdir"), File.separatorChar);
@@ -570,6 +571,19 @@ public class App {
             ip = ips[0];
         }
         return ip;
+    }
+
+    public static <T> T getOrStore(HttpServletRequest request, String key, Supplier<T> supplier) {
+        String nk = KeyPrefix + key;
+        T val = (T) request.getAttribute(nk);
+        if (val == null) {
+            request.setAttribute(nk, val = supplier.get());
+            //            System.out.printf("getOrStore new %s%s", key, System.lineSeparator());
+        }
+        //        else {
+        //            System.out.printf("getOrStore hit %s%s", key, System.lineSeparator());
+        //        }
+        return val;
     }
 
     public static void catalina(String name, HttpServletResponse res) {

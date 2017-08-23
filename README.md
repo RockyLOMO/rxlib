@@ -1,2 +1,2 @@
 # rxlib
-Rocky Java Lib
+A set of utilities for Java
