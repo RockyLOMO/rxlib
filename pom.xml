@@ -11,7 +11,7 @@
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
     <!-- -SNAPSHOT -->
-    <version>1.0.3</version>
+    <version>1.0.4-SNAPSHOT</version>
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
