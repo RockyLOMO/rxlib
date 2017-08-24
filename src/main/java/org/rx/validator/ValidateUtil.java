@@ -1,7 +1,5 @@
 package org.rx.validator;
 
-import com.alibaba.fastjson.JSON;
-import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
@@ -24,11 +22,12 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.rx.util.App.logInfo;
+
 /**
  * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/11
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
-@Slf4j
 public class ValidateUtil {
     private static final List<Class> SkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class,
             Model.class);
@@ -158,8 +157,7 @@ public class ValidateUtil {
             throw ex;
         } finally {
             msg.appendLine("end validate..");
-            //System.out.println(msg);
-            log.info(msg.toString());
+            logInfo(msg.toString());
         }
     }
 }

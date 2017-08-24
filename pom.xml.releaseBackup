@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -41,8 +40,11 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring.version>4.3.10.RELEASE</spring.version>
+        <swagger.version>1.5.10</swagger.version>
+        <cxf.jackson.version>2.8.2</cxf.jackson.version>
+        <cxf.version>3.1.5</cxf.version>
         <spring.jpa.version>1.9.4.RELEASE</spring.jpa.version>
+        <spring.version>4.2.6.RELEASE</spring.version>
         <hibernate.druid.version>1.0.22</hibernate.druid.version>
         <hibernate.slf4j.version>1.7.20</hibernate.slf4j.version>
         <hibernate.version>5.1.0.Final</hibernate.version>
@@ -93,11 +95,26 @@
             <version>1.1.8</version>
         </dependency>
 
+        <!--<dependency>-->
+        <!--<groupId>org.springframework</groupId>-->
+        <!--<artifactId>spring-core</artifactId>-->
+        <!--<version>4.3.10.RELEASE</version>-->
+        <!--</dependency>-->
         <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context</artifactId>
-            <version>${spring.version}</version>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+            <version>1.8.6.RELEASE</version>
         </dependency>
+        <!--<dependency>-->
+        <!--<groupId>redis.clients</groupId>-->
+        <!--<artifactId>jedis</artifactId>-->
+        <!--<version>2.9.0</version>-->
+        <!--</dependency>-->
+        <!--<dependency>-->
+        <!--<groupId>org.redisson</groupId>-->
+        <!--<artifactId>redisson</artifactId>-->
+        <!--<version>3.5.0</version>-->
+        <!--</dependency>-->
 
         <dependency>
             <groupId>javax.servlet</groupId>
@@ -114,6 +131,13 @@
             <artifactId>aspectjrt</artifactId>
             <version>1.8.10</version>
         </dependency>
+
+        <!--wtf-->
+        <!--<dependency>-->
+        <!--<groupId>org.codehaus.plexus</groupId>-->
+        <!--<artifactId>plexus-container-default</artifactId>-->
+        <!--<version>1.7.1</version>-->
+        <!--</dependency>-->
     </dependencies>
 
     <profiles>
@@ -222,6 +246,15 @@
                     </descriptorRefs>
                 </configuration>
             </plugin>
+            <!--<plugin>-->
+            <!--<groupId>org.apache.maven.plugins</groupId>-->
+            <!--<artifactId>maven-compiler-plugin</artifactId>-->
+            <!--<configuration>-->
+            <!--<source>1.8</source>-->
+            <!--<target>1.8</target>-->
+            <!--<encoding>UTF-8</encoding>-->
+            <!--</configuration>-->
+            <!--</plugin>-->
         </plugins>
         <!--<defaultGoal>compile</defaultGoal>-->
     </build>
