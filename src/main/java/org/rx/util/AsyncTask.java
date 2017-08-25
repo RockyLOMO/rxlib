@@ -6,26 +6,44 @@ import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import static org.rx.util.App.isNull;
 import static org.rx.util.App.logError;
 import static org.rx.util.App.logInfo;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/25
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/25
  */
 public final class AsyncTask {
-    private static class NamedRunnable<T> implements Runnable, Callable<T> {
-        private final String name;
-        private final Consumer<T> consumer;
-        private final Function<T>
+    private static class NamedRunnable implements Runnable, Callable {
+        private final String   name;
+        private final Runnable runnable;
+        private final Callable callable;
 
-        @Override
-        public void run() {
-
+        public NamedRunnable(String name, Runnable runnable, Callable callable) {
+            this.name = name;
+            this.runnable = runnable;
+            this.callable = callable;
         }
 
         @Override
-        public T call() throws Exception {
-            return null;
+        public void run() {
+            if (runnable == null) {
+                return;
+            }
+            runnable.run();
+        }
+
+        @Override
+        public Object call() throws Exception {
+            if (callable == null) {
+                return null;
+            }
+            return callable.call();
+        }
+
+        @Override
+        public String toString() {
+            return String.format("AsyncTask[%s,%s]", name, isNull(runnable, callable).getClass().getSimpleName());
         }
     }
 
@@ -46,10 +64,18 @@ public final class AsyncTask {
     }
 
     public <T> Future<T> run(Callable<T> task) {
-        return executor.submit(task);
+        return run(task, null);
+    }
+
+    public <T> Future<T> run(Callable<T> task, String taskName) {
+        return executor.submit(taskName != null ? (Callable<T>) new NamedRunnable(taskName, null, task) : task);
     }
 
     public void run(Runnable task) {
-        executor.execute(task);
+        run(task, null);
+    }
+
+    public void run(Runnable task, String taskName) {
+        executor.execute(taskName != null ? new NamedRunnable(taskName, task, null) : task);
     }
 }

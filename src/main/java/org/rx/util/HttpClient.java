@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Created by za-wangxiaoming on 2017/6/29.
+ * Created by wangxiaoming on 2017/6/29.
  * http://www.jianshu.com/p/aa3f066263ed
  */
 public class HttpClient {

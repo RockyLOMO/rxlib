@@ -8,7 +8,7 @@ import static org.rx.util.App.As;
 import static org.rx.util.App.split;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/22
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/22
  */
 public interface NEnum {
     int getValue();

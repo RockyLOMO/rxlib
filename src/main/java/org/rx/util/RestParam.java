@@ -3,7 +3,7 @@ package org.rx.util;
 import java.lang.annotation.*;
 
 /**
- * Created by za-wangxiaoming on 2017/7/3.
+ * Created by wangxiaoming on 2017/7/3.
  */
 @Target(ElementType.PARAMETER)
 @Retention(RetentionPolicy.RUNTIME)

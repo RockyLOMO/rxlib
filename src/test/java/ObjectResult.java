@@ -1,5 +1,5 @@
 /**
- * Created by za-wangxiaoming on 2017/7/3.
+ * Created by wangxiaoming on 2017/7/3.
  */
 public class ObjectResult {
     private int code;

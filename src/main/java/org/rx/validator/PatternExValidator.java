@@ -5,7 +5,7 @@ import javax.validation.ConstraintValidatorContext;
 import java.util.regex.Pattern;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/1
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/1
  */
 public class PatternExValidator implements ConstraintValidator<PatternEx, String> {
     private PatternEx patternEx;

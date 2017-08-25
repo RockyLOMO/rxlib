@@ -7,7 +7,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/17
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/17
  */
 public class SQuery<T> {
     public static <T> SQuery<T> of(Stream<T> stream) {

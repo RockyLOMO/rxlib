@@ -11,7 +11,7 @@ import static org.rx.common.Contract.require;
 import static org.rx.util.App.logError;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/18
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/18
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
 public final class WeakCache {

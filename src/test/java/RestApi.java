@@ -2,7 +2,7 @@ import org.rx.util.RestMethod;
 import org.rx.util.RestParam;
 
 /**
- * Created by za-wangxiaoming on 2017/7/3.
+ * Created by wangxiaoming on 2017/7/3.
  */
 public interface RestApi {
     @RestMethod(method = "GET")

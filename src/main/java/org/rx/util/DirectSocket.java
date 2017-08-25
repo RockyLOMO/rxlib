@@ -5,7 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/25
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/25
  */
 public class DirectSocket {
     public static final InetAddress LocalAddress, AnyAddress;
@@ -22,7 +22,7 @@ public class DirectSocket {
     private InetSocketAddress listenAddr, directAddr;
     private ServerSocket      serverSocket;
 
-    public DirectSocket(int port) {
-                serverSocket = new ServerSocket().accept().getInputStream().available();
-    }
+//    public DirectSocket(int port) {
+//                serverSocket = new ServerSocket().accept().getInputStream().available();
+//    }
 }

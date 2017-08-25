@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.function.Predicate;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/22
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/22
  */
 public class Contract {
     public static void require(Object... args) {

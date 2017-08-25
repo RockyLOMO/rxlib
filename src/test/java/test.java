@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.util.Random;
 
 /**
- * Created by za-wangxiaoming on 2017/6/28.
+ * Created by wangxiaoming on 2017/6/28.
  */
 public class test {
     private static Random rnd = new Random();

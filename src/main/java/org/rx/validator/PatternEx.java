@@ -10,7 +10,7 @@ import static java.lang.annotation.ElementType.*;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/1
+ * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/1
  */
 @Target({ METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER })
 @Retention(RUNTIME)
