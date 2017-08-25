@@ -68,8 +68,10 @@ public class BeanMapper {
             List<Method> setters = Arrays.stream(to.getMethods())
                     .filter(p -> p.getName().startsWith("set") && p.getParameterCount() == 1)
                     .collect(Collectors.toList());
-            List<Method> getters = Arrays.stream(to.getMethods()).filter(
-                    p -> !"getClass".equals(p.getName()) && p.getName().startsWith("get") && p.getParameterCount() == 0)
+            List<Method> getters = Arrays.stream(to.getMethods())
+                    .filter(p -> !"getClass".equals(p.getName())
+                            && (p.getName().startsWith("get") || p.getName().startsWith("is"))
+                            && p.getParameterCount() == 0)
                     .collect(Collectors.toList());
             List<Method> s2 = setters.stream().filter(
                     ps -> getters.stream().anyMatch(pg -> ps.getName().substring(3).equals(pg.getName().substring(3))))

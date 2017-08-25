@@ -3,9 +3,8 @@ package org.rx.util;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import java.util.concurrent.*;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
+import static org.rx.common.Contract.require;
 import static org.rx.util.App.isNull;
 import static org.rx.util.App.logError;
 import static org.rx.util.App.logInfo;
@@ -68,6 +67,8 @@ public final class AsyncTask {
     }
 
     public <T> Future<T> run(Callable<T> task, String taskName) {
+        require(task);
+
         return executor.submit(taskName != null ? (Callable<T>) new NamedRunnable(taskName, null, task) : task);
     }
 
@@ -76,6 +77,8 @@ public final class AsyncTask {
     }
 
     public void run(Runnable task, String taskName) {
+        require(task);
+
         executor.execute(taskName != null ? new NamedRunnable(taskName, task, null) : task);
     }
 }
