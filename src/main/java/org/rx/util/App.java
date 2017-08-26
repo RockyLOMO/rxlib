@@ -292,6 +292,14 @@ public class App {
     public static final int  TimeoutInfinite   = -1;
     private static final int DefaultBufferSize = 1024;
 
+    public static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            logError(ex, "sleep");
+        }
+    }
+
     public static String readString(InputStream stream) {
         return readString(stream, UTF8);
     }

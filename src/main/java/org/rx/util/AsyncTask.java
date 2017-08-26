@@ -50,7 +50,7 @@ public final class AsyncTask {
 
     private final ThreadPoolExecutor executor;
 
-    AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes) {
+    private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes) {
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
                 .setUncaughtExceptionHandler((thread, ex) -> logError(new RuntimeException(ex), thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
