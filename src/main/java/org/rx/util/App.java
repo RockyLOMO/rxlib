@@ -3,10 +3,7 @@ package org.rx.util;
 import com.google.common.base.Strings;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.rx.common.DateTime;
-import org.rx.common.Func;
-import org.rx.common.NQuery;
-import org.rx.common.Tuple;
+import org.rx.common.*;
 import org.rx.security.MD5Util;
 
 import javax.servlet.http.HttpServletRequest;
@@ -26,6 +23,8 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -53,13 +52,9 @@ public class App {
         SupportDateFormats = new NQuery<>(new SimpleDateFormat[] { new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
                 new SimpleDateFormat("yyyyMMddHHmmss") });
     }
-
-    private static Random getRandom() {
-        return ThreadLocalRandom.current();
-    }
     //endregion
 
-    //region Sys
+    //region Basic
     public static void logInfo(String format, Object... args) {
         String msg = args.length == 0 ? format : String.format(format, args);
         log1.info(msg + System.lineSeparator());
@@ -70,26 +65,6 @@ public class App {
         log2.error(String.format("%s%s %s", System.lineSeparator(), ex.getMessage(), msg), ex);
     }
 
-    public static String randomString(int strLength) {
-        Random rnd = getRandom();
-        StringBuilder ret = new StringBuilder();
-        for (int i = 0; i < strLength; i++) {
-            boolean isChar = (rnd.nextInt(2) % 2 == 0);// 输出字母还是数字
-            if (isChar) { // 字符串
-                int choice = rnd.nextInt(2) % 2 == 0 ? 65 : 97; // 取得大写字母还是小写字母
-                ret.append((char) (choice + rnd.nextInt(26)));
-            } else { // 数字
-                ret.append(Integer.toString(rnd.nextInt(10)));
-            }
-        }
-        return ret.toString();
-    }
-
-    public static String randomValue(int maxValue) {
-        Integer int2 = maxValue;
-        return String.format("%0" + int2.toString().length() + "d", getRandom().nextInt(maxValue));
-    }
-
     public static UUID hash(String key) {
         byte[] guidBytes = MD5Util.md5(key);
         return newUUID(guidBytes);
@@ -97,7 +72,7 @@ public class App {
 
     public static UUID newComb(boolean sequentialAtEnd) {
         byte[] guidBytes = new byte[16];
-        getRandom().nextBytes(guidBytes);
+        ThreadLocalRandom.current().nextBytes(guidBytes);
         byte[] msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime() - DateTime.BaseDate.getTime()).array();
         int copyCount = 6, copyOffset = msecsBytes.length - copyCount;
         if (sequentialAtEnd) {
@@ -134,6 +109,26 @@ public class App {
             lsb = (lsb << 8) | (guidBytes[i] & 0xff);
         }
         return new UUID(msb, lsb);
+    }
+
+    public static String randomString(int strLength) {
+        Random rnd = ThreadLocalRandom.current();
+        StringBuilder ret = new StringBuilder();
+        for (int i = 0; i < strLength; i++) {
+            boolean isChar = (rnd.nextInt(2) % 2 == 0);// 输出字母还是数字
+            if (isChar) { // 字符串
+                int choice = rnd.nextInt(2) % 2 == 0 ? 65 : 97; // 取得大写字母还是小写字母
+                ret.append((char) (choice + rnd.nextInt(26)));
+            } else { // 数字
+                ret.append(Integer.toString(rnd.nextInt(10)));
+            }
+        }
+        return ret.toString();
+    }
+
+    public static String randomValue(int maxValue) {
+        Integer int2 = maxValue;
+        return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
     }
 
     public static Map<String, String> readSettings(String propertiesFile) {
@@ -223,6 +218,40 @@ public class App {
             }
         }
         return value;
+    }
+
+    public static <T> void retry(Consumer<T> func, T state, int retryCount) {
+        require(func);
+
+        int i = 1;
+        while (i <= retryCount) {
+            try {
+                func.accept(state);
+                return;
+            } catch (Exception ex) {
+                if (i == retryCount) {
+                    throw ex;
+                }
+            }
+            i++;
+        }
+    }
+
+    public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
+        require(func);
+
+        int i = 1;
+        while (i <= retryCount) {
+            try {
+                return func.apply(state);
+            } catch (Exception ex) {
+                if (i == retryCount) {
+                    throw ex;
+                }
+            }
+            i++;
+        }
+        return null;
     }
 
     public static String[] split(String str, String delimiter) {
@@ -578,11 +607,7 @@ public class App {
         T val = (T) request.getAttribute(nk);
         if (val == null) {
             request.setAttribute(nk, val = supplier.get());
-            //            System.out.printf("getOrStore new %s%s", key, System.lineSeparator());
         }
-        //        else {
-        //            System.out.printf("getOrStore hit %s%s", key, System.lineSeparator());
-        //        }
         return val;
     }
 

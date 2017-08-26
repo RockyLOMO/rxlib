@@ -48,8 +48,8 @@ public class BeanMapper {
         }
     }
 
-    private static Map<UUID, MapConfig>  config      = new ConcurrentHashMap<>();
-    private static Map<Class, CacheItem> methodCache = new ConcurrentHashMap<>();
+    private static Map<UUID, MapConfig>        config      = new ConcurrentHashMap<>();
+    private static WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
 
     private MapConfig getConfig(Class from, Class to) {
         require(from, to);
@@ -63,8 +63,7 @@ public class BeanMapper {
     }
 
     private CacheItem getMethods(Class to) {
-        CacheItem result = methodCache.get(to);
-        if (result == null) {
+        return methodCache.getOrAdd(to, () -> {
             List<Method> setters = Arrays.stream(to.getMethods())
                     .filter(p -> p.getName().startsWith("set") && p.getParameterCount() == 1)
                     .collect(Collectors.toList());
@@ -79,9 +78,8 @@ public class BeanMapper {
             List<Method> g2 = getters.stream().filter(
                     pg -> s2.stream().anyMatch(ps -> pg.getName().substring(3).equals(ps.getName().substring(3))))
                     .collect(Collectors.toList());
-            methodCache.put(to, result = new CacheItem(genKey(to, toMethodNames(s2)), s2, g2));
-        }
-        return result;
+            return new CacheItem(genKey(to, toMethodNames(s2)), s2, g2);
+        }, true);
     }
 
     private Set<String> toMethodNames(List<Method> methods) {

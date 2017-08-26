@@ -8,26 +8,36 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 
 import static org.rx.common.Contract.require;
+import static org.rx.util.App.As;
 import static org.rx.util.App.logError;
 
 /**
  * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/18
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
-public final class WeakCache {
-    private ConcurrentMap<String, Object> container;
+public final class WeakCache<TK, TV> {
+    private ConcurrentMap<TK, Reference> container;
+    private boolean                      softRef;
+
+    public boolean isSoftRef() {
+        return softRef;
+    }
+
+    public void setSoftRef(boolean softRef) {
+        this.softRef = softRef;
+    }
 
     public WeakCache() {
         container = new ConcurrentHashMap<>();
     }
 
-    private Reference getItem(String key) {
+    private Reference getItem(TK key) {
         require(key);
 
-        return (Reference) container.get(key);
+        return container.get(key);
     }
 
-    private void setItem(String key, Object val, boolean isSoftRef) {
+    private void setItem(TK key, TV val, boolean isSoftRef) {
         require(key, val);
 
         Reference ref = getItem(key);
@@ -40,27 +50,27 @@ public final class WeakCache {
         container.put(key, isSoftRef ? new SoftReference(val) : new WeakReference(val));
     }
 
-    public void add(String key, Object val) {
-        add(key, val, false);
+    public void add(TK key, TV val) {
+        add(key, val, softRef);
     }
 
-    public void add(String key, Object val, boolean isSoftRef) {
+    public void add(TK key, TV val, boolean isSoftRef) {
         setItem(key, val, isSoftRef);
     }
 
-    public void remove(String key) {
+    public void remove(TK key) {
         remove(key, true);
     }
 
-    public void remove(String key, boolean destroy) {
+    public void remove(TK key, boolean destroy) {
         require(key);
 
-        Reference ref = (Reference) container.remove(key);
+        Reference ref = container.remove(key);
         if (ref == null) {
             return;
         }
-        if (destroy && ref.get() instanceof AutoCloseable) {
-            AutoCloseable ac = (AutoCloseable) ref.get();
+        AutoCloseable ac;
+        if (destroy && (ac = As(ref.get(), AutoCloseable.class)) != null) {
             try {
                 ac.close();
             } catch (Exception ex) {
@@ -70,19 +80,23 @@ public final class WeakCache {
         ref.clear();
     }
 
-    public <T> T get(String key) {
+    public TV get(TK key) {
         Reference ref = getItem(key);
         if (ref == null) {
             return null;
         }
-        return (T) ref.get();
+        return (TV) ref.get();
     }
 
-    public <T> T getOrAdd(String key, Supplier<T> supplier) {
-        T v;
+    public TV getOrAdd(TK key, Supplier<TV> supplier) {
+        return getOrAdd(key, supplier, softRef);
+    }
+
+    public TV getOrAdd(TK key, Supplier<TV> supplier, boolean isSoftRef) {
+        TV v;
         Reference ref = getItem(key);
-        if (ref == null || (v = (T) ref.get()) == null) {
-            add(key, v = supplier.get());
+        if (ref == null || (v = (TV) ref.get()) == null) {
+            add(key, v = supplier.get(), isSoftRef);
         }
         return v;
     }
