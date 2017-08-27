@@ -125,6 +125,13 @@ public final class SocketPool implements AutoCloseable {
         }
     }
 
+    private void stopTimer() {
+        synchronized (timer) {
+            timer.purge();
+            isTimerRun = false;
+        }
+    }
+
     private void clearIdleSockets() {
         for (InetSocketAddress socketAddress : pool.keySet()) {
             ConcurrentLinkedDeque<PooledSocket> sockets = pool.get(socketAddress);
@@ -143,7 +150,7 @@ public final class SocketPool implements AutoCloseable {
             }
         }
         if (pool.size() == 0) {
-            timer.purge();
+            stopTimer();
         }
     }
 
