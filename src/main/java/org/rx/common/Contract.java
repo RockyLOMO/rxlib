@@ -16,6 +16,13 @@ public class Contract {
         }
     }
 
+    public static void require(Object instance, boolean ok) {
+        if (!ok) {
+            throw new IllegalArgumentException(
+                    String.format("Instance[%s] test failed", instance.getClass().getSimpleName()));
+        }
+    }
+
     public static <T> void require(T arg, Predicate<T> func) {
         if (!func.test(arg)) {
             throw new IllegalArgumentException(String.format("Arg[%s] test failed", arg));
