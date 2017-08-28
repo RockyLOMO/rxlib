@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import static org.rx.common.Contract.require;
 import static org.rx.util.App.logError;
 
-public final class SocketPool implements AutoCloseable {
+public final class SocketPool extends Traceable implements AutoCloseable {
     public static final class PooledSocket implements AutoCloseable {
         private final SocketPool owner;
         private DateTime         lastActive;
@@ -71,7 +71,6 @@ public final class SocketPool implements AutoCloseable {
         if (maxIdleMillis <= 0) {
             maxIdleMillis = DefaultMaxIdleMillis;
         }
-
         this.maxIdleMillis = maxIdleMillis;
     }
 
@@ -83,7 +82,6 @@ public final class SocketPool implements AutoCloseable {
         if (maxSocketsCount < 0) {
             maxSocketsCount = 0;
         }
-
         this.maxSocketsCount = maxSocketsCount;
     }
 
@@ -92,7 +90,11 @@ public final class SocketPool implements AutoCloseable {
         connectTimeout = DefaultConnectTimeout;
         maxIdleMillis = DefaultMaxIdleMillis;
         maxSocketsCount = DefaultMaxSocketsCount;
-        timer = new Timer("SocketPool", true);
+        String n = "SocketPool";
+        timer = new Timer(n, true);
+        Tracer tracer = new Tracer();
+        tracer.setPrefix(n + " ");
+        setTracer(tracer);
     }
 
     @Override
@@ -123,13 +125,7 @@ public final class SocketPool implements AutoCloseable {
             }, period, period);
             isTimerRun = true;
         }
-    }
-
-    private void stopTimer() {
-        synchronized (timer) {
-            timer.purge();
-            isTimerRun = false;
-        }
+        getTracer().writeLine("%s runTimer..", getTimeString());
     }
 
     private void clearIdleSockets() {
@@ -143,6 +139,8 @@ public final class SocketPool implements AutoCloseable {
                 if (!socket.isConnected()
                         || new DateTime().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
                     sockets.remove(socket);
+                    getTracer().writeLine("%s clearIdleSocket[Local=%s, Remote=%s]..", getTimeString(),
+                            socket.socket.getLocalSocketAddress(), socket.socket.getRemoteSocketAddress());
                 }
             }
             if (sockets.size() == 0) {
@@ -152,6 +150,15 @@ public final class SocketPool implements AutoCloseable {
         if (pool.size() == 0) {
             stopTimer();
         }
+    }
+
+    private void stopTimer() {
+        synchronized (timer) {
+            timer.cancel();
+            timer.purge();
+            isTimerRun = false;
+        }
+        getTracer().writeLine("%s stopTimer..", getTimeString());
     }
 
     private ConcurrentLinkedDeque<PooledSocket> getSockets(InetSocketAddress remoteAddr) {
@@ -180,6 +187,9 @@ public final class SocketPool implements AutoCloseable {
         if (!pooledSocket.isConnected()) {
             return borrowSocket(remoteAddr);
         }
+        Socket sock = pooledSocket.socket;
+        getTracer().writeLine("%s borrowSocket[Local=%s, Remote=%s]..", getTimeString(), sock.getLocalSocketAddress(),
+                sock.getRemoteSocketAddress());
         return pooledSocket;
     }
 
@@ -196,6 +206,9 @@ public final class SocketPool implements AutoCloseable {
             return;
         }
         sockets.addFirst(pooledSocket);
+        Socket sock = pooledSocket.socket;
+        getTracer().writeLine("%s returnSocket[Local=%s, Remote=%s]..", getTimeString(), sock.getLocalSocketAddress(),
+                sock.getRemoteSocketAddress());
     }
 
     public void clear() {
@@ -203,6 +216,8 @@ public final class SocketPool implements AutoCloseable {
 
         pool.values().stream().flatMap(ConcurrentLinkedDeque::stream).map(p -> p.socket).forEach(p -> {
             try {
+                getTracer().writeLine("%s clearSocket[Local=%s, Remote=%s]..", getTimeString(),
+                        p.getLocalSocketAddress(), p.getRemoteSocketAddress());
                 p.close();
             } catch (IOException ex) {
                 logError(ex, "SocketPool.close()");

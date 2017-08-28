@@ -3,11 +3,13 @@ package org.rx.socket;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.rx.common.Contract.require;
 
 public final class IOStream implements AutoCloseable {
+    private static final int   DefaultBufferSize = 1024 * 2;
     private final InputStream  inputStream;
     private final OutputStream outputStream;
     private final byte[]       buffer;
@@ -29,7 +31,7 @@ public final class IOStream implements AutoCloseable {
 
         this.inputStream = inputStream;
         this.outputStream = outputStream;
-        buffer = new byte[1024];
+        buffer = new byte[DefaultBufferSize];
     }
 
     @Override
@@ -42,15 +44,20 @@ public final class IOStream implements AutoCloseable {
         }
     }
 
-    public int directDate(Predicate<IOStream> checkFunc) {
-        if (checkFunc == null) {
-            checkFunc = p -> true;
-        }
-
+    public int directData(Predicate<IOStream> checkFunc, Function<Integer, Boolean> eachFunc) {
         try {
             int recv = -1;
-            while (checkFunc.test(this) && (recv = inputStream.read(buffer, 0, buffer.length)) > 0) {
+            while ((checkFunc == null || checkFunc.test(this))
+                    && (recv = inputStream.read(buffer, 0, buffer.length)) >= 0) {
+                if (recv == 0) {
+                    break;
+                }
                 outputStream.write(buffer, 0, recv);
+                if (eachFunc != null) {
+                    if (!eachFunc.apply(recv)) {
+                        break;
+                    }
+                }
             }
             outputStream.flush();
             return recv;

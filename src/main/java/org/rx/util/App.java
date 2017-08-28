@@ -220,38 +220,22 @@ public class App {
         return value;
     }
 
-    public static <T> void retry(Consumer<T> func, T state, int retryCount) {
-        require(func);
-
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                func.accept(state);
-                return;
-            } catch (Exception ex) {
-                if (i == retryCount) {
-                    throw ex;
-                }
-            }
-            i++;
-        }
-    }
-
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
         require(func);
 
+        RuntimeException lastEx = null;
         int i = 1;
         while (i <= retryCount) {
             try {
                 return func.apply(state);
             } catch (Exception ex) {
                 if (i == retryCount) {
-                    throw ex;
+                    lastEx = new RuntimeException(ex);
                 }
             }
             i++;
         }
-        return null;
+        throw isNull(lastEx, new IllegalStateException("retry().returnValue"));
     }
 
     public static String[] split(String str, String delimiter) {

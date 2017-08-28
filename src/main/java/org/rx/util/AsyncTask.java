@@ -46,15 +46,18 @@ public final class AsyncTask {
         }
     }
 
-    public static final AsyncTask    TaskFactory = new AsyncTask(4, 16, 10);
-
+    public static final AsyncTask    TaskFactory = new AsyncTask(0, Integer.MAX_VALUE, 4, new SynchronousQueue<>());
+    private static final int         ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
     private final ThreadPoolExecutor executor;
 
-    private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes) {
+    private AsyncTask() {
+        this(ThreadCount, ThreadCount, 4, new LinkedBlockingQueue<>());
+    }
+
+    private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
                 .setUncaughtExceptionHandler((thread, ex) -> logError(new RuntimeException(ex), thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
-        BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(512);
         this.executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
                 threadFactory, (p1, p2) -> {
                     logInfo("AsyncTask rejected task: %s", p1.toString());
