@@ -2,9 +2,6 @@ package org.rx.socket;
 
 import java.io.PrintStream;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/28
- */
 public class Tracer extends PrintStream {
     private String prefix;
 

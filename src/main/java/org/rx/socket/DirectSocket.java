@@ -1,5 +1,6 @@
 package org.rx.socket;
 
+import org.rx.common.BufferSegment;
 import org.rx.common.Tuple;
 
 import java.io.IOException;
@@ -19,16 +20,14 @@ import static org.rx.util.AsyncTask.TaskFactory;
 import static org.rx.socket.SocketPool.Pool;
 import static org.rx.socket.SocketPool.PooledSocket;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/25
- */
 public class DirectSocket extends Traceable implements AutoCloseable {
     private static class ClientItem implements AutoCloseable {
-        private final DirectSocket owner;
-        public final Socket        sock;
-        public final IOStream      ioStream;
-        public final PooledSocket  directSock;
-        public final IOStream      directIoStream;
+        private final DirectSocket  owner;
+        public final Socket         sock;
+        public final IOStream       ioStream;
+        public final PooledSocket   directSock;
+        public final IOStream       directIoStream;
+        private final BufferSegment segment;
 
         public boolean isClosed() {
             return !(sock.isConnected() && !sock.isClosed() && directSock.isConnected());
@@ -36,10 +35,12 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
         public ClientItem(Socket client, DirectSocket owner) {
             sock = client;
+            segment = new BufferSegment(BufferSegment.DefaultBufferSize, 2);
             try {
                 directSock = retry(p -> Pool.borrowSocket(p.directAddress), owner, owner.connectRetryCount);
-                ioStream = new IOStream(sock.getInputStream(), directSock.socket.getOutputStream());
-                directIoStream = new IOStream(directSock.socket.getInputStream(), sock.getOutputStream());
+                ioStream = new IOStream(sock.getInputStream(), directSock.socket.getOutputStream(), segment.alloc());
+                directIoStream = new IOStream(directSock.socket.getInputStream(), sock.getOutputStream(),
+                        segment.alloc());
             } catch (IOException ex) {
                 throw new SocketException((InetSocketAddress) sock.getLocalSocketAddress(), ex);
             }

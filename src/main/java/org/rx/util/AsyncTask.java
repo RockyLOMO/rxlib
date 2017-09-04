@@ -9,9 +9,6 @@ import static org.rx.util.App.isNull;
 import static org.rx.util.App.logError;
 import static org.rx.util.App.logInfo;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/25
- */
 public final class AsyncTask {
     private static class NamedRunnable implements Runnable, Callable {
         private final String   name;

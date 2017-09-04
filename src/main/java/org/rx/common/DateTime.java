@@ -5,9 +5,6 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 
-/**
- * Created by wangxiaoming on 2016/8/12.
- */
 public class DateTime extends Date {
     //2000-01-01
     public static final Date BaseDate = new Date(100, 0, 1);

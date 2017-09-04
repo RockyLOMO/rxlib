@@ -2,9 +2,6 @@ package org.rx.common;
 
 import java.util.function.Supplier;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/9/1
- */
 public final class Lazy<T> {
     private T                 value;
     private final Supplier<T> supplier;

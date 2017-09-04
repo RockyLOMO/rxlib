@@ -1,8 +1,5 @@
 package org.rx.validator;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/15
- */
 public class StringBuilder {
     public static final String      Empty = "";
     private java.lang.StringBuilder buffer;

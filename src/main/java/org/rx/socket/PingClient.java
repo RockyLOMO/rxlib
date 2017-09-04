@@ -16,9 +16,6 @@ import static org.rx.common.Contract.require;
 import static org.rx.util.App.isNull;
 import static org.rx.util.App.logError;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/9/1
- */
 public final class PingClient {
     public class Result {
         private final List<Long> results;

@@ -4,9 +4,6 @@ import org.rx.common.DateTime;
 
 import static org.rx.util.App.isNull;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/28
- */
 public abstract class Traceable {
     private Tracer tracer;
 

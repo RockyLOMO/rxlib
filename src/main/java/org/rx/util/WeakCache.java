@@ -12,7 +12,6 @@ import static org.rx.util.App.As;
 import static org.rx.util.App.logError;
 
 /**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/18
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
 public final class WeakCache<TK, TV> {

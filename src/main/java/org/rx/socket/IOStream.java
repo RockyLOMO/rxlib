@@ -1,5 +1,7 @@
 package org.rx.socket;
 
+import org.rx.common.BytesSegment;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -9,10 +11,9 @@ import java.util.function.Predicate;
 import static org.rx.common.Contract.require;
 
 public final class IOStream implements AutoCloseable {
-    private static final int   DefaultBufferSize = 1024 * 2;
     private final InputStream  inputStream;
     private final OutputStream outputStream;
-    private final byte[]       buffer;
+    private final BytesSegment segment;
 
     public InputStream getInputStream() {
         return inputStream;
@@ -22,16 +23,16 @@ public final class IOStream implements AutoCloseable {
         return outputStream;
     }
 
-    public byte[] getBuffer() {
-        return buffer;
+    public BytesSegment getSegment() {
+        return segment;
     }
 
-    public IOStream(InputStream inputStream, OutputStream outputStream) {
-        require(inputStream, outputStream);
+    public IOStream(InputStream inputStream, OutputStream outputStream, BytesSegment segment) {
+        require(inputStream, outputStream, segment);
 
         this.inputStream = inputStream;
         this.outputStream = outputStream;
-        buffer = new byte[DefaultBufferSize];
+        this.segment = segment;
     }
 
     @Override
@@ -39,6 +40,7 @@ public final class IOStream implements AutoCloseable {
         try {
             inputStream.close();
             outputStream.close();
+            segment.close();
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -48,11 +50,11 @@ public final class IOStream implements AutoCloseable {
         try {
             int recv = -1;
             while ((checkFunc == null || checkFunc.test(this))
-                    && (recv = inputStream.read(buffer, 0, buffer.length)) >= 0) {
+                    && (recv = inputStream.read(segment.array, segment.offset, segment.count)) >= 0) {
                 if (recv == 0) {
                     break;
                 }
-                outputStream.write(buffer, 0, recv);
+                outputStream.write(segment.array, segment.offset, recv);
                 if (eachFunc != null) {
                     if (!eachFunc.apply(recv)) {
                         break;

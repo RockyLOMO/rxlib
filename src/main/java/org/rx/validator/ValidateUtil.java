@@ -25,7 +25,6 @@ import java.util.stream.Collectors;
 import static org.rx.util.App.logInfo;
 
 /**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/11
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
 public class ValidateUtil {

@@ -2,9 +2,6 @@ package org.rx.util;
 
 import java.util.Set;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/7
- */
 public class BeanMapException extends RuntimeException {
     private Set<String> allMethodNames, missedMethodNames;
 
