@@ -4,9 +4,6 @@ import java.util.function.Supplier;
 
 import static org.rx.common.Contract.require;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/9/1
- */
 public final class Lazy<T> {
     private T                 value;
     private final Supplier<T> supplier;
