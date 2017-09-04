@@ -53,6 +53,10 @@ public final class PingClient {
         }
     }
 
+    public static boolean test(String endpoint) {
+        return new PingClient().ping(endpoint).getLossCount() == 0;
+    }
+
     private Stopwatch watcher;
 
     public PingClient() {

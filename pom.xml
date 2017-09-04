@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -15,9 +16,6 @@
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
-    <organization>
-        <name>com.github.rockylomo</name>
-    </organization>
     <licenses>
         <license>
             <name>The Apache Software License, Version 2.0</name>
@@ -26,15 +24,18 @@
         </license>
     </licenses>
     <scm>
+        <url>https://github.com/RockyLOMO/rxlib</url>
         <connection>scm:git:https://github.com/RockyLOMO/rxlib.git</connection>
         <developerConnection>scm:git:https://github.com/RockyLOMO/rxlib.git</developerConnection>
-        <url>https://github.com/RockyLOMO/rxlib</url>
     </scm>
+    <organization>
+        <name>com.github.rockylomo</name>
+    </organization>
     <developers>
         <developer>
-            <id>rocky</id>
-            <name>rocky</name>
-            <email>rockywong.chn@gmail.com</email>
+            <id>Rocky</id>
+            <name>Rocky</name>
+            <email>RockyWong.CHN@gmail.com</email>
         </developer>
     </developers>
 
