@@ -30,9 +30,6 @@ import java.util.regex.Pattern;
 
 import static org.rx.common.Contract.require;
 
-/**
- * Created by wangxiaoming on 2016/1/25.
- */
 public class App {
     //region Fields
     public static final String                    KeyPrefix   = "_rx";

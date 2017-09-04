@@ -1,6 +1,3 @@
-/**
- * Created by wangxiaoming on 2017/7/3.
- */
 public class ObjectParam {
     private int a,b;
 

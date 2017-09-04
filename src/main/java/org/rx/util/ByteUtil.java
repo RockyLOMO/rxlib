@@ -1,8 +1,5 @@
 package org.rx.util;
 
-/**
- * Created by wangxiaoming on 2016/8/24.
- */
 public class ByteUtil {
     public static void reverse(byte[] array) {
         reverse(array, 0, array.length);

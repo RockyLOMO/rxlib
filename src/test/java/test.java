@@ -6,9 +6,6 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.util.Random;
 
-/**
- * Created by wangxiaoming on 2017/6/28.
- */
 public class test {
     private static Random rnd = new Random();
 

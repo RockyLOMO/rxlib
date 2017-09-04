@@ -6,9 +6,6 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import java.util.Arrays;
 import java.util.function.Predicate;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/22
- */
 public class Contract {
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {

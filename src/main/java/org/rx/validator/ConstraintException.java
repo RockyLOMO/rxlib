@@ -1,8 +1,5 @@
 package org.rx.validator;
 
-/**
- * Created by IntelliJ IDEA. User: wangxiaoming Date: 2017/8/1
- */
 public class ConstraintException extends RuntimeException {
     private String propertyName;
     private String validateMessage;

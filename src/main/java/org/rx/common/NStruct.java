@@ -3,9 +3,6 @@ package org.rx.common;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 
-/**
- * Created by wangxiaoming on 2016/3/31.
- */
 public abstract class NStruct implements Serializable {
     static final long serialVersionUID = 42L;
     private transient Field[] fields;

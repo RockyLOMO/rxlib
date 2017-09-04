@@ -18,9 +18,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Created by wangxiaoming on 2017/6/30.
- */
 public class RestClient {
     private static class DynamicProxy implements InvocationHandler, MethodInterceptor {
         private String                  baseUrl, proxyHost;

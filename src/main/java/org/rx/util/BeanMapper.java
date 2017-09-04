@@ -13,9 +13,6 @@ import java.util.stream.Collectors;
 
 import static org.rx.common.Contract.require;
 
-/**
- * JAVA Bean操作类 Created by wangxiaoming on 2017/7/25.
- */
 public class BeanMapper {
     public class Flags {
         public static final int SkipNull         = 1;

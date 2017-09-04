@@ -1,8 +1,5 @@
 package org.rx.common;
 
-/**
- * Created by wangxiaoming on 2016/3/21.
- */
 public final class BiTuple<T1, T2, T3> extends NStruct {
     public static <T1, T2, T3> BiTuple<T1, T2, T3> of(T1 t1, T2 t2, T3 t3) {
         return new BiTuple<>(t1, t2, t3);

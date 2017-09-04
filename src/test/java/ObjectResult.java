@@ -1,6 +1,3 @@
-/**
- * Created by wangxiaoming on 2017/7/3.
- */
 public class ObjectResult {
     private int code;
     private int val;

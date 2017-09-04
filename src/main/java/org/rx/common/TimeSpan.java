@@ -4,7 +4,6 @@ import java.util.Calendar;
 import java.util.Date;
 
 /**
- * Created by wangxiaoming on 2016/2/23.
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
 public class TimeSpan {
