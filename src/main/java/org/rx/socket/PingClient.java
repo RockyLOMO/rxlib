@@ -51,7 +51,12 @@ public final class PingClient {
     }
 
     public static boolean test(String endpoint) {
-        return new PingClient().ping(endpoint).getLossCount() == 0;
+        try {
+            return new PingClient().ping(endpoint).getLossCount() == 0;
+        } catch (Exception ex) {
+            logError(ex, "PingClient.test()");
+            return false;
+        }
     }
 
     private Stopwatch watcher;
@@ -61,13 +66,13 @@ public final class PingClient {
     }
 
     public Result ping(String endpoint) {
-        return ping(App.parseSocketAddress(endpoint));
+        return ping(App.parseSocketAddress(endpoint), 4);
     }
 
-    public Result ping(InetSocketAddress sockAddr) {
+    public Result ping(InetSocketAddress sockAddr, int times) {
         require(sockAddr);
 
-        return new Result(Arrays.stream(new Long[4]).map(p -> {
+        return new Result(Arrays.stream(new Long[times]).map(p -> {
             Socket sock = new Socket();
             try {
                 watcher.start();
