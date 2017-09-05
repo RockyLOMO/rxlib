@@ -32,7 +32,8 @@ public class BufferSegment {
         }
 
         synchronized (buffer) {
-            BytesSegment segment = new BytesSegment(buffer, offset += bufferSize, bufferSize);
+            BytesSegment segment = new BytesSegment(buffer, offset, bufferSize);
+            offset += bufferSize;
             if (autoReleased) {
                 segment.Closed = p -> release(p);
             }
