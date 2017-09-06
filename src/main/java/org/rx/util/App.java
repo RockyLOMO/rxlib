@@ -15,9 +15,6 @@ import javax.xml.bind.Unmarshaller;
 import java.io.*;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
-import java.net.Authenticator;
-import java.net.InetSocketAddress;
-import java.net.PasswordAuthentication;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -59,6 +56,24 @@ public class App {
     public static void logError(Exception ex, String format, Object... args) {
         String msg = args.length == 0 ? format : String.format(format, args);
         log2.error(String.format("%s%s %s", System.lineSeparator(), ex.getMessage(), msg), ex);
+    }
+
+    public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
+        require(func);
+
+        InvalidOperationException lastEx = null;
+        int i = 1;
+        while (i <= retryCount) {
+            try {
+                return func.apply(state);
+            } catch (Exception ex) {
+                if (i == retryCount) {
+                    lastEx = Contract.wrapCause(ex);
+                }
+            }
+            i++;
+        }
+        throw isNull(lastEx, new IllegalStateException("retry().returnValue"));
     }
 
     public static UUID hash(String key) {
@@ -193,24 +208,6 @@ public class App {
         return ignoreCase ? str1.equals(str2) : str1.equalsIgnoreCase(str2);
     }
 
-    public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
-        require(func);
-
-        RuntimeException lastEx = null;
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                return func.apply(state);
-            } catch (Exception ex) {
-                if (i == retryCount) {
-                    lastEx = Contract.wrapCause(ex);
-                }
-            }
-            i++;
-        }
-        throw isNull(lastEx, new IllegalStateException("retry().returnValue"));
-    }
-
     public static String[] split(String str, String delimiter) {
         return str.split(Pattern.quote(delimiter));
     }
@@ -296,48 +293,6 @@ public class App {
         File dir = new File(dirPath);
         if (!dir.exists()) {
             dir.mkdirs();
-        }
-    }
-
-    public static InetSocketAddress parseSocketAddress(String sockAddr) {
-        require(sockAddr);
-        String[] arr = sockAddr.split(":");
-        require(arr, p -> p.length == 2);
-
-        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
-    }
-
-    public static void setHttpProxy(String sockAddr) {
-        setHttpProxy(sockAddr, null, null, null);
-    }
-
-    public static void setHttpProxy(String sockAddr, List<String> nonProxyHosts, String userName, String password) {
-        InetSocketAddress ipe = parseSocketAddress(sockAddr);
-        Properties prop = System.getProperties();
-        prop.setProperty("http.proxyHost", ipe.getAddress().getHostAddress());
-        prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));
-        prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
-        prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
-        if (!isNullOrEmpty(nonProxyHosts)) {
-            //如"localhost|192.168.0.*"
-            prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
-        }
-        if (userName != null && password != null) {
-            Authenticator.setDefault(new UserAuthenticator(userName, password));
-        }
-    }
-
-    static class UserAuthenticator extends Authenticator {
-        private String userName;
-        private String password;
-
-        public UserAuthenticator(String userName, String password) {
-            this.userName = userName;
-            this.password = password;
-        }
-
-        protected PasswordAuthentication getPasswordAuthentication() {
-            return new PasswordAuthentication(userName, password.toCharArray());
         }
     }
     //endregion

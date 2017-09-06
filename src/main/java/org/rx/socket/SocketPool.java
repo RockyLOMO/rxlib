@@ -140,7 +140,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                         || new DateTime().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
                     sockets.remove(socket);
                     getTracer().writeLine("%s clearIdleSocket[Local=%s, Remote=%s]..", getTimeString(),
-                            socket.socket.getLocalSocketAddress(), socket.socket.getRemoteSocketAddress());
+                            Sockets.getId(socket.socket, false), Sockets.getId(socket.socket, true));
                 }
             }
             if (sockets.size() == 0) {
@@ -188,8 +188,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             return borrowSocket(remoteAddr);
         }
         Socket sock = pooledSocket.socket;
-        getTracer().writeLine("%s borrowSocket[Local=%s, Remote=%s]..", getTimeString(), sock.getLocalSocketAddress(),
-                sock.getRemoteSocketAddress());
+        getTracer().writeLine("%s borrowSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(sock, false),
+                Sockets.getId(sock, true));
         return pooledSocket;
     }
 
@@ -207,8 +207,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         }
         sockets.addFirst(pooledSocket);
         Socket sock = pooledSocket.socket;
-        getTracer().writeLine("%s returnSocket[Local=%s, Remote=%s]..", getTimeString(), sock.getLocalSocketAddress(),
-                sock.getRemoteSocketAddress());
+        getTracer().writeLine("%s returnSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(sock, false),
+                Sockets.getId(sock, true));
     }
 
     public void clear() {
@@ -216,8 +216,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
 
         pool.values().stream().flatMap(ConcurrentLinkedDeque::stream).map(p -> p.socket).forEach(p -> {
             try {
-                getTracer().writeLine("%s clearSocket[Local=%s, Remote=%s]..", getTimeString(),
-                        p.getLocalSocketAddress(), p.getRemoteSocketAddress());
+                getTracer().writeLine("%s clearSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(p, false),
+                        Sockets.getId(p, true));
                 p.close();
             } catch (IOException ex) {
                 logError(ex, "SocketPool.close()");

@@ -4,7 +4,6 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.common.Contract;
 import org.springframework.ui.Model;
 
 import javax.servlet.ServletRequest;
@@ -22,6 +21,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.toJSONString;
 import static org.rx.common.Contract.wrapCause;
 import static org.rx.util.App.logInfo;
 
@@ -125,7 +125,7 @@ public class ValidateUtil {
             }
             List args = Arrays.stream(joinPoint.getArgs())
                     .filter(p -> !(SkipTypes.stream().anyMatch(p2 -> p2.isInstance(p)))).collect(Collectors.toList());
-            msg.appendLine("begin validate args=%s..", Contract.toJSONString(args));
+            msg.appendLine("begin validate args=%s..", toJSONString(args));
 
             int flags = attr.value();
             boolean validateValues = hasFlags(flags, ValidFlag.ParameterValues);
@@ -141,7 +141,7 @@ public class ValidateUtil {
                     try {
                         return joinPoint.proceed();
                     } catch (Throwable ex) {
-                        throw Contract.wrapCause(ex);
+                        throw wrapCause(ex);
                     }
                 });
             }

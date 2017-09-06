@@ -70,7 +70,7 @@ public class Contract {
         try {
             return JSON.toJSONString(args, SerializerFeature.DisableCircularReferenceDetect);
         } catch (Exception ex) {
-            return String.format("[\"Contract.toJSONString:%s\"]", ex.getMessage());
+            return String.format("[\"_error\":\"%s\"]", ex.getMessage());
         }
     }
 }

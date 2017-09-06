@@ -1,7 +1,6 @@
 package org.rx.security;
 
 import com.alibaba.fastjson.JSONArray;
-import org.rx.common.Contract;
 import org.rx.util.App;
 
 import javax.crypto.Cipher;
@@ -59,7 +58,7 @@ public class RSAUtil extends App {
             signature.update(getContentBytes(content, UTF8));
             return convertToBase64String(signature.sign());
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -101,7 +100,7 @@ public class RSAUtil extends App {
             signature.update(getContentBytes(content, UTF8));
             return signature.verify(convertFromBase64String(sign));
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -140,7 +139,7 @@ public class RSAUtil extends App {
             /** 执行加密操作 */
             return convertToBase64String(b);
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -160,7 +159,7 @@ public class RSAUtil extends App {
             /** 执行解密操作 */
             return new String(cipher.doFinal(b));
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -193,7 +192,7 @@ public class RSAUtil extends App {
         try {
             keygen = KeyPairGenerator.getInstance("RSA");
         } catch (NoSuchAlgorithmException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
         keygen.initialize(1024, new SecureRandom());
         KeyPair keys = keygen.genKeyPair();

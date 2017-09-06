@@ -1,9 +1,9 @@
 package org.rx.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import org.rx.common.Contract;
 
 import java.util.concurrent.*;
+import java.util.function.Func;
 
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
@@ -15,9 +15,9 @@ public final class AsyncTask {
     private static class NamedRunnable implements Runnable, Callable {
         private final String   name;
         private final Runnable runnable;
-        private final Callable callable;
+        private final Func     callable;
 
-        public NamedRunnable(String name, Runnable runnable, Callable callable) {
+        public NamedRunnable(String name, Runnable runnable, Func callable) {
             this.name = name;
             this.runnable = runnable;
             this.callable = callable;
@@ -32,11 +32,11 @@ public final class AsyncTask {
         }
 
         @Override
-        public Object call() throws Exception {
+        public Object call() {
             if (callable == null) {
                 return null;
             }
-            return callable.call();
+            return callable.invoke();
         }
 
         @Override
@@ -55,7 +55,7 @@ public final class AsyncTask {
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-                .setUncaughtExceptionHandler((thread, ex) -> logError(Contract.wrapCause(ex), thread.getName()))
+                .setUncaughtExceptionHandler((thread, ex) -> logError(wrapCause(ex), thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
         this.executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
                 threadFactory, (p1, p2) -> {
@@ -64,14 +64,14 @@ public final class AsyncTask {
                 });
     }
 
-    public <T> Future<T> run(Callable<T> task) {
+    public <T> Future<T> run(Func<T> task) {
         return run(task, null);
     }
 
-    public <T> Future<T> run(Callable<T> task, String taskName) {
+    public <T> Future<T> run(Func<T> task, String taskName) {
         require(task);
 
-        return executor.submit(taskName != null ? (Callable<T>) new NamedRunnable(taskName, null, task) : task);
+        return executor.submit((Callable<T>) new NamedRunnable(taskName, null, task));
     }
 
     public void run(Runnable task) {

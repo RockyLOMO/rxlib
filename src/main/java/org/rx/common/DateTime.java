@@ -5,11 +5,13 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 
+import static org.rx.common.Contract.require;
+
 public class DateTime extends Date {
     //2000-01-01
-    public static final Date BaseDate = new Date(100, 0, 1);
+    public static final Date    BaseDate      = new Date(100, 0, 1);
     private static final String DefaultFormat = "yyyy-MM-dd HH:mm:ss";
-    private Calendar cal;
+    private Calendar            cal;
 
     private Calendar getCalendar() {
         if (cal == null) {
@@ -71,6 +73,8 @@ public class DateTime extends Date {
     }
 
     public TimeSpan subtract(Date value) {
+        require(value);
+
         return new TimeSpan(this.getTime() - value.getTime());
     }
 
@@ -80,6 +84,8 @@ public class DateTime extends Date {
     }
 
     public String toString(String format) {
+        require(format);
+
         return new SimpleDateFormat(format).format(this);
     }
 }

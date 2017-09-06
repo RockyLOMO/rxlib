@@ -1,7 +1,7 @@
 package org.rx.util;
 
 import com.alibaba.fastjson.JSON;
-import org.rx.common.Contract;
+import org.rx.socket.Sockets;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;
@@ -20,7 +20,7 @@ public class HttpClient {
         try {
             return URLEncoder.encode(val, App.UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -40,7 +40,7 @@ public class HttpClient {
                 map.put(key, value);
             }
         } catch (UnsupportedEncodingException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
         return map;
     }
@@ -125,7 +125,7 @@ public class HttpClient {
             String charset = App.UTF8;
             URL uri = new URL(url);
             HttpURLConnection client = (HttpURLConnection) (proxyHost != null
-                    ? uri.openConnection(new Proxy(Proxy.Type.HTTP, App.parseSocketAddress(proxyHost)))
+                    ? uri.openConnection(new Proxy(Proxy.Type.HTTP, Sockets.parseAddress(proxyHost)))
                     : uri.openConnection());
             client.setDoOutput(true);
             client.setDoInput(true);
@@ -151,7 +151,7 @@ public class HttpClient {
             }
             return App.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 }

@@ -29,7 +29,7 @@ public final class Lazy<T> {
             try {
                 return type.newInstance();
             } catch (ReflectiveOperationException ex) {
-                throw Contract.wrapCause(ex);
+                throw wrapCause(ex);
             }
         });
     }

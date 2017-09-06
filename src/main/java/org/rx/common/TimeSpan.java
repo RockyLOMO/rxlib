@@ -14,7 +14,7 @@ public class TimeSpan {
     }
 
     public TimeSpan(Date start, Date end) {
-        ticks = start.getTime() - end.getTime();
+        this(start.getTime() - end.getTime());
     }
 
     public long getTicks() {

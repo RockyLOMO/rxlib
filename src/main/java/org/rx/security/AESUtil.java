@@ -1,6 +1,5 @@
 package org.rx.security;
 
-import org.rx.common.Contract;
 import org.rx.util.App;
 
 import static org.rx.common.Contract.require;
@@ -104,7 +103,7 @@ public class AESUtil extends App {
         try {
             keygen = KeyGenerator.getInstance(AES_ALGORITHM);
         } catch (NoSuchAlgorithmException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
         SecureRandom random = new SecureRandom();
         keygen.init(random);

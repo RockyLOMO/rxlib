@@ -2,7 +2,6 @@ package org.rx.socket;
 
 import com.google.common.base.Stopwatch;
 import org.rx.common.Lazy;
-import org.rx.util.App;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -66,7 +65,7 @@ public final class PingClient {
     }
 
     public Result ping(String endpoint) {
-        return ping(App.parseSocketAddress(endpoint), 4);
+        return ping(Sockets.parseAddress(endpoint), 4);
     }
 
     public Result ping(InetSocketAddress sockAddr, int times) {

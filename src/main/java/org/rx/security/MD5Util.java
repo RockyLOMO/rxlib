@@ -1,7 +1,5 @@
 package org.rx.security;
 
-import org.rx.common.Contract;
-
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -26,7 +24,7 @@ public class MD5Util {
         try {
             return MessageDigest.getInstance("MD5");
         } catch (NoSuchAlgorithmException e) {
-            throw Contract.wrapCause(e);
+            throw wrapCause(e);
         }
     }
 

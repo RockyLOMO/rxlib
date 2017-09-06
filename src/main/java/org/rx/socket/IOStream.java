@@ -1,7 +1,6 @@
 package org.rx.socket;
 
 import org.rx.common.BytesSegment;
-import org.rx.common.Contract;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,7 +43,7 @@ public final class IOStream implements AutoCloseable {
             outputStream.close();
             segment.close();
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 
@@ -66,7 +65,7 @@ public final class IOStream implements AutoCloseable {
             outputStream.flush();
             return recv;
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw wrapCause(ex);
         }
     }
 }
