@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
-import static org.rx.util.App.isNull;
 import static org.rx.util.App.logError;
 
 public final class PingClient {

@@ -5,7 +5,6 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.common.Func;
 import org.rx.common.Tuple;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.PrioritizedParameterNameDiscoverer;
@@ -17,6 +16,9 @@ import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
+
+import static org.rx.common.Contract.isNull;
 
 public class RestClient {
     private static class DynamicProxy implements InvocationHandler, MethodInterceptor {
@@ -39,7 +41,7 @@ public class RestClient {
             boolean isFormParam = args != null && args.length > 1;
             RestMethod restMethod = method.getDeclaredAnnotation(RestMethod.class);
             if (restMethod != null) {
-                String temp = App.isNull(restMethod.path(), restMethod.value());
+                String temp = isNull(restMethod.path(), restMethod.value());
                 if (!App.isNullOrEmpty(temp)) {
                     apiPath = temp;
                 }
@@ -57,7 +59,7 @@ public class RestClient {
 
             Parameter[] parameters = method.getParameters();
             String[] parameterNames = parameterNameDiscoverer.getParameterNames(method);
-            Func<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
+            Function<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
                     && parameters.length == parameterNames.length ? parameterNames[offset]
                             : parameters[offset].getName();
             System.out.println(method.getDeclaringClass().getName() + " pNames: " + Arrays.toString(parameterNames));
@@ -70,7 +72,7 @@ public class RestClient {
                 for (int i = 0; i < parameters.length; i++) {
                     Parameter p = parameters[i];
                     RestParam restParam = p.getDeclaredAnnotation(RestParam.class);
-                    jsonEntity.put(restParam != null ? App.isNull(restParam.name(), restParam.value()) : func.invoke(i),
+                    jsonEntity.put(restParam != null ? isNull(restParam.name(), restParam.value()) : func.apply(i),
                             args[i]);
                 }
                 return setResult(method, client.httpPost(url, jsonEntity));
@@ -80,7 +82,7 @@ public class RestClient {
             for (int i = 0; i < parameters.length; i++) {
                 Parameter p = parameters[i];
                 RestParam restParam = p.getDeclaredAnnotation(RestParam.class);
-                params.put(restParam != null ? App.isNull(restParam.name(), restParam.value()) : func.invoke(i),
+                params.put(restParam != null ? isNull(restParam.name(), restParam.value()) : func.apply(i),
                         JSON.toJSONString(args[i]));
             }
             return setResult(method, client.httpPost(url, params));

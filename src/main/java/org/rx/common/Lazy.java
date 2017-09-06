@@ -3,6 +3,7 @@ package org.rx.common;
 import java.util.function.Supplier;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.wrapCause;
 
 public final class Lazy<T> {
     private T                 value;
@@ -28,7 +29,7 @@ public final class Lazy<T> {
             try {
                 return type.newInstance();
             } catch (ReflectiveOperationException ex) {
-                throw new RuntimeException(ex);
+                throw Contract.wrapCause(ex);
             }
         });
     }

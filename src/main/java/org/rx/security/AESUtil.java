@@ -1,8 +1,10 @@
 package org.rx.security;
 
+import org.rx.common.Contract;
 import org.rx.util.App;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.wrapCause;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -102,7 +104,7 @@ public class AESUtil extends App {
         try {
             keygen = KeyGenerator.getInstance(AES_ALGORITHM);
         } catch (NoSuchAlgorithmException ex) {
-            throw new RuntimeException("genarateRandomKey fail!", ex);
+            throw Contract.wrapCause(ex);
         }
         SecureRandom random = new SecureRandom();
         keygen.init(random);

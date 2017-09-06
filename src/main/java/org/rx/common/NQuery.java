@@ -2,6 +2,8 @@ package org.rx.common;
 
 import java.lang.reflect.Array;
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * Created by wangxiaoming on 2016/3/3.
@@ -63,28 +65,28 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region PRMethods
-    public NQuery<T> where(Func<T, Boolean> selector) {
+    public NQuery<T> where(Function<T, Boolean> selector) {
         List<T> result = new ArrayList<>();
         for (T t : current) {
-            if (selector.invoke(t)) {
+            if (selector.apply(t)) {
                 result.add(t);
             }
         }
         return new NQuery<>(result);
     }
 
-    public <TR> NQuery<TR> select(Func<T, TR> selector) {
+    public <TR> NQuery<TR> select(Function<T, TR> selector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
-            result.add(selector.invoke(t));
+            result.add(selector.apply(t));
         }
         return new NQuery<>(result);
     }
 
-    public <TR> NQuery<TR> selectMany(Func<T, Iterable<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(Function<T, Iterable<TR>> selector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
-            for (TR tr : selector.invoke(t)) {
+            for (TR tr : selector.apply(t)) {
                 result.add(tr);
             }
         }
@@ -93,15 +95,15 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region JoinMethods
-    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiFunc<T, TI, Boolean> keySelector,
-                                    BiFunc<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiFunction<T, TI, Boolean> keySelector,
+                                    BiFunction<T, TI, TR> resultSelector) {
         List<TR> result = new ArrayList<>();
         for (T t : current) {
             for (TI ti : inner) {
-                if (!keySelector.invoke(t, ti)) {
+                if (!keySelector.apply(t, ti)) {
                     continue;
                 }
-                result.add(resultSelector.invoke(t, ti));
+                result.add(resultSelector.apply(t, ti));
             }
         }
         return new NQuery<>(result);
@@ -113,7 +115,7 @@ public class NQuery<T> implements Iterable<T> {
         return current.size() > 0;
     }
 
-    public boolean any(Func<T, Boolean> selector) {
+    public boolean any(Function<T, Boolean> selector) {
         return this.where(selector).any();
     }
 
@@ -140,33 +142,33 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region OrderingMethods
-    public <TK> NQuery<T> orderBy(final Func<T, TK> keySelector) {
+    public <TK> NQuery<T> orderBy(final Function<T, TK> keySelector) {
         List<T> result = toList();
         Collections.sort(result, new Comparator<T>() {
             @Override
             public int compare(T o1, T o2) {
-                TK tk = keySelector.invoke(o1);
+                TK tk = keySelector.apply(o1);
                 if (!Comparable.class.isAssignableFrom(tk.getClass())) {
                     return 0;
                 }
                 Comparable c = (Comparable) tk;
-                return c.compareTo(keySelector.invoke(o2));
+                return c.compareTo(keySelector.apply(o2));
             }
         });
         return new NQuery<>(result);
     }
 
-    public <TK> NQuery<T> orderByDescending(final Func<T, TK> keySelector) {
+    public <TK> NQuery<T> orderByDescending(final Function<T, TK> keySelector) {
         List<T> result = toList();
         Collections.sort(result, new Comparator<T>() {
             @Override
             public int compare(T o1, T o2) {
-                TK tk = keySelector.invoke(o1);
+                TK tk = keySelector.apply(o1);
                 if (!Comparable.class.isAssignableFrom(tk.getClass())) {
                     return 0;
                 }
                 Comparable c = (Comparable) tk;
-                int val = c.compareTo(keySelector.invoke(o2));
+                int val = c.compareTo(keySelector.apply(o2));
                 if (val == 1) {
                     return -1;
                 } else if (val == -1) {
@@ -180,10 +182,10 @@ public class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region GroupingMethods
-    public <TK, TR> NQuery<TR> groupBy(Func<T, TK> keySelector, Func<Tuple<TK, NQuery<T>>, TR> resultSelector) {
+    public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, Function<Tuple<TK, NQuery<T>>, TR> resultSelector) {
         Map<TK, List<T>> map = new HashMap<>();
         for (T t : current) {
-            TK key = keySelector.invoke(t);
+            TK key = keySelector.apply(t);
             if (map.get(key) == null) {
                 map.put(key, new ArrayList<T>());
             }
@@ -191,7 +193,7 @@ public class NQuery<T> implements Iterable<T> {
         }
         List<TR> result = new ArrayList<>();
         for (TK tk : map.keySet()) {
-            result.add(resultSelector.invoke(Tuple.of(tk, new NQuery<>(map.get(tk)))));
+            result.add(resultSelector.apply(Tuple.of(tk, new NQuery<>(map.get(tk)))));
         }
         return new NQuery<>(result);
     }
@@ -242,18 +244,18 @@ public class NQuery<T> implements Iterable<T> {
         return new HashSet<>(current);
     }
 
-    public <TK> Map<TK, T> toMap(Func<T, TK> keySelector) {
+    public <TK> Map<TK, T> toMap(Function<T, TK> keySelector) {
         HashMap<TK, T> map = new HashMap<>();
         for (T t : current) {
-            map.put(keySelector.invoke(t), t);
+            map.put(keySelector.apply(t), t);
         }
         return map;
     }
 
-    public <TK, TV> Map<TK, TV> toMap(Func<T, TK> keySelector, Func<T, TV> valueSelector) {
+    public <TK, TV> Map<TK, TV> toMap(Function<T, TK> keySelector, Function<T, TV> valueSelector) {
         HashMap<TK, TV> map = new HashMap<>();
         for (T t : current) {
-            map.put(keySelector.invoke(t), valueSelector.invoke(t));
+            map.put(keySelector.apply(t), valueSelector.apply(t));
         }
         return map;
     }

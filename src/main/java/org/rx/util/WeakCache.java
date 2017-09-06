@@ -7,8 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 
+import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.require;
-import static org.rx.util.App.As;
 import static org.rx.util.App.logError;
 
 /**
@@ -69,7 +69,7 @@ public final class WeakCache<TK, TV> {
             return;
         }
         AutoCloseable ac;
-        if (destroy && (ac = As(ref.get(), AutoCloseable.class)) != null) {
+        if (destroy && (ac = as(ref.get(), AutoCloseable.class)) != null) {
             try {
                 ac.close();
             } catch (Exception ex) {

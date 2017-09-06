@@ -3,8 +3,10 @@ package org.rx.common;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 
+import static org.rx.common.Contract.wrapCause;
+
 public abstract class NStruct implements Serializable {
-    static final long serialVersionUID = 42L;
+    static final long         serialVersionUID = 42L;
     private transient Field[] fields;
 
     private Field[] getFields() {
@@ -26,7 +28,7 @@ public abstract class NStruct implements Serializable {
                     hex.append(val.hashCode());
                 }
             } catch (IllegalAccessException ex) {
-                throw new RuntimeException(ex);
+                throw Contract.wrapCause(ex);
             }
         }
         //System.out.println(String.format("hashCode=%s", hex.toString()));

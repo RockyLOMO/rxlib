@@ -1,11 +1,13 @@
 package org.rx.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.rx.common.Contract;
 
 import java.util.concurrent.*;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
-import static org.rx.util.App.isNull;
+import static org.rx.common.Contract.wrapCause;
 import static org.rx.util.App.logError;
 import static org.rx.util.App.logInfo;
 
@@ -53,7 +55,7 @@ public final class AsyncTask {
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-                .setUncaughtExceptionHandler((thread, ex) -> logError(new RuntimeException(ex), thread.getName()))
+                .setUncaughtExceptionHandler((thread, ex) -> logError(Contract.wrapCause(ex), thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
         this.executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
                 threadFactory, (p1, p2) -> {

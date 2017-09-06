@@ -1,6 +1,7 @@
 package org.rx.security;
 
 import com.alibaba.fastjson.JSONArray;
+import org.rx.common.Contract;
 import org.rx.util.App;
 
 import javax.crypto.Cipher;
@@ -13,6 +14,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.wrapCause;
 
 public class RSAUtil extends App {
     private static final String SIGN_ALGORITHMS  = "MD5withRSA";
@@ -57,7 +59,7 @@ public class RSAUtil extends App {
             signature.update(getContentBytes(content, UTF8));
             return convertToBase64String(signature.sign());
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -99,7 +101,7 @@ public class RSAUtil extends App {
             signature.update(getContentBytes(content, UTF8));
             return signature.verify(convertFromBase64String(sign));
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -138,7 +140,7 @@ public class RSAUtil extends App {
             /** 执行加密操作 */
             return convertToBase64String(b);
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -158,7 +160,7 @@ public class RSAUtil extends App {
             /** 执行解密操作 */
             return new String(cipher.doFinal(b));
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -191,7 +193,7 @@ public class RSAUtil extends App {
         try {
             keygen = KeyPairGenerator.getInstance("RSA");
         } catch (NoSuchAlgorithmException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
         keygen.initialize(1024, new SecureRandom());
         KeyPair keys = keygen.genKeyPair();

@@ -1,6 +1,7 @@
 package org.rx.socket;
 
 import org.rx.common.BufferSegment;
+import org.rx.common.Contract;
 import org.rx.common.Tuple;
 
 import java.io.IOException;
@@ -13,7 +14,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.wrapCause;
 import static org.rx.util.App.logError;
 import static org.rx.util.App.retry;
 import static org.rx.util.AsyncTask.TaskFactory;
@@ -69,7 +72,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -169,11 +172,28 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
     private void onReceive(ClientItem client, String taskName) {
         TaskFactory.run(() -> {
-            int recv = client.ioStream.directData(p -> !client.isClosed(), p -> {
-                getTracer().writeLine("%s sent %s bytes from %s to %s..", getTimeString(), p,
-                        client.sock.getLocalSocketAddress(), client.directSock.socket.getRemoteSocketAddress());
-                return true;
-            });
+            int recv = -1;
+            try {
+                recv = client.ioStream.directData(p -> !client.isClosed(), p -> {
+                    getTracer().writeLine("%s sent %s bytes from %s to %s..", getTimeString(), p,
+                            client.sock.getRemoteSocketAddress(), client.directSock.socket.getLocalSocketAddress());
+                    return true;
+                });
+            } catch (Exception ex) {
+                boolean ok = false;
+                java.net.SocketException sockEx = as(ex, java.net.SocketException.class);
+                if (sockEx != null) {
+                    String msg = sockEx.getMessage();
+                    if (msg != null && msg.toLowerCase().contains("connection reset")) {
+                        ok = true;
+                        recv = 0;
+                        logError(sockEx, "onReceive");
+                    }
+                }
+                if (!ok) {
+                    throw Contract.wrapCause(ex);
+                }
+            }
             if (recv == 0) {
                 client.close();
             }
@@ -181,7 +201,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         TaskFactory.run(() -> {
             int recv = client.directIoStream.directData(p -> !client.isClosed(), p -> {
                 getTracer().writeLine("%s recv %s bytes from %s to %s..", getTimeString(), p,
-                        client.directSock.socket.getRemoteSocketAddress(), client.sock.getLocalSocketAddress());
+                        client.directSock.socket.getLocalSocketAddress(), client.sock.getRemoteSocketAddress());
                 return true;
             });
             if (recv == 0) {

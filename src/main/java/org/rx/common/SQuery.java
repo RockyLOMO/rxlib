@@ -6,6 +6,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
+ * @param <T>
+ */
 public class SQuery<T> {
     public static <T> SQuery<T> of(Stream<T> stream) {
         return new SQuery<>(stream);

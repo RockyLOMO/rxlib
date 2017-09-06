@@ -9,6 +9,7 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.rx.common.Contract.require;
@@ -22,11 +23,11 @@ public class BeanMapper {
     }
 
     private static class MapConfig {
-        public final BeanCopier     copier;
-        public volatile boolean     isCheck;
-        public Set<String>          ignoreMethods;
-        public Func<String, String> methodMatcher;
-        public BiConsumer           postProcessor;
+        public final BeanCopier         copier;
+        public volatile boolean         isCheck;
+        public Set<String>              ignoreMethods;
+        public Function<String, String> methodMatcher;
+        public BiConsumer               postProcessor;
 
         public MapConfig(BeanCopier copier) {
             this.copier = copier;
@@ -90,7 +91,7 @@ public class BeanMapper {
         return App.hash(k.toString());
     }
 
-    public synchronized BeanMapper setConfig(Class from, Class to, Func<String, String> methodMatcher,
+    public synchronized BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher,
                                              BiConsumer postProcessor, String... ignoreMethods) {
         MapConfig config = getConfig(from, to);
         config.methodMatcher = methodMatcher;
@@ -151,7 +152,7 @@ public class BeanMapper {
             final CacheItem fmc = getMethods(from);
             for (String missedName : missedNames) {
                 Method fm;
-                String fromName = config.methodMatcher.invoke(missedName);
+                String fromName = config.methodMatcher.apply(missedName);
                 if (fromName == null || (fm = fmc.getters.stream().filter(p -> p.getName().equals(fromName)).findFirst()
                         .orElse(null)) == null) {
                     throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),

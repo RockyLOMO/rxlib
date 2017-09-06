@@ -3,8 +3,8 @@ package org.rx.common;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.require;
-import static org.rx.util.App.As;
 import static org.rx.util.App.split;
 
 public interface NEnum {
@@ -48,7 +48,7 @@ public interface NEnum {
         List<T> result = new ArrayList<>();
         Class type = this.getClass();
         for (Object o : type.getEnumConstants()) {
-            NEnum e = As(o, NEnum.class);
+            NEnum e = as(o, NEnum.class);
             if (this.has(e)) {
                 result.add((T) e);
             }

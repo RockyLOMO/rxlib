@@ -1,11 +1,15 @@
 package org.rx.util;
 
 import com.alibaba.fastjson.JSON;
+import org.rx.common.Contract;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import static org.rx.common.Contract.isNull;
+import static org.rx.common.Contract.wrapCause;
 
 /**
  * http://www.jianshu.com/p/aa3f066263ed
@@ -16,7 +20,7 @@ public class HttpClient {
         try {
             return URLEncoder.encode(val, App.UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -36,7 +40,7 @@ public class HttpClient {
                 map.put(key, value);
             }
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
         return map;
     }
@@ -145,9 +149,9 @@ public class HttpClient {
             if (resCode != HttpURLConnection.HTTP_OK) {
 
             }
-            return App.readString(client.getInputStream(), App.isNull(client.getContentEncoding(), charset));
+            return App.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 }

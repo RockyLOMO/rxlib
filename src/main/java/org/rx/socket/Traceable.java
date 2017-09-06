@@ -2,7 +2,7 @@ package org.rx.socket;
 
 import org.rx.common.DateTime;
 
-import static org.rx.util.App.isNull;
+import static org.rx.common.Contract.isNull;
 
 public abstract class Traceable {
     private Tracer tracer;

@@ -1,11 +1,15 @@
 package org.rx.security;
 
+import org.rx.common.Contract;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
+import static org.rx.common.Contract.wrapCause;
+
 /**
- * Static functions to simplifiy common {@link MessageDigest} tasks.  This
- * class is thread safe.
+ * Static functions to simplifiy common {@link MessageDigest} tasks. This class
+ * is thread safe.
  *
  * @author 99bill
  */
@@ -16,14 +20,13 @@ public class MD5Util {
      * Returns a MessageDigest for the given <code>algorithm</code>.
      *
      * @return An MD5 digest instance.
-     * @throws RuntimeException when a {@link NoSuchAlgorithmException} is
-     *                          caught
+     * @throws RuntimeException when a {@link NoSuchAlgorithmException} is caught
      */
     private static MessageDigest getDigest() {
         try {
             return MessageDigest.getInstance("MD5");
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
+            throw Contract.wrapCause(e);
         }
     }
 
@@ -50,8 +53,7 @@ public class MD5Util {
     }
 
     /**
-     * Calculates the MD5 digest and returns the value as a 32 character hex
-     * string.
+     * Calculates the MD5 digest and returns the value as a 32 character hex string.
      *
      * @param data Data to digest
      * @return MD5 digest as a hex string
@@ -61,8 +63,7 @@ public class MD5Util {
     }
 
     /**
-     * Calculates the MD5 digest and returns the value as a 32 character hex
-     * string.
+     * Calculates the MD5 digest and returns the value as a 32 character hex string.
      *
      * @param data Data to digest
      * @return MD5 digest as a hex string
@@ -74,8 +75,7 @@ public class MD5Util {
     /**
      * Converts a byte array to hex string.
      *
-     * @param b -
-     *          the input byte array
+     * @param b - the input byte array
      * @return hex string representation of b.
      */
     private static String toHexString(byte[] b) {
@@ -90,8 +90,7 @@ public class MD5Util {
     /**
      * Converts a hex string into a byte array.
      *
-     * @param s -
-     *          string to be converted
+     * @param s - string to be converted
      * @return byte array converted from s
      */
     private static byte[] toByteArray(String s) {

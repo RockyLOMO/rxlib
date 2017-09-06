@@ -23,12 +23,11 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.*;
 
 public class App {
     //region Fields
@@ -134,7 +133,7 @@ public class App {
             prop.load(new InputStreamReader(
                     App.class.getClassLoader().getResourceAsStream(propertiesFile + ".properties"), UTF8));
         } catch (Exception ex) {
-            throw new RuntimeException("readSettings", ex);
+            throw Contract.wrapCause(ex);
         }
 
         Map<String, String> map = new HashMap<>();
@@ -194,29 +193,6 @@ public class App {
         return ignoreCase ? str1.equals(str2) : str1.equalsIgnoreCase(str2);
     }
 
-    public static <T> T As(Object obj, Class<T> type) {
-        if (!type.isInstance(obj)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
-    }
-
-    public static <T> T isNull(T value, Supplier<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.get();
-            }
-        }
-        return value;
-    }
-
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
         require(func);
 
@@ -227,7 +203,7 @@ public class App {
                 return func.apply(state);
             } catch (Exception ex) {
                 if (i == retryCount) {
-                    lastEx = new RuntimeException(ex);
+                    lastEx = Contract.wrapCause(ex);
                 }
             }
             i++;
@@ -296,7 +272,7 @@ public class App {
                 result.append(new String(buffer, 0, read, charset));
             }
         } catch (IOException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
         return result.toString();
     }
@@ -312,7 +288,7 @@ public class App {
             byte[] data = value.getBytes(charset);
             writer.write(data);
         } catch (IOException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -400,13 +376,13 @@ public class App {
             return (T) value.toString();
         }
 
-        if (!(SupportTypes.any(new Func<Class<?>, Boolean>() {
+        if (!(SupportTypes.any(new Function<Class<?>, Boolean>() {
             @Override
-            public Boolean invoke(Class<?> arg) {
+            public Boolean apply(Class<?> arg) {
                 return arg.equals(fromType);
             }
         }) || fromType.isEnum())) {
-            throw new RuntimeException(String.format("不支持类型%s=>%s的转换", fromType, toType));
+            throw newCause("不支持类型%s=>%s的转换", fromType, toType);
         }
 
         String val = value.toString();
@@ -425,13 +401,13 @@ public class App {
                 }
             }
             if (value == null) {
-                NQuery<String> q = SupportDateFormats.select(new Func<SimpleDateFormat, String>() {
+                NQuery<String> q = SupportDateFormats.select(new Function<SimpleDateFormat, String>() {
                     @Override
-                    public String invoke(SimpleDateFormat arg) {
+                    public String apply(SimpleDateFormat arg) {
                         return arg.toPattern();
                     }
                 });
-                throw new RuntimeException(String.format("仅支持 %s format的日期转换", String.join(",", q)), lastEx);
+                throw newCause("仅支持 %s format的日期转换", String.join(",", q), lastEx);
             }
         } else {
             toType = checkType(toType);
@@ -439,9 +415,9 @@ public class App {
                 Method m = toType.getDeclaredMethod("valueOf", strType);
                 value = m.invoke(null, val);
             } catch (NoSuchMethodException ex) {
-                throw new RuntimeException(String.format("未找到类型%s的valueOf方法", toType), ex);
+                throw wrapCause(ex, "未找到类型%s的valueOf方法", toType);
             } catch (ReflectiveOperationException ex) {
-                throw new RuntimeException(String.format("类型%s=>%s转换错误", fromType, toType), ex);
+                throw wrapCause(ex, "类型%s=>%s转换错误", fromType, toType);
             }
         }
         return (T) value;
@@ -457,7 +433,7 @@ public class App {
         try {
             return Class.forName(newName);
         } catch (ClassNotFoundException ex) {
-            throw new RuntimeException(String.format("checkType %s=>%s", type, newName), ex);
+            throw wrapCause(ex, "checkType %s=>%s", type, newName);
         }
     }
 
@@ -476,7 +452,7 @@ public class App {
         try {
             return new String(ret, UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException("convertToBase64String", ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -487,7 +463,7 @@ public class App {
         try {
             data = base64.getBytes(UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException("convertFromBase64String", ex);
+            throw Contract.wrapCause(ex);
         }
         return Base64.getDecoder().decode(data);
     }
@@ -505,7 +481,7 @@ public class App {
             out.writeObject(obj);
             return bos.toByteArray();
         } catch (IOException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -521,7 +497,7 @@ public class App {
                 ObjectInputStream in = new ObjectInputStream(bis)) {
             return in.readObject();
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
 
@@ -615,7 +591,7 @@ public class App {
             }
             out.flush();
         } catch (IOException ex) {
-            throw new RuntimeException(ex);
+            throw Contract.wrapCause(ex);
         }
     }
     //endregion

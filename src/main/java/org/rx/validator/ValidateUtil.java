@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.wrapCause;
 import static org.rx.util.App.logInfo;
 
 /**
@@ -140,7 +141,7 @@ public class ValidateUtil {
                     try {
                         return joinPoint.proceed();
                     } catch (Throwable ex) {
-                        throw new RuntimeException(ex);
+                        throw Contract.wrapCause(ex);
                     }
                 });
             }
