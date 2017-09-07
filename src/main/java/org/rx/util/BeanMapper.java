@@ -46,21 +46,21 @@ public class BeanMapper {
         }
     }
 
-    private static Map<UUID, MapConfig>        config      = new ConcurrentHashMap<>();
-    private static WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
+    private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
+    private static BeanMapper                        instance;
 
-    private MapConfig getConfig(Class from, Class to) {
-        require(from, to);
-
-        UUID k = App.hash(from.getName() + to.getName());
-        MapConfig mapConfig = config.get(k);
-        if (mapConfig == null) {
-            config.put(k, mapConfig = new MapConfig(BeanCopier.create(from, to, true)));
+    public static BeanMapper getInstance() {
+        if (instance == null) {
+            synchronized (methodCache) {
+                if (instance == null) {
+                    instance = new BeanMapper();
+                }
+            }
         }
-        return mapConfig;
+        return instance;
     }
 
-    private CacheItem getMethods(Class to) {
+    private static CacheItem getMethods(Class to) {
         return methodCache.getOrAdd(to, () -> {
             List<Method> setters = Arrays.stream(to.getMethods())
                     .filter(p -> p.getName().startsWith("set") && p.getParameterCount() == 1)
@@ -80,15 +80,28 @@ public class BeanMapper {
         }, true);
     }
 
-    private Set<String> toMethodNames(List<Method> methods) {
+    private static Set<String> toMethodNames(List<Method> methods) {
         return methods.stream().map(Method::getName).collect(Collectors.toSet());
     }
 
-    private UUID genKey(Class to, Set<String> methodNames) {
+    private static UUID genKey(Class to, Set<String> methodNames) {
         StringBuilder k = new StringBuilder(to.getName());
         methodNames.stream().forEachOrdered(k::append);
         App.logInfo("genKey %s..", k.toString());
         return App.hash(k.toString());
+    }
+
+    private Map<UUID, MapConfig> config = new ConcurrentHashMap<>();
+
+    private MapConfig getConfig(Class from, Class to) {
+        require(from, to);
+
+        UUID k = App.hash(from.getName() + to.getName());
+        MapConfig mapConfig = config.get(k);
+        if (mapConfig == null) {
+            config.put(k, mapConfig = new MapConfig(BeanCopier.create(from, to, true)));
+        }
+        return mapConfig;
     }
 
     public synchronized BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher,

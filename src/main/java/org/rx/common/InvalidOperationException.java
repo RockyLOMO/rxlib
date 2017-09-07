@@ -1,8 +1,9 @@
 package org.rx.common;
 
 import com.google.common.base.Strings;
+import org.springframework.core.NestedRuntimeException;
 
-public class InvalidOperationException extends RuntimeException {
+public class InvalidOperationException extends NestedRuntimeException {
     public InvalidOperationException() {
         this((String) null);
     }

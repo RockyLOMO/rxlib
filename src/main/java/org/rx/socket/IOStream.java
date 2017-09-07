@@ -8,13 +8,15 @@ import java.io.OutputStream;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.wrapCause;
 
 public final class IOStream implements AutoCloseable {
-    private final InputStream  inputStream;
-    private final OutputStream outputStream;
-    private final BytesSegment segment;
+    private static final Predicate<IOStream> DefaultIsOpen = p -> true;
+    private final InputStream                inputStream;
+    private final OutputStream               outputStream;
+    private final BytesSegment               segment;
 
     public InputStream getInputStream() {
         return inputStream;
@@ -47,12 +49,15 @@ public final class IOStream implements AutoCloseable {
         }
     }
 
-    public int directData(Predicate<IOStream> checkFunc, Function<Integer, Boolean> eachFunc) {
+    public int directData(Predicate<IOStream> isOpen, Function<Integer, Boolean> eachFunc) {
+        isOpen = isNull(isOpen, DefaultIsOpen);
         try {
             int recv = -1;
-            while ((checkFunc == null || checkFunc.test(this))
-                    && (recv = inputStream.read(segment.array, segment.offset, segment.count)) >= 0) {
+            while (isOpen.test(this) && (recv = inputStream.read(segment.array, segment.offset, segment.count)) >= 0) {
                 if (recv == 0) {
+                    break;
+                }
+                if (!isOpen.test(this)) {
                     break;
                 }
                 outputStream.write(segment.array, segment.offset, recv);
