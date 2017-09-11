@@ -12,14 +12,15 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
 public class BeanMapper {
     public class Flags {
-        public static final int SkipNull         = 1;
-        public static final int TrimString       = 1 << 1;
-        public static final int ValidateBean     = 1 << 2;
-        public static final int NonCheckAllMatch = 1 << 3;
+        public static final int SkipNull      = 1;
+        public static final int TrimString    = 1 << 1;
+        public static final int ValidateBean  = 1 << 2;
+        public static final int NonCheckMatch = 1 << 3;
     }
 
     private static class MapConfig {
@@ -46,6 +47,7 @@ public class BeanMapper {
         }
     }
 
+    private static final String                      Get         = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
     private static BeanMapper                        instance;
 
@@ -63,20 +65,20 @@ public class BeanMapper {
     private static CacheItem getMethods(Class to) {
         return methodCache.getOrAdd(to, () -> {
             List<Method> setters = Arrays.stream(to.getMethods())
-                    .filter(p -> p.getName().startsWith("set") && p.getParameterCount() == 1)
+                    .filter(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1)
                     .collect(Collectors.toList());
             List<Method> getters = Arrays.stream(to.getMethods())
                     .filter(p -> !"getClass".equals(p.getName())
-                            && (p.getName().startsWith("get") || p.getName().startsWith("is"))
+                            && (p.getName().startsWith(Get) || p.getName().startsWith(GetBool))
                             && p.getParameterCount() == 0)
                     .collect(Collectors.toList());
-            List<Method> s2 = setters.stream().filter(
-                    ps -> getters.stream().anyMatch(pg -> ps.getName().substring(3).equals(pg.getName().substring(3))))
+            List<Method> s2 = setters.stream()
+                    .filter(ps -> getters.stream().anyMatch(pg -> exEquals(pg.getName(), ps.getName())))
                     .collect(Collectors.toList());
-            List<Method> g2 = getters.stream().filter(
-                    pg -> s2.stream().anyMatch(ps -> pg.getName().substring(3).equals(ps.getName().substring(3))))
+            List<Method> g2 = getters.stream()
+                    .filter(pg -> s2.stream().anyMatch(ps -> exEquals(pg.getName(), ps.getName())))
                     .collect(Collectors.toList());
-            return new CacheItem(genKey(to, toMethodNames(s2)), s2, g2);
+            return new CacheItem(genKey(to, new TreeSet<>(toMethodNames(s2))), s2, g2);
         }, true);
     }
 
@@ -84,10 +86,15 @@ public class BeanMapper {
         return methods.stream().map(Method::getName).collect(Collectors.toSet());
     }
 
-    private static UUID genKey(Class to, Set<String> methodNames) {
+    private static boolean exEquals(String getterName, String setterName) {
+        return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length())
+                .equals(setterName.substring(Set.length()));
+    }
+
+    private static UUID genKey(Class to, TreeSet<String> methodNames) {
         StringBuilder k = new StringBuilder(to.getName());
         methodNames.stream().forEachOrdered(k::append);
-        App.logInfo("genKey %s..", k.toString());
+        //App.logInfo("genKey %s..", k.toString());
         return App.hash(k.toString());
     }
 
@@ -104,12 +111,23 @@ public class BeanMapper {
         return mapConfig;
     }
 
-    public synchronized BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher,
-                                             BiConsumer postProcessor, String... ignoreMethods) {
+    public BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher, String... ignoreMethods) {
         MapConfig config = getConfig(from, to);
-        config.methodMatcher = methodMatcher;
-        config.postProcessor = postProcessor;
-        config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+        synchronized (config) {
+            config.methodMatcher = methodMatcher;
+            config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+        }
+        return this;
+    }
+
+    public BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher, BiConsumer postProcessor,
+                                String... ignoreMethods) {
+        MapConfig config = getConfig(from, to);
+        synchronized (config) {
+            config.methodMatcher = methodMatcher;
+            config.postProcessor = postProcessor;
+            config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+        }
         return this;
     }
 
@@ -140,22 +158,23 @@ public class BeanMapper {
 
         Class from = source.getClass(), to = target.getClass();
         MapConfig config = getConfig(from, to);
+        boolean skipNull = checkFlag(flags, Flags.SkipNull), trimString = checkFlag(flags, Flags.TrimString),
+                nonCheckMatch = checkFlag(flags, Flags.NonCheckMatch);
         final CacheItem tmc = getMethods(to);
-        Set<String> targetMethods = new HashSet<>();
+        TreeSet<String> targetMethods = new TreeSet<>();
         config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
-            String mName = methodName.toString();
-            targetMethods.add(mName);
-            if (checkSkip(sourceValue, mName, checkFlag(flags, Flags.SkipNull), config)) {
-                String fn = mName.substring(3);
-                Method gm = tmc.getters.stream().filter(p -> p.getName().endsWith(fn)).findFirst().get();
+            String setterName = methodName.toString();
+            targetMethods.add(setterName);
+            if (checkSkip(sourceValue, setterName, skipNull, config)) {
+                Method gm = tmc.getters.stream().filter(p -> exEquals(p.getName(), setterName)).findFirst().get();
                 return invoke(gm, target);
             }
-            if (checkFlag(flags, Flags.TrimString) && sourceValue instanceof String) {
+            if (trimString && sourceValue instanceof String) {
                 sourceValue = ((String) sourceValue).trim();
             }
             return App.changeType(sourceValue, targetMethodType);
         });
-        Set<String> copiedNames = targetMethods;
+        TreeSet<String> copiedNames = targetMethods;
         if (config.ignoreMethods != null) {
             copiedNames.addAll(config.ignoreMethods);
         }
@@ -165,29 +184,47 @@ public class BeanMapper {
             final CacheItem fmc = getMethods(from);
             for (String missedName : missedNames) {
                 Method fm;
-                String fromName = config.methodMatcher.apply(missedName);
-                if (fromName == null || (fm = fmc.getters.stream().filter(p -> p.getName().equals(fromName)).findFirst()
-                        .orElse(null)) == null) {
+                String fromName = isNull(
+                        config.methodMatcher.apply(missedName.substring(3, 4).toLowerCase() + missedName.substring(4)),
+                        "");
+                if (fromName.length() == 0 || (fm = fmc.getters.stream().filter(p -> gmEquals(p.getName(), fromName))
+                        .findFirst().orElse(null)) == null) {
+                    if (nonCheckMatch) {
+                        continue;
+                    }
                     throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
                             allNames, missedNames);
                 }
+                copiedNames.add(missedName);
+                missedNames.remove(missedName);
                 Object sourceValue = invoke(fm, source);
-                if (checkFlag(flags, Flags.SkipNull) && sourceValue == null) {
+                if (skipNull && sourceValue == null) {
                     continue;
                 }
-                if (checkFlag(flags, Flags.TrimString) && sourceValue instanceof String) {
+                if (trimString && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
                 }
                 Method tm = tmc.setters.stream().filter(p -> p.getName().equals(missedName)).findFirst().get();
                 invoke(tm, target, sourceValue);
-                copiedNames.add(missedName);
-                missedNames.remove(missedName);
             }
         }
-        if (!checkFlag(flags, Flags.NonCheckAllMatch) && !config.isCheck) {
+        if (config.postProcessor != null) {
+            config.postProcessor.accept(source, target);
+        }
+        if (!nonCheckMatch && !config.isCheck) {
             synchronized (config) {
+                for (String missedName : missedNames) {
+                    Method tm;
+                    if ((tm = tmc.getters.stream().filter(p -> exEquals(p.getName(), missedName)).findFirst()
+                            .orElse(null)) == null) {
+                        continue;
+                    }
+                    if (invoke(tm, target) != null) {
+                        copiedNames.add(missedName);
+                    }
+                }
                 UUID k = genKey(to, copiedNames);
-                App.logInfo("check %s %s", k, tmc.key);
+                //App.logInfo("check %s %s", k, tmc.key);
                 if (!k.equals(tmc.key)) {
                     throw new BeanMapException(String.format("Map %s to %s missed method %s..", from.getSimpleName(),
                             to.getSimpleName(), String.join(", ", missedNames)), allNames, missedNames);
@@ -198,10 +235,18 @@ public class BeanMapper {
         if (checkFlag(flags, Flags.ValidateBean)) {
             ValidateUtil.validateBean(target);
         }
-        if (config.postProcessor != null) {
-            config.postProcessor.accept(source, target);
-        }
         return target;
+    }
+
+    private boolean gmEquals(String getterName, String content) {
+        if (content.startsWith(Get)) {
+            content = content.substring(Get.length());
+        } else if (content.startsWith(GetBool)) {
+            content = content.substring(GetBool.length());
+        } else {
+            content = content.substring(0, 1).toUpperCase() + content.substring(1);
+        }
+        return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length()).equals(content);
     }
 
     private Object invoke(Method method, Object obj, Object... args) {
