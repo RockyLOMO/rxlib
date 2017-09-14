@@ -1,3 +1,7 @@
+package org.rx;
+
+import org.rx.ObjectParam;
+import org.rx.ObjectResult;
 import org.rx.util.RestMethod;
 import org.rx.util.RestParam;
 

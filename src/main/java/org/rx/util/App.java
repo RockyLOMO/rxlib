@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import com.google.common.base.Strings;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.rx.common.*;
@@ -77,31 +78,34 @@ public class App {
     }
 
     public static UUID hash(String key) {
+        require(key);
+
         byte[] guidBytes = MD5Util.md5(key);
         return newUUID(guidBytes);
     }
 
     public static UUID newComb(boolean sequentialAtEnd) {
-        byte[] guidBytes = new byte[16];
-        ThreadLocalRandom.current().nextBytes(guidBytes);
-        byte[] msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime() - DateTime.BaseDate.getTime()).array();
-        int copyCount = 6, copyOffset = msecsBytes.length - copyCount;
-        if (sequentialAtEnd) {
-            System.arraycopy(msecsBytes, copyOffset, guidBytes, guidBytes.length - copyCount, copyCount);
-        } else {
-            System.arraycopy(msecsBytes, copyOffset, guidBytes, 0, copyCount);
-        }
-        return newUUID(guidBytes);
+        return newComb(null, null);
     }
 
-    public static UUID createComb(String key, Date now) {
-        return createComb(key, now, false);
+    public static UUID newComb(String key, Date now) {
+        return newComb(key, now, false);
     }
 
     //http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database
-    public static UUID createComb(String key, Date now, boolean sequentialAtEnd) {
-        byte[] guidBytes = MD5Util.md5(key);
-        byte[] msecsBytes = ByteBuffer.allocate(8).putLong(now.getTime() - DateTime.BaseDate.getTime()).array();
+    public static UUID newComb(String key, Date date, boolean sequentialAtEnd) {
+        byte[] guidBytes, msecsBytes;
+        if (key != null) {
+            guidBytes = MD5Util.md5(key);
+        } else {
+            guidBytes = new byte[16];
+            ThreadLocalRandom.current().nextBytes(guidBytes);
+        }
+        if (date != null) {
+            msecsBytes = ByteBuffer.allocate(8).putLong(date.getTime() - DateTime.BaseDate.getTime()).array();
+        } else {
+            msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime() - DateTime.BaseDate.getTime()).array();
+        }
         int copyCount = 6, copyOffset = msecsBytes.length - copyCount;
         if (sequentialAtEnd) {
             System.arraycopy(msecsBytes, copyOffset, guidBytes, guidBytes.length - copyCount, copyCount);
@@ -164,16 +168,16 @@ public class App {
     //endregion
 
     //region Check
-    public static boolean isNullOrEmpty(String obj) {
-        return obj == null || obj.length() == 0 || "null".equals(obj);
+    public static boolean isNullOrEmpty(String s) {
+        return s == null || s.length() == 0 || "null".equals(s);
     }
 
-    public static boolean isNullOrWhiteSpace(String obj) {
-        return isNullOrEmpty(obj) || obj.trim().length() == 0;
+    public static boolean isNullOrWhiteSpace(String s) {
+        return isNullOrEmpty(s) || s.trim().length() == 0;
     }
 
-    public static boolean isNullOrEmpty(Number num) {
-        return num == null || num.equals(0);
+    public static boolean isNullOrEmpty(Number n) {
+        return n == null || n.equals(0);
     }
 
     public static <E> boolean isNullOrEmpty(E[] obj) {
@@ -198,18 +202,26 @@ public class App {
         return t1.equals(t2);
     }
 
-    public static boolean equals(String str1, String str2, boolean ignoreCase) {
-        if (str1 == null) {
-            if (str2 == null) {
+    public static boolean equals(String s1, String s2, boolean ignoreCase) {
+        if (s1 == null) {
+            if (s2 == null) {
                 return true;
             }
             return false;
         }
-        return ignoreCase ? str1.equals(str2) : str1.equalsIgnoreCase(str2);
+        return ignoreCase ? s1.equals(s2) : s1.equalsIgnoreCase(s2);
     }
 
-    public static String[] split(String str, String delimiter) {
-        return str.split(Pattern.quote(delimiter));
+    public static String[] split(String s, String delimiter) {
+        if (isNullOrEmpty(s)) {
+            return new String[0];
+        }
+
+        return s.split(Pattern.quote(delimiter));
+    }
+
+    public static String toTitleCase(String s) {
+        return StringUtils.capitalize(s);
     }
 
     public static String filterPrivacy(String val) {

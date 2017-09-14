@@ -5,6 +5,6 @@ A set of utilities for Java. [rxlib](https://github.com/RockyLOMO/rxlib)
         <dependency>
             <groupId>com.github.rockylomo</groupId>
             <artifactId>rxlib</artifactId>
-            <version>1.0.4</version>
+            <version>1.0.9</version>
         </dependency>
 ```

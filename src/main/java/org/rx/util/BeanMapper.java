@@ -115,7 +115,8 @@ public class BeanMapper {
         MapConfig config = getConfig(from, to);
         synchronized (config) {
             config.methodMatcher = methodMatcher;
-            config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+            config.ignoreMethods = Arrays.stream(ignoreMethods)
+                    .map(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).collect(Collectors.toSet());
         }
         return this;
     }
@@ -126,7 +127,8 @@ public class BeanMapper {
         synchronized (config) {
             config.methodMatcher = methodMatcher;
             config.postProcessor = postProcessor;
-            config.ignoreMethods = new HashSet<>(Arrays.asList(ignoreMethods));
+            config.ignoreMethods = Arrays.stream(ignoreMethods)
+                    .map(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).collect(Collectors.toSet());
         }
         return this;
     }
@@ -189,7 +191,9 @@ public class BeanMapper {
                         "");
                 if (fromName.length() == 0 || (fm = fmc.getters.stream().filter(p -> gmEquals(p.getName(), fromName))
                         .findFirst().orElse(null)) == null) {
-                    if (nonCheckMatch) {
+                    Method tm;
+                    if (nonCheckMatch || ((tm = tmc.getters.stream().filter(p -> exEquals(p.getName(), missedName))
+                            .findFirst().orElse(null)) != null && invoke(tm, target) != null)) {
                         continue;
                     }
                     throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
@@ -244,7 +248,7 @@ public class BeanMapper {
         } else if (content.startsWith(GetBool)) {
             content = content.substring(GetBool.length());
         } else {
-            content = content.substring(0, 1).toUpperCase() + content.substring(1);
+            content = App.toTitleCase(content);
         }
         return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length()).equals(content);
     }

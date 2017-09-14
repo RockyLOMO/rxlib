@@ -220,7 +220,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                         Sockets.getId(p, true));
                 p.close();
             } catch (IOException ex) {
-                logError(ex, "SocketPool.close()");
+                logError(ex, "SocketPool clear");
             }
         });
         pool.clear();

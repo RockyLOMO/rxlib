@@ -2,6 +2,7 @@ package org.rx.socket;
 
 import com.google.common.base.Stopwatch;
 import org.rx.common.Lazy;
+import org.rx.util.WeakCache;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -9,11 +10,14 @@ import java.net.Socket;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 import static org.rx.util.App.logError;
+import static org.rx.util.App.logInfo;
 
 public final class PingClient {
     public class Result {
@@ -50,12 +54,36 @@ public final class PingClient {
     }
 
     public static boolean test(String endpoint) {
-        try {
-            return new PingClient().ping(endpoint).getLossCount() == 0;
-        } catch (Exception ex) {
-            logError(ex, "PingClient.test()");
-            return false;
+        return test(endpoint, null, false);
+    }
+
+    public static boolean test(String endpoint, Consumer<String> onOk, boolean cacheResult) {
+        require(endpoint);
+
+        Consumer<Boolean> consumer = null;
+        if (cacheResult) {
+            WeakCache<String, Object> cache = WeakCache.getInstance();
+            String k = String.format("_PingClient%s", endpoint);
+            Boolean result = as(cache.get(k), Boolean.class);
+            if (result != null) {
+                return result;
+            }
+            consumer = p -> cache.add(k, p);
         }
+        Boolean ok = false;
+        try {
+            ok = new PingClient().ping(endpoint).getLossCount() == 0;
+        } catch (Exception ex) {
+            logInfo("PingClient test error: %s", ex.getMessage());
+        } finally {
+            if (consumer != null) {
+                consumer.accept(ok);
+            }
+            if (ok && onOk != null) {
+                onOk.accept(endpoint);
+            }
+        }
+        return ok;
     }
 
     private Stopwatch watcher;
@@ -77,14 +105,14 @@ public final class PingClient {
                 watcher.start();
                 sock.connect(sockAddr);
             } catch (IOException ex) {
-                logError(ex, "ping");
+                logError(ex, "ping error");
                 return null;
             } finally {
                 watcher.stop();
                 try {
                     sock.close();
                 } catch (IOException ex) {
-                    logError(ex, "PingClient.ping()");
+                    logError(ex, "ping error");
                 }
             }
             return watcher.elapsed(TimeUnit.MILLISECONDS);

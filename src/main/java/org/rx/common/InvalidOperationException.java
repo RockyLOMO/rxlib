@@ -9,7 +9,7 @@ public class InvalidOperationException extends NestedRuntimeException {
     }
 
     public InvalidOperationException(String friendlyMessage) {
-        this(friendlyMessage, null);
+        this(friendlyMessage, (Throwable) null);
     }
 
     public InvalidOperationException(Throwable ex) {
@@ -18,5 +18,9 @@ public class InvalidOperationException extends NestedRuntimeException {
 
     public InvalidOperationException(String friendlyMessage, Throwable ex) {
         super(Strings.isNullOrEmpty(friendlyMessage) ? "网络异常，稍后再试。" : friendlyMessage, ex);
+    }
+
+    public InvalidOperationException(String format, Object... args) {
+        super(String.format(format, args));
     }
 }

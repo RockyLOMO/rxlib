@@ -5,6 +5,7 @@ import org.rx.util.App;
 import java.net.*;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.wrapCause;
@@ -29,20 +30,29 @@ public final class Sockets {
         return addr.getHostString() + ":" + addr.getPort();
     }
 
-    public static InetSocketAddress parseAddress(String sockAddr) {
-        require(sockAddr);
-        String[] arr = sockAddr.split(":");
+    public static InetSocketAddress parseAddress(String endpoint) {
+        require(endpoint);
+        String[] arr = endpoint.split(":");
         require(arr, p -> p.length == 2);
 
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
 
-    public static void setHttpProxy(String sockAddr) {
-        setHttpProxy(sockAddr, null, null, null);
+    public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {
+        setHttpProxy(proxyAddr);
+        try {
+            return func.apply(proxyAddr);
+        } finally {
+            clearHttpProxy();
+        }
     }
 
-    public static void setHttpProxy(String sockAddr, List<String> nonProxyHosts, String userName, String password) {
-        InetSocketAddress ipe = parseAddress(sockAddr);
+    public static void setHttpProxy(String proxyAddr) {
+        setHttpProxy(proxyAddr, null, null, null);
+    }
+
+    public static void setHttpProxy(String proxyAddr, List<String> nonProxyHosts, String userName, String password) {
+        InetSocketAddress ipe = parseAddress(proxyAddr);
         Properties prop = System.getProperties();
         prop.setProperty("http.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));
@@ -55,6 +65,14 @@ public final class Sockets {
         if (userName != null && password != null) {
             Authenticator.setDefault(new UserAuthenticator(userName, password));
         }
+    }
+
+    public static void clearHttpProxy() {
+        System.clearProperty("http.proxyHost");
+        System.clearProperty("http.proxyPort");
+        System.clearProperty("https.proxyHost");
+        System.clearProperty("https.proxyPort");
+        System.clearProperty("http.nonProxyHosts");
     }
 
     static class UserAuthenticator extends Authenticator {

@@ -15,6 +15,19 @@ import static org.rx.util.App.logError;
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
 public final class WeakCache<TK, TV> {
+    private static WeakCache<String, Object> instance;
+
+    public static WeakCache<String, Object> getInstance() {
+        if (instance == null) {
+            synchronized (WeakCache.class) {
+                if (instance == null) {
+                    instance = new WeakCache<>();
+                }
+            }
+        }
+        return instance;
+    }
+
     private ConcurrentMap<TK, Reference> container;
     private boolean                      softRef;
 
@@ -73,7 +86,7 @@ public final class WeakCache<TK, TV> {
             try {
                 ac.close();
             } catch (Exception ex) {
-                logError(ex, "WeakCache.destroy");
+                logError(ex, "Auto close error");
             }
         }
         ref.clear();

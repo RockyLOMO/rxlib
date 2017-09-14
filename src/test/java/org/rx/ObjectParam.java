@@ -1,3 +1,5 @@
+package org.rx;
+
 public class ObjectParam {
     private int a,b;
 

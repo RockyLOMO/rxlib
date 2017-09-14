@@ -1,3 +1,5 @@
+package org.rx;
+
 public class ObjectResult {
     private int code;
     private int val;

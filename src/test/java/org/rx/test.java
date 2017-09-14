@@ -15,12 +15,12 @@
 //    private static void testRest() {
 //        String proxy = null;
 //        proxy = "127.0.0.1:8888";
-//        RestApi client = RestClient.create(RestApi.class, "http://localhost:8081", proxy, true);
+//        org.rx.RestApi client = RestClient.create(org.rx.RestApi.class, "http://localhost:8081", proxy, true);
 //        System.out.println(client.getClass());
 //        client.test();
 //        client.add(1, 1);
 //        client.login("Rocky", "abc123");
-//        ObjectParam p = new ObjectParam();
+//        org.rx.ObjectParam p = new org.rx.ObjectParam();
 //        p.setA(12);
 //        p.setB(12);
 //        client.add2(p);
