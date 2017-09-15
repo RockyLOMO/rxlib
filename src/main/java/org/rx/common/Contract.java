@@ -67,8 +67,12 @@ public class Contract {
     }
 
     public static String toJSONString(Object... args) {
+        return toJSONString(args);
+    }
+
+    public static String toJSONString(Object arg) {
         try {
-            return JSON.toJSONString(args, SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(arg, SerializerFeature.DisableCircularReferenceDetect);
         } catch (Exception ex) {
             return String.format("[\"_error\":\"%s\"]", ex.getMessage());
         }

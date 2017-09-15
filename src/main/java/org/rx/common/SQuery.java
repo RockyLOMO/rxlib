@@ -325,7 +325,8 @@ public final class SQuery<T> implements Iterable<T> {
     }
 
     public long count() {
-        return stream().count();
+        //        return stream().count();
+        return current.size();
     }
 
     public long count(Predicate<T> predicate) {
