@@ -36,15 +36,15 @@ public class App {
     public static final String                    Catalina    = System.getProperty("catalina.home"), UTF8 = "UTF-8";
     private static final Log                      log1        = LogFactory.getLog("helperInfo"),
             log2 = LogFactory.getLog("helperError");
-    private static final NQuery<Class<?>>         SupportTypes;
-    private static final NQuery<SimpleDateFormat> SupportDateFormats;
+    private static final SQuery<Class<?>>         SupportTypes;
+    private static final SQuery<SimpleDateFormat> SupportDateFormats;
     private static final String                   base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
 
     static {
-        SupportTypes = new NQuery<>(new Class<?>[] { String.class, Boolean.class, Byte.class, Short.class,
-                Integer.class, Long.class, Float.class, Double.class, BigDecimal.class, UUID.class, Date.class, });
-        SupportDateFormats = new NQuery<>(new SimpleDateFormat[] { new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
-                new SimpleDateFormat("yyyyMMddHHmmss") });
+        SupportTypes = SQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
+                Float.class, Double.class, BigDecimal.class, UUID.class, Date.class);
+        SupportDateFormats = SQuery.of(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
+                new SimpleDateFormat("yyyyMMddHHmmss"));
     }
     //endregion
 
@@ -343,12 +343,7 @@ public class App {
             return (T) value.toString();
         }
 
-        if (!(SupportTypes.any(new Function<Class<?>, Boolean>() {
-            @Override
-            public Boolean apply(Class<?> arg) {
-                return arg.equals(fromType);
-            }
-        }) || fromType.isEnum())) {
+        if (!(SupportTypes.any(p -> p.equals(fromType)) || fromType.isEnum())) {
             throw newCause("不支持类型%s=>%s的转换", fromType, toType);
         }
 
@@ -368,7 +363,7 @@ public class App {
                 }
             }
             if (value == null) {
-                NQuery<String> q = SupportDateFormats.select(new Function<SimpleDateFormat, String>() {
+                SQuery<String> q = SupportDateFormats.select(new Function<SimpleDateFormat, String>() {
                     @Override
                     public String apply(SimpleDateFormat arg) {
                         return arg.toPattern();

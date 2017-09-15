@@ -181,10 +181,11 @@ public class BeanMapper {
             copiedNames.addAll(config.ignoreMethods);
         }
         Set<String> allNames = toMethodNames(tmc.setters),
-                missedNames = new NQuery<>(allNames).except(copiedNames).toSet();
+                missedNames = SQuery.of(allNames).except(copiedNames).toSet();
         if (config.methodMatcher != null) {
             final CacheItem fmc = getMethods(from);
-            for (String missedName : missedNames) {
+            //避免missedNames.remove引发异常
+            for (String missedName : new ArrayList<>(missedNames)) {
                 Method fm;
                 String fromName = isNull(
                         config.methodMatcher.apply(missedName.substring(3, 4).toLowerCase() + missedName.substring(4)),
