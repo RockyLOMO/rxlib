@@ -4,6 +4,7 @@ import org.rx.util.App;
 import org.springframework.core.NestedRuntimeException;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.rx.common.Contract.isNull;
@@ -14,12 +15,12 @@ import static org.rx.common.Contract.toJSONString;
  */
 public class InvalidOperationException extends NestedRuntimeException {
     public static final String               ErrorFile  = "ErrorCode";
-    public static final String               DefaultKey = "default";
+    public static final String               DefaultKey = "default", DefaultMsg = "网络繁忙，请稍后再试。";
     private static final Map<String, String> settings   = App.readSettings(ErrorFile);
 
     private String                           friendlyMessage;
     private Enum                             errorCode;
-    private Lazy<Map<String, Object>> data;
+    private Map<String, Object>              data;
     /**
      * Gets or sets the class of the object that causes the error.
      */
@@ -35,7 +36,7 @@ public class InvalidOperationException extends NestedRuntimeException {
     }
 
     public String getFriendlyMessage() {
-        return isNull(friendlyMessage, isNull(settings.get(DefaultKey), "网络繁忙，请稍后再试。"));
+        return isNull(friendlyMessage, isNull(settings.get(DefaultKey), DefaultMsg));
     }
 
     public Enum getErrorCode() {
@@ -43,7 +44,10 @@ public class InvalidOperationException extends NestedRuntimeException {
     }
 
     public Map<String, Object> getData() {
-        return data.getValue();
+        if (data == null) {
+            data = new HashMap<>();
+        }
+        return data;
     }
 
     public InvalidOperationException(String format, Object... args) {
@@ -52,6 +56,32 @@ public class InvalidOperationException extends NestedRuntimeException {
 
     public InvalidOperationException(Throwable ex) {
         super(ex.getMessage(), ex);
+    }
+
+    public InvalidOperationException(Enum errorCode, Tuple<String, Object>... data) {
+        super(isNull(settings.get(DefaultKey), DefaultMsg));
+
+        if ((this.errorCode = errorCode) == null) {
+            return;
+        }
+        Map<String, Object> errorData = getData();
+        if (!App.isNullOrEmpty(data)) {
+            for (Tuple<String, Object> tuple : data) {
+                errorData.put(tuple.left, tuple.right);
+            }
+        }
+        String pk = String.format("%s.%s", errorCode.getClass().getName(), errorCode.name());
+        String pv = settings.get(pk);
+        if (pv == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : errorData.entrySet()) {
+            String k = entry.getKey(), v = isNull(entry.getValue(), "").toString();
+            //            System.out.println(k + ": " + v);
+            pv = pv.replace(k, v);
+        }
+        friendlyMessage = pv;
+        return;
     }
 
     public InvalidOperationException setSource(Class source, Object... args) {
@@ -106,22 +136,8 @@ public class InvalidOperationException extends NestedRuntimeException {
         return this;
     }
 
-    public InvalidOperationException setErrorCode(Enum errorCode, Tuple<String, Object>... data) {
-        if ((this.errorCode = errorCode) == null) {
-            return this;
-        }
-        Map<String, Object> errorData = getData();
-        if (!App.isNullOrEmpty(data)) {
-            for (Tuple<String, Object> tuple : data) {
-                errorData.put(tuple.left, tuple.right);
-            }
-        }
-
-        return this;
-    }
-
-    public InvalidOperationException setFriendlyMessage(String friendlyMessage) {
-        this.friendlyMessage = friendlyMessage;
+    public InvalidOperationException setFriendlyMessage(String format, Object... args) {
+        friendlyMessage = String.format(format, args);
         return this;
     }
 }
