@@ -16,6 +16,10 @@ import static org.rx.Contract.toJSONString;
  * .fillInStackTrace()
  */
 public class SystemException extends NestedRuntimeException {
+    public interface EnumErrorCode {
+        String[] messageKeys();
+    }
+
     public static final String               ErrorFile = "errorCode";
     public static final String               DefaultMessage;
     private static final Map<String, String> Settings;
@@ -35,7 +39,8 @@ public class SystemException extends NestedRuntimeException {
      * Gets the method that throws the current exception.
      */
     private BiTuple<Class, Method, ErrorCode> targetSite;
-    //    private Object[]                          parameterValues;
+    private Object[]                          parameterValues;
+    private EnumErrorCode                     errorCode;
 
     @Override
     public String getMessage() {
@@ -57,9 +62,9 @@ public class SystemException extends NestedRuntimeException {
         return targetSite;
     }
 
-    //    protected Object[] getParameterValues() {
-    //        return parameterValues;
-    //    }
+    public EnumErrorCode getErrorCode() {
+        return errorCode;
+    }
 
     protected SystemException(String message) {
         super(message);
@@ -139,7 +144,7 @@ public class SystemException extends NestedRuntimeException {
                         break;
                     }
                 }
-                if (source == null || targetSite == null || errorCode == null) {
+                if (errorCode == null) {
                     continue;
                 }
 
@@ -174,85 +179,38 @@ public class SystemException extends NestedRuntimeException {
         }
     }
 
-    //    public SystemException(Class source, Object... messageValues) {
-    //        this(null, source, null, messageValues);
-    //    }
-    //
-    //    public SystemException(Throwable ex, Class source, String errorName, Object... messageValues) {
-    //        super(DefaultMessage);
-    //
-    //        setSource(source, errorName);
-    //        if (this.source == null) {
-    //            return;
-    //        }
-    //        ErrorCode targetSiteCode = targetSite.right;
-    //        String pk = String.format("%s.%s", this.source.getName(),
-    //                !App.isNullOrEmpty(targetSiteCode.value()) ? targetSiteCode.value() : targetSite.left.getName());
-    //        setErrorMessage(pk, targetSiteCode.messageKeys(), messageValues);
-    //    }
-    //
-    //    private SystemException setSource(Class source, String errorName) {
-    //        if (source == null) {
-    //            return this;
-    //        }
-    //        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-    //        Logger.debug(toJSONString("setSource.step1", source.getName(), stackTrace));
-    //        StackTraceElement target = NQuery.of(stackTrace).where(p -> p.getClassName().equals(source.getName()))
-    //                .firstOrDefault();
-    //        if (target == null) {
-    //            return this;
-    //        }
-    //        Logger.debug(toJSONString("setSource.step2", target.getMethodName(), errorName));
-    //
-    //        Tuple<Method, ErrorCode> caller = NQuery.of(source.getDeclaredMethods()).select(p -> {
-    //            p.setAccessible(true);
-    //            return Tuple.of(p, p.getAnnotation(ErrorCode.class));
-    //        }).where(p -> {
-    //            boolean ok = p.right != null && p.left.getName().equals(target.getMethodName());
-    //            if (errorName != null) {
-    //                ok = ok && errorName.equals(p.right.value());
-    //            }
-    //            return ok;
-    //        }).firstOrDefault();
-    //        if (caller != null) {
-    //            this.source = source;
-    //            this.targetSite = caller;
-    //            Logger.debug("setSource ok");
-    //        }
-    //        return this;
-    //    }
-    //
-    //    private SystemException setErrorMessage(String propKey, String[] messageKeys, Object[] messageValues) {
-    //        String pv = Settings.get(propKey);
-    //        if (pv == null) {
-    //            return this;
-    //        }
-    //        for (int i = 0; i < messageKeys.length; i++) {
-    //            String k = messageKeys[i], v = isNull(messageValues[i], "").toString();
-    //            pv = pv.replace(k, v);
-    //        }
-    //        friendlyMessage = pv;
-    //        return this;
-    //    }
-    //
-    //    public SystemException setErrorCode(Enum errorCode, Tuple<String, Object>... data) {
-    //        if ((this.errorCode = errorCode) == null) {
-    //            return this;
-    //        }
-    //        Map<String, Object> errorData = getData();
-    //        if (!App.isNullOrEmpty(data)) {
-    //            for (Tuple<String, Object> tuple : data) {
-    //                errorData.put(tuple.left, tuple.right);
-    //            }
-    //        }
-    //        if (errorData.isEmpty()) {
-    //            return this;
-    //        }
-    //
-    //        String pk = String.format("%s.%s", errorCode.getClass().getName(), errorCode.name());
-    //        setErrorMessage(pk, NQuery.of(errorData.keySet()).toArray(String.class), errorData.values().toArray());
-    //        return this;
-    //    }
+    protected SystemException setParameterValues(Object... args) {
+        parameterValues = args;
+        return this;
+    }
+
+    public <T extends Enum<T> & EnumErrorCode> SystemException setErrorCode(T errorCode, Object... messageValues) {
+        if ((this.errorCode = errorCode) == null) {
+            Logger.debug("SystemException: setErrorCode errorCode is null");
+            return this;
+        }
+        String[] messageKeys = errorCode.messageKeys();
+        if (App.isNullOrEmpty(messageKeys) || App.isNullOrEmpty(messageValues)
+                || messageKeys.length != messageValues.length) {
+            return this;
+        }
+        String pk = String.format("%s.%s", errorCode.getClass().getName(), errorCode.name());
+        String pv = Settings.get(pk);
+        if (pv == null) {
+            return this;
+        }
+
+        Map<String, Object> errorData = getData();
+        for (int i = 0; i < messageKeys.length; i++) {
+            errorData.put(messageKeys[i], messageValues[i]);
+        }
+        for (Map.Entry<String, Object> entry : errorData.entrySet()) {
+            String k = entry.getKey(), v = toJSONString(entry.getValue());
+            pv = pv.replace(k, v);
+        }
+        friendlyMessage = pv;
+        return this;
+    }
 
     public SystemException setFriendlyMessage(String format, Object... args) {
         friendlyMessage = String.format(format, args);
