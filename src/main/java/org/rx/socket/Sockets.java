@@ -1,14 +1,14 @@
 package org.rx.socket;
 
-import org.rx.util.App;
+import org.rx.App;
 
 import java.net.*;
+import org.rx.SystemException;
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.wrapCause;
+import static org.rx.Contract.require;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;
@@ -18,7 +18,7 @@ public final class Sockets {
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -33,7 +33,7 @@ public final class Sockets {
     public static InetSocketAddress parseAddress(String endpoint) {
         require(endpoint);
         String[] arr = endpoint.split(":");
-        require(arr, p -> p.length == 2);
+        require(arr, arr.length == 2);
 
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }

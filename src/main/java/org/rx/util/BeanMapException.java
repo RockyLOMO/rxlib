@@ -1,10 +1,10 @@
 package org.rx.util;
 
-import org.rx.common.InvalidOperationException;
+import org.rx.SystemException;
 
 import java.util.Set;
 
-public class BeanMapException extends InvalidOperationException {
+public class BeanMapException extends SystemException {
     private Set<String> allMethodNames, missedMethodNames;
 
     public Set<String> getAllMethodNames() {

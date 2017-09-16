@@ -1,17 +1,17 @@
 package org.rx.socket;
 
-import org.rx.common.DateTime;
+import org.rx.DateTime;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import org.rx.Logger;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
-import static org.rx.common.Contract.require;
-import static org.rx.util.App.logError;
+import static org.rx.Contract.require;
 
 public final class SocketPool extends Traceable implements AutoCloseable {
     public static final class PooledSocket implements AutoCloseable {
@@ -220,7 +220,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                         Sockets.getId(p, true));
                 p.close();
             } catch (IOException ex) {
-                logError(ex, "SocketPool clear");
+                Logger.error(ex, "SocketPool clear");
             }
         });
         pool.clear();

@@ -2,14 +2,12 @@ package org.rx.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import org.rx.Logger;
 import java.util.concurrent.*;
 import java.util.function.Func;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.wrapCause;
-import static org.rx.util.App.logError;
-import static org.rx.util.App.logInfo;
+import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
 
 public final class AsyncTask {
     private static class NamedRunnable implements Runnable, Callable {
@@ -55,11 +53,11 @@ public final class AsyncTask {
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-                .setUncaughtExceptionHandler((thread, ex) -> logError(wrapCause(ex), thread.getName()))
+                .setUncaughtExceptionHandler((thread, ex) -> Logger.error(ex, thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
         this.executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
                 threadFactory, (p1, p2) -> {
-                    logInfo("AsyncTask rejected task: %s", p1.toString());
+                    Logger.info("AsyncTask rejected task: %s", p1.toString());
                     p1.run();
                 });
     }

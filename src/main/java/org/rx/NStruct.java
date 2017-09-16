@@ -1,26 +1,16 @@
-package org.rx.common;
+package org.rx;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
 
-import static org.rx.common.Contract.wrapCause;
-
 public abstract class NStruct implements Serializable {
-    static final long         serialVersionUID = 42L;
-    private transient Field[] fields;
-
-    private Field[] getFields() {
-        if (fields == null) {
-            fields = this.getClass().getDeclaredFields();
-        }
-        return fields;
-    }
+    static final long               serialVersionUID = 42L;
+    private transient Lazy<Field[]> fields           = new Lazy<>(() -> this.getClass().getDeclaredFields());
 
     @Override
     public int hashCode() {
         StringBuilder hex = new StringBuilder();
-        for (Field field : getFields()) {
-            //System.out.println("item " + field.getName());
+        for (Field field : fields.getValue()) {
             field.setAccessible(true);
             try {
                 Object val = field.get(this);
@@ -28,10 +18,9 @@ public abstract class NStruct implements Serializable {
                     hex.append(val.hashCode());
                 }
             } catch (IllegalAccessException ex) {
-                throw Contract.wrapCause(ex);
+                throw new SystemException(ex);
             }
         }
-        //System.out.println(String.format("hashCode=%s", hex.toString()));
         return hex.toString().hashCode();
     }
 

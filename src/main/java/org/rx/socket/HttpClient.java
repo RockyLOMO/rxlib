@@ -1,15 +1,15 @@
-package org.rx.util;
+package org.rx.socket;
 
 import com.alibaba.fastjson.JSON;
-import org.rx.socket.Sockets;
+import org.rx.App;
+import org.rx.SystemException;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.wrapCause;
+import static org.rx.Contract.isNull;
 
 /**
  * http://www.jianshu.com/p/aa3f066263ed
@@ -20,7 +20,7 @@ public class HttpClient {
         try {
             return URLEncoder.encode(val, App.UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -40,7 +40,7 @@ public class HttpClient {
                 map.put(key, value);
             }
         } catch (UnsupportedEncodingException ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
         return map;
     }
@@ -121,8 +121,8 @@ public class HttpClient {
     }
 
     private String exec(String url, String method, String content, String contentType, int timeout) {
+        String charset = App.UTF8;
         try {
-            String charset = App.UTF8;
             URL uri = new URL(url);
             HttpURLConnection client = (HttpURLConnection) (proxyHost != null
                     ? uri.openConnection(new Proxy(Proxy.Type.HTTP, Sockets.parseAddress(proxyHost)))
@@ -151,7 +151,7 @@ public class HttpClient {
             }
             return App.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
         } catch (Exception ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 }

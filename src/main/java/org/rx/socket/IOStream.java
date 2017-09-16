@@ -1,6 +1,7 @@
 package org.rx.socket;
 
-import org.rx.common.BytesSegment;
+import org.rx.SystemException;
+import org.rx.cache.BytesSegment;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -8,15 +9,14 @@ import java.io.OutputStream;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.wrapCause;
+import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
 
 public final class IOStream implements AutoCloseable {
     private static final Predicate<IOStream> DefaultIsOpen = p -> true;
     private final InputStream                inputStream;
     private final OutputStream               outputStream;
-    private final BytesSegment               segment;
+    private final BytesSegment segment;
 
     public InputStream getInputStream() {
         return inputStream;
@@ -45,7 +45,7 @@ public final class IOStream implements AutoCloseable {
             outputStream.close();
             segment.close();
         } catch (IOException ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -70,7 +70,7 @@ public final class IOStream implements AutoCloseable {
             outputStream.flush();
             return recv;
         } catch (IOException ex) {
-            throw wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 }

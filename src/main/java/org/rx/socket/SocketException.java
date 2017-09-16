@@ -1,10 +1,10 @@
 package org.rx.socket;
 
-import org.rx.common.InvalidOperationException;
+import org.rx.SystemException;
 
 import java.net.InetSocketAddress;
 
-public class SocketException extends InvalidOperationException {
+public class SocketException extends SystemException {
     private InetSocketAddress localAddress;
 
     public InetSocketAddress getLocalAddress() {

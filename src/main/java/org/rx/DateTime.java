@@ -1,13 +1,13 @@
-package org.rx.common;
+package org.rx;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 
-import static org.rx.common.Contract.require;
+import static org.rx.Contract.require;
 
-public class DateTime extends Date {
+public final class DateTime extends Date {
     //2000-01-01
     public static final Date    BaseDate      = new Date(100, 0, 1);
     private static final String DefaultFormat = "yyyy-MM-dd HH:mm:ss";
@@ -33,12 +33,12 @@ public class DateTime extends Date {
         this(new SimpleDateFormat(format).parse(sDate));
     }
 
-    public DateTime(long ticks) {
-        super(ticks);
-    }
-
     public DateTime(Date date) {
         super(date.getTime());
+    }
+
+    public DateTime(long ticks) {
+        super(ticks);
     }
 
     public DateTime addYears(int value) {

@@ -1,9 +1,8 @@
-package org.rx.common;
+package org.rx;
 
 import java.util.function.Supplier;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.wrapCause;
+import static org.rx.Contract.require;
 
 public final class Lazy<T> {
     private T                 value;
@@ -29,7 +28,7 @@ public final class Lazy<T> {
             try {
                 return type.newInstance();
             } catch (ReflectiveOperationException ex) {
-                throw wrapCause(ex);
+                throw new SystemException(ex);
             }
         });
     }

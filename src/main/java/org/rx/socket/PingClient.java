@@ -1,8 +1,9 @@
 package org.rx.socket;
 
 import com.google.common.base.Stopwatch;
-import org.rx.common.Lazy;
-import org.rx.util.WeakCache;
+import org.rx.cache.WeakCache;
+import org.rx.Lazy;
+import org.rx.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -13,11 +14,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
-import static org.rx.util.App.logError;
-import static org.rx.util.App.logInfo;
+import static org.rx.Contract.as;
+import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
 
 public final class PingClient {
     public class Result {
@@ -74,7 +73,7 @@ public final class PingClient {
         try {
             ok = new PingClient().ping(endpoint).getLossCount() == 0;
         } catch (Exception ex) {
-            logInfo("PingClient test error: %s", ex.getMessage());
+            Logger.info("PingClient test error: %s", ex.getMessage());
         } finally {
             if (consumer != null) {
                 consumer.accept(ok);
@@ -105,14 +104,14 @@ public final class PingClient {
                 watcher.start();
                 sock.connect(sockAddr);
             } catch (IOException ex) {
-                logError(ex, "ping error");
+                Logger.error(ex, "Ping error");
                 return null;
             } finally {
                 watcher.stop();
                 try {
                     sock.close();
                 } catch (IOException ex) {
-                    logError(ex, "ping error");
+                    Logger.info("Ping error: %s", ex.getMessage());
                 }
             }
             return watcher.elapsed(TimeUnit.MILLISECONDS);

@@ -1,15 +1,20 @@
-package org.rx.common;
+package org.rx;
 
+import java.io.Serializable;
 import java.util.Calendar;
 import java.util.Date;
 
 /**
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
-public class TimeSpan {
+public final class TimeSpan implements Serializable {
     private long ticks;
 
-    public TimeSpan(long ticks) {
+    public long getTicks() {
+        return ticks;
+    }
+
+    public void setTicks(long ticks) {
         this.ticks = ticks;
     }
 
@@ -17,12 +22,8 @@ public class TimeSpan {
         this(start.getTime() - end.getTime());
     }
 
-    public long getTicks() {
-        return ticks;
-    }
-
-    public void setTicks(long value) {
-        this.ticks = value;
+    public TimeSpan(long ticks) {
+        this.ticks = ticks;
     }
 
     public long getDays() {

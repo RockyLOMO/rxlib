@@ -1,9 +1,9 @@
-package org.rx.common;
+package org.rx;
 
 import com.alibaba.fastjson.JSON;
 import com.google.common.collect.Streams;
-import org.rx.util.App;
 
+import java.lang.reflect.Array;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -14,14 +14,15 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import static org.rx.common.Contract.*;
+import static org.rx.Contract.*;
+import static org.rx.SystemException.values;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
  * 
  * @param <T>
  */
-public final class SQuery<T> implements Iterable<T> {
+public final class NQuery<T> implements Iterable<T> {
     @FunctionalInterface
     public interface IndexSelector<T, TR> {
         TR apply(T t, long index);
@@ -39,20 +40,20 @@ public final class SQuery<T> implements Iterable<T> {
     //region of
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
-    public static <T> SQuery<T> of(T... args) {
+    public static <T> NQuery<T> of(T... args) {
         return of(Arrays.stream(args));
     }
 
-    public static <T> SQuery<T> of(Collection<T> set) {
+    public static <T> NQuery<T> of(Collection<T> set) {
         require(set);
 
         return of(set.stream());
     }
 
-    public static <T> SQuery<T> of(Stream<T> stream) {
+    public static <T> NQuery<T> of(Stream<T> stream) {
         require(stream);
 
-        return new SQuery<>(stream);
+        return new NQuery<>(stream);
     }
     //endregion
 
@@ -64,7 +65,7 @@ public final class SQuery<T> implements Iterable<T> {
         return isParallel ? current.parallelStream() : current.stream();
     }
 
-    private SQuery(Stream<T> stream) {
+    private NQuery(Stream<T> stream) {
         isParallel = stream.isParallel();
         current = stream.collect(Collectors.toList());
     }
@@ -90,20 +91,20 @@ public final class SQuery<T> implements Iterable<T> {
         return isParallel ? set.parallelStream() : set.stream();
     }
 
-    private <TR> SQuery<TR> me(Collection<TR> set) {
+    private <TR> NQuery<TR> me(Collection<TR> set) {
         this.current = set;
-        return (SQuery<TR>) this;
+        return (NQuery<TR>) this;
     }
 
-    private <TR> SQuery<TR> me(Stream<TR> stream) {
+    private <TR> NQuery<TR> me(Stream<TR> stream) {
         return me(stream.collect(Collectors.toList()));
     }
 
-    private SQuery<T> me(EachFunc<T> func) {
+    private NQuery<T> me(EachFunc<T> func) {
         return me(stream(), func);
     }
 
-    private <TR> SQuery<TR> me(Stream<TR> stream, EachFunc<TR> func) {
+    private <TR> NQuery<TR> me(Stream<TR> stream, EachFunc<TR> func) {
         boolean isParallel = stream.isParallel();
         Spliterator<TR> spliterator = stream.spliterator();
         return me(StreamSupport.stream(
@@ -114,8 +115,6 @@ public final class SQuery<T> implements Iterable<T> {
                     @Override
                     public boolean tryAdvance(Consumer action) {
                         return spliterator.tryAdvance(p -> {
-                            //                            StringBuilder log = new StringBuilder();
-                            //                            log.appendLine("start %s %s...", JSON.toJSONString(p), counter.get());
                             int flags = func.each(p, counter.getAndIncrement());
                             if ((flags & EachFunc.Accept) == EachFunc.Accept) {
                                 action.accept(p);
@@ -123,8 +122,6 @@ public final class SQuery<T> implements Iterable<T> {
                             if ((flags & EachFunc.Break) == EachFunc.Break) {
                                 breaker.set(true);
                             }
-                            //                            log.appendLine("end %s...", flags);
-                            //                            System.out.println(log);
                         }) && !breaker.get();
                     }
                 }, isParallel));
@@ -141,7 +138,7 @@ public final class SQuery<T> implements Iterable<T> {
     }
     //endregion
 
-    public SQuery<T> each(IndexPredicate<T> func) {
+    public NQuery<T> each(IndexPredicate<T> func) {
         Iterator<T> tor = this.iterator();
         int i = 0;
         while (tor.hasNext()) {
@@ -152,33 +149,33 @@ public final class SQuery<T> implements Iterable<T> {
         return this;
     }
 
-    public <TR> SQuery<TR> select(Function<T, TR> selector) {
+    public <TR> NQuery<TR> select(Function<T, TR> selector) {
         return me(stream().map(selector));
     }
 
-    public <TR> SQuery<TR> select(IndexSelector<T, TR> selector) {
+    public <TR> NQuery<TR> select(IndexSelector<T, TR> selector) {
         List<TR> result = newList();
         AtomicLong counter = new AtomicLong();
         stream().forEach(t -> result.add(selector.apply(t, counter.getAndIncrement())));
         return me(result);
     }
 
-    public <TR> SQuery<TR> selectMany(Function<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(Function<T, Collection<TR>> selector) {
         return me(stream().flatMap(p -> newStream(selector.apply(p))));
     }
 
-    public <TR> SQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
         List<TR> result = newList();
         AtomicLong counter = new AtomicLong();
         stream().forEach(t -> newStream(selector.apply(t, counter.getAndIncrement())).forEach(result::add));
         return me(result);
     }
 
-    public SQuery<T> where(Predicate<T> predicate) {
+    public NQuery<T> where(Predicate<T> predicate) {
         return me(stream().filter(predicate));
     }
 
-    public SQuery<T> where(IndexPredicate<T> predicate) {
+    public NQuery<T> where(IndexPredicate<T> predicate) {
         List<T> result = newList();
         AtomicLong counter = new AtomicLong();
         stream().forEach(t -> {
@@ -190,20 +187,20 @@ public final class SQuery<T> implements Iterable<T> {
         return me(result);
     }
 
-    public <TI, TR> SQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector,
+    public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector,
                                     BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(
                 p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
-    public <TI, TR> SQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector,
+    public <TI, TR> NQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector,
                                     BiFunction<T, TI, TR> resultSelector) {
         List<TI> inner = newList();
         stream().forEach(t -> inner.add(innerSelector.apply(t)));
         return join(inner, keySelector, resultSelector);
     }
 
-    public <TI, TR> SQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector,
+    public <TI, TR> NQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector,
                                         BiFunction<T, TI, TR> resultSelector) {
         List<TI> inner = newList();
         stream().forEach(t -> newStream(innerSelector.apply(t)).forEach(inner::add));
@@ -226,27 +223,27 @@ public final class SQuery<T> implements Iterable<T> {
         return stream().anyMatch(p -> p.equals(item));
     }
 
-    public SQuery<T> concat(Collection<T> set) {
+    public NQuery<T> concat(Collection<T> set) {
         return me(Stream.concat(stream(), newStream(set)));
     }
 
-    public SQuery<T> distinct() {
+    public NQuery<T> distinct() {
         return me(stream().distinct());
     }
 
-    public SQuery<T> except(Collection<T> set) {
+    public NQuery<T> except(Collection<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public SQuery<T> intersect(Collection<T> set) {
+    public NQuery<T> intersect(Collection<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public SQuery<T> union(Collection<T> set) {
+    public NQuery<T> union(Collection<T> set) {
         return concat(set);
     }
 
-    public <TK> SQuery<T> orderBy(Function<T, TK> keySelector) {
+    public <TK> NQuery<T> orderBy(Function<T, TK> keySelector) {
         return me(stream().sorted(getComparator(keySelector)));
     }
 
@@ -260,11 +257,11 @@ public final class SQuery<T> implements Iterable<T> {
         };
     }
 
-    public <TK> SQuery<T> orderByDescending(Function<T, TK> keySelector) {
+    public <TK> NQuery<T> orderByDescending(Function<T, TK> keySelector) {
         return me(stream().sorted(getComparator(keySelector).reversed()));
     }
 
-    public SQuery<T> orderByMany(Function<T, Object[]> keySelector) {
+    public NQuery<T> orderByMany(Function<T, Object[]> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
@@ -287,15 +284,15 @@ public final class SQuery<T> implements Iterable<T> {
         };
     }
 
-    public SQuery<T> orderByDescendingMany(Function<T, Object[]> keySelector) {
+    public NQuery<T> orderByDescendingMany(Function<T, Object[]> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
-    public SQuery<T> reverse() {
+    public NQuery<T> reverse() {
         return me(stream().sorted((Comparator<T>) ReverseOrder));
     }
 
-    public <TK, TR> SQuery<TR> groupBy(Function<T, TK> keySelector, Function<Tuple<TK, SQuery<T>>, TR> resultSelector) {
+    public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, Function<Tuple<TK, NQuery<T>>, TR> resultSelector) {
         Map<TK, List<T>> map = newMap();
         stream().forEach(t -> map.computeIfAbsent(keySelector.apply(t), p -> newList()).add(t));
         List<TR> result = newList();
@@ -305,8 +302,8 @@ public final class SQuery<T> implements Iterable<T> {
         return me(result);
     }
 
-    public <TR> SQuery<TR> groupByMany(Function<T, Object[]> keySelector,
-                                       Function<Tuple<Object[], SQuery<T>>, TR> resultSelector) {
+    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector,
+                                       Function<Tuple<Object[], NQuery<T>>, TR> resultSelector) {
         Map<String, Tuple<Object[], List<T>>> map = newMap();
         stream().forEach(t -> {
             Object[] ks = keySelector.apply(t);
@@ -393,10 +390,11 @@ public final class SQuery<T> implements Iterable<T> {
         return where(predicate).lastOrDefault();
     }
 
+    @ErrorCode(messageKeys = { "$count" })
     public T single() {
         long count = stream().count();
         if (count != 1) {
-            throw new InvalidOperationException("Require 1 element, current is %s elements", count);
+            throw new SystemException(values(count));
         }
         return first();
     }
@@ -405,10 +403,11 @@ public final class SQuery<T> implements Iterable<T> {
         return where(predicate).single();
     }
 
+    @ErrorCode(messageKeys = { "$count" })
     public T singleOrDefault() {
         long count = stream().count();
         if (count > 1) {
-            throw new InvalidOperationException("Require 1 element, current is %s elements", count);
+            throw new SystemException(values(count));
         }
         return firstOrDefault();
     }
@@ -417,15 +416,15 @@ public final class SQuery<T> implements Iterable<T> {
         return where(predicate).singleOrDefault();
     }
 
-    public SQuery<T> skip(long count) {
+    public NQuery<T> skip(long count) {
         return me(stream().skip(count));
     }
 
-    public SQuery<T> skipWhile(Predicate<T> predicate) {
+    public NQuery<T> skipWhile(Predicate<T> predicate) {
         return skipWhile((p, i) -> predicate.test(p));
     }
 
-    public SQuery<T> skipWhile(IndexPredicate<T> predicate) {
+    public NQuery<T> skipWhile(IndexPredicate<T> predicate) {
         AtomicBoolean doAccept = new AtomicBoolean();
         return me((p, i) -> {
             int flags = EachFunc.None;
@@ -441,15 +440,15 @@ public final class SQuery<T> implements Iterable<T> {
         });
     }
 
-    public SQuery<T> take(long count) {
+    public NQuery<T> take(long count) {
         return me(stream().limit(count));
     }
 
-    public SQuery<T> takeWhile(Predicate<T> predicate) {
+    public NQuery<T> takeWhile(Predicate<T> predicate) {
         return takeWhile((p, i) -> predicate.test(p));
     }
 
-    public SQuery<T> takeWhile(IndexPredicate<T> predicate) {
+    public NQuery<T> takeWhile(IndexPredicate<T> predicate) {
         return me((p, i) -> {
             int flags = EachFunc.None;
             if (!predicate.test(p, i)) {
@@ -459,6 +458,13 @@ public final class SQuery<T> implements Iterable<T> {
             flags |= EachFunc.Accept;
             return flags;
         });
+    }
+
+    public T[] toArray(Class<T> type) {
+        List<T> result = toList();
+        T[] array = (T[]) Array.newInstance(type, result.size());
+        result.toArray(array);
+        return array;
     }
 
     public List<T> toList() {
@@ -498,48 +504,48 @@ public final class SQuery<T> implements Iterable<T> {
         px.index3 = 41;
         personSet.add(px);
 
-        //        showResult("groupBy(p -> p.index2...", of(personSet).groupBy(p -> p.index2, p -> {
-        //            System.out.println("groupKey: " + p.left);
-        //            List<Person> list = p.right.toList();
-        //            System.out.println("items: " + JSON.toJSONString(list));
-        //            return list.get(0);
-        //        }));
-        //        showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-        //                of(personSet).groupByMany(p -> new Object[] { p.index2, p.index3 }, p -> {
-        //                    System.out.println("groupKey: " + toJSONString(p.left));
-        //                    List<Person> list = p.right.toList();
-        //                    System.out.println("items: " + toJSONString(list));
-        //                    return list.get(0);
-        //                }));
-        //
-        //        showResult("orderBy(p->p.index)", of(personSet).orderBy(p -> p.index));
-        //        showResult("orderByDescending(p->p.index)", of(personSet).orderByDescending(p -> p.index));
-        //        showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-        //                of(personSet).orderByMany(p -> new Object[] { p.index2, p.index }));
-        //        showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-        //                of(personSet).orderByDescendingMany(p -> new Object[] { p.index2, p.index }));
-        //
-        //        showResult("select(p -> p.index).reverse()",
-        //                of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
-        //
-        //        showResult(".max(p -> p.index)", of(personSet).<Integer> max(p -> p.index));
-        //        showResult(".min(p -> p.index)", of(personSet).<Integer> min(p -> p.index));
-        //
-        //        showResult("take(0).average(p -> p.index)", of(personSet).take(0).average(p -> p.index));
-        //        showResult("average(p -> p.index)", of(personSet).average(p -> p.index));
-        //        showResult("take(0).sum(p -> p.index)", of(personSet).take(0).sum(p -> p.index));
-        //        showResult("sum(p -> p.index)", of(personSet).sum(p -> p.index));
-        //
-        //        showResult("firstOrDefault()", of(personSet).orderBy(p -> p.index).firstOrDefault());
-        //        showResult("lastOrDefault()", of(personSet).orderBy(p -> p.index).lastOrDefault());
-        //        showResult("skip(2)", of(personSet).orderBy(p -> p.index).skip(2));
-        //        showResult("take(2)", of(personSet).orderBy(p -> p.index).take(2));
-        //
-        //        showResult(".skipWhile((p, i) -> p.index < 3)",
-        //                of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
-        //
-        //        showResult(".takeWhile((p, i) -> p.index < 3)",
-        //                of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
+        showResult("groupBy(p -> p.index2...", of(personSet).groupBy(p -> p.index2, p -> {
+            System.out.println("groupKey: " + p.left);
+            List<Person> list = p.right.toList();
+            System.out.println("items: " + JSON.toJSONString(list));
+            return list.get(0);
+        }));
+        showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
+                of(personSet).groupByMany(p -> new Object[] { p.index2, p.index3 }, p -> {
+                    System.out.println("groupKey: " + toJSONString(p.left));
+                    List<Person> list = p.right.toList();
+                    System.out.println("items: " + toJSONString(list));
+                    return list.get(0);
+                }));
+
+        showResult("orderBy(p->p.index)", of(personSet).orderBy(p -> p.index));
+        showResult("orderByDescending(p->p.index)", of(personSet).orderByDescending(p -> p.index));
+        showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
+                of(personSet).orderByMany(p -> new Object[] { p.index2, p.index }));
+        showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
+                of(personSet).orderByDescendingMany(p -> new Object[] { p.index2, p.index }));
+
+        showResult("select(p -> p.index).reverse()",
+                of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
+
+        showResult(".max(p -> p.index)", of(personSet).<Integer> max(p -> p.index));
+        showResult(".min(p -> p.index)", of(personSet).<Integer> min(p -> p.index));
+
+        showResult("take(0).average(p -> p.index)", of(personSet).take(0).average(p -> p.index));
+        showResult("average(p -> p.index)", of(personSet).average(p -> p.index));
+        showResult("take(0).sum(p -> p.index)", of(personSet).take(0).sum(p -> p.index));
+        showResult("sum(p -> p.index)", of(personSet).sum(p -> p.index));
+
+        showResult("firstOrDefault()", of(personSet).orderBy(p -> p.index).firstOrDefault());
+        showResult("lastOrDefault()", of(personSet).orderBy(p -> p.index).lastOrDefault());
+        showResult("skip(2)", of(personSet).orderBy(p -> p.index).skip(2));
+        showResult("take(2)", of(personSet).orderBy(p -> p.index).take(2));
+
+        showResult(".skipWhile((p, i) -> p.index < 3)",
+                of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
+
+        showResult(".takeWhile((p, i) -> p.index < 3)",
+                of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
     }
 
     private static void showResult(String n, Object q) {
@@ -549,7 +555,7 @@ public final class SQuery<T> implements Iterable<T> {
         System.out.println(JSON.toJSONString(q));
     }
 
-    private static void showResult(String n, SQuery q) {
+    private static void showResult(String n, NQuery q) {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);

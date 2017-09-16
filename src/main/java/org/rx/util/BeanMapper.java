@@ -1,19 +1,23 @@
 package org.rx.util;
 
 import net.sf.cglib.beans.BeanCopier;
-import org.rx.common.*;
+import org.rx.App;
+
+import java.lang.StringBuilder;
 import org.rx.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import org.rx.NQuery;
+import org.rx.cache.WeakCache;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
+import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
 
 public class BeanMapper {
     public class Flags {
@@ -63,11 +67,11 @@ public class BeanMapper {
     }
 
     private static CacheItem getMethods(Class to) {
-        return methodCache.getOrAdd(to, () -> {
-            List<Method> setters = Arrays.stream(to.getMethods())
+        return methodCache.getOrAdd(to, tType -> {
+            List<Method> setters = Arrays.stream(tType.getMethods())
                     .filter(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1)
                     .collect(Collectors.toList());
-            List<Method> getters = Arrays.stream(to.getMethods())
+            List<Method> getters = Arrays.stream(tType.getMethods())
                     .filter(p -> !"getClass".equals(p.getName())
                             && (p.getName().startsWith(Get) || p.getName().startsWith(GetBool))
                             && p.getParameterCount() == 0)
@@ -78,7 +82,7 @@ public class BeanMapper {
             List<Method> g2 = getters.stream()
                     .filter(pg -> s2.stream().anyMatch(ps -> exEquals(pg.getName(), ps.getName())))
                     .collect(Collectors.toList());
-            return new CacheItem(genKey(to, new TreeSet<>(toMethodNames(s2))), s2, g2);
+            return new CacheItem(genKey(tType, new TreeSet<>(toMethodNames(s2))), s2, g2);
         }, true);
     }
 
@@ -92,7 +96,7 @@ public class BeanMapper {
     }
 
     private static UUID genKey(Class to, TreeSet<String> methodNames) {
-        StringBuilder k = new StringBuilder(to.getName());
+        java.lang.StringBuilder k = new StringBuilder(to.getName());
         methodNames.stream().forEachOrdered(k::append);
         //App.logInfo("genKey %s..", k.toString());
         return App.hash(k.toString());
@@ -181,7 +185,7 @@ public class BeanMapper {
             copiedNames.addAll(config.ignoreMethods);
         }
         Set<String> allNames = toMethodNames(tmc.setters),
-                missedNames = SQuery.of(allNames).except(copiedNames).toSet();
+                missedNames = NQuery.of(allNames).except(copiedNames).toSet();
         if (config.methodMatcher != null) {
             final CacheItem fmc = getMethods(from);
             //避免missedNames.remove引发异常

@@ -1,20 +1,21 @@
-package org.rx.util;
+package org.rx.cache;
 
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
+import org.rx.Logger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.require;
-import static org.rx.util.App.logError;
+import static org.rx.Contract.as;
+import static org.rx.Contract.require;
 
 /**
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
-public final class WeakCache<TK, TV> {
+public class WeakCache<TK, TV> {
     private static WeakCache<String, Object> instance;
 
     public static WeakCache<String, Object> getInstance() {
@@ -86,7 +87,7 @@ public final class WeakCache<TK, TV> {
             try {
                 ac.close();
             } catch (Exception ex) {
-                logError(ex, "Auto close error");
+                Logger.error(ex, "Auto close error");
             }
         }
         ref.clear();
@@ -100,15 +101,15 @@ public final class WeakCache<TK, TV> {
         return (TV) ref.get();
     }
 
-    public TV getOrAdd(TK key, Supplier<TV> supplier) {
+    public TV getOrAdd(TK key, Function<TK, TV> supplier) {
         return getOrAdd(key, supplier, softRef);
     }
 
-    public TV getOrAdd(TK key, Supplier<TV> supplier, boolean isSoftRef) {
+    public TV getOrAdd(TK key, Function<TK, TV> supplier, boolean isSoftRef) {
         TV v;
         Reference ref = getItem(key);
         if (ref == null || (v = (TV) ref.get()) == null) {
-            add(key, v = supplier.get(), isSoftRef);
+            add(key, v = supplier.apply(key), isSoftRef);
         }
         return v;
     }

@@ -1,8 +1,8 @@
 package org.rx.validator;
 
-import org.rx.common.InvalidOperationException;
+import org.rx.SystemException;
 
-public class ConstraintException extends InvalidOperationException {
+public class ConstraintException extends SystemException {
     private String propertyName;
     private String validateMessage;
 

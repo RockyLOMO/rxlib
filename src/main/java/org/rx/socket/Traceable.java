@@ -1,8 +1,8 @@
 package org.rx.socket;
 
-import org.rx.common.DateTime;
+import org.rx.DateTime;
 
-import static org.rx.common.Contract.isNull;
+import static org.rx.Contract.isNull;
 
 public abstract class Traceable {
     private Tracer tracer;

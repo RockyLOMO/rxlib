@@ -1,10 +1,13 @@
 package org.rx.socket;
 
-import org.rx.common.BufferSegment;
-import org.rx.common.Tuple;
+import org.rx.App;
+import org.rx.SystemException;
+import org.rx.Tuple;
+import org.rx.cache.BufferSegment;
+import org.rx.util.AsyncTask;
+import org.rx.Logger;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -13,21 +16,15 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.wrapCause;
-import static org.rx.util.App.logError;
-import static org.rx.util.App.retry;
-import static org.rx.util.AsyncTask.TaskFactory;
-import static org.rx.socket.SocketPool.Pool;
-import static org.rx.socket.SocketPool.PooledSocket;
+import static org.rx.Contract.as;
+import static org.rx.Contract.require;
 
 public class DirectSocket extends Traceable implements AutoCloseable {
     private static class ClientItem implements AutoCloseable {
         private final DirectSocket  owner;
         public final Socket         sock;
         public final IOStream       ioStream;
-        public final PooledSocket   directSock;
+        public final SocketPool.PooledSocket directSock;
         public final IOStream       directIoStream;
         private final BufferSegment segment;
 
@@ -39,7 +36,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             sock = client;
             segment = new BufferSegment(BufferSegment.DefaultBufferSize, 2);
             try {
-                directSock = retry(p -> Pool.borrowSocket(p.directAddress), owner, owner.connectRetryCount);
+                directSock = App.retry(p -> SocketPool.Pool.borrowSocket(p.directAddress), owner, owner.connectRetryCount);
                 ioStream = new IOStream(sock.getInputStream(), directSock.socket.getOutputStream(), segment.alloc());
                 directIoStream = new IOStream(directSock.socket.getInputStream(), sock.getOutputStream(),
                         segment.alloc());
@@ -57,7 +54,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 sock.close();
                 directSock.close();
             } catch (IOException ex) {
-                logError(ex, "DirectSocket.ClientItem.close()");
+                Logger.info("DirectSocket item close error: %s", ex.getMessage());
             }
         }
     }
@@ -117,7 +114,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         Tracer tracer = new Tracer();
         tracer.setPrefix(taskName + " ");
         setTracer(tracer);
-        TaskFactory.run(() -> {
+        AsyncTask.TaskFactory.run(() -> {
             getTracer().writeLine("%s start..", getTimeString());
             while (!isClosed()) {
                 try {
@@ -125,7 +122,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                     clients.add(client);
                     onReceive(client, taskName);
                 } catch (IOException ex) {
-                    logError(ex, taskName);
+                    Logger.error(ex, taskName);
                 }
             }
             close();
@@ -140,16 +137,12 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         isClosed = true;
         try {
             for (ClientItem client : getClientsCopy()) {
-                try {
-                    client.close();
-                } catch (Exception ex) {
-                    logError(ex, "DirectSocket.ClientItem.close()");
-                }
+                client.close();
             }
             clients.clear();
             server.close();
         } catch (IOException ex) {
-            logError(ex, "DirectSocket.close()");
+            Logger.error(ex, "DirectSocket close");
         }
         getTracer().writeLine("%s close..", getTimeString());
     }
@@ -159,7 +152,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     }
 
     private void onReceive(ClientItem client, String taskName) {
-        TaskFactory.run(() -> {
+        AsyncTask.TaskFactory.run(() -> {
             int recv = -1;
             try {
                 recv = client.ioStream.directData(p -> !client.isClosed(), p -> {
@@ -175,18 +168,18 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                     if (msg != null && msg.toLowerCase().contains("connection reset")) {
                         check = true;
                         recv = 0;
-                        logError(sockEx, "onReceive");
+                        Logger.error(sockEx, "onReceive");
                     }
                 }
                 if (!check) {
-                    throw wrapCause(ex);
+                    throw new SystemException(ex);
                 }
             }
             if (recv == 0) {
                 client.close();
             }
         }, String.format("%s[ioStream]", taskName));
-        TaskFactory.run(() -> {
+        AsyncTask.TaskFactory.run(() -> {
             int recv = client.directIoStream.directData(p -> !client.isClosed(), p -> {
                 getTracer().writeLine("%s recv %s bytes from %s to %s..", getTimeString(), p,
                         Sockets.getId(client.directSock.socket, false), Sockets.getId(client.sock, true));

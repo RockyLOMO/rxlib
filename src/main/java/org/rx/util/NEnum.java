@@ -1,11 +1,12 @@
-package org.rx.common;
+package org.rx.util;
+
+import org.rx.App;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.require;
-import static org.rx.util.App.split;
+import static org.rx.Contract.as;
+import static org.rx.Contract.require;
 
 public interface NEnum {
     int getValue();
@@ -64,7 +65,7 @@ public interface NEnum {
         require(strings);
 
         Class type = this.getClass();
-        for (String n : split(strings, ", ")) {
+        for (String n : App.split(strings, ", ")) {
             NEnum e = (NEnum) Enum.valueOf(type, n);
             add(e);
         }

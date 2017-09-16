@@ -1,16 +1,12 @@
-package org.rx.util;
+package org.rx;
 
 import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.rx.common.*;
 import org.rx.security.MD5Util;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
 import java.io.*;
@@ -25,56 +21,45 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-import static org.rx.common.Contract.*;
+import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
+import static org.rx.SystemException.values;
 
 public class App {
     //region Fields
-    public static final String                    KeyPrefix   = "_rx";
-    public static final String                    CurrentPath = System.getProperty("user.dir");
-    public static final String                    TmpDirPath  = String.format("%s%srx",
-            System.getProperty("java.io.tmpdir"), File.separatorChar);
-    public static final String                    Catalina    = System.getProperty("catalina.home"), UTF8 = "UTF-8";
-    private static final Log                      log1        = LogFactory.getLog("helperInfo"),
-            log2 = LogFactory.getLog("helperError");
-    private static final SQuery<Class<?>>         SupportTypes;
-    private static final SQuery<SimpleDateFormat> SupportDateFormats;
+    public static final String                    UTF8        = "UTF-8", KeyPrefix = "_rx";
+    public static final String                    CurrentPath = System.getProperty("user.dir"),
+            TmpDirPath = String.format("%s%srx", System.getProperty("java.io.tmpdir"), File.separatorChar);
+    private static final NQuery<Class<?>>         SupportTypes;
+    private static final NQuery<SimpleDateFormat> SupportDateFormats;
     private static final String                   base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
 
     static {
-        SupportTypes = SQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, BigDecimal.class, UUID.class, Date.class);
-        SupportDateFormats = SQuery.of(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
+        SupportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
+                Float.class, Double.class, BigDecimal.class, UUID.class, Date.class, Enum.class);
+        SupportDateFormats = NQuery.of(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
                 new SimpleDateFormat("yyyyMMddHHmmss"));
     }
     //endregion
 
     //region Basic
-    public static void logInfo(String format, Object... args) {
-        String msg = args.length == 0 ? format : String.format(format, args);
-        log1.info(msg + System.lineSeparator());
-    }
-
-    public static void logError(Exception ex, String format, Object... args) {
-        String msg = args.length == 0 ? format : String.format(format, args);
-        log2.error(String.format("%s%s %s", System.lineSeparator(), ex.getMessage(), msg), ex);
-    }
-
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
         require(func);
+        require(retryCount, retryCount > 0);
 
-        InvalidOperationException lastEx = null;
+        SystemException lastEx = null;
         int i = 1;
         while (i <= retryCount) {
             try {
                 return func.apply(state);
             } catch (Exception ex) {
                 if (i == retryCount) {
-                    lastEx = Contract.wrapCause(ex);
+                    lastEx = new SystemException(ex);
                 }
             }
             i++;
         }
-        throw isNull(lastEx, new IllegalStateException("retry().returnValue"));
+        throw lastEx;
     }
 
     public static UUID hash(String key) {
@@ -152,16 +137,12 @@ public class App {
             prop.load(new InputStreamReader(
                     App.class.getClassLoader().getResourceAsStream(propertiesFile + ".properties"), UTF8));
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
 
         Map<String, String> map = new HashMap<>();
         for (String key : prop.stringPropertyNames()) {
-            String val = prop.getProperty(key);
-            if (val == null) {
-                val = "";
-            }
-            map.put(key, val);
+            map.put(key, isNull(prop.getProperty(key), ""));
         }
         return map;
     }
@@ -262,7 +243,7 @@ public class App {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException ex) {
-            logError(ex, "sleep");
+            Logger.info("Thread sleep error: %s", ex.getMessage());
         }
     }
 
@@ -281,7 +262,7 @@ public class App {
                 result.append(new String(buffer, 0, read, charset));
             }
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
         return result.toString();
     }
@@ -297,7 +278,7 @@ public class App {
             byte[] data = value.getBytes(charset);
             writer.write(data);
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -331,20 +312,24 @@ public class App {
         }
     }
 
+    @ErrorCode(messageKeys = { "$fType", "$tType" })
+    @ErrorCode(exception = ParseException.class, messageKeys = { "$formats", "$date" })
+    @ErrorCode(exception = NoSuchFieldException.class, messageKeys = { "$name", "$eType" })
+    @ErrorCode(exception = NoSuchMethodException.class, messageKeys = { "$type" })
+    @ErrorCode(exception = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
-        final Class<?> fromType;
-        if (value == null || toType.isInstance(value) || toType.equals(fromType = value.getClass())) {
+        if (value == null || toType.isInstance(value)) {
             return (T) value;
         }
         Class<?> strType = SupportTypes.first();
         if (toType.equals(strType)) {
             return (T) value.toString();
         }
-
-        if (!(SupportTypes.any(p -> p.equals(fromType)) || fromType.isEnum())) {
-            throw newCause("不支持类型%s=>%s的转换", fromType, toType);
+        final Class<?> fromType = value.getClass();
+        if (!(SupportTypes.any(p -> p.equals(fromType)))) {
+            throw new SystemException(values(fromType, toType));
         }
 
         String val = value.toString();
@@ -352,7 +337,7 @@ public class App {
             value = new BigDecimal(val);
         } else if (toType.equals(UUID.class)) {
             value = UUID.fromString(val);
-        } else if (toType.equals(Date.class) || toType.equals(DateTime.class)) {
+        } else if (Date.class.isAssignableFrom(toType)) {
             value = null;
             ParseException lastEx = null;
             for (SimpleDateFormat format : SupportDateFormats) {
@@ -363,13 +348,14 @@ public class App {
                 }
             }
             if (value == null) {
-                SQuery<String> q = SupportDateFormats.select(new Function<SimpleDateFormat, String>() {
-                    @Override
-                    public String apply(SimpleDateFormat arg) {
-                        return arg.toPattern();
-                    }
-                });
-                throw newCause("仅支持 %s format的日期转换", String.join(",", q), lastEx);
+                NQuery<String> q = SupportDateFormats.select(p -> p.toPattern());
+                throw new SystemException(lastEx, values(String.join(",", q), val));
+            }
+        } else if (toType.isEnum()) {
+            NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
+            value = q.where(p -> p.equals(val)).singleOrDefault();
+            if (value == null) {
+                throw new SystemException(new NoSuchFieldException(), values(String.join(",", q), val));
             }
         } else {
             toType = checkType(toType);
@@ -377,14 +363,15 @@ public class App {
                 Method m = toType.getDeclaredMethod("valueOf", strType);
                 value = m.invoke(null, val);
             } catch (NoSuchMethodException ex) {
-                throw wrapCause(ex, "未找到类型%s的valueOf方法", toType);
+                throw new SystemException(ex, values(toType));
             } catch (ReflectiveOperationException ex) {
-                throw wrapCause(ex, "类型%s=>%s转换错误", fromType, toType);
+                throw new SystemException(ex, values(fromType, toType, val));
             }
         }
         return (T) value;
     }
 
+    @ErrorCode(messageKeys = { "$type" })
     private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
@@ -395,7 +382,7 @@ public class App {
         try {
             return Class.forName(newName);
         } catch (ClassNotFoundException ex) {
-            throw wrapCause(ex, "checkType %s=>%s", type, newName);
+            throw new SystemException(ex, values(newName));
         }
     }
 
@@ -414,20 +401,19 @@ public class App {
         try {
             return new String(ret, UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
     public static byte[] convertFromBase64String(String base64) {
         require(base64);
 
-        byte[] data;
         try {
-            data = base64.getBytes(UTF8);
+            byte[] data = base64.getBytes(UTF8);
+            return Base64.getDecoder().decode(data);
         } catch (UnsupportedEncodingException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
-        return Base64.getDecoder().decode(data);
     }
 
     public static String serializeToBase64(Object obj) {
@@ -443,7 +429,7 @@ public class App {
             out.writeObject(obj);
             return bos.toByteArray();
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -459,7 +445,7 @@ public class App {
                 ObjectInputStream in = new ObjectInputStream(bis)) {
             return in.readObject();
         } catch (Exception ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
 
@@ -468,32 +454,34 @@ public class App {
         return (T) deserialize(data);
     }
 
-    public static <T> String convertToXml(T obj) throws JAXBException {
-        JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
-        Marshaller marshaller = jaxbContext.createMarshaller();
-        //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
-        //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        marshaller.marshal(obj, stream);
+    public static <T> String convertToXml(T obj) {
+        require(obj);
+
         try {
+            JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
+            Marshaller marshaller = jaxbContext.createMarshaller();
+            //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
+            //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+            marshaller.marshal(obj, stream);
             return stream.toString(UTF8);
-        } catch (UnsupportedEncodingException ex) {
-            throw new JAXBException(ex.getCause());
+        } catch (Exception ex) {
+            throw new SystemException(ex);
         }
     }
 
-    public static <T> T convertFromXml(String xml, Class<T> type) throws JAXBException {
-        //Class<T> type = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
-        JAXBContext jaxbContext = JAXBContext.newInstance(type);
-        Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
-        byte[] data;
+    public static <T> T convertFromXml(String xml, Class<T> type) {
+        require(xml, type);
+
         try {
-            data = xml.getBytes(UTF8);
-        } catch (UnsupportedEncodingException ex) {
-            throw new JAXBException(ex.getCause());
+            JAXBContext jaxbContext = JAXBContext.newInstance(type);
+            Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
+            byte[] data = xml.getBytes(UTF8);
+            ByteArrayInputStream stream = new ByteArrayInputStream(data);
+            return (T) unmarshaller.unmarshal(stream);
+        } catch (Exception ex) {
+            throw new SystemException(ex);
         }
-        ByteArrayInputStream stream = new ByteArrayInputStream(data);
-        return (T) unmarshaller.unmarshal(stream);
     }
     //endregion
 
@@ -530,6 +518,8 @@ public class App {
     }
 
     public static <T> T getOrStore(HttpServletRequest request, String key, Supplier<T> supplier) {
+        require(request, key, supplier);
+
         String nk = KeyPrefix + key;
         T val = (T) request.getAttribute(nk);
         if (val == null) {
@@ -538,14 +528,21 @@ public class App {
         return val;
     }
 
-    public static void catalina(String name, HttpServletResponse res) {
-        File file = new File(String.format("%s/logs/%s", Catalina, name));
-        res.setCharacterEncoding(UTF8);
-        res.setContentType("application/octet-stream");
-        res.setContentLength((int) file.length());
-        res.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
+    public static void downloadFile(HttpServletResponse response, String filePath) {
+        require(response, filePath);
+        switch (filePath) {
+            case "info":
+            case "error":
+                filePath = String.format("%s/logs/%s", System.getProperty("catalina.home"), filePath);
+        }
+
+        File file = new File(filePath);
+        response.setCharacterEncoding(UTF8);
+        response.setContentType("application/octet-stream");
+        response.setContentLength((int) file.length());
+        response.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
         try (FileInputStream in = new FileInputStream(file)) {
-            OutputStream out = res.getOutputStream();
+            OutputStream out = response.getOutputStream();
             byte[] buffer = new byte[4096];
             int length;
             while ((length = in.read(buffer)) > 0) {
@@ -553,7 +550,7 @@ public class App {
             }
             out.flush();
         } catch (IOException ex) {
-            throw Contract.wrapCause(ex);
+            throw new SystemException(ex);
         }
     }
     //endregion

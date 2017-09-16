@@ -1,9 +1,9 @@
 package org.rx.security;
 
+import org.rx.SystemException;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-
-import static org.rx.common.Contract.wrapCause;
 
 /**
  * Static functions to simplifiy common {@link MessageDigest} tasks. This class
@@ -24,7 +24,7 @@ public class MD5Util {
         try {
             return MessageDigest.getInstance("MD5");
         } catch (NoSuchAlgorithmException e) {
-            throw wrapCause(e);
+            throw new SystemException(e);
         }
     }
 

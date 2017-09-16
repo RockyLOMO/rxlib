@@ -1,6 +1,6 @@
-package org.rx.validator;
+package org.rx.util;
 
-public class StringBuilder {
+public final class StringBuilder {
     public static final String      Empty = "";
     private java.lang.StringBuilder buffer;
     private String                  prefix;
@@ -20,6 +20,13 @@ public class StringBuilder {
     public StringBuilder() {
         buffer = new java.lang.StringBuilder();
         prefix = Empty;
+    }
+
+    public StringBuilder replace(String target, String replacement) {
+        String str = buffer.toString();
+        buffer.setLength(0);
+        buffer.append(str.replace(target, replacement));
+        return this;
     }
 
     public StringBuilder append(Object obj) {

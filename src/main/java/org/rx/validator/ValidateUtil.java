@@ -4,6 +4,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.SystemException;
 import org.springframework.ui.Model;
 
 import javax.servlet.ServletRequest;
@@ -15,15 +16,16 @@ import javax.validation.executable.ExecutableValidator;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
+
+import org.rx.Logger;
+import org.rx.util.StringBuilder;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.rx.common.Contract.toJSONString;
-import static org.rx.common.Contract.wrapCause;
-import static org.rx.util.App.logInfo;
+import static org.rx.Contract.toJSONString;
 
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
@@ -141,7 +143,7 @@ public class ValidateUtil {
                     try {
                         return joinPoint.proceed();
                     } catch (Throwable ex) {
-                        throw wrapCause(ex);
+                        throw new SystemException(ex);
                     }
                 });
             }
@@ -157,7 +159,7 @@ public class ValidateUtil {
             throw ex;
         } finally {
             msg.appendLine("end validate..");
-            logInfo(msg.toString());
+            Logger.info(msg.toString());
         }
     }
 }
