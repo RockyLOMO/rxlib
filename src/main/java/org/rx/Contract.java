@@ -20,7 +20,7 @@ public final class Contract {
     @ErrorCode(value = "args", messageKeys = { "$args" })
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
-            throw new SystemException(args, "args");
+            throw new SystemException(values(toJSONString(args)), "args");
         }
     }
 
@@ -55,7 +55,7 @@ public final class Contract {
     }
 
     public static String toJSONString(Object... args) {
-        return toJSONString(args);
+        return toJSONString((Object) args);
     }
 
     public static String toJSONString(Object arg) {

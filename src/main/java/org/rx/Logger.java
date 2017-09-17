@@ -7,11 +7,8 @@ public final class Logger {
     private static final Log log1 = LogFactory.getLog("infoLogger"), log2 = LogFactory.getLog("errorLogger");
 
     public static void debug(String format, Object... args) {
-        if (!log1.isDebugEnabled()) {
-            return;
-        }
         String msg = args.length == 0 ? format : String.format(format, args);
-        //System.out.println(msg);
+        System.out.println(msg);
         log1.debug(msg);
     }
 

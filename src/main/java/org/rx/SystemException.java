@@ -8,9 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-import static org.rx.Contract.as;
-import static org.rx.Contract.isNull;
-import static org.rx.Contract.toJSONString;
+import static org.rx.Contract.*;
 
 /**
  * .fillInStackTrace()
@@ -39,7 +37,6 @@ public class SystemException extends NestedRuntimeException {
      * Gets the method that throws the current exception.
      */
     private BiTuple<Class, Method, ErrorCode> targetSite;
-    private Object[]                          parameterValues;
     private EnumErrorCode                     errorCode;
 
     @Override
@@ -89,6 +86,9 @@ public class SystemException extends NestedRuntimeException {
     public SystemException(Throwable cause, Object[] messageValues, String errorName) {
         super(cause != null ? cause.getMessage() : DefaultMessage, cause);
 
+        if (messageValues == null) {
+            messageValues = new Object[0];
+        }
         try {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
             Set<Map.Entry<String, String>> settings = Settings.entrySet();
@@ -167,11 +167,7 @@ public class SystemException extends NestedRuntimeException {
                 }
 
                 this.targetSite = BiTuple.of(source, targetSite, errorCode);
-                for (int j = 0; j < errorCode.messageKeys().length; j++) {
-                    String mk = messageKeys[j], mv = toJSONString(messageValues[j]);
-                    msgTemp = msgTemp.replace(mk, mv);
-                }
-                friendlyMessage = msgTemp;
+                setFriendlyMessage(msgTemp, errorCode.messageKeys(), messageValues);
                 break;
             }
         } catch (Throwable e) {
@@ -179,9 +175,18 @@ public class SystemException extends NestedRuntimeException {
         }
     }
 
-    protected SystemException setParameterValues(Object... args) {
-        parameterValues = args;
-        return this;
+    private void setFriendlyMessage(String msgTemp, String[] messageKeys, Object[] messageValues) {
+        for (int j = 0; j < messageKeys.length; j++) {
+            String mk = messageKeys[j], mv = toJSONString(messageValues[j]);
+            msgTemp = msgTemp.replace(mk, mv);
+        }
+        friendlyMessage = msgTemp;
+    }
+
+    protected Object recall(Object instance, Object... args) throws ReflectiveOperationException {
+        require(targetSite);
+
+        return targetSite.middle.invoke(instance, args);
     }
 
     public <T extends Enum<T> & EnumErrorCode> SystemException setErrorCode(T errorCode, Object... messageValues) {
@@ -204,11 +209,7 @@ public class SystemException extends NestedRuntimeException {
         for (int i = 0; i < messageKeys.length; i++) {
             errorData.put(messageKeys[i], messageValues[i]);
         }
-        for (Map.Entry<String, Object> entry : errorData.entrySet()) {
-            String k = entry.getKey(), v = toJSONString(entry.getValue());
-            pv = pv.replace(k, v);
-        }
-        friendlyMessage = pv;
+        setFriendlyMessage(pv, NQuery.of(errorData.keySet()).toArray(String.class), errorData.values().toArray());
         return this;
     }
 
