@@ -180,6 +180,34 @@ public class SystemException extends NestedRuntimeException {
         friendlyMessage = msgTemp;
     }
 
+    public <T extends Throwable> boolean tryGet($<T> out, Class<T> exType) {
+        if (exType == null) {
+            return false;
+        } else if (exType.isInstance(this)) {
+            out.$ = (T) this;
+            return true;
+        } else {
+            Throwable cause = this.getCause();
+            if (cause == this) {
+                return false;
+            } else if (cause instanceof SystemException) {
+                return ((SystemException) cause).tryGet(out, exType);
+            } else {
+                while (cause != null) {
+                    if (exType.isInstance(cause)) {
+                        out.$ = (T) cause;
+                        return true;
+                    }
+                    if (cause.getCause() == cause) {
+                        break;
+                    }
+                    cause = cause.getCause();
+                }
+                return false;
+            }
+        }
+    }
+
     public <T extends Enum<T> & EnumErrorCode> SystemException setErrorCode(T errorCode, Object... messageValues) {
         if ((this.errorCode = errorCode) == null) {
             Logger.debug("SystemException: setErrorCode errorCode is null");

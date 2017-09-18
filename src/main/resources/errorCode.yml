@@ -13,6 +13,6 @@ org.rx.App:
   changeType: Not supported convert $fType type to $tType type
   changeType<ParseException>: Only supported $formats date formats, current date is $date
   changeType[enumError]: Not find $name in $eType enum
-  changeType<NoSuchMethodException>: Not find valueOf method of $type type
+  changeType<NoSuchMethodException>: Not found valueOf method of $type type
   changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
   checkType: Find $type primitive type failed

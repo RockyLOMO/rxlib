@@ -5,16 +5,25 @@ import org.rx.util.BeanMapper;
 import org.rx.util.RestClient;
 
 import java.math.BigDecimal;
-import java.util.Date;
+
+import static org.rx.Contract.tryGet;
+import static org.rx.$.$;
 
 public class Tester {
     public static void main(String[] args) {
         System.out.println("--rx--");
+        SystemException ex = new SystemException(new IllegalArgumentException());
+        $<IllegalArgumentException> out = $();
+        if (ex.tryGet(out, IllegalArgumentException.class)) {
+            Exception e = out.$;
+            System.out.println("ok" + e);
+        }
+
         //        SourceBean sb = new SourceBean();
         //        App.changeType(sb, TargetBean.class);
 
-        String sd = "2017";
-        App.changeType(sd, Date.class);
+        //        String sd = "2017";
+        //        App.changeType(sd, Date.class);
     }
 
     private static void testRest() {

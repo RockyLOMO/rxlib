@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 
 import java.util.Arrays;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.rx.SystemException.values;
@@ -52,6 +53,16 @@ public final class Contract {
             }
         }
         return value;
+    }
+
+    public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func) {
+        return tryGet(out, func, null);
+    }
+
+    public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func, T state) {
+        require(out, func);
+
+        return (out.$ = func.apply(state)) != null;
     }
 
     public static String toJSONString(Object... args) {
