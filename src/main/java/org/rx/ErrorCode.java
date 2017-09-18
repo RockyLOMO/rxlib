@@ -5,8 +5,15 @@ import java.lang.annotation.*;
 @Target({ ElementType.METHOD })
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@Repeatable(ErrorCodes.class)
+@Repeatable(ErrorCode.ErrorCodes.class)
 public @interface ErrorCode {
+    @Target({ ElementType.METHOD })
+    @Retention(RetentionPolicy.RUNTIME)
+    @Documented
+    public @interface ErrorCodes {
+        ErrorCode[] value();
+    }
+
     String value() default "";
 
     Class exception() default Exception.class;

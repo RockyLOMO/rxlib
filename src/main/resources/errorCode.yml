@@ -1,0 +1,18 @@
+default: Network error, please retry later.
+
+org.rx.Contract:
+  require[arg]: Parameter is null
+  require[args]: Parameters $args have null value
+  require[test]: Instance $obj test failed
+
+org.rx.NQuery:
+  single: Require 1 element, current set has $count elements
+  singleOrDefault: Require less than 1 element, current set has $count elements
+
+org.rx.App:
+  changeType: Not supported convert $fType type to $tType type
+  changeType<ParseException>: Only supported $formats date formats, current date is $date
+  changeType[enumError]: Not find $name in $eType enum
+  changeType<NoSuchMethodException>: Not find valueOf method of $type type
+  changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
+  checkType: Find $type primitive type failed

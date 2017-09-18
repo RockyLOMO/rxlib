@@ -3,6 +3,8 @@ package org.rx;
 import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.security.MD5Util;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -131,7 +133,25 @@ public class App {
         return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
     }
 
-    public static Map<String, String> readSettings(String propertiesFile) {
+    public static Map<String, Object> readSettings(String yamlFile) {
+        Map<String, Object> result = null;
+        Yaml yaml = new Yaml(new SafeConstructor());
+        for (Object data : yaml.loadAll(App.class.getClassLoader().getResourceAsStream(yamlFile + ".yml"))) {
+            Map<String, Object> map = (Map<String, Object>) data;
+            if (result == null) {
+                result = map;
+                continue;
+            }
+            result.putAll(map);
+        }
+        if (result == null) {
+            result = new HashMap<>();
+        }
+        return result;
+    }
+
+    @Deprecated
+    public static Map<String, String> readProperties(String propertiesFile) {
         Properties prop = new Properties();
         try {
             prop.load(new InputStreamReader(
@@ -314,7 +334,7 @@ public class App {
 
     @ErrorCode(messageKeys = { "$fType", "$tType" })
     @ErrorCode(exception = ParseException.class, messageKeys = { "$formats", "$date" })
-    @ErrorCode(exception = NoSuchFieldException.class, messageKeys = { "$name", "$eType" })
+    @ErrorCode(value = "enumError", messageKeys = { "$name", "$eType" })
     @ErrorCode(exception = NoSuchMethodException.class, messageKeys = { "$type" })
     @ErrorCode(exception = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
     public static <T> T changeType(Object value, Class<T> toType) {
@@ -349,13 +369,13 @@ public class App {
             }
             if (value == null) {
                 NQuery<String> q = SupportDateFormats.select(p -> p.toPattern());
-                throw new SystemException(lastEx, values(String.join(",", q), val));
+                throw new SystemException(values(String.join(",", q), val), lastEx);
             }
         } else if (toType.isEnum()) {
             NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
             value = q.where(p -> p.equals(val)).singleOrDefault();
             if (value == null) {
-                throw new SystemException(new NoSuchFieldException(), values(String.join(",", q), val));
+                throw new SystemException(values(String.join(",", q), val), "enumError");
             }
         } else {
             toType = checkType(toType);
@@ -363,9 +383,9 @@ public class App {
                 Method m = toType.getDeclaredMethod("valueOf", strType);
                 value = m.invoke(null, val);
             } catch (NoSuchMethodException ex) {
-                throw new SystemException(ex, values(toType));
+                throw new SystemException(values(toType), ex);
             } catch (ReflectiveOperationException ex) {
-                throw new SystemException(ex, values(fromType, toType, val));
+                throw new SystemException(values(fromType, toType, val), ex);
             }
         }
         return (T) value;
@@ -382,7 +402,7 @@ public class App {
         try {
             return Class.forName(newName);
         } catch (ClassNotFoundException ex) {
-            throw new SystemException(ex, values(newName));
+            throw new SystemException(values(newName), ex);
         }
     }
 

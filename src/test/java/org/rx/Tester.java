@@ -13,8 +13,8 @@ public class Tester {
         //        SourceBean sb = new SourceBean();
         //        App.changeType(sb, TargetBean.class);
 
-        //        String sd = "2017";
-        //        App.changeType(sd, Date.class);
+        String sd = "2017";
+        App.changeType(sd, Date.class);
     }
 
     private static void testRest() {
