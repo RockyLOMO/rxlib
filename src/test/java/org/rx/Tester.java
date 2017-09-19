@@ -11,13 +11,18 @@ import static org.rx.$.$;
 
 public class Tester {
     public static void main(String[] args) {
-        System.out.println("--rx--");
-        SystemException ex = new SystemException(new IllegalArgumentException());
-        $<IllegalArgumentException> out = $();
-        if (ex.tryGet(out, IllegalArgumentException.class)) {
-            Exception e = out.$;
-            System.out.println("ok" + e);
-        }
+        Logger.debug("--debug--");
+        Logger.info("--info--");
+        Logger.error(new Exception(), "--error--");
+        //        System.out.println(App.getBootstrapPath());
+
+        //        System.out.println("--rx--");
+        //        SystemException ex = new SystemException(new IllegalArgumentException());
+        //        $<IllegalArgumentException> out = $();
+        //        if (ex.tryGet(out, IllegalArgumentException.class)) {
+        //            Exception e = out.$;
+        //            System.out.println("ok" + e);
+        //        }
 
         //        SourceBean sb = new SourceBean();
         //        App.changeType(sb, TargetBean.class);

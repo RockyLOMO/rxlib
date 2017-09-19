@@ -12,6 +12,7 @@ import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
 import java.io.*;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -29,8 +30,7 @@ import static org.rx.SystemException.values;
 
 public class App {
     //region Fields
-    public static final String                    UTF8        = "UTF-8", KeyPrefix = "_rx";
-    public static final String                    CurrentPath = System.getProperty("user.dir"),
+    public static final String                    UTF8        = "UTF-8", KeyPrefix = "_rx",
             TmpDirPath = String.format("%s%srx", System.getProperty("java.io.tmpdir"), File.separatorChar);
     private static final NQuery<Class<?>>         SupportTypes;
     private static final NQuery<SimpleDateFormat> SupportDateFormats;
@@ -45,6 +45,55 @@ public class App {
     //endregion
 
     //region Basic
+    public static boolean windowsOS() {
+        return isNull(System.getProperty("os.name"), "").toLowerCase().contains("windows");
+    }
+
+    public static String getBootstrapPath() {
+        String p = App.class.getClassLoader().getResource("").getFile();
+        if (windowsOS()) {
+            p = p.substring(1);
+        }
+        return p;
+    }
+
+    public static <T> T newInstance(Class<T> type) {
+        require(type);
+
+        try {
+            return type.newInstance();
+        } catch (ReflectiveOperationException ex) {
+            throw new SystemException(ex);
+        }
+    }
+
+    public static <T> T newInstance(Class<T> type, Object... args) {
+        require(type, args);
+
+        try {
+            for (Constructor<?> constructor : type.getConstructors()) {
+                Class[] paramTypes = constructor.getParameterTypes();
+                if (paramTypes.length != args.length) {
+                    continue;
+                }
+                boolean ok = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!paramTypes[i].isInstance(args[i])) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+                return (T) constructor.newInstance(args);
+            }
+        } catch (ReflectiveOperationException ex) {
+            throw new SystemException(ex);
+        }
+        throw new SystemException("Parameters error");
+    }
+
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
         require(func);
         require(retryCount, retryCount > 0);

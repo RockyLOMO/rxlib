@@ -19,6 +19,9 @@ import java.util.stream.Collectors;
 import static org.rx.Contract.isNull;
 import static org.rx.Contract.require;
 
+/**
+ * map from multi sources
+ */
 public class BeanMapper {
     public class Flags {
         public static final int SkipNull      = 1;
@@ -64,6 +67,20 @@ public class BeanMapper {
             }
         }
         return instance;
+    }
+
+    public static Function<String, String> match(String... pairs) {
+        require(pairs);
+        require(pairs, pairs.length % 2 == 0);
+        
+        return p -> {
+            for (int i = 1; i < pairs.length; i += 2) {
+                if (p.equals(pairs[i])) {
+                    return pairs[i - 1];
+                }
+            }
+            return p;
+        };
     }
 
     private static CacheItem getMethods(Class to) {

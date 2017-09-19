@@ -1,14 +1,19 @@
 package org.rx;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.LoggerFactory;
 
 public final class Logger {
-    private static final Log log1 = LogFactory.getLog("infoLogger"), log2 = LogFactory.getLog("errorLogger");
+    private static final org.slf4j.Logger log1, log2;
+
+    static {
+        System.setProperty("BootstrapPath", App.getBootstrapPath());
+        System.out.println("BootstrapPath: " + App.getBootstrapPath());
+        log1 = LoggerFactory.getLogger("infoLogger");
+        log2 = LoggerFactory.getLogger("errorLogger");
+    }
 
     public static void debug(String format, Object... args) {
         String msg = args.length == 0 ? format : String.format(format, args);
-        System.out.println(msg);
         log1.debug(msg);
     }
 
@@ -19,6 +24,6 @@ public final class Logger {
 
     public static void error(Throwable ex, String format, Object... args) {
         String msg = args.length == 0 ? format : String.format(format, args);
-        log2.error(String.format("%s%s %s", System.lineSeparator(), ex.getMessage(), msg), ex);
+        log2.error(msg + System.lineSeparator(), ex);
     }
 }
