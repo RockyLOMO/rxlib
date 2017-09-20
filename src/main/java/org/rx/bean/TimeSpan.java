@@ -1,4 +1,4 @@
-package org.rx;
+package org.rx.bean;
 
 import java.io.Serializable;
 import java.util.Calendar;

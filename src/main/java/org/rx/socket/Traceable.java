@@ -1,10 +1,11 @@
 package org.rx.socket;
 
-import org.rx.DateTime;
+import org.rx.Disposable;
+import org.rx.bean.DateTime;
 
 import static org.rx.Contract.isNull;
 
-public abstract class Traceable {
+public abstract class Traceable extends Disposable {
     private Tracer tracer;
 
     public Tracer getTracer() {

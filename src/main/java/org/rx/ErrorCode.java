@@ -16,7 +16,7 @@ public @interface ErrorCode {
 
     String value() default "";
 
-    Class exception() default Exception.class;
+    Class cause() default Exception.class;
 
     String[] messageKeys() default {};
 }

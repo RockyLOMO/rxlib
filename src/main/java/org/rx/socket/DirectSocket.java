@@ -1,11 +1,9 @@
 package org.rx.socket;
 
-import org.rx.App;
-import org.rx.SystemException;
-import org.rx.Tuple;
+import org.rx.*;
+import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.util.AsyncTask;
-import org.rx.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -14,60 +12,57 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Stream;
 
-import static org.rx.Contract.as;
 import static org.rx.Contract.require;
+import static org.rx.socket.Sockets.shutdown;
 
 public class DirectSocket extends Traceable implements AutoCloseable {
     private static class ClientItem implements AutoCloseable {
-        private final DirectSocket           owner;
-        public final Socket                  sock;
+        private DirectSocket                 owner;
+        private final BufferSegment          segment;
         public final NetworkStream           networkStream;
         public final SocketPool.PooledSocket toSock;
         public final NetworkStream           toNetworkStream;
-        private final BufferSegment          segment;
-
-        public boolean isClosed() {
-            return !(sock.isConnected() && !sock.isClosed() && toSock.isConnected());
-        }
 
         public ClientItem(Socket client, DirectSocket owner) {
-            sock = client;
             segment = new BufferSegment(BufferSegment.DefaultBufferSize, 2);
             try {
                 toSock = App.retry(p -> SocketPool.Pool.borrowSocket(p.directAddress), owner, owner.connectRetryCount);
-                networkStream = new NetworkStream(sock, segment.alloc());
-                toNetworkStream = new NetworkStream(toSock.socket, segment.alloc());
+                networkStream = new NetworkStream(client, segment.alloc());
+                toNetworkStream = new NetworkStream(toSock.socket, segment.alloc(), false);
             } catch (IOException ex) {
-                throw new SocketException((InetSocketAddress) sock.getLocalSocketAddress(), ex);
+                throw new SocketException((InetSocketAddress) client.getLocalSocketAddress(), ex);
             }
             this.owner = owner;
         }
 
         @Override
         public void close() {
-            owner.getTracer().writeLine("%s client[%s->%s] close..", owner.getTimeString(), Sockets.getId(sock, false),
-                    Sockets.getId(toSock.socket, false));
-            try {
-                sock.close();
+            synchronized (networkStream) {
+                if (owner == null) {
+                    return;
+                }
+
+                owner.getTracer().writeLine("%s client[%s->%s] close..", owner.getTimeString(),
+                        Sockets.getId(networkStream.getSocket(), false), Sockets.getId(toSock.socket, false));
+                owner.clients.remove(this);
+                networkStream.close();
+                toNetworkStream.close();
                 toSock.close();
-            } catch (IOException ex) {
-                Logger.info("DirectSocket item close error: %s", ex.getMessage());
+                owner = null;
             }
         }
     }
 
     private static final int       DefaultBacklog           = 128;
     private static final int       DefaultConnectRetryCount = 4;
-    private volatile boolean       isClosed;
     private InetSocketAddress      directAddress;
     private final ServerSocket     server;
     private final List<ClientItem> clients;
     private volatile int           connectRetryCount;
 
     public boolean isClosed() {
-        return !(!isClosed && !server.isClosed());
+        return !(!isClosed() && !server.isClosed());
     }
 
     public InetSocketAddress getDirectAddress() {
@@ -78,8 +73,8 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         return (InetSocketAddress) server.getLocalSocketAddress();
     }
 
-    public Stream<Tuple<Socket, Socket>> getClients() {
-        return getClientsCopy().stream().map(p -> Tuple.of(p.sock, p.toSock.socket));
+    public NQuery<Tuple<Socket, Socket>> getClients() {
+        return NQuery.of(getClientsCopy()).select(p -> Tuple.of(p.networkStream.getSocket(), p.toSock.socket));
     }
 
     public int getConnectRetryCount() {
@@ -102,6 +97,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
         try {
             server = new ServerSocket();
+            server.setReuseAddress(true);
             server.bind(listenAddr, DefaultBacklog);
         } catch (IOException ex) {
             throw new SocketException(listenAddr, ex);
@@ -129,13 +125,10 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
-        if (isClosed) {
-            return;
-        }
-        isClosed = true;
+    protected void freeManaged() {
         try {
             for (ClientItem client : getClientsCopy()) {
+                shutdown(client.networkStream.getSocket(), 1 | 2);
                 client.close();
             }
             clients.clear();
@@ -152,22 +145,28 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
     private void onReceive(ClientItem client, String taskName) {
         AsyncTask.TaskFactory.run(() -> {
-            int recv = client.networkStream.directTo(client.toNetworkStream, p -> !client.isClosed(), (p1, p2) -> {
-                getTracer().writeLine("%s sent %s bytes from %s to %s..", getTimeString(), p2,
-                        Sockets.getId(client.sock, true), Sockets.getId(client.toSock.socket, false));
-                return true;
-            });
-            if (recv == 0) {
+            try {
+                int recv = client.networkStream.directTo(client.toNetworkStream, (p1, p2) -> {
+                    getTracer().writeLine("%s sent %s bytes from %s to %s..", getTimeString(), p2,
+                            Sockets.getId(client.networkStream.getSocket(), true),
+                            Sockets.getId(client.toSock.socket, false));
+                    return true;
+                });
+                Logger.debug("Socket[%s] close with %s", Sockets.getId(client.networkStream.getSocket(), true), recv);
+            } finally {
                 client.close();
             }
         }, String.format("%s[networkStream]", taskName));
         AsyncTask.TaskFactory.run(() -> {
-            int recv = client.toNetworkStream.directTo(client.networkStream, p -> !client.isClosed(), (p1, p2) -> {
-                getTracer().writeLine("%s recv %s bytes from %s to %s..", getTimeString(), p2,
-                        Sockets.getId(client.toSock.socket, false), Sockets.getId(client.sock, true));
-                return true;
-            });
-            if (recv == 0) {
+            try {
+                int recv = client.toNetworkStream.directTo(client.networkStream, (p1, p2) -> {
+                    getTracer().writeLine("%s recv %s bytes from %s to %s..", getTimeString(), p2,
+                            Sockets.getId(client.toSock.socket, false),
+                            Sockets.getId(client.networkStream.getSocket(), true));
+                    return true;
+                });
+                Logger.debug("Socket[%s] close with %s", Sockets.getId(client.toSock.socket, false), recv);
+            } finally {
                 client.close();
             }
         }, String.format("%s[toNetworkStream]", taskName));

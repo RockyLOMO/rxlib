@@ -1,4 +1,4 @@
-package org.rx;
+package org.rx.bean;
 
 public final class Tuple<T1, T2> extends NStruct {
     public static <T1, T2> Tuple<T1, T2> of(T1 t1, T2 t2) {

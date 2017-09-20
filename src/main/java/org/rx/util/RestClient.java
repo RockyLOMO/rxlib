@@ -5,7 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.Tuple;
+import org.rx.bean.Tuple;
 
 import org.rx.App;
 import org.rx.socket.HttpClient;

@@ -1,5 +1,6 @@
 package org.rx.util;
 
+import org.rx.Disposable;
 import org.rx.SystemException;
 import org.rx.cache.BufferSegment;
 
@@ -7,7 +8,7 @@ import java.io.*;
 
 import static org.rx.Contract.require;
 
-public class IOStream implements Closeable, Flushable {
+public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
@@ -42,7 +43,7 @@ public class IOStream implements Closeable, Flushable {
     }
 
     @Override
-    public void close() {
+    protected void freeManaged() {
         try {
             writer.close();
             reader.close();

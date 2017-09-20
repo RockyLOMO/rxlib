@@ -1,5 +1,7 @@
 package org.rx;
 
+import org.rx.bean.BiTuple;
+import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
 import org.springframework.core.NestedRuntimeException;
 
@@ -34,7 +36,7 @@ public class SystemException extends NestedRuntimeException {
     private String                            friendlyMessage;
     private Map<String, Object>               data;
     /**
-     * Gets the method that throws the current exception.
+     * Gets the method that throws the current cause.
      */
     private BiTuple<Class, Method, ErrorCode> targetSite;
     private EnumErrorCode                     errorCode;
@@ -130,7 +132,7 @@ public class SystemException extends NestedRuntimeException {
                         }
                     }
                     if (cause != null) {
-                        errorCodes = errorCodes.where(p -> cause.getClass().equals(p.exception()));
+                        errorCodes = errorCodes.where(p -> cause.getClass().equals(p.cause()));
                         if (!errorCodes.any()) {
                             continue;
                         }
@@ -154,8 +156,8 @@ public class SystemException extends NestedRuntimeException {
                 if (!App.isNullOrEmpty(errorCode.value())) {
                     k += "[" + errorCode.value() + "]";
                 }
-                if (!Exception.class.equals(errorCode.exception())) {
-                    k += "<" + errorCode.exception().getSimpleName() + ">";
+                if (!Exception.class.equals(errorCode.cause())) {
+                    k += "<" + errorCode.cause().getSimpleName() + ">";
                 }
                 String msgTemp = as(methodSettings.get(k), String.class);
                 if (msgTemp == null) {
@@ -284,7 +286,7 @@ public class SystemException extends NestedRuntimeException {
                             }
                         }
                         if (cause != null) {
-                            errorCodes = errorCodes.where(p -> cause.getClass().equals(p.exception()));
+                            errorCodes = errorCodes.where(p -> cause.getClass().equals(p.cause()));
                             if (!errorCodes.any()) {
                                 continue;
                             }
@@ -311,8 +313,8 @@ public class SystemException extends NestedRuntimeException {
                 if (!App.isNullOrEmpty(errorCode.value())) {
                     k += "[" + errorCode.value() + "]";
                 }
-                if (!Exception.class.equals(errorCode.exception())) {
-                    k += "<" + errorCode.exception().getSimpleName() + ">";
+                if (!Exception.class.equals(errorCode.cause())) {
+                    k += "<" + errorCode.cause().getSimpleName() + ">";
                 }
                 String msgTemp = properties.get(k);
                 if (msgTemp == null) {

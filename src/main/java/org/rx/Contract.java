@@ -25,10 +25,10 @@ public final class Contract {
         }
     }
 
-    @ErrorCode(value = "test", messageKeys = { "$obj" })
-    public static void require(Object instance, boolean testResult) {
+    @ErrorCode(value = "test", messageKeys = { "$arg" })
+    public static void require(Object arg, boolean testResult) {
         if (!testResult) {
-            throw new SystemException(values(instance), "test");
+            throw new SystemException(values(arg), "test");
         }
     }
 

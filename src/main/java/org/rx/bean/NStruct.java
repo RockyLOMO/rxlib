@@ -1,4 +1,7 @@
-package org.rx;
+package org.rx.bean;
+
+import org.rx.Lazy;
+import org.rx.SystemException;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;

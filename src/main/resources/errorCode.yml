@@ -3,7 +3,7 @@ default: Network error, please retry later.
 org.rx.Contract:
   require[arg]: Parameter is null
   require[args]: Parameters $args have null value
-  require[test]: Instance $obj test failed
+  require[test]: Parameter $arg test failed
 
 org.rx.NQuery:
   single: Require 1 element, current set has $count elements

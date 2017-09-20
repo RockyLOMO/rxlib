@@ -2,6 +2,7 @@ package org.rx.socket;
 
 import org.rx.App;
 
+import java.io.IOException;
 import java.net.*;
 import org.rx.SystemException;
 import java.util.List;
@@ -19,6 +20,25 @@ public final class Sockets {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
             throw new SystemException(ex);
+        }
+    }
+
+    /**
+     * @param socket
+     * @param flags Send=1, Receive=2
+     */
+    public static void shutdown(Socket socket, int flags) {
+        if (!socket.isClosed() && socket.isConnected()) {
+            try {
+                if ((flags & 1) == 1 && !socket.isOutputShutdown()) {
+                    socket.shutdownOutput();
+                }
+                if ((flags & 2) == 2 && !socket.isInputShutdown()) {
+                    socket.shutdownInput();
+                }
+            } catch (IOException e) {
+                throw new SystemException(e);
+            }
         }
     }
 

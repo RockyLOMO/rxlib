@@ -2,8 +2,10 @@ package org.rx;
 
 import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
+import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.security.MD5Util;
+import org.rx.bean.DateTime;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -382,10 +384,10 @@ public class App {
     }
 
     @ErrorCode(messageKeys = { "$fType", "$tType" })
-    @ErrorCode(exception = ParseException.class, messageKeys = { "$formats", "$date" })
+    @ErrorCode(cause = ParseException.class, messageKeys = { "$formats", "$date" })
     @ErrorCode(value = "enumError", messageKeys = { "$name", "$eType" })
-    @ErrorCode(exception = NoSuchMethodException.class, messageKeys = { "$type" })
-    @ErrorCode(exception = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
+    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
+    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 

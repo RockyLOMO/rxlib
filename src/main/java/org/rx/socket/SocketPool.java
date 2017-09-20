@@ -1,6 +1,6 @@
 package org.rx.socket;
 
-import org.rx.DateTime;
+import org.rx.bean.DateTime;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -20,7 +20,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         public final Socket      socket;
 
         public boolean isConnected() {
-            return !owner.isClosed && socket.isConnected() && !socket.isClosed();
+            return !owner.isClosed() && socket.isConnected() && !socket.isClosed();
         }
 
         public DateTime getLastActive() {
@@ -47,7 +47,6 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     private static final int                                                                DefaultConnectTimeout  = 30000;
     private static final int                                                                DefaultMaxIdleMillis   = 120000;
     private static final int                                                                DefaultMaxSocketsCount = 64;
-    private volatile boolean                                                                isClosed;
     private final ConcurrentHashMap<InetSocketAddress, ConcurrentLinkedDeque<PooledSocket>> pool;
     private volatile int                                                                    connectTimeout;
     private volatile int                                                                    maxIdleMillis;
@@ -98,13 +97,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
-        if (isClosed) {
-            return;
-        }
-
+    protected void freeManaged() {
         clear();
-        isClosed = true;
     }
 
     private void runTimer() {
@@ -171,7 +165,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public PooledSocket borrowSocket(InetSocketAddress remoteAddr) {
-        require(this, !isClosed);
+        require(this, !isClosed());
 
         ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(remoteAddr);
         PooledSocket pooledSocket;
@@ -194,7 +188,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public void returnSocket(PooledSocket pooledSocket) {
-        require(this, !isClosed);
+        require(this, !isClosed());
         if (!pooledSocket.isConnected()) {
             return;
         }
@@ -202,7 +196,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         pooledSocket.setLastActive(new DateTime());
         ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(
                 (InetSocketAddress) pooledSocket.socket.getRemoteSocketAddress());
-        if (sockets.size() >= maxSocketsCount) {
+        if (sockets.size() >= maxSocketsCount || sockets.contains(pooledSocket)) {
             return;
         }
         sockets.addFirst(pooledSocket);
@@ -212,7 +206,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public void clear() {
-        require(this, !isClosed);
+        require(this, !isClosed());
 
         pool.values().stream().flatMap(ConcurrentLinkedDeque::stream).map(p -> p.socket).forEach(p -> {
             try {

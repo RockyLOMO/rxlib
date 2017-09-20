@@ -8,14 +8,30 @@ import org.rx.util.IOStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.function.BiPredicate;
-import java.util.function.Predicate;
 
-import static org.rx.Contract.as;
 import static org.rx.Contract.require;
+import static org.rx.socket.Sockets.shutdown;
 
 public final class NetworkStream extends IOStream {
+    private final boolean      ownsSocket;
     private final Socket       socket;
     private final BytesSegment segment;
+
+    public boolean isConnected() {
+        return !isClosed() && !socket.isClosed() && socket.isConnected();
+    }
+
+    public boolean canRead() {
+        return checkSocket(socket, false);
+    }
+
+    public boolean canWrite() {
+        return checkSocket(socket, true);
+    }
+
+    private static boolean checkSocket(Socket sock, boolean isWrite) {
+        return !sock.isClosed() && sock.isConnected() && !(isWrite ? sock.isOutputShutdown() : sock.isInputShutdown());
+    }
 
     public Socket getSocket() {
         return socket;
@@ -26,59 +42,58 @@ public final class NetworkStream extends IOStream {
     }
 
     public NetworkStream(Socket socket, BytesSegment segment) throws IOException {
+        this(socket, segment, true);
+    }
+
+    public NetworkStream(Socket socket, BytesSegment segment, boolean ownsSocket) throws IOException {
         super(socket.getInputStream(), socket.getOutputStream());
 
+        this.ownsSocket = ownsSocket;
         this.socket = socket;
         this.segment = segment;
     }
 
     @Override
-    public void close() {
-        super.close();
+    protected void freeManaged() {
+        super.freeManaged();
         try {
-            socket.close();
+            if (ownsSocket && !socket.isClosed()) {
+                shutdown(socket, 1);
+                socket.setSoLinger(true, 2);
+                socket.close();
+            }
         } catch (IOException e) {
             throw new SystemException(e);
-        }
-        segment.close();
-    }
-
-    @Override
-    public int read(byte[] buffer, int offset, int count) {
-        try {
-            return super.read(buffer, offset, count);
-        } catch (Exception ex) {
-            java.net.SocketException sockEx = as(ex, java.net.SocketException.class);
-            if (sockEx != null) {
-                String msg = sockEx.getMessage();
-                if (msg != null && msg.toLowerCase().contains("connection reset")) {
-                    Logger.error(sockEx, "NetworkStream onReceive read 0");
-                    return 0;
-                }
-            }
-            throw ex;
+        } finally {
+            segment.close();
         }
     }
 
-    public int directTo(NetworkStream to, Predicate<NetworkStream> isConnected,
-                        BiPredicate<BytesSegment, Integer> onEach) {
+    public int directTo(NetworkStream to, BiPredicate<BytesSegment, Integer> onEach) {
         require(to);
 
         int recv = -1;
-        while ((isConnected == null || isConnected.test(this))
-                && (recv = super.read(segment.array, segment.offset, segment.count)) >= 0) {
+        while (!isClosed() && canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= 0) {
             if (recv == 0) {
+                shutdown(socket, 1);
                 break;
             }
-            if (!(isConnected == null || isConnected.test(this))) {
-                break;
+            if (to.canWrite()) {
+                to.write(segment.array, segment.offset, recv);
+            } else {
+                Logger.debug("DirectTo read %s bytes and can't write", recv);
             }
-            to.write(segment.array, segment.offset, recv);
             if (onEach != null && !onEach.test(segment, recv)) {
+                recv = -1;
                 break;
             }
         }
-        to.flush();
+        if (to.canWrite()) {
+            to.flush();
+        }
+        if (recv == -1) {
+            close();
+        }
         return recv;
     }
 }
