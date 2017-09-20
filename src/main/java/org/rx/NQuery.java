@@ -8,7 +8,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -25,12 +25,12 @@ import static org.rx.SystemException.values;
 public final class NQuery<T> implements Iterable<T> {
     @FunctionalInterface
     public interface IndexSelector<T, TR> {
-        TR apply(T t, long index);
+        TR apply(T t, int index);
     }
 
     @FunctionalInterface
     public interface IndexPredicate<T> {
-        boolean test(T t, long index);
+        boolean test(T t, int index);
 
         default IndexPredicate<T> negate() {
             return (t, i) -> !test(t, i);
@@ -41,19 +41,23 @@ public final class NQuery<T> implements Iterable<T> {
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
     public static <T> NQuery<T> of(T... args) {
-        return of(Arrays.stream(args));
-    }
-
-    public static <T> NQuery<T> of(Collection<T> set) {
-        require(set);
-
-        return of(set.stream());
+        return of(Arrays.asList(args));
     }
 
     public static <T> NQuery<T> of(Stream<T> stream) {
         require(stream);
 
-        return new NQuery<>(stream);
+        return of(stream.collect(Collectors.toList()), stream.isParallel());
+    }
+
+    public static <T> NQuery<T> of(Collection<T> set) {
+        return of(set, false);
+    }
+
+    public static <T> NQuery<T> of(Collection<T> set, boolean isParallel) {
+        require(set);
+
+        return new NQuery<>(set, isParallel);
     }
     //endregion
 
@@ -65,9 +69,9 @@ public final class NQuery<T> implements Iterable<T> {
         return isParallel ? current.parallelStream() : current.stream();
     }
 
-    private NQuery(Stream<T> stream) {
-        isParallel = stream.isParallel();
-        current = stream.collect(Collectors.toList());
+    private NQuery(Collection<T> set, boolean isParallel) {
+        this.current = set;
+        this.isParallel = isParallel;
     }
 
     @Override
@@ -92,8 +96,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     private <TR> NQuery<TR> me(Collection<TR> set) {
-        this.current = set;
-        return (NQuery<TR>) this;
+        return of(set, isParallel);
     }
 
     private <TR> NQuery<TR> me(Stream<TR> stream) {
@@ -110,7 +113,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(StreamSupport.stream(
                 new Spliterators.AbstractSpliterator<TR>(spliterator.estimateSize(), spliterator.characteristics()) {
                     AtomicBoolean breaker = new AtomicBoolean();
-                    AtomicLong counter = new AtomicLong();
+                    AtomicInteger counter = new AtomicInteger();
 
                     @Override
                     public boolean tryAdvance(Consumer action) {
@@ -134,7 +137,7 @@ public final class NQuery<T> implements Iterable<T> {
         int Break  = 1 << 1;
         int All    = Accept | Break;
 
-        int each(T t, long index);
+        int each(T t, int index);
     }
     //endregion
 
@@ -155,7 +158,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     public <TR> NQuery<TR> select(IndexSelector<T, TR> selector) {
         List<TR> result = newList();
-        AtomicLong counter = new AtomicLong();
+        AtomicInteger counter = new AtomicInteger();
         stream().forEach(t -> result.add(selector.apply(t, counter.getAndIncrement())));
         return me(result);
     }
@@ -166,7 +169,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     public <TR> NQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
         List<TR> result = newList();
-        AtomicLong counter = new AtomicLong();
+        AtomicInteger counter = new AtomicInteger();
         stream().forEach(t -> newStream(selector.apply(t, counter.getAndIncrement())).forEach(result::add));
         return me(result);
     }
@@ -177,7 +180,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     public NQuery<T> where(IndexPredicate<T> predicate) {
         List<T> result = newList();
-        AtomicLong counter = new AtomicLong();
+        AtomicInteger counter = new AtomicInteger();
         stream().forEach(t -> {
             if (!predicate.test(t, counter.getAndIncrement())) {
                 return;
@@ -321,13 +324,12 @@ public final class NQuery<T> implements Iterable<T> {
         return q.isPresent() ? q.getAsDouble() : null;
     }
 
-    public long count() {
-        //        return stream().count();
+    public int count() {
         return current.size();
     }
 
-    public long count(Predicate<T> predicate) {
-        return stream().filter(predicate).count();
+    public int count(Predicate<T> predicate) {
+        return (int) stream().filter(predicate).count();
     }
 
     public T max() {
@@ -392,7 +394,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     @ErrorCode(messageKeys = { "$count" })
     public T single() {
-        long count = stream().count();
+        int count = count();
         if (count != 1) {
             throw new SystemException(values(count));
         }
@@ -405,7 +407,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     @ErrorCode(messageKeys = { "$count" })
     public T singleOrDefault() {
-        long count = stream().count();
+        int count = count();
         if (count > 1) {
             throw new SystemException(values(count));
         }
@@ -416,7 +418,7 @@ public final class NQuery<T> implements Iterable<T> {
         return where(predicate).singleOrDefault();
     }
 
-    public NQuery<T> skip(long count) {
+    public NQuery<T> skip(int count) {
         return me(stream().skip(count));
     }
 
@@ -440,7 +442,7 @@ public final class NQuery<T> implements Iterable<T> {
         });
     }
 
-    public NQuery<T> take(long count) {
+    public NQuery<T> take(int count) {
         return me(stream().limit(count));
     }
 

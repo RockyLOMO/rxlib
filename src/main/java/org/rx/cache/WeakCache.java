@@ -7,7 +7,6 @@ import org.rx.Logger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import static org.rx.Contract.as;
 import static org.rx.Contract.require;
@@ -27,6 +26,10 @@ public class WeakCache<TK, TV> {
             }
         }
         return instance;
+    }
+
+    public static Object getOrDefault(String key, Function<String, Object> supplier) {
+        return getInstance().getOrAdd(key, supplier);
     }
 
     private ConcurrentMap<TK, Reference> container;

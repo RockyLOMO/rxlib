@@ -2,6 +2,7 @@ package org.rx;
 
 import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
+import org.rx.cache.BufferSegment;
 import org.rx.security.MD5Util;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -305,8 +306,7 @@ public class App {
     //endregion
 
     //region IO
-    public static final int  TimeoutInfinite   = -1;
-    private static final int DefaultBufferSize = 1024;
+    public static final int TimeoutInfinite = -1;
 
     public static void sleep(long millis) {
         try {
@@ -325,7 +325,7 @@ public class App {
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[DefaultBufferSize];
+            byte[] buffer = new byte[BufferSegment.DefaultBufferSize];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
