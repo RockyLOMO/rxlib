@@ -4,7 +4,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.rx.Logger;
 import java.util.concurrent.*;
-import java.util.function.Func;
 
 import static org.rx.Contract.isNull;
 import static org.rx.Contract.require;

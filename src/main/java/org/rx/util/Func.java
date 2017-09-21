@@ -1,4 +1,4 @@
-package java.util.function;
+package org.rx.util;
 
 @FunctionalInterface
 public interface Func<T> {

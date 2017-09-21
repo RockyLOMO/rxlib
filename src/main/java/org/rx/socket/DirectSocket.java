@@ -49,15 +49,19 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             toSock.close();
         }
 
-        public void closeToSocket() {
+        public void closeToSocket(boolean pooling) {
             owner.getTracer().writeLine("client close socket[%s->%s]..",
                     Sockets.getId(networkStream.getSocket(), false), Sockets.getId(networkStream.getSocket(), true));
             owner.clients.remove(this);
             networkStream.close();
 
-            owner.getTracer().writeLine("client close socket[%s->%s]..", Sockets.getId(toSock.socket, false),
-                    Sockets.getId(toSock.socket, true));
-            Sockets.close(toSock.socket);
+            owner.getTracer().writeLine("client %s socket[%s->%s]..", pooling ? "pooling" : "close",
+                    Sockets.getId(toSock.socket, false), Sockets.getId(toSock.socket, true));
+            if (pooling) {
+                toSock.close();
+            } else {
+                Sockets.close(toSock.socket);
+            }
         }
     }
 
@@ -173,8 +177,9 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             }
         }, String.format("%s[networkStream]", taskName));
         AsyncTask.TaskFactory.run(() -> {
+            int recv = NetworkStream.StreamEOF;
             try {
-                int recv = client.toNetworkStream.directTo(client.networkStream, (p1, p2) -> {
+                recv = client.toNetworkStream.directTo(client.networkStream, (p1, p2) -> {
                     getTracer().writeLine("recv %s bytes from %s to %s..", p2 + "" + client.toSock.isConnected(),
                             Sockets.getId(client.toSock.socket, false),
                             Sockets.getId(client.networkStream.getSocket(), true));
@@ -193,7 +198,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 }
                 throw e;
             } finally {
-                client.closeToSocket();
+                client.closeToSocket(recv == NetworkStream.CannotWrite);
             }
         }, String.format("%s[toNetworkStream]", taskName));
     }

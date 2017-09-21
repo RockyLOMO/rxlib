@@ -4,6 +4,7 @@ import lombok.Data;
 import org.rx.socket.Sockets;
 import org.rx.util.BeanMapper;
 import org.rx.util.RestClient;
+import org.rx.util.StringBuilder;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -11,8 +12,17 @@ import java.math.BigDecimal;
 import java.net.Socket;
 
 public class Tester {
+    public enum xCode {
+        @ErrorCode(messageKeys = { "$arg" })
+        arg,
+        rv;
+    }
+
     public static void main(String[] args) throws Exception {
-        testSock();
+        SystemException e = new SystemException(new Throwable()).setErrorCode(xCode.arg, "userId");
+        System.out.println(e.getFriendlyMessage());
+
+        //testSock();
         //        System.out.println(App.getBootstrapPath());
 
         //        System.out.println("--rx--");

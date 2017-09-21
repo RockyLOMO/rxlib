@@ -23,9 +23,11 @@ public final class StringBuilder {
     }
 
     public StringBuilder replace(String target, String replacement) {
-        String str = buffer.toString();
-        buffer.setLength(0);
-        buffer.append(str.replace(target, replacement));
+        int index = 0;
+        while ((index = buffer.indexOf(target, index)) != -1) {
+            buffer.replace(index, index + target.length(), replacement);
+            index += replacement.length(); // Move to the end of the replacement
+        }
         return this;
     }
 

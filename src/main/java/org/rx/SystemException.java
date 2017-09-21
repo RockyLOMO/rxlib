@@ -3,23 +3,24 @@ package org.rx;
 import org.rx.bean.BiTuple;
 import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
+import org.rx.util.StringBuilder;
 import org.springframework.core.NestedRuntimeException;
 
+import java.lang.reflect.AccessibleObject;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
 import static org.rx.Contract.*;
+import static org.rx.Contract.toJSONString;
 
 /**
  * .fillInStackTrace()
  */
 public class SystemException extends NestedRuntimeException {
-    public interface EnumErrorCode {
-        String[] messageKeys();
-    }
-
     public static final String               ErrorFile = "errorCode";
     public static final String               DefaultMessage;
     private static final Map<String, Object> Settings;
@@ -39,7 +40,7 @@ public class SystemException extends NestedRuntimeException {
      * Gets the method that throws the current cause.
      */
     private BiTuple<Class, Method, ErrorCode> targetSite;
-    private EnumErrorCode                     errorCode;
+    private Enum                              errorCode;
 
     @Override
     public String getMessage() {
@@ -61,7 +62,7 @@ public class SystemException extends NestedRuntimeException {
         return targetSite;
     }
 
-    public EnumErrorCode getErrorCode() {
+    public Enum getErrorCode() {
         return errorCode;
     }
 
@@ -93,7 +94,6 @@ public class SystemException extends NestedRuntimeException {
         }
         try {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            Set<Map.Entry<String, Object>> settings = Settings.entrySet();
             for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
                 StackTraceElement stack = stackTrace[i];
                 Map<String, Object> methodSettings = as(Settings.get(stack.getClassName()), Map.class);
@@ -120,53 +120,20 @@ public class SystemException extends NestedRuntimeException {
                     if (!method.getName().equals(stack.getMethodName())) {
                         continue;
                     }
-
-                    NQuery<ErrorCode> errorCodes = NQuery.of(method.getAnnotationsByType(ErrorCode.class));
-                    if (!errorCodes.any()) {
+                    if ((errorCode = findCode(method, errorName, cause)) == null) {
                         continue;
                     }
-                    if (errorName != null) {
-                        errorCodes = errorCodes.where(p -> errorName.equals(p.value()));
-                        if (!errorCodes.any()) {
-                            continue;
-                        }
-                    }
-                    if (cause != null) {
-                        errorCodes = errorCodes.where(p -> cause.getClass().equals(p.cause()));
-                        if (!errorCodes.any()) {
-                            continue;
-                        }
-                    }
+
                     source = caller.left;
                     targetSite = method;
-                    errorCode = errorCodes.first();
                     break;
                 }
                 if (errorCode == null) {
                     continue;
                 }
 
-                String k = targetSite.getName();
-                String[] messageKeys = errorCode.messageKeys();
-                if (messageKeys.length != messageValues.length) {
-                    Logger.debug("SystemException: MessageKeys length %s not equals messageValues length %s",
-                            messageKeys.length, messageValues.length);
-                    return;
-                }
-                if (!App.isNullOrEmpty(errorCode.value())) {
-                    k += "[" + errorCode.value() + "]";
-                }
-                if (!Exception.class.equals(errorCode.cause())) {
-                    k += "<" + errorCode.cause().getSimpleName() + ">";
-                }
-                String msgTemp = as(methodSettings.get(k), String.class);
-                if (msgTemp == null) {
-                    Logger.debug("SystemException: Not fund %s key", k);
-                    return;
-                }
-
                 this.targetSite = BiTuple.of(source, targetSite, errorCode);
-                setFriendlyMessage(msgTemp, errorCode.messageKeys(), messageValues);
+                setFriendlyMessage(methodSettings, targetSite.getName(), errorCode, messageValues);
                 break;
             }
         } catch (Throwable e) {
@@ -174,12 +141,91 @@ public class SystemException extends NestedRuntimeException {
         }
     }
 
-    private void setFriendlyMessage(String msgTemp, String[] messageKeys, Object[] messageValues) {
-        for (int j = 0; j < messageKeys.length; j++) {
-            String mk = messageKeys[j], mv = toJSONString(messageValues[j]);
-            msgTemp = msgTemp.replace(mk, mv);
+    public <T extends Enum<T>> SystemException setErrorCode(T enumErrorCode, Object... messageValues) {
+        if ((this.errorCode = enumErrorCode) == null) {
+            Logger.debug("SystemException.setErrorCode: Parameter errorCode is null");
+            return this;
         }
-        friendlyMessage = msgTemp;
+
+        try {
+            Class type = enumErrorCode.getClass();
+            Map<String, Object> methodSettings = as(Settings.get(type.getName()), Map.class);
+            if (methodSettings == null) {
+                return this;
+            }
+            Field field = type.getDeclaredField(enumErrorCode.name());
+            ErrorCode errorCode;
+            if ((errorCode = findCode(field, null, null)) == null) {
+                return this;
+            }
+
+            setFriendlyMessage(methodSettings, enumErrorCode.name(), errorCode, messageValues);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        return this;
+    }
+
+    private ErrorCode findCode(AccessibleObject member, String errorName, Throwable cause) {
+        NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
+        if (!errorCodes.any()) {
+            Logger.debug("SystemException: Not found @ErrorCode in $s", member.toString());
+            return null;
+        }
+        if (errorName != null) {
+            errorCodes = errorCodes.where(p -> errorName.equals(p.value()));
+        }
+        if (cause != null) {
+            errorCodes = errorCodes.where(p -> cause.getClass().equals(p.cause()));
+        }
+        if (!errorCodes.any()) {
+            return null;
+        }
+        return errorCodes.first();
+    }
+
+    private void setFriendlyMessage(Map<String, Object> methodSettings, String messageName, ErrorCode errorCode,
+                                    Object[] messageValues) {
+        if (!App.isNullOrEmpty(errorCode.value())) {
+            messageName += "[" + errorCode.value() + "]";
+        }
+        if (!Exception.class.equals(errorCode.cause())) {
+            messageName += "<" + errorCode.cause().getSimpleName() + ">";
+        }
+        String msg = as(methodSettings.get(messageName), String.class);
+        if (msg == null) {
+            Logger.debug("SystemException: Not found messageName %s", messageName);
+            return;
+        }
+
+        switch (errorCode.messageFormatter()) {
+            case StringFormat:
+                msg = String.format(msg, messageValues);
+                break;
+            case MessageFormat:
+                msg = MessageFormat.format(msg, messageValues);
+                break;
+            default:
+                String[] messageKeys = errorCode.messageKeys();
+                if (messageKeys.length != messageValues.length) {
+                    Logger.debug("SystemException: MessageKeys length %s not equals messageValues length %s",
+                            messageKeys.length, messageValues.length);
+                    return;
+                }
+                StringBuilder temp = new StringBuilder().append(msg);
+                for (int j = 0; j < messageKeys.length; j++) {
+                    String mk = messageKeys[j], mv = toJSONString(messageValues[j]);
+                    temp.replace(mk, mv);
+                }
+                if (data != null) {
+                    for (Map.Entry<String, Object> entry : data.entrySet()) {
+                        temp.replace(entry.getKey(), toJSONString(entry.getValue()));
+                    }
+                }
+                msg = temp.toString();
+                break;
+        }
+        friendlyMessage = msg;
     }
 
     public <T extends Throwable> boolean tryGet($<T> out, Class<T> exType) {
@@ -208,35 +254,6 @@ public class SystemException extends NestedRuntimeException {
                 return false;
             }
         }
-    }
-
-    public <T extends Enum<T> & EnumErrorCode> SystemException setErrorCode(T errorCode, Object... messageValues) {
-        if ((this.errorCode = errorCode) == null) {
-            Logger.debug("SystemException: setErrorCode errorCode is null");
-            return this;
-        }
-        String[] messageKeys = errorCode.messageKeys();
-        if (App.isNullOrEmpty(messageKeys) || App.isNullOrEmpty(messageValues)
-                || messageKeys.length != messageValues.length) {
-            return this;
-        }
-        String pk = String.format("%s.%s", errorCode.getClass().getName(), errorCode.name());
-        String pv = as(Settings.get(pk), String.class);
-        if (pv == null) {
-            return this;
-        }
-
-        Map<String, Object> errorData = getData();
-        for (int i = 0; i < messageKeys.length; i++) {
-            errorData.put(messageKeys[i], messageValues[i]);
-        }
-        setFriendlyMessage(pv, NQuery.of(errorData.keySet()).toArray(String.class), errorData.values().toArray());
-        return this;
-    }
-
-    public SystemException setFriendlyMessage(String format, Object... args) {
-        friendlyMessage = String.format(format, args);
-        return this;
     }
 
     @Deprecated
@@ -318,7 +335,7 @@ public class SystemException extends NestedRuntimeException {
                 }
                 String msgTemp = properties.get(k);
                 if (msgTemp == null) {
-                    Logger.debug("SystemException: Not fund %s key", k);
+                    Logger.debug("SystemException: Not found messageName %s", k);
                     return;
                 }
 
@@ -329,6 +346,11 @@ public class SystemException extends NestedRuntimeException {
         } catch (Throwable e) {
             e.printStackTrace();
         }
+    }
+
+    public SystemException setFriendlyMessage(String format, Object... args) {
+        friendlyMessage = String.format(format, args);
+        return this;
     }
 
     protected Object recall(Object instance, Object... args) throws ReflectiveOperationException {

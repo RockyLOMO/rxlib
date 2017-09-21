@@ -12,6 +12,9 @@ import static org.rx.Contract.require;
 import static org.rx.socket.Sockets.shutdown;
 
 public final class NetworkStream extends IOStream {
+    public static final int    SocketEOF   = 0;
+    public static final int    StreamEOF   = -1;
+    public static final int    CannotWrite = -2;
     private final boolean      ownsSocket;
     private final Socket       socket;
     private final BytesSegment segment;
@@ -70,7 +73,7 @@ public final class NetworkStream extends IOStream {
         require(this, !isClosed());
         require(to);
 
-        int recv = -2;
+        int recv = StreamEOF;
         while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= -1) {
             if (ownsSocket && recv <= 0) {
                 Logger.debug("DirectTo read %s flag and shutdown send", recv);
@@ -80,12 +83,13 @@ public final class NetworkStream extends IOStream {
 
             if (!to.canWrite()) {
                 Logger.debug("DirectTo read %s bytes and can't write", recv);
+                recv = CannotWrite;
                 break;
             }
             to.write(segment.array, segment.offset, recv);
 
             if (onEach != null && !onEach.test(segment, recv)) {
-                recv = -1;
+                recv = StreamEOF;
                 break;
             }
         }

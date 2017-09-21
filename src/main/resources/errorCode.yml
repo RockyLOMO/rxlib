@@ -16,3 +16,6 @@ org.rx.App:
   changeType<NoSuchMethodException>: Not found valueOf method of $type type
   changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
   checkType: Find $type primitive type failed
+
+org.rx.Tester$xCode:
+  arg: Parameter $arg error..
