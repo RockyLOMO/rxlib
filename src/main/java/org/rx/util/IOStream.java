@@ -43,7 +43,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     @Override
-    protected void freeManaged() {
+    protected void freeUnmanaged() {
         try {
             writer.close();
             reader.close();

@@ -1,7 +1,6 @@
 package org.rx.socket;
 
 import org.rx.Logger;
-import org.rx.SystemException;
 import org.rx.cache.BytesSegment;
 import org.rx.util.IOStream;
 
@@ -54,35 +53,37 @@ public final class NetworkStream extends IOStream {
     }
 
     @Override
-    protected void freeManaged() {
-        super.freeManaged();
+    protected void freeUnmanaged() {
         try {
-            if (ownsSocket && !socket.isClosed()) {
-                shutdown(socket, 1);
-                socket.setSoLinger(true, 2);
-                socket.close();
+            Logger.info("NetworkStream freeUnmanaged ownsSocket=%s socket[%s][closed=%s]", ownsSocket,
+                    Sockets.getId(socket, false), socket.isClosed());
+            if (ownsSocket) {
+                //super.freeUnmanaged(); Ignore this!!
+                Sockets.close(socket, 1);
             }
-        } catch (IOException e) {
-            throw new SystemException(e);
         } finally {
             segment.close();
         }
     }
 
     public int directTo(NetworkStream to, BiPredicate<BytesSegment, Integer> onEach) {
+        require(this, !isClosed());
         require(to);
 
-        int recv = -1;
-        while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= 0) {
-            if (recv == 0) {
+        int recv = -2;
+        while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= -1) {
+            if (ownsSocket && recv <= 0) {
+                Logger.debug("DirectTo read %s flag and shutdown send", recv);
                 shutdown(socket, 1);
                 break;
             }
-            if (to.canWrite()) {
-                to.write(segment.array, segment.offset, recv);
-            } else {
+
+            if (!to.canWrite()) {
                 Logger.debug("DirectTo read %s bytes and can't write", recv);
+                break;
             }
+            to.write(segment.array, segment.offset, recv);
+
             if (onEach != null && !onEach.test(segment, recv)) {
                 recv = -1;
                 break;
@@ -90,9 +91,6 @@ public final class NetworkStream extends IOStream {
         }
         if (to.canWrite()) {
             to.flush();
-        }
-        if (recv == -1) {
-            close();
         }
         return recv;
     }

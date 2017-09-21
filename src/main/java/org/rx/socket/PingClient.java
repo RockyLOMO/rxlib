@@ -109,8 +109,8 @@ public final class PingClient {
             } finally {
                 watcher.stop();
                 try {
-                    sock.close();
-                } catch (IOException ex) {
+                    Sockets.close(sock);
+                } catch (Exception ex) {
                     Logger.info("Ping error: %s", ex.getMessage());
                 }
             }

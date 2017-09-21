@@ -24,11 +24,10 @@ public abstract class Disposable implements AutoCloseable {
         closed = true;
     }
 
-    protected abstract void freeManaged();
-
-    protected void freeUnmanaged() {
-
+    protected void freeManaged() {
     }
+
+    protected abstract void freeUnmanaged();
 
     @Override
     public void close() {

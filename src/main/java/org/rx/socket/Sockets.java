@@ -23,11 +23,31 @@ public final class Sockets {
         }
     }
 
+    public static void close(Socket socket) {
+        close(socket, 1 | 2);
+    }
+
+    public static void close(Socket socket, int flags) {
+        require(socket);
+
+        if (!socket.isClosed()) {
+            shutdown(socket, flags);
+            try {
+                socket.setSoLinger(true, 2);
+                socket.close();
+            } catch (IOException e) {
+                throw new SystemException(e);
+            }
+        }
+    }
+
     /**
      * @param socket
      * @param flags Send=1, Receive=2
      */
     public static void shutdown(Socket socket, int flags) {
+        require(socket);
+
         if (!socket.isClosed() && socket.isConnected()) {
             try {
                 if ((flags & 1) == 1 && !socket.isOutputShutdown()) {

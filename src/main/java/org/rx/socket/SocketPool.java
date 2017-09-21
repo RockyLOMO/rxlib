@@ -1,11 +1,14 @@
 package org.rx.socket;
 
+import org.rx.NQuery;
 import org.rx.bean.DateTime;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import org.rx.Logger;
+
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,7 +23,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         public final Socket      socket;
 
         public boolean isConnected() {
-            return !owner.isClosed() && socket.isConnected() && !socket.isClosed();
+            return !owner.isClosed() && !socket.isClosed() && socket.isConnected();
         }
 
         public DateTime getLastActive() {
@@ -91,13 +94,14 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         maxSocketsCount = DefaultMaxSocketsCount;
         String n = "SocketPool";
         timer = new Timer(n, true);
-        Tracer tracer = new Tracer();
+        Logger tracer = new Logger();
         tracer.setPrefix(n + " ");
+        tracer.writeLine("started..");
         setTracer(tracer);
     }
 
     @Override
-    protected void freeManaged() {
+    protected void freeUnmanaged() {
         clear();
     }
 
@@ -119,26 +123,26 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             }, period, period);
             isTimerRun = true;
         }
-        getTracer().writeLine("%s runTimer..", getTimeString());
+        getTracer().writeLine("runTimer..");
     }
 
     private void clearIdleSockets() {
-        for (InetSocketAddress socketAddress : pool.keySet()) {
-            ConcurrentLinkedDeque<PooledSocket> sockets = pool.get(socketAddress);
+        for (Map.Entry<InetSocketAddress, ConcurrentLinkedDeque<PooledSocket>> entry : NQuery.of(pool.entrySet())) {
+            ConcurrentLinkedDeque<PooledSocket> sockets = entry.getValue();
             if (sockets == null) {
                 continue;
             }
 
-            for (PooledSocket socket : sockets) {
+            for (PooledSocket socket : NQuery.of(sockets)) {
                 if (!socket.isConnected()
                         || new DateTime().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
                     sockets.remove(socket);
-                    getTracer().writeLine("%s clearIdleSocket[Local=%s, Remote=%s]..", getTimeString(),
+                    getTracer().writeLine("clear idle socket[local=%s, remote=%s]..",
                             Sockets.getId(socket.socket, false), Sockets.getId(socket.socket, true));
                 }
             }
             if (sockets.size() == 0) {
-                pool.remove(socketAddress);
+                pool.remove(entry.getKey());
             }
         }
         if (pool.size() == 0) {
@@ -152,7 +156,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             timer.purge();
             isTimerRun = false;
         }
-        getTracer().writeLine("%s stopTimer..", getTimeString());
+        getTracer().writeLine("stopTimer..");
     }
 
     private ConcurrentLinkedDeque<PooledSocket> getSockets(InetSocketAddress remoteAddr) {
@@ -167,6 +171,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     public PooledSocket borrowSocket(InetSocketAddress remoteAddr) {
         require(this, !isClosed());
 
+        boolean isExisted = true;
         ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(remoteAddr);
         PooledSocket pooledSocket;
         if ((pooledSocket = sockets.peekFirst()) == null) {
@@ -177,46 +182,57 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                 throw new SocketException(remoteAddr, ex);
             }
             pooledSocket = new PooledSocket(this, sock);
+            isExisted = false;
         }
         if (!pooledSocket.isConnected()) {
+            if (isExisted) {
+                sockets.remove(pooledSocket);
+            }
             return borrowSocket(remoteAddr);
         }
         Socket sock = pooledSocket.socket;
-        getTracer().writeLine("%s borrowSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(sock, false),
-                Sockets.getId(sock, true));
+        getTracer().writeLine("borrow %s socket[local=%s, remote=%s]..", isExisted ? "existed" : "new",
+                Sockets.getId(sock, false), Sockets.getId(sock, true));
         return pooledSocket;
     }
 
     public void returnSocket(PooledSocket pooledSocket) {
         require(this, !isClosed());
-        if (!pooledSocket.isConnected()) {
-            return;
-        }
 
-        pooledSocket.setLastActive(new DateTime());
-        ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(
-                (InetSocketAddress) pooledSocket.socket.getRemoteSocketAddress());
-        if (sockets.size() >= maxSocketsCount || sockets.contains(pooledSocket)) {
-            return;
+        String action = "return";
+        try {
+            if (!pooledSocket.isConnected()) {
+                action = "discard closed";
+                return;
+            }
+            pooledSocket.setLastActive(new DateTime());
+            ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(
+                    (InetSocketAddress) pooledSocket.socket.getRemoteSocketAddress());
+            if (sockets.size() >= maxSocketsCount || sockets.contains(pooledSocket)) {
+                action = "discard contains";
+                return;
+            }
+
+            sockets.addFirst(pooledSocket);
+        } finally {
+            Socket sock = pooledSocket.socket;
+            getTracer().writeLine("%s socket[local=%s, remote=%s]..", action, Sockets.getId(sock, false),
+                    Sockets.getId(sock, true));
         }
-        sockets.addFirst(pooledSocket);
-        Socket sock = pooledSocket.socket;
-        getTracer().writeLine("%s returnSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(sock, false),
-                Sockets.getId(sock, true));
     }
 
     public void clear() {
         require(this, !isClosed());
 
-        pool.values().stream().flatMap(ConcurrentLinkedDeque::stream).map(p -> p.socket).forEach(p -> {
+        for (Socket socket : NQuery.of(pool.values()).selectMany(p -> p).select(p -> p.socket)) {
             try {
-                getTracer().writeLine("%s clearSocket[Local=%s, Remote=%s]..", getTimeString(), Sockets.getId(p, false),
-                        Sockets.getId(p, true));
-                p.close();
-            } catch (IOException ex) {
+                getTracer().writeLine("clear socket[local=%s, remote=%s]..", Sockets.getId(socket, false),
+                        Sockets.getId(socket, true));
+                Sockets.close(socket);
+            } catch (Exception ex) {
                 Logger.error(ex, "SocketPool clear");
             }
-        });
+        }
         pool.clear();
     }
 }
