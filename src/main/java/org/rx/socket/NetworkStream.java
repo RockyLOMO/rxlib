@@ -22,11 +22,11 @@ public final class NetworkStream extends IOStream {
     }
 
     public boolean canRead() {
-        return checkSocket(socket, false);
+        return !isClosed() && checkSocket(socket, false);
     }
 
     public boolean canWrite() {
-        return checkSocket(socket, true);
+        return !isClosed() && checkSocket(socket, true);
     }
 
     private static boolean checkSocket(Socket sock, boolean isWrite) {
@@ -73,7 +73,7 @@ public final class NetworkStream extends IOStream {
         require(to);
 
         int recv = -1;
-        while (!isClosed() && canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= 0) {
+        while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= 0) {
             if (recv == 0) {
                 shutdown(socket, 1);
                 break;

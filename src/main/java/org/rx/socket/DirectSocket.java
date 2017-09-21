@@ -17,8 +17,8 @@ import static org.rx.Contract.require;
 import static org.rx.socket.Sockets.shutdown;
 
 public class DirectSocket extends Traceable implements AutoCloseable {
-    private static class ClientItem implements AutoCloseable {
-        private DirectSocket                 owner;
+    private static class ClientItem extends Disposable {
+        private final DirectSocket           owner;
         private final BufferSegment          segment;
         public final NetworkStream           networkStream;
         public final SocketPool.PooledSocket toSock;
@@ -37,20 +37,16 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         }
 
         @Override
-        public void close() {
-            synchronized (networkStream) {
-                if (owner == null) {
-                    return;
-                }
+        protected void freeManaged() {
+            owner.getTracer().writeLine("%s client[%s->%s] close..", owner.getTimeString(),
+                    Sockets.getId(networkStream.getSocket(), false), Sockets.getId(networkStream.getSocket(), true));
+            owner.clients.remove(this);
+            networkStream.close();
 
-                owner.getTracer().writeLine("%s client[%s->%s] close..", owner.getTimeString(),
-                        Sockets.getId(networkStream.getSocket(), false), Sockets.getId(toSock.socket, false));
-                owner.clients.remove(this);
-                networkStream.close();
-                toNetworkStream.close();
-                toSock.close();
-                owner = null;
-            }
+            owner.getTracer().writeLine("%s client[%s->%s] return..", owner.getTimeString(),
+                    Sockets.getId(toSock.socket, false), Sockets.getId(toSock.socket, true));
+            toNetworkStream.close();
+            toSock.close();
         }
     }
 
@@ -61,8 +57,9 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     private final List<ClientItem> clients;
     private volatile int           connectRetryCount;
 
+    @Override
     public boolean isClosed() {
-        return !(!isClosed() && !server.isClosed());
+        return !(!super.isClosed() && !server.isClosed());
     }
 
     public InetSocketAddress getDirectAddress() {
