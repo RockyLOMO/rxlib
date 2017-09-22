@@ -22,7 +22,7 @@ public @interface ErrorCode {
 
     String value() default "";
 
-    Class cause() default Exception.class;
+    Class<? extends Throwable> cause() default Exception.class;
 
     MessageFormatter messageFormatter() default MessageFormatter.KeyValueFormat;
 

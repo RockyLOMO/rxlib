@@ -100,7 +100,7 @@ public class SystemException extends NestedRuntimeException {
                 if (methodSettings == null) {
                     continue;
                 }
-                Tuple<Class, Method[]> caller = as(WeakCache.getInstance().getOrAdd(stack.getClassName(), p -> {
+                Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(this.getClass(), stack.getClassName(), p -> {
                     try {
                         Class type = Class.forName(p);
                         return Tuple.of(type, type.getDeclaredMethods());
@@ -275,15 +275,16 @@ public class SystemException extends NestedRuntimeException {
                     if (!entry.getKey().startsWith(k)) {
                         continue;
                     }
-                    Tuple<Class, Method[]> caller = as(WeakCache.getInstance().getOrAdd(stack.getClassName(), p -> {
-                        try {
-                            Class type = Class.forName(p);
-                            return Tuple.of(type, type.getDeclaredMethods());
-                        } catch (ClassNotFoundException e) {
-                            e.printStackTrace();
-                            return null;
-                        }
-                    }), Tuple.class);
+                    Tuple<Class, Method[]> caller = as(
+                            WeakCache.getOrStore(this.getClass(), stack.getClassName(), p -> {
+                                try {
+                                    Class type = Class.forName(p);
+                                    return Tuple.of(type, type.getDeclaredMethods());
+                                } catch (ClassNotFoundException e) {
+                                    e.printStackTrace();
+                                    return null;
+                                }
+                            }), Tuple.class);
                     if (caller == null) {
                         continue;
                     }

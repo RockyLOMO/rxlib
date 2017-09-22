@@ -5,6 +5,8 @@ import org.rx.App;
 import java.io.IOException;
 import java.net.*;
 import org.rx.SystemException;
+import org.rx.cache.WeakCache;
+
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
@@ -21,6 +23,16 @@ public final class Sockets {
         } catch (Exception ex) {
             throw new SystemException(ex);
         }
+    }
+
+    public InetAddress[] getAddresses(String host) {
+        return (InetAddress[]) WeakCache.getOrStore(Sockets.class, host, p -> {
+            try {
+                return InetAddress.getAllByName(p);
+            } catch (UnknownHostException e) {
+                throw new SystemException(e);
+            }
+        });
     }
 
     public static void close(Socket socket) {

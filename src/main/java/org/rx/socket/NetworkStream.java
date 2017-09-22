@@ -75,9 +75,11 @@ public final class NetworkStream extends IOStream {
 
         int recv = StreamEOF;
         while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= -1) {
-            if (ownsSocket && recv <= 0) {
-                Logger.debug("DirectTo read %s flag and shutdown send", recv);
-                shutdown(socket, 1);
+            if (recv <= 0) {
+                if (ownsSocket) {
+                    Logger.debug("DirectTo read %s flag and shutdown send", recv);
+                    shutdown(socket, 1);
+                }
                 break;
             }
 

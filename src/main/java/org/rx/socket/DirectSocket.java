@@ -12,10 +12,10 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Function;
 
 import static org.rx.$.$;
 import static org.rx.Contract.require;
-import static org.rx.socket.Sockets.shutdown;
 
 public class DirectSocket extends Traceable implements AutoCloseable {
     private static class ClientItem {
@@ -42,19 +42,9 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                     Sockets.getId(networkStream.getSocket(), false), Sockets.getId(networkStream.getSocket(), true));
             owner.clients.remove(this);
             networkStream.close();
-
-            //            owner.getTracer().writeLine("client return socket[%s->%s]..", Sockets.getId(toSock.socket, false),
-            //                    Sockets.getId(toSock.socket, true));
-            //            toNetworkStream.close();
-            //            toSock.close();
         }
 
         public void closeToSocket(boolean pooling) {
-            //            owner.getTracer().writeLine("client close socket[%s->%s]..",
-            //                    Sockets.getId(networkStream.getSocket(), false), Sockets.getId(networkStream.getSocket(), true));
-            //            owner.clients.remove(this);
-            //            networkStream.close();
-
             owner.getTracer().writeLine("client %s socket[%s->%s]..", pooling ? "pooling" : "close",
                     Sockets.getId(toSock.socket, false), Sockets.getId(toSock.socket, true));
             if (pooling) {

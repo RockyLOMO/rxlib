@@ -28,8 +28,11 @@ public class WeakCache<TK, TV> {
         return instance;
     }
 
-    public static Object getOrDefault(String key, Function<String, Object> supplier) {
-        return getInstance().getOrAdd(key, supplier);
+    public static Object getOrStore(Class caller, String key, Function<String, Object> supplier) {
+        require(caller, key, supplier);
+
+        String k = caller.getName() + key;
+        return getInstance().getOrAdd(k, p -> supplier.apply(key));
     }
 
     private ConcurrentMap<TK, Reference> container;
@@ -53,7 +56,11 @@ public class WeakCache<TK, TV> {
         return container.get(key);
     }
 
-    private void setItem(TK key, TV val, boolean isSoftRef) {
+    public void add(TK key, TV val) {
+        add(key, val, softRef);
+    }
+
+    public void add(TK key, TV val, boolean isSoftRef) {
         require(key, val);
 
         Reference ref = getItem(key);
@@ -64,14 +71,6 @@ public class WeakCache<TK, TV> {
             }
         }
         container.put(key, isSoftRef ? new SoftReference(val) : new WeakReference(val));
-    }
-
-    public void add(TK key, TV val) {
-        add(key, val, softRef);
-    }
-
-    public void add(TK key, TV val, boolean isSoftRef) {
-        setItem(key, val, isSoftRef);
     }
 
     public void remove(TK key) {
@@ -109,6 +108,8 @@ public class WeakCache<TK, TV> {
     }
 
     public TV getOrAdd(TK key, Function<TK, TV> supplier, boolean isSoftRef) {
+        require(supplier);
+
         TV v;
         Reference ref = getItem(key);
         if (ref == null || (v = (TV) ref.get()) == null) {

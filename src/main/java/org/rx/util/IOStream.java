@@ -24,8 +24,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         }
     }
 
-    private InputStream  reader;
-    private OutputStream writer;
+    protected InputStream  reader;
+    protected OutputStream writer;
 
     public InputStream getReader() {
         return reader;
@@ -33,6 +33,9 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
     public OutputStream getWriter() {
         return writer;
+    }
+
+    protected IOStream() {
     }
 
     public IOStream(InputStream input, OutputStream output) {
