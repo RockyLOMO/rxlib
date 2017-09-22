@@ -229,31 +229,32 @@ public class SystemException extends NestedRuntimeException {
     }
 
     public <T extends Throwable> boolean tryGet($<T> out, Class<T> exType) {
-        if (exType == null) {
+        if (out == null || exType == null) {
             return false;
-        } else if (exType.isInstance(this)) {
+        }
+        if (exType.isInstance(this)) {
             out.$ = (T) this;
             return true;
-        } else {
-            Throwable cause = this.getCause();
-            if (cause == this) {
-                return false;
-            } else if (cause instanceof SystemException) {
-                return ((SystemException) cause).tryGet(out, exType);
-            } else {
-                while (cause != null) {
-                    if (exType.isInstance(cause)) {
-                        out.$ = (T) cause;
-                        return true;
-                    }
-                    if (cause.getCause() == cause) {
-                        break;
-                    }
-                    cause = cause.getCause();
-                }
-                return false;
-            }
         }
+        Throwable cause = this.getCause();
+        if (cause == this) {
+            return false;
+        }
+        if (cause instanceof SystemException) {
+            return ((SystemException) cause).tryGet(out, exType);
+        }
+
+        while (cause != null) {
+            if (exType.isInstance(cause)) {
+                out.$ = (T) cause;
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     @Deprecated

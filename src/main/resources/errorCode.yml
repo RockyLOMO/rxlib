@@ -17,5 +17,8 @@ org.rx.App:
   changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
   checkType: Find $type primitive type failed
 
+org.rx.util.MemoryStream:
+  getBuffer: The MemoryStream instance was not created with a publicly visible buffer
+
 org.rx.Tester$xCode:
   arg: Parameter $arg error..

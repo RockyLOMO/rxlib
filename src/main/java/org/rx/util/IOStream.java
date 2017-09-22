@@ -56,6 +56,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public int available() {
+        checkNotClosed();
+
         try {
             return reader.available();
         } catch (IOException ex) {
@@ -64,6 +66,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public int read() {
+        checkNotClosed();
+
         try {
             return reader.read();
         } catch (IOException ex) {
@@ -72,12 +76,14 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public int read(byte[] data) {
+        checkNotClosed();
         require(data);
 
         return read(data, 0, data.length);
     }
 
     public int read(byte[] buffer, int offset, int count) {
+        checkNotClosed();
         require(buffer);
         require(offset, offset >= 0);//ignore count 4 BytesSegment
 
@@ -89,6 +95,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public void write(int b) {
+        checkNotClosed();
+
         try {
             writer.write(b);
         } catch (IOException e) {
@@ -97,12 +105,14 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public void write(byte[] data) {
+        checkNotClosed();
         require(data);
 
         write(data, 0, data.length);
     }
 
     public void write(byte[] buffer, int offset, int count) {
+        checkNotClosed();
         require(buffer);
         require(offset, offset >= 0);
 
@@ -115,6 +125,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
     @Override
     public void flush() {
+        checkNotClosed();
+
         try {
             writer.flush();
         } catch (IOException e) {
@@ -123,6 +135,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public void copyTo(IOStream to) {
+        checkNotClosed();
         require(to);
 
         copyTo(this.reader, to.writer);

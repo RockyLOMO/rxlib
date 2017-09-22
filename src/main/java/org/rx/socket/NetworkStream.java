@@ -70,7 +70,7 @@ public final class NetworkStream extends IOStream {
     }
 
     public int directTo(NetworkStream to, BiPredicate<BytesSegment, Integer> onEach) {
-        require(this, !isClosed());
+        checkNotClosed();
         require(to);
 
         int recv = StreamEOF;

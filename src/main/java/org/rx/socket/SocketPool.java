@@ -169,7 +169,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public PooledSocket borrowSocket(InetSocketAddress remoteAddr) {
-        require(this, !isClosed());
+        checkNotClosed();
+        require(remoteAddr);
 
         boolean isExisted = true;
         ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(remoteAddr);
@@ -197,7 +198,8 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public void returnSocket(PooledSocket pooledSocket) {
-        require(this, !isClosed());
+        checkNotClosed();
+        require(pooledSocket);
 
         String action = "return";
         try {
@@ -222,7 +224,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     public void clear() {
-        require(this, !isClosed());
+        checkNotClosed();
 
         for (Socket socket : NQuery.of(pool.values()).selectMany(p -> p).select(p -> p.socket)) {
             try {

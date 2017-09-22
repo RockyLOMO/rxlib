@@ -3,6 +3,7 @@ package org.rx;
 import lombok.Data;
 import org.rx.socket.Sockets;
 import org.rx.util.BeanMapper;
+import org.rx.util.MemoryStream;
 import org.rx.util.RestClient;
 import org.rx.util.StringBuilder;
 
@@ -21,6 +22,14 @@ public class Tester {
     public static void main(String[] args) throws Exception {
         SystemException e = new SystemException(new Throwable()).setErrorCode(xCode.arg, "userId");
         System.out.println(e.getFriendlyMessage());
+
+        MemoryStream stream = new MemoryStream(32, true);
+        stream.write(new byte[240]);
+        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
+                stream.getLength(), stream.getBuffer().length));
+        stream.read();
+        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
+                stream.getLength(), stream.getBuffer().length));
 
         //testSock();
         //        System.out.println(App.getBootstrapPath());

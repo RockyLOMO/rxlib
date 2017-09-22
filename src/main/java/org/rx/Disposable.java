@@ -1,5 +1,7 @@
 package org.rx;
 
+import static org.rx.Contract.require;
+
 public abstract class Disposable implements AutoCloseable {
     private boolean closed;
 
@@ -28,6 +30,10 @@ public abstract class Disposable implements AutoCloseable {
     }
 
     protected abstract void freeUnmanaged();
+
+    protected void checkNotClosed() {
+        require(this, !closed);
+    }
 
     @Override
     public void close() {
