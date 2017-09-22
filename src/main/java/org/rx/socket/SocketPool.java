@@ -141,7 +141,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                             Sockets.getId(socket.socket, false), Sockets.getId(socket.socket, true));
                 }
             }
-            if (sockets.size() == 0) {
+            if (sockets.isEmpty()) {
                 pool.remove(entry.getKey());
             }
         }
@@ -174,7 +174,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         boolean isExisted = true;
         ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(remoteAddr);
         PooledSocket pooledSocket;
-        if ((pooledSocket = sockets.peekFirst()) == null) {
+        if ((pooledSocket = sockets.pollFirst()) == null) {
             Socket sock = new Socket();
             try {
                 sock.connect(remoteAddr, connectTimeout);
