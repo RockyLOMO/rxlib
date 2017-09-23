@@ -1,6 +1,6 @@
-package org.rx;
+package org.rx.test.bean;
 
-public class ObjectParam {
+public class RestParam {
     private int a,b;
 
     public int getA() {

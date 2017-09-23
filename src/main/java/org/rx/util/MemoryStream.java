@@ -10,22 +10,99 @@ import java.io.*;
 import static org.rx.Contract.require;
 import static org.rx.SystemException.values;
 
-public final class MemoryStream extends IOStream {
+public class MemoryStream extends IOStream {
     private static final class BytesWriter extends ByteArrayOutputStream {
-        public int getCount() {
+        private volatile int minPosition, length, maxLength = Integer.MAX_VALUE - 8;
+
+        public int getPosition() {
             return count;
         }
 
-        public void setCount(int count) {
-            this.count = count;
+        public synchronized void setPosition(int position) {
+            require(position, minPosition <= position);
+
+            count = position;
         }
 
-        public byte[] getBuffer() {
+        public int getLength() {
+            return length;
+        }
+
+        public synchronized void setLength(int length) {
+            require(length, length <= maxLength);
+
+            this.length = length;
+        }
+
+        public synchronized byte[] getBuffer() {
             return buf;
+        }
+
+        public synchronized void setBuffer(byte[] buffer) {
+            require(buffer);
+
+            buf = buffer;
         }
 
         public BytesWriter(int capacity) {
             super(capacity);
+        }
+
+        public BytesWriter(byte[] buffer, int offset, int count, boolean nonResizable) {
+            super(0);
+            require(buffer);
+            require(offset, offset >= 0);
+            if (nonResizable) {
+                require(count, offset + count < buffer.length);
+                minPosition = offset;
+                maxLength = count;
+            }
+
+            setBuffer(buffer);
+            setPosition(offset);
+        }
+
+        @Override
+        public synchronized void write(int b) {
+            beforeWrite(1);
+            super.write(b);
+            afterWrite();
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            require(b);
+
+            beforeWrite(len);
+            super.write(b, off, len);
+            afterWrite();
+        }
+
+        private void beforeWrite(int count) {
+            require(count, getPosition() + count < maxLength);
+        }
+
+        private void afterWrite() {
+            if (getPosition() > getLength()) {
+                setLength(getPosition());
+            }
+        }
+
+        @Override
+        public synchronized void writeTo(OutputStream out) throws IOException {
+            require(out);
+
+            out.write(getBuffer(), minPosition, getLength());
+        }
+
+        @Override
+        public int size() {
+            return getLength();
+        }
+
+        @Override
+        public void reset() {
+            setPosition(minPosition);
         }
     }
 
@@ -34,32 +111,32 @@ public final class MemoryStream extends IOStream {
             return pos;
         }
 
-        public void setPosition(int position) {
+        public synchronized void setPosition(int position) {
             this.pos = position;
         }
 
-        public int getCount() {
+        public int getLength() {
             return count;
         }
 
-        public void setCount(int count) {
-            this.count = count;
+        public synchronized void setLength(int length) {
+            count = length;
         }
 
-        public byte[] getBuffer() {
-            return buf;
-        }
-
-        public BytesReader(byte[] buffer) {
+        public BytesReader(byte[] buffer, int offset, int count) {
             super(buffer);
+            setBuffer(buffer, offset, count, offset);
         }
 
-        public void setBuffer(byte[] buffer, int count) {
-            int offset = Math.min(pos, count);
+        public synchronized void setBuffer(byte[] buffer, int offset, int count, int mark) {
+            require(buffer);
+            require(offset, offset >= 0);
+            //require(count, offset + count < buffer.length);
+
             this.buf = buffer;
             this.pos = offset;
-            this.count = Math.min(offset + count, buf.length);
-            this.mark = offset;
+            this.count = count;
+            this.mark = mark;
         }
     }
 
@@ -68,28 +145,32 @@ public final class MemoryStream extends IOStream {
     private BytesReader reader;
 
     public int getPosition() {
-        checkRefresh();
-        return reader.getPosition();
+        return writer.getPosition();
     }
 
     public void setPosition(int position) {
-        checkRefresh();
-        reader.setPosition(position);
+        checkNotClosed();
+
+        writer.setPosition(position);
     }
 
     public int getLength() {
-        return writer.getCount();
+        return writer.getLength();
     }
 
     public void setLength(int length) {
-        writer.setCount(length);
+        checkNotClosed();
+
+        writer.setLength(length);
     }
 
     @ErrorCode
     public byte[] getBuffer() {
+        checkNotClosed();
         if (!publiclyVisible) {
             throw new SystemException(values());
         }
+
         return writer.getBuffer();
     }
 
@@ -99,45 +180,56 @@ public final class MemoryStream extends IOStream {
 
     public MemoryStream(int capacity, boolean publiclyVisible) {
         super.writer = writer = new BytesWriter(capacity);
-        super.reader = reader = new BytesReader(writer.getBuffer());
+        initReader(publiclyVisible);
+    }
+
+    public MemoryStream(byte[] buffer, int offset, int count, boolean nonResizable, boolean publiclyVisible) {
+        super.writer = writer = new BytesWriter(buffer, offset, count, nonResizable);
+        initReader(publiclyVisible);
+    }
+
+    private void initReader(boolean publiclyVisible) {
+        super.reader = reader = new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength());
         this.publiclyVisible = publiclyVisible;
     }
 
-    private void checkRefresh() {
-        if (writer.getCount() != reader.getCount() || writer.getBuffer() != reader.getBuffer()) {
-            reader.setBuffer(writer.getBuffer(), writer.getCount());
-        }
+    private void checkRead() {
+        reader.setBuffer(writer.getBuffer(), writer.getPosition(), writer.getLength(), writer.minPosition);
     }
 
     @Override
     public int available() {
-        checkRefresh();
+        checkRead();
         return super.available();
     }
 
     @Override
     public int read() {
-        checkRefresh();
+        checkRead();
         return super.read();
     }
 
     @Override
     public int read(byte[] buffer, int offset, int count) {
-        checkRefresh();
+        checkRead();
         return super.read(buffer, offset, count);
     }
 
     @Override
     public void copyTo(IOStream to) {
-        checkRefresh();
-        super.copyTo(to);
+        require(to);
+
+        copyTo(to.getWriter());
     }
 
     public void copyTo(OutputStream to) {
         checkNotClosed();
+        require(to);
 
-        checkRefresh();
+        checkRead();
+        int mark = reader.getPosition();
         copyTo(reader, to);
+        reader.setPosition(mark);
     }
 
     public void writeTo(IOStream from) {

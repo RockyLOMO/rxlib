@@ -1,6 +1,6 @@
-package org.rx;
+package org.rx.test.bean;
 
-public class ObjectResult {
+public class RestResult {
     private int code;
     private int val;
 

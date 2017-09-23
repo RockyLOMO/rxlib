@@ -20,5 +20,5 @@ org.rx.App:
 org.rx.util.MemoryStream:
   getBuffer: The MemoryStream instance was not created with a publicly visible buffer
 
-org.rx.Tester$xCode:
-  arg: Parameter $arg error..
+org.rx.test.bean.UserCode$xCode:
+  argument: Parameter $arg error..
