@@ -144,6 +144,12 @@ public class MemoryStream extends IOStream {
     private BytesWriter writer;
     private BytesReader reader;
 
+    @Override
+    public InputStream getReader() {
+        checkRead();
+        return super.getReader();
+    }
+
     public int getPosition() {
         return writer.getPosition();
     }
