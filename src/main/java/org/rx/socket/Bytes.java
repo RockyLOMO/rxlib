@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 
 import static org.rx.Contract.require;
 
-public class ByteUtil {
+public class Bytes {
     public static String readLine(byte[] buffer) {
         require(buffer);
 

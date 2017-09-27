@@ -12,8 +12,6 @@ import java.net.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 import static org.rx.$.$;
 import static org.rx.Contract.isNull;
@@ -49,7 +47,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                     BytesSegment buffer = stream.getSegment();
                     int read;
                     while ((read = stream.readSegment()) > 0) {
-                        System.out.println("----:" + ByteUtil.toString(buffer.array, buffer.offset, read));
+                        System.out.println("----:" + Bytes.toString(buffer.array, buffer.offset, read));
                         firstPack.write(buffer.array, buffer.offset, read);
                         Tuple<AutoCloseable, Socket> toSocks;
                         if ((toSocks = owner.directSupplier.get(firstPack)) != null) {
@@ -59,7 +57,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                         }
                     }
                     Logger.info("DirectSocket ClientItem directSupplier read: %s\ncontent: %s", read,
-                            ByteUtil.toString(firstPack.toArray(), 0, firstPack.getLength()));
+                            Bytes.toString(firstPack.toArray(), 0, firstPack.getLength()));
                 }
             } catch (IOException ex) {
                 throw new SocketException((InetSocketAddress) client.getLocalSocketAddress(), ex);
@@ -91,7 +89,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     }
 
     public static final SocketSupplier HttpSupplier             = pack -> {
-                                                                    String line = ByteUtil.readLine(pack.getBuffer());
+                                                                    String line = Bytes.readLine(pack.getBuffer());
                                                                     if (line == null) {
                                                                         return null;
                                                                     }
