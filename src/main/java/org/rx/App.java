@@ -6,14 +6,13 @@ import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.security.MD5Util;
 import org.rx.bean.DateTime;
+import org.rx.util.Action;
+import org.rx.util.Func;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.Unmarshaller;
 import java.io.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -114,6 +113,26 @@ public class App {
             i++;
         }
         throw lastEx;
+    }
+
+    public static <T extends Exception> void catchCall(Action action, Function<Exception, T> exFunc) {
+        require(action);
+
+        try {
+            action.invoke();
+        } catch (Exception e) {
+            throw new SystemException(isNull(exFunc != null ? exFunc.apply(e) : null, e));
+        }
+    }
+
+    public static <T, TE extends Exception> T catchCall(Func<T> action, Function<Exception, TE> exFunc) {
+        require(action);
+
+        try {
+            return action.invoke();
+        } catch (Exception e) {
+            throw new SystemException(isNull(exFunc != null ? exFunc.apply(e) : null, e));
+        }
     }
 
     public static UUID hash(String key) {
@@ -523,36 +542,6 @@ public class App {
     public static <T> T deepClone(T obj) {
         byte[] data = serialize(obj);
         return (T) deserialize(data);
-    }
-
-    public static <T> String convertToXml(T obj) {
-        require(obj);
-
-        try {
-            JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
-            Marshaller marshaller = jaxbContext.createMarshaller();
-            //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
-            //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
-            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            marshaller.marshal(obj, stream);
-            return stream.toString(UTF8);
-        } catch (Exception ex) {
-            throw new SystemException(ex);
-        }
-    }
-
-    public static <T> T convertFromXml(String xml, Class<T> type) {
-        require(xml, type);
-
-        try {
-            JAXBContext jaxbContext = JAXBContext.newInstance(type);
-            Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
-            byte[] data = xml.getBytes(UTF8);
-            ByteArrayInputStream stream = new ByteArrayInputStream(data);
-            return (T) unmarshaller.unmarshal(stream);
-        } catch (Exception ex) {
-            throw new SystemException(ex);
-        }
     }
     //endregion
 

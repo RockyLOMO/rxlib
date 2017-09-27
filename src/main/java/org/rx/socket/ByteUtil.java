@@ -1,24 +1,39 @@
 package org.rx.socket;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.rx.Contract.require;
 
 public class ByteUtil {
-    //    byte[] data = s.getBytes();
-    //    int i, skip = 0;
-    //        for (i = 0; i < data.length; i++) {
-    //        byte b = data[i];
-    //        if (b == line) {
-    //            skip = 1;
-    //            break;
-    //        }
-    //        if (b == line2) {
-    //            skip = 2;
-    //            break;
-    //        }
-    //    }
-    //        if (skip > 0) {
-    //        System.out.println(new String(data, 0, i));
-    //    }
+    public static String readLine(byte[] buffer) {
+        require(buffer);
+
+        return readLine(buffer, 0, buffer.length);
+    }
+
+    public static String readLine(byte[] buffer, int offset, int count) {
+        require(buffer);
+
+        final byte line = '\n', line2 = '\r';
+        for (int i = offset; i < Math.min(count, buffer.length); i++) {
+            byte b = buffer[i];
+            if (b == line || b == line2) {
+                return toString(buffer, offset, i);
+            }
+        }
+        return null;
+    }
+
+    public static byte[] getBytes(String str) {
+        require(str);
+
+        return str.getBytes(StandardCharsets.UTF_8);
+    }
+
+    public static String toString(byte[] buffer, int offset, int count) {
+        return new String(buffer, offset, count, StandardCharsets.UTF_8);
+    }
+
     public static void reverse(byte[] array, int offset, int length) {
         require(array);
 

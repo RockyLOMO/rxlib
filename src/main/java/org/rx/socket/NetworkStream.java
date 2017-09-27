@@ -6,12 +6,16 @@ import org.rx.util.IOStream;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.util.function.BiPredicate;
 
 import static org.rx.Contract.require;
 import static org.rx.socket.Sockets.shutdown;
 
 public final class NetworkStream extends IOStream {
+    @FunctionalInterface
+    public interface DirectPredicate {
+        boolean test(BytesSegment buffer, int count);
+    }
+
     public static final int    SocketEOF   = 0;
     public static final int    StreamEOF   = -1;
     public static final int    CannotWrite = -2;
@@ -69,7 +73,15 @@ public final class NetworkStream extends IOStream {
         }
     }
 
-    public int directTo(NetworkStream to, BiPredicate<BytesSegment, Integer> onEach) {
+    int readSegment() {
+        return read(segment.array, segment.offset, segment.count);
+    }
+
+    void writeSegment(int count) {
+        write(segment.array, segment.offset, count);
+    }
+
+    public int directTo(NetworkStream to, DirectPredicate onEach) {
         checkNotClosed();
         require(to);
 

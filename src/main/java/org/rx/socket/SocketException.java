@@ -15,4 +15,9 @@ public class SocketException extends SystemException {
         super(ex);
         this.localAddress = localAddress;
     }
+
+    public SocketException(InetSocketAddress localAddress, String msg) {
+        super(msg);
+        this.localAddress = localAddress;
+    }
 }
