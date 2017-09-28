@@ -16,6 +16,11 @@ import static org.rx.$.$;
 
 public class Tester {
     @Test
+    public void testMain() {
+        System.out.println($.class.getName());
+    }
+
+    @Test
     public void testSock() throws Exception {
         Socket sock = new Socket();
         sock.connect(Sockets.parseAddress("cn.bing.com:80"));

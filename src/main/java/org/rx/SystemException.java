@@ -30,10 +30,6 @@ public class SystemException extends NestedRuntimeException {
         DefaultMessage = isNull(Settings.get("default"), "网络繁忙，请稍后再试。").toString();
     }
 
-    public static Object[] values(Object... x) {
-        return x;
-    }
-
     private String                            friendlyMessage;
     private Map<String, Object>               data;
     /**

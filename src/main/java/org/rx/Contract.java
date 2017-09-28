@@ -8,8 +8,6 @@ import java.util.Arrays;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import static org.rx.SystemException.values;
-
 public final class Contract {
     @ErrorCode(value = "arg")
     public static void require(Object arg) {
@@ -53,6 +51,10 @@ public final class Contract {
             }
         }
         return value;
+    }
+
+    public static Object[] values(Object... args) {
+        return args;
     }
 
     public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func) {

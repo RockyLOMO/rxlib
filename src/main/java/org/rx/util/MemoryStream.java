@@ -8,7 +8,7 @@ import org.rx.cache.BytesSegment;
 import java.io.*;
 
 import static org.rx.Contract.require;
-import static org.rx.SystemException.values;
+import static org.rx.Contract.values;
 
 public class MemoryStream extends IOStream {
     private static final class BytesWriter extends ByteArrayOutputStream {

@@ -16,7 +16,6 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static org.rx.Contract.*;
-import static org.rx.SystemException.values;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx

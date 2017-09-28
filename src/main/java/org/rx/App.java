@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 
 import static org.rx.Contract.isNull;
 import static org.rx.Contract.require;
-import static org.rx.SystemException.values;
+import static org.rx.Contract.values;
 
 public class App {
     //region Fields
