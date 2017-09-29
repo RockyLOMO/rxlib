@@ -1,6 +1,8 @@
 package org.rx.socket;
 
 import com.google.common.base.Stopwatch;
+import org.rx.App;
+import org.rx.NQuery;
 import org.rx.cache.WeakCache;
 import org.rx.Lazy;
 import org.rx.Logger;
@@ -8,11 +10,9 @@ import org.rx.Logger;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import static org.rx.Contract.as;
 import static org.rx.Contract.isNull;
@@ -69,18 +69,12 @@ public final class PingClient {
             }
             consumer = p -> cache.add(k, p);
         }
-        Boolean ok = false;
-        try {
-            ok = new PingClient().ping(endpoint).getLossCount() == 0;
-        } catch (Exception ex) {
-            Logger.info("PingClient test error: %s", ex.getMessage());
-        } finally {
-            if (consumer != null) {
-                consumer.accept(ok);
-            }
-            if (ok && onOk != null) {
-                onOk.accept(endpoint);
-            }
+        Boolean ok = new PingClient().ping(endpoint).getLossCount() == 0;
+        if (consumer != null) {
+            consumer.accept(ok);
+        }
+        if (ok && onOk != null) {
+            onOk.accept(endpoint);
         }
         return ok;
     }
@@ -98,23 +92,19 @@ public final class PingClient {
     public Result ping(InetSocketAddress sockAddr, int times) {
         require(sockAddr);
 
-        return new Result(Arrays.stream(new Long[times]).map(p -> {
+        return new Result(NQuery.of(new int[times]).select(p -> {
             Socket sock = new Socket();
             try {
                 watcher.start();
                 sock.connect(sockAddr);
             } catch (IOException ex) {
-                Logger.error(ex, "Ping error");
+                Logger.info("Ping error %s", ex.getMessage());
                 return null;
             } finally {
                 watcher.stop();
-                try {
-                    Sockets.close(sock);
-                } catch (Exception ex) {
-                    Logger.info("Ping error: %s", ex.getMessage());
-                }
+                App.catchCall(() -> Sockets.close(sock));
             }
             return watcher.elapsed(TimeUnit.MILLISECONDS);
-        }).collect(Collectors.toList()));
+        }).toList());
     }
 }

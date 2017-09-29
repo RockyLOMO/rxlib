@@ -35,7 +35,7 @@ public class AESUtil {
             cipher.init(Cipher.ENCRYPT_MODE, seckey);// 初始化
             return cipher.doFinal(data);// 加密
         } catch (GeneralSecurityException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -58,7 +58,7 @@ public class AESUtil {
             cipher.init(Cipher.DECRYPT_MODE, seckey);// 初始化
             return cipher.doFinal(data); // 加密
         } catch (GeneralSecurityException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -69,7 +69,7 @@ public class AESUtil {
             byte[] valueByte = encrypt(data.getBytes(App.UTF8), key.getBytes(App.UTF8));
             return App.convertToBase64String(valueByte);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -80,7 +80,7 @@ public class AESUtil {
             byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(App.UTF8));
             return new String(valueByte, App.UTF8);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -91,7 +91,7 @@ public class AESUtil {
             byte[] valueByte = encrypt(data.getBytes(App.UTF8), App.convertFromBase64String(key));
             return App.convertToBase64String(valueByte);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -102,7 +102,7 @@ public class AESUtil {
             byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
             return new String(valueByte, App.UTF8);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -111,7 +111,7 @@ public class AESUtil {
         try {
             keygen = KeyGenerator.getInstance(AES_ALGORITHM);
         } catch (NoSuchAlgorithmException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
         SecureRandom random = new SecureRandom();
         keygen.init(random);

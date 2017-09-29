@@ -16,8 +16,4 @@ public abstract class Traceable extends Disposable {
     public synchronized void setTracer(Logger tracer) {
         this.tracer = isNull(tracer, new Logger());
     }
-
-//    protected String getTimeString() {
-//        return new DateTime().toString("yyyy-MM-dd HH:mm:ss.SSS");
-//    }
 }

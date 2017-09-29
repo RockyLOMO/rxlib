@@ -1,12 +1,15 @@
 package org.rx.util;
 
+import org.rx.App;
 import org.rx.Disposable;
+import org.rx.ErrorCode;
 import org.rx.SystemException;
 import org.rx.cache.BufferSegment;
 
 import java.io.*;
 
 import static org.rx.Contract.require;
+import static org.rx.Contract.values;
 
 public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
@@ -19,8 +22,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
                 to.write(buffer, 0, read);
                 to.flush();
             }
-        } catch (IOException e) {
-            throw new SystemException(e);
+        } catch (IOException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -35,6 +38,33 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         return writer;
     }
 
+    public boolean canRead() {
+        return !isClosed() && available() > 0;
+    }
+
+    public boolean canWrite() {
+        return !isClosed();
+    }
+
+    public boolean canSeek() {
+        return false;
+    }
+
+    @ErrorCode
+    public int getPosition() {
+        throw new SystemException(values());
+    }
+
+    @ErrorCode
+    public void setPosition(int position) {
+        throw new SystemException(values());
+    }
+
+    @ErrorCode(messageKeys = { "$type" })
+    public int getLength() {
+        throw new SystemException(values(this.getClass().getSimpleName()));
+    }
+
     protected IOStream() {
     }
 
@@ -47,11 +77,12 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
     @Override
     protected void freeUnmanaged() {
+        App.catchCall(this::flush);
         try {
             writer.close();
             reader.close();
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -61,7 +92,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         try {
             return reader.available();
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -71,7 +102,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         try {
             return reader.read();
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -90,7 +121,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         try {
             return reader.read(buffer, offset, count);
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -99,8 +130,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         try {
             writer.write(b);
-        } catch (IOException e) {
-            throw new SystemException(e);
+        } catch (IOException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -118,8 +149,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         try {
             writer.write(buffer, offset, count);
-        } catch (IOException e) {
-            throw new SystemException(e);
+        } catch (IOException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -129,8 +160,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         try {
             writer.flush();
-        } catch (IOException e) {
-            throw new SystemException(e);
+        } catch (IOException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 

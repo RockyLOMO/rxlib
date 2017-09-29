@@ -10,11 +10,11 @@ public @interface ErrorCode {
     @Target({ ElementType.METHOD, ElementType.FIELD })
     @Retention(RetentionPolicy.RUNTIME)
     @Documented
-    public @interface ErrorCodes {
+    @interface ErrorCodes {
         ErrorCode[] value();
     }
 
-    public enum MessageFormatter {
+    enum MessageFormatter {
         KeyValueFormat,
         StringFormat,
         MessageFormat

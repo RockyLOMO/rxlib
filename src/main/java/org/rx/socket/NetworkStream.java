@@ -27,12 +27,14 @@ public final class NetworkStream extends IOStream {
         return !isClosed() && !socket.isClosed() && socket.isConnected();
     }
 
+    @Override
     public boolean canRead() {
-        return !isClosed() && checkSocket(socket, false);
+        return super.canRead() && checkSocket(socket, false);
     }
 
+    @Override
     public boolean canWrite() {
-        return !isClosed() && checkSocket(socket, true);
+        return super.canWrite() && checkSocket(socket, true);
     }
 
     private static boolean checkSocket(Socket sock, boolean isWrite) {

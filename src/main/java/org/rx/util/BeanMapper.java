@@ -72,7 +72,7 @@ public class BeanMapper {
     public static Function<String, String> match(String... pairs) {
         require(pairs);
         require(pairs, pairs.length % 2 == 0);
-        
+
         return p -> {
             for (int i = 1; i < pairs.length; i += 2) {
                 if (p.equals(pairs[i])) {

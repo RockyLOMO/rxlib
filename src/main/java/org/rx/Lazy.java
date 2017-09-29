@@ -24,13 +24,7 @@ public final class Lazy<T> {
     }
 
     public Lazy(Class<T> type) {
-        this(() -> {
-            try {
-                return type.newInstance();
-            } catch (ReflectiveOperationException ex) {
-                throw new SystemException(ex);
-            }
-        });
+        this(() -> App.newInstance(type));
     }
 
     public Lazy(Supplier<T> supplier) {

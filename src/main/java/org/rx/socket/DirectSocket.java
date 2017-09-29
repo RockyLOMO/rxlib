@@ -79,8 +79,8 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             if (pooling) {
                 try {
                     toSock.close();
-                } catch (Exception e) {
-                    e.printStackTrace();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
                 }
             } else {
                 Sockets.close(toStream.getSocket());
@@ -98,8 +98,8 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                                                                         authority = Sockets.parseAddress(
                                                                                 new URL(line.split(" ")[1])
                                                                                         .getAuthority());
-                                                                    } catch (MalformedURLException e) {
-                                                                        throw new SystemException(e);
+                                                                    } catch (MalformedURLException ex) {
+                                                                        throw SystemException.wrap(ex);
                                                                     }
                                                                     SocketPool.PooledSocket pooledSocket = App.retry(
                                                                             p -> SocketPool.Pool.borrowSocket(p),
@@ -201,16 +201,16 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 });
                 getTracer().writeLine("socket[%s->%s] closing with %s", Sockets.getId(client.stream.getSocket(), false),
                         Sockets.getId(client.stream.getSocket(), true), recv);
-            } catch (SystemException e) {
+            } catch (SystemException ex) {
                 $<java.net.SocketException> out = $();
-                if (e.tryGet(out, java.net.SocketException.class)) {
+                if (ex.tryGet(out, java.net.SocketException.class)) {
                     if (out.$.getMessage().contains("Socket closed")) {
                         //ignore
                         Logger.debug("DirectTo ignore socket closed");
                         return;
                     }
                 }
-                throw e;
+                throw ex;
             } finally {
                 client.closeSocket();
             }
@@ -227,16 +227,16 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 getTracer().writeLine("socket[%s->%s] closing with %s",
                         Sockets.getId(client.toStream.getSocket(), false),
                         Sockets.getId(client.toStream.getSocket(), true), recv);
-            } catch (SystemException e) {
+            } catch (SystemException ex) {
                 $<java.net.SocketException> out = $();
-                if (e.tryGet(out, java.net.SocketException.class)) {
+                if (ex.tryGet(out, java.net.SocketException.class)) {
                     if (out.$.getMessage().contains("Socket closed")) {
                         //ignore
                         Logger.debug("DirectTo ignore socket closed");
                         return;
                     }
                 }
-                throw e;
+                throw ex;
             } finally {
                 client.closeToSocket(recv == NetworkStream.CannotWrite);
             }

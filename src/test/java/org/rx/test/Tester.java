@@ -1,11 +1,14 @@
-package org.rx.test.app;
+package org.rx.test;
 
+import com.alibaba.fastjson.JSON;
 import org.junit.Test;
 import org.rx.$;
 import org.rx.App;
 import org.rx.SystemException;
+import org.rx.socket.Bytes;
 import org.rx.socket.Sockets;
 import org.rx.test.bean.*;
+import org.rx.util.BinaryStream;
 import org.rx.util.MemoryStream;
 
 import java.io.InputStreamReader;
@@ -50,6 +53,38 @@ public class Tester {
     }
 
     @Test
+    public void testBinaryStream() {
+        BinaryStream stream = new BinaryStream(new MemoryStream());
+        stream.writeString("test hello");
+
+        stream.writeInt(100);
+        stream.writeLine("di yi hang");
+        stream.writeLine("di er hang");
+
+        stream.setPosition(0);
+        System.out.println(stream.readString());
+        System.out.println(stream.readInt());
+
+        String line;
+        while ((line = stream.readLine()) != null) {
+            System.out.println(line);
+        }
+
+        SourceBean bean = new SourceBean();
+        bean.setName("hello");
+        bean.setAge(12);
+        bean.setMoney(250L);
+        stream.setPosition(0);
+        stream.writeObject(bean);
+
+        stream.setPosition(0);
+        SourceBean newBean = stream.readObject();
+
+        System.out.println(JSON.toJSONString(bean));
+        System.out.println(JSON.toJSONString(newBean));
+    }
+
+    @Test
     public void testStream() {
         MemoryStream stream = new MemoryStream(32, true);
         for (int i = 0; i < 5; i++) {
@@ -70,7 +105,7 @@ public class Tester {
     public void testCode() {
         System.out.println(App.getBootstrapPath());
 
-        SystemException ex = new SystemException(new IllegalArgumentException());
+        SystemException ex = SystemException.wrap(new IllegalArgumentException());
         $<IllegalArgumentException> out = $();
         if (ex.tryGet(out, IllegalArgumentException.class)) {
             Exception e = out.$;
@@ -83,7 +118,7 @@ public class Tester {
         //        String sd = "2017";
         //        App.changeType(sd, Date.class);
 
-        SystemException e = new SystemException(new Throwable()).setErrorCode(UserCode.xCode.argument, "userId");
+        SystemException e = SystemException.wrap(new Throwable()).setErrorCode(UserCode.xCode.argument, "userId");
         System.out.println(e.getFriendlyMessage());
         assert e.getFriendlyMessage().equals("Parameter \"userId\" error..");
     }

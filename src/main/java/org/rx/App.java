@@ -8,6 +8,7 @@ import org.rx.security.MD5Util;
 import org.rx.bean.DateTime;
 import org.rx.util.Action;
 import org.rx.util.Func;
+import org.rx.util.MemoryStream;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -32,17 +33,17 @@ import static org.rx.Contract.values;
 
 public class App {
     //region Fields
-    public static final String                    UTF8        = "UTF-8", KeyPrefix = "_rx",
-            TmpDirPath = String.format("%s%srx", System.getProperty("java.io.tmpdir"), File.separatorChar);
+    public static final String                    UTF8            = "UTF-8", KeyPrefix = "_rx";
+    public static final int                       TimeoutInfinite = -1;
     private static final NQuery<Class<?>>         SupportTypes;
     private static final NQuery<SimpleDateFormat> SupportDateFormats;
-    private static final String                   base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    private static final String                   base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
 
     static {
         SupportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, BigDecimal.class, UUID.class, Date.class, Enum.class);
         SupportDateFormats = NQuery.of(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
-                new SimpleDateFormat("yyyyMMddHHmmss"));
+                new SimpleDateFormat("yyyyMMddHHmmss"), new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS"));
     }
     //endregion
 
@@ -59,13 +60,81 @@ public class App {
         return p;
     }
 
+    public static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Logger.info("Thread sleep error: %s", ex.getMessage());
+        }
+    }
+
+    public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
+        require(func);
+        require(retryCount, retryCount > 0);
+
+        SystemException lastEx = null;
+        int i = 1;
+        while (i <= retryCount) {
+            try {
+                return func.apply(state);
+            } catch (Exception ex) {
+                if (i == retryCount) {
+                    lastEx = SystemException.wrap(ex);
+                }
+            }
+            i++;
+        }
+        throw lastEx;
+    }
+
+    public static void catchCall(Action action) {
+        require(action);
+
+        try {
+            action.invoke();
+        } catch (Exception ex) {
+            Logger.info("CatchCall %s", ex.getMessage());
+        }
+    }
+
+    public static <T> T catchCall(Func<T> action) {
+        require(action);
+
+        try {
+            return action.invoke();
+        } catch (Exception ex) {
+            Logger.info("CatchCall %s", ex.getMessage());
+        }
+        return null;
+    }
+
+    public static <T extends Exception> void catchCall(Action action, Function<Exception, T> exFunc) {
+        require(action);
+
+        try {
+            action.invoke();
+        } catch (Exception ex) {
+            throw new SystemException(isNull(exFunc != null ? exFunc.apply(ex) : null, ex));
+        }
+    }
+
+    public static <T, TE extends Exception> T catchCall(Func<T> action, Function<Exception, TE> exFunc) {
+        require(action);
+
+        try {
+            return action.invoke();
+        } catch (Exception ex) {
+            throw new SystemException(isNull(exFunc != null ? exFunc.apply(ex) : null, ex));
+        }
+    }
+
     public static <T> T newInstance(Class<T> type) {
         require(type);
 
         try {
             return type.newInstance();
         } catch (ReflectiveOperationException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -91,48 +160,9 @@ public class App {
                 return (T) constructor.newInstance(args);
             }
         } catch (ReflectiveOperationException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
         throw new SystemException("Parameters error");
-    }
-
-    public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
-        require(func);
-        require(retryCount, retryCount > 0);
-
-        SystemException lastEx = null;
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                return func.apply(state);
-            } catch (Exception ex) {
-                if (i == retryCount) {
-                    lastEx = new SystemException(ex);
-                }
-            }
-            i++;
-        }
-        throw lastEx;
-    }
-
-    public static <T extends Exception> void catchCall(Action action, Function<Exception, T> exFunc) {
-        require(action);
-
-        try {
-            action.invoke();
-        } catch (Exception e) {
-            throw new SystemException(isNull(exFunc != null ? exFunc.apply(e) : null, e));
-        }
-    }
-
-    public static <T, TE extends Exception> T catchCall(Func<T> action, Function<Exception, TE> exFunc) {
-        require(action);
-
-        try {
-            return action.invoke();
-        } catch (Exception e) {
-            throw new SystemException(isNull(exFunc != null ? exFunc.apply(e) : null, e));
-        }
     }
 
     public static UUID hash(String key) {
@@ -220,58 +250,31 @@ public class App {
         }
         return result;
     }
-
-    @Deprecated
-    public static Map<String, String> readProperties(String propertiesFile) {
-        Properties prop = new Properties();
-        try {
-            prop.load(new InputStreamReader(
-                    App.class.getClassLoader().getResourceAsStream(propertiesFile + ".properties"), UTF8));
-        } catch (Exception ex) {
-            throw new SystemException(ex);
-        }
-
-        Map<String, String> map = new HashMap<>();
-        for (String key : prop.stringPropertyNames()) {
-            map.put(key, isNull(prop.getProperty(key), ""));
-        }
-        return map;
-    }
     //endregion
 
     //region Check
-    public static boolean isNullOrEmpty(String s) {
-        return s == null || s.length() == 0 || "null".equals(s);
+    public static boolean isNullOrEmpty(String input) {
+        return input == null || input.length() == 0 || "null".equals(input);
     }
 
-    public static boolean isNullOrWhiteSpace(String s) {
-        return isNullOrEmpty(s) || s.trim().length() == 0;
+    public static boolean isNullOrWhiteSpace(String input) {
+        return isNullOrEmpty(input) || input.trim().length() == 0;
     }
 
-    public static boolean isNullOrEmpty(Number n) {
-        return n == null || n.equals(0);
+    public static boolean isNullOrEmpty(Number input) {
+        return input == null || input.equals(0);
     }
 
-    public static <E> boolean isNullOrEmpty(E[] obj) {
-        return obj == null || obj.length == 0;
+    public static <E> boolean isNullOrEmpty(E[] input) {
+        return input == null || input.length == 0;
     }
 
-    public static <E> boolean isNullOrEmpty(Collection<E> obj) {
-        return obj == null || obj.size() == 0;
+    public static <E> boolean isNullOrEmpty(Collection<E> input) {
+        return input == null || input.size() == 0;
     }
 
-    public static <K, V> boolean isNullOrEmpty(Map<K, V> obj) {
-        return obj == null || obj.size() == 0;
-    }
-
-    public static <T> boolean equals(T t1, T t2) {
-        if (t1 == null) {
-            if (t2 == null) {
-                return true;
-            }
-            return false;
-        }
-        return t1.equals(t2);
+    public static <K, V> boolean isNullOrEmpty(Map<K, V> input) {
+        return input == null || input.size() == 0;
     }
 
     public static boolean equals(String s1, String s2, boolean ignoreCase) {
@@ -327,16 +330,6 @@ public class App {
     //endregion
 
     //region IO
-    public static final int TimeoutInfinite = -1;
-
-    public static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException ex) {
-            Logger.info("Thread sleep error: %s", ex.getMessage());
-        }
-    }
-
     public static String readString(InputStream stream) {
         return readString(stream, UTF8);
     }
@@ -352,7 +345,7 @@ public class App {
                 result.append(new String(buffer, 0, read, charset));
             }
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
         return result.toString();
     }
@@ -368,7 +361,7 @@ public class App {
             byte[] data = value.getBytes(charset);
             writer.write(data);
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -404,7 +397,7 @@ public class App {
 
     @ErrorCode(messageKeys = { "$fType", "$tType" })
     @ErrorCode(cause = ParseException.class, messageKeys = { "$formats", "$date" })
-    @ErrorCode(value = "enumError", messageKeys = { "$name", "$eType" })
+    @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
     @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
     @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
     public static <T> T changeType(Object value, Class<T> toType) {
@@ -445,7 +438,7 @@ public class App {
             NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
             value = q.where(p -> p.equals(val)).singleOrDefault();
             if (value == null) {
-                throw new SystemException(values(String.join(",", q), val), "enumError");
+                throw new SystemException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
             }
         } else {
             toType = checkType(toType);
@@ -491,7 +484,7 @@ public class App {
         try {
             return new String(ret, UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -502,7 +495,7 @@ public class App {
             byte[] data = base64.getBytes(UTF8);
             return Base64.getDecoder().decode(data);
         } catch (UnsupportedEncodingException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -514,12 +507,12 @@ public class App {
     public static byte[] serialize(Object obj) {
         require(obj);
 
-        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                ObjectOutputStream out = new ObjectOutputStream(bos)) {
+        try (MemoryStream stream = new MemoryStream();
+                ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
-            return bos.toByteArray();
+            return stream.toArray();
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -531,11 +524,11 @@ public class App {
     public static Object deserialize(byte[] data) {
         require(data);
 
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
-                ObjectInputStream in = new ObjectInputStream(bis)) {
+        try (MemoryStream stream = new MemoryStream(data, 0, data.length);
+                ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -610,7 +603,7 @@ public class App {
             }
             out.flush();
         } catch (IOException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
     //endregion

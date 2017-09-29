@@ -53,13 +53,14 @@ public class MemoryStream extends IOStream {
             require(buffer);
             require(offset, offset >= 0);
             if (nonResizable) {
-                require(count, offset + count < buffer.length);
+                require(count, offset + count <= buffer.length);
                 minPosition = offset;
                 maxLength = count;
             }
 
             setBuffer(buffer);
             setPosition(offset);
+            setLength(count);
         }
 
         @Override
@@ -150,16 +151,25 @@ public class MemoryStream extends IOStream {
         return super.getReader();
     }
 
+    @Override
+    public boolean canSeek() {
+        return true;
+    }
+
+    @Override
     public int getPosition() {
         return writer.getPosition();
     }
 
+    @Override
     public void setPosition(int position) {
         checkNotClosed();
 
         writer.setPosition(position);
+        checkRead();
     }
 
+    @Override
     public int getLength() {
         return writer.getLength();
     }
@@ -168,6 +178,7 @@ public class MemoryStream extends IOStream {
         checkNotClosed();
 
         writer.setLength(length);
+        checkRead();
     }
 
     @ErrorCode
@@ -187,6 +198,10 @@ public class MemoryStream extends IOStream {
     public MemoryStream(int capacity, boolean publiclyVisible) {
         super.writer = writer = new BytesWriter(capacity);
         initReader(publiclyVisible);
+    }
+
+    public MemoryStream(byte[] buffer, int offset, int count) {
+        this(buffer, offset, count, true, false);
     }
 
     public MemoryStream(byte[] buffer, int offset, int count, boolean nonResizable, boolean publiclyVisible) {
@@ -238,6 +253,18 @@ public class MemoryStream extends IOStream {
         reader.setPosition(mark);
     }
 
+    @Override
+    public void write(int b) {
+        super.write(b);
+        checkRead();
+    }
+
+    @Override
+    public void write(byte[] buffer, int offset, int count) {
+        super.write(buffer, offset, count);
+        checkRead();
+    }
+
     public void writeTo(IOStream from) {
         checkNotClosed();
         require(from);
@@ -251,8 +278,8 @@ public class MemoryStream extends IOStream {
 
         try {
             writer.writeTo(from);
-        } catch (IOException e) {
-            throw new SystemException(e);
+        } catch (IOException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 

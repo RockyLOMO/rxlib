@@ -58,7 +58,7 @@ public class RSAUtil {
             signature.update(getContentBytes(content, App.UTF8));
             return App.convertToBase64String(signature.sign());
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -93,14 +93,15 @@ public class RSAUtil {
 
         try {
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
+            PublicKey pubKey = keyFactory
+                    .generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initVerify(pubKey);
             signature.update(getContentBytes(content, App.UTF8));
             return signature.verify(App.convertFromBase64String(sign));
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -119,7 +120,7 @@ public class RSAUtil {
         try {
             return content.getBytes(charset);
         } catch (UnsupportedEncodingException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -139,7 +140,7 @@ public class RSAUtil {
             /** 执行加密操作 */
             return App.convertToBase64String(b);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -151,7 +152,8 @@ public class RSAUtil {
 
         try {
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
+            PrivateKey key = keyFactory
+                    .generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
             /** 得到Cipher对象对已用公钥加密的数据进行RSA解密 */
             Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
             cipher.init(Cipher.DECRYPT_MODE, key);
@@ -159,7 +161,7 @@ public class RSAUtil {
             /** 执行解密操作 */
             return new String(cipher.doFinal(b));
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -192,7 +194,7 @@ public class RSAUtil {
         try {
             keygen = KeyPairGenerator.getInstance("RSA");
         } catch (NoSuchAlgorithmException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
         keygen.initialize(1024, new SecureRandom());
         KeyPair keys = keygen.genKeyPair();

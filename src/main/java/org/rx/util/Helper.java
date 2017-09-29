@@ -34,7 +34,7 @@ public class Helper {
             marshaller.marshal(obj, stream);
             return stream.toString(UTF8);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -48,7 +48,7 @@ public class Helper {
             ByteArrayInputStream stream = new ByteArrayInputStream(data);
             return (T) unmarshaller.unmarshal(stream);
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 

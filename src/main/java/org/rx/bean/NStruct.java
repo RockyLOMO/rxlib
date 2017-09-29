@@ -21,7 +21,7 @@ public abstract class NStruct implements Serializable {
                     hex.append(val.hashCode());
                 }
             } catch (IllegalAccessException ex) {
-                throw new SystemException(ex);
+                throw SystemException.wrap(ex);
             }
         }
         return hex.toString().hashCode();

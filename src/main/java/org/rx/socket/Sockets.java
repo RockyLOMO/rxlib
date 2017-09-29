@@ -21,7 +21,7 @@ public final class Sockets {
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -29,8 +29,8 @@ public final class Sockets {
         return (InetAddress[]) WeakCache.getOrStore(Sockets.class, host, p -> {
             try {
                 return InetAddress.getAllByName(p);
-            } catch (UnknownHostException e) {
-                throw new SystemException(e);
+            } catch (UnknownHostException ex) {
+                throw SystemException.wrap(ex);
             }
         });
     }
@@ -47,8 +47,8 @@ public final class Sockets {
             try {
                 socket.setSoLinger(true, 2);
                 socket.close();
-            } catch (IOException e) {
-                throw new SystemException(e);
+            } catch (IOException ex) {
+                throw SystemException.wrap(ex);
             }
         }
     }
@@ -68,8 +68,8 @@ public final class Sockets {
                 if ((flags & 2) == 2 && !socket.isInputShutdown()) {
                     socket.shutdownInput();
                 }
-            } catch (IOException e) {
-                throw new SystemException(e);
+            } catch (IOException ex) {
+                throw SystemException.wrap(ex);
             }
         }
     }

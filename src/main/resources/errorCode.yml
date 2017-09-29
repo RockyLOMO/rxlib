@@ -5,6 +5,9 @@ org.rx.Contract:
   require[args]: Parameters $args have null value
   require[test]: Parameter $arg test failed
 
+org.rx.Disposable:
+  checkNotClosed: Cannot access a closed $type
+
 org.rx.NQuery:
   single: Require 1 element, current set has $count elements
   singleOrDefault: Require less than 1 element, current set has $count elements
@@ -12,10 +15,15 @@ org.rx.NQuery:
 org.rx.App:
   changeType: Not supported convert $fType type to $tType type
   changeType<ParseException>: Only supported $formats date formats, current date is $date
-  changeType[enumError]: Not find $name in $eType enum
+  changeType[enumError]: Not found $name in $names of $eType enum
   changeType<NoSuchMethodException>: Not found valueOf method of $type type
   changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
   checkType: Find $type primitive type failed
+
+org.rx.util.IOStream:
+  getPosition: The stream does not support seeking
+  setPosition: The stream does not support seeking
+  getLength: A class derived from $type does not support seeking
 
 org.rx.util.MemoryStream:
   getBuffer: The MemoryStream instance was not created with a publicly visible buffer

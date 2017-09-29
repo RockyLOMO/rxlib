@@ -23,8 +23,8 @@ public class MD5Util {
     private static MessageDigest getDigest() {
         try {
             return MessageDigest.getInstance("MD5");
-        } catch (NoSuchAlgorithmException e) {
-            throw new SystemException(e);
+        } catch (NoSuchAlgorithmException ex) {
+            throw SystemException.wrap(ex);
         }
     }
 

@@ -9,6 +9,7 @@ import java.net.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.rx.Contract.eq;
 import static org.rx.Contract.isNull;
 
 /**
@@ -20,7 +21,7 @@ public class HttpClient {
         try {
             return URLEncoder.encode(val, App.UTF8);
         } catch (UnsupportedEncodingException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 
@@ -40,7 +41,7 @@ public class HttpClient {
                 map.put(key, value);
             }
         } catch (UnsupportedEncodingException ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
         return map;
     }
@@ -141,7 +142,7 @@ public class HttpClient {
                 client.setReadTimeout(timeout);
             }
             client.connect();
-            if (App.equals(method, PostMethod) && !App.isNullOrEmpty(content)) {
+            if (eq(method, PostMethod) && !App.isNullOrEmpty(content)) {
                 App.writeString(client.getOutputStream(), content, charset);
             }
 
@@ -151,7 +152,7 @@ public class HttpClient {
             }
             return App.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
         } catch (Exception ex) {
-            throw new SystemException(ex);
+            throw SystemException.wrap(ex);
         }
     }
 }

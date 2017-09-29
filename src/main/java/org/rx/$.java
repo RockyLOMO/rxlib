@@ -5,6 +5,7 @@ public final class $<T> {
 
     /**
      * Alt+Enter
+     * 
      * @param <T>
      * @return
      */

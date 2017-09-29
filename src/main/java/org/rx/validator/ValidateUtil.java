@@ -4,6 +4,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.NQuery;
 import org.rx.SystemException;
 import org.springframework.ui.Model;
 
@@ -19,11 +20,9 @@ import java.lang.reflect.Method;
 
 import org.rx.Logger;
 import org.rx.util.StringBuilder;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static org.rx.Contract.toJSONString;
 
@@ -31,8 +30,7 @@ import static org.rx.Contract.toJSONString;
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
 public class ValidateUtil {
-    private static final List<Class> SkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class,
-            Model.class);
+    private static final NQuery<Class> SkipTypes = NQuery.of(ServletRequest.class, ServletResponse.class, Model.class);
 
     /**
      * 验证bean实体 @Valid deep valid
@@ -125,8 +123,7 @@ public class ValidateUtil {
                     return joinPoint.proceed();
                 }
             }
-            List args = Arrays.stream(joinPoint.getArgs())
-                    .filter(p -> !(SkipTypes.stream().anyMatch(p2 -> p2.isInstance(p)))).collect(Collectors.toList());
+            List args = NQuery.of(joinPoint.getArgs()).where(p -> !(SkipTypes.any(p2 -> p2.isInstance(p)))).toList();
             msg.appendLine("begin validate args=%s..", toJSONString(args));
 
             int flags = attr.value();
@@ -143,7 +140,7 @@ public class ValidateUtil {
                     try {
                         return joinPoint.proceed();
                     } catch (Throwable ex) {
-                        throw new SystemException(ex);
+                        throw SystemException.wrap(ex);
                     }
                 });
             }

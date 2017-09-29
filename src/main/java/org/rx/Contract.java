@@ -2,7 +2,6 @@ package org.rx;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.serializer.SerializerFeature;
 
 import java.util.Arrays;
 import java.util.function.Function;
@@ -35,6 +34,16 @@ public final class Contract {
             return null;
         }
         return (T) obj;
+    }
+
+    public static <T> boolean eq(T t1, T t2) {
+        if (t1 == null) {
+            if (t2 == null) {
+                return true;
+            }
+            return false;
+        }
+        return t1.equals(t2);
     }
 
     public static <T> T isNull(T value, T defaultVal) {
@@ -77,7 +86,7 @@ public final class Contract {
         }
 
         try {
-            return JSON.toJSONString(arg, SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(arg);
         } catch (Exception ex) {
             JSONObject json = new JSONObject();
             json.put("_input", arg.toString());
