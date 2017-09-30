@@ -15,6 +15,7 @@ public interface NEnum {
 
     void setFlags(int flags);
 
+    @SuppressWarnings(App.AllWarnings)
     default void add(NEnum... vals) {
         require(vals);
 
@@ -25,6 +26,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     default void remove(NEnum... vals) {
         require(vals);
 
@@ -35,6 +37,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     default boolean has(NEnum... vals) {
         require(vals);
 

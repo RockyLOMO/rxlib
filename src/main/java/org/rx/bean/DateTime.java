@@ -4,18 +4,34 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
 
 import static org.rx.Contract.require;
 
 public final class DateTime extends Date {
+    public enum DateTimeKind {
+        Local,
+        Utc
+    }
+
     //2000-01-01
-    public static final Date    BaseDate      = new Date(100, 0, 1);
+    public static final Date BaseDate;
+
+    static {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(100, Calendar.JANUARY, 1);
+        BaseDate = calendar.getTime();
+        java.time.
+    }
+
     private static final String DefaultFormat = "yyyy-MM-dd HH:mm:ss";
+
     private Calendar            cal;
 
     private Calendar getCalendar() {
         if (cal == null) {
             cal = Calendar.getInstance();
+
         }
         cal.setTime(this);
         return cal;
@@ -38,6 +54,7 @@ public final class DateTime extends Date {
     }
 
     public DateTime(long ticks) {
+        super();
         super(ticks);
     }
 

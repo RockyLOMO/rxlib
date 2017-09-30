@@ -4,11 +4,14 @@ import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
+import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
 import org.rx.bean.DateTime;
 import org.rx.util.Action;
 import org.rx.util.Func;
 import org.rx.util.MemoryStream;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -24,7 +27,6 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import static org.rx.Contract.isNull;
@@ -32,8 +34,16 @@ import static org.rx.Contract.require;
 import static org.rx.Contract.values;
 
 public class App {
+    //region Nested
+    public enum CacheContainerKind {
+        WeakCache,
+        ThreadStatic,
+        ServletRequest
+    }
+    //endregion
+
     //region Fields
-    public static final String                    UTF8            = "UTF-8", KeyPrefix = "_rx";
+    public static final String                    UTF8            = "UTF-8", AllWarnings = "all";
     public static final int                       TimeoutInfinite = -1;
     private static final NQuery<Class<?>>         SupportTypes;
     private static final NQuery<SimpleDateFormat> SupportDateFormats;
@@ -60,12 +70,49 @@ public class App {
         return p;
     }
 
+    public static HttpServletRequest getCurrentRequest() {
+        return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+    }
+
     public static void sleep(long millis) {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException ex) {
             Logger.info("Thread sleep error: %s", ex.getMessage());
         }
+    }
+
+    public static <T> T getOrStore(String key, Function<String, T> supplier) {
+        return getOrStore(App.class, key, supplier);
+    }
+
+    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier) {
+        return getOrStore(caller, key, supplier, CacheContainerKind.WeakCache);
+    }
+
+    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier,
+                                   CacheContainerKind containerKind) {
+        require(caller, key, supplier, containerKind);
+
+        String k = caller.getName() + key;
+        Object v;
+        switch (containerKind) {
+            case ThreadStatic:
+                Map threadMap = ThreadLocal.withInitial(HashMap::new).get();
+                v = threadMap.computeIfAbsent(k, supplier);
+                break;
+            case ServletRequest:
+                HttpServletRequest request = getCurrentRequest();
+                v = request.getAttribute(k);
+                if (v == null) {
+                    request.setAttribute(k, v = supplier.apply(k));
+                }
+                break;
+            default:
+                v = WeakCache.getOrStore(caller, key, (Function<String, Object>) supplier);
+                break;
+        }
+        return (T) v;
     }
 
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
@@ -568,17 +615,6 @@ public class App {
             ip = ips[0];
         }
         return ip;
-    }
-
-    public static <T> T getOrStore(HttpServletRequest request, String key, Supplier<T> supplier) {
-        require(request, key, supplier);
-
-        String nk = KeyPrefix + key;
-        T val = (T) request.getAttribute(nk);
-        if (val == null) {
-            request.setAttribute(nk, val = supplier.get());
-        }
-        return val;
     }
 
     public static void downloadFile(HttpServletResponse response, String filePath) {
