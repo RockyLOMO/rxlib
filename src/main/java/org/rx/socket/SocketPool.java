@@ -37,7 +37,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         private PooledSocket(SocketPool owner, Socket socket) {
             this.owner = owner;
             this.socket = socket;
-            lastActive = new DateTime();
+            lastActive = DateTime.utcNow();
         }
 
         @Override
@@ -135,7 +135,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
 
             for (PooledSocket socket : NQuery.of(sockets)) {
                 if (!socket.isConnected()
-                        || new DateTime().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
+                        || DateTime.utcNow().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
                     sockets.remove(socket);
                     getTracer().writeLine("clear idle socket[local=%s, remote=%s]..",
                             Sockets.getId(socket.socket, false), Sockets.getId(socket.socket, true));
@@ -207,7 +207,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                 action = "discard closed";
                 return;
             }
-            pooledSocket.setLastActive(new DateTime());
+            pooledSocket.setLastActive(DateTime.utcNow());
             ConcurrentLinkedDeque<PooledSocket> sockets = getSockets(
                     (InetSocketAddress) pooledSocket.socket.getRemoteSocketAddress());
             if (sockets.size() >= maxSocketsCount || sockets.contains(pooledSocket)) {

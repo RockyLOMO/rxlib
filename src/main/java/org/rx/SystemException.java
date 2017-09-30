@@ -20,13 +20,15 @@ import static org.rx.Contract.toJSONString;
  * ex.fillInStackTrace()
  */
 public class SystemException extends NestedRuntimeException {
-    public static final String               ErrorFile = "errorCode";
-    public static final String               DefaultMessage;
-    private static final Map<String, Object> Settings;
+    public static final String ErrorFile = "errorCode";
+    public static final String DefaultMessage;
+
+    private static Map<String, Object> getSettings() {
+        return App.getOrStore(SystemException.class, App.EmptyString, k -> App.readSettings(ErrorFile));
+    }
 
     static {
-        Settings = App.readSettings(ErrorFile);
-        DefaultMessage = isNull(Settings.get("default"), "网络繁忙，请稍后再试。").toString();
+        DefaultMessage = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
     }
 
     public static SystemException wrap(Throwable cause) {
@@ -101,7 +103,7 @@ public class SystemException extends NestedRuntimeException {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
             for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
                 StackTraceElement stack = stackTrace[i];
-                Map<String, Object> methodSettings = as(Settings.get(stack.getClassName()), Map.class);
+                Map<String, Object> methodSettings = as(getSettings().get(stack.getClassName()), Map.class);
                 if (methodSettings == null) {
                     continue;
                 }
@@ -125,10 +127,12 @@ public class SystemException extends NestedRuntimeException {
                     if (!method.getName().equals(stack.getMethodName())) {
                         continue;
                     }
+                    //Logger.debug("SystemException: Try find @ErrorCode at %s", method.toString());
                     if ((errorCode = findCode(method, errorName, cause)) == null) {
                         continue;
                     }
 
+                    Logger.debug("SystemException: Found @ErrorCode at %s", method.toString());
                     source = caller.left;
                     targetSite = method;
                     break;
@@ -144,6 +148,9 @@ public class SystemException extends NestedRuntimeException {
         } catch (Throwable ex) {
             ex.printStackTrace();
         }
+        if (friendlyMessage == null) {
+            Logger.debug("SystemException: Not found @ErrorCode");
+        }
     }
 
     public <T extends Enum<T>> SystemException setErrorCode(T enumErrorCode, Object... messageValues) {
@@ -154,7 +161,7 @@ public class SystemException extends NestedRuntimeException {
 
         try {
             Class type = enumErrorCode.getClass();
-            Map<String, Object> methodSettings = as(Settings.get(type.getName()), Map.class);
+            Map<String, Object> methodSettings = as(getSettings().get(type.getName()), Map.class);
             if (methodSettings == null) {
                 return this;
             }
@@ -174,14 +181,24 @@ public class SystemException extends NestedRuntimeException {
     private ErrorCode findCode(AccessibleObject member, String errorName, Throwable cause) {
         NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
         if (!errorCodes.any()) {
-            Logger.debug("SystemException: Not found @ErrorCode in $s", member.toString());
+            Logger.debug("SystemException: Not found @ErrorCode in %s", member.toString());
             return null;
         }
         if (errorName != null) {
             errorCodes = errorCodes.where(p -> errorName.equals(p.value()));
         }
         if (cause != null) {
-            errorCodes = errorCodes.where(p -> cause.getClass().equals(p.cause()));
+            errorCodes = errorCodes.orderByDescending(p -> {
+                byte count = 0;
+                Class st = p.cause();
+                for (; count < 8; count++) {
+                    if (st.equals(Exception.class)) {
+                        break;
+                    }
+                    st = st.getSuperclass();
+                }
+                return count;
+            }).where(p -> p.cause().isAssignableFrom(cause.getClass()));
         }
         if (!errorCodes.any()) {
             return null;

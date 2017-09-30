@@ -1,65 +1,166 @@
 package org.rx.bean;
 
+import org.apache.commons.lang3.time.FastDateFormat;
+import org.rx.$;
+import org.rx.ErrorCode;
+import org.rx.NQuery;
+import org.rx.SystemException;
+
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.DayOfWeek;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.GregorianCalendar;
+import java.util.TimeZone;
 
+import static org.rx.$.$;
 import static org.rx.Contract.require;
+import static org.rx.Contract.values;
 
+/**
+ * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
+ */
 public final class DateTime extends Date {
-    public enum DateTimeKind {
-        Local,
-        Utc
+    public static final TimeZone       UtcZone  = TimeZone.getTimeZone("UTC");
+    public static final DateTime       BaseDate = new DateTime(2000, 1, 1);
+    public static final NQuery<String> Formats  = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS",
+            "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
+
+    public static DateTime now() {
+        return new DateTime(System.currentTimeMillis());
     }
 
-    //2000-01-01
-    public static final Date BaseDate;
-
-    static {
-        Calendar calendar = Calendar.getInstance();
-        calendar.set(100, Calendar.JANUARY, 1);
-        BaseDate = calendar.getTime();
-        java.time.
+    public static DateTime utcNow() {
+        return now().asUniversalTime();
     }
 
-    private static final String DefaultFormat = "yyyy-MM-dd HH:mm:ss";
+    @ErrorCode(cause = ParseException.class, messageKeys = { "$formats", "$date" })
+    public static DateTime valueOf(String dateString) {
+        SystemException lastEx = null;
+        for (String format : Formats) {
+            try {
+                return valueOf(dateString, format);
+            } catch (SystemException ex) {
+                lastEx = ex;
+            }
+        }
+        $<ParseException> out = $();
+        Exception nested = lastEx.tryGet(out, ParseException.class) ? out.$ : lastEx;
+        throw new SystemException(values(String.join(",", Formats), dateString), nested);
+    }
 
-    private Calendar            cal;
+    public static DateTime valueOf(String dateString, String format) {
+        try {
+            //SimpleDateFormat not thread safe
+            return new DateTime(FastDateFormat.getInstance(format).parse(dateString));
+        } catch (ParseException ex) {
+            throw SystemException.wrap(ex);
+        }
+    }
+
+    private Calendar calendar;
 
     private Calendar getCalendar() {
-        if (cal == null) {
-            cal = Calendar.getInstance();
-
+        if (calendar == null) {
+            calendar = Calendar.getInstance();
+            calendar.setTimeInMillis(super.getTime());
         }
-        cal.setTime(this);
-        return cal;
+        return calendar;
     }
 
-    public DateTime() {
-        super();
+    @Override
+    public int getYear() {
+        return getCalendar().get(Calendar.YEAR);
     }
 
-    public DateTime(String sDate) throws ParseException {
-        this(sDate, DefaultFormat);
+    @Override
+    public int getMonth() {
+        return getCalendar().get(Calendar.MONTH);
     }
 
-    public DateTime(String sDate, String format) throws ParseException {
-        this(new SimpleDateFormat(format).parse(sDate));
+    @Override
+    public int getDay() {
+        return getCalendar().get(Calendar.DAY_OF_MONTH);
+    }
+
+    @Override
+    public int getHours() {
+        return getCalendar().get(Calendar.HOUR_OF_DAY);
+    }
+
+    @Override
+    public int getMinutes() {
+        return getCalendar().get(Calendar.MINUTE);
+    }
+
+    @Override
+    public int getSeconds() {
+        return getCalendar().get(Calendar.SECOND);
+    }
+
+    public int getMillisecond() {
+        return getCalendar().get(Calendar.MILLISECOND);
+    }
+
+    public int getDayOfYear() {
+        return getCalendar().get(Calendar.DAY_OF_YEAR);
+    }
+
+    public DayOfWeek getDayOfWeek() {
+        return DayOfWeek.of(getCalendar().get(Calendar.DAY_OF_WEEK));
+    }
+
+    public long getTotalDays() {
+        return super.getTime() / (24 * 60 * 60 * 1000);
+    }
+
+    public long getTotalHours() {
+        return super.getTime() / (60 * 60 * 1000);
+    }
+
+    public long getTotalMinutes() {
+        return super.getTime() / (60 * 1000);
+    }
+
+    public long getTotalSeconds() {
+        return super.getTime() / (1000);
+    }
+
+    public long getTotalMilliseconds() {
+        return super.getTime();
+    }
+
+    public DateTime(int year, int month, int day) {
+        this(year, month, day, 0, 0, 0);
+    }
+
+    public DateTime(int year, int month, int day, int hour, int minute, int second) {
+        Calendar c = getCalendar();
+        c.set(year, month, day, hour, minute, second);
+        super.setTime(c.getTimeInMillis());
+    }
+
+    public DateTime(long ticks) {
+        super(ticks);
     }
 
     public DateTime(Date date) {
         super(date.getTime());
     }
 
-    public DateTime(long ticks) {
-        super();
-        super(ticks);
+    @Override
+    public synchronized void setTime(long time) {
+        super.setTime(time);
+        if (calendar != null) {
+            calendar.setTimeInMillis(time);
+        }
     }
 
     public DateTime addYears(int value) {
         return add(Calendar.YEAR, value);
+    }
+
+    public DateTime addMonths(int value) {
+        return add(Calendar.MONTH, value);
     }
 
     public DateTime addDays(int value) {
@@ -84,25 +185,53 @@ public final class DateTime extends Date {
 
     private DateTime add(int field, int value) {
         Calendar c = getCalendar();
+        long mark = c.getTimeInMillis();
         c.set(field, c.get(field) + value);
-        this.setTime(c.getTime().getTime());
+        try {
+            return new DateTime(c.getTimeInMillis());
+        } finally {
+            c.setTimeInMillis(mark);
+        }
+    }
+
+    public DateTime addTicks(long ticks) {
+        return new DateTime(super.getTime() + ticks);
+    }
+
+    public DateTime add(Date value) {
+        require(value);
+
+        return addTicks(value.getTime());
+    }
+
+    public DateTime subtract(Date value) {
+        require(value);
+
+        return new DateTime(super.getTime() - value.getTime());
+    }
+
+    public DateTime asLocalTime() {
+        getCalendar().setTimeZone(TimeZone.getDefault());
         return this;
     }
 
-    public TimeSpan subtract(Date value) {
-        require(value);
+    public DateTime asUniversalTime() {
+        getCalendar().setTimeZone(UtcZone);
+        return this;
+    }
 
-        return new TimeSpan(this.getTime() - value.getTime());
+    public String toDateTimeString() {
+        return toString(Formats.first());
     }
 
     @Override
     public String toString() {
-        return toString(DefaultFormat);
+        return toString(Formats.last());
     }
 
     public String toString(String format) {
         require(format);
 
-        return new SimpleDateFormat(format).format(this);
+        return FastDateFormat.getInstance(format, getCalendar().getTimeZone()).format(this);
     }
 }

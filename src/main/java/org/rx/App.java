@@ -19,11 +19,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
@@ -43,17 +42,16 @@ public class App {
     //endregion
 
     //region Fields
-    public static final String                    UTF8            = "UTF-8", AllWarnings = "all";
-    public static final int                       TimeoutInfinite = -1;
-    private static final NQuery<Class<?>>         SupportTypes;
-    private static final NQuery<SimpleDateFormat> SupportDateFormats;
-    private static final String                   base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    public static final String            EmptyString     = "", UTF8 = "UTF-8", AllWarnings = "all";
+    public static final int               TimeoutInfinite = -1;
+    private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    private static final ThreadLocal<Map> threadStatic;
+    private static final NQuery<Class<?>> supportTypes;
 
     static {
-        SupportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, BigDecimal.class, UUID.class, Date.class, Enum.class);
-        SupportDateFormats = NQuery.of(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
-                new SimpleDateFormat("yyyyMMddHHmmss"), new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS"));
+        threadStatic = ThreadLocal.withInitial(HashMap::new);
+        supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
+                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
     }
     //endregion
 
@@ -98,7 +96,7 @@ public class App {
         Object v;
         switch (containerKind) {
             case ThreadStatic:
-                Map threadMap = ThreadLocal.withInitial(HashMap::new).get();
+                Map threadMap = threadStatic.get();
                 v = threadMap.computeIfAbsent(k, supplier);
                 break;
             case ServletRequest:
@@ -443,7 +441,6 @@ public class App {
     }
 
     @ErrorCode(messageKeys = { "$fType", "$tType" })
-    @ErrorCode(cause = ParseException.class, messageKeys = { "$formats", "$date" })
     @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
     @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
     @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
@@ -453,34 +450,20 @@ public class App {
         if (value == null || toType.isInstance(value)) {
             return (T) value;
         }
-        Class<?> strType = SupportTypes.first();
+        Class<?> strType = supportTypes.first();
         if (toType.equals(strType)) {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        if (!(SupportTypes.any(p -> p.equals(fromType)))) {
-            throw new SystemException(values(fromType, toType));
+        if (!(supportTypes.any(p -> p.equals(fromType)))) {
+            throw new SystemException(values(fromType, toType), "notSupported");
         }
 
         String val = value.toString();
-        if (toType.equals(BigDecimal.class)) {
-            value = new BigDecimal(val);
-        } else if (toType.equals(UUID.class)) {
+        if (toType.equals(UUID.class)) {
             value = UUID.fromString(val);
-        } else if (Date.class.isAssignableFrom(toType)) {
-            value = null;
-            ParseException lastEx = null;
-            for (SimpleDateFormat format : SupportDateFormats) {
-                try {
-                    value = new DateTime(format.parse(val));
-                } catch (ParseException ex) {
-                    lastEx = ex;
-                }
-            }
-            if (value == null) {
-                NQuery<String> q = SupportDateFormats.select(p -> p.toPattern());
-                throw new SystemException(values(String.join(",", q), val), lastEx);
-            }
+        } else if (toType.equals(BigDecimal.class)) {
+            value = new BigDecimal(val);
         } else if (toType.isEnum()) {
             NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
             value = q.where(p -> p.equals(val)).singleOrDefault();
@@ -488,9 +471,15 @@ public class App {
                 throw new SystemException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
             }
         } else {
-            toType = checkType(toType);
+            final String of = "valueOf";
             try {
-                Method m = toType.getDeclaredMethod("valueOf", strType);
+                Method m;
+                if (Date.class.isAssignableFrom(toType)) {
+                    m = DateTime.class.getDeclaredMethod(of, strType);
+                } else {
+                    toType = checkType(toType);
+                    m = toType.getDeclaredMethod(of, strType);
+                }
                 value = m.invoke(null, val);
             } catch (NoSuchMethodException ex) {
                 throw new SystemException(values(toType), ex);

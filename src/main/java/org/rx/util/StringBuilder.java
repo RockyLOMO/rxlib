@@ -1,7 +1,8 @@
 package org.rx.util;
 
+import org.rx.App;
+
 public final class StringBuilder {
-    public static final String      Empty = "";
     private java.lang.StringBuilder buffer;
     private String                  prefix;
 
@@ -19,7 +20,7 @@ public final class StringBuilder {
 
     public StringBuilder() {
         buffer = new java.lang.StringBuilder();
-        prefix = Empty;
+        prefix = App.EmptyString;
     }
 
     public StringBuilder replace(String target, String replacement) {

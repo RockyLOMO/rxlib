@@ -112,7 +112,7 @@ public class ValidateUtil {
         }
 
         StringBuilder msg = new StringBuilder();
-        msg.setPrefix(String.format("[ValidateAround] %s.%s ", targetType.getSimpleName(), signature.getName()));
+        msg.setPrefix(String.format("[Validating] %s.%s ", targetType.getSimpleName(), signature.getName()));
         try {
             msg.appendLine("begin check..");
             ValidFlag attr = member.getAnnotation(ValidFlag.class);

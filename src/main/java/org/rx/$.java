@@ -1,8 +1,8 @@
 package org.rx;
 
-public final class $<T> {
-    private static final ThreadLocal<$> ThreadStatic = ThreadLocal.withInitial($::new);
+import static org.rx.App.CacheContainerKind.*;
 
+public final class $<T> {
     /**
      * Alt+Enter
      * 
@@ -10,7 +10,7 @@ public final class $<T> {
      * @return
      */
     public static <T> $<T> $() {
-        return ThreadStatic.get();
+        return App.getOrStore($.class, App.EmptyString, k -> new $<>(), ThreadStatic);
     }
 
     public T $;

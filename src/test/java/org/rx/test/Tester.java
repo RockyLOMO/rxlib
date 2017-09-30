@@ -1,20 +1,21 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSON;
 import org.junit.Test;
 import org.rx.$;
 import org.rx.App;
+import org.rx.ErrorCode;
 import org.rx.SystemException;
 import org.rx.socket.Sockets;
 import org.rx.test.bean.*;
-import org.rx.util.BinaryStream;
-import org.rx.util.MemoryStream;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
+import java.util.Date;
 
 import static org.rx.$.$;
+import static org.rx.Contract.eq;
+import static org.rx.Contract.values;
 
 public class Tester {
     @Test
@@ -52,73 +53,32 @@ public class Tester {
     }
 
     @Test
-    public void testBinaryStream() {
-        BinaryStream stream = new BinaryStream(new MemoryStream());
-        stream.writeString("test hello");
-
-        stream.writeInt(100);
-        stream.writeLine("di yi hang");
-        stream.writeLine("di er hang");
-
-        stream.setPosition(0);
-        System.out.println(stream.readString());
-        System.out.println(stream.readInt());
-
-        String line;
-        while ((line = stream.readLine()) != null) {
-            System.out.println(line);
-        }
-
-        SourceBean bean = new SourceBean();
-        bean.setName("hello");
-        bean.setAge(12);
-        bean.setMoney(250L);
-        stream.setPosition(0);
-        stream.writeObject(bean);
-
-        stream.setPosition(0);
-        SourceBean newBean = stream.readObject();
-
-        System.out.println(JSON.toJSONString(bean));
-        System.out.println(JSON.toJSONString(newBean));
-    }
-
-    @Test
-    public void testStream() {
-        MemoryStream stream = new MemoryStream(32, true);
-        for (int i = 0; i < 5; i++) {
-            stream.write(i);
-        }
-        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().length));
-
-        stream.write(new byte[30]);
-        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().length));
-
-        stream.setPosition(0);
-        System.out.println(stream.read());
-    }
-
-    @Test
+    @ErrorCode(messageKeys = { "$x" })
+    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = { "$x" })
     public void testCode() {
         System.out.println(App.getBootstrapPath());
 
-        SystemException ex = SystemException.wrap(new IllegalArgumentException());
+        String val = "rx";
+        SystemException ex = new SystemException(values(val));
+        assert eq(ex.getFriendlyMessage(), "Method Error Code value=\"" + val + "\"");
+
+        ex = new SystemException(values(val), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "This is IllegalArgumentException! \"" + val + "\"");
         $<IllegalArgumentException> out = $();
-        if (ex.tryGet(out, IllegalArgumentException.class)) {
-            Exception e = out.$;
-            System.out.println("ok " + e);
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String uid = "userId";
+        ex.setErrorCode(UserCode.xCode.argument, uid);
+        assert eq(ex.getFriendlyMessage(), "Parameter \"" + uid + "\" error..");
+
+        try {
+            String date = "2017-08-24 02:02:02";
+            App.changeType(date, Date.class);
+
+            date = "x";
+            App.changeType(date, Date.class);
+        } catch (SystemException e) {
+            e.printStackTrace();
         }
-
-        //        SourceBean sb = new SourceBean();
-        //        App.changeType(sb, TargetBean.class);
-        //
-        //        String sd = "2017";
-        //        App.changeType(sd, Date.class);
-
-        SystemException e = SystemException.wrap(new Throwable()).setErrorCode(UserCode.xCode.argument, "userId");
-        System.out.println(e.getFriendlyMessage());
-        assert e.getFriendlyMessage().equals("Parameter \"userId\" error..");
     }
 }

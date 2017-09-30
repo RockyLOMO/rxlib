@@ -14,11 +14,13 @@ org.rx.NQuery:
 
 org.rx.App:
   changeType: Not supported convert $fType type to $tType type
-  changeType<ParseException>: Only supported $formats date formats, current date is $date
   changeType[enumError]: Not found $name in $names of $eType enum
   changeType<NoSuchMethodException>: Not found valueOf method of $type type
   changeType<ReflectiveOperationException>: Convert $val from $fType type to $tType type error
   checkType: Find $type primitive type failed
+
+org.rx.bean.DateTime:
+  valueOf<ParseException>: Only supported $formats date formats, current date is $date
 
 org.rx.util.IOStream:
   getPosition: The stream does not support seeking
@@ -28,5 +30,9 @@ org.rx.util.IOStream:
 org.rx.util.MemoryStream:
   getBuffer: The MemoryStream instance was not created with a publicly visible buffer
 
+
+org.rx.test.Tester:
+  testCode: Method Error Code value=$x
+  testCode<IllegalArgumentException>: This is IllegalArgumentException! $x
 org.rx.test.bean.UserCode$xCode:
   argument: Parameter $arg error..
