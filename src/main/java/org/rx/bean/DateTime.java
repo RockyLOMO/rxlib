@@ -1,10 +1,7 @@
 package org.rx.bean;
 
 import org.apache.commons.lang3.time.FastDateFormat;
-import org.rx.$;
-import org.rx.ErrorCode;
-import org.rx.NQuery;
-import org.rx.SystemException;
+import org.rx.*;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
@@ -67,31 +64,37 @@ public final class DateTime extends Date {
         return calendar;
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
+    @SuppressWarnings(App.AllWarnings)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);

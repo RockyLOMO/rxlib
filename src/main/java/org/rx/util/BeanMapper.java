@@ -69,6 +69,7 @@ public class BeanMapper {
         return instance;
     }
 
+    @SuppressWarnings(App.AllWarnings)
     public static Function<String, String> match(String... pairs) {
         require(pairs);
         require(pairs, pairs.length % 2 == 0);
