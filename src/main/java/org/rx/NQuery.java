@@ -40,8 +40,8 @@ public final class NQuery<T> implements Iterable<T> {
     //region of
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
-    public static <T> NQuery<T> of(T... args) {
-        return of(Arrays.asList(args));
+    public static <T> NQuery<T> of(T... set) {
+        return of(Arrays.asList(set));
     }
 
     public static <T> NQuery<T> of(Stream<T> stream) {
@@ -226,6 +226,10 @@ public final class NQuery<T> implements Iterable<T> {
         return stream().anyMatch(p -> p.equals(item));
     }
 
+    public NQuery<T> concat(T... set) {
+        return concat(Arrays.asList(set));
+    }
+
     public NQuery<T> concat(Collection<T> set) {
         return me(Stream.concat(stream(), newStream(set)));
     }
@@ -234,12 +238,24 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().distinct());
     }
 
+    public NQuery<T> except(T... set) {
+        return except(Arrays.asList(set));
+    }
+
     public NQuery<T> except(Collection<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
+    public NQuery<T> intersect(T... set) {
+        return intersect(Arrays.asList(set));
+    }
+
     public NQuery<T> intersect(Collection<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
+    }
+
+    public NQuery<T> union(T... set) {
+        return union(Arrays.asList(set));
     }
 
     public NQuery<T> union(Collection<T> set) {
