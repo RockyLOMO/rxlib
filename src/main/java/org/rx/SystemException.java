@@ -35,7 +35,7 @@ public class SystemException extends NestedRuntimeException {
         if (cause == null) {
             return null;
         }
-        if (SystemException.class.equals(cause.getClass())) {
+        if (SystemException.class.isInstance(cause)) {
             return (SystemException) cause;
         }
         return new SystemException(cause);

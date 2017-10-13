@@ -10,6 +10,7 @@ import org.rx.bean.DateTime;
 import org.rx.util.Action;
 import org.rx.util.Func;
 import org.rx.util.MemoryStream;
+import org.rx.util.StringBuilder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -28,9 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
-import static org.rx.Contract.isNull;
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.Contract.*;
 
 public class App {
     //region Nested
@@ -277,6 +276,42 @@ public class App {
     public static String randomValue(int maxValue) {
         Integer int2 = maxValue;
         return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
+    }
+
+    public static Object readSetting(String key) {
+        return readSetting(key, "application");
+    }
+
+    @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
+    @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
+    public static Object readSetting(String key, String yamlFile) {
+        Map<String, Object> settings = readSettings(yamlFile);
+        Object val;
+        if ((val = settings.get(key)) != null) {
+            return val;
+        }
+
+        StringBuilder kBuf = new StringBuilder();
+        String d = ".";
+        String[] splits = split(key, d);
+        int c = splits.length - 1;
+        for (int i = 0; i <= c; i++) {
+            if (kBuf.getLength() > 0) {
+                kBuf.append(d);
+            }
+            String k = kBuf.append(splits[i]).toString();
+            if ((val = settings.get(k)) == null) {
+                continue;
+            }
+            if (i == c) {
+                return val;
+            }
+            if ((settings = as(val, Map.class)) == null) {
+                throw new SystemException(values(k, yamlFile), "partialKeyError");
+            }
+            kBuf.setLength(0);
+        }
+        throw new SystemException(values(key, yamlFile), "keyError");
     }
 
     public static Map<String, Object> readSettings(String yamlFile) {

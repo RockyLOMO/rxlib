@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.util.Date;
+import java.util.Map;
 
 import static org.rx.$.$;
 import static org.rx.Contract.eq;
@@ -69,7 +70,7 @@ public class Tester {
 
         String uid = "userId";
         ex.setErrorCode(UserCode.xCode.argument, uid);
-        assert eq(ex.getFriendlyMessage(), "Parameter \"" + uid + "\" error..");
+        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=\"" + uid + "\"");
 
         try {
             String date = "2017-08-24 02:02:02";
@@ -80,5 +81,14 @@ public class Tester {
         } catch (SystemException e) {
             e.printStackTrace();
         }
+    }
+
+    @Test
+    public void testReadSetting() {
+        Object v = App.readSetting("org.rx.test.Tester", SystemException.ErrorFile);
+        assert v instanceof Map;
+
+        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.ErrorFile);
+        assert eq(v, "This is IllegalArgumentException! $x");
     }
 }

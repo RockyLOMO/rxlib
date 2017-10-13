@@ -2,6 +2,8 @@ package org.rx.util;
 
 import org.rx.App;
 
+import static org.rx.Contract.isNull;
+
 public final class StringBuilder {
     private java.lang.StringBuilder buffer;
     private String                  prefix;
@@ -10,16 +12,29 @@ public final class StringBuilder {
         return buffer;
     }
 
+    public int getLength() {
+        return buffer.length();
+    }
+
+    public StringBuilder setLength(int length) {
+        buffer.setLength(length);
+        return this;
+    }
+
     public String getPrefix() {
         return prefix;
     }
 
     public void setPrefix(String prefix) {
-        this.prefix = prefix;
+        this.prefix = isNull(prefix, App.EmptyString);
     }
 
     public StringBuilder() {
-        buffer = new java.lang.StringBuilder();
+        this(App.EmptyString);
+    }
+
+    public StringBuilder(String str) {
+        buffer = new java.lang.StringBuilder(str);
         prefix = App.EmptyString;
     }
 
@@ -32,33 +47,50 @@ public final class StringBuilder {
         return this;
     }
 
+    public StringBuilder insert(int offset, String format, Object... args) {
+        return insert(offset, String.format(format, args));
+    }
+
+    public StringBuilder insert(int offset, Object obj) {
+        buffer.insert(offset, prefix);
+        buffer.insert(offset + prefix.length(), obj);
+        return this;
+    }
+
+    public StringBuilder remove(int offset, int count) {
+        buffer.delete(offset, offset + count);
+        return this;
+    }
+
+    public StringBuilder append(String format, Object... args) {
+        return append(String.format(format, args));
+    }
+
     public StringBuilder append(Object obj) {
         buffer.append(prefix).append(obj);
         return this;
     }
 
-    public StringBuilder append(String format, Object... args) {
-        buffer.append(prefix).append(String.format(format, args));
-        return this;
-    }
-
     public StringBuilder appendLine() {
-        append(System.lineSeparator());
+        buffer.append(System.lineSeparator());
         return this;
     }
 
     public StringBuilder appendLine(Object obj) {
-        buffer.append(prefix).append(obj).append(System.lineSeparator());
-        return this;
+        buffer.append(prefix).append(obj);
+        return appendLine();
     }
 
     public StringBuilder appendLine(String format, Object... args) {
-        buffer.append(prefix).append(String.format(format, args)).append(System.lineSeparator());
-        return this;
+        return appendLine(String.format(format, args));
     }
 
     @Override
     public String toString() {
         return buffer.toString();
+    }
+
+    public String toString(int offset, int count) {
+        return buffer.substring(offset, offset + count);
     }
 }

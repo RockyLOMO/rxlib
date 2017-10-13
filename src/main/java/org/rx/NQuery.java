@@ -478,6 +478,10 @@ public final class NQuery<T> implements Iterable<T> {
         });
     }
 
+    public Collection<T> asCollection() {
+        return current;
+    }
+
     public T[] toArray(Class<T> type) {
         List<T> result = toList();
         T[] array = (T[]) Array.newInstance(type, result.size());
