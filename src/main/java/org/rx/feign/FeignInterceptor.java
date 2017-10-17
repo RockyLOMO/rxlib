@@ -1,11 +1,10 @@
-package org.rx.util;
+package org.rx.feign;
 
-import com.zhongan.graphene.common.dto.ResultBase;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.Logger;
 import org.springframework.cloud.netflix.feign.FeignClient;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -16,12 +15,7 @@ import java.util.stream.Collectors;
 
 import static org.rx.Contract.toJSONString;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/8/16
- * 外部调用方法记录入参与返回值
- */
-@Slf4j
-public class FeignClientInterceptor {
+public class FeignInterceptor {
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
         if (!(signature instanceof MethodSignature)) {
@@ -70,14 +64,14 @@ public class FeignClientInterceptor {
             return rt;
         } catch (Exception ex) {
             msg.appendLine("Error:\t\t%s", ex.getMessage());
-            log.error("FeignClientInterceptor proceed {}", ex);
+            log.error("FeignInterceptor proceed {}", ex);
 
             ResultBase<Object> errorResult = new ResultBase<>();
             errorResult.setSuccess(false);
             errorResult.setErrorMsg("网络异常, 稍后再试!");
             return errorResult;
         } finally {
-            log.info(msg.toString());
+            Logger.info(msg.toString());
         }
     }
 }

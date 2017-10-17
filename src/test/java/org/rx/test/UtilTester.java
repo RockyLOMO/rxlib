@@ -9,7 +9,7 @@ import org.rx.test.bean.TargetBean;
 import org.rx.util.BeanMapper;
 import org.rx.util.BinaryStream;
 import org.rx.util.MemoryStream;
-import org.rx.util.RestClient;
+import org.rx.feign.RestClient;
 
 public class UtilTester {
     @Test

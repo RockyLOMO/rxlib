@@ -84,6 +84,10 @@ public final class Contract {
         if (arg == null) {
             return "{}";
         }
+        String s;
+        if ((s = as(arg, String.class)) != null) {
+            return s;
+        }
 
         try {
             return JSON.toJSONString(arg);

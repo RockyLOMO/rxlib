@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.feign;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;

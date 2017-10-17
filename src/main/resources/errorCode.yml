@@ -17,12 +17,12 @@ org.rx.App:
   readSetting[partialKeyError]: Not found partial key $key in $file.yml
   changeType: Not supported convert $fType to $tType
   changeType[enumError]: Not found $name in $names of $eType enum
-  changeType<NoSuchMethodException>: Not found valueOf method of $type type
+  changeType<NoSuchMethodException>: Not found ValueOf method of $type
   changeType<ReflectiveOperationException>: Convert $val from $fType to $tType error
   checkType: Try find $type primitive type failed
 
 org.rx.bean.DateTime:
-  valueOf<ParseException>: Only supported $formats date formats, current date is $date
+  valueOf<ParseException>: Only supported $formats date formats, current date string is $date
 
 org.rx.util.IOStream:
   getPosition: The stream does not support seeking
