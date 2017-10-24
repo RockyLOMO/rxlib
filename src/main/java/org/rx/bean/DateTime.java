@@ -64,37 +64,37 @@ public final class DateTime extends Date {
         return calendar;
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);

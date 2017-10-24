@@ -4,6 +4,7 @@ import org.rx.App;
 import org.rx.Disposable;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
+import org.rx.bean.Const;
 import org.rx.cache.BufferSegment;
 
 import java.io.*;
@@ -15,7 +16,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
-        byte[] buffer = new byte[BufferSegment.DefaultBufferSize * 2];
+        byte[] buffer = new byte[Const.DefaultBufferSize * 2];
         try {
             int read;
             while ((read = from.read(buffer, 0, buffer.length)) > 0) {

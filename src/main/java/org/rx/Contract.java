@@ -2,6 +2,7 @@ package org.rx;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import org.rx.bean.Const;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -80,17 +81,15 @@ public final class Contract {
     public static final Set<Class> SkipTypes = ConcurrentHashMap.newKeySet();
 
     static {
-        try {
-            List<String> skips = App.asList(App.readSetting("app.jsonSkipTypes"));
-            for (String skip : skips) {
-                try {
-                    SkipTypes.add(Class.forName(skip));
-                } catch (ClassNotFoundException e) {
-                    Logger.debug("Not found %s skip type 4 toJsonString", skip);
+        Object val = App.readSetting(Const.SettingNames.JsonSkipTypes);
+        if (val != null) {
+            try {
+                for (Object skip : App.asList(val)) {
+                    SkipTypes.add(Class.forName(String.valueOf(skip)));
                 }
+            } catch (Exception e) {
+                Logger.debug("toJsonString: %s", e);
             }
-        } catch (Exception e) {
-            Logger.debug("toJsonString: %s", e);
         }
     }
 

@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import org.rx.App;
+import org.rx.bean.Const;
 
 import static org.rx.Contract.isNull;
 
@@ -26,16 +27,20 @@ public final class StringBuilder {
     }
 
     public void setPrefix(String prefix) {
-        this.prefix = isNull(prefix, App.EmptyString);
+        this.prefix = isNull(prefix, Const.EmptyString);
     }
 
     public StringBuilder() {
-        this(App.EmptyString);
+        this(Const.EmptyString);
     }
 
     public StringBuilder(String str) {
         buffer = new java.lang.StringBuilder(str);
-        prefix = App.EmptyString;
+        prefix = Const.EmptyString;
+    }
+
+    public int indexOf(String target) {
+        return buffer.indexOf(target);
     }
 
     public StringBuilder replace(String target, String replacement) {

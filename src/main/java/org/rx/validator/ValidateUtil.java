@@ -16,8 +16,9 @@ import java.lang.reflect.Method;
 
 import org.rx.Logger;
 import org.rx.util.StringBuilder;
+import org.rx.util.ThrowableFunc;
+
 import java.util.Set;
-import java.util.function.Function;
 
 import static org.rx.Contract.toJsonString;
 
@@ -25,10 +26,6 @@ import static org.rx.Contract.toJsonString;
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
 public class ValidateUtil {
-    public interface ThrowableFunc {
-        Object apply(Object arg) throws Throwable;
-    }
-
     /**
      * 验证bean实体 @Valid deep valid
      *
@@ -86,7 +83,7 @@ public class ValidateUtil {
         }
         Object retVal;
         for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member,
-                retVal = returnValueFuc.apply(null))) {
+                retVal = returnValueFuc.invoke(null))) {
             doThrow(violation);
         }
         return retVal;

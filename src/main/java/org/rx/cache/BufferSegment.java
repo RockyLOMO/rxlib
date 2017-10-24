@@ -5,7 +5,6 @@ import java.util.function.Consumer;
 import static org.rx.Contract.require;
 
 public class BufferSegment {
-    public static final int  DefaultBufferSize = 1024;
     private final byte[]     buffer;
     private final int        bufferSize;
     private volatile int     offset;

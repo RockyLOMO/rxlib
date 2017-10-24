@@ -1,6 +1,7 @@
 package org.rx.socket;
 
 import org.rx.*;
+import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.cache.BytesSegment;
@@ -32,7 +33,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
         public ClientItem(Socket client, DirectSocket owner) {
             this.owner = owner;
-            segment = new BufferSegment(BufferSegment.DefaultBufferSize, 2);
+            segment = new BufferSegment(Const.DefaultBufferSize, 2);
             try {
                 stream = new NetworkStream(client, segment.alloc());
                 if (owner.directAddress != null) {

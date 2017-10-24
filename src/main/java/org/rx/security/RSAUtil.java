@@ -3,6 +3,7 @@ package org.rx.security;
 import org.rx.App;
 import org.rx.Contract;
 import org.rx.SystemException;
+import org.rx.bean.Const;
 
 import javax.crypto.Cipher;
 import java.io.UnsupportedEncodingException;
@@ -55,7 +56,7 @@ public class RSAUtil {
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initSign(priKey);
-            signature.update(getContentBytes(content, App.UTF8));
+            signature.update(getContentBytes(content, Const.Utf8));
             return App.convertToBase64String(signature.sign());
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
@@ -98,7 +99,7 @@ public class RSAUtil {
 
             Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
             signature.initVerify(pubKey);
-            signature.update(getContentBytes(content, App.UTF8));
+            signature.update(getContentBytes(content, Const.Utf8));
             return signature.verify(App.convertFromBase64String(sign));
         } catch (Exception ex) {
             throw SystemException.wrap(ex);

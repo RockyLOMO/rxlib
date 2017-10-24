@@ -85,12 +85,13 @@ public class Tester {
 
     @Test
     public void testReadSetting() {
-        App.readSetting("not");
+        Object v = App.readSetting("not");
+        assert v == null;
 
-        Object v = App.readSetting("org.rx.test.Tester", SystemException.ErrorFile);
+        v = App.readSetting("org.rx.test.Tester", SystemException.CodeFile, true);
         assert v instanceof Map;
 
-        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.ErrorFile);
+        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.CodeFile, true);
         assert eq(v, "This is IllegalArgumentException! $x");
     }
 }

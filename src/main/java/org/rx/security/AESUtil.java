@@ -2,6 +2,7 @@ package org.rx.security;
 
 import org.rx.App;
 import org.rx.SystemException;
+import org.rx.bean.Const;
 
 import static org.rx.Contract.require;
 
@@ -66,7 +67,7 @@ public class AESUtil {
         require(data, key);
 
         try {
-            byte[] valueByte = encrypt(data.getBytes(App.UTF8), key.getBytes(App.UTF8));
+            byte[] valueByte = encrypt(data.getBytes(Const.Utf8), key.getBytes(Const.Utf8));
             return App.convertToBase64String(valueByte);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
@@ -77,8 +78,8 @@ public class AESUtil {
         require(data, key);
 
         try {
-            byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(App.UTF8));
-            return new String(valueByte, App.UTF8);
+            byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(Const.Utf8));
+            return new String(valueByte, Const.Utf8);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }
@@ -88,7 +89,7 @@ public class AESUtil {
         require(data, key);
 
         try {
-            byte[] valueByte = encrypt(data.getBytes(App.UTF8), App.convertFromBase64String(key));
+            byte[] valueByte = encrypt(data.getBytes(Const.Utf8), App.convertFromBase64String(key));
             return App.convertToBase64String(valueByte);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
@@ -100,7 +101,7 @@ public class AESUtil {
 
         try {
             byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
-            return new String(valueByte, App.UTF8);
+            return new String(valueByte, Const.Utf8);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }

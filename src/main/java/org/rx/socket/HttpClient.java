@@ -3,6 +3,7 @@ package org.rx.socket;
 import org.rx.App;
 import org.rx.Contract;
 import org.rx.SystemException;
+import org.rx.bean.Const;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;
@@ -19,7 +20,7 @@ public class HttpClient {
     //region StaticMembers
     public static String urlEncode(String val) {
         try {
-            return URLEncoder.encode(val, App.UTF8);
+            return URLEncoder.encode(val, Const.Utf8);
         } catch (UnsupportedEncodingException ex) {
             throw SystemException.wrap(ex);
         }
@@ -35,8 +36,8 @@ public class HttpClient {
         try {
             for (String pair : pairs) {
                 int idx = pair.indexOf("=");
-                String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), App.UTF8) : pair;
-                String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), App.UTF8)
+                String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Const.Utf8) : pair;
+                String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), Const.Utf8)
                         : null;
                 map.put(key, value);
             }
@@ -122,7 +123,7 @@ public class HttpClient {
     }
 
     private String exec(String url, String method, String content, String contentType, int timeout) {
-        String charset = App.UTF8;
+        String charset = Const.Utf8;
         try {
             URL uri = new URL(url);
             HttpURLConnection client = (HttpURLConnection) (proxyHost != null

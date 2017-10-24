@@ -6,6 +6,7 @@ import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.rx.Logger;
 import org.rx.SystemException;
+import org.rx.bean.Const;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
@@ -17,7 +18,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.rx.App.UTF8;
 import static org.rx.Contract.require;
 import static org.rx.Contract.toJsonString;
 
@@ -32,7 +32,7 @@ public class Helper {
             //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
             marshaller.marshal(obj, stream);
-            return stream.toString(UTF8);
+            return stream.toString(Const.Utf8);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }
@@ -44,7 +44,7 @@ public class Helper {
         try {
             JAXBContext jaxbContext = JAXBContext.newInstance(type);
             Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
-            byte[] data = xml.getBytes(UTF8);
+            byte[] data = xml.getBytes(Const.Utf8);
             ByteArrayInputStream stream = new ByteArrayInputStream(data);
             return (T) unmarshaller.unmarshal(stream);
         } catch (Exception ex) {

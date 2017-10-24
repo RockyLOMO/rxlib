@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import org.rx.App;
+import org.rx.bean.Const;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -15,7 +16,7 @@ public interface NEnum {
 
     void setFlags(int flags);
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     default void add(NEnum... vals) {
         require(vals);
 
@@ -26,7 +27,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     default void remove(NEnum... vals) {
         require(vals);
 
@@ -37,7 +38,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     default boolean has(NEnum... vals) {
         require(vals);
 

@@ -2,8 +2,8 @@ package org.rx;
 
 import com.google.common.base.Strings;
 import org.apache.commons.lang3.StringUtils;
+import org.rx.bean.Const;
 import org.rx.bean.Tuple;
-import org.rx.cache.BufferSegment;
 import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
 import org.rx.bean.DateTime;
@@ -41,7 +41,6 @@ public class App {
     //endregion
 
     //region Fields
-    public static final String            EmptyString     = "", UTF8 = "UTF-8", AllWarnings = "all";
     public static final int               TimeoutInfinite = -1;
     private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
@@ -298,12 +297,12 @@ public class App {
     }
 
     public static Object readSetting(String key) {
-        return readSetting(key, "application");
+        return readSetting(key, "application", false);
     }
 
     @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
     @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
-    public static Object readSetting(String key, String yamlFile) {
+    public static Object readSetting(String key, String yamlFile, boolean throwOnEmpty) {
         Map<String, Object> settings = readSettings(yamlFile);
         Object val;
         if ((val = settings.get(key)) != null) {
@@ -329,6 +328,10 @@ public class App {
                 throw new SystemException(values(k, yamlFile), "partialKeyError");
             }
             kBuf.setLength(0);
+        }
+
+        if (!throwOnEmpty) {
+            return null;
         }
         throw new SystemException(values(key, yamlFile), "keyError");
     }
@@ -430,7 +433,7 @@ public class App {
 
     //region IO
     public static String readString(InputStream stream) {
-        return readString(stream, UTF8);
+        return readString(stream, Const.Utf8);
     }
 
     public static String readString(InputStream stream, String charset) {
@@ -438,7 +441,7 @@ public class App {
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[BufferSegment.DefaultBufferSize];
+            byte[] buffer = new byte[Const.DefaultBufferSize];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -450,7 +453,7 @@ public class App {
     }
 
     public static void writeString(OutputStream stream, String value) {
-        writeString(stream, value, UTF8);
+        writeString(stream, value, Const.Utf8);
     }
 
     public static void writeString(OutputStream stream, String value, String charset) {
@@ -572,7 +575,7 @@ public class App {
 
         byte[] ret = Base64.getEncoder().encode(data);
         try {
-            return new String(ret, UTF8);
+            return new String(ret, Const.Utf8);
         } catch (UnsupportedEncodingException ex) {
             throw SystemException.wrap(ex);
         }
@@ -582,7 +585,7 @@ public class App {
         require(base64);
 
         try {
-            byte[] data = base64.getBytes(UTF8);
+            byte[] data = base64.getBytes(Const.Utf8);
             return Base64.getDecoder().decode(data);
         } catch (UnsupportedEncodingException ex) {
             throw SystemException.wrap(ex);
@@ -669,7 +672,7 @@ public class App {
         }
 
         File file = new File(filePath);
-        response.setCharacterEncoding(UTF8);
+        response.setCharacterEncoding(Const.Utf8);
         response.setContentType("application/octet-stream");
         response.setContentLength((int) file.length());
         response.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));

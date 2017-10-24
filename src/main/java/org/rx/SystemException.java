@@ -1,6 +1,7 @@
 package org.rx;
 
 import org.rx.bean.BiTuple;
+import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
 import org.rx.util.StringBuilder;
@@ -20,17 +21,21 @@ import static org.rx.Contract.toJsonString;
  * ex.fillInStackTrace()
  */
 public class SystemException extends NestedRuntimeException {
+    public static final String CodeFile = "rxCode";
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {
-        return App.getOrStore(SystemException.class, App.EmptyString, k -> {
-            Map<String, Object> codes = App.readSettings("rxCode");
-            try {
-                for (Object errorFile : App.asList(App.readSetting("app.errorCodeFiles"))) {
-                    codes.putAll(App.readSettings(errorFile.toString()));
+        return App.getOrStore(SystemException.class, Const.EmptyString, k -> {
+            Map<String, Object> codes = App.readSettings(CodeFile);
+            Object val = App.readSetting(Const.SettingNames.ErrorCodeFiles);
+            if (val != null) {
+                try {
+                    for (Object file : App.asList(val)) {
+                        codes.putAll(App.readSettings(String.valueOf(file)));
+                    }
+                } catch (Exception e) {
+                    Logger.debug("getSettings: %s", e);
                 }
-            } catch (Exception e) {
-                Logger.debug("getSettings: %s", e);
             }
             return codes;
         });
@@ -106,7 +111,7 @@ public class SystemException extends NestedRuntimeException {
         super(cause != null ? cause.getMessage() : null, cause);
 
         if (messageValues == null) {
-            messageValues = new Object[0];
+            messageValues = Const.EmptyArray;
         }
         try {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();

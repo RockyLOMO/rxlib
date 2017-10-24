@@ -4,6 +4,8 @@ import net.sf.cglib.beans.BeanCopier;
 import org.rx.App;
 
 import java.lang.StringBuilder;
+
+import org.rx.bean.Const;
 import org.rx.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
@@ -43,12 +45,10 @@ public class BeanMapper {
     }
 
     private static class CacheItem {
-        //        public final UUID         key;
         public final List<Method> setters;
         public final List<Method> getters;
 
-        public CacheItem(UUID key, List<Method> setters, List<Method> getters) {
-            //            this.key = key;
+        public CacheItem(List<Method> setters, List<Method> getters) {
             this.setters = setters;
             this.getters = getters;
         }
@@ -69,7 +69,7 @@ public class BeanMapper {
         return instance;
     }
 
-    @SuppressWarnings(App.AllWarnings)
+    @SuppressWarnings(Const.AllWarnings)
     public static Function<String, String> match(String... pairs) {
         require(pairs);
         require(pairs, pairs.length % 2 == 0);
@@ -100,7 +100,7 @@ public class BeanMapper {
             List<Method> g2 = getters.stream()
                     .filter(pg -> s2.stream().anyMatch(ps -> exEquals(pg.getName(), ps.getName())))
                     .collect(Collectors.toList());
-            return new CacheItem(genKey(tType, new TreeSet<>(toMethodNames(s2))), s2, g2);
+            return new CacheItem(s2, g2);
         }, true);
     }
 
@@ -111,13 +111,6 @@ public class BeanMapper {
     private static boolean exEquals(String getterName, String setterName) {
         return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length())
                 .equals(setterName.substring(Set.length()));
-    }
-
-    private static UUID genKey(Class to, TreeSet<String> methodNames) {
-        java.lang.StringBuilder k = new StringBuilder(to.getName());
-        methodNames.stream().forEachOrdered(k::append);
-        //App.logInfo("genKey %s..", k.toString());
-        return App.hash(k.toString());
     }
 
     private Map<UUID, MapConfig> config = new ConcurrentHashMap<>();
@@ -250,9 +243,6 @@ public class BeanMapper {
                         copiedNames.add(missedName);
                     }
                 }
-                UUID k = genKey(to, copiedNames);
-                //App.logInfo("check %s %s", k, tmc.key);
-                //                if (!k.equals(tmc.key)) {
                 if (!missedNames.isEmpty()) {
                     throw new BeanMapException(String.format("Map %s to %s missed method %s..", from.getSimpleName(),
                             to.getSimpleName(), String.join(", ", missedNames)), allNames, missedNames);
