@@ -3,7 +3,8 @@ package org.rx;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import java.util.Arrays;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -18,7 +19,7 @@ public final class Contract {
     @ErrorCode(value = "args", messageKeys = { "$args" })
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
-            throw new SystemException(values(toJSONString(args)), "args");
+            throw new SystemException(values(toJsonString(args)), "args");
         }
     }
 
@@ -76,11 +77,28 @@ public final class Contract {
         return (out.$ = func.apply(state)) != null;
     }
 
-    public static String toJSONString(Object... args) {
-        return toJSONString((Object) args);
+    public static final Set<Class> SkipTypes = ConcurrentHashMap.newKeySet();
+
+    static {
+        try {
+            List<String> skips = App.asList(App.readSetting("app.jsonSkipTypes"));
+            for (String skip : skips) {
+                try {
+                    SkipTypes.add(Class.forName(skip));
+                } catch (ClassNotFoundException e) {
+                    Logger.debug("Not found %s skip type 4 toJsonString", skip);
+                }
+            }
+        } catch (Exception e) {
+            Logger.debug("toJsonString: %s", e);
+        }
     }
 
-    public static String toJSONString(Object arg) {
+    public static String toJsonString(Object... args) {
+        return toJsonString((Object) args);
+    }
+
+    public static String toJsonString(Object arg) {
         if (arg == null) {
             return "{}";
         }
@@ -89,9 +107,29 @@ public final class Contract {
             return s;
         }
 
+        Class type = arg.getClass();
+        NQuery args = null;
         try {
-            return JSON.toJSONString(arg);
+            boolean first = false;
+            Map map;
+            if (type.isArray() || arg instanceof Iterable) {
+                args = NQuery.of(App.asList(arg));
+            } else if ((map = as(arg, Map.class)) != null) {
+                args = NQuery.of(map.values());
+            } else {
+                args = NQuery.of(arg);
+                first = true;
+            }
+            args = args.where(p -> !NQuery.of(SkipTypes).any(p2 -> p2.isInstance(p)));
+            if (!args.any()) {
+                return "{}";
+            }
+            return JSON.toJSONString(first ? args.first() : args.asCollection());
         } catch (Exception ex) {
+            if (args != null) {
+                args.forEach(p -> SkipTypes.add(p.getClass()));
+            }
+
             JSONObject json = new JSONObject();
             json.put("_input", arg.toString());
             json.put("_error", ex.getMessage());

@@ -1,7 +1,7 @@
 package org.rx.socket;
 
-import com.alibaba.fastjson.JSON;
 import org.rx.App;
+import org.rx.Contract;
 import org.rx.SystemException;
 
 import java.io.UnsupportedEncodingException;
@@ -118,7 +118,7 @@ public class HttpClient {
 
     public String httpPost(String url, Object jsonEntity) {
         contentType = JsonMimeType;
-        return exec(url, PostMethod, JSON.toJSONString(jsonEntity), contentType, timeout);
+        return exec(url, PostMethod, Contract.toJsonString(jsonEntity), contentType, timeout);
     }
 
     private String exec(String url, String method, String content, String contentType, int timeout) {

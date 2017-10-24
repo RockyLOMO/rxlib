@@ -19,8 +19,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -77,39 +77,6 @@ public class App {
         } catch (InterruptedException ex) {
             Logger.info("Thread sleep error: %s", ex.getMessage());
         }
-    }
-
-    public static <T> T getOrStore(String key, Function<String, T> supplier) {
-        return getOrStore(App.class, key, supplier);
-    }
-
-    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier) {
-        return getOrStore(caller, key, supplier, CacheContainerKind.WeakCache);
-    }
-
-    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier,
-                                   CacheContainerKind containerKind) {
-        require(caller, key, supplier, containerKind);
-
-        String k = caller.getName() + key;
-        Object v;
-        switch (containerKind) {
-            case ThreadStatic:
-                Map threadMap = threadStatic.get();
-                v = threadMap.computeIfAbsent(k, supplier);
-                break;
-            case ServletRequest:
-                HttpServletRequest request = getCurrentRequest();
-                v = request.getAttribute(k);
-                if (v == null) {
-                    request.setAttribute(k, v = supplier.apply(k));
-                }
-                break;
-            default:
-                v = WeakCache.getOrStore(caller, key, (Function<String, Object>) supplier);
-                break;
-        }
-        return (T) v;
     }
 
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {
@@ -209,6 +176,73 @@ public class App {
         throw new SystemException("Parameters error");
     }
 
+    @ErrorCode(value = "argError", messageKeys = { "type" })
+    public static <T> List<T> asList(Object arrayOrIterable) {
+        require(arrayOrIterable);
+
+        Class type = arrayOrIterable.getClass();
+        if (type.isArray()) {
+            int length = Array.getLength(arrayOrIterable);
+            List<T> list = new ArrayList<>(length);
+            for (int i = 0; i < length; i++) {
+                Object item = Array.get(arrayOrIterable, i);
+                list.add((T) item);
+            }
+            return list;
+        }
+
+        Iterable iterable;
+        if ((iterable = as(arrayOrIterable, Iterable.class)) != null) {
+            List<T> list = new ArrayList<>();
+            iterable.forEach(p -> list.add((T) p));
+            return list;
+        }
+
+        throw new SystemException(values(type.getSimpleName()), "argError");
+    }
+
+    public static <T> T getOrStore(String key, Function<String, T> supplier) {
+        return getOrStore(App.class, key, supplier);
+    }
+
+    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier) {
+        return getOrStore(caller, key, supplier, CacheContainerKind.WeakCache);
+    }
+
+    public static <T> T getOrStore(Class caller, String key, Function<String, T> supplier,
+                                   CacheContainerKind containerKind) {
+        require(caller, key, supplier, containerKind);
+
+        String k = cacheKey(caller.getName() + key);
+        Object v;
+        switch (containerKind) {
+            case ThreadStatic:
+                Map threadMap = threadStatic.get();
+                v = threadMap.computeIfAbsent(k, supplier);
+                break;
+            case ServletRequest:
+                HttpServletRequest request = getCurrentRequest();
+                v = request.getAttribute(k);
+                if (v == null) {
+                    request.setAttribute(k, v = supplier.apply(k));
+                }
+                break;
+            default:
+                v = WeakCache.getOrStore(caller, key, (Function<String, Object>) supplier);
+                break;
+        }
+        return (T) v;
+    }
+
+    public static String cacheKey(String key) {
+        require(key);
+
+        if (key.length() <= 32) {
+            return key;
+        }
+        return MD5Util.md5Hex(key);
+    }
+
     public static UUID hash(String key) {
         require(key);
 
@@ -256,21 +290,6 @@ public class App {
             lsb = (lsb << 8) | (guidBytes[i] & 0xff);
         }
         return new UUID(msb, lsb);
-    }
-
-    public static String randomString(int strLength) {
-        Random rnd = ThreadLocalRandom.current();
-        StringBuilder ret = new StringBuilder();
-        for (int i = 0; i < strLength; i++) {
-            boolean isChar = (rnd.nextInt(2) % 2 == 0);// 输出字母还是数字
-            if (isChar) { // 字符串
-                int choice = rnd.nextInt(2) % 2 == 0 ? 65 : 97; // 取得大写字母还是小写字母
-                ret.append((char) (choice + rnd.nextInt(26)));
-            } else { // 数字
-                ret.append(Integer.toString(rnd.nextInt(10)));
-            }
-        }
-        return ret.toString();
     }
 
     public static String randomValue(int maxValue) {

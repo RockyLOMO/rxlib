@@ -1,6 +1,5 @@
 package org.rx;
 
-import com.alibaba.fastjson.JSON;
 import com.google.common.collect.Streams;
 import org.rx.bean.Tuple;
 
@@ -226,8 +225,8 @@ public final class NQuery<T> implements Iterable<T> {
         return stream().anyMatch(p -> p.equals(item));
     }
 
-    public NQuery<T> concat(T... set) {
-        return concat(Arrays.asList(set));
+    public NQuery<T> concat(Iterable<T> set) {
+        return concat(App.asList(set));
     }
 
     public NQuery<T> concat(Collection<T> set) {
@@ -238,24 +237,24 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().distinct());
     }
 
-    public NQuery<T> except(T... set) {
-        return except(Arrays.asList(set));
+    public NQuery<T> except(Iterable<T> set) {
+        return except(App.asList(set));
     }
 
     public NQuery<T> except(Collection<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public NQuery<T> intersect(T... set) {
-        return intersect(Arrays.asList(set));
+    public NQuery<T> intersect(Iterable<T> set) {
+        return intersect(App.asList(set));
     }
 
     public NQuery<T> intersect(Collection<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public NQuery<T> union(T... set) {
-        return union(Arrays.asList(set));
+    public NQuery<T> union(Iterable<T> set) {
+        return union(App.asList(set));
     }
 
     public NQuery<T> union(Collection<T> set) {
@@ -326,7 +325,7 @@ public final class NQuery<T> implements Iterable<T> {
         Map<String, Tuple<Object[], List<T>>> map = newMap();
         stream().forEach(t -> {
             Object[] ks = keySelector.apply(t);
-            map.computeIfAbsent(toJSONString(ks), p -> Tuple.of(ks, newList())).right.add(t);
+            map.computeIfAbsent(toJsonString(ks), p -> Tuple.of(ks, newList())).right.add(t);
         });
         List<TR> result = newList();
         for (Tuple<Object[], List<T>> entry : map.values()) {
@@ -517,7 +516,7 @@ public final class NQuery<T> implements Iterable<T> {
             p.index = i;
             p.index2 = i % 2 == 0 ? 2 : i;
             p.index3 = i % 2 == 0 ? 3 : 4;
-            p.name = App.randomString(5);
+            p.name = App.randomValue(5);
             p.age = ThreadLocalRandom.current().nextInt(100);
             personSet.add(p);
         }
@@ -529,14 +528,14 @@ public final class NQuery<T> implements Iterable<T> {
         showResult("groupBy(p -> p.index2...", of(personSet).groupBy(p -> p.index2, p -> {
             System.out.println("groupKey: " + p.left);
             List<Person> list = p.right.toList();
-            System.out.println("items: " + JSON.toJSONString(list));
+            System.out.println("items: " + Contract.toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
                 of(personSet).groupByMany(p -> new Object[] { p.index2, p.index3 }, p -> {
-                    System.out.println("groupKey: " + toJSONString(p.left));
+                    System.out.println("groupKey: " + toJsonString(p.left));
                     List<Person> list = p.right.toList();
-                    System.out.println("items: " + toJSONString(list));
+                    System.out.println("items: " + toJsonString(list));
                     return list.get(0);
                 }));
 
@@ -574,14 +573,14 @@ public final class NQuery<T> implements Iterable<T> {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);
-        System.out.println(JSON.toJSONString(q));
+        System.out.println(Contract.toJsonString(q));
     }
 
     private static void showResult(String n, NQuery q) {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);
-        System.out.println(JSON.toJSONString(q.toList()));
+        System.out.println(Contract.toJsonString(q.toList()));
     }
 
     public static class Person {

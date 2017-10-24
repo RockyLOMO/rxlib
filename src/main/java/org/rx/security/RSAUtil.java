@@ -1,7 +1,7 @@
 package org.rx.security;
 
-import com.alibaba.fastjson.JSONArray;
 import org.rx.App;
+import org.rx.Contract;
 import org.rx.SystemException;
 
 import javax.crypto.Cipher;
@@ -173,7 +173,7 @@ public class RSAUtil {
     public static void main(String[] args) {
         UUID id = UUID.randomUUID();
         String[] kp = RSAUtil.generateKeyPair();
-        System.out.println("id=" + id + ", kp=" + JSONArray.toJSONString(kp));
+        System.out.println("id=" + id + ", kp=" + Contract.toJsonString(kp));
 
         String publicKey = kp[0];
         String privateKey = kp[1];

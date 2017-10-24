@@ -6,7 +6,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Inherited
-public @interface ValidFlag {
+public @interface EnableValid {
     static final int ParameterValues = 1;
     static final int Method          = 1 << 1;
     static final int All             = ParameterValues | Method;

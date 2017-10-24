@@ -4,12 +4,8 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.NQuery;
 import org.rx.SystemException;
-import org.springframework.ui.Model;
 
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
 import javax.validation.Validator;
@@ -20,17 +16,18 @@ import java.lang.reflect.Method;
 
 import org.rx.Logger;
 import org.rx.util.StringBuilder;
-import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
-import static org.rx.Contract.toJSONString;
+import static org.rx.Contract.toJsonString;
 
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
 public class ValidateUtil {
-    private static final NQuery<Class> SkipTypes = NQuery.of(ServletRequest.class, ServletResponse.class, Model.class);
+    public interface ThrowableFunc {
+        Object apply(Object arg) throws Throwable;
+    }
 
     /**
      * 验证bean实体 @Valid deep valid
@@ -70,7 +67,8 @@ public class ValidateUtil {
     }
 
     public static Object validateMethod(Method member, Object instance, Object[] parameterValues,
-                                        boolean validateValues, Function<Object, Object> returnValueFuc) {
+                                        boolean validateValues, ThrowableFunc returnValueFuc)
+            throws Throwable {
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         ExecutableValidator executableValidator = validator.forExecutables();
         for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member,
@@ -115,34 +113,28 @@ public class ValidateUtil {
         msg.setPrefix(String.format("[Validating] %s.%s ", targetType.getSimpleName(), signature.getName()));
         try {
             msg.appendLine("begin check..");
-            ValidFlag attr = member.getAnnotation(ValidFlag.class);
+            EnableValid attr = member.getAnnotation(EnableValid.class);
             if (attr == null) {
-                attr = (ValidFlag) targetType.getAnnotation(ValidFlag.class);
+                attr = (EnableValid) targetType.getAnnotation(EnableValid.class);
                 if (attr == null) {
                     msg.appendLine("exit..");
                     return joinPoint.proceed();
                 }
             }
-            List args = NQuery.of(joinPoint.getArgs()).where(p -> !(SkipTypes.any(p2 -> p2.isInstance(p)))).toList();
-            msg.appendLine("begin validate args=%s..", toJSONString(args));
+            msg.appendLine("begin validate args=%s..", toJsonString(joinPoint.getArgs()));
 
             int flags = attr.value();
-            boolean validateValues = hasFlags(flags, ValidFlag.ParameterValues);
-            if (hasFlags(flags, ValidFlag.Method)) {
+            boolean validateValues = hasFlags(flags, EnableValid.ParameterValues);
+            if (hasFlags(flags, EnableValid.Method)) {
                 if (signature instanceof ConstructorSignature) {
                     ConstructorSignature cs = (ConstructorSignature) signature;
                     validateConstructor(cs.getConstructor(), joinPoint.getArgs(), validateValues);
-                    return joinPoint.proceed();
+                    return onProcess(joinPoint, msg);
                 }
 
                 MethodSignature ms = (MethodSignature) signature;
-                return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues, p -> {
-                    try {
-                        return joinPoint.proceed();
-                    } catch (Throwable ex) {
-                        throw SystemException.wrap(ex);
-                    }
-                });
+                return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues,
+                        p -> onProcess(joinPoint, msg));
             }
 
             if (validateValues) {
@@ -150,13 +142,21 @@ public class ValidateUtil {
                     validateBean(parameterValue);
                 }
             }
-            return joinPoint.proceed();
+            return onProcess(joinPoint, msg);
         } catch (Exception ex) {
             msg.appendLine("validate fail %s..", ex.getMessage());
-            throw ex;
+            return onException(ex);
         } finally {
             msg.appendLine("end validate..");
             Logger.info(msg.toString());
         }
+    }
+
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
+        return joinPoint.proceed();
+    }
+
+    protected Object onException(Exception ex) {
+        throw SystemException.wrap(ex);
     }
 }

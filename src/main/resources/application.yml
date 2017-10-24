@@ -1,0 +1,7 @@
+app:
+  jsonSkipTypes:
+    - javax.servlet.ServletRequest
+    - javax.servlet.ServletResponse
+    - org.springframework.ui.Model
+#  errorCodeFiles:
+#    - rxCode

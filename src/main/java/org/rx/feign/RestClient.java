@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.rx.Contract;
 import org.rx.bean.Tuple;
 
 import org.rx.App;
@@ -86,7 +87,7 @@ public class RestClient {
                 Parameter p = parameters[i];
                 RestParam restParam = p.getDeclaredAnnotation(RestParam.class);
                 params.put(restParam != null ? isNull(restParam.name(), restParam.value()) : func.apply(i),
-                        JSON.toJSONString(args[i]));
+                        Contract.toJsonString(args[i]));
             }
             return setResult(method, client.httpPost(url, params));
         }

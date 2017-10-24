@@ -9,7 +9,7 @@
             <!--expression="execution(public * org.rx..*.*(..))-->
             <!--and !execution(* java.rx.validator.*(..))"/>-->
             <aop:pointcut id="vaPointcut"
-                          expression="@annotation(org.rx.validator.ValidFlag) or @within(org.rx.validator.ValidFlag)"/>
+                          expression="@annotation(org.rx.validator.EnableValid) or @within(org.rx.validator.EnableValid)"/>
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>

@@ -5,6 +5,8 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.Logger;
+import org.rx.SystemException;
+import org.rx.util.StringBuilder;
 import org.springframework.cloud.netflix.feign.FeignClient;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -13,7 +15,7 @@ import java.util.Arrays;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.rx.Contract.toJSONString;
+import static org.rx.Contract.toJsonString;
 
 public class FeignInterceptor {
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -46,32 +48,29 @@ public class FeignInterceptor {
         }
         url += pf.apply(apiMapping);
 
-        org.rx.util.StringBuilder msg = new org.rx.util.StringBuilder().appendLine();
+        StringBuilder msg = new StringBuilder().appendLine();
         String httpMethod = ArrayUtils.isEmpty(apiMapping.method()) ? "POST"
                 : String.join(",", Arrays.stream(apiMapping.method()).map(p -> p.name()).collect(Collectors.toList()));
         msg.appendLine("%s\t\t%s", httpMethod, url);
 
-        msg.appendLine("Request:\t%s", toJSONString(joinPoint.getArgs()));
+        msg.appendLine("Request:\t%s", toJsonString(joinPoint.getArgs()));
         try {
-            Object rt = joinPoint.proceed();
-            msg.appendLine("Response:\t%s", toJSONString(rt));
-
-            //这里可以check返回值
-            //            if (rt instanceof ResultBase) {
-            //                ResultBase<Object> rtw = (ResultBase<Object>) rt;
-            //                GrapheneUtil.checkResult(rtw);
-            //            }
-            return rt;
+            Object r = onProcess(joinPoint, msg);
+            msg.appendLine("Response:\t%s", toJsonString(r));
+            return r;
         } catch (Exception ex) {
             msg.appendLine("Error:\t\t%s", ex.getMessage());
-            log.error("FeignInterceptor proceed {}", ex);
-
-            ResultBase<Object> errorResult = new ResultBase<>();
-            errorResult.setSuccess(false);
-            errorResult.setErrorMsg("网络异常, 稍后再试!");
-            return errorResult;
+            return onException(ex);
         } finally {
             Logger.info(msg.toString());
         }
+    }
+
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
+        return joinPoint.proceed();
+    }
+
+    protected Object onException(Exception ex) {
+        throw SystemException.wrap(ex);
     }
 }

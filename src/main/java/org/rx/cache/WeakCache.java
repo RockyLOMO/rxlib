@@ -3,6 +3,8 @@ package org.rx.cache;
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
+
+import org.rx.App;
 import org.rx.Logger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -31,7 +33,7 @@ public class WeakCache<TK, TV> {
     public static Object getOrStore(Class caller, String key, Function<String, Object> supplier) {
         require(caller, key, supplier);
 
-        String k = caller.getName() + key;
+        String k = App.cacheKey(caller.getName() + key);
         return getInstance().getOrAdd(k, p -> supplier.apply(key));
     }
 

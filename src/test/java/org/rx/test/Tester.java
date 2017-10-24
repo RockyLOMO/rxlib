@@ -85,6 +85,8 @@ public class Tester {
 
     @Test
     public void testReadSetting() {
+        App.readSetting("not");
+
         Object v = App.readSetting("org.rx.test.Tester", SystemException.ErrorFile);
         assert v instanceof Map;
 

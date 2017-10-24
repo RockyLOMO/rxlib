@@ -174,11 +174,11 @@ public final class DateTime extends Date {
         return add(Calendar.HOUR_OF_DAY, value);
     }
 
-    public DateTime addMinute(int value) {
+    public DateTime addMinutes(int value) {
         return add(Calendar.MINUTE, value);
     }
 
-    public DateTime addSecond(int value) {
+    public DateTime addSeconds(int value) {
         return add(Calendar.SECOND, value);
     }
 

@@ -14,17 +14,26 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.rx.Contract.*;
-import static org.rx.Contract.toJSONString;
+import static org.rx.Contract.toJsonString;
 
 /**
  * ex.fillInStackTrace()
  */
 public class SystemException extends NestedRuntimeException {
-    public static final String ErrorFile = "errorCode";
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {
-        return App.getOrStore(SystemException.class, App.EmptyString, k -> App.readSettings(ErrorFile));
+        return App.getOrStore(SystemException.class, App.EmptyString, k -> {
+            Map<String, Object> codes = App.readSettings("rxCode");
+            try {
+                for (Object errorFile : App.asList(App.readSetting("app.errorCodeFiles"))) {
+                    codes.putAll(App.readSettings(errorFile.toString()));
+                }
+            } catch (Exception e) {
+                Logger.debug("getSettings: %s", e);
+            }
+            return codes;
+        });
     }
 
     static {
@@ -242,7 +251,7 @@ public class SystemException extends NestedRuntimeException {
                 }
                 StringBuilder temp = new StringBuilder().append(msg);
                 for (Tuple<String, Object> tuple : query.orderByDescending(p -> p.left.length())) {
-                    temp.replace(tuple.left, toJSONString(tuple.right));
+                    temp.replace(tuple.left, toJsonString(tuple.right));
                 }
                 msg = temp.toString();
                 break;

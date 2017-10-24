@@ -43,12 +43,12 @@ public class BeanMapper {
     }
 
     private static class CacheItem {
-        public final UUID         key;
+        //        public final UUID         key;
         public final List<Method> setters;
         public final List<Method> getters;
 
         public CacheItem(UUID key, List<Method> setters, List<Method> getters) {
-            this.key = key;
+            //            this.key = key;
             this.setters = setters;
             this.getters = getters;
         }
@@ -252,7 +252,8 @@ public class BeanMapper {
                 }
                 UUID k = genKey(to, copiedNames);
                 //App.logInfo("check %s %s", k, tmc.key);
-                if (!k.equals(tmc.key)) {
+                //                if (!k.equals(tmc.key)) {
+                if (!missedNames.isEmpty()) {
                     throw new BeanMapException(String.format("Map %s to %s missed method %s..", from.getSimpleName(),
                             to.getSimpleName(), String.join(", ", missedNames)), allNames, missedNames);
                 }

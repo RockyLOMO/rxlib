@@ -19,7 +19,7 @@ import java.util.List;
 
 import static org.rx.App.UTF8;
 import static org.rx.Contract.require;
-import static org.rx.Contract.toJSONString;
+import static org.rx.Contract.toJsonString;
 
 public class Helper {
     public static <T> String convertToXml(T obj) {
@@ -81,7 +81,7 @@ public class Helper {
                     cellValues.add(value);
                 }
                 if (cellValues.contains(null)) {
-                    Logger.debug(String.format("current=%s offset=%s count=%s -> %s/%s", toJSONString(cellValues),
+                    Logger.debug(String.format("current=%s offset=%s count=%s -> %s/%s", toJsonString(cellValues),
                             row.getFirstCellNum(), row.getLastCellNum(), rowIndex, sheetIndex));
                 }
                 result.add(cellValues.toArray());

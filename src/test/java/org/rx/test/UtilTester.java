@@ -1,7 +1,7 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSON;
 import org.junit.Test;
+import org.rx.Contract;
 import org.rx.test.bean.RestApi;
 import org.rx.test.bean.RestParam;
 import org.rx.test.bean.SourceBean;
@@ -40,8 +40,8 @@ public class UtilTester {
         stream.setPosition(0);
         SourceBean newBean = stream.readObject();
 
-        System.out.println(JSON.toJSONString(bean));
-        System.out.println(JSON.toJSONString(newBean));
+        System.out.println(Contract.toJsonString(bean));
+        System.out.println(Contract.toJsonString(newBean));
     }
 
     @Test
