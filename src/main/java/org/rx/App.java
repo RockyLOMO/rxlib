@@ -297,7 +297,7 @@ public class App {
     }
 
     public static Object readSetting(String key) {
-        return readSetting(key, "application", false);
+        return readSetting(key, Const.SettingsFile, false);
     }
 
     @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
