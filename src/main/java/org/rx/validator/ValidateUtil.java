@@ -107,7 +107,7 @@ public class ValidateUtil {
         }
 
         StringBuilder msg = new StringBuilder();
-        msg.setPrefix(String.format("[Validating] %s.%s ", targetType.getSimpleName(), signature.getName()));
+        msg.setPrefix(String.format("[Valid] %s.%s ", targetType.getSimpleName(), signature.getName()));
         try {
             msg.appendLine("begin check..");
             EnableValid attr = member.getAnnotation(EnableValid.class);
@@ -145,7 +145,7 @@ public class ValidateUtil {
             return onException(ex);
         } finally {
             msg.appendLine("end validate..");
-            Logger.info(msg.toString());
+            Logger.info(Logger.Slf4j(member.getDeclaringClass()), msg.toString());
         }
     }
 

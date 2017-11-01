@@ -112,23 +112,23 @@ public final class DateTime extends Date {
         return DayOfWeek.of(getCalendar().get(Calendar.DAY_OF_WEEK));
     }
 
-    public long getTotalDays() {
+    public double getTotalDays() {
         return super.getTime() / (24 * 60 * 60 * 1000);
     }
 
-    public long getTotalHours() {
+    public double getTotalHours() {
         return super.getTime() / (60 * 60 * 1000);
     }
 
-    public long getTotalMinutes() {
+    public double getTotalMinutes() {
         return super.getTime() / (60 * 1000);
     }
 
-    public long getTotalSeconds() {
+    public double getTotalSeconds() {
         return super.getTime() / (1000);
     }
 
-    public long getTotalMilliseconds() {
+    public double getTotalMilliseconds() {
         return super.getTime();
     }
 

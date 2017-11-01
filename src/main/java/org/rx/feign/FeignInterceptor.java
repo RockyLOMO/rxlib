@@ -23,8 +23,7 @@ public class FeignInterceptor {
         if (!(signature instanceof MethodSignature)) {
             return joinPoint.proceed();
         }
-        MethodSignature methodSignature = (MethodSignature) signature;
-        Method method = methodSignature.getMethod();
+        Method method = ((MethodSignature) signature).getMethod();
         RequestMapping apiMapping = method.getAnnotation(RequestMapping.class);
         if (apiMapping == null) {
             return joinPoint.proceed();
@@ -62,7 +61,7 @@ public class FeignInterceptor {
             msg.appendLine("Error:\t\t%s", ex.getMessage());
             return onException(ex);
         } finally {
-            Logger.info(msg.toString());
+            Logger.info(Logger.Slf4j(method.getDeclaringClass()), msg.toString());
         }
     }
 

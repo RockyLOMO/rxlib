@@ -1,6 +1,11 @@
 package org.rx;
 
+import org.rx.util.StringBuilder;
 import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Field;
+
+import static org.rx.Contract.isNull;
 
 public final class Logger {
     private static final org.slf4j.Logger log1, log2;
@@ -12,30 +17,57 @@ public final class Logger {
         log2 = LoggerFactory.getLogger("errorLogger");
     }
 
+    public static org.slf4j.Logger Slf4j(Class type) {
+        try {
+            Field field = type.getDeclaredField("log");
+            field.setAccessible(true);
+            return (org.slf4j.Logger) field.get(null);
+        } catch (ReflectiveOperationException e) {
+            error(e, "Slf4j");
+        }
+        return null;
+    }
+
     public static void debug(String format, Object... args) {
+        debug(null, format, args);
+    }
+
+    public static void debug(org.slf4j.Logger log, String format, Object... args) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+
         String msg = args.length == 0 ? format : String.format(format, args);
-        log1.debug(msg);
+        isNull(log, log1).debug(msg);
     }
 
     public static void info(String format, Object... args) {
+        info(null, format, args);
+    }
+
+    public static void info(org.slf4j.Logger log, String format, Object... args) {
         String msg = args.length == 0 ? format : String.format(format, args);
-        log1.info(msg);
+        isNull(log, log1).info(msg);
     }
 
     public static void error(Throwable ex, String format, Object... args) {
-        String msg = args.length == 0 ? format : String.format(format, args);
-        log2.error(msg, ex);
+        error(null, ex, format, args);
     }
 
-    private org.slf4j.Logger log;
-    private String           prefix;
+    public static void error(org.slf4j.Logger log, Throwable ex, String format, Object... args) {
+        String msg = args.length == 0 ? format : String.format(format, args);
+        isNull(log, log2).error(msg, ex);
+    }
+
+    private org.slf4j.Logger          log;
+    private org.rx.util.StringBuilder msg;
 
     public String getPrefix() {
-        return prefix;
+        return msg.getPrefix();
     }
 
     public void setPrefix(String prefix) {
-        this.prefix = prefix;
+        msg.setPrefix(prefix);
     }
 
     public Logger() {
@@ -44,15 +76,18 @@ public final class Logger {
 
     public Logger(String loggerName) {
         log = loggerName == null ? log1 : LoggerFactory.getLogger(loggerName);
+        msg = new StringBuilder();
     }
 
     public Logger write(Object obj) {
-        log.info(new StringBuilder(prefix).append(obj).toString());
+        log.info(msg.append(obj).toString());
+        msg.setLength(0);
         return this;
     }
 
     public Logger write(String format, Object... args) {
-        log.info(new StringBuilder(prefix).append(String.format(format, args)).toString());
+        log.info(msg.append(String.format(format, args)).toString());
+        msg.setLength(0);
         return this;
     }
 
