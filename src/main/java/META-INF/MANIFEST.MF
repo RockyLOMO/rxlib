@@ -1,0 +1,16 @@
+Manifest-Version: 1.0
+Class-Path: asm-5.2.jar spring-boot-autoconfigure-1.5.7.RELEASE.jar sp
+ ring-expression-5.0.0.RELEASE.jar j2objc-annotations-1.1.jar ant-1.9.
+ 6.jar javax.servlet-api-4.0.0.jar ant-launcher-1.9.6.jar jsr305-1.3.9
+ .jar jpinyin-1.1.8.jar spring-jcl-5.0.0.RELEASE.jar commons-codec-1.1
+ 0.jar spring-beans-5.0.0.RELEASE.jar guava-23.0.jar commons-lang3-3.6
+ .jar logback-core-1.2.3.jar animal-sniffer-annotations-1.14.jar sprin
+ g-core-5.0.0.RELEASE.jar spring-aop-5.0.0.RELEASE.jar commons-collect
+ ions4-4.1.jar snakeyaml-1.18.jar spring-cloud-netflix-core-1.3.5.RELE
+ ASE.jar aspectjrt-1.8.10.jar bcprov-jdk15on-1.52.jar logback-classic-
+ 1.2.3.jar cglib-3.2.5.jar fastjson-1.2.38.jar spring-context-5.0.0.RE
+ LEASE.jar validation-api-2.0.0.Final.jar json-simple-1.1.1.jar poi-3.
+ 17.jar spring-web-5.0.0.RELEASE.jar error_prone_annotations-2.0.18.ja
+ r spring-boot-1.5.7.RELEASE.jar slf4j-api-1.7.25.jar
+Main-Class: org.rx.socks.shadowsocks.Main
+

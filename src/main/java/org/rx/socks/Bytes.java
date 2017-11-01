@@ -1,4 +1,4 @@
-package org.rx.socket;
+package org.rx.socks;
 
 import java.nio.charset.StandardCharsets;
 

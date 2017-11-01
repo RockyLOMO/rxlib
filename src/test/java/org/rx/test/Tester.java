@@ -5,7 +5,7 @@ import org.rx.$;
 import org.rx.App;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
-import org.rx.socket.Sockets;
+import org.rx.socks.Sockets;
 import org.rx.test.bean.*;
 
 import java.io.InputStreamReader;

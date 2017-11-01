@@ -9,7 +9,7 @@ import org.rx.Contract;
 import org.rx.bean.Tuple;
 
 import org.rx.App;
-import org.rx.socket.HttpClient;
+import org.rx.socks.HttpClient;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.PrioritizedParameterNameDiscoverer;
 

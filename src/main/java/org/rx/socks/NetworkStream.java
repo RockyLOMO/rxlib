@@ -1,4 +1,4 @@
-package org.rx.socket;
+package org.rx.socks;
 
 import org.rx.Logger;
 import org.rx.cache.BytesSegment;
@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.net.Socket;
 
 import static org.rx.Contract.require;
-import static org.rx.socket.Sockets.shutdown;
+import static org.rx.socks.Sockets.shutdown;
 
 public final class NetworkStream extends IOStream {
     @FunctionalInterface

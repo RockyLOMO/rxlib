@@ -1,4 +1,4 @@
-package org.rx.socket;
+package org.rx.socks;
 
 import com.google.common.base.Stopwatch;
 import org.rx.App;

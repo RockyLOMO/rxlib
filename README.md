@@ -1,10 +1,21 @@
-# rxlib
-A set of utilities for Java. [rxlib](https://github.com/RockyLOMO/rxlib)
+# rxlib-java
 
+A set of utilities for Java.
+
+### Maven
 ```xml
-        <dependency>
-            <groupId>com.github.rockylomo</groupId>
-            <artifactId>rxlib</artifactId>
-            <version>1.0.19</version>
-        </dependency>
+<dependency>
+    <groupId>com.github.rockylomo</groupId>
+    <artifactId>rxlib</artifactId>
+    <version>1.0.22</version>
+</dependency>
 ```
+
+### shadowsocks (Only tested AES encryption)
+    * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
+    * Requirements
+        Bouncy Castle v1.5.2 [Release](https://www.bouncycastle.org/)
+    * Using Non-blocking server
+        Config config = new Config("SS_SERVER_IP", "SS_SERVER_PORT", "LOCAL_IP", "LOCAL_PORT", "CIPHER_NAME", "PASSWORD");
+        NioLocalServer server = new NioLocalServer(config);
+        new Thread(server).start();

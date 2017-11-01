@@ -1,8 +1,7 @@
-package org.rx.socket;
+package org.rx.socks;
 
 import org.rx.Disposable;
 import org.rx.Logger;
-import org.rx.bean.DateTime;
 
 import static org.rx.Contract.isNull;
 

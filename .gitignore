@@ -1,3 +1,8 @@
-.idea
-target
-rxlib.iml
+# ignore output folders
+.idea/
+out/
+target/
+
+# ignore files
+*.iml
+config.json

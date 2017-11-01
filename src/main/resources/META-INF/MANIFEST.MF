@@ -1,0 +1,3 @@
+Manifest-Version: 1.0
+Class-Path: bcprov-jdk15on-1.52.jar json-simple-1.1.1.jar
+Main-Class: org.rx.socks.shadowsocks.Main
