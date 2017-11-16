@@ -497,7 +497,7 @@ public class App {
         }
     }
 
-    @ErrorCode(messageKeys = { "$fType", "$tType" })
+    @ErrorCode(value = "notSupported", messageKeys = { "$fType", "$tType" })
     @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
     @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
     @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
