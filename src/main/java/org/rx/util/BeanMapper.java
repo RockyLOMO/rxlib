@@ -3,8 +3,6 @@ package org.rx.util;
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.App;
 
-import java.lang.StringBuilder;
-
 import org.rx.bean.Const;
 import org.rx.validator.ValidateUtil;
 
@@ -35,7 +33,7 @@ public class BeanMapper {
     private static class MapConfig {
         public final BeanCopier         copier;
         public volatile boolean         isCheck;
-        public Set<String>              ignoreMethods;
+        public NQuery<String>           ignoreMethods;
         public Function<String, String> methodMatcher;
         public BiConsumer               postProcessor;
 
@@ -45,10 +43,10 @@ public class BeanMapper {
     }
 
     private static class CacheItem {
-        public final List<Method> setters;
-        public final List<Method> getters;
+        public final NQuery<Method> setters;
+        public final NQuery<Method> getters;
 
-        public CacheItem(List<Method> setters, List<Method> getters) {
+        public CacheItem(NQuery<Method> setters, NQuery<Method> getters) {
             this.setters = setters;
             this.getters = getters;
         }
@@ -86,26 +84,14 @@ public class BeanMapper {
 
     private static CacheItem getMethods(Class to) {
         return methodCache.getOrAdd(to, tType -> {
-            List<Method> setters = Arrays.stream(tType.getMethods())
-                    .filter(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1)
-                    .collect(Collectors.toList());
-            List<Method> getters = Arrays.stream(tType.getMethods())
-                    .filter(p -> !"getClass".equals(p.getName())
-                            && (p.getName().startsWith(Get) || p.getName().startsWith(GetBool))
-                            && p.getParameterCount() == 0)
-                    .collect(Collectors.toList());
-            List<Method> s2 = setters.stream()
-                    .filter(ps -> getters.stream().anyMatch(pg -> exEquals(pg.getName(), ps.getName())))
-                    .collect(Collectors.toList());
-            List<Method> g2 = getters.stream()
-                    .filter(pg -> s2.stream().anyMatch(ps -> exEquals(pg.getName(), ps.getName())))
-                    .collect(Collectors.toList());
+            NQuery<Method> setters = NQuery.of(tType.getMethods())
+                    .where(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1);
+            NQuery<Method> getters = NQuery.of(tType.getMethods()).where(p -> !"getClass".equals(p.getName())
+                    && (p.getName().startsWith(Get) || p.getName().startsWith(GetBool)) && p.getParameterCount() == 0);
+            NQuery<Method> s2 = setters.where(ps -> getters.any(pg -> exEquals(pg.getName(), ps.getName())));
+            NQuery<Method> g2 = getters.where(pg -> s2.any(ps -> exEquals(pg.getName(), ps.getName())));
             return new CacheItem(s2, g2);
         }, true);
-    }
-
-    private static Set<String> toMethodNames(List<Method> methods) {
-        return methods.stream().map(Method::getName).collect(Collectors.toSet());
     }
 
     private static boolean exEquals(String getterName, String setterName) {
@@ -130,8 +116,8 @@ public class BeanMapper {
         MapConfig config = getConfig(from, to);
         synchronized (config) {
             config.methodMatcher = methodMatcher;
-            config.ignoreMethods = Arrays.stream(ignoreMethods)
-                    .map(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).collect(Collectors.toSet());
+            config.ignoreMethods = NQuery.of(ignoreMethods)
+                    .select(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).distinct();
         }
         return this;
     }
@@ -142,8 +128,8 @@ public class BeanMapper {
         synchronized (config) {
             config.methodMatcher = methodMatcher;
             config.postProcessor = postProcessor;
-            config.ignoreMethods = Arrays.stream(ignoreMethods)
-                    .map(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).collect(Collectors.toSet());
+            config.ignoreMethods = NQuery.of(ignoreMethods)
+                    .select(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).distinct();
         }
         return this;
     }
@@ -163,11 +149,7 @@ public class BeanMapper {
     public <T> T map(Object source, Class<T> targetType) {
         require(targetType);
 
-        try {
-            return map(source, targetType.newInstance(), 0);
-        } catch (ReflectiveOperationException ex) {
-            throw new BeanMapException(ex);
-        }
+        return map(source, App.newInstance(targetType), 0);
     }
 
     public <T> T map(Object source, T target, int flags) {
@@ -183,7 +165,7 @@ public class BeanMapper {
             String setterName = methodName.toString();
             targetMethods.add(setterName);
             if (checkSkip(sourceValue, setterName, skipNull, config)) {
-                Method gm = tmc.getters.stream().filter(p -> exEquals(p.getName(), setterName)).findFirst().get();
+                Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
                 return invoke(gm, target);
             }
             if (trimString && sourceValue instanceof String) {
@@ -193,9 +175,9 @@ public class BeanMapper {
         });
         TreeSet<String> copiedNames = targetMethods;
         if (config.ignoreMethods != null) {
-            copiedNames.addAll(config.ignoreMethods);
+            copiedNames.addAll(config.ignoreMethods.asCollection());
         }
-        Set<String> allNames = toMethodNames(tmc.setters),
+        Set<String> allNames = tmc.setters.select(Method::getName).toSet(),
                 missedNames = NQuery.of(allNames).except(copiedNames).toSet();
         if (config.methodMatcher != null) {
             final CacheItem fmc = getMethods(from);
@@ -205,11 +187,11 @@ public class BeanMapper {
                 String fromName = isNull(
                         config.methodMatcher.apply(missedName.substring(3, 4).toLowerCase() + missedName.substring(4)),
                         "");
-                if (fromName.length() == 0 || (fm = fmc.getters.stream().filter(p -> gmEquals(p.getName(), fromName))
-                        .findFirst().orElse(null)) == null) {
+                if (fromName.length() == 0
+                        || (fm = fmc.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
                     Method tm;
-                    if (nonCheckMatch || ((tm = tmc.getters.stream().filter(p -> exEquals(p.getName(), missedName))
-                            .findFirst().orElse(null)) != null && invoke(tm, target) != null)) {
+                    if (nonCheckMatch || ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName))
+                            .firstOrDefault()) != null && invoke(tm, target) != null)) {
                         continue;
                     }
                     throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
@@ -224,7 +206,7 @@ public class BeanMapper {
                 if (trimString && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
                 }
-                Method tm = tmc.setters.stream().filter(p -> p.getName().equals(missedName)).findFirst().get();
+                Method tm = tmc.setters.where(p -> p.getName().equals(missedName)).first();
                 invoke(tm, target, sourceValue);
             }
         }
@@ -235,8 +217,7 @@ public class BeanMapper {
             synchronized (config) {
                 for (String missedName : missedNames) {
                     Method tm;
-                    if ((tm = tmc.getters.stream().filter(p -> exEquals(p.getName(), missedName)).findFirst()
-                            .orElse(null)) == null) {
+                    if ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName)).firstOrDefault()) == null) {
                         continue;
                     }
                     if (invoke(tm, target) != null) {
@@ -276,9 +257,9 @@ public class BeanMapper {
         }
     }
 
-    private boolean checkSkip(Object sourceValue, String methodName, boolean skipNull, MapConfig config) {
+    private boolean checkSkip(Object sourceValue, String setterName, boolean skipNull, MapConfig config) {
         return (skipNull && sourceValue == null)
-                || (config.ignoreMethods != null && config.ignoreMethods.contains(methodName));
+                || (config.ignoreMethods != null && config.ignoreMethods.contains(setterName));
     }
 
     private boolean checkFlag(int flags, int value) {

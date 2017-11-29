@@ -268,10 +268,11 @@ public final class NQuery<T> implements Iterable<T> {
     private <TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
         return (p1, p2) -> {
             Comparable c1 = as(keySelector.apply(p1), Comparable.class);
-            if (c1 == null) {
+            Comparable c2 = as(keySelector.apply(p2), Comparable.class);
+            if (c1 == null || c2 == null) {
                 return 0;
             }
-            return c1.compareTo(keySelector.apply(p2));
+            return c1.compareTo(c2);
         };
     }
 
@@ -289,10 +290,11 @@ public final class NQuery<T> implements Iterable<T> {
             Object[] k2s = keySelector.apply(p2);
             for (int i = 0; i < k1s.length; i++) {
                 Comparable c1 = as(k1s[i], Comparable.class);
-                if (c1 == null) {
+                Comparable c2 = as(k2s[i], Comparable.class);
+                if (c1 == null || c2 == null) {
                     continue;
                 }
-                int r = c1.compareTo(k2s[i]);
+                int r = c1.compareTo(c2);
                 if (r == 0) {
                     continue;
                 }

@@ -33,12 +33,13 @@ public final class Logger {
     }
 
     public static void debug(org.slf4j.Logger log, String format, Object... args) {
+        log = isNull(log, log1);
         if (!log.isDebugEnabled()) {
             return;
         }
 
         String msg = args.length == 0 ? format : String.format(format, args);
-        isNull(log, log1).debug(msg);
+        log.debug(msg);
     }
 
     public static void info(String format, Object... args) {
