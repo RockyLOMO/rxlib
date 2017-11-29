@@ -19,6 +19,7 @@ import static org.rx.Contract.toJsonString;
 
 /**
  * ex.fillInStackTrace()
+ * https://northconcepts.com/blog/2013/01/18/6-tips-to-improve-your-exception-handling/
  */
 public class SystemException extends NestedRuntimeException {
     public static final String CodeFile = "rxCode";

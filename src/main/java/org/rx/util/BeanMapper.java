@@ -21,6 +21,7 @@ import static org.rx.Contract.require;
 
 /**
  * map from multi sources
+ * https://yq.aliyun.com/articles/14958
  */
 public class BeanMapper {
     public class Flags {
