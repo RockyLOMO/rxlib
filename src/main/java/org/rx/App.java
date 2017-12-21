@@ -23,12 +23,20 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.JarURLConnection;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 
+import static org.rx.$.$;
 import static org.rx.Contract.*;
 
 public class App {
@@ -173,6 +181,81 @@ public class App {
             throw SystemException.wrap(ex);
         }
         throw new SystemException("Parameters error");
+    }
+
+    public static List<Class> getClassesFromPackage(String packageDirName) {
+        return getClassesFromPackage(packageDirName, false);
+    }
+
+    public static List<Class> getClassesFromPackage(String packageDirName, boolean initClass) {
+        require(packageDirName);
+        packageDirName = packageDirName.replace('.', '/');
+
+        final String flag = ".class";
+        List<Class> classes = new ArrayList<>();
+        try {
+            Thread thread = Thread.currentThread();
+            final Consumer<String> loadFunc = n -> {
+                try {
+                    classes.add(initClass ? Class.forName(n) : thread.getContextClassLoader().loadClass(n));
+                } catch (ClassNotFoundException e) {
+                    Logger.info("getClassesFromPackage %s %s", n, e.getMessage());
+                }
+            };
+            Enumeration<URL> dirs = thread.getContextClassLoader().getResources(packageDirName);
+            while (dirs.hasMoreElements()) {
+                URL url = dirs.nextElement();
+                switch (url.getProtocol()) {
+                    case "file":
+                        $<BiConsumer<String, String>> callee = $();
+                        callee.$ = (packageName, filePath) -> {
+                            File dir = new File(filePath);
+                            if (!dir.exists() || !dir.isDirectory()) {
+                                return;
+                            }
+
+                            for (File file : isNull(dir.listFiles(p -> p.isDirectory() || p.getName().endsWith(flag)),
+                                    new File[0])) {
+                                if (file.isDirectory()) {
+                                    callee.$.accept(packageName + "." + file.getName(), file.getAbsolutePath());
+                                    continue;
+                                }
+
+                                String className = packageName + "."
+                                        + file.getName().substring(0, file.getName().length() - flag.length());
+                                loadFunc.accept(className);
+                            }
+                        };
+                        String filePath = URLDecoder.decode(url.getFile(), "UTF-8");
+                        callee.$.accept(packageDirName, filePath);
+                        break;
+                    case "jar":
+                        JarFile jar = ((JarURLConnection) url.openConnection()).getJarFile();
+                        Enumeration<JarEntry> tor = jar.entries();
+                        while (tor.hasMoreElements()) {
+                            JarEntry entry = tor.nextElement();
+                            String name = entry.getName();
+                            if (name.charAt(0) == '/') {
+                                name = name.substring(1);
+                            }
+                            if (!(name.startsWith(packageDirName) && name.endsWith(flag))) {
+                                continue;
+                            }
+
+                            String className = entry.getName().replace('/', '.');
+                            className = className.substring(0, className.length() - flag.length());
+                            loadFunc.accept(className);
+                        }
+                        break;
+                    default:
+                        System.out.println("getClassesFromPackage skip " + url.getProtocol());
+                        break;
+                }
+            }
+        } catch (IOException e) {
+            throw SystemException.wrap(e);
+        }
+        return classes;
     }
 
     @ErrorCode(value = "argError", messageKeys = { "type" })

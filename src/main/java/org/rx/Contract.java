@@ -107,16 +107,17 @@ public final class Contract {
         }
 
         Class type = arg.getClass();
-        NQuery args = null;
+        List args = null;
         try {
             boolean first = false;
             Map map;
             if (type.isArray() || arg instanceof Iterable) {
-                args = NQuery.of(App.asList(arg));
+                args = App.asList(arg);
             } else if ((map = as(arg, Map.class)) != null) {
-                args = NQuery.of(map.values());
+                args = new ArrayList(map.values());
             } else {
-                args = NQuery.of(arg);
+                args = new ArrayList();
+                args.add(arg);
                 first = true;
             }
             args = args.where(p -> !NQuery.of(SkipTypes).any(p2 -> p2.isInstance(p)));

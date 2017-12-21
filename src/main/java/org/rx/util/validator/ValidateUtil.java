@@ -1,10 +1,9 @@
-package org.rx.validator;
+package org.rx.util.validator;
 
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.SystemException;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
@@ -14,18 +13,16 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 
-import org.rx.Logger;
+import org.rx.util.LogInterceptor;
 import org.rx.util.StringBuilder;
 import org.rx.util.ThrowableFunc;
 
 import java.util.Set;
 
-import static org.rx.Contract.toJsonString;
-
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
-public class ValidateUtil {
+public class ValidateUtil extends LogInterceptor {
     /**
      * 验证bean实体 @Valid deep valid
      *
@@ -93,10 +90,12 @@ public class ValidateUtil {
      * Annotation expression只对method有效
      * 
      * @param joinPoint
+     * @param msg
      * @return
      * @throws Throwable
      */
-    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+    @Override
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
         Class targetType = joinPoint.getTarget().getClass();
         Signature signature = joinPoint.getSignature();
         Executable member;
@@ -106,54 +105,43 @@ public class ValidateUtil {
             member = ((MethodSignature) signature).getMethod();
         }
 
-        StringBuilder msg = new StringBuilder();
         msg.setPrefix(String.format("[Valid] %s.%s ", targetType.getSimpleName(), signature.getName()));
-        try {
-            msg.appendLine("begin check..");
-            EnableValid attr = member.getAnnotation(EnableValid.class);
+        EnableValid attr = member.getAnnotation(EnableValid.class);
+        if (attr == null) {
+            attr = (EnableValid) targetType.getAnnotation(EnableValid.class);
             if (attr == null) {
-                attr = (EnableValid) targetType.getAnnotation(EnableValid.class);
-                if (attr == null) {
-                    msg.appendLine("exit..");
-                    return joinPoint.proceed();
-                }
+                msg.appendLine("skip validate..");
+                return joinPoint.proceed();
             }
-            msg.appendLine("begin validate args=%s..", toJsonString(joinPoint.getArgs()));
-
-            int flags = attr.value();
-            boolean validateValues = hasFlags(flags, EnableValid.ParameterValues);
-            if (hasFlags(flags, EnableValid.Method)) {
-                if (signature instanceof ConstructorSignature) {
-                    ConstructorSignature cs = (ConstructorSignature) signature;
-                    validateConstructor(cs.getConstructor(), joinPoint.getArgs(), validateValues);
-                    return onProcess(joinPoint, msg);
-                }
-
-                MethodSignature ms = (MethodSignature) signature;
-                return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues,
-                        p -> onProcess(joinPoint, msg));
-            }
-
-            if (validateValues) {
-                for (Object parameterValue : joinPoint.getArgs()) {
-                    validateBean(parameterValue);
-                }
-            }
-            return onProcess(joinPoint, msg);
-        } catch (Exception ex) {
-            msg.appendLine("validate fail %s..", ex.getMessage());
-            return onException(ex);
-        } finally {
-            msg.appendLine("end validate..");
-            Logger.info(Logger.Slf4j(member.getDeclaringClass()), msg.toString());
         }
+
+        int flags = attr.value();
+        boolean validateValues = hasFlags(flags, EnableValid.ParameterValues);
+        if (hasFlags(flags, EnableValid.Method)) {
+            if (signature instanceof ConstructorSignature) {
+                ConstructorSignature cs = (ConstructorSignature) signature;
+                validateConstructor(cs.getConstructor(), joinPoint.getArgs(), validateValues);
+                return super.onProcess(joinPoint, msg);
+            }
+
+            MethodSignature ms = (MethodSignature) signature;
+            return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues,
+                    p -> super.onProcess(joinPoint, msg));
+        }
+
+        if (validateValues) {
+            for (Object parameterValue : joinPoint.getArgs()) {
+                validateBean(parameterValue);
+            }
+        }
+
+        msg.appendLine("validate ok..").setPrefix(null);
+        return super.onProcess(joinPoint, msg);
     }
 
-    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
-        return joinPoint.proceed();
-    }
-
-    protected Object onException(Exception ex) {
-        throw SystemException.wrap(ex);
+    @Override
+    protected Object onException(Exception ex, StringBuilder msg) throws Throwable {
+        msg.appendLine("validate fail %s..", ex.getMessage());
+        throw ex;
     }
 }

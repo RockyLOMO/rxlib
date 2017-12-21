@@ -5,7 +5,6 @@ import org.rx.bean.Tuple;
 
 import java.lang.reflect.Array;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -83,11 +82,11 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     private <TR> Set<TR> newSet() {
-        return isParallel ? ConcurrentHashMap.newKeySet() : new HashSet<>();
+        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>()) : new LinkedHashSet<>();
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
-        return isParallel ? new ConcurrentHashMap<>() : new HashMap<>();
+        return isParallel ? Collections.synchronizedMap(new LinkedHashMap<>()) : new LinkedHashMap<>();
     }
 
     private <TR> Stream<TR> newStream(Collection<TR> set) {
@@ -377,6 +376,14 @@ public final class NQuery<T> implements Iterable<T> {
         return stream().mapToDouble(selector).sum();
     }
 
+    public <TR> NQuery<TR> cast() {
+        return (NQuery<TR>) this;
+    }
+
+    public <TR> NQuery<TR> ofType(Class type) {
+        return where(p -> type.isInstance(p)).select(p -> (TR) p);
+    }
+
     public T first() {
         return stream().findFirst().get();
     }
@@ -559,6 +566,10 @@ public final class NQuery<T> implements Iterable<T> {
         showResult("take(0).sum(p -> p.index)", of(personSet).take(0).sum(p -> p.index));
         showResult("sum(p -> p.index)", of(personSet).sum(p -> p.index));
 
+        showResult("cast<IPerson>", of(personSet).<IPerson> cast());
+        NQuery oq = of(personSet).cast().union(Arrays.asList(1, 2, 3));
+        showResult("ofType(Integer.class)", oq.ofType(Integer.class));
+
         showResult("firstOrDefault()", of(personSet).orderBy(p -> p.index).firstOrDefault());
         showResult("lastOrDefault()", of(personSet).orderBy(p -> p.index).lastOrDefault());
         showResult("skip(2)", of(personSet).orderBy(p -> p.index).skip(2));
@@ -585,7 +596,11 @@ public final class NQuery<T> implements Iterable<T> {
         System.out.println(Contract.toJsonString(q.toList()));
     }
 
-    public static class Person {
+    public interface IPerson {
+
+    }
+
+    public static class Person implements IPerson {
         public int    index;
         public int    index2;
         public int    index3;

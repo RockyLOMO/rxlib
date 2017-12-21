@@ -4,7 +4,7 @@ import net.sf.cglib.beans.BeanCopier;
 import org.rx.App;
 
 import org.rx.bean.Const;
-import org.rx.validator.ValidateUtil;
+import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
@@ -14,14 +14,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static org.rx.Contract.isNull;
 import static org.rx.Contract.require;
 
 /**
- * map from multi sources
- * https://yq.aliyun.com/articles/14958
+ * map from multi sources https://yq.aliyun.com/articles/14958
  */
 public class BeanMapper {
     public class Flags {
@@ -56,6 +54,23 @@ public class BeanMapper {
     private static final String                      Get         = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
     private static BeanMapper                        instance;
+
+    public static String genCode(Class entity) {
+        require(entity);
+
+        String var = entity.getSimpleName();
+        if (var.length() > 1) {
+            var = var.substring(0, 1).toLowerCase() + var.substring(1);
+        }
+        StringBuilder code = new StringBuilder();
+        for (java.lang.reflect.Method method : entity.getMethods()) {
+            String name = method.getName();
+            if (name.startsWith("set") && method.getParameterCount() == 1) {
+                code.appendLine("%s.%s(null);", var, name);
+            }
+        }
+        return code.toString();
+    }
 
     public static BeanMapper getInstance() {
         if (instance == null) {

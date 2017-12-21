@@ -4,8 +4,8 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.Logger;
-import org.rx.SystemException;
+import org.rx.bean.Tuple;
+import org.rx.util.LogInterceptor;
 import org.rx.util.StringBuilder;
 import org.springframework.cloud.netflix.feign.FeignClient;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,10 +15,9 @@ import java.util.Arrays;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static org.rx.Contract.toJsonString;
-
-public class FeignInterceptor {
-    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+public class FeignInterceptor extends LogInterceptor {
+    @Override
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
         Signature signature = joinPoint.getSignature();
         if (!(signature instanceof MethodSignature)) {
             return joinPoint.proceed();
@@ -47,29 +46,18 @@ public class FeignInterceptor {
         }
         url += pf.apply(apiMapping);
 
-        StringBuilder msg = new StringBuilder().appendLine();
         String httpMethod = ArrayUtils.isEmpty(apiMapping.method()) ? "POST"
                 : String.join(",", Arrays.stream(apiMapping.method()).map(p -> p.name()).collect(Collectors.toList()));
-        msg.appendLine("%s\t\t%s", httpMethod, url);
-
-        msg.appendLine("Request:\t%s", toJsonString(joinPoint.getArgs()));
-        try {
-            Object r = onProcess(joinPoint, msg);
-            msg.appendLine("Response:\t%s", toJsonString(r));
-            return r;
-        } catch (Exception ex) {
-            msg.appendLine("Error:\t\t%s", ex.getMessage());
-            return onException(ex);
-        } finally {
-            Logger.info(Logger.Slf4j(method.getDeclaringClass()), msg.toString());
-        }
+        msg.appendLine().appendLine("%s\t\t%s", httpMethod, resolveUrl(url, signature));
+        return super.onProcess(joinPoint, msg);
     }
 
-    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
-        return joinPoint.proceed();
+    protected String resolveUrl(String url, Signature signature) {
+        return url;
     }
 
-    protected Object onException(Exception ex) {
-        throw SystemException.wrap(ex);
+    @Override
+    protected Tuple<String, String> getProcessFormat() {
+        return Tuple.of("Request:\t%s", "Response:\t%s");
     }
 }

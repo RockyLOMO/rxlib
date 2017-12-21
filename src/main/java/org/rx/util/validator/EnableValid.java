@@ -1,4 +1,4 @@
-package org.rx.validator;
+package org.rx.util.validator;
 
 import java.lang.annotation.*;
 

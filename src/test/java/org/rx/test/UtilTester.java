@@ -62,6 +62,11 @@ public class UtilTester {
     }
 
     @Test
+    public void testMapperCode() {
+        System.out.println(BeanMapper.genCode(SourceBean.class));
+    }
+
+    @Test
     public void testMapper() {
         BeanMapper mapper = new BeanMapper();
         mapper.setConfig(SourceBean.class, TargetBean.class, p -> {

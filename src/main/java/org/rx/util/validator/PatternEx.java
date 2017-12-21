@@ -1,4 +1,4 @@
-package org.rx.validator;
+package org.rx.util.validator;
 
 import javax.validation.Constraint;
 import javax.validation.Payload;

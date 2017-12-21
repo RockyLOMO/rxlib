@@ -9,9 +9,9 @@
             <!--expression="execution(public * org.rx..*.*(..))-->
             <!--and !execution(* java.rx.validator.*(..))"/>-->
             <aop:pointcut id="vaPointcut"
-                          expression="@annotation(org.rx.validator.EnableValid) or @within(org.rx.validator.EnableValid)"/>
+                          expression="@annotation(org.rx.util.validator.EnableValid) or @within(org.rx.util.validator.EnableValid)"/>
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>
-    <bean id="validateAspect" class="org.rx.validator.ValidateUtil"/>
+    <bean id="validateAspect" class="org.rx.util.validator.ValidateUtil"/>
 </beans>

@@ -3,9 +3,13 @@ package org.rx;
 import org.rx.util.StringBuilder;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import static org.rx.Contract.isNull;
+import static org.rx.Contract.require;
 
 public final class Logger {
     private static final org.slf4j.Logger log1, log2;
@@ -17,15 +21,30 @@ public final class Logger {
         log2 = LoggerFactory.getLogger("errorLogger");
     }
 
-    public static org.slf4j.Logger Slf4j(Class type) {
-        try {
-            Field field = type.getDeclaredField("log");
-            field.setAccessible(true);
-            return (org.slf4j.Logger) field.get(null);
-        } catch (ReflectiveOperationException e) {
-            error(e, "Slf4j");
-        }
-        return null;
+    public static org.slf4j.Logger getSlf4j(Class signature) {
+        return getSlf4j(signature, Collections.emptyList(), null);
+    }
+
+    public static org.slf4j.Logger getSlf4j(Class signature, List<String> regs, String cacheMethodName) {
+        require(signature, regs);
+
+        Function<String, org.slf4j.Logger> func = k -> {
+            Class owner = signature;
+            if (!regs.isEmpty()) {
+                String fType;
+                if ((fType = NQuery.of(Thread.currentThread().getStackTrace()).select(p -> p.getClassName())
+                        .firstOrDefault(p -> NQuery.of(regs).any(reg -> Pattern.matches(reg, p)))) != null) {
+                    try {
+                        owner = Class.forName(fType);
+                    } catch (ClassNotFoundException e) {
+                        info("getSlf4j %s %s", fType, e.getMessage());
+                    }
+                }
+            }
+            return org.slf4j.LoggerFactory.getLogger(owner);
+        };
+        return cacheMethodName != null ? App.getOrStore(Logger.class, signature.getName() + cacheMethodName, func)
+                : func.apply(null);
     }
 
     public static void debug(String format, Object... args) {
