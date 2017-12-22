@@ -78,23 +78,14 @@ public final class Contract {
         return (out.$ = func.apply(state)) != null;
     }
 
-    public static final Set<Class> SkipTypes = ConcurrentHashMap.newKeySet();
+    private static NQuery<Class> SkipTypes = NQuery.of();
 
     static {
         Object val = App.readSetting(Const.SettingNames.JsonSkipTypes);
         if (val != null) {
-            try {
-                for (Object skip : App.asList(val)) {
-                    SkipTypes.add(Class.forName(String.valueOf(skip)));
-                }
-            } catch (Exception e) {
-                Logger.debug("toJsonString: %s", e);
-            }
+            SkipTypes = SkipTypes
+                    .union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
-    }
-
-    public static String toJsonString(Object... args) {
-        return toJsonString((Object) args);
     }
 
     public static String toJsonString(Object arg) {
@@ -106,29 +97,47 @@ public final class Contract {
             return s;
         }
 
+        Function<Object, String> skipResult = p -> p.getClass().getName();
         Class type = arg.getClass();
-        List args = null;
+        List jArr = null;
+        Map<Object, Object> jObj = null;
         try {
-            boolean first = false;
-            Map map;
             if (type.isArray() || arg instanceof Iterable) {
-                args = App.asList(arg);
-            } else if ((map = as(arg, Map.class)) != null) {
-                args = new ArrayList(map.values());
+                jArr = App.asList(arg);
+                for (int i = 0; i < jArr.size(); i++) {
+                    Object p = jArr.get(i);
+                    if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                        jArr.set(i, skipResult.apply(p));
+                    }
+                }
+                arg = jArr;
+            } else if ((jObj = as(arg, Map.class)) != null) {
+                for (Map.Entry<Object, Object> kv : jObj.entrySet()) {
+                    Object p = kv.getValue();
+                    if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                        jObj.put(kv.getKey(), skipResult.apply(p));
+                    }
+                }
+                arg = jObj;
             } else {
-                args = new ArrayList();
-                args.add(arg);
-                first = true;
+                Object p = arg;
+                if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                    arg = skipResult.apply(p);
+                }
             }
-            args = args.where(p -> !NQuery.of(SkipTypes).any(p2 -> p2.isInstance(p)));
-            if (!args.any()) {
-                return "{}";
-            }
-            return JSON.toJSONString(first ? args.first() : args.asCollection());
+            return JSON.toJSONString(arg);
         } catch (Exception ex) {
-            if (args != null) {
-                args.forEach(p -> SkipTypes.add(p.getClass()));
+            NQuery q;
+            if (jArr != null) {
+                q = NQuery.of(jArr);
+
+            } else if (jObj != null) {
+                q = NQuery.of(jObj.values());
+            } else {
+                q = NQuery.of(arg);
             }
+            SkipTypes = SkipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
+                    .select(p -> p.getClass()).distinct());
 
             JSONObject json = new JSONObject();
             json.put("_input", arg.toString());

@@ -1,17 +1,16 @@
 package org.rx.test;
 
 import org.junit.Test;
-import org.rx.$;
-import org.rx.App;
-import org.rx.ErrorCode;
-import org.rx.SystemException;
+import org.rx.*;
 import org.rx.socks.Sockets;
 import org.rx.test.bean.*;
 
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import javax.servlet.*;
+import java.io.*;
 import java.net.Socket;
 import java.util.Date;
+import java.util.Enumeration;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.rx.$.$;
@@ -93,5 +92,16 @@ public class Tester {
 
         v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.CodeFile, true);
         assert eq(v, "This is IllegalArgumentException! $x");
+    }
+
+    @Test
+    public void testJson() {
+        Object p = new TestServletRequest();
+        System.out.println(Contract.toJsonString(p));
+
+        ErrorBean eb = new ErrorBean();
+        System.out.println(Contract.toJsonString(eb));
+
+        System.out.println(Contract.toJsonString(eb));
     }
 }

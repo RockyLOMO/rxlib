@@ -34,11 +34,7 @@ public final class Logger {
                 String fType;
                 if ((fType = NQuery.of(Thread.currentThread().getStackTrace()).select(p -> p.getClassName())
                         .firstOrDefault(p -> NQuery.of(regs).any(reg -> Pattern.matches(reg, p)))) != null) {
-                    try {
-                        owner = Class.forName(fType);
-                    } catch (ClassNotFoundException e) {
-                        info("getSlf4j %s %s", fType, e.getMessage());
-                    }
+                    owner = App.loadClass(fType, false);
                 }
             }
             return org.slf4j.LoggerFactory.getLogger(owner);

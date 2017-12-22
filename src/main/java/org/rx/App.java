@@ -146,6 +146,25 @@ public class App {
         }
     }
 
+    public static ClassLoader getClassLoader() {
+        return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
+    }
+
+    public static <T> Class<T> loadClass(String className, boolean initialize) {
+        return loadClass(className, initialize, true);
+    }
+
+    public static Class loadClass(String className, boolean initialize, boolean throwOnEmpty) {
+        try {
+            return Class.forName(className, initialize, getClassLoader());
+        } catch (ClassNotFoundException e) {
+            if (!throwOnEmpty) {
+                return null;
+            }
+            throw SystemException.wrap(e);
+        }
+    }
+
     public static <T> T newInstance(Class<T> type) {
         require(type);
 
@@ -194,15 +213,14 @@ public class App {
         final String flag = ".class";
         List<Class> classes = new ArrayList<>();
         try {
-            Thread thread = Thread.currentThread();
             final Consumer<String> loadFunc = n -> {
-                try {
-                    classes.add(initClass ? Class.forName(n) : thread.getContextClassLoader().loadClass(n));
-                } catch (ClassNotFoundException e) {
-                    Logger.info("getClassesFromPackage %s %s", n, e.getMessage());
+                Class type = loadClass(n, initClass, false);
+                if (type == null) {
+                    return;
                 }
+                classes.add(type);
             };
-            Enumeration<URL> dirs = thread.getContextClassLoader().getResources(packageDirName);
+            Enumeration<URL> dirs = getClassLoader().getResources(packageDirName);
             while (dirs.hasMoreElements()) {
                 URL url = dirs.nextElement();
                 switch (url.getProtocol()) {
