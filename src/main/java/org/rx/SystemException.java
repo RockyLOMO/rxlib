@@ -22,7 +22,7 @@ import static org.rx.Contract.toJsonString;
  * https://northconcepts.com/blog/2013/01/18/6-tips-to-improve-your-exception-handling/
  */
 public class SystemException extends NestedRuntimeException {
-    public static final String CodeFile = "rxCode";
+    public static final String CodeFile = "rxCode.yml";
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {

@@ -4,4 +4,4 @@ app:
     - javax.servlet.ServletResponse
     - org.springframework.ui.Model
 #  errorCodeFiles:
-#    - rxCode
+#    - rxCode.yml

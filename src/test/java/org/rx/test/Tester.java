@@ -8,6 +8,11 @@ import org.rx.test.bean.*;
 import javax.servlet.*;
 import java.io.*;
 import java.net.Socket;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.Locale;
@@ -96,12 +101,28 @@ public class Tester {
 
     @Test
     public void testJson() {
-        Object p = new TestServletRequest();
-        System.out.println(Contract.toJsonString(p));
+        URL e = App.getClassLoader().getResource("jsonMapper/");
+        System.out.println(e);
+        try {
+            for (Path path : Files.newDirectoryStream(Paths.get(e.toURI()))) {
+                System.out.println(path);
+                Map<String, Object> map = App.readSettings(path.toString(), false);
+                for (Map.Entry<String, Object> entry : map.entrySet()) {
+                    System.out.println(entry.getKey() + ": " + entry.getValue());
+                }
+            }
+        } catch (IOException e1) {
+            e1.printStackTrace();
+        } catch (URISyntaxException e1) {
+            e1.printStackTrace();
+        }
 
-        ErrorBean eb = new ErrorBean();
-        System.out.println(Contract.toJsonString(eb));
-
-        System.out.println(Contract.toJsonString(eb));
+        //        Object p = new TestServletRequest();
+        //        System.out.println(Contract.toJsonString(p));
+        //
+        //        ErrorBean eb = new ErrorBean();
+        //        System.out.println(Contract.toJsonString(eb));
+        //
+        //        System.out.println(Contract.toJsonString(eb));
     }
 }

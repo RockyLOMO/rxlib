@@ -166,17 +166,15 @@ public class App {
     }
 
     public static <T> T newInstance(Class<T> type) {
-        require(type);
-
-        try {
-            return type.newInstance();
-        } catch (ReflectiveOperationException ex) {
-            throw SystemException.wrap(ex);
-        }
+        Object[] args = null;
+        return newInstance(type, args);
     }
 
     public static <T> T newInstance(Class<T> type, Object... args) {
-        require(type, args);
+        require(type);
+        if (args == null) {
+            args = Const.EmptyArray;
+        }
 
         try {
             for (Constructor<?> constructor : type.getConstructors()) {
@@ -194,6 +192,7 @@ public class App {
                 if (!ok) {
                     continue;
                 }
+                constructor.setAccessible(true);
                 return (T) constructor.newInstance(args);
             }
         } catch (ReflectiveOperationException ex) {
@@ -404,7 +403,7 @@ public class App {
     @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
     @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
     public static Object readSetting(String key, String yamlFile, boolean throwOnEmpty) {
-        Map<String, Object> settings = readSettings(yamlFile);
+        Map<String, Object> settings = readSettings(yamlFile + ".yml");
         Object val;
         if ((val = settings.get(key)) != null) {
             return val;
@@ -438,15 +437,24 @@ public class App {
     }
 
     public static Map<String, Object> readSettings(String yamlFile) {
+        return readSettings(yamlFile, true);
+    }
+
+    public static Map<String, Object> readSettings(String yamlFile, boolean isResource) {
         Map<String, Object> result = null;
         Yaml yaml = new Yaml(new SafeConstructor());
-        for (Object data : yaml.loadAll(App.class.getClassLoader().getResourceAsStream(yamlFile + ".yml"))) {
-            Map<String, Object> map = (Map<String, Object>) data;
-            if (result == null) {
-                result = map;
-                continue;
+        try {
+            for (Object data : yaml.loadAll(
+                    isResource ? getClassLoader().getResourceAsStream(yamlFile) : new FileInputStream(yamlFile))) {
+                Map<String, Object> map = (Map<String, Object>) data;
+                if (result == null) {
+                    result = map;
+                    continue;
+                }
+                result.putAll(map);
             }
-            result.putAll(map);
+        } catch (FileNotFoundException e) {
+            throw SystemException.wrap(e);
         }
         if (result == null) {
             result = new HashMap<>();

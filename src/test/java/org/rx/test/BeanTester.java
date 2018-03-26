@@ -4,6 +4,9 @@ import org.junit.Test;
 import org.rx.SystemException;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
+import org.rx.test.bean.ErrorBean;
+
+import java.lang.reflect.Constructor;
 
 public class BeanTester {
     @Test
@@ -44,5 +47,11 @@ public class BeanTester {
         assert tuple.right == 1;
         assert tuple.equals(tuple2);
         assert !tuple.equals(tuple3);
+    }
+
+    @Test
+    public void testConstructor() throws Exception {
+        Constructor constructor = ErrorBean.class.getConstructor(new Class[0]);
+        System.out.println(constructor != null);
     }
 }
