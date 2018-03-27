@@ -380,7 +380,7 @@ public final class NQuery<T> implements Iterable<T> {
         return (NQuery<TR>) this;
     }
 
-    public <TR> NQuery<TR> ofType(Class type) {
+    public <TR> NQuery<TR> ofType(Class<TR> type) {
         return where(p -> type.isInstance(p)).select(p -> (TR) p);
     }
 
