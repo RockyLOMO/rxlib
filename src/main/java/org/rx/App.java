@@ -27,6 +27,10 @@ import java.net.JarURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.ByteBuffer;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
@@ -580,6 +584,14 @@ public class App {
         File dir = new File(dirPath);
         if (!dir.exists()) {
             dir.mkdirs();
+        }
+    }
+
+    public static DirectoryStream<Path> fileStream(Path dir) {
+        try {
+            return Files.newDirectoryStream(dir, Files::isRegularFile);
+        } catch (IOException e) {
+            throw SystemException.wrap(e);
         }
     }
     //endregion

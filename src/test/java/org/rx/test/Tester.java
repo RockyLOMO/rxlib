@@ -104,15 +104,13 @@ public class Tester {
         URL e = App.getClassLoader().getResource("jsonMapper/");
         System.out.println(e);
         try {
-            for (Path path : Files.newDirectoryStream(Paths.get(e.toURI()))) {
+            for (Path path : App.fileStream(Paths.get(e.toURI()))) {
                 System.out.println(path);
                 Map<String, Object> map = App.readSettings(path.toString(), false);
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     System.out.println(entry.getKey() + ": " + entry.getValue());
                 }
             }
-        } catch (IOException e1) {
-            e1.printStackTrace();
         } catch (URISyntaxException e1) {
             e1.printStackTrace();
         }
