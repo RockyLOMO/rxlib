@@ -1,11 +1,11 @@
 package org.rx.util;
 
+import lombok.SneakyThrows;
 import org.rx.App;
 import org.rx.Disposable;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
 import org.rx.bean.Const;
-import org.rx.cache.BufferSegment;
 
 import java.io.*;
 
@@ -13,6 +13,39 @@ import static org.rx.Contract.require;
 import static org.rx.Contract.values;
 
 public class IOStream extends Disposable implements Closeable, Flushable {
+    public static String readString(InputStream stream) {
+        return readString(stream, Const.Utf8);
+    }
+
+    @SneakyThrows
+    public static String readString(InputStream stream, String charset) {
+        require(stream, charset);
+
+        StringBuilder result = new StringBuilder();
+        try (DataInputStream reader = new DataInputStream(stream)) {
+            byte[] buffer = new byte[Const.DefaultBufferSize];
+            int read;
+            while ((read = reader.read(buffer)) > 0) {
+                result.append(new String(buffer, 0, read, charset));
+            }
+        }
+        return result.toString();
+    }
+
+    public static void writeString(OutputStream stream, String value) {
+        writeString(stream, value, Const.Utf8);
+    }
+
+    @SneakyThrows
+    public static void writeString(OutputStream stream, String value, String charset) {
+        require(stream, charset);
+
+        try (DataOutputStream writer = new DataOutputStream(stream)) {
+            byte[] data = value.getBytes(charset);
+            writer.write(data);
+        }
+    }
+
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 

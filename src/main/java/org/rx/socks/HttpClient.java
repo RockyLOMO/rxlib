@@ -4,6 +4,7 @@ import org.rx.App;
 import org.rx.Contract;
 import org.rx.SystemException;
 import org.rx.bean.Const;
+import org.rx.util.IOStream;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;
@@ -37,7 +38,8 @@ public class HttpClient {
             for (String pair : pairs) {
                 int idx = pair.indexOf("=");
                 String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Const.Utf8) : pair;
-                String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), Const.Utf8)
+                String value = idx > 0 && pair.length() > idx + 1
+                        ? URLDecoder.decode(pair.substring(idx + 1), Const.Utf8)
                         : null;
                 map.put(key, value);
             }
@@ -144,14 +146,14 @@ public class HttpClient {
             }
             client.connect();
             if (eq(method, PostMethod) && !App.isNullOrEmpty(content)) {
-                App.writeString(client.getOutputStream(), content, charset);
+                IOStream.writeString(client.getOutputStream(), content, charset);
             }
 
             int resCode = client.getResponseCode();
             if (resCode != HttpURLConnection.HTTP_OK) {
 
             }
-            return App.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
+            return IOStream.readString(client.getInputStream(), isNull(client.getContentEncoding(), charset));
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }

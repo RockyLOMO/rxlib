@@ -1,6 +1,7 @@
 package org.rx;
 
 import com.google.common.base.Strings;
+import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.bean.Const;
 import org.rx.bean.Tuple;
@@ -30,7 +31,6 @@ import java.nio.ByteBuffer;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
@@ -209,72 +209,69 @@ public class App {
         return getClassesFromPackage(packageDirName, false);
     }
 
+    @SneakyThrows
     public static List<Class> getClassesFromPackage(String packageDirName, boolean initClass) {
         require(packageDirName);
         packageDirName = packageDirName.replace('.', '/');
 
         final String flag = ".class";
         List<Class> classes = new ArrayList<>();
-        try {
-            final Consumer<String> loadFunc = n -> {
-                Class type = loadClass(n, initClass, false);
-                if (type == null) {
-                    return;
-                }
-                classes.add(type);
-            };
-            Enumeration<URL> dirs = getClassLoader().getResources(packageDirName);
-            while (dirs.hasMoreElements()) {
-                URL url = dirs.nextElement();
-                switch (url.getProtocol()) {
-                    case "file":
-                        $<BiConsumer<String, String>> callee = $();
-                        callee.$ = (packageName, filePath) -> {
-                            File dir = new File(filePath);
-                            if (!dir.exists() || !dir.isDirectory()) {
-                                return;
-                            }
+        final Consumer<String> loadFunc = n -> {
+            Class type = loadClass(n, initClass, false);
+            if (type == null) {
+                return;
+            }
+            classes.add(type);
+        };
+        Enumeration<URL> dirs = getClassLoader().getResources(packageDirName);
+        while (dirs.hasMoreElements()) {
+            URL url = dirs.nextElement();
+            switch (url.getProtocol()) {
+                case "file":
+                    $<BiConsumer<String, String>> callee = $();
+                    callee.$ = (packageName, filePath) -> {
+                        File dir = new File(filePath);
+                        if (!dir.exists() || !dir.isDirectory()) {
+                            return;
+                        }
 
-                            for (File file : isNull(dir.listFiles(p -> p.isDirectory() || p.getName().endsWith(flag)),
-                                    new File[0])) {
-                                if (file.isDirectory()) {
-                                    callee.$.accept(packageName + "." + file.getName(), file.getAbsolutePath());
-                                    continue;
-                                }
-
-                                String className = packageName + "."
-                                        + file.getName().substring(0, file.getName().length() - flag.length());
-                                loadFunc.accept(className);
-                            }
-                        };
-                        String filePath = URLDecoder.decode(url.getFile(), "UTF-8");
-                        callee.$.accept(packageDirName, filePath);
-                        break;
-                    case "jar":
-                        JarFile jar = ((JarURLConnection) url.openConnection()).getJarFile();
-                        Enumeration<JarEntry> tor = jar.entries();
-                        while (tor.hasMoreElements()) {
-                            JarEntry entry = tor.nextElement();
-                            String name = entry.getName();
-                            if (name.charAt(0) == '/') {
-                                name = name.substring(1);
-                            }
-                            if (!(name.startsWith(packageDirName) && name.endsWith(flag))) {
+                        for (File file : isNull(dir.listFiles(p -> p.isDirectory() || p.getName().endsWith(flag)),
+                                new File[0])) {
+                            if (file.isDirectory()) {
+                                callee.$.accept(packageName + "." + file.getName(), file.getAbsolutePath());
                                 continue;
                             }
 
-                            String className = entry.getName().replace('/', '.');
-                            className = className.substring(0, className.length() - flag.length());
+                            String className = packageName + "."
+                                    + file.getName().substring(0, file.getName().length() - flag.length());
                             loadFunc.accept(className);
                         }
-                        break;
-                    default:
-                        System.out.println("getClassesFromPackage skip " + url.getProtocol());
-                        break;
-                }
+                    };
+                    String filePath = URLDecoder.decode(url.getFile(), "UTF-8");
+                    callee.$.accept(packageDirName, filePath);
+                    break;
+                case "jar":
+                    JarFile jar = ((JarURLConnection) url.openConnection()).getJarFile();
+                    Enumeration<JarEntry> tor = jar.entries();
+                    while (tor.hasMoreElements()) {
+                        JarEntry entry = tor.nextElement();
+                        String name = entry.getName();
+                        if (name.charAt(0) == '/') {
+                            name = name.substring(1);
+                        }
+                        if (!(name.startsWith(packageDirName) && name.endsWith(flag))) {
+                            continue;
+                        }
+
+                        String className = entry.getName().replace('/', '.');
+                        className = className.substring(0, className.length() - flag.length());
+                        loadFunc.accept(className);
+                    }
+                    break;
+                default:
+                    System.out.println("getClassesFromPackage skip " + url.getProtocol());
+                    break;
             }
-        } catch (IOException e) {
-            throw SystemException.wrap(e);
         }
         return classes;
     }
@@ -444,26 +441,35 @@ public class App {
         return readSettings(yamlFile, true);
     }
 
+    @SneakyThrows
     public static Map<String, Object> readSettings(String yamlFile, boolean isResource) {
         Map<String, Object> result = null;
         Yaml yaml = new Yaml(new SafeConstructor());
-        try {
-            for (Object data : yaml.loadAll(
-                    isResource ? getClassLoader().getResourceAsStream(yamlFile) : new FileInputStream(yamlFile))) {
-                Map<String, Object> map = (Map<String, Object>) data;
-                if (result == null) {
-                    result = map;
-                    continue;
-                }
-                result.putAll(map);
+        for (Object data : yaml
+                .loadAll(isResource ? getClassLoader().getResourceAsStream(yamlFile) : new FileInputStream(yamlFile))) {
+            Map<String, Object> map = (Map<String, Object>) data;
+            if (result == null) {
+                result = map;
+                continue;
             }
-        } catch (FileNotFoundException e) {
-            throw SystemException.wrap(e);
+            result.putAll(map);
         }
         if (result == null) {
             result = new HashMap<>();
         }
         return result;
+    }
+
+    public static void createDirectory(String dirPath) {
+        File dir = new File(dirPath);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+    }
+
+    @SneakyThrows
+    public static DirectoryStream<Path> fileStream(Path dir) {
+        return Files.newDirectoryStream(dir, Files::isRegularFile);
     }
     //endregion
 
@@ -541,58 +547,6 @@ public class App {
         }
         String x = Strings.repeat("*", len - left - right);
         return val.substring(0, left) + x + val.substring(left + x.length());
-    }
-    //endregion
-
-    //region IO
-    public static String readString(InputStream stream) {
-        return readString(stream, Const.Utf8);
-    }
-
-    public static String readString(InputStream stream, String charset) {
-        require(stream, charset);
-
-        StringBuilder result = new StringBuilder();
-        try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[Const.DefaultBufferSize];
-            int read;
-            while ((read = reader.read(buffer)) > 0) {
-                result.append(new String(buffer, 0, read, charset));
-            }
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
-        return result.toString();
-    }
-
-    public static void writeString(OutputStream stream, String value) {
-        writeString(stream, value, Const.Utf8);
-    }
-
-    public static void writeString(OutputStream stream, String value, String charset) {
-        require(stream, charset);
-
-        try (DataOutputStream writer = new DataOutputStream(stream)) {
-            byte[] data = value.getBytes(charset);
-            writer.write(data);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
-    }
-
-    public static void createDirectory(String dirPath) {
-        File dir = new File(dirPath);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-    }
-
-    public static DirectoryStream<Path> fileStream(Path dir) {
-        try {
-            return Files.newDirectoryStream(dir, Files::isRegularFile);
-        } catch (IOException e) {
-            throw SystemException.wrap(e);
-        }
     }
     //endregion
 
@@ -691,26 +645,20 @@ public class App {
         return Pattern.compile(base64Regex).matcher(base64).find();
     }
 
+    @SneakyThrows
     public static String convertToBase64String(byte[] data) {
         require(data);
 
         byte[] ret = Base64.getEncoder().encode(data);
-        try {
-            return new String(ret, Const.Utf8);
-        } catch (UnsupportedEncodingException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return new String(ret, Const.Utf8);
     }
 
+    @SneakyThrows
     public static byte[] convertFromBase64String(String base64) {
         require(base64);
 
-        try {
-            byte[] data = base64.getBytes(Const.Utf8);
-            return Base64.getDecoder().decode(data);
-        } catch (UnsupportedEncodingException ex) {
-            throw SystemException.wrap(ex);
-        }
+        byte[] data = base64.getBytes(Const.Utf8);
+        return Base64.getDecoder().decode(data);
     }
 
     public static String serializeToBase64(Object obj) {
@@ -718,6 +666,7 @@ public class App {
         return convertToBase64String(data);
     }
 
+    @SneakyThrows
     public static byte[] serialize(Object obj) {
         require(obj);
 
@@ -725,8 +674,6 @@ public class App {
                 ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
             return stream.toArray();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
         }
     }
 
@@ -735,14 +682,13 @@ public class App {
         return deserialize(data);
     }
 
+    @SneakyThrows
     public static Object deserialize(byte[] data) {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
                 ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
         }
     }
 
@@ -784,6 +730,7 @@ public class App {
         return ip;
     }
 
+    @SneakyThrows
     public static void downloadFile(HttpServletResponse response, String filePath) {
         require(response, filePath);
         switch (filePath) {
@@ -805,8 +752,6 @@ public class App {
                 out.write(buffer, 0, length);
             }
             out.flush();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
         }
     }
     //endregion

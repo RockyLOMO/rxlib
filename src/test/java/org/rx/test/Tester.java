@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import lombok.SneakyThrows;
 import org.junit.Test;
 import org.rx.*;
 import org.rx.socks.Sockets;
@@ -100,19 +101,16 @@ public class Tester {
     }
 
     @Test
+    @SneakyThrows
     public void testJson() {
         URL e = App.getClassLoader().getResource("jsonMapper/");
         System.out.println(e);
-        try {
-            for (Path path : App.fileStream(Paths.get(e.toURI()))) {
-                System.out.println(path);
-                Map<String, Object> map = App.readSettings(path.toString(), false);
-                for (Map.Entry<String, Object> entry : map.entrySet()) {
-                    System.out.println(entry.getKey() + ": " + entry.getValue());
-                }
+        for (Path path : App.fileStream(Paths.get(e.toURI()))) {
+            System.out.println(path);
+            Map<String, Object> map = App.readSettings(path.toString(), false);
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                System.out.println(entry.getKey() + ": " + entry.getValue());
             }
-        } catch (URISyntaxException e1) {
-            e1.printStackTrace();
         }
 
         //        Object p = new TestServletRequest();

@@ -30,11 +30,7 @@ public class BeanTester {
         System.out.println(utc.toString());
         System.out.println(d.toDateTimeString());
 
-        try {
-            DateTime.valueOf("x");
-        } catch (SystemException e) {
-            e.printStackTrace();
-        }
+        DateTime.valueOf("x");
     }
 
     @Test
