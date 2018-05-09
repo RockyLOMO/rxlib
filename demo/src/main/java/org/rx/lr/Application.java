@@ -9,7 +9,7 @@ import org.springframework.context.annotation.ImportResource;
 import static org.rx.lr.Application.PackName;
 
 @SpringBootApplication(scanBasePackages = PackName)
-@ImportResource("classpath:springContext.xml")
+@ImportResource("classpath:applicationContext.xml")
 @EnableAutoConfiguration
 public class Application {
     public static final String PackName = "org.rx.lr";

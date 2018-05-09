@@ -1,4 +1,4 @@
-package org.rx.lr.repository.model;
+package org.rx.lr.repository.model.common;
 
 import lombok.Data;
 

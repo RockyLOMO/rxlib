@@ -8,9 +8,9 @@ import java.util.function.Predicate;
 public interface IRepository<T> {
     T save(T model);
 
-    NQuery<T> query(Predicate<T> condition);
+    T single(Predicate<T> condition);
 
-    <TK> NQuery<T> query(Predicate<T> condition, Function<T, TK> keySelector);
+    <TK> NQuery<T> list(Predicate<T> condition, Function<T, TK> keySelector);
 
-    <TK> NQuery<T> queryDescending(Predicate<T> condition, Function<T, TK> keySelector);
+    <TK> NQuery<T> listDescending(Predicate<T> condition, Function<T, TK> keySelector);
 }

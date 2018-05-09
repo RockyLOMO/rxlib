@@ -7,7 +7,7 @@ import lombok.SneakyThrows;
 import org.rx.App;
 import org.rx.NQuery;
 import org.rx.lr.repository.IRepository;
-import org.rx.lr.repository.model.DataObject;
+import org.rx.lr.repository.model.common.DataObject;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -31,7 +31,7 @@ public class Db4oRepository<T> implements IRepository<T> {
     }
 
     protected <R> R invoke(Function<ObjectContainer, R> func) {
-        return NQuery.of(invoke(func)).firstOrDefault();
+        return NQuery.of(invoke((Function<ObjectContainer, R>[]) new Function[]{func})).firstOrDefault();
     }
 
     protected <R> List<R> invoke(Function<ObjectContainer, R>... funcList) {
