@@ -264,7 +264,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().sorted(getComparator(keySelector)));
     }
 
-    private <TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
+    public static <T, TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
         return (p1, p2) -> {
             Comparable c1 = as(keySelector.apply(p1), Comparable.class);
             Comparable c2 = as(keySelector.apply(p2), Comparable.class);
@@ -283,7 +283,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
-    private Comparator<T> getComparatorMany(Function<T, Object[]> keySelector) {
+    public static <T> Comparator<T> getComparatorMany(Function<T, Object[]> keySelector) {
         return (p1, p2) -> {
             Object[] k1s = keySelector.apply(p1);
             Object[] k2s = keySelector.apply(p2);

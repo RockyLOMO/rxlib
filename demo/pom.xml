@@ -22,6 +22,8 @@
         <java.version>1.8</java.version>
         <spring.boot.version>1.5.12.RELEASE</spring.boot.version>
         <swagger.ver>2.8.0</swagger.ver>
+        <projectlombok.version>1.16.20</projectlombok.version>
+        <mapstruct.version>1.2.0.Final</mapstruct.version>
     </properties>
 
     <dependencies>
@@ -64,7 +66,12 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.16.20</version>
+            <version>${projectlombok.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct-jdk8</artifactId>
+            <version>${mapstruct.version}</version>
         </dependency>
         <dependency>
             <groupId>com.db4o</groupId>
@@ -81,6 +88,7 @@
     <repositories>
         <repository>
             <!-- Maven 自带的中央仓库使用的Id为central 如果其他的仓库声明也是用该Id就会覆盖中央仓库的配置 -->
+            <!-- 去掉 mirrorOf * -->
             <id>mvnrepository</id>
             <name>mvnrepository</name>
             <url>http://repo.boundlessgeo.com/main/</url>
@@ -100,10 +108,18 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.7.0</version>
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
                     <encoding>UTF-8</encoding>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>

@@ -5,6 +5,9 @@ import lombok.EqualsAndHashCode;
 
 import java.util.UUID;
 
+/**
+ * 签到
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class CheckInLog extends DataObject {

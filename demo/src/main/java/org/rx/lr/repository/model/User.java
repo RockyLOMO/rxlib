@@ -3,6 +3,9 @@ package org.rx.lr.repository.model;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+/**
+ * 用户
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class User extends DataObject {
