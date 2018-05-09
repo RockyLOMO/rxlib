@@ -8,6 +8,8 @@ import org.rx.App;
 import org.rx.NQuery;
 import org.rx.lr.repository.IRepository;
 import org.rx.lr.repository.model.common.DataObject;
+import org.rx.lr.repository.model.common.PagedResult;
+import org.rx.lr.repository.model.common.PagingParam;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -65,6 +67,36 @@ public class Db4oRepository<T> implements IRepository<T> {
         });
     }
 
+    @Override
+    public T single(Predicate<T> condition) {
+        return null;
+    }
+
+    @Override
+    public List<T> list(Predicate<T> condition) {
+        return null;
+    }
+
+    @Override
+    public <TK> List<T> list(Predicate<T> condition, Function<T, TK> keySelector) {
+        return null;
+    }
+
+    @Override
+    public <TK> List<T> listDescending(Predicate<T> condition, Function<T, TK> keySelector) {
+        return null;
+    }
+
+    @Override
+    public <TK> PagedResult<T> page(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
+        return null;
+    }
+
+    @Override
+    public <TK> PagedResult<T> pageDescending(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
+        return null;
+    }
+
     public NQuery<T> query(Predicate<T> condition) {
         return query(condition, null);
     }
@@ -77,7 +109,7 @@ public class Db4oRepository<T> implements IRepository<T> {
         return query(condition, keySelector, true);
     }
 
-    private <TK> NQuery<T> query(Predicate<T> condition, Function<T, TK> keySelector, boolean isDescending) {
+    private <TK> PagedResult<T> query(Predicate<T> condition, Function<T, TK> keySelector, boolean isDescending, PagingParam pagingParam) {
         require(condition);
 
         com.db4o.query.Predicate<T> predicate = new com.db4o.query.Predicate<T>() {
@@ -96,7 +128,12 @@ public class Db4oRepository<T> implements IRepository<T> {
             }
             return db.query(predicate, comparator);
         });
-        return NQuery.of(list);
+        if (pagingParam == null) {
+            PagedResult<T> result = new PagedResult<>();
+            result.setResultSet(list);
+            return result;
+        }
+        return pagingParam.page(NQuery.of(list));
     }
 
     private <TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
