@@ -2,19 +2,26 @@ package org.rx.lr.repository.impl;
 
 import com.db4o.Db4o;
 import com.db4o.ObjectContainer;
+import com.db4o.ObjectSet;
 import com.db4o.config.Configuration;
 import lombok.SneakyThrows;
 import org.rx.App;
 import org.rx.NQuery;
+import org.rx.SystemException;
+import org.rx.bean.DateTime;
 import org.rx.lr.repository.IRepository;
 import org.rx.lr.repository.model.common.DataObject;
 import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.repository.model.common.PagingParam;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -23,13 +30,23 @@ import static org.rx.Contract.require;
 
 @Component
 public class Db4oRepository<T> implements IRepository<T> {
-    protected static final String DbName = "rx";
+    private String dbPath;
     private Configuration config;
 
     @SneakyThrows
     public Db4oRepository() {
+        dbPath = (String) App.readSetting("app.dbPath");
+        if (dbPath == null) {
+            throw SystemException.wrap(new IllegalArgumentException("app.dbPath配置为空"));
+        }
+        String dir = dbPath;
+        int i = dir.lastIndexOf(".");
+        if (i != -1) {
+            dir = dir.substring(0, i);
+        }
+        App.createDirectory(dir);
+
         config = Db4o.newConfiguration();
-        config.setBlobPath(App.getBootstrapPath() + "\\" + DbName + ".dat");
     }
 
     protected <R> R invoke(Function<ObjectContainer, R> func) {
@@ -40,7 +57,7 @@ public class Db4oRepository<T> implements IRepository<T> {
         require(funcList);
 
         List<R> result = new ArrayList<>();
-        ObjectContainer db = Db4o.openFile(config, DbName);
+        ObjectContainer db = Db4o.openFile(config, dbPath);
         try {
             for (Function<ObjectContainer, R> function : funcList) {
                 result.add(function.apply(db));
@@ -61,6 +78,14 @@ public class Db4oRepository<T> implements IRepository<T> {
             throw new IllegalArgumentException("model is not a DataObject");
         }
 
+        DataObject dObj = (DataObject) model;
+        if (dObj.getId() == null) {
+            dObj.setId(UUID.randomUUID());
+        }
+        if (dObj.getCreateTime() == null) {
+            dObj.setCreateTime(DateTime.now());
+        }
+        dObj.setModifyTime(DateTime.now());
         return invoke(db -> {
             db.store(model);
             return model;
@@ -69,44 +94,36 @@ public class Db4oRepository<T> implements IRepository<T> {
 
     @Override
     public T single(Predicate<T> condition) {
-        return null;
+        return NQuery.of(list(condition)).firstOrDefault();
     }
 
     @Override
     public List<T> list(Predicate<T> condition) {
-        return null;
+        return list(condition, null);
     }
 
     @Override
     public <TK> List<T> list(Predicate<T> condition, Function<T, TK> keySelector) {
-        return null;
+        return query(condition, keySelector, false, null).getResultSet();
     }
 
     @Override
     public <TK> List<T> listDescending(Predicate<T> condition, Function<T, TK> keySelector) {
-        return null;
+        return query(condition, keySelector, true, null).getResultSet();
     }
 
     @Override
     public <TK> PagedResult<T> page(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
-        return null;
+        require(pagingParam);
+
+        return query(condition, keySelector, false, pagingParam);
     }
 
     @Override
     public <TK> PagedResult<T> pageDescending(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
-        return null;
-    }
+        require(pagingParam);
 
-    public NQuery<T> query(Predicate<T> condition) {
-        return query(condition, null);
-    }
-
-    public <TK> NQuery<T> query(Predicate<T> condition, Function<T, TK> keySelector) {
-        return query(condition, keySelector, false);
-    }
-
-    public <TK> NQuery<T> queryDescending(Predicate<T> condition, Function<T, TK> keySelector) {
-        return query(condition, keySelector, true);
+        return query(condition, keySelector, true, pagingParam);
     }
 
     private <TK> PagedResult<T> query(Predicate<T> condition, Function<T, TK> keySelector, boolean isDescending, PagingParam pagingParam) {
@@ -117,23 +134,25 @@ public class Db4oRepository<T> implements IRepository<T> {
                 return condition.test(candidate);
             }
         };
-        List<T> list = invoke(db -> {
+        return invoke(db -> {
+            ObjectSet<T> objectSet;
             if (keySelector == null) {
-                return db.query(predicate);
+                objectSet = db.query(predicate);
+            } else {
+                Comparator<T> comparator = getComparator(keySelector);
+                if (isDescending) {
+                    comparator = comparator.reversed();
+                }
+                objectSet = db.query(predicate, comparator);
             }
-
-            Comparator<T> comparator = getComparator(keySelector);
-            if (isDescending) {
-                comparator = comparator.reversed();
+            NQuery<T> nQuery = NQuery.of(objectSet);
+            if (pagingParam == null) {
+                PagedResult<T> result = new PagedResult<>();
+                result.setResultSet(nQuery.toList());
+                return result;
             }
-            return db.query(predicate, comparator);
+            return pagingParam.page(nQuery);
         });
-        if (pagingParam == null) {
-            PagedResult<T> result = new PagedResult<>();
-            result.setResultSet(list);
-            return result;
-        }
-        return pagingParam.page(NQuery.of(list));
     }
 
     private <TK> Comparator<T> getComparator(Function<T, TK> keySelector) {

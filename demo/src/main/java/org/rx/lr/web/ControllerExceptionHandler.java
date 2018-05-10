@@ -25,12 +25,13 @@ public class ControllerExceptionHandler {
     private class ErrorResult implements Serializable {
         private int errorCode;
         private String errorMsg;
+        private String debugMsg;
     }
 
     @ResponseStatus(HttpStatus.OK)
     @ExceptionHandler({Exception.class})
     public ResponseEntity bizException(Exception e, HttpServletRequest request) {
-        String msg = DefaultMessage;
+        String msg = DefaultMessage, dm = null;
         Exception logEx = e;
         if (e instanceof ConstraintException) {
             //参数校验错误 ignore log
@@ -43,6 +44,7 @@ public class ControllerExceptionHandler {
 //                logEx = out.$;
 //            }
             msg = ((SystemException) e).getFriendlyMessage();
+            dm = e.getMessage();
         }
         if (logEx != null) {
             log.error("异常Trace", logEx);
@@ -51,6 +53,7 @@ public class ControllerExceptionHandler {
         ErrorResult r = new ErrorResult();
         r.setErrorCode(-1);
         r.setErrorMsg(msg);
+        r.setDebugMsg(dm);
         return ResponseEntity.ok(r);
     }
 }
