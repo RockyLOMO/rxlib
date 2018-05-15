@@ -8,10 +8,7 @@ import org.rx.lr.repository.model.CheckInLog;
 import org.rx.lr.repository.model.User;
 import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.service.mapper.UserMapper;
-import org.rx.lr.web.dto.user.CheckInRequest;
-import org.rx.lr.web.dto.user.QueryUsersRequest;
-import org.rx.lr.web.dto.user.SignInRequest;
-import org.rx.lr.web.dto.user.SignUpRequest;
+import org.rx.lr.web.dto.user.*;
 import org.rx.security.MD5Util;
 import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +24,7 @@ public class UserService {
     @Autowired
     private IRepository<CheckInLog> checkInLogIRepository;
 
-    public User signUp(@NotNull SignUpRequest request) {
+    public UserResponse signUp(@NotNull SignUpRequest request) {
         User user = UserMapper.INSTANCE.toUser(request);
         user.setPassword(hexPwd(user.getPassword()));
         if (!userIRepository.list(p -> p.getUserName().equals(user.getUserName())).isEmpty()) {
@@ -35,24 +32,26 @@ public class UserService {
         }
 
         userIRepository.save(user);
-        return user;
+        return UserMapper.INSTANCE.toUserResponse(user);
     }
 
-    public User signIn(@NotNull SignInRequest request) {
+    public UserResponse signIn(@NotNull SignInRequest request) {
         User user = NQuery.of(userIRepository.list(p -> p.getUserName().equals(request.getUserName())
                 && p.getPassword().equals(hexPwd(request.getPassword())))).firstOrDefault();
         if (user == null) {
             throw SystemException.wrap(new IllegalArgumentException("用户名或密码错误"));
         }
-        return user;
+        return UserMapper.INSTANCE.toUserResponse(user);
     }
 
     private String hexPwd(String pwd) {
         return MD5Util.md5Hex(pwd);
     }
 
-    public PagedResult<User> queryUsers(@NotNull QueryUsersRequest request) {
-        return userIRepository.pageDescending(p -> request.getUserName() == null || p.getUserName().equals(request.getUserName()), p -> p.getCreateTime(), request);
+    public PagedResult<UserResponse> queryUsers(@NotNull QueryUsersRequest request) {
+        return userIRepository.pageDescending(p -> (request.getUserName() == null || p.getUserName().equals(request.getUserName()))
+                && (request.getUserId() == null || p.getId().equals(request.getUserId())), p -> p.getCreateTime(), request)
+                .convert(p -> UserMapper.INSTANCE.toUserResponse(p));
     }
 
     public void checkIn(@NotNull CheckInRequest request) {

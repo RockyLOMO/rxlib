@@ -24,6 +24,7 @@
         <swagger.ver>2.8.0</swagger.ver>
         <projectlombok.version>1.16.20</projectlombok.version>
         <mapstruct.version>1.2.0.Final</mapstruct.version>
+        <rxlib.version>1.1</rxlib.version>
     </properties>
 
     <dependencies>
@@ -62,7 +63,7 @@
         <dependency>
             <groupId>com.github.rockylomo</groupId>
             <artifactId>rxlib</artifactId>
-            <version>1.0.25</version>
+            <version>${rxlib.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>

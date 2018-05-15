@@ -13,6 +13,7 @@ import org.rx.lr.repository.IRepository;
 import org.rx.lr.repository.model.common.DataObject;
 import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.repository.model.common.PagingParam;
+import org.rx.util.BeanMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -29,7 +30,7 @@ import static org.rx.Contract.as;
 import static org.rx.Contract.require;
 
 @Component
-public class Db4oRepository<T> implements IRepository<T> {
+public class Db4oRepository<T extends DataObject> implements IRepository<T> {
     private String dbPath;
     private Configuration config;
 
@@ -78,23 +79,48 @@ public class Db4oRepository<T> implements IRepository<T> {
             throw new IllegalArgumentException("model is not a DataObject");
         }
 
-        DataObject dObj = (DataObject) model;
-        if (dObj.getId() == null) {
-            dObj.setId(UUID.randomUUID());
-        }
-        if (dObj.getCreateTime() == null) {
-            dObj.setCreateTime(DateTime.now());
-        }
-        dObj.setModifyTime(DateTime.now());
         return invoke(db -> {
-            db.store(model);
-            return model;
+            T dataObj = single(p -> p.getId().equals(model.getId()));
+            if (dataObj != null) {
+                dataObj = BeanMapper.getInstance().map(model, dataObj, BeanMapper.Flags.NonCheckMatch | BeanMapper.Flags.SkipNull);
+            } else {
+                dataObj = model;
+            }
+            if (dataObj.getId() == null) {
+                dataObj.setId(UUID.randomUUID());
+            }
+            if (dataObj.getCreateTime() == null) {
+                dataObj.setCreateTime(DateTime.now());
+            }
+            dataObj.setModifyTime(DateTime.now());
+            db.store(dataObj);
+            return dataObj;
         });
+    }
+
+    @Override
+    public T delete(UUID id) {
+        T model = single(id);
+        if (model == null) {
+            return null;
+        }
+        model.setDeleted(true);
+        return save(model);
+    }
+
+    @Override
+    public T single(UUID id) {
+        return single(p -> p.getId().equals(id));
     }
 
     @Override
     public T single(Predicate<T> condition) {
         return NQuery.of(list(condition)).firstOrDefault();
+    }
+
+    @Override
+    public long count(Predicate<T> condition) {
+        return executeReader(condition, null, false).count();
     }
 
     @Override
@@ -104,34 +130,36 @@ public class Db4oRepository<T> implements IRepository<T> {
 
     @Override
     public <TK> List<T> list(Predicate<T> condition, Function<T, TK> keySelector) {
-        return query(condition, keySelector, false, null).getResultSet();
+        return executeReader(condition, keySelector, false).toList();
     }
 
     @Override
     public <TK> List<T> listDescending(Predicate<T> condition, Function<T, TK> keySelector) {
-        return query(condition, keySelector, true, null).getResultSet();
+        return executeReader(condition, keySelector, true).toList();
     }
 
     @Override
     public <TK> PagedResult<T> page(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
         require(pagingParam);
 
-        return query(condition, keySelector, false, pagingParam);
+        NQuery<T> nQuery = executeReader(condition, keySelector, false);
+        return pagingParam.page(nQuery);
     }
 
     @Override
     public <TK> PagedResult<T> pageDescending(Predicate<T> condition, Function<T, TK> keySelector, PagingParam pagingParam) {
         require(pagingParam);
 
-        return query(condition, keySelector, true, pagingParam);
+        NQuery<T> nQuery = executeReader(condition, keySelector, true);
+        return pagingParam.page(nQuery);
     }
 
-    private <TK> PagedResult<T> query(Predicate<T> condition, Function<T, TK> keySelector, boolean isDescending, PagingParam pagingParam) {
+    private <TK> NQuery<T> executeReader(Predicate<T> condition, Function<T, TK> keySelector, boolean isDescending) {
         require(condition);
 
         com.db4o.query.Predicate<T> predicate = new com.db4o.query.Predicate<T>() {
             public boolean match(T candidate) {
-                return condition.test(candidate);
+                return !candidate.isDeleted() && condition.test(candidate);
             }
         };
         return invoke(db -> {
@@ -145,28 +173,15 @@ public class Db4oRepository<T> implements IRepository<T> {
                 }
                 objectSet = db.query(predicate, comparator);
             }
-            NQuery<T> nQuery = NQuery.of(objectSet);
-            if (pagingParam == null) {
-                PagedResult<T> result = new PagedResult<>();
-                result.setResultSet(nQuery.toList());
-                return result;
-            }
-            return pagingParam.page(nQuery);
+            return NQuery.of(objectSet);
         });
     }
 
     private <TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
         if (keySelector == null) {
-            return (Comparator<T>) Comparator.naturalOrder();
+            return (Comparator) Comparator.naturalOrder();
         }
 
-        return (p1, p2) -> {
-            Comparable c1 = as(keySelector.apply(p1), Comparable.class);
-            Comparable c2 = as(keySelector.apply(p2), Comparable.class);
-            if (c1 == null || c2 == null) {
-                return 0;
-            }
-            return c1.compareTo(c2);
-        };
+        return NQuery.getComparator(keySelector);
     }
 }

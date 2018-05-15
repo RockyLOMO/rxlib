@@ -10,4 +10,5 @@ import java.util.UUID;
 public abstract class DataObject implements Serializable {
     private UUID id;
     private Date createTime, modifyTime;
+    private boolean isDeleted;
 }

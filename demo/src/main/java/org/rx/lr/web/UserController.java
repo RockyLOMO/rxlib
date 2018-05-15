@@ -1,12 +1,8 @@
 package org.rx.lr.web;
 
-import org.rx.lr.repository.model.User;
 import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.service.UserService;
-import org.rx.lr.web.dto.user.CheckInRequest;
-import org.rx.lr.web.dto.user.QueryUsersRequest;
-import org.rx.lr.web.dto.user.SignInRequest;
-import org.rx.lr.web.dto.user.SignUpRequest;
+import org.rx.lr.web.dto.user.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,17 +13,17 @@ public class UserController {
     private UserService service;
 
     @RequestMapping(value = "/signUp")
-    public User signUp(@RequestBody SignUpRequest request) {
+    public UserResponse signUp(@RequestBody SignUpRequest request) {
         return service.signUp(request);
     }
 
     @RequestMapping(value = "/signIn")
-    public User signIn(@RequestBody SignInRequest request) {
+    public UserResponse signIn(@RequestBody SignInRequest request) {
         return service.signIn(request);
     }
 
     @RequestMapping(value = "/queryUsers")
-    public PagedResult<User> queryUsers(@RequestBody QueryUsersRequest request) {
+    public PagedResult<UserResponse> queryUsers(@RequestBody QueryUsersRequest request) {
         return service.queryUsers(request);
     }
 

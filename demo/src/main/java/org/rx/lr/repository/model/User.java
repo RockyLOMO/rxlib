@@ -14,5 +14,6 @@ public class User extends DataObject {
     private String password;
     private String email;
     private String mobile;
+    private int level;
     private int status;
 }

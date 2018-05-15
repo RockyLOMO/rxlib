@@ -1,4 +1,4 @@
-package org.rx.lr.web;
+package org.rx.lr.web.dto.common;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;

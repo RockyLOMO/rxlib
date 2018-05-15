@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" debug="false">
-    <property name="log.dir" value="/usr/local/jApp/logs/lr.web"/>
+    <property name="log.dir" value="/usr/local/jApp/lr.web"/>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder charset="UTF-8">
             <pattern>%d %-5p [%t] %c - %m%n</pattern>
