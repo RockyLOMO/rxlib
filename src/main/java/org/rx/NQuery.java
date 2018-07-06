@@ -5,7 +5,6 @@ import org.rx.bean.Tuple;
 
 import java.lang.reflect.Array;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
@@ -17,7 +16,7 @@ import static org.rx.Contract.*;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
- * 
+ *
  * @param <T>
  */
 public final class NQuery<T> implements Iterable<T> {
@@ -78,15 +77,18 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     private <TR> List<TR> newList() {
-        return isParallel ? Collections.synchronizedList(new ArrayList<>()) : new ArrayList<>();
+        int count = count();
+        return isParallel ? Collections.synchronizedList(new ArrayList<>(count)) : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {
-        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>()) : new LinkedHashSet<>();
+        int count = count();
+        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
-        return isParallel ? Collections.synchronizedMap(new LinkedHashMap<>()) : new LinkedHashMap<>();
+        int count = count();
+        return isParallel ? Collections.synchronizedMap(new LinkedHashMap<>(count)) : new LinkedHashMap<>(count);
     }
 
     private <TR> Stream<TR> newStream(Collection<TR> set) {
@@ -513,98 +515,20 @@ public final class NQuery<T> implements Iterable<T> {
         return toMap(keySelector, p -> p);
     }
 
+    /**
+     * Collectors.toMap 会校验value为null的情况
+     *
+     * @param keySelector
+     * @param resultSelector
+     * @param <TK>
+     * @param <TR>
+     * @return
+     */
     public <TK, TR> Map<TK, TR> toMap(Function<T, TK> keySelector, Function<T, TR> resultSelector) {
-        return isParallel ? stream().collect(Collectors.toConcurrentMap(keySelector, resultSelector))
-                : stream().collect(Collectors.toMap(keySelector, resultSelector));
-    }
-
-    public static void main(String[] args) {
-        Set<Person> personSet = new HashSet<>();
-        for (int i = 0; i < 5; i++) {
-            Person p = new Person();
-            p.index = i;
-            p.index2 = i % 2 == 0 ? 2 : i;
-            p.index3 = i % 2 == 0 ? 3 : 4;
-            p.name = App.randomValue(5);
-            p.age = ThreadLocalRandom.current().nextInt(100);
-            personSet.add(p);
+        Map<TK, TR> result = newMap();
+        for (Object item : current) {
+            result.put(keySelector.apply((T) item), resultSelector.apply((T) item));
         }
-        Person px = new Person();
-        px.index2 = 2;
-        px.index3 = 41;
-        personSet.add(px);
-
-        showResult("groupBy(p -> p.index2...", of(personSet).groupBy(p -> p.index2, p -> {
-            System.out.println("groupKey: " + p.left);
-            List<Person> list = p.right.toList();
-            System.out.println("items: " + Contract.toJsonString(list));
-            return list.get(0);
-        }));
-        showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                of(personSet).groupByMany(p -> new Object[] { p.index2, p.index3 }, p -> {
-                    System.out.println("groupKey: " + toJsonString(p.left));
-                    List<Person> list = p.right.toList();
-                    System.out.println("items: " + toJsonString(list));
-                    return list.get(0);
-                }));
-
-        showResult("orderBy(p->p.index)", of(personSet).orderBy(p -> p.index));
-        showResult("orderByDescending(p->p.index)", of(personSet).orderByDescending(p -> p.index));
-        showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-                of(personSet).orderByMany(p -> new Object[] { p.index2, p.index }));
-        showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-                of(personSet).orderByDescendingMany(p -> new Object[] { p.index2, p.index }));
-
-        showResult("select(p -> p.index).reverse()",
-                of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
-
-        showResult(".max(p -> p.index)", of(personSet).<Integer> max(p -> p.index));
-        showResult(".min(p -> p.index)", of(personSet).<Integer> min(p -> p.index));
-
-        showResult("take(0).average(p -> p.index)", of(personSet).take(0).average(p -> p.index));
-        showResult("average(p -> p.index)", of(personSet).average(p -> p.index));
-        showResult("take(0).sum(p -> p.index)", of(personSet).take(0).sum(p -> p.index));
-        showResult("sum(p -> p.index)", of(personSet).sum(p -> p.index));
-
-        showResult("cast<IPerson>", of(personSet).<IPerson> cast());
-        NQuery oq = of(personSet).cast().union(Arrays.asList(1, 2, 3));
-        showResult("ofType(Integer.class)", oq.ofType(Integer.class));
-
-        showResult("firstOrDefault()", of(personSet).orderBy(p -> p.index).firstOrDefault());
-        showResult("lastOrDefault()", of(personSet).orderBy(p -> p.index).lastOrDefault());
-        showResult("skip(2)", of(personSet).orderBy(p -> p.index).skip(2));
-        showResult("take(2)", of(personSet).orderBy(p -> p.index).take(2));
-
-        showResult(".skipWhile((p, i) -> p.index < 3)",
-                of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
-
-        showResult(".takeWhile((p, i) -> p.index < 3)",
-                of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
-    }
-
-    private static void showResult(String n, Object q) {
-        System.out.println();
-        System.out.println();
-        System.out.println("showResult: " + n);
-        System.out.println(Contract.toJsonString(q));
-    }
-
-    private static void showResult(String n, NQuery q) {
-        System.out.println();
-        System.out.println();
-        System.out.println("showResult: " + n);
-        System.out.println(Contract.toJsonString(q.toList()));
-    }
-
-    public interface IPerson {
-
-    }
-
-    public static class Person implements IPerson {
-        public int    index;
-        public int    index2;
-        public int    index3;
-        public String name;
-        public int    age;
+        return result;
     }
 }

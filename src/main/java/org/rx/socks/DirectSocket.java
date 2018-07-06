@@ -57,7 +57,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                             return;
                         }
                     }
-                    Logger.info("DirectSocket ClientItem directSupplier read: %s\ncontent: %s", read,
+                    Logger.info("DirectSocket ClientState directSupplier read: %s\ncontent: %s", read,
                             Bytes.toString(firstPack.toArray(), 0, firstPack.getLength()));
                 }
             } catch (IOException ex) {
