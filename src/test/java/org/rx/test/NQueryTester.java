@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.rx.App;
 import org.rx.Contract;
 import org.rx.NQuery;

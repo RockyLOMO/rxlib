@@ -1,7 +1,7 @@
 package org.rx.test;
 
 import lombok.SneakyThrows;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.rx.*;
 import org.rx.socks.Sockets;
 import org.rx.test.bean.*;

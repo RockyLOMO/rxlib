@@ -51,7 +51,7 @@ public final class ProxyServer extends Disposable {
 
             // and then business logic.
             // Please note we create a handler for every new channel because it has stateful properties.
-            pipeline.addLast(new DirectServerHandler());
+            pipeline.addLast(new DirectServerHandler(sslCtx != null, enableCompression));
         }
     }
 

@@ -1,5 +1,6 @@
 package org.rx.socks.proxy;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -25,10 +26,18 @@ public class DirectClientHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, byte[] bytes) {
-        onReceive.accept(ctx, bytes);
+        if (onReceive != null) {
+            onReceive.accept(ctx, bytes);
+        }
     }
 
     public ChannelFuture send(byte[] bytes) {
+        require(bytes);
+
+        return ctx.writeAndFlush(bytes);
+    }
+
+    public ChannelFuture send(ByteBuf bytes) {
         require(bytes);
 
         return ctx.writeAndFlush(bytes);

@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.rx.SystemException;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;

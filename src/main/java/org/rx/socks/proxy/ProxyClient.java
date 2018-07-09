@@ -1,6 +1,7 @@
 package org.rx.socks.proxy;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
@@ -110,6 +111,14 @@ public class ProxyClient extends Disposable {
     }
 
     public ChannelFuture send(byte[] bytes) {
+        checkNotClosed();
+        require(group != null);
+        require(bytes);
+
+        return handler.send(bytes);
+    }
+
+    public ChannelFuture send(ByteBuf bytes) {
         checkNotClosed();
         require(group != null);
         require(bytes);

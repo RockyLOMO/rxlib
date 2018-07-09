@@ -1,15 +1,13 @@
 package org.rx.socks.proxy;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import org.rx.NQuery;
 import org.rx.socks.Bytes;
 import org.rx.socks.Sockets;
 import org.rx.util.MemoryStream;
 
-import java.net.SocketAddress;
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,31 +15,37 @@ import static org.rx.Contract.require;
 
 public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
     private static class ClientState {
-        private final ChannelHandlerContext channelHandlerContext;
+        private final ChannelHandlerContext serverChannel;
         private int                         length;
         private MemoryStream                stream;
-        private SocketAddress               remoteAddress;
-        private ProxyServer                 proxyServer;
+        private InetSocketAddress           remoteAddress;
+        private ProxyClient                 directClient;
 
-        public ClientState(ChannelHandlerContext ctx) {
-            channelHandlerContext = ctx;
+        public ClientState(ChannelHandlerContext ctx, boolean enableSsl, boolean enableCompression) {
+            serverChannel = ctx;
             stream = new MemoryStream(32, true);
+            directClient = new ProxyClient();
+            directClient.setEnableSsl(enableSsl);
+            directClient.setEnableCompression(enableCompression);
         }
 
         public void transfer(byte[] bytes) {
             if (remoteAddress == null) {
                 int offset = readRemoteAddress(bytes);
-                if (offset == 0) {
+                if (offset == -1) {
                     return;
                 }
-                proxyServer = new ProxyServer();
-                proxyServer.start();
 
-                channelHandlerContext.writeAndFlush(Unpooled.wrappedBuffer(bytes, offset, bytes.length - offset));
+                directClient.connect(remoteAddress, (directChannel, data) -> {
+                    serverChannel.writeAndFlush(data);
+                });
+                if (offset > 0) {
+                    directClient.send(Unpooled.wrappedBuffer(bytes, offset, bytes.length - offset));
+                }
                 return;
             }
 
-            channelHandlerContext.writeAndFlush(bytes);
+            directClient.send(bytes);
         }
 
         private int readRemoteAddress(byte[] bytes) {
@@ -64,21 +68,18 @@ public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     private final Map<ChannelHandlerContext, ClientState> clients;
+    private boolean                                       enableSsl, enableCompression;
 
-    public DirectServerHandler() {
+    public DirectServerHandler(boolean enableSsl, boolean enableCompression) {
         clients = new ConcurrentHashMap<>();
+        this.enableSsl = enableSsl;
+        this.enableCompression = enableCompression;
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, byte[] bytes) throws Exception {
-        ClientState state = clients.computeIfAbsent(ctx, p -> new ClientState());
-        SocketAddress remoteAddress = state.getRemoteAddress(bytes);
-        if (remoteAddress == null) {
-            return;
-        }
-
+        ClientState state = clients.computeIfAbsent(ctx, p -> new ClientState(ctx, enableSsl, enableCompression));
         state.transfer(bytes);
-        //        ctx.writeAndFlush(factorial);
     }
 
     @Override
@@ -94,7 +95,7 @@ public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)  {
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         cause.printStackTrace();
         ctx.close();
     }

@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.rx.Contract;
 import org.rx.test.bean.RestApi;
 import org.rx.test.bean.RestParam;
