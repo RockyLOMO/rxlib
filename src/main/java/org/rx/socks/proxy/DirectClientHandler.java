@@ -13,6 +13,10 @@ public class DirectClientHandler extends SimpleChannelInboundHandler<byte[]> {
     private BiConsumer<ChannelHandlerContext, byte[]> onReceive;
     private ChannelHandlerContext                     ctx;
 
+    public boolean isConnected() {
+        return ctx.channel().isActive();
+    }
+
     public DirectClientHandler(BiConsumer<ChannelHandlerContext, byte[]> onReceive) {
         require(onReceive);
 

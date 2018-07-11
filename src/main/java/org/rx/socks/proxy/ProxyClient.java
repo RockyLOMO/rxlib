@@ -14,50 +14,18 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.SneakyThrows;
+import org.rx.App;
 import org.rx.Disposable;
 
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 
 import static org.rx.Contract.require;
+import static org.rx.socks.proxy.ProxyServer.Compression_Key;
 
 public class ProxyClient extends Disposable {
-    private static class DirectClientInitializer extends ChannelInitializer<SocketChannel> {
-        private final SslContext                          sslCtx;
-        private boolean                                   enableCompression;
-        private InetSocketAddress                         remoteAddress;
-        private BiConsumer<ChannelHandlerContext, byte[]> onReceive;
-
-        public DirectClientInitializer(SslContext sslCtx, boolean enableCompression, InetSocketAddress remoteAddress,
-                                       BiConsumer<ChannelHandlerContext, byte[]> onReceive) {
-            require(remoteAddress);
-
-            this.sslCtx = sslCtx;
-            this.enableCompression = enableCompression;
-            this.remoteAddress = remoteAddress;
-            this.onReceive = onReceive;
-        }
-
-        @Override
-        public void initChannel(SocketChannel ch) {
-            ChannelPipeline pipeline = ch.pipeline();
-            if (sslCtx != null) {
-                pipeline.addLast(sslCtx.newHandler(ch.alloc(), remoteAddress.getHostName(), remoteAddress.getPort()));
-            }
-            if (enableCompression) {
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-            }
-
-            pipeline.addLast(new ByteArrayDecoder());
-            pipeline.addLast(new ByteArrayEncoder());
-
-            pipeline.addLast(new DirectClientHandler(onReceive));
-        }
-    }
-
     private EventLoopGroup      group;
-    private boolean             enableSsl, enableCompression;
+    private boolean             enableSsl;
     private DirectClientHandler handler;
 
     public boolean isEnableSsl() {
@@ -69,15 +37,11 @@ public class ProxyClient extends Disposable {
     }
 
     public boolean isEnableCompression() {
-        return enableCompression;
+        return App.convert(App.readSetting(Compression_Key), boolean.class);
     }
 
-    public void setEnableCompression(boolean enableCompression) {
-        this.enableCompression = enableCompression;
-    }
-
-    public ProxyClient() {
-        enableCompression = true;
+    public boolean isConnected() {
+        return !super.isClosed() && handler != null && handler.isConnected();
     }
 
     @Override
@@ -104,8 +68,27 @@ public class ProxyClient extends Disposable {
         }
 
         Bootstrap b = new Bootstrap();
+        SslContext ssl = sslCtx;
         b.group(group = new NioEventLoopGroup()).channel(NioSocketChannel.class)
-                .handler(new DirectClientInitializer(sslCtx, enableCompression, remoteAddress, onReceive));
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        ChannelPipeline pipeline = ch.pipeline();
+                        if (ssl != null) {
+                            pipeline.addLast(
+                                    ssl.newHandler(ch.alloc(), remoteAddress.getHostName(), remoteAddress.getPort()));
+                        }
+                        if (isEnableCompression()) {
+                            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+                        }
+
+                        pipeline.addLast(new ByteArrayDecoder());
+                        pipeline.addLast(new ByteArrayEncoder());
+
+                        pipeline.addLast(new DirectClientHandler(onReceive));
+                    }
+                });
         ChannelFuture f = b.connect(remoteAddress).sync();
         handler = (DirectClientHandler) f.channel().pipeline().last();
     }

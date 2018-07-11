@@ -579,7 +579,18 @@ public class App {
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
-        if (value == null || toType.isInstance(value)) {
+        if (value == null) {
+            if (toType.isPrimitive()) {
+                if (boolean.class.equals(toType)) {
+                    value = false;
+                } else {
+                    value = 0;
+                }
+            } else {
+                return null;
+            }
+        }
+        if (toType.isInstance(value)) {
             return (T) value;
         }
         Class<?> strType = supportTypes.first();

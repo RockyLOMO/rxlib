@@ -8,6 +8,7 @@ import org.rx.socks.Sockets;
 import org.rx.util.MemoryStream;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,27 +17,31 @@ import static org.rx.Contract.require;
 public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
     private static class ClientState {
         private final ChannelHandlerContext serverChannel;
+        private ProxyClient                 directClient;
+        private SocketAddress               directAddress;
+
         private int                         length;
         private MemoryStream                stream;
-        private InetSocketAddress           remoteAddress;
-        private ProxyClient                 directClient;
 
-        public ClientState(ChannelHandlerContext ctx, boolean enableSsl, boolean enableCompression) {
+        public ClientState(ChannelHandlerContext ctx, boolean enableSsl, SocketAddress directAddress) {
             serverChannel = ctx;
-            stream = new MemoryStream(32, true);
             directClient = new ProxyClient();
             directClient.setEnableSsl(enableSsl);
-            directClient.setEnableCompression(enableCompression);
+            this.directAddress = directAddress;
+
+            stream = new MemoryStream(32, true);
         }
 
         public void transfer(byte[] bytes) {
-            if (remoteAddress == null) {
-                int offset = readRemoteAddress(bytes);
+            int offset = 0;
+            if (directAddress == null) {
+                offset = readRemoteAddress(bytes);
                 if (offset == -1) {
                     return;
                 }
-
-                directClient.connect(remoteAddress, (directChannel, data) -> {
+            }
+            if (!directClient.isConnected()) {
+                directClient.connect((InetSocketAddress) directAddress, (directChannel, data) -> {
                     serverChannel.writeAndFlush(data);
                 });
                 if (offset > 0) {
@@ -61,24 +66,27 @@ public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
                 return -1;
             }
 
-            remoteAddress = Sockets.parseAddress(Bytes.toString(stream.getBuffer(), 0, length));
+            directAddress = Sockets.parseAddress(Bytes.toString(stream.getBuffer(), 0, length));
             length = -1;
             return bytes.length - count;
         }
     }
 
     private final Map<ChannelHandlerContext, ClientState> clients;
-    private boolean                                       enableSsl, enableCompression;
+    private boolean                                       enableSsl;
+    private SocketAddress                                 directAddress;
 
-    public DirectServerHandler(boolean enableSsl, boolean enableCompression) {
+    public DirectServerHandler(boolean enableSsl, SocketAddress directAddress) {
+        require(directAddress);
+
         clients = new ConcurrentHashMap<>();
         this.enableSsl = enableSsl;
-        this.enableCompression = enableCompression;
+        this.directAddress = directAddress;
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, byte[] bytes) throws Exception {
-        ClientState state = clients.computeIfAbsent(ctx, p -> new ClientState(ctx, enableSsl, enableCompression));
+        ClientState state = clients.computeIfAbsent(ctx, p -> new ClientState(ctx, enableSsl, directAddress));
         state.transfer(bytes);
     }
 

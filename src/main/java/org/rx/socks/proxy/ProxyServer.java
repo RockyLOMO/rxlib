@@ -17,46 +17,19 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.SneakyThrows;
+import org.rx.App;
 import org.rx.Disposable;
+import org.rx.socks.Sockets;
 
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
 import static org.rx.Contract.require;
 
 public final class ProxyServer extends Disposable {
-    private static class DirectServerInitializer extends ChannelInitializer<SocketChannel> {
-        private final SslContext sslCtx;
-        private boolean          enableCompression;
-
-        public DirectServerInitializer(SslContext sslCtx, boolean enableCompression) {
-            this.sslCtx = sslCtx;
-            this.enableCompression = enableCompression;
-        }
-
-        @Override
-        public void initChannel(SocketChannel ch) {
-            ChannelPipeline pipeline = ch.pipeline();
-            if (sslCtx != null) {
-                pipeline.addLast(sslCtx.newHandler(ch.alloc()));
-            }
-            if (enableCompression) {
-                // Enable stream compression (you can remove these two if unnecessary)
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-            }
-
-            // Add the number codec first,
-            pipeline.addLast(new ByteArrayDecoder());
-            pipeline.addLast(new ByteArrayEncoder());
-
-            // and then business logic.
-            // Please note we create a handler for every new channel because it has stateful properties.
-            pipeline.addLast(new DirectServerHandler(sslCtx != null, enableCompression));
-        }
-    }
-
-    private EventLoopGroup group;
-    private boolean        enableSsl, enableCompression;
+    public static final String Compression_Key = "app.netProxy.compression";
+    private EventLoopGroup     group;
+    private boolean            enableSsl;
 
     public boolean isEnableSsl() {
         return enableSsl;
@@ -67,19 +40,11 @@ public final class ProxyServer extends Disposable {
     }
 
     public boolean isEnableCompression() {
-        return enableCompression;
-    }
-
-    public void setEnableCompression(boolean enableCompression) {
-        this.enableCompression = enableCompression;
+        return App.convert(App.readSetting(Compression_Key), boolean.class);
     }
 
     public boolean isBusy() {
         return group != null;
-    }
-
-    public ProxyServer() {
-        enableCompression = true;
     }
 
     @Override
@@ -89,10 +54,15 @@ public final class ProxyServer extends Disposable {
         }
     }
 
+    public void start(int localPort, SocketAddress directAddress) {
+        start(new InetSocketAddress(Sockets.AnyAddress, localPort), directAddress);
+    }
+
     @SneakyThrows
-    public void start(SocketAddress localAddress) {
+    public void start(SocketAddress localAddress, SocketAddress directAddress) {
         checkNotClosed();
         require(group == null);
+        require(localAddress);
 
         // Configure SSL.
         SslContext sslCtx = null;
@@ -102,9 +72,30 @@ public final class ProxyServer extends Disposable {
         }
 
         ServerBootstrap b = new ServerBootstrap();
+        SslContext ssl = sslCtx;
         b.group(group = new NioEventLoopGroup()).channel(NioServerSocketChannel.class)
-                .handler(new LoggingHandler(LogLevel.INFO))
-                .childHandler(new DirectServerInitializer(sslCtx, enableCompression));
+                .handler(new LoggingHandler(LogLevel.INFO)).childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        ChannelPipeline pipeline = ch.pipeline();
+                        if (ssl != null) {
+                            pipeline.addLast(ssl.newHandler(ch.alloc()));
+                        }
+                        if (isEnableCompression()) {
+                            // Enable stream compression (you can remove these two if unnecessary)
+                            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+                        }
+
+                        // Add the number codec first,
+                        pipeline.addLast(new ByteArrayDecoder());
+                        pipeline.addLast(new ByteArrayEncoder());
+
+                        // and then business logic.
+                        // Please note we create a handler for every new channel because it has stateful properties.
+                        pipeline.addLast(new DirectServerHandler(enableSsl, directAddress));
+                    }
+                });
         b.bind(localAddress).sync().channel().closeFuture().sync();
     }
 
