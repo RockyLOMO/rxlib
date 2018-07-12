@@ -1,6 +1,7 @@
 package org.rx.socks.proxy;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
@@ -28,6 +29,7 @@ import static org.rx.Contract.require;
 
 public final class ProxyServer extends Disposable {
     public static final String Compression_Key = "app.netProxy.compression";
+    public static final String ListenBlock_Key = "app.netProxy.listenBlock";
     private EventLoopGroup     group;
     private boolean            enableSsl;
 
@@ -43,8 +45,12 @@ public final class ProxyServer extends Disposable {
         return App.convert(App.readSetting(Compression_Key), boolean.class);
     }
 
-    public boolean isBusy() {
+    public boolean isListening() {
         return group != null;
+    }
+
+    private boolean isListenBlock() {
+        return App.convert(App.readSetting(ListenBlock_Key), boolean.class);
     }
 
     @Override
@@ -96,7 +102,10 @@ public final class ProxyServer extends Disposable {
                         pipeline.addLast(new DirectServerHandler(enableSsl, directAddress));
                     }
                 });
-        b.bind(localAddress).sync().channel().closeFuture().sync();
+        ChannelFuture f = b.bind(localAddress).sync();
+        if (isListenBlock()) {
+            f.channel().closeFuture().sync();
+        }
     }
 
     public void closeClients() {

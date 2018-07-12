@@ -1,7 +1,6 @@
 package org.rx.socks.proxy;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
@@ -40,8 +39,9 @@ public class ProxyClient extends Disposable {
         return App.convert(App.readSetting(Compression_Key), boolean.class);
     }
 
-    public boolean isConnected() {
-        return !super.isClosed() && handler != null && handler.isConnected();
+    public DirectClientHandler getHandler() {
+        checkNotClosed();
+        return handler;
     }
 
     @Override
@@ -98,14 +98,6 @@ public class ProxyClient extends Disposable {
         require(group != null);
         require(bytes);
 
-        return handler.send(bytes);
-    }
-
-    public ChannelFuture send(ByteBuf bytes) {
-        checkNotClosed();
-        require(group != null);
-        require(bytes);
-
-        return handler.send(bytes);
+        return getHandler().send(bytes);
     }
 }

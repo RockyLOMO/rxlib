@@ -560,9 +560,6 @@ public class App {
     }
 
     public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType, T defaultVal) {
-        if (val == null) {
-            return Tuple.of(true, null);
-        }
         require(toType);
 
         try {
