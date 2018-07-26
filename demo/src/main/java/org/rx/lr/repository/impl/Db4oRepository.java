@@ -54,11 +54,12 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
         return NQuery.of(invoke((Function<ObjectContainer, R>[]) new Function[]{func})).firstOrDefault();
     }
 
-    protected <R> List<R> invoke(Function<ObjectContainer, R>... funcList) {
+    protected synchronized <R> List<R> invoke(Function<ObjectContainer, R>... funcList) {
         require(funcList);
 
         List<R> result = new ArrayList<>();
-        ObjectContainer db = Db4o.openFile(config, dbPath);
+//        ObjectContainer db = Db4o.openFile(config, dbPath);
+        ObjectContainer db = App.getOrStore(Db4oRepository.class, "threadDb", k -> Db4o.openFile(config, dbPath));
         try {
             for (Function<ObjectContainer, R> function : funcList) {
                 result.add(function.apply(db));
@@ -67,9 +68,10 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
         } catch (Exception e) {
             db.rollback();
             throw e;
-        } finally {
-            db.close();
         }
+//        finally {
+//            db.close();
+//        }
         return result;
     }
 
