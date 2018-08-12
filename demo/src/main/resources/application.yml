@@ -2,3 +2,7 @@ server.port: 8080
 
 app:
   dbPath: /usr/local/jApp/db/rx.dat
+  sms:
+    appId: 1400123840
+    appKey: 0decfdc628b7d885a790524133f22339
+    smsSign: 隽斋

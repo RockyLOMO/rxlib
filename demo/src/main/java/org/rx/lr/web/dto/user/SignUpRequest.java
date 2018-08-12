@@ -7,15 +7,14 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class SignUpRequest {
+    private Integer smsCode;
+
     @NotNull
     @Length(min = 4, max = 12)
     private String userName;
-
-    @NotNull
+    //    @NotNull
     @Length(min = 8, max = 12)
     private String password;
-
     private String email;
-
     private String mobile;
 }

@@ -10,7 +10,7 @@ import static org.rx.lr.Application.PackName;
 
 @SpringBootApplication(scanBasePackages = PackName)
 @ImportResource("classpath:applicationContext.xml")
-@EnableAutoConfiguration
+//@EnableAutoConfiguration
 public class Application {
     public static final String PackName = "org.rx.lr";
 
