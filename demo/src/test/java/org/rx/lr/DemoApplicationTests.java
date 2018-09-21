@@ -15,6 +15,7 @@ public class DemoApplicationTests {
 
     @Test
     public void testSms() {
-        System.out.println(smsUtil.sendSms("17091916400", "您的验证码是520"));
+//        System.out.println(smsUtil.sendSms("17091916400", "您的验证码是520"));
+        System.out.println(smsUtil.sendSms("17091916400", 173531, "520"));
     }
 }

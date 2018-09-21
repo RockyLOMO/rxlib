@@ -8,9 +8,6 @@ import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2017/12/22
- */
 public class TestServletRequest implements ServletRequest {
     @Override
     public Object getAttribute(String s) {

@@ -20,7 +20,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class SmsService {
     public enum CodeType {
-        @Description("【隽斋】您的验证码是%s")
+        @Description("173531")
         UserComment
     }
 
@@ -70,7 +70,7 @@ public class SmsService {
         }
         //todo app
         Description desc = CodeType.class.getField(type.name()).getAnnotation(Description.class);
-        SmsSingleSenderResult result = smsUtil.sendSms(mobile, String.format(desc.value(), code));
+        SmsSingleSenderResult result = smsUtil.sendSms(mobile, Integer.valueOf(desc.value()), String.valueOf(code));
         if (Strings.isNullOrEmpty(result.errMsg)) {
             counter.count++;
         }

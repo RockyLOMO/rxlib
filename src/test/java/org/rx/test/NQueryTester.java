@@ -13,9 +13,6 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.Contract.toJsonString;
 
-/**
- * Created by IntelliJ IDEA. User: za-wangxiaoming Date: 2018/7/4
- */
 public class NQueryTester {
     @Test
     public void run() {
