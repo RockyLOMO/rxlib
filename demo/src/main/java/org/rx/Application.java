@@ -4,8 +4,6 @@ import lombok.SneakyThrows;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.service.Media;
 import org.rx.fl.service.TbMedia;
-import org.rx.socks.Sockets;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;
 
@@ -21,11 +19,17 @@ public class Application {
     public static void main(String[] args) {
         Logger.debug("app start.."); //init path
 //                Sockets.setHttpProxy("127.0.0.1:8888");
+        testMedia();
+//        SpringApplication.run(Application.class, args);
+    }
+
+    @SneakyThrows
+    private static void testMedia() {
         Media media = new TbMedia();
+        media.login();
         GoodsInfo goods = media.findGoods("https://m.tb.cn/h.3qxSSs4");
         String code = media.findAdv(goods);
         System.out.println("code: " + code);
         System.in.read();
-//        SpringApplication.run(Application.class, args);
     }
 }

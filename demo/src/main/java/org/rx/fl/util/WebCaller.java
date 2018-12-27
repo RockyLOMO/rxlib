@@ -3,6 +3,7 @@ package org.rx.fl.util;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import org.json.JSONObject;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -10,60 +11,96 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.App;
+import org.rx.Logger;
 import org.rx.NQuery;
 import org.springframework.util.CollectionUtils;
 
+import java.net.URI;
+import java.net.URL;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.rx.Contract.eq;
 import static org.rx.Contract.require;
 
 public final class WebCaller implements AutoCloseable {
-    private static Set<Cookie> cookies;
-    private static final ConcurrentLinkedQueue<ChromeDriver> Drivers = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentMap<String, Set<Cookie>> cookies;
+    private static final ChromeDriverService driverService;
+    private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
     private static final String FuncFormat = "function(){%s}";
-    static ChromeDriverService driverService;
+    private static final String dataPath = (String) App.readSetting("app.web.dataPath");
+    private static volatile int pathCounter;
 
     static {
+        cookies = new ConcurrentHashMap<>();
         System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.web.driver"));
-        driverService = new ChromeDriverService.Builder().withSilent(true).build();
+        driverService = new ChromeDriverService.Builder().build();
+        driverPool = new ConcurrentLinkedQueue<>();
     }
 
     public synchronized static void releaseAll() {
-        for (ChromeDriver driver : Drivers) {
-            driver.close();
+        for (ChromeDriver driver : NQuery.of(driverPool).toList()) {
+            driver.quit();
         }
-        Drivers.clear();
+        driverPool.clear();
     }
 
-    private ChromeDriver driver;
     @Getter
     @Setter
-    private boolean isMain;
-    static int i=0;
+    private boolean isBackground;
+    @Getter
+    @Setter
+    private boolean isShareCookie;
+    @Getter
+    @Setter
+    private boolean enableImage;
+    private ChromeDriver driver;
 
-    public WebCaller() {
-        driver = Drivers.poll();
+    private ChromeDriver getDriver() {
         if (driver == null) {
+            System.out.println("create driver...");
             ChromeOptions opt = new ChromeOptions();
-//            opt.setHeadless(true);
-            opt.addArguments("disable-infobars", "--disable-extensions","--disable-dev-shm-usage","--profile-directory=\"Profile "+(i++)+"\"",
-                    "--no-sandbox","disable-web-security", "user-data-dir=D:\\rx2", "ash-enable-unified-desktop");
+            opt.setHeadless(isBackground);
             opt.setAcceptInsecureCerts(true);
+            opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
+//                    "disable-extensions", "disable-plugins", "disable-java",
+//                    "no-sandbox", "disable-dev-shm-usage",
+                    "disable-web-security", "ash-enable-unified-desktop");
+            if (!enableImage) {
+                opt.addArguments("disable-images");
+            }
             opt.setCapability("applicationCacheEnabled", true);
             opt.setCapability("browserConnectionEnabled", true);
             opt.setCapability("hasTouchScreen", true);
             opt.setCapability("networkConnectionEnabled", true);
             opt.setCapability("strictFileInteractability", true);
-            driver = new ChromeDriver( opt);
+            driver = new ChromeDriver(driverService, opt);
 //            driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
         }
+        return driver;
+    }
+
+    public String getCurrentUrl() {
+        return getDriver().getCurrentUrl();
+    }
+
+    public String getCurrentHandle() {
+        return getDriver().getWindowHandle();
+    }
+
+    public WebCaller() {
+        enableImage = true;
+        driver = driverPool.poll();
     }
 
     @Override
     public void close() {
-        Drivers.add(driver);
+        if (driver == null) {
+            return;
+        }
+        driverPool.add(driver);
         driver = null;
     }
 
@@ -75,11 +112,14 @@ public final class WebCaller implements AutoCloseable {
     public void navigateUrl(String url, By locator) {
         require(url);
 
-        if (!isMain && !CollectionUtils.isEmpty(cookies)) {
+        ChromeDriver driver = getDriver();
+        if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
             try {
-                for (Cookie p : cookies) {
-                    System.out.println("load cookie: " + p.getDomain() + "-" + p.getName() + "=" + p.getValue());
+                String host = new URL(url).getHost();
+                Set<Cookie> set = cookies.get(host);
+                for (Cookie p : set) {
+                    Logger.info("%s load cookie: " + p.getDomain() + "-" + p.getName() + "=" + p.getValue(), host);
                     manage.addCookie(p);
                 }
             } catch (UnableToSetCookieException e) {
@@ -96,17 +136,23 @@ public final class WebCaller implements AutoCloseable {
 //        Logger.info("navigateUrl %s %s", url, status);
 
         if (locator != null) {
-            WebDriverWait wait = new WebDriverWait(driver, 20);
-            wait.until(ExpectedConditions.presenceOfElementLocated(locator));
+            waitElementLocated(locator);
         }
-        if (isMain) {
+        if (isShareCookie) {
+            String host = new URL(getCurrentUrl()).getHost();
+            Set<Cookie> set = cookies.get(host);
+            if (set == null) {
+                set = Collections.synchronizedSet(new HashSet<>());
+            }
             WebDriver.Options manage = driver.manage();
-            cookies = manage.getCookies();
+            set.addAll(manage.getCookies());
+            cookies.put(host, set);
         }
     }
 
-    public String getCurrentUrl() {
-        return driver.getCurrentUrl();
+    private void waitElementLocated(By locator) {
+        WebDriverWait wait = new WebDriverWait(getDriver(), 10);
+        wait.until(ExpectedConditions.presenceOfElementLocated(locator));
     }
 
     public NQuery<String> getAttributeValues(By by, String attrName) {
@@ -122,9 +168,44 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public NQuery<WebElement> findElements(By by) {
+        return findElements(by, null);
+    }
+
+    public NQuery<WebElement> findElements(By by, By waiter) {
         require(by);
 
-        return NQuery.of(driver.findElements(by));
+        if (waiter != null) {
+            waitElementLocated(waiter);
+        }
+        return NQuery.of(getDriver().findElements(by));
+    }
+
+    public String openTab() {
+        ChromeDriver driver = getDriver();
+        driver.executeScript("window.open('about:blank','_blank')");
+        return NQuery.of(driver.getWindowHandles()).last();
+    }
+
+    public void switchTab(String winHandle) {
+        require(winHandle);
+
+        getDriver().switchTo().window(winHandle);
+    }
+
+    public void closeTab(String winHandle) {
+        require(winHandle);
+
+        ChromeDriver driver = getDriver();
+        String current = driver.getWindowHandle();
+        boolean isSelf = current.equals(winHandle);
+        if (!isSelf) {
+            switchTab(winHandle);
+        }
+        driver.close();
+        if (isSelf) {
+            current = NQuery.of(driver.getWindowHandles()).first();
+        }
+        switchTab(current);
     }
 
 //    public WebElement findElementById(String id) {

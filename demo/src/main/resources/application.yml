@@ -2,7 +2,8 @@ server.port: 8080
 
 app:
   web:
-    driver: D:\Downloads\chromedriver_win32\chromedriver.exe
+    driver: D:\usr\chrome\chromedriver.exe
+    dataPath: D:\usr\chrome\data
   dbPath: /usr/local/jApp/db/rx.dat
   sms:
     appId: 1400123840
