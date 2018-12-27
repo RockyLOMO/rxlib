@@ -9,7 +9,7 @@ import springfox.documentation.spi.DocumentationType;
 import springfox.documentation.spring.web.plugins.Docket;
 import springfox.documentation.swagger2.annotations.EnableSwagger2;
 
-import static org.rx.lr.Application.PackName;
+import static org.rx.Application.PackName;
 
 @Configuration
 @EnableSwagger2
