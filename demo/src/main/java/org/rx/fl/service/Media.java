@@ -5,6 +5,8 @@ import org.rx.fl.model.GoodsInfo;
 public interface Media {
     boolean isLogin();
 
+    void keepLogin();
+
     void login();
 
     String findLink(String content);

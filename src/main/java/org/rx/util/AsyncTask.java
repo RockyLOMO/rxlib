@@ -48,7 +48,7 @@ public final class AsyncTask {
     private final ThreadPoolExecutor executor;
     private ScheduledExecutorService scheduler;
 
-    public synchronized ScheduledExecutorService getScheduler() {
+    private synchronized ScheduledExecutorService getScheduler() {
         if (scheduler == null) {
             scheduler = new ScheduledThreadPoolExecutor(ThreadCount, threadFactory);
         }

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script src="https://code.jquery.com/jquery-2.2.4.js"></script>
+<script>
+    function f() {
+        var users = [];
+        $(".chat_item").attr("rx", 0);
+        $(".web_wechat_reddot_middle").each(function (i, o) {
+            var me = $(o), chatItem = me.parent().parent();
+            chatItem.attr("rx", 1);
+            users.push({
+                openId: chatItem.attr("data-username"),
+                nickname: chatItem.find(".nickname_text").text(),
+                unread: me.text()
+            });
+        });
+        return users.toString();
+    }
+</script>
+</body>
+</html>

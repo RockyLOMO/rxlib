@@ -4,11 +4,9 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.InvalidOperationException;
 import org.rx.Logger;
-import org.rx.NQuery;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.AsyncTask;
@@ -26,7 +24,7 @@ public class TbMedia implements Media {
 
     public TbMedia() {
         caller = new WebCaller();
-        AsyncTask.TaskFactory.
+        AsyncTask.TaskFactory.schedule(() -> keepLogin(), 30 * 1000);
     }
 
     @SneakyThrows
@@ -162,6 +160,17 @@ public class TbMedia implements Media {
             }
             Logger.info("login ok...");
             isLogin = true;
+        });
+    }
+
+    @SneakyThrows
+    public void keepLogin() {
+        caller.invokeSelf(caller -> {
+            caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli");
+            if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
+                Logger.info("login keep error...");
+            }
+            Thread.sleep(100);
         });
     }
 }
