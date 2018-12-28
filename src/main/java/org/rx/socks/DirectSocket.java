@@ -1,12 +1,13 @@
 package org.rx.socks;
 
 import org.rx.*;
+import org.rx.bean.$;
 import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.cache.BytesSegment;
 import org.rx.util.AsyncTask;
-import org.rx.util.MemoryStream;
+import org.rx.io.MemoryStream;
 
 import java.io.IOException;
 import java.net.*;
@@ -14,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import static org.rx.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.Contract.isNull;
 import static org.rx.Contract.require;
 

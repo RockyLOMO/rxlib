@@ -1,6 +1,6 @@
-package org.rx;
+package org.rx.bean;
 
-import org.rx.bean.Const;
+import org.rx.App;
 
 import static org.rx.App.CacheContainerKind.*;
 

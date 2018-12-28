@@ -3,7 +3,6 @@ package org.rx.fl.util;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
-import org.json.JSONObject;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -11,25 +10,33 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.App;
+import org.rx.InvalidOperationException;
 import org.rx.Logger;
 import org.rx.NQuery;
-import org.springframework.util.CollectionUtils;
 
-import java.net.URI;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.rx.Contract.eq;
 import static org.rx.Contract.require;
 
 public final class WebCaller implements AutoCloseable {
+    public static final class SkipSelfInvokeException extends RuntimeException {
+        public SkipSelfInvokeException() {
+            super("Skip self invoke");
+        }
+    }
+
     private static final ConcurrentMap<String, Set<Cookie>> cookies;
     private static final ChromeDriverService driverService;
     private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
-    private static final String FuncFormat = "function(){%s}";
     private static final String dataPath = (String) App.readSetting("app.web.dataPath");
     private static volatile int pathCounter;
 
@@ -57,29 +64,44 @@ public final class WebCaller implements AutoCloseable {
     @Setter
     private boolean enableImage;
     private ChromeDriver driver;
+    private ReentrantLock locker;
 
     private ChromeDriver getDriver() {
         if (driver == null) {
-            System.out.println("create driver...");
-            ChromeOptions opt = new ChromeOptions();
-            opt.setHeadless(isBackground);
-            opt.setAcceptInsecureCerts(true);
-            opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
-//                    "disable-extensions", "disable-plugins", "disable-java",
-//                    "no-sandbox", "disable-dev-shm-usage",
-                    "disable-web-security", "ash-enable-unified-desktop");
-            if (!enableImage) {
-                opt.addArguments("disable-images");
-            }
-            opt.setCapability("applicationCacheEnabled", true);
-            opt.setCapability("browserConnectionEnabled", true);
-            opt.setCapability("hasTouchScreen", true);
-            opt.setCapability("networkConnectionEnabled", true);
-            opt.setCapability("strictFileInteractability", true);
-            driver = new ChromeDriver(driverService, opt);
+            synchronized (this) {
+                if (driver == null) {
+                    System.out.println("create driver...");
+                    ChromeOptions opt = new ChromeOptions();
+                    opt.setHeadless(isBackground);
+                    opt.setAcceptInsecureCerts(true);
+                    opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
+                            "disable-extensions", "disable-plugins", "disable-java",
+                            "no-sandbox", "disable-dev-shm-usage",
+                            "disable-web-security");
+                    if (!enableImage) {
+                        opt.addArguments("disable-images");
+                    }
+                    opt.setCapability("applicationCacheEnabled", true);
+                    opt.setCapability("browserConnectionEnabled", true);
+                    opt.setCapability("hasTouchScreen", true);
+                    opt.setCapability("networkConnectionEnabled", true);
+                    driver = new ChromeDriver(driverService, opt);
 //            driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
+                }
+            }
         }
         return driver;
+    }
+
+    private Lock getLocker() {
+        if (locker == null) {
+            synchronized (this) {
+                if (locker == null) {
+                    locker = new ReentrantLock();
+                }
+            }
+        }
+        return locker;
     }
 
     public String getCurrentUrl() {
@@ -88,6 +110,10 @@ public final class WebCaller implements AutoCloseable {
 
     public String getCurrentHandle() {
         return getDriver().getWindowHandle();
+    }
+
+    public String getReadyState() {
+        return getDriver().executeScript("return document.readyState;").toString();
     }
 
     public WebCaller() {
@@ -102,6 +128,70 @@ public final class WebCaller implements AutoCloseable {
         }
         driverPool.add(driver);
         driver = null;
+    }
+
+    public void invokeSelf(Consumer<WebCaller> consumer) {
+        invokeSelf(consumer, false);
+    }
+
+    public void invokeSelf(Consumer<WebCaller> consumer, boolean skipIfLocked) {
+        require(consumer);
+        if (driver == null) {
+            throw new InvalidOperationException("The driver is closed");
+        }
+
+        Lock locker = getLocker();
+        if (!locker.tryLock()) {
+            if (skipIfLocked) {
+                return;
+            }
+            locker.lock();
+        }
+        try {
+            consumer.accept(this);
+        } finally {
+            locker.unlock();
+        }
+    }
+
+    public <T> T invokeSelf(Function<WebCaller, T> consumer) {
+        return invokeSelf(consumer, false);
+    }
+
+    public <T> T invokeSelf(Function<WebCaller, T> consumer, boolean skipIfLocked) {
+        require(consumer);
+        if (driver == null) {
+            throw new InvalidOperationException("The driver is closed");
+        }
+
+        Lock locker = getLocker();
+        if (!locker.tryLock()) {
+            if (skipIfLocked) {
+                return null;
+            }
+            locker.lock();
+        }
+        try {
+            return consumer.apply(this);
+        } finally {
+            locker.unlock();
+        }
+    }
+
+    public void invokeNew(Consumer<WebCaller> consumer) {
+        require(consumer);
+
+        try (WebCaller caller = new WebCaller()) {
+            consumer.accept(caller);
+        }
+    }
+
+    public <T> T invokeNew(Function<WebCaller, T> consumer) {
+        require(consumer);
+
+        try (WebCaller caller = new WebCaller()) {
+            return consumer.apply(caller);
+        }
     }
 
     public void navigateUrl(String url) {
@@ -127,13 +217,6 @@ public final class WebCaller implements AutoCloseable {
             }
         }
         driver.get(url);
-
-//        String status;
-//        while (!"complete".equals(status = driver.executeScript("return document.readyState").toString())) {
-//            Thread.sleep(100);
-//            Logger.info("navigateUrl %s %s", url, status);
-//        }
-//        Logger.info("navigateUrl %s %s", url, status);
 
         if (locator != null) {
             waitElementLocated(locator);
@@ -165,6 +248,21 @@ public final class WebCaller implements AutoCloseable {
         require(by, attrName);
 
         return findElements(by).where(p -> eq(attrVal, p.getAttribute(attrName)));
+    }
+
+    public WebElement findElement(By by) {
+        return findElement(by, true);
+    }
+
+    public WebElement findElement(By by, boolean throwOnEmpty) {
+        NQuery<WebElement> elements = findElements(by);
+        if (!elements.any()) {
+            if (throwOnEmpty) {
+                throw new InvalidOperationException("Element %s not found", by);
+            }
+            return null;
+        }
+        return elements.first();
     }
 
     public NQuery<WebElement> findElements(By by) {
@@ -208,34 +306,9 @@ public final class WebCaller implements AutoCloseable {
         switchTab(current);
     }
 
-//    public WebElement findElementById(String id) {
-//        try {
-//            return driver.findElementById(id);
-//        } catch (NoSuchElementException e) {
-//            Logger.info("findElementById(%s) null", id);
-//            return null;
-//        }
-//    }
-//
-//    public NQuery<WebElement> findElementsByName(String name) {
-//        try {
-//            return NQuery.of(driver.findElementsByName(name));
-//        } catch (NoSuchElementException e) {
-//            Logger.info("findElementsByName(%s) null", name);
-//            return NQuery.of();
-//        }
-//    }
-//
-//    public NQuery<WebElement> findElementsByCssSelector(String css) {
-//        try {
-//            return NQuery.of(driver.findElementsByCssSelector(css));
-//        } catch (NoSuchElementException e) {
-//            Logger.info("findElementsByCssSelector(%s) null", css);
-//            return NQuery.of();
-//        }
-//    }
-//
-//    public String getFunc(String script) {
-//        return String.format(FuncFormat, script);
-//    }
+    public Object executeScript(String script, Object... args) {
+        require(script);
+
+        return driver.executeScript(script, args);
+    }
 }

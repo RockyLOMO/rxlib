@@ -44,14 +44,23 @@ public final class AsyncTask {
 
     public static final AsyncTask    TaskFactory = new AsyncTask(0, Integer.MAX_VALUE, 4, new SynchronousQueue<>());
     private static final int         ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
+    private final ThreadFactory      threadFactory;
     private final ThreadPoolExecutor executor;
+    private ScheduledExecutorService scheduler;
+
+    public synchronized ScheduledExecutorService getScheduler() {
+        if (scheduler == null) {
+            scheduler = new ScheduledThreadPoolExecutor(ThreadCount, threadFactory);
+        }
+        return scheduler;
+    }
 
     private AsyncTask() {
         this(ThreadCount, ThreadCount, 4, new LinkedBlockingQueue<>());
     }
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
-        ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
+        threadFactory = new ThreadFactoryBuilder().setDaemon(true)
                 .setUncaughtExceptionHandler((thread, ex) -> Logger.error(ex, thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
         this.executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
@@ -79,5 +88,14 @@ public final class AsyncTask {
         require(task);
 
         executor.execute(taskName != null ? new NamedRunnable(taskName, task, null) : task);
+    }
+
+    public void schedule(Runnable task, long delay) {
+        schedule(task, delay, delay, null);
+    }
+
+    public void schedule(Runnable task, long initialDelay, long delay, String taskName) {
+        getScheduler().scheduleWithFixedDelay(new NamedRunnable(taskName, task, null), initialDelay, delay,
+                TimeUnit.MILLISECONDS);
     }
 }

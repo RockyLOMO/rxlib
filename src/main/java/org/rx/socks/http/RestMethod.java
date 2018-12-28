@@ -1,4 +1,4 @@
-package org.rx.feign;
+package org.rx.socks.http;
 
 import java.lang.annotation.*;
 

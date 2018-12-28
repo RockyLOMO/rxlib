@@ -6,10 +6,10 @@ import org.rx.test.bean.RestApi;
 import org.rx.test.bean.RestParam;
 import org.rx.test.bean.SourceBean;
 import org.rx.test.bean.TargetBean;
-import org.rx.util.BeanMapper;
-import org.rx.util.BinaryStream;
-import org.rx.util.MemoryStream;
-import org.rx.feign.RestClient;
+import org.rx.bean.BeanMapper;
+import org.rx.io.BinaryStream;
+import org.rx.io.MemoryStream;
+import org.rx.socks.http.RestClient;
 
 public class UtilTester {
     @Test

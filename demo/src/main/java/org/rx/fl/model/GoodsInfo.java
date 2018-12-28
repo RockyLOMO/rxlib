@@ -9,4 +9,8 @@ public class GoodsInfo implements Serializable {
     private String title;
     private String sellerId;
     private String sellerNickname;
+    private String price;
+    private String backRate;
+    private String backMoney;
+    private String couponAmount;
 }

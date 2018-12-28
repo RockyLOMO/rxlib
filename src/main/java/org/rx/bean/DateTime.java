@@ -9,7 +9,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.Contract.require;
 import static org.rx.Contract.values;
 

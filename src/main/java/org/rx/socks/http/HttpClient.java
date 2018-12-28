@@ -1,10 +1,11 @@
-package org.rx.socks;
+package org.rx.socks.http;
 
 import org.rx.App;
 import org.rx.Contract;
 import org.rx.SystemException;
 import org.rx.bean.Const;
-import org.rx.util.IOStream;
+import org.rx.socks.Sockets;
+import org.rx.io.IOStream;
 
 import java.io.UnsupportedEncodingException;
 import java.net.*;

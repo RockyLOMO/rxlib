@@ -3,23 +3,19 @@ package org.rx.test;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.*;
+import org.rx.bean.$;
 import org.rx.socks.Sockets;
 import org.rx.test.bean.*;
 
-import javax.servlet.*;
 import java.io.*;
 import java.net.Socket;
-import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
-import java.util.Enumeration;
-import java.util.Locale;
 import java.util.Map;
 
-import static org.rx.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.Contract.eq;
 import static org.rx.Contract.values;
 

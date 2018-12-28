@@ -1,12 +1,8 @@
 package org.rx.socks.proxy;
 
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.rx.Logger;
-import org.rx.socks.Bytes;
-import org.rx.socks.Sockets;
-import org.rx.util.MemoryStream;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;

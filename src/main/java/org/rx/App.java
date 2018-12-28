@@ -3,6 +3,7 @@ package org.rx;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
+import org.rx.bean.$;
 import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
@@ -10,7 +11,7 @@ import org.rx.security.MD5Util;
 import org.rx.bean.DateTime;
 import org.rx.util.Action;
 import org.rx.util.Func;
-import org.rx.util.MemoryStream;
+import org.rx.io.MemoryStream;
 import org.rx.util.StringBuilder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -40,7 +41,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 
-import static org.rx.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.Contract.*;
 
 public class App {
@@ -79,15 +80,8 @@ public class App {
     }
 
     public static HttpServletRequest getCurrentRequest() {
-        return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
-    }
-
-    public static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException ex) {
-            Logger.info("Thread sleep error: %s", ex.getMessage());
-        }
+        ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        return ra == null ? null : ra.getRequest();
     }
 
     public static <T, TR> TR retry(Function<T, TR> func, T state, int retryCount) {

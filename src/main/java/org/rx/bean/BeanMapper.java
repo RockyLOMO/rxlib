@@ -1,9 +1,9 @@
-package org.rx.util;
+package org.rx.bean;
 
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.App;
 
-import org.rx.bean.Const;
+import org.rx.util.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Array;

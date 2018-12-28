@@ -1,5 +1,6 @@
 package org.rx;
 
+import org.rx.bean.$;
 import org.rx.bean.BiTuple;
 import org.rx.bean.Const;
 import org.rx.bean.Tuple;

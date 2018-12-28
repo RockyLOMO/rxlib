@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import org.rx.App;
 import org.rx.bean.Const;
 
 import static org.rx.Contract.isNull;

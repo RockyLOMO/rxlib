@@ -2,7 +2,7 @@ package org.rx.socks;
 
 import org.rx.Logger;
 import org.rx.cache.BytesSegment;
-import org.rx.util.IOStream;
+import org.rx.io.IOStream;
 
 import java.io.IOException;
 import java.net.Socket;

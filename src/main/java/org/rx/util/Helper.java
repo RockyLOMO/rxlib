@@ -1,5 +1,8 @@
 package org.rx.util;
 
+import com.alibaba.fastjson.JSON;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
@@ -11,16 +14,14 @@ import org.rx.bean.Const;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 import static org.rx.Contract.require;
 import static org.rx.Contract.toJsonString;
 
+@Slf4j
 public class Helper {
     public static <T> String convertToXml(T obj) {
         require(obj);
@@ -52,41 +53,87 @@ public class Helper {
         }
     }
 
-    public static List<Object[]> readExcel(String filePath, boolean skipColumn) throws IOException {
-        List<Object[]> result = new ArrayList<>();
-        HSSFWorkbook workbook = new HSSFWorkbook(new FileInputStream(filePath));
-        for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
-            HSSFSheet sheet = workbook.getSheetAt(sheetIndex);
-            for (int rowIndex = skipColumn ? 1 : sheet.getFirstRowNum(); rowIndex < sheet.getLastRowNum(); rowIndex++) {
-                HSSFRow row = sheet.getRow(rowIndex);
-                List<Object> cellValues = new ArrayList<>();
-                for (int i = row.getFirstCellNum(); i < row.getLastCellNum(); i++) {
-                    HSSFCell cell = row.getCell(i);
-                    if (cell == null) {
-                        cellValues.add(null);
+    @SneakyThrows
+    public static Map<String, List<Object[]>> readExcel(InputStream in, boolean skipColumn) {
+        Map<String, List<Object[]>> data = new LinkedHashMap<>();
+        try (HSSFWorkbook workbook = new HSSFWorkbook(in)) {
+            for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
+                List<Object[]> rows = new ArrayList<>();
+                HSSFSheet sheet = workbook.getSheetAt(sheetIndex);
+                for (int rowIndex = skipColumn ? 1 : sheet.getFirstRowNum(); rowIndex <= sheet
+                        .getLastRowNum(); rowIndex++) {
+                    HSSFRow row = sheet.getRow(rowIndex);
+                    if (row == null) {
                         continue;
                     }
-                    Object value;
-                    switch (cell.getCellTypeEnum()) {
-                        case NUMERIC:
-                            value = cell.getNumericCellValue();
-                            break;
-                        case BOOLEAN:
-                            value = cell.getBooleanCellValue();
-                            break;
-                        default:
-                            value = cell.getStringCellValue();
-                            break;
+                    List<Object> cells = new ArrayList<>();
+                    for (int i = row.getFirstCellNum(); i < row.getLastCellNum(); i++) {
+                        HSSFCell cell = row.getCell(i);
+                        if (cell == null) {
+                            cells.add(null);
+                            continue;
+                        }
+                        Object value;
+                        switch (cell.getCellTypeEnum()) {
+                            case NUMERIC:
+                                value = cell.getNumericCellValue();
+                                break;
+                            case BOOLEAN:
+                                value = cell.getBooleanCellValue();
+                                break;
+                            default:
+                                value = cell.getStringCellValue();
+                                break;
+                        }
+                        cells.add(value);
                     }
-                    cellValues.add(value);
+                    if (cells.contains(null)) {
+                        log.debug(String.format("current=%s offset=%s count=%s -> %s/%s", JSON.toJSONString(cells),
+                                row.getFirstCellNum(), row.getLastCellNum(), rowIndex, sheetIndex));
+                    }
+                    rows.add(cells.toArray());
                 }
-                if (cellValues.contains(null)) {
-                    Logger.debug(String.format("current=%s offset=%s count=%s -> %s/%s", toJsonString(cellValues),
-                            row.getFirstCellNum(), row.getLastCellNum(), rowIndex, sheetIndex));
-                }
-                result.add(cellValues.toArray());
+                data.put(sheet.getSheetName(), rows);
             }
         }
-        return result;
+        return data;
+    }
+
+    @SneakyThrows
+    public static void writeExcel(OutputStream out, Map<String, List<Object[]>> data) {
+        try (HSSFWorkbook workbook = new HSSFWorkbook()) {
+            for (Map.Entry<String, List<Object[]>> entry : data.entrySet()) {
+                HSSFSheet sheet = workbook.getSheet(entry.getKey());
+                if (sheet == null) {
+                    sheet = workbook.createSheet(entry.getKey());
+                }
+                List<Object[]> rows = entry.getValue();
+                for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+                    HSSFRow row = sheet.getRow(rowIndex);
+                    if (row == null) {
+                        row = sheet.createRow(rowIndex);
+                    }
+                    Object[] cells = rows.get(rowIndex);
+                    for (int i = 0; i < cells.length; i++) {
+                        HSSFCell cell = row.getCell(i);
+                        if (cell == null) {
+                            cell = row.createCell(i);
+                        }
+                        Object val = cells[i];
+                        if (val == null) {
+                            continue;
+                        }
+                        String value;
+                        if (val instanceof Date) {
+                            value = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(val);
+                        } else {
+                            value = String.valueOf(val);
+                        }
+                        cell.setCellValue(value);
+                    }
+                }
+            }
+            workbook.write(out);
+        }
     }
 }

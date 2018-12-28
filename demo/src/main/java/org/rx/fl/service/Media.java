@@ -7,7 +7,11 @@ public interface Media {
 
     void login();
 
+    String findLink(String content);
+
     GoodsInfo findGoods(String url);
+
+    String findCouponAmount(String url);
 
     String findAdv(GoodsInfo goodsInfo);
 }

@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.io;
 
 import lombok.SneakyThrows;
 import org.rx.App;
@@ -6,6 +6,7 @@ import org.rx.Disposable;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
 import org.rx.bean.Const;
+import org.rx.util.StringBuilder;
 
 import java.io.*;
 

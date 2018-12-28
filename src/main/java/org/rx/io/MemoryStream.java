@@ -1,6 +1,6 @@
-package org.rx.util;
+package org.rx.io;
 
-import org.rx.$;
+import org.rx.bean.$;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
 import org.rx.cache.BytesSegment;

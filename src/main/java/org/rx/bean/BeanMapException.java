@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.bean;
 
 import org.rx.SystemException;
 
