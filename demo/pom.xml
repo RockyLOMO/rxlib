@@ -24,7 +24,7 @@
         <swagger.ver>2.8.0</swagger.ver>
         <projectlombok.version>1.16.20</projectlombok.version>
         <mapstruct.version>1.2.0.Final</mapstruct.version>
-        <rxlib.version>1.4</rxlib.version>
+        <rxlib.version>1.4-SNAPSHOT</rxlib.version>
         <guava.version>23.0</guava.version>
     </properties>
 
@@ -53,6 +53,16 @@
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>1.11.3</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna-platform</artifactId>
+            <version>5.2.0</version>
         </dependency>
 
         <dependency>
