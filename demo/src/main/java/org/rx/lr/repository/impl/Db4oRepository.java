@@ -8,15 +8,12 @@ import lombok.SneakyThrows;
 import org.rx.App;
 import org.rx.NQuery;
 import org.rx.SystemException;
+import org.rx.bean.BeanMapper;
 import org.rx.bean.DateTime;
 import org.rx.lr.repository.IRepository;
 import org.rx.lr.repository.model.common.DataObject;
 import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.repository.model.common.PagingParam;
-import org.rx.util.BeanMapper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

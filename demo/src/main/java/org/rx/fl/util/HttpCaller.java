@@ -4,7 +4,7 @@ import lombok.SneakyThrows;
 import okhttp3.*;
 import org.rx.Disposable;
 import org.rx.bean.Const;
-import org.rx.socks.HttpClient;
+import org.rx.socks.http.HttpClient;
 
 import java.net.URLDecoder;
 import java.util.Collections;

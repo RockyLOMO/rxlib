@@ -9,10 +9,7 @@ import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import org.rx.App;
-import org.rx.InvalidOperationException;
-import org.rx.Logger;
-import org.rx.NQuery;
+import org.rx.*;
 
 import java.net.URL;
 import java.util.*;
@@ -27,13 +24,7 @@ import java.util.function.Function;
 import static org.rx.Contract.eq;
 import static org.rx.Contract.require;
 
-public final class WebCaller implements AutoCloseable {
-    public static final class SkipSelfInvokeException extends RuntimeException {
-        public SkipSelfInvokeException() {
-            super("Skip self invoke");
-        }
-    }
-
+public final class WebCaller extends Disposable {
     private static final ConcurrentMap<String, Set<Cookie>> cookies;
     private static final ChromeDriverService driverService;
     private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
@@ -60,38 +51,8 @@ public final class WebCaller implements AutoCloseable {
     @Getter
     @Setter
     private boolean isShareCookie;
-    @Getter
-    @Setter
-    private boolean enableImage;
     private ChromeDriver driver;
     private ReentrantLock locker;
-
-    private ChromeDriver getDriver() {
-        if (driver == null) {
-            synchronized (this) {
-                if (driver == null) {
-                    System.out.println("create driver...");
-                    ChromeOptions opt = new ChromeOptions();
-                    opt.setHeadless(isBackground);
-                    opt.setAcceptInsecureCerts(true);
-                    opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
-                            "disable-extensions", "disable-plugins", "disable-java",
-                            "no-sandbox", "disable-dev-shm-usage",
-                            "disable-web-security");
-                    if (!enableImage) {
-                        opt.addArguments("disable-images");
-                    }
-                    opt.setCapability("applicationCacheEnabled", true);
-                    opt.setCapability("browserConnectionEnabled", true);
-                    opt.setCapability("hasTouchScreen", true);
-                    opt.setCapability("networkConnectionEnabled", true);
-                    driver = new ChromeDriver(driverService, opt);
-//            driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
-                }
-            }
-        }
-        return driver;
-    }
 
     private Lock getLocker() {
         if (locker == null) {
@@ -105,24 +66,39 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public String getCurrentUrl() {
-        return getDriver().getCurrentUrl();
+        return driver.getCurrentUrl();
     }
 
     public String getCurrentHandle() {
-        return getDriver().getWindowHandle();
+        return driver.getWindowHandle();
     }
 
     public String getReadyState() {
-        return getDriver().executeScript("return document.readyState;").toString();
+        return driver.executeScript("return document.readyState;").toString();
     }
 
     public WebCaller() {
-        enableImage = true;
         driver = driverPool.poll();
+        if (driver == null) {
+            System.out.println("create driver...");
+            ChromeOptions opt = new ChromeOptions();
+            opt.setHeadless(isBackground);
+            opt.setAcceptInsecureCerts(true);
+            opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
+                    "disable-extensions", "disable-plugins", "disable-java",
+                    "no-sandbox", "disable-dev-shm-usage",
+                    "disable-web-security");
+            opt.setCapability("applicationCacheEnabled", true);
+            opt.setCapability("browserConnectionEnabled", true);
+            opt.setCapability("hasTouchScreen", true);
+            opt.setCapability("networkConnectionEnabled", true);
+            driver = new ChromeDriver(driverService, opt);
+//            driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
+        }
     }
 
     @Override
-    public void close() {
+    protected void freeUnmanaged() {
         if (driver == null) {
             return;
         }
@@ -135,10 +111,8 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public void invokeSelf(Consumer<WebCaller> consumer, boolean skipIfLocked) {
+        checkNotClosed();
         require(consumer);
-        if (driver == null) {
-            throw new InvalidOperationException("The driver is closed");
-        }
 
         Lock locker = getLocker();
         if (!locker.tryLock()) {
@@ -159,10 +133,8 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public <T> T invokeSelf(Function<WebCaller, T> consumer, boolean skipIfLocked) {
+        checkNotClosed();
         require(consumer);
-        if (driver == null) {
-            throw new InvalidOperationException("The driver is closed");
-        }
 
         Lock locker = getLocker();
         if (!locker.tryLock()) {
@@ -179,6 +151,7 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public void invokeNew(Consumer<WebCaller> consumer) {
+        checkNotClosed();
         require(consumer);
 
         try (WebCaller caller = new WebCaller()) {
@@ -187,6 +160,7 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public <T> T invokeNew(Function<WebCaller, T> consumer) {
+        checkNotClosed();
         require(consumer);
 
         try (WebCaller caller = new WebCaller()) {
@@ -200,9 +174,9 @@ public final class WebCaller implements AutoCloseable {
 
     @SneakyThrows
     public void navigateUrl(String url, By locator) {
+        checkNotClosed();
         require(url);
 
-        ChromeDriver driver = getDriver();
         if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
             try {
@@ -234,17 +208,19 @@ public final class WebCaller implements AutoCloseable {
     }
 
     private void waitElementLocated(By locator) {
-        WebDriverWait wait = new WebDriverWait(getDriver(), 10);
+        WebDriverWait wait = new WebDriverWait(driver, 10);
         wait.until(ExpectedConditions.presenceOfElementLocated(locator));
     }
 
     public NQuery<String> getAttributeValues(By by, String attrName) {
+        checkNotClosed();
         require(by, attrName);
 
         return findElements(by).select(p -> p.getAttribute(attrName));
     }
 
     public NQuery<WebElement> findElementsByAttribute(By by, String attrName, String attrVal) {
+        checkNotClosed();
         require(by, attrName);
 
         return findElements(by).where(p -> eq(attrVal, p.getAttribute(attrName)));
@@ -255,6 +231,9 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public WebElement findElement(By by, boolean throwOnEmpty) {
+        checkNotClosed();
+        require(by);
+
         NQuery<WebElement> elements = findElements(by);
         if (!elements.any()) {
             if (throwOnEmpty) {
@@ -270,30 +249,33 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public NQuery<WebElement> findElements(By by, By waiter) {
+        checkNotClosed();
         require(by);
 
         if (waiter != null) {
             waitElementLocated(waiter);
         }
-        return NQuery.of(getDriver().findElements(by));
+        return NQuery.of(driver.findElements(by));
     }
 
     public String openTab() {
-        ChromeDriver driver = getDriver();
+        checkNotClosed();
+
         driver.executeScript("window.open('about:blank','_blank')");
         return NQuery.of(driver.getWindowHandles()).last();
     }
 
     public void switchTab(String winHandle) {
+        checkNotClosed();
         require(winHandle);
 
-        getDriver().switchTo().window(winHandle);
+        driver.switchTo().window(winHandle);
     }
 
     public void closeTab(String winHandle) {
+        checkNotClosed();
         require(winHandle);
 
-        ChromeDriver driver = getDriver();
         String current = driver.getWindowHandle();
         boolean isSelf = current.equals(winHandle);
         if (!isSelf) {
@@ -307,6 +289,7 @@ public final class WebCaller implements AutoCloseable {
     }
 
     public Object executeScript(String script, Object... args) {
+        checkNotClosed();
         require(script);
 
         return driver.executeScript(script, args);

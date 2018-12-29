@@ -1,4 +1,4 @@
-package org.rx.lr.config;
+package org.rx.common;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

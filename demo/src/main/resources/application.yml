@@ -4,7 +4,9 @@ app:
   web:
     driver: D:\usr\chrome\chromedriver.exe
     dataPath: D:\usr\chrome\data
-  dbPath: /usr/local/jApp/db/rx.dat
+    remoteMedia: true
+    remoteEndpoint: 127.0.0.1:8081
+  dbPath: /usr/local/_rx/db/rx.dat
   sms:
     appId: 1400123840
     appKey: 0decfdc628b7d885a790524133f22339

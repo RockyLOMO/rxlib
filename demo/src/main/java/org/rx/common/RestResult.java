@@ -1,4 +1,4 @@
-package org.rx.lr.web.dto.common;
+package org.rx.common;
 
 public class RestResult<T> {
     private int code;
