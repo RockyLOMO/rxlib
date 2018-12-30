@@ -43,11 +43,11 @@
         <appender-ref ref="infoAppender"/>
         <appender-ref ref="errorAppender"/>
     </logger>
-    <logger name="com.netflix" additivity="false">
-        <level value="INFO"/>
-        <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
+    <!--<logger name="org.rx" additivity="false">-->
+    <!--<level value="DEBUG"/>-->
+    <!--<appender-ref ref="infoAppender"/>-->
+    <!--<appender-ref ref="errorAppender"/>-->
+    <!--</logger>-->
     <logger name="infoLogger">
         <level value="DEBUG"/>
         <appender-ref ref="infoAppender"/>

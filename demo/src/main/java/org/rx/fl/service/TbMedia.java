@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.rx.InvalidOperationException;
-import org.rx.Logger;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
 import org.rx.fl.util.WebCaller;
@@ -48,17 +47,17 @@ public class TbMedia implements Media {
         return caller.invokeSelf(caller -> {
             try {
                 String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s", URLEncoder.encode(goodsInfo.getTitle(), "utf-8"));
-                Logger.debug("findAdv step1 %s", url);
+                log.info("findAdv step1 {}", url);
                 By first = By.cssSelector(".box-btn-left");
                 caller.navigateUrl(url, first);
                 List<WebElement> eBtns = caller.findElements(first).toList();
                 List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
                 List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
-                Logger.debug("findAdv step2 btnSize: %s\tsellerEles: %s\tmoneyEles: %s", eBtns.size(), eSellers.size(), eMoneys.size());
+                log.info("findAdv step2 btnSize: {}\tsellerEles: {}\tmoneyEles: {}", eBtns.size(), eSellers.size(), eMoneys.size());
                 for (int i = 0; i < eSellers.size(); i++) {
                     WebElement eSeller = eSellers.get(i);
                     String sellerName = goodsInfo.getSellerNickname().trim();
-                    Logger.debug("findAdv step3 %s == %s", sellerName, eSeller.getText());
+                    log.info("findAdv step3 {} == {}", sellerName, eSeller.getText());
                     if (sellerName.equals(eSeller.getText().trim())) {
                         int offset = i * 3;
                         goodsInfo.setPrice(eMoneys.get(offset).getText().trim());
@@ -71,14 +70,14 @@ public class TbMedia implements Media {
 //                    Logger.info("findAdv %s", e.getMessage());
                         caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
 //                }
-                        Logger.debug("findAdv step4-1 ok");
+                        log.info("findAdv step4-1 ok");
 
                         By waiter = By.cssSelector("button[mx-click=submit]");
                         WebElement btn42 = caller.findElements(waiter, waiter).first();
                         Thread.sleep(1000);
                         btn42.click();
 //                caller.executeScript("$('button[mx-click=submit]').click();");
-                        Logger.debug("findAdv step4-2 ok");
+                        log.info("findAdv step4-2 ok");
 
                         By step423 = By.cssSelector("#clipboard-target-2");
                         String couponUrl = null;
@@ -91,7 +90,7 @@ public class TbMedia implements Media {
                         WebElement btn43 = caller.findElements(waiter, waiter).first();
                         Thread.sleep(100);
                         btn43.click();
-                        Logger.debug("findAdv step4-3 ok");
+                        log.info("findAdv step4-3 ok");
 
                         eStep423 = caller.findElement(step423, false);
                         if (eStep423 != null) {
@@ -101,15 +100,15 @@ public class TbMedia implements Media {
                             goodsInfo.setCouponAmount("0");
                         }
                         String code = eStep423.getAttribute("value");
-                        Logger.info("Goods %s -> %s", toJsonString(goodsInfo), code);
+                        log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
                         return code;
                     }
                 }
-                Logger.info("Goods %s not found", goodsInfo.getTitle());
-                return null;
             } catch (Exception e) {
                 throw new InvalidOperationException(e);
             }
+            log.info("Goods {} not found", goodsInfo.getTitle());
+            return null;
         });
     }
 
@@ -139,10 +138,11 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault());
                     goodsInfo.setSellerNickname(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault());
                 }
-                Logger.info("FindGoods %s\n -> %s -> %s", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
+                log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
                 return goodsInfo;
             } catch (Exception e) {
-                throw new InvalidOperationException(e);
+                log.error("findGoods", e);
+                return null;
             }
         });
     }
@@ -151,11 +151,13 @@ public class TbMedia implements Media {
     public String findLink(String content) {
         int s = content.indexOf("http"), e;
         if (s == -1) {
-            throw new InvalidOperationException("Start flag not found %s", content);
+            log.info("Start flag not found {}", content);
+            return null;
         }
         e = content.indexOf(" ", s);
         if (e == -1) {
-            throw new InvalidOperationException("End flag not found %s", content);
+            log.info("End flag not found {}", content);
+            return null;
         }
         return content.substring(s, e);
     }
@@ -168,14 +170,14 @@ public class TbMedia implements Media {
                 caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli");
                 String url;
                 while ((url = caller.getCurrentUrl()).startsWith("https://www.alimama.com/member/login.htm")) {
-                    Logger.info("please login %s", url);
+                    log.info("please login {}", url);
                     isLogin = false;
                     Thread.sleep(1000);
                 }
                 if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com/myunion.htm")) {
                     login();
                 }
-                Logger.info("login ok...");
+                log.info("login ok...");
                 isLogin = true;
             } catch (Exception e) {
                 throw new InvalidOperationException(e);
@@ -187,12 +189,13 @@ public class TbMedia implements Media {
     @Override
     public void keepLogin() {
         caller.invokeSelf(caller -> {
-            caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli");
+            String noCache = String.format("&_t=%s", System.currentTimeMillis());
+            caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli" + noCache);
             if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
-                Logger.info("login keep error...");
+                log.info("login keep error...");
             } else {
-                Logger.info("login keep ok...");
+                log.info("login keep ok...");
             }
-        });
+        }, true);
     }
 }

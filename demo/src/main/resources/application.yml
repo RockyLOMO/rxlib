@@ -1,11 +1,18 @@
 server.port: 8080
 
 app:
-  web:
+  chrome:
     driver: D:\usr\chrome\chromedriver.exe
-    dataPath: D:\usr\chrome\data
-    remoteMedia: true
-    remoteEndpoint: 127.0.0.1:8081
+    logPath: D:\usr\chrome\logs
+    #dataPath: D:\usr\chrome\data
+    downloadPath: D:\usr\chrome\download
+    mobileMode: true
+    isBackground: false
+    initSize: 2
+  web:
+    mediaSize: 2
+    remoteMedia: false
+    remoteEndpoint: 127.0.0.1:8080
   dbPath: /usr/local/_rx/db/rx.dat
   sms:
     appId: 1400123840

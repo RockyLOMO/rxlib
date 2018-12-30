@@ -4,6 +4,7 @@ import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
+import org.rx.fl.model.AdvNotFoundReason;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
 import org.springframework.stereotype.Service;
@@ -33,9 +34,12 @@ public class MediaService {
         return queue;
     }
 
-    private static Media create(MediaType type) {
-        ConcurrentLinkedQueue<Media> queue = getQueue(type);
-        Media media = queue.poll();
+    private static Media create(MediaType type, boolean fromPool) {
+        Media media = null;
+        if (fromPool) {
+            ConcurrentLinkedQueue<Media> queue = getQueue(type);
+            media = queue.poll();
+        }
         if (media == null) {
             switch (type) {
                 case Jd:
@@ -53,19 +57,26 @@ public class MediaService {
         getQueue(media.getType()).add(media);
     }
 
-    public static void init(byte size) {
+    static {
+        Integer size = (Integer) App.readSetting("app.web.initSize");
+        if (size != null && size > 0) {
+            init(size);
+        }
+    }
+
+    public static void init(int count) {
+        log.info("init each media {} size", count);
         for (MediaType type : MediaType.values()) {
-            size -= getQueue(type).size();
-            for (int i = 0; i < size; i++) {
-                create(type);
+            for (int i = 0; i < count; i++) {
+                release(create(type, false));
             }
         }
     }
 
-    public static void invoke(MediaType type, Consumer<Media> consumer) {
+    private void invoke(MediaType type, Consumer<Media> consumer) {
         require(type, consumer);
 
-        Media media = create(type);
+        Media media = create(type, true);
         try {
             consumer.accept(media);
         } finally {
@@ -76,28 +87,38 @@ public class MediaService {
     public List<String> findAdv(String[] sourceArray) {
         List<String> list = new ArrayList<>();
         for (String source : sourceArray) {
-            Media media = create(MediaType.Taobao);
-
-            String url = media.findLink(source);
-
-            GoodsInfo goods = media.findGoods(url);
-
-            media.login();
-            String code = media.findAdv(goods);
-
-            Function<String, Double> convert = p -> {
-                if (Strings.isNullOrEmpty(p)) {
-                    return 0d;
+            invoke(MediaType.Taobao, media -> {
+                String url = media.findLink(source);
+                if (Strings.isNullOrEmpty(url)) {
+                    list.add(AdvNotFoundReason.NoLink.name());
+                    return;
                 }
-                return App.changeType(p.replace("￥", ""), double.class);
-            };
-            Double payAmount = convert.apply(goods.getPrice())
-                    - convert.apply(goods.getBackMoney())
-                    - convert.apply(goods.getCouponAmount());
-            String content = String.format("约反%s 优惠券%s 付费价￥%.2f；复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-                    goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
+                GoodsInfo goods = media.findGoods(url);
+                if (goods == null || Strings.isNullOrEmpty(goods.getSellerNickname())) {
+                    list.add(AdvNotFoundReason.NoGoods.name());
+                    return;
+                }
+                media.login();
+                String code = media.findAdv(goods);
+                if (Strings.isNullOrEmpty(code)) {
+                    list.add(AdvNotFoundReason.NoAdv.name());
+                    return;
+                }
 
-            list.add(content);
+                Function<String, Double> convert = p -> {
+                    if (Strings.isNullOrEmpty(p)) {
+                        return 0d;
+                    }
+                    return App.changeType(p.replace("￥", ""), double.class);
+                };
+                Double payAmount = convert.apply(goods.getPrice())
+                        - convert.apply(goods.getBackMoney())
+                        - convert.apply(goods.getCouponAmount());
+                String content = String.format("约反%s 优惠券%s 付费价￥%.2f；复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
+                        goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
+
+                list.add(content);
+            });
         }
         return list;
     }

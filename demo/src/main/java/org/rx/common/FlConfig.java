@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 public class FlConfig {
     private String driver;
     private String dataPath;
+    private int initSize;
     private boolean remoteMedia;
     private String remoteEndpoint;
 }

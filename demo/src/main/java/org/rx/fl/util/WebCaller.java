@@ -1,16 +1,20 @@
 package org.rx.fl.util;
 
+import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.*;
 
+import java.io.File;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,30 +28,93 @@ import java.util.function.Function;
 import static org.rx.Contract.eq;
 import static org.rx.Contract.require;
 
+@Slf4j
 public final class WebCaller extends Disposable {
     private static final ConcurrentMap<String, Set<Cookie>> cookies;
     private static final ChromeDriverService driverService;
     private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
-    private static final String dataPath = (String) App.readSetting("app.web.dataPath");
+    private static final String dataPath = (String) App.readSetting("app.chrome.dataPath");
     private static volatile int pathCounter;
 
     static {
         cookies = new ConcurrentHashMap<>();
-        System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.web.driver"));
-        driverService = new ChromeDriverService.Builder().build();
+        System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
+        driverService = new ChromeDriverService.Builder()
+                .usingAnyFreePort()
+                .withLogFile(new File((String) App.readSetting("app.chrome.logPath")))
+                .withVerbose(true).build();
         driverPool = new ConcurrentLinkedQueue<>();
+        Integer init = (Integer) App.readSetting("app.chrome.initSize");
+        if (init != null) {
+            init(init);
+        }
     }
 
-    public synchronized static void releaseAll() {
+    private static ChromeDriver create(boolean fromPool) {
+        ChromeDriver driver = null;
+        if (fromPool) {
+            driver = driverPool.poll();
+        }
+        if (driver == null) {
+            log.info("create driver...");
+            ChromeOptions opt = new ChromeOptions();
+            opt.setHeadless((boolean) App.readSetting("app.chrome.isBackground"));
+            opt.setAcceptInsecureCerts(true);
+            opt.setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
+
+            opt.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
+            opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
+            opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
+            opt.setCapability(CapabilityType.SUPPORTS_NETWORK_CONNECTION, true);
+            opt.setCapability("browserConnectionEnabled", true);
+
+            Map<String, Object> chromePrefs = new HashMap<>();
+            chromePrefs.put("download.default_directory", App.readSetting("app.chrome.downloadPath"));
+            chromePrefs.put("profile.default_content_settings.popups", 0);
+            chromePrefs.put("pdfjs.disabled", true);
+            opt.setExperimentalOption("prefs", chromePrefs);
+            if ((boolean) App.readSetting("app.chrome.mobileMode")) {
+                //--user-agent=android
+                opt.addArguments("user-agent=iphone");
+                Map<String, Object> emulations = new HashMap<>();
+                emulations.put("'deviceName'", "iPhone X");
+                opt.setExperimentalOption("mobileEmulation", emulations);
+            }
+
+            opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
+                    "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
+                    "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
+                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "no-experiments", "no-pings",
+                    "no-sandbox", "test-type");
+//            opt.addArguments("disable-dev-shm-usage");
+            if (!Strings.isNullOrEmpty(dataPath)) {
+                opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
+            }
+
+            driver = new ChromeDriver(driverService, opt);
+//        driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
+        }
+        return driver;
+    }
+
+    private static void release(ChromeDriver driver) {
+        driverPool.add(driver);
+    }
+
+    public static void init(int count) {
+        int left = count - driverPool.size();
+        for (int i = 0; i < left; i++) {
+            release(create(false));
+        }
+    }
+
+    public synchronized static void purgeAll() {
         for (ChromeDriver driver : NQuery.of(driverPool).toList()) {
             driver.quit();
         }
         driverPool.clear();
     }
 
-    @Getter
-    @Setter
-    private boolean isBackground;
     @Getter
     @Setter
     private boolean isShareCookie;
@@ -78,23 +145,7 @@ public final class WebCaller extends Disposable {
     }
 
     public WebCaller() {
-        driver = driverPool.poll();
-        if (driver == null) {
-            System.out.println("create driver...");
-            ChromeOptions opt = new ChromeOptions();
-            opt.setHeadless(isBackground);
-            opt.setAcceptInsecureCerts(true);
-            opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "disable-infobars",
-                    "disable-extensions", "disable-plugins", "disable-java",
-                    "no-sandbox", "disable-dev-shm-usage",
-                    "disable-web-security");
-            opt.setCapability("applicationCacheEnabled", true);
-            opt.setCapability("browserConnectionEnabled", true);
-            opt.setCapability("hasTouchScreen", true);
-            opt.setCapability("networkConnectionEnabled", true);
-            driver = new ChromeDriver(driverService, opt);
-//            driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
-        }
+        driver = create(true);
     }
 
     @Override
@@ -102,7 +153,7 @@ public final class WebCaller extends Disposable {
         if (driver == null) {
             return;
         }
-        driverPool.add(driver);
+        release(driver);
         driver = null;
     }
 

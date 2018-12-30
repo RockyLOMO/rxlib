@@ -6,13 +6,15 @@ import lombok.SneakyThrows;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.service.Media;
 import org.rx.fl.service.TbMedia;
+import org.rx.fl.util.WebCaller;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;
 
 import static org.rx.Application.PackName;
 
-@SpringBootApplication(scanBasePackages = PackName)
+//@SpringBootApplication(scanBasePackages = PackName)
+@SpringBootApplication
 @ImportResource("classpath:applicationContext.xml")
 public class Application {
     public static final String PackName = "org.rx";
@@ -22,9 +24,12 @@ public class Application {
         Logger.debug("app start.."); //init path
 
 //        Sockets.setHttpProxy("127.0.0.1:8888");
+        Class type = WebCaller.class;
+        WebCaller.init(2);
+        System.in.read();
 //        testMedia();
 
-        SpringApplication.run(Application.class, args);
+//        SpringApplication.run(Application.class, args);
     }
 
     @SneakyThrows

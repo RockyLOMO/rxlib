@@ -1,7 +1,15 @@
 package org.rx.fl.service;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.App;
+import org.rx.NQuery;
+import org.rx.bean.DateTime;
+import org.rx.bean.Tuple;
+import org.rx.common.ManualResetEvent;
 import org.rx.fl.model.MessageInfo;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
@@ -17,16 +25,47 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import static org.rx.Contract.toJsonString;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public final class WxBot implements Bot {
     public static final WxBot Instance = new WxBot();
     private static final String token = "wangyoufan";
-    //重复通知过滤
-    private static final ExpireKey expireKey = new DefaultExpireKey();
+//    //重复通知过滤
+//    private static final ExpireKey expireKey = new DefaultExpireKey();
+//    private static final Cache<String, Object> callCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS).build();
+
+    @Data
+    private static class CacheItem {
+        private final ManualResetEvent waiter;
+        private final DateTime createTime;
+        private String value;
+
+        public CacheItem() {
+            waiter = new ManualResetEvent(false);
+            createTime = DateTime.utcNow();
+        }
+    }
+
+    private static final ConcurrentHashMap<String, CacheItem> callCache = new ConcurrentHashMap<>();
+
+    static {
+        TaskFactory.schedule(() -> {
+            for (String k : NQuery.of(callCache.entrySet())
+                    .where(p -> DateTime.utcNow().addMinutes(-1).after(p.getValue().getCreateTime()))
+                    .select(p -> p.getKey())) {
+                callCache.remove(k);
+                log.info("callCache remove {}", k);
+            }
+        }, 40 * 1000);
+    }
 
     private Function<MessageInfo, String> event;
 
@@ -72,32 +111,53 @@ public final class WxBot implements Bot {
             outWrite(out, "Request signature is invalid");
             return;
         }
+
+        String toMsg = "";
         //转换XML
         EventMessage eventMessage = XMLConverUtil.convertToObject(EventMessage.class, in);
-        String key = eventMessage.getFromUserName() + "__"
+        String key = App.cacheKey(eventMessage.getFromUserName() + "__"
                 + eventMessage.getToUserName() + "__"
                 + eventMessage.getMsgId() + "__"
-                + eventMessage.getCreateTime();
-        if (expireKey.exists(key)) {
-            log.info("重复通知不作处理");
-            outWrite(out, "");
-            return;
+                + eventMessage.getCreateTime());
+//        if (expireKey.exists(key)) {
+//            log.info("重复通知不作处理");
+//            outWrite(out, "");
+//            return;
+//        }
+//        expireKey.add(key);
+        CacheItem cacheItem = callCache.get(key);
+        boolean isProduce = false;
+        if (cacheItem == null) {
+            synchronized (callCache) {
+                if ((cacheItem = callCache.get(key)) == null) {
+                    callCache.put(key, cacheItem = new CacheItem());
+                    isProduce = true;
+                    log.info("callCache produce {}", key);
+                }
+            }
         }
-        expireKey.add(key);
+        if (isProduce) {
+            log.info("recv: {}", toJsonString(eventMessage));
+            MessageInfo messageInfo = new MessageInfo();
+            messageInfo.setOpenId(eventMessage.getFromUserName());
+            if ("subscribe".equalsIgnoreCase(eventMessage.getEvent())) {
+                messageInfo.setSubscribe(true);
+            } else if ("text".equals(eventMessage.getMsgType())) {
+                messageInfo.setContent(eventMessage.getContent());
+            }
+            if (event != null) {
+                cacheItem.setValue(toMsg = event.apply(messageInfo));
+                cacheItem.waiter.set();
+            }
+        } else {
+            log.info("callCache consumer {}", key);
+            cacheItem.waiter.waitOne();
+        }
+        if (toMsg.isEmpty()) {
+            toMsg = cacheItem.getValue();
+        }
 
-        log.info("recv: {}", toJsonString(eventMessage));
-        MessageInfo messageInfo = new MessageInfo();
-        messageInfo.setOpenId(eventMessage.getFromUserName());
-        String toMsg = "";
-        if ("subscribe".equalsIgnoreCase(eventMessage.getEvent())) {
-            messageInfo.setSubscribe(true);
-        } else if ("text".equals(eventMessage.getMsgType())) {
-            messageInfo.setContent(eventMessage.getContent());
-        }
-        if (event != null) {
-            toMsg = event.apply(messageInfo);
-        }
-
+        log.info("send: {}", toMsg);
         //创建回复
         XMLMessage xmlTextMessage = new XMLTextMessage(eventMessage.getFromUserName(), eventMessage.getToUserName(), toMsg);
         xmlTextMessage.outputStreamWrite(out);

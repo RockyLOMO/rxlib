@@ -13,7 +13,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 @RestController
-@RequestMapping(value = "bot", method = RequestMethod.POST)
+//@RequestMapping(value = "bot", method = RequestMethod.POST)
 public class BotController {
     @Resource
     private HttpServletRequest request;
