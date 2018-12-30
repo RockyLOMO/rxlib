@@ -4,14 +4,13 @@ app:
   chrome:
     driver: D:\usr\chrome\chromedriver.exe
     logPath: D:\usr\chrome\logs
-    #dataPath: D:\usr\chrome\data
+    dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
-    mobileMode: true
     isBackground: false
     initSize: 2
-  web:
-    mediaSize: 2
-    remoteMedia: false
+  media:
+    coreSize: 1
+    remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
   dbPath: /usr/local/_rx/db/rx.dat
   sms:

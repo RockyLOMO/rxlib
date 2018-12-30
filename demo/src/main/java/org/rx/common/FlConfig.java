@@ -6,11 +6,9 @@ import org.springframework.stereotype.Component;
 
 @Data
 @Component
-@ConfigurationProperties(prefix = "app.web")
+@ConfigurationProperties(prefix = "app.media")
 public class FlConfig {
-    private String driver;
-    private String dataPath;
     private int initSize;
-    private boolean remoteMedia;
+    private boolean remoteMode;
     private String remoteEndpoint;
 }

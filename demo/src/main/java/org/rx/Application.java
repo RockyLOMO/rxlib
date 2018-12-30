@@ -24,12 +24,11 @@ public class Application {
         Logger.debug("app start.."); //init path
 
 //        Sockets.setHttpProxy("127.0.0.1:8888");
-        Class type = WebCaller.class;
-        WebCaller.init(2);
-        System.in.read();
+//        WebCaller.init(2);
+//        System.in.read();
 //        testMedia();
 
-//        SpringApplication.run(Application.class, args);
+        SpringApplication.run(Application.class, args);
     }
 
     @SneakyThrows

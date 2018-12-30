@@ -2,8 +2,11 @@ package org.rx.fl.service;
 
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
+import lombok.Data;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
+import org.rx.common.ManualResetEvent;
 import org.rx.fl.model.AdvNotFoundReason;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
@@ -20,25 +23,33 @@ import static org.rx.Contract.require;
 @Service
 @Slf4j
 public class MediaService {
-    private static final ConcurrentHashMap<MediaType, ConcurrentLinkedQueue<Media>> holder = new ConcurrentHashMap<>();
+    @Data
+    private static class HoldItem {
+        private final ConcurrentLinkedQueue<Media> queue = new ConcurrentLinkedQueue<>();
+        private final ManualResetEvent waiter = new ManualResetEvent(false);
+    }
 
-    private static ConcurrentLinkedQueue<Media> getQueue(MediaType type) {
-        ConcurrentLinkedQueue<Media> queue = holder.get(type);
-        if (queue == null) {
+    private static final ConcurrentHashMap<MediaType, HoldItem> holder = new ConcurrentHashMap<>();
+
+    private static HoldItem getHoldItem(MediaType type) {
+        HoldItem holdItem = holder.get(type);
+        if (holdItem == null) {
             synchronized (holder) {
-                if ((queue = holder.get(type)) == null) {
-                    holder.put(type, queue = new ConcurrentLinkedQueue<>());
+                if ((holdItem = holder.get(type)) == null) {
+                    holder.put(type, holdItem = new HoldItem());
                 }
             }
         }
-        return queue;
+        return holdItem;
     }
 
     private static Media create(MediaType type, boolean fromPool) {
         Media media = null;
+        HoldItem holdItem = null;
         if (fromPool) {
-            ConcurrentLinkedQueue<Media> queue = getQueue(type);
-            media = queue.poll();
+            holdItem = getHoldItem(type);
+            media = holdItem.queue.poll();
+            log.info("get media from pool {}", media == null ? "fail" : "ok");
         }
         if (media == null) {
             switch (type) {
@@ -46,28 +57,40 @@ public class MediaService {
                     media = new JdMedia();
                     break;
                 default:
-                    media = new TbMedia();
+                    if (holdItem == null) {
+                        media = new TbMedia();
+                    } else {
+                        while ((media = holdItem.queue.poll()) == null) {
+                            log.info("wait media from pool");
+                            holdItem.waiter.waitOne();
+                        }
+                        log.info("wait ok and get media");
+                    }
                     break;
             }
         }
         return media;
     }
 
+    @SneakyThrows
     private static void release(Media media) {
-        getQueue(media.getType()).add(media);
+        HoldItem holdItem = getHoldItem(media.getType());
+        holdItem.queue.add(media);
+        holdItem.waiter.set();
+        log.info("release media and waitHandle");
+        Thread.sleep(50);
+        holdItem.waiter.reset();
+        log.info("reset waitHandle");
     }
 
     static {
-        Integer size = (Integer) App.readSetting("app.web.initSize");
-        if (size != null && size > 0) {
-            init(size);
+        Integer size = (Integer) App.readSetting("app.media.coreSize");
+        if (size == null) {
+            size = 1;
         }
-    }
-
-    public static void init(int count) {
-        log.info("init each media {} size", count);
+        log.info("init each media {} size", size);
         for (MediaType type : MediaType.values()) {
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < size; i++) {
                 release(create(type, false));
             }
         }
@@ -109,12 +132,13 @@ public class MediaService {
                     if (Strings.isNullOrEmpty(p)) {
                         return 0d;
                     }
-                    return App.changeType(p.replace("￥", ""), double.class);
+                    return App.changeType(p.replace("￥", "")
+                            .replace("¥", ""), double.class);
                 };
                 Double payAmount = convert.apply(goods.getPrice())
                         - convert.apply(goods.getBackMoney())
                         - convert.apply(goods.getCouponAmount());
-                String content = String.format("约反%s 优惠券%s 付费价￥%.2f；复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
+                String content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
                         goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
 
                 list.add(content);

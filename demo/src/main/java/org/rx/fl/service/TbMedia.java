@@ -1,5 +1,6 @@
 package org.rx.fl.service;
 
+import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +30,7 @@ public class TbMedia implements Media {
 
     public TbMedia() {
         caller = new WebCaller();
-        AsyncTask.TaskFactory.schedule(() -> keepLogin(), 30 * 1000);
+        AsyncTask.TaskFactory.schedule(() -> keepLogin(), 4 * 1000, 40 * 1000, "TbMedia");
     }
 
     @SneakyThrows
@@ -74,16 +75,24 @@ public class TbMedia implements Media {
 
                         By waiter = By.cssSelector("button[mx-click=submit]");
                         WebElement btn42 = caller.findElements(waiter, waiter).first();
-                        Thread.sleep(1000);
+                        Thread.sleep(200);
                         btn42.click();
 //                caller.executeScript("$('button[mx-click=submit]').click();");
                         log.info("findAdv step4-2 ok");
 
-                        By step423 = By.cssSelector("#clipboard-target-2");
-                        String couponUrl = null;
-                        WebElement eStep423 = caller.findElement(step423, false);
-                        if (eStep423 != null) {
-                            couponUrl = eStep423.getAttribute("value");
+                        By codeXBy = By.cssSelector("#clipboard-target,#clipboard-target-2");
+                        caller.findElements(codeXBy, codeXBy).first();
+                        Thread.sleep(100);
+                        goodsInfo.setCouponAmount("0");
+                        WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
+                        if (code2 != null) {
+                            String couponUrl = code2.getAttribute("value");
+//                            couponUrl = (String) caller.executeScript("return $('#clipboard-target-2').val();");
+                            if (Strings.isNullOrEmpty(couponUrl)) {
+                                log.info("couponUrl is null -> {}", toJsonString(goodsInfo));
+                            } else {
+                                goodsInfo.setCouponAmount(findCouponAmount(couponUrl));
+                            }
                         }
 
                         waiter = By.cssSelector("li[mx-click='tab(4)']");
@@ -92,14 +101,8 @@ public class TbMedia implements Media {
                         btn43.click();
                         log.info("findAdv step4-3 ok");
 
-                        eStep423 = caller.findElement(step423, false);
-                        if (eStep423 != null) {
-                            goodsInfo.setCouponAmount(findCouponAmount(couponUrl));
-                        } else {
-                            eStep423 = caller.findElement(By.cssSelector("#clipboard-target"));
-                            goodsInfo.setCouponAmount("0");
-                        }
-                        String code = eStep423.getAttribute("value");
+                        WebElement codeX = caller.findElement(codeXBy);
+                        String code = codeX.getAttribute("value");
                         log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
                         return code;
                     }
@@ -165,9 +168,13 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public void login() {
+        if (isLogin) {
+            return;
+        }
+
         caller.invokeSelf(caller -> {
             try {
-                caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli");
+                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
                 String url;
                 while ((url = caller.getCurrentUrl()).startsWith("https://www.alimama.com/member/login.htm")) {
                     log.info("please login {}", url);
@@ -190,11 +197,13 @@ public class TbMedia implements Media {
     public void keepLogin() {
         caller.invokeSelf(caller -> {
             String noCache = String.format("&_t=%s", System.currentTimeMillis());
-            caller.navigateUrl("https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5spluli" + noCache);
+            caller.navigateUrl("https://pub.alimama.com/myunion.htm" + noCache);
             if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
                 log.info("login keep error...");
+                isLogin = false;
             } else {
                 log.info("login keep ok...");
+                isLogin = true;
             }
         }, true);
     }

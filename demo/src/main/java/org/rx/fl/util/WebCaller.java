@@ -73,26 +73,20 @@ public final class WebCaller extends Disposable {
             chromePrefs.put("profile.default_content_settings.popups", 0);
             chromePrefs.put("pdfjs.disabled", true);
             opt.setExperimentalOption("prefs", chromePrefs);
-            if ((boolean) App.readSetting("app.chrome.mobileMode")) {
-                //--user-agent=android
-                opt.addArguments("user-agent=iphone");
-                Map<String, Object> emulations = new HashMap<>();
-                emulations.put("'deviceName'", "iPhone X");
-                opt.setExperimentalOption("mobileEmulation", emulations);
-            }
 
             opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
                     "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                     "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
-                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "no-experiments", "no-pings",
-                    "no-sandbox", "test-type");
-//            opt.addArguments("disable-dev-shm-usage");
+                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-experiments", "no-pings",
+                    "no-sandbox", "test-type=webdriver");
+//            opt.addArguments("window-position=", "disable-dev-shm-usage");
             if (!Strings.isNullOrEmpty(dataPath)) {
                 opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
             }
 
             driver = new ChromeDriver(driverService, opt);
 //        driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
+//            driver.get("http://www.baidu.com");
         }
         return driver;
     }

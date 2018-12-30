@@ -21,11 +21,6 @@ public class MediaController {
     @Resource
     private MediaService mediaService;
 
-    @RequestMapping("init")
-    public void init(Byte size) {
-        MediaService.init(size);
-    }
-
     @RequestMapping("findAdv")
     public List<String> findAdv(String sourceArray) {
         return mediaService.findAdv(App.split(sourceArray, ","));
