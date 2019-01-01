@@ -76,9 +76,9 @@ public final class WebCaller extends Disposable {
 
             opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
                     "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
-                    "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
-                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-experiments", "no-pings",
-                    "no-sandbox", "test-type=webdriver");
+                    "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
+                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
+                    "ash-force-desktop", "disable-background-mode", "no-sandbox", "test-type=webdriver");
 //            opt.addArguments("window-position=", "disable-dev-shm-usage");
             if (!Strings.isNullOrEmpty(dataPath)) {
                 opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
