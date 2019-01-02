@@ -1,14 +1,11 @@
 package org.rx.fl.service;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
 import org.rx.NQuery;
 import org.rx.bean.DateTime;
-import org.rx.bean.Tuple;
 import org.rx.common.ManualResetEvent;
 import org.rx.fl.model.MessageInfo;
 import weixin.popular.bean.message.EventMessage;
@@ -25,10 +22,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import static org.rx.Contract.toJsonString;
@@ -40,7 +34,6 @@ public final class WxBot implements Bot {
     private static final String token = "wangyoufan";
 //    //重复通知过滤
 //    private static final ExpireKey expireKey = new DefaultExpireKey();
-//    private static final Cache<String, Object> callCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS).build();
 
     @Data
     private static class CacheItem {

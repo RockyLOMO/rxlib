@@ -85,6 +85,6 @@ public class BotService {
                 toMsg = adv;
             }
         }
-        return String.format(messageFormat, toMsg);
+        return toMsg != null && toMsg.startsWith("http") ? toMsg : String.format(messageFormat, toMsg);
     }
 }

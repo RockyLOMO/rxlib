@@ -1,10 +1,13 @@
 package org.rx.fl.service;
 
 import com.google.common.base.Strings;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.App;
@@ -12,12 +15,12 @@ import org.rx.InvalidOperationException;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
 import org.rx.fl.util.WebCaller;
-import org.rx.util.AsyncTask;
 
 import java.net.URLEncoder;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
@@ -30,6 +33,7 @@ public class TbMedia implements Media {
             "https://pub.alimama.com/manage/overview/index.htm?spm=a219t.7900221/1.1998910419.dbb742793.6f2075a54ffHxF",
             "https://pub.alimama.com/manage/selection/list.htm?spm=a219t.7900221/1.1998910419.d3d9c63c9.6f2075a54ffHxF"};
     private static final int sleepMillis = 100;
+    private static final Cache<String, Object> cache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS).build();
 
     @Getter
     private boolean isLogin;
@@ -42,7 +46,7 @@ public class TbMedia implements Media {
 
     public TbMedia() {
         caller = new WebCaller();
-        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 35 * 1000, "TbMedia");
+        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 40 * 1000, "TbMedia");
     }
 
     @SneakyThrows
@@ -62,11 +66,7 @@ public class TbMedia implements Media {
                 String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getTitle(), "utf-8"), System.currentTimeMillis());
                 log.info("findAdv step1 {}", url);
                 By first = By.cssSelector(".box-btn-left");
-                App.retry(p -> {
-                    caller.navigateUrl(url, first);
-                    return null;
-                }, null, 2);
-                Thread.sleep(sleepMillis);
+                caller.navigateUrl(url, first);
                 List<WebElement> eBtns = caller.findElements(first).toList();
                 List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
                 List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
@@ -81,30 +81,41 @@ public class TbMedia implements Media {
                         goodsInfo.setBackRate(eMoneys.get(offset + 1).getText().trim());
                         goodsInfo.setBackMoney(eMoneys.get(offset + 2).getText().trim());
 
-                        try {
-                            eBtns.get(i).click();
-                        } catch (WebDriverException e) {
-                            log.info("findAdv step4-1 click {}", e.getMessage());
-                            caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
-                            Thread.sleep(sleepMillis);
-                        }
+//                        try {
+////                            Thread.sleep(sleepMillis);  //睡不睡都会step4-1 click unknown error
+//                            eBtns.get(i).click();
+//                        } catch (WebDriverException e) {
+//                            log.info("findAdv step4-1 click {}", e.getMessage());
+                        caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
+//                        }
                         log.info("findAdv step4-1 ok");
 
-                        By waiter = By.cssSelector("button[mx-click=submit]");
+                        By waiter = By.cssSelector("button[mx-click=submit]");//.dialog-ft button:eq(0)
                         WebElement btn42 = caller.findElements(waiter, waiter).first();
-                        Thread.sleep(sleepMillis);
                         try {
+//                            Thread.sleep(sleepMillis);
                             btn42.click();
                         } catch (WebDriverException e) {
                             log.info("findAdv step4-2 click %s", e.getMessage());
                             caller.executeScript("$('button[mx-click=submit]').click();");
-                            Thread.sleep(sleepMillis);
                         }
+//                        Thread.sleep(sleepMillis);
                         log.info("findAdv step4-2 ok");
 
                         By hybridCodeBy = By.cssSelector("#clipboard-target,#clipboard-target-2");
-                        caller.findElements(hybridCodeBy, hybridCodeBy).first();
-                        Thread.sleep(sleepMillis);
+                        int j = 0;
+                        while (j < 4) {
+                            try {
+                                caller.waitElementLocated(hybridCodeBy, 1, 1);
+                                break;
+                            } catch (Exception e) {
+                                log.info("btn42 reClick -> reason: {}", e.getMessage());
+                                btn42 = caller.findElement(waiter);
+                                btn42.click();
+                            }
+                            j++;
+                        }
+//                        Thread.sleep(sleepMillis);
                         goodsInfo.setCouponAmount("0");
                         Future<String> future = null;
                         WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
@@ -125,7 +136,7 @@ public class TbMedia implements Media {
 
                         waiter = By.cssSelector("li[mx-click='tab(4)']");
                         WebElement btn43 = caller.findElements(waiter, waiter).first();
-                        Thread.sleep(sleepMillis);
+//                        Thread.sleep(sleepMillis);
                         btn43.click();
                         log.info("findAdv step4-3 ok");
 
@@ -151,23 +162,24 @@ public class TbMedia implements Media {
         });
     }
 
+    @SneakyThrows
     @Override
     public String findCouponAmount(String url) {
-        return caller.invokeNew(caller -> {
+        return (String) cache.get(url, () -> caller.invokeNew(caller -> {
             By first = By.cssSelector(".coupons-price");
             caller.navigateUrl(url, first);
             return caller.findElement(first).getText().trim();
-        });
+        }));
     }
 
+    @SneakyThrows
     @Override
     public GoodsInfo findGoods(String url) {
-        return caller.invokeNew(caller -> {
+        return (GoodsInfo) cache.get(url, () -> caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 By hybridSelector = By.cssSelector(".tb-main-title,input[name=title]");
                 caller.navigateUrl(url, hybridSelector);
-//                Thread.sleep(sleepMillis);
                 WebElement hybridElement = caller.findElement(hybridSelector);
                 if (caller.getCurrentUrl().contains(".taobao.com/")) {
                     goodsInfo.setTitle(hybridElement.getText().trim());
@@ -177,13 +189,14 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault().trim());
                     goodsInfo.setSellerNickname(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
                 }
+                goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
                 log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
                 return goodsInfo;
             } catch (Exception e) {
                 log.error("findGoods", e);
                 return null;
             }
-        });
+        }));
     }
 
     @Override

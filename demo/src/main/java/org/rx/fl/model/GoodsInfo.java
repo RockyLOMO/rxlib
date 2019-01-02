@@ -7,6 +7,7 @@ import java.io.Serializable;
 @Data
 public class GoodsInfo implements Serializable {
     private String title;
+    private String imageUrl;
     private String sellerId;
     private String sellerNickname;
     private String price;

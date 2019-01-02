@@ -252,9 +252,33 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    private void waitElementLocated(By locator) {
-        WebDriverWait wait = new WebDriverWait(driver, 10);
-        wait.until(ExpectedConditions.presenceOfElementLocated(locator));
+    public void waitElementLocated(By locator) {
+        waitElementLocated(locator, 5, 2);
+    }
+
+    public void waitElementLocated(By locator, long timeOutInSeconds, int retryCount) {
+        SystemException lastEx = null;
+        int i = 1;
+
+        while (i <= retryCount) {
+            try {
+                WebDriverWait wait = new WebDriverWait(driver, timeOutInSeconds);
+                wait.until(ExpectedConditions.presenceOfElementLocated(locator));
+                return;
+            } catch (Exception e) {
+                log.info("waitElementLocated: {}", e.getMessage());
+                if (findElements(locator).any()) {
+                    return;
+                }
+                if (i == retryCount) {
+                    lastEx = SystemException.wrap(e);
+                }
+
+                ++i;
+            }
+        }
+
+        throw lastEx;
     }
 
     public NQuery<String> getAttributeValues(By by, String attrName) {
