@@ -2,7 +2,7 @@ package org.rx.lr.repository.model;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.rx.lr.repository.model.common.DataObject;
+import org.rx.repository.DataObject;
 
 import java.util.UUID;
 

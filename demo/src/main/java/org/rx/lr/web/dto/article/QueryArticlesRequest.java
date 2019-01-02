@@ -2,7 +2,7 @@ package org.rx.lr.web.dto.article;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.rx.lr.repository.model.common.PagingParam;
+import org.rx.repository.PagingParam;
 
 import java.util.List;
 import java.util.UUID;

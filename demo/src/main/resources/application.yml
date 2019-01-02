@@ -7,12 +7,13 @@ app:
     dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
     isBackground: false
-    initSize: 2
+    initSize: 0
   media:
-    coreSize: 1
+    coreSize: 0
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
-  dbPath: /usr/local/_rx/db/rx.dat
+  repository:
+    dbFile: /usr/local/_rx/db/rx.dat
   sms:
     appId: 1400123840
     appKey: 0decfdc628b7d885a790524133f22339

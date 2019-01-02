@@ -138,6 +138,7 @@ public class MediaService {
                 Double payAmount = convert.apply(goods.getPrice())
                         - convert.apply(goods.getBackMoney())
                         - convert.apply(goods.getCouponAmount());
+                String flUrl = String.format("http://xxxx.com/tb.html?taowords={淘口令}&url={返利链接}&image={图片地址}", "");
                 String content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
                         goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
 

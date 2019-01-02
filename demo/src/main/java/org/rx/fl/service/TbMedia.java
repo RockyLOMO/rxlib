@@ -156,7 +156,7 @@ public class TbMedia implements Media {
         return caller.invokeNew(caller -> {
             By first = By.cssSelector(".coupons-price");
             caller.navigateUrl(url, first);
-            return caller.findElement(first).getText();
+            return caller.findElement(first).getText().trim();
         });
     }
 
@@ -167,15 +167,15 @@ public class TbMedia implements Media {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 By hybridSelector = By.cssSelector(".tb-main-title,input[name=title]");
                 caller.navigateUrl(url, hybridSelector);
-                Thread.sleep(sleepMillis);
+//                Thread.sleep(sleepMillis);
                 WebElement hybridElement = caller.findElement(hybridSelector);
                 if (caller.getCurrentUrl().contains(".taobao.com/")) {
-                    goodsInfo.setTitle(hybridElement.getText());
-                    goodsInfo.setSellerNickname(caller.findElement(By.cssSelector(".shop-name-link")).getText());
+                    goodsInfo.setTitle(hybridElement.getText().trim());
+                    goodsInfo.setSellerNickname(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
                 } else {
                     goodsInfo.setTitle(hybridElement.getAttribute("value"));
-                    goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault());
-                    goodsInfo.setSellerNickname(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault());
+                    goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault().trim());
+                    goodsInfo.setSellerNickname(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
                 }
                 log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
                 return goodsInfo;

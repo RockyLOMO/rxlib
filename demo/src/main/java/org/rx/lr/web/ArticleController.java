@@ -1,8 +1,8 @@
 package org.rx.lr.web;
 
-import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.service.ArticleService;
 import org.rx.lr.web.dto.article.*;
+import org.rx.repository.PagedResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;

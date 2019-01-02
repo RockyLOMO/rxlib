@@ -1,8 +1,4 @@
-package org.rx.lr.repository;
-
-import org.rx.lr.repository.model.common.DataObject;
-import org.rx.lr.repository.model.common.PagedResult;
-import org.rx.lr.repository.model.common.PagingParam;
+package org.rx.repository;
 
 import java.util.List;
 import java.util.UUID;

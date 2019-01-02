@@ -1,4 +1,4 @@
-package org.rx.lr.repository.impl;
+package org.rx.repository.impl;
 
 import com.db4o.Db4o;
 import com.db4o.ObjectContainer;
@@ -6,14 +6,14 @@ import com.db4o.ObjectSet;
 import com.db4o.config.Configuration;
 import lombok.SneakyThrows;
 import org.rx.App;
+import org.rx.InvalidOperationException;
 import org.rx.NQuery;
-import org.rx.SystemException;
 import org.rx.bean.BeanMapper;
 import org.rx.bean.DateTime;
-import org.rx.lr.repository.IRepository;
-import org.rx.lr.repository.model.common.DataObject;
-import org.rx.lr.repository.model.common.PagedResult;
-import org.rx.lr.repository.model.common.PagingParam;
+import org.rx.repository.IRepository;
+import org.rx.repository.DataObject;
+import org.rx.repository.PagedResult;
+import org.rx.repository.PagingParam;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,7 +23,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.Contract.as;
 import static org.rx.Contract.require;
 
 @Component
@@ -33,9 +32,9 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
 
     @SneakyThrows
     public Db4oRepository() {
-        dbPath = (String) App.readSetting("app.dbPath");
+        dbPath = (String) App.readSetting("app.repository.dbFile");
         if (dbPath == null) {
-            throw SystemException.wrap(new IllegalArgumentException("app.dbPath配置为空"));
+            throw new InvalidOperationException("app.repository.dbFile is empty");
         }
         String dir = dbPath;
         int i = dir.lastIndexOf(".");

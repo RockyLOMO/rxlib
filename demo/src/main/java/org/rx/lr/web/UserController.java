@@ -1,9 +1,9 @@
 package org.rx.lr.web;
 
-import org.rx.lr.repository.model.common.PagedResult;
 import org.rx.lr.service.SmsService;
 import org.rx.lr.service.UserService;
 import org.rx.lr.web.dto.user.*;
+import org.rx.repository.PagedResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
