@@ -17,9 +17,7 @@ import org.rx.*;
 import java.io.File;
 import java.net.URL;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -30,14 +28,12 @@ import static org.rx.Contract.require;
 
 @Slf4j
 public final class WebCaller extends Disposable {
-    private static final ConcurrentMap<String, Set<Cookie>> cookies;
     private static final ChromeDriverService driverService;
     private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
     private static final String dataPath = (String) App.readSetting("app.chrome.dataPath");
     private static volatile int pathCounter;
 
     static {
-        cookies = new ConcurrentHashMap<>();
         System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
         driverService = new ChromeDriverService.Builder()
                 .usingAnyFreePort()
@@ -226,7 +222,7 @@ public final class WebCaller extends Disposable {
             WebDriver.Options manage = driver.manage();
             try {
                 String host = new URL(url).getHost();
-                Set<Cookie> set = cookies.get(host);
+                Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
                 for (Cookie p : set) {
                     Logger.info("%s load cookie: " + p.getDomain() + "-" + p.getName() + "=" + p.getValue(), host);
                     manage.addCookie(p);
@@ -241,14 +237,8 @@ public final class WebCaller extends Disposable {
             waitElementLocated(locator);
         }
         if (isShareCookie) {
-            String host = new URL(getCurrentUrl()).getHost();
-            Set<Cookie> set = cookies.get(host);
-            if (set == null) {
-                set = Collections.synchronizedSet(new HashSet<>());
-            }
             WebDriver.Options manage = driver.manage();
-            set.addAll(manage.getCookies());
-            cookies.put(host, set);
+            HttpCaller.CookieContainer.saveFromResponse(getCurrentUrl(), manage.getCookies());
         }
     }
 

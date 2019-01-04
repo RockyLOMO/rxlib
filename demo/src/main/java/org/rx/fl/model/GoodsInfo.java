@@ -6,12 +6,13 @@ import java.io.Serializable;
 
 @Data
 public class GoodsInfo implements Serializable {
-    private String title;
+    private String id;
+    private String name;
     private String imageUrl;
     private String sellerId;
-    private String sellerNickname;
+    private String sellerName;
     private String price;
-    private String backRate;
-    private String backMoney;
+    private String rebateRatio;
+    private String rebateAmount;
     private String couponAmount;
 }

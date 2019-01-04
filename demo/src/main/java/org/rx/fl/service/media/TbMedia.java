@@ -1,4 +1,4 @@
-package org.rx.fl.service;
+package org.rx.fl.service.media;
 
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
@@ -7,17 +7,22 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
-import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.App;
 import org.rx.InvalidOperationException;
+import org.rx.bean.DateTime;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
+import org.rx.fl.model.OrderInfo;
+import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
+import org.rx.util.Helper;
 
+import java.io.File;
 import java.net.URLEncoder;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +37,6 @@ public class TbMedia implements Media {
             "https://pub.alimama.com/myunion.htm#!/report/zone/zone_self?spm=a219t.7664554.a214tr8.2.a0e435d9ahtooV",
             "https://pub.alimama.com/manage/overview/index.htm?spm=a219t.7900221/1.1998910419.dbb742793.6f2075a54ffHxF",
             "https://pub.alimama.com/manage/selection/list.htm?spm=a219t.7900221/1.1998910419.d3d9c63c9.6f2075a54ffHxF"};
-    private static final int sleepMillis = 100;
     private static final Cache<String, Object> cache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS).build();
 
     @Getter
@@ -57,13 +61,25 @@ public class TbMedia implements Media {
         login();
     }
 
+    @Override
+    public List<OrderInfo> findOrders(DateTime start, DateTime end) {
+        String fp = "yyyy-MM-dd";
+        String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.60a135d9iv17LD&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
+
+        String filePath = App.readSetting("app.chrome.downloadPath") + File.separator + UUID.randomUUID().toString() + ".xls";
+        HttpCaller caller = new HttpCaller();
+        caller.getDownload(url, filePath);
+        Helper.readExcel()
+        return null;
+    }
+
     @SneakyThrows
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
         checkLogin();
         return caller.invokeSelf(caller -> {
             try {
-                String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getTitle(), "utf-8"), System.currentTimeMillis());
+                String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8"), System.currentTimeMillis());
                 log.info("findAdv step1 {}", url);
                 By first = By.cssSelector(".box-btn-left");
                 caller.navigateUrl(url, first);
@@ -73,13 +89,13 @@ public class TbMedia implements Media {
                 log.info("findAdv step2 btnSize: {}\tsellerEles: {}\tmoneyEles: {}", eBtns.size(), eSellers.size(), eMoneys.size());
                 for (int i = 0; i < eSellers.size(); i++) {
                     WebElement eSeller = eSellers.get(i);
-                    String sellerName = goodsInfo.getSellerNickname().trim();
+                    String sellerName = goodsInfo.getSellerName().trim();
                     log.info("findAdv step3 {} == {}", sellerName, eSeller.getText());
                     if (sellerName.equals(eSeller.getText().trim())) {
                         int offset = i * 3;
                         goodsInfo.setPrice(eMoneys.get(offset).getText().trim());
-                        goodsInfo.setBackRate(eMoneys.get(offset + 1).getText().trim());
-                        goodsInfo.setBackMoney(eMoneys.get(offset + 2).getText().trim());
+                        goodsInfo.setRebateRatio(eMoneys.get(offset + 1).getText().trim());
+                        goodsInfo.setRebateAmount(eMoneys.get(offset + 2).getText().trim());
 
 //                        try {
 ////                            Thread.sleep(sleepMillis);  //睡不睡都会step4-1 click unknown error
@@ -157,7 +173,7 @@ public class TbMedia implements Media {
             } catch (Exception e) {
                 throw new InvalidOperationException(e);
             }
-            log.info("Goods {} not found", goodsInfo.getTitle());
+            log.info("Goods {} not found", goodsInfo.getName());
             return null;
         });
     }
@@ -182,12 +198,12 @@ public class TbMedia implements Media {
                 caller.navigateUrl(url, hybridSelector);
                 WebElement hybridElement = caller.findElement(hybridSelector);
                 if (caller.getCurrentUrl().contains(".taobao.com/")) {
-                    goodsInfo.setTitle(hybridElement.getText().trim());
-                    goodsInfo.setSellerNickname(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
+                    goodsInfo.setName(hybridElement.getText().trim());
+                    goodsInfo.setSellerName(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
                 } else {
-                    goodsInfo.setTitle(hybridElement.getAttribute("value"));
+                    goodsInfo.setName(hybridElement.getAttribute("value"));
                     goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault().trim());
-                    goodsInfo.setSellerNickname(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
+                    goodsInfo.setSellerName(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
                 }
                 goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
                 log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
@@ -242,8 +258,7 @@ public class TbMedia implements Media {
     }
 
     @SneakyThrows
-    @Override
-    public void keepLogin() {
+    private void keepLogin() {
         caller.invokeSelf(caller -> {
             String noCache = String.format("&_t=%s", System.currentTimeMillis());
             int i = ThreadLocalRandom.current().nextInt(0, keepLoginUrl.length);

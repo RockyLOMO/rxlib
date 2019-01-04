@@ -1,8 +1,13 @@
-package org.rx.fl.service;
+package org.rx.fl.service.media;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.DateTime;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
+import org.rx.fl.model.OrderInfo;
+import org.rx.fl.service.media.Media;
+
+import java.util.List;
 
 @Slf4j
 public class JdMedia implements Media {
@@ -24,6 +29,11 @@ public class JdMedia implements Media {
     @Override
     public void login() {
 
+    }
+
+    @Override
+    public List<OrderInfo> findOrders(DateTime start, DateTime end) {
+        return null;
     }
 
     @Override

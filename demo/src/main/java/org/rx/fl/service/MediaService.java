@@ -6,14 +6,15 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
-import org.rx.InvalidOperationException;
 import org.rx.common.ManualResetEvent;
 import org.rx.fl.model.AdvNotFoundReason;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
+import org.rx.fl.service.media.JdMedia;
+import org.rx.fl.service.media.Media;
+import org.rx.fl.service.media.TbMedia;
 import org.springframework.stereotype.Service;
 
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -131,25 +132,25 @@ public class MediaService {
                 }
 
                 String content;
-//                Function<String, Double> convert = p -> {
-//                    if (Strings.isNullOrEmpty(p)) {
-//                        return 0d;
-//                    }
-//                    return App.changeType(p.replace("￥", "")
-//                            .replace("¥", ""), double.class);
-//                };
-//                Double payAmount = convert.apply(goods.getPrice())
-//                        - convert.apply(goods.getBackMoney())
-//                        - convert.apply(goods.getCouponAmount());
-//                String content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-//                        goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
-                try {
-                    content = String.format("http://taoyouhui.ml/tb.html#/%s/%s",
-                            code.replace("￥", ""),
-                            URLEncoder.encode(goods.getImageUrl(), "utf-8"));
-                } catch (Exception e) {
-                    throw new InvalidOperationException(e);
-                }
+                Function<String, Double> convert = p -> {
+                    if (Strings.isNullOrEmpty(p)) {
+                        return 0d;
+                    }
+                    return App.changeType(p.replace("￥", "")
+                            .replace("¥", ""), double.class);
+                };
+                Double payAmount = convert.apply(goods.getPrice())
+                        - convert.apply(goods.getBackMoney())
+                        - convert.apply(goods.getCouponAmount());
+                content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
+                        goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
+//                try {
+//                    content = String.format("http://taoyouhui.ml/tb.html#/%s/%s",
+//                            code.replace("￥", ""),
+//                            URLEncoder.encode(goods.getImageUrl(), "utf-8"));
+//                } catch (Exception e) {
+//                    throw new InvalidOperationException(e);
+//                }
 
                 list.add(content);
             });

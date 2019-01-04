@@ -4,14 +4,11 @@ import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.rx.fl.model.GoodsInfo;
-import org.rx.fl.service.Media;
-import org.rx.fl.service.TbMedia;
-import org.rx.fl.util.WebCaller;
+import org.rx.fl.service.media.Media;
+import org.rx.fl.service.media.TbMedia;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;
-
-import static org.rx.Application.PackName;
 
 //@SpringBootApplication(scanBasePackages = PackName)
 @SpringBootApplication
