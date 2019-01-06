@@ -120,7 +120,7 @@ public class MediaService {
                     return;
                 }
                 GoodsInfo goods = media.findGoods(url);
-                if (goods == null || Strings.isNullOrEmpty(goods.getSellerNickname())) {
+                if (goods == null || Strings.isNullOrEmpty(goods.getSellerName())) {
                     list.add(AdvNotFoundReason.NoGoods.name());
                     return;
                 }
@@ -140,10 +140,10 @@ public class MediaService {
                             .replace("¥", ""), double.class);
                 };
                 Double payAmount = convert.apply(goods.getPrice())
-                        - convert.apply(goods.getBackMoney())
+                        - convert.apply(goods.getRebateAmount())
                         - convert.apply(goods.getCouponAmount());
                 content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-                        goods.getBackMoney(), goods.getCouponAmount(), payAmount, code);
+                        goods.getRebateAmount(), goods.getCouponAmount(), payAmount, code);
 //                try {
 //                    content = String.format("http://taoyouhui.ml/tb.html#/%s/%s",
 //                            code.replace("￥", ""),

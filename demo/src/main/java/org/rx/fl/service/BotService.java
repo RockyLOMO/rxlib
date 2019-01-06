@@ -40,7 +40,8 @@ public class BotService {
         if (config.isRemoteMode()) {
             Map<String, String> data = new HashMap<>();
             data.put("sourceArray", msg.getContent());
-            String json = HttpCaller.Instance.httpPost(String.format("http://%s/media/findAdv", config.getRemoteEndpoint()), data);
+            HttpCaller caller = new HttpCaller();
+            String json = caller.post(String.format("http://%s/media/findAdv", config.getRemoteEndpoint()), data);
             if (Strings.isNullOrEmpty(json)) {
                 toMsg = defaultSendMessage;
             } else {

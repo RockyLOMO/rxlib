@@ -21,10 +21,10 @@ public class JdMedia implements Media {
         return false;
     }
 
-    @Override
-    public void keepLogin() {
-
-    }
+//    @Override
+//    public void keepLogin() {
+//
+//    }
 
     @Override
     public void login() {

@@ -65,7 +65,9 @@ public final class WebCaller extends Disposable {
             opt.setCapability("browserConnectionEnabled", true);
 
             Map<String, Object> chromePrefs = new HashMap<>();
-            chromePrefs.put("download.default_directory", App.readSetting("app.chrome.downloadPath"));
+            String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
+            App.createDirectory(downloadPath);
+            chromePrefs.put("download.default_directory", downloadPath);
             chromePrefs.put("profile.default_content_settings.popups", 0);
             chromePrefs.put("pdfjs.disabled", true);
             opt.setExperimentalOption("prefs", chromePrefs);
@@ -224,7 +226,7 @@ public final class WebCaller extends Disposable {
                 String host = new URL(url).getHost();
                 Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
                 for (Cookie p : set) {
-                    Logger.info("%s load cookie: " + p.getDomain() + "-" + p.getName() + "=" + p.getValue(), host);
+                    log.debug("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
                     manage.addCookie(p);
                 }
             } catch (UnableToSetCookieException e) {

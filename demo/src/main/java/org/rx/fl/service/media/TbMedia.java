@@ -1,9 +1,11 @@
 package org.rx.fl.service.media;
 
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
@@ -11,18 +13,21 @@ import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.App;
 import org.rx.InvalidOperationException;
+import org.rx.NQuery;
 import org.rx.bean.DateTime;
+import org.rx.bean.Tuple;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
 import org.rx.fl.model.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.Helper;
+import org.springframework.util.CollectionUtils;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.net.URLEncoder;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -41,6 +46,9 @@ public class TbMedia implements Media {
 
     @Getter
     private boolean isLogin;
+    @Getter
+    @Setter
+    private String downloadFileDateFormat;
     private WebCaller caller;
 
     @Override
@@ -49,7 +57,9 @@ public class TbMedia implements Media {
     }
 
     public TbMedia() {
+        downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller();
+        caller.setShareCookie(true);
         TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 40 * 1000, "TbMedia");
     }
 
@@ -61,16 +71,50 @@ public class TbMedia implements Media {
         login();
     }
 
+    @SneakyThrows
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
         String fp = "yyyy-MM-dd";
         String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.60a135d9iv17LD&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
+        log.info("findOrders\n{}", url);
 
-        String filePath = App.readSetting("app.chrome.downloadPath") + File.separator + UUID.randomUUID().toString() + ".xls";
+        String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
+        App.createDirectory(downloadPath);
+        String filePath = downloadPath + File.separator + "TbMedia-" + DateTime.now().toString(downloadFileDateFormat) + ".xls";
         HttpCaller caller = new HttpCaller();
         caller.getDownload(url, filePath);
-        Helper.readExcel()
-        return null;
+        List<OrderInfo> orders = new ArrayList<>();
+        try (FileInputStream in = new FileInputStream(caller.getDownload(url, filePath))) {
+            Map<String, List<Object[]>> excel = Helper.readExcel(in, false);
+            List<Object[]> list = excel.get("Page1");
+            if (CollectionUtils.isEmpty(list)) {
+                return Collections.emptyList();
+            }
+
+            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#预估收入,status#订单状态,createTime#创建时间";
+            Object[] cols = list.get(0);
+            NQuery<Tuple<String, Integer>> tuples = NQuery.of(mapStr.split(","))
+                    .select(p -> {
+                        String[] pair = p.split("#");
+                        return Tuple.of(pair[0], findIndex(cols, pair[1]));
+                    });
+            for (int i = 1; i < list.size(); i++) {
+                Object[] vals = list.get(i);
+                JSONObject json = new JSONObject();
+                json.putAll(tuples.toMap(p -> p.left, p -> vals[p.right]));
+                orders.add(json.toJavaObject(OrderInfo.class));
+            }
+        }
+        return orders;
+    }
+
+    private int findIndex(Object[] array, String name) {
+        for (int i = 0; i < array.length; i++) {
+            if (array[i].equals(name)) {
+                return i;
+            }
+        }
+        throw new InvalidOperationException(String.format("%s index not found", name));
     }
 
     @SneakyThrows

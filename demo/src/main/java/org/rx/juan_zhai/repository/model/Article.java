@@ -1,0 +1,21 @@
+package org.rx.juan_zhai.repository.model;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import org.rx.repository.DataObject;
+
+import java.util.Date;
+import java.util.UUID;
+
+/**
+ * 新闻
+ */
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class Article extends DataObject {
+    private UUID typeId;
+    private String title;
+    private String color;
+    private String content;
+    private Date createTime;
+}

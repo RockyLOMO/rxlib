@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 @Component
 @ConfigurationProperties(prefix = "app.media")
 public class FlConfig {
+    public static String AliPayCode;
+
     private int initSize;
     private boolean remoteMode;
     private String remoteEndpoint;
