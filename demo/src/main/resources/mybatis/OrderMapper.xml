@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.rx.fl.repository.OrderMapper">
+  <select id="sumRebateAmount" parameterType="org.rx.fl.repository.model.OrderExample" resultType="java.lang.Long">
+    select sum(rebate_amount) from t_order
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
+
   <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.Order">
     <id column="id" jdbcType="CHAR" property="id" />
     <result column="user_id" jdbcType="CHAR" property="userId" />

@@ -23,7 +23,7 @@ public class DbUtil {
         return (double) cent / 100;
     }
 
-    public <TMapper, T> T selectByPrimaryKey(TMapper mapper, String id) {
+    public <TMapper, T> T selectById(TMapper mapper, String id) {
         require(mapper, id);
 
         T t = invoke(mapper, "selectByPrimaryKey", id);

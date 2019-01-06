@@ -1,11 +1,14 @@
 package org.rx.fl.repository;
 
 import java.util.List;
+
 import org.apache.ibatis.annotations.Param;
 import org.rx.fl.repository.model.BalanceLog;
 import org.rx.fl.repository.model.BalanceLogExample;
 
 public interface BalanceLogMapper {
+    long sumAmount(BalanceLogExample example);
+
     long countByExample(BalanceLogExample example);
 
     int deleteByExample(BalanceLogExample example);

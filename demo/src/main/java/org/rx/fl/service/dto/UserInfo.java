@@ -6,6 +6,11 @@ import lombok.Data;
 public class UserInfo {
     private String userId;
     private long balance;
-    private long totalCheckInCount;
-    private long totalCheckInAmount;
+    private long freezeAmount;
+    private long totalWithdrawAmount;
+    private long withdrawingAmount;
+    private long checkInCount;
+    private long checkInAmount;
+    private long unconfirmedOrderAmount;
+    private long confirmedOrderCount;
 }

@@ -1,35 +1,39 @@
-//package org.rx.fl.service.command.impl;
-//
-//import lombok.Data;
-//import org.rx.fl.service.command.Command;
-//import org.rx.fl.service.command.HandleResult;
-//
-//public class UserDashboardCmd implements Command<UserDashboardCmd.Argument> {
-//    @Data
-//    public static class Argument {
-//        private double totalWithdrawAmount;
-//        private double balance;
-//        private double freezeAmount;
-//        private double unconfirmedAmount;
-//        private int totalConfirmedOrderCount;
-//        private int checkInCount;
-//        private double checkInAmount;
-//        private double withdrawAmount;
-//    }
-//
-//    @Override
-//    public HandleResult<String> handleMessage(String message, UserDashboardCmd.Argument argument) {
-//        return HandleResult.of(String.format("一一一一个 人 信 息一一一一\n" +
-//                        "总提现金额: %.2f元\n" +
-//                        "可提现金额: %.2f元\n" +
-//                        "  冻结金额: %.2f元\n" +
-//                        "未收货金额: %.2f元\n" +
-//                        "总成功订单: %s单\n" +
-//                        "\n" +
-//                        "签到次数: %s次\n" +
-//                        "签到奖励: %.2f元\n" +
-//                        "  提现中: %.2f元", argument.getTotalWithdrawAmount(), argument.getBalance(),
-//                argument.getFreezeAmount(), argument.getUnconfirmedAmount(), argument.getTotalConfirmedOrderCount(),
-//                argument.getCheckInCount(), argument.getCheckInAmount(), argument.getWithdrawAmount()));
-//    }
-//}
+package org.rx.fl.service.command.impl;
+
+import org.rx.fl.service.UserService;
+import org.rx.fl.service.command.Command;
+import org.rx.fl.service.command.HandleResult;
+import org.rx.fl.service.dto.UserInfo;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
+
+import static org.rx.fl.util.DbUtil.toMoney;
+
+@Component
+public class UserDashboardCmd implements Command {
+    @Resource
+    private UserService userService;
+
+    @Override
+    public boolean peek(String message) {
+        return message.startsWith("个人信息");
+    }
+
+    @Override
+    public HandleResult<String> handleMessage(String userId, String message) {
+        UserInfo user = userService.queryUser(userId);
+        return HandleResult.of(String.format("一一一一个 人 信 息一一一一\n" +
+                        "总提现金额: %.2f元\n" +
+                        "可提现金额: %.2f元\n" +
+                        "  冻结金额: %.2f元\n" +
+                        "未收货金额: %.2f元\n" +
+                        "总成功订单: %s单\n" +
+                        "\n" +
+                        "签到次数: %s次\n" +
+                        "签到奖励: %.2f元\n" +
+                        "  提现中: %.2f元", toMoney(user.getTotalWithdrawAmount()), toMoney(user.getBalance()),
+                toMoney(user.getFreezeAmount()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(),
+                user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getWithdrawingAmount())));
+    }
+}

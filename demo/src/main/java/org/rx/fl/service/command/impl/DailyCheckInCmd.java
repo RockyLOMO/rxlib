@@ -44,7 +44,7 @@ public class DailyCheckInCmd implements Command {
                         "\n" +
                         "荭苞来啦\n" +
                         "吱富寳搜索：%s\n" +
-                        "最高99", toMoney(bonus), user.getTotalCheckInCount(), toMoney(user.getTotalCheckInAmount()), toMoney(user.getBalance()), FlConfig.AliPayCode));
+                        "最高99", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), FlConfig.AliPayCode));
             case Command.ErrorStep:
                 return HandleResult.of("一一一一签 到 失 败一一一一\n" +
                         "    今天已经签到过了,请明天再来。");
