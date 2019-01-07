@@ -1,19 +1,16 @@
 package org.rx.fl.service;
 
+import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.App;
-import org.rx.ErrorCode;
-import org.rx.InvalidOperationException;
-import org.rx.SystemException;
-import org.rx.bean.DateTime;
+import org.rx.*;
 import org.rx.fl.model.MediaType;
 import org.rx.fl.model.OrderInfo;
+import org.rx.fl.model.OrderStatus;
 import org.rx.fl.repository.OrderMapper;
-import org.rx.fl.repository.UserGoodsMapper;
-import org.rx.fl.repository.model.Order;
-import org.rx.fl.repository.model.OrderExample;
-import org.rx.fl.repository.model.UserGoods;
-import org.rx.fl.repository.model.UserGoodsExample;
+import org.rx.fl.repository.model.*;
+import org.rx.fl.service.dto.BalanceSourceKind;
+import org.rx.fl.service.dto.RebindOrderResult;
+import org.rx.fl.service.dto.UserInfo;
 import org.rx.fl.util.DbUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +28,7 @@ public class OrderService {
     @Resource
     private OrderMapper orderMapper;
     @Resource
-    private UserGoodsMapper userGoodsMapper;
+    private UserService userService;
     @Resource
     private DbUtil dbUtil;
 
@@ -40,52 +37,47 @@ public class OrderService {
         require(mediaType, orderInfos);
 
         for (OrderInfo media : orderInfos) {
-            try {
-                String orderId = App.newComb(mediaType.ordinal() + media.getOrderNo(), media.getCreateTime()).toString();
-                Order order = orderMapper.selectByPrimaryKey(orderId);
-                boolean insert = false;
-                if (order == null) {
-                    insert = true;
-                    order = new Order();
+            require(media.getOrderNo(), media.getCreateTime());
 
-                    UserGoodsExample q = new UserGoodsExample();
-                    q.setLimit(2);
-                    q.createCriteria().andMediaTypeEqualTo(mediaType.ordinal())
-                            .andGoodsIdEqualTo(media.getGoodsId())
-                            .andCreateTimeGreaterThanOrEqualTo(DateTime.now().addDays(-1))
-                            .andIsDeletedEqualTo(DbUtil.IsDeleted_False);
-                    List<UserGoods> userGoodsList = userGoodsMapper.selectByExample(q);
-                    if (userGoodsList.size() == 1) {
-                        UserGoods userGoods = userGoodsList.get(0);
+            //do not try catch, exec through trans
+            String orderId = App.newComb(mediaType.ordinal() + media.getOrderNo(), media.getCreateTime()).toString();
+            Order order = orderMapper.selectByPrimaryKey(orderId);
+            boolean insert = false;
+            if (order == null) {
+                insert = true;
+                order = new Order();
+                order.setId(orderId);
+                order.setMediaType(mediaType.ordinal());
+                order.setOrderNo(media.getOrderNo());
+                order.setGoodsId(media.getGoodsId());
+                order.setGoodsName(media.getGoodsName());
+                order.setUnitPrice(toCent(media.getUnitPrice()));
+                order.setQuantity(media.getQuantity());
+                order.setSellerName(media.getSellerName());
+                order.setPayAmount(toCent(media.getPayAmount()));
+                order.setRebateAmount(toCent(media.getRebateAmount()));
 
-                        UserGoods toUpdate = new UserGoods();
-                        toUpdate.setId(userGoods.getId());
-                        toUpdate.setIsDeleted(DbUtil.IsDeleted_True);
-                        userGoodsMapper.updateByPrimaryKeySelective(toUpdate);
-
-                        order.setUserId(userGoods.getUserId());
-                    }
-
-                    order.setMediaType(mediaType.ordinal());
-                    order.setOrderNo(media.getOrderNo());
-                    order.setGoodsId(media.getGoodsId());
-                    order.setGoodsName(media.getGoodsName());
-                    order.setUnitPrice(toCent(media.getUnitPrice()));
-                    order.setQuantity(media.getQuantity());
-                    order.setSellerName(media.getSellerName());
-                    order.setPayAmount(toCent(media.getPayAmount()));
-                    order.setRebateAmount(toCent(media.getRebateAmount()));
+                String userId = userService.findUserByGoods(mediaType, media.getGoodsId());
+                if (!Strings.isNullOrEmpty(userId)) {
+                    order.setUserId(userId);
                 }
-                order.setStatus(media.getStatus().getValue());
-                dbUtil.save(order, insert);
-            } catch (Exception e) {
-                log.error("save", e);
+            }
+            order.setStatus(media.getStatus().getValue());
+            dbUtil.save(order, insert);
+
+            if (!Strings.isNullOrEmpty(order.getUserId())
+                    && NQuery.of(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()).contains(order.getStatus())) {
+//todo check
+
+                userService.saveUserBalance(order.getUserId(), "0.0.0.0", BalanceSourceKind.Order, order.getId(), order.getRebateAmount());
+
             }
         }
     }
 
     @ErrorCode(value = "orderNotExist", messageKeys = {"$orderNo"})
-    public void rebindOrder(String userId, String orderNo) {
+    @Transactional
+    public RebindOrderResult rebindOrder(String userId, String orderNo) {
         require(userId, orderNo);
 
         OrderExample q = new OrderExample();
@@ -98,8 +90,20 @@ public class OrderService {
         if (orders.size() > 1) {
             throw new InvalidOperationException(String.format("OrderNo %s have more then one orders", orderNo));
         }
+
         Order order = orders.get(0);
         order.setUserId(userId);
         dbUtil.save(order);
+
+        userService.saveUserBalance(userId, "0.0.0.0", BalanceSourceKind.RebindOrder, order.getId(), order.getRebateAmount());
+        UserInfo user = userService.queryUser(userId);
+
+        RebindOrderResult result = new RebindOrderResult();
+        result.setOrderNo(order.getOrderNo());
+        result.setPayAmount(order.getPayAmount());
+        result.setRebateAmount(order.getRebateAmount());
+        result.setBalance(user.getBalance());
+        result.setUnconfirmedOrderAmount(user.getUnconfirmedOrderAmount());
+        return result;
     }
 }

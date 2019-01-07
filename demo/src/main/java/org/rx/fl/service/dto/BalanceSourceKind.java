@@ -8,6 +8,8 @@ public enum BalanceSourceKind {
     CheckIn(1),
     @Description("下单")
     Order(10),
+    @Description("绑定订单")
+    RebindOrder(11),
     @Description("提现")
     Withdraw(20);
 

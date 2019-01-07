@@ -4,6 +4,7 @@ import com.google.common.base.Strings;
 import org.rx.*;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
+import org.rx.fl.model.MediaType;
 import org.rx.fl.model.OrderStatus;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.Contract.require;
@@ -35,6 +37,8 @@ public class UserService {
     @Resource
     private OrderMapper orderMapper;
     @Resource
+    private UserGoodsMapper userGoodsMapper;
+    @Resource
     private DbUtil dbUtil;
 
     public UserInfo queryUser(String userId) {
@@ -50,12 +54,11 @@ public class UserService {
         qBalance.createCriteria().andUserIdEqualTo(user.getId())
                 .andSourceEqualTo(BalanceSourceKind.Withdraw.getValue());
         userInfo.setTotalWithdrawAmount(balanceLogMapper.sumAmount(qBalance));
-        qBalance = new BalanceLogExample();
-        //todo 提现
-//        qBalance.createCriteria().andUserIdEqualTo(user.getId())
-//                .andSourceEqualTo(BalanceSourceKind.Withdrawing.getValue())
-//                .andIsDeletedEqualTo(DbUtil.IsDeleted_True);
-//        userInfo.setWithdrawingAmount(balanceLogMapper.sumAmount(qBalance));
+
+        WithdrawLogExample qWithdraw = new WithdrawLogExample();
+        qWithdraw.createCriteria().andUserIdEqualTo(user.getId())
+                .andStatusEqualTo(WithdrawStatus.Wait.getValue());
+        userInfo.setWithdrawingAmount(withdrawLogMapper.sumAmount(qWithdraw));
 
         OrderExample qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
@@ -71,6 +74,30 @@ public class UserService {
         userInfo.setCheckInCount(checkInLogMapper.countByExample(query));
         userInfo.setCheckInAmount(checkInLogMapper.sumBonus(query));
         return userInfo;
+    }
+
+    public String findUserByGoods(MediaType mediaType, String goodsId) {
+        require(mediaType, goodsId);
+
+        UserGoodsExample q = new UserGoodsExample();
+        q.setLimit(2);
+        q.createCriteria().andMediaTypeEqualTo(mediaType.ordinal())
+                .andGoodsIdEqualTo(goodsId)
+                .andCreateTimeGreaterThanOrEqualTo(DateTime.now().addDays(-1))
+                .andIsDeletedEqualTo(DbUtil.IsDeleted_False);
+        List<UserGoods> userGoodsList = userGoodsMapper.selectByExample(q);
+        if (userGoodsList.size() != 1) {
+            return "";
+        }
+
+        UserGoods userGoods = userGoodsList.get(0);
+
+        UserGoods toUpdate = new UserGoods();
+        toUpdate.setId(userGoods.getId());
+        toUpdate.setIsDeleted(DbUtil.IsDeleted_True);
+        userGoodsMapper.updateByPrimaryKeySelective(toUpdate);
+
+        return userGoods.getUserId();
     }
 
     @ErrorCode("notEnoughBalance")
@@ -171,7 +198,7 @@ public class UserService {
         return bonus;
     }
 
-    private Tuple<User, String> saveUserBalance(String userId, String clientIp, BalanceSourceKind sourceKind, String sourceId, long money) {
+    Tuple<User, String> saveUserBalance(String userId, String clientIp, BalanceSourceKind sourceKind, String sourceId, long money) {
         require(money, money != 0);
 
         return App.retry(p -> {

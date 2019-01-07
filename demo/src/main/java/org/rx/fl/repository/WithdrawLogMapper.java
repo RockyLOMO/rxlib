@@ -1,11 +1,14 @@
 package org.rx.fl.repository;
 
 import java.util.List;
+
 import org.apache.ibatis.annotations.Param;
 import org.rx.fl.repository.model.WithdrawLog;
 import org.rx.fl.repository.model.WithdrawLogExample;
 
 public interface WithdrawLogMapper {
+    long sumAmount(WithdrawLogExample example);
+
     long countByExample(WithdrawLogExample example);
 
     int deleteByExample(WithdrawLogExample example);

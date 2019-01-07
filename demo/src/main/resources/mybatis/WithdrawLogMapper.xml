@@ -12,6 +12,12 @@
     <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime" />
     <result column="is_deleted" jdbcType="CHAR" property="isDeleted" />
   </resultMap>
+  <select id="sumAmount" parameterType="org.rx.fl.repository.model.WithdrawLogExample" resultType="java.lang.Long">
+    select sum(amount) from t_withdraw_log
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
   <sql id="Example_Where_Clause">
     <where>
       <foreach collection="oredCriteria" item="criteria" separator="or">
