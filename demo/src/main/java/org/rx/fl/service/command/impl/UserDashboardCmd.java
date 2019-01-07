@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+import static org.rx.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Component
@@ -17,11 +18,16 @@ public class UserDashboardCmd implements Command {
 
     @Override
     public boolean peek(String message) {
-        return message.startsWith("个人信息");
+        require(message);
+        message = message.trim();
+
+        return message.equals("个人信息");
     }
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
+        require(userId, message);
+
         UserInfo user = userService.queryUser(userId);
         return HandleResult.of(String.format("一一一一个 人 信 息一一一一\n" +
                         "总提现金额: %.2f元\n" +

@@ -1,4 +1,4 @@
-package org.rx.fl.service.dto;
+package org.rx.fl.model;
 
 import lombok.Getter;
 import org.rx.Description;

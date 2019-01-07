@@ -4,6 +4,9 @@ import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.stereotype.Component;
 
+import static org.rx.Contract.require;
+
+//↓
 @Component
 public class HelpCmd implements Command {
     @Override
@@ -13,6 +16,8 @@ public class HelpCmd implements Command {
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
+        require(userId, message);
+
         return HandleResult.of("一一一一帮 助 信 息一一一一\n" +
                 "\n" +
                 "[个人信息]---查看账户信息\n" +

@@ -6,13 +6,13 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
-import org.rx.common.ManualResetEvent;
 import org.rx.fl.model.AdvNotFoundReason;
 import org.rx.fl.model.GoodsInfo;
 import org.rx.fl.model.MediaType;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
+import org.rx.util.ManualResetEvent;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;

@@ -1,9 +1,9 @@
-package org.rx.common;
+package org.rx.util;
 
 import lombok.SneakyThrows;
 
 public final class ManualResetEvent {
-    private final Object monitor = new Object();
+    private final Object     monitor = new Object();
     private volatile boolean open;
 
     public ManualResetEvent(boolean initialState) {

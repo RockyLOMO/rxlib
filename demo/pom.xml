@@ -24,7 +24,7 @@
         <swagger.ver>2.8.0</swagger.ver>
         <projectlombok.version>1.18.4</projectlombok.version>
         <mapstruct.version>1.2.0.Final</mapstruct.version>
-        <rxlib.version>1.3</rxlib.version>
+        <rxlib.version>1.4-SNAPSHOT</rxlib.version>
         <guava.version>23.0</guava.version>
     </properties>
 

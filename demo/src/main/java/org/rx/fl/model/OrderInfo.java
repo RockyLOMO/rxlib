@@ -15,6 +15,6 @@ public class OrderInfo implements Serializable {
     private String sellerName;
     private String payAmount;
     private String rebateAmount;
-    private String status;
+    private OrderStatus status;
     private Date createTime;
 }

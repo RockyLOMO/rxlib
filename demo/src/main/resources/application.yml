@@ -9,6 +9,8 @@ mybatis.config-location: classpath:mybatis-config.xml
 mybatis.mapper-locations: classpath:mybatis/*.xml
 
 app:
+  errorCodeFiles:
+  - errorCode.yml
   mybatis:
     mapperScan: org.rx.fl.repository
   chrome:

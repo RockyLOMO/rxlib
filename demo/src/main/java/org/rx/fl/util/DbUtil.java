@@ -1,6 +1,7 @@
 package org.rx.fl.util;
 
 import lombok.SneakyThrows;
+import org.apache.commons.lang3.StringUtils;
 import org.rx.App;
 import org.rx.InvalidOperationException;
 import org.rx.NQuery;
@@ -17,10 +18,21 @@ import static org.rx.Contract.require;
 
 @Component
 public class DbUtil {
+    public static final String IsDeleted_True = "Y", IsDeleted_False = "N";
     private static final String mapperScan = (String) App.readSetting("app.mybatis.mapperScan");
 
-    public static double toMoney(long cent) {
+    public static double toMoney(Long cent) {
+        if (cent == null) {
+            return 0;
+        }
         return (double) cent / 100;
+    }
+
+    public static long toCent(String money) {
+        if (StringUtils.isBlank(money)) {
+            return 0;
+        }
+        return ((Double) (Double.valueOf(money) * 100)).longValue();
     }
 
     public <TMapper, T> T selectById(TMapper mapper, String id) {
@@ -33,8 +45,12 @@ public class DbUtil {
         return t;
     }
 
-    @Transactional
     public <T> T save(T model) {
+        return save(model, false);
+    }
+
+    @Transactional
+    public <T> T save(T model, boolean forceInsert) {
         require(model);
 
         String className = String.format("%s.%sMapper", mapperScan, model.getClass().getTypeName());
@@ -48,7 +64,7 @@ public class DbUtil {
         }
         Date createTime = getValue(model, "createTime");
         if (createTime == null) {
-            setValue(model, "createTime", createTime = DateTime.utcNow());
+            setValue(model, "createTime", createTime = DateTime.now());
         }
         Date modifyTime = getValue(model, "modifyTime");
         if (modifyTime == null) {
@@ -59,7 +75,7 @@ public class DbUtil {
             setValue(model, "isDeleted", isDeleted = "N");
         }
 
-        if (isInsert) {
+        if (forceInsert || isInsert) {
             invoke(mapper, "insertSelective", model);
         } else {
             invoke(mapper, "updateByPrimaryKeySelective", model);

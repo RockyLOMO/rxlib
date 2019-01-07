@@ -64,6 +64,11 @@ public final class DateTime extends Date {
         return calendar;
     }
 
+    public DateTime getDateComponent() {
+        String format = "yyyyMMdd";
+        return DateTime.valueOf(this.toString(format), format);
+    }
+
     @SuppressWarnings(Const.AllWarnings)
     @Override
     public int getYear() {

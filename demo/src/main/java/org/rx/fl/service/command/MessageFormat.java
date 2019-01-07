@@ -1,33 +1,6 @@
 package org.rx.fl.service.command;
 
 public class MessageFormat {
-    //↓
-
-    public static final String bindPayment = "一一一一绑 定 账 号一一一一\n" +
-            "亲，回复如下格式绑定:\n" +
-            "姓名***支付宝*********\n" +
-            "\n" +
-            "如:姓名小范支付宝15888888888\n" +
-            "\n" +
-            "    本绑定只用于提现到支付宝时使用，支付宝账号应为手机号码或者邮箱地址，如不清楚可打开支付宝APP查看自己的账号。";
-    public static final String bindPayment_Ok = "一一一一绑 定 成 功一一一一\n" +
-            "    亲，您已成功绑定！";
-    public static final String bindPayment_Fail = "一一一一绑 定 失 败一一一一\n" +
-            "    亲，您已绑定过支付宝，如果支付宝或者姓名回复错误，请回复新的支付宝和姓名，系统会在24小时内为您处理。";
-
-    public static final String withdraw_Ok = "一一一一申 请 成 功一一一一\n" +
-            "申请提现金额: %.2f元\n" +
-            "    冻结金额: %.2f元\n" +
-            "\n" +
-            "    亲，为方便您更快更便捷的第一时间收到返现，请您尽快绑定支付宝账号，系统会在24小时内处理，处理后会有消息通知，请注意查看。";
-    public static final String withdraw_Fail1 = "一一一一申 请 失 败一一一一\n" +
-            "申请提现失败！\n" +
-            "    亲，您的可提现金额不足，请下单后再来申请。";
-    public static final String withdraw_Fail2 = "一一一一申 请 失 败一一一一\n" +
-            "申请提现失败！\n" +
-            "    亲，您已申请过提现:[%.2f元]，请等提现成功后再继续申请。";
-
-
     public static final String orderList="一一一一订 单 列 表一一一一\n";
     public static final String rebindOrder = "一一一一订 单 绑 定一一一一\n" +
             "    付款成功后如果2分钟内没有订单记录再发送订单编号绑定，订单编号在购买的商品详细页能查看到。";
