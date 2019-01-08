@@ -13,6 +13,7 @@ import org.rx.fl.dto.repo.BalanceSourceKind;
 import org.rx.fl.dto.repo.RebindOrderResult;
 import org.rx.fl.dto.repo.UserDto;
 import org.rx.fl.util.DbUtil;
+import org.rx.util.NEnum;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,20 +34,24 @@ public class OrderService {
     @Resource
     private DbUtil dbUtil;
 
-    public List<OrderResult> queryOrders(String userId) {
+    public List<OrderResult> queryOrders(String userId, int takeCount) {
+        require(userId);
+        require(takeCount, takeCount > 0);
+
         OrderExample query = new OrderExample();
+        query.setLimit(takeCount);
         query.createCriteria().andUserIdEqualTo(userId);
-        query.setOrderByClause("createTime desc");
+        query.setOrderByClause("create_time desc");
         List<Order> orders = orderMapper.selectByExample(query);
-        NQuery.of(orders).select(p -> {
+        return NQuery.of(orders).select(p -> {
             OrderResult result = new OrderResult();
             result.setOrderNo(p.getOrderNo());
             result.setGoodsName(p.getGoodsName());
             result.setRebateAmount(p.getRebateAmount());
-            result.setStatus(p.getStatus());
+            result.setStatus(NEnum.valueOf(OrderStatus.class, p.getStatus()));
             result.setCreateTime(p.getCreateTime());
             return result;
-        });
+        }).toList();
     }
 
     @Transactional
@@ -57,14 +62,14 @@ public class OrderService {
             require(media.getOrderNo(), media.getCreateTime());
 
             //do not try catch, exec through trans
-            String orderId = App.newComb(mediaType.ordinal() + media.getOrderNo(), media.getCreateTime()).toString();
+            String orderId = App.newComb(mediaType.getValue() + media.getOrderNo(), media.getCreateTime()).toString();
             Order order = orderMapper.selectByPrimaryKey(orderId);
             boolean insert = false;
             if (order == null) {
                 insert = true;
                 order = new Order();
                 order.setId(orderId);
-                order.setMediaType(mediaType.ordinal());
+                order.setMediaType(mediaType.getValue());
                 order.setOrderNo(media.getOrderNo());
                 order.setGoodsId(media.getGoodsId());
                 order.setGoodsName(media.getGoodsName());
@@ -83,11 +88,9 @@ public class OrderService {
             dbUtil.save(order, insert);
 
             if (!Strings.isNullOrEmpty(order.getUserId())
-                    && NQuery.of(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()).contains(order.getStatus())) {
-//todo check
-
+                    && NQuery.of(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()).contains(order.getStatus())
+                    && !userService.hasSettleOrder(order.getUserId(), order.getId())) {
                 userService.saveUserBalance(order.getUserId(), "0.0.0.0", BalanceSourceKind.Order, order.getId(), order.getRebateAmount());
-
             }
         }
     }

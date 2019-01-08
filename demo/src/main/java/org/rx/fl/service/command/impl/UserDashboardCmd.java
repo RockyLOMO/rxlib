@@ -4,6 +4,7 @@ import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.rx.fl.dto.repo.UserDto;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -11,6 +12,7 @@ import javax.annotation.Resource;
 import static org.rx.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
+@Order(3)
 @Component
 public class UserDashboardCmd implements Command {
     @Resource

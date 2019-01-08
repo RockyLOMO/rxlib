@@ -2,8 +2,9 @@ package org.rx.fl.dto.repo;
 
 import lombok.Getter;
 import org.rx.Description;
+import org.rx.util.NEnum;
 
-public enum FeedbackStatus {
+public enum FeedbackStatus implements NEnum {
     @Description("等待处理")
     WaitReply(1),
     @Description("已处理")

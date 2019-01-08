@@ -2,8 +2,9 @@ package org.rx.fl.dto.repo;
 
 import lombok.Getter;
 import org.rx.Description;
+import org.rx.util.NEnum;
 
-public enum WithdrawStatus {
+public enum WithdrawStatus implements NEnum {
     @Description("待转")
     Wait(1),
     @Description("已转")

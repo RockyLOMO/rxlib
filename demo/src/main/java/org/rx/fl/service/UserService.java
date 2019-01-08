@@ -81,7 +81,7 @@ public class UserService {
 
         UserGoodsExample q = new UserGoodsExample();
         q.setLimit(2);
-        q.createCriteria().andMediaTypeEqualTo(mediaType.ordinal())
+        q.createCriteria().andMediaTypeEqualTo(mediaType.getValue())
                 .andGoodsIdEqualTo(goodsId)
                 .andCreateTimeGreaterThanOrEqualTo(DateTime.now().addDays(-1))
                 .andIsDeletedEqualTo(DbUtil.IsDeleted_False);
@@ -98,6 +98,16 @@ public class UserService {
         userGoodsMapper.updateByPrimaryKeySelective(toUpdate);
 
         return userGoods.getUserId();
+    }
+
+    public boolean hasSettleOrder(String userId, String orderId) {
+        require(userId, orderId);
+
+        BalanceLogExample q = new BalanceLogExample();
+        q.createCriteria().andUserIdEqualTo(userId)
+                .andSourceEqualTo(BalanceSourceKind.Order.getValue())
+                .andSourceIdEqualTo(orderId);
+        return balanceLogMapper.countByExample(q) > 0;
     }
 
     @ErrorCode("notEnoughBalance")

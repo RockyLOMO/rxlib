@@ -11,14 +11,14 @@ import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.service.MediaService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import java.net.URLEncoder;
-
 import static org.rx.Contract.require;
 
+@Order(1)
 @Component
 public class FindAdvCmd implements Command {
     @Resource

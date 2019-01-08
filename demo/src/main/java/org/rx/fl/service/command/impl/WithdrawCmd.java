@@ -7,6 +7,7 @@ import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.rx.fl.dto.repo.WithdrawResult;
 import org.springframework.context.annotation.Scope;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -14,6 +15,7 @@ import javax.annotation.Resource;
 import static org.rx.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
+@Order(5)
 @Component
 @Scope("prototype")
 @Slf4j

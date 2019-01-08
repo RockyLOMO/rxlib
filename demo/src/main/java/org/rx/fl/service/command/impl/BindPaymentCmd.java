@@ -8,12 +8,14 @@ import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.context.annotation.Scope;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
 import static org.rx.Contract.require;
 
+@Order(4)
 @Component
 @Scope("prototype")
 @Slf4j

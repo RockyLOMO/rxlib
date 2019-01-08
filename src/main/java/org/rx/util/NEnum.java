@@ -1,21 +1,18 @@
 package org.rx.util;
 
-import org.rx.App;
-import org.rx.Contract;
+import org.rx.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
-import static org.rx.Contract.as;
-import static org.rx.Contract.require;
+import static org.rx.Contract.*;
 
 public interface NEnum {
     static <T extends Enum<T> & NEnum> T valueOf(Class<T> type, int value) {
         require(type);
 
-        for (T enumConstant : type.getEnumConstants()) {
-            if (enumConstant.getValue() == value) {
-                return enumConstant;
+        for (T val : type.getEnumConstants()) {
+            if (val.getValue() == value) {
+                return val;
             }
         }
         return null;
@@ -71,25 +68,35 @@ public interface NEnum {
     default boolean has(NEnum... vals) {
         require(vals);
 
-        int v = 0;
+        int flags = 0;
         for (NEnum val : vals) {
-            v |= val.getValue();
+            flags |= val.getValue();
         }
-        return (this.getFlags() & v) == v;
+        return (this.getFlags() & flags) == flags;
     }
 
     default <T extends Enum<T> & NEnum> List<T> toEnums() {
         List<T> result = new ArrayList<>();
-        for (Object o : this.getClass().getEnumConstants()) {
-            NEnum e = as(o, NEnum.class);
-            if (this.has(e)) {
-                result.add((T) e);
+        for (NEnum val : this.getClass().getEnumConstants()) {
+            if (this.has(val)) {
+                result.add((T) val);
             }
         }
         return result;
     }
 
     default String toStrings() {
-        return String.join(", ", toEnums().stream().map(p -> p.toString()).collect(Collectors.toList()));
+        return String.join(", ", NQuery.of(toEnums()).select(p -> p.toString()).toList());
+    }
+
+    default String toDescriptions() {
+        Class type = this.getClass();
+        return String.join(", ", NQuery.of(toEnums()).select(p -> {
+            try {
+                return toDescription(type.getField(((Enum) p).name()));
+            } catch (Exception e) {
+                throw SystemException.wrap(e);
+            }
+        }));
     }
 }

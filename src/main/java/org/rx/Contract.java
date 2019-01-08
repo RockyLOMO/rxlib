@@ -4,18 +4,19 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.rx.bean.$;
 
+import java.lang.reflect.AccessibleObject;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class Contract {
     public interface SettingNames {
-        String JsonSkipTypes  = "app.jsonSkipTypes";
+        String JsonSkipTypes = "app.jsonSkipTypes";
         String ErrorCodeFiles = "app.errorCodeFiles";
     }
 
-    public static final int      DefaultBufferSize;
-    public static final String   SettingsFile, EmptyString, Utf8, AllWarnings = "all";
+    public static final int DefaultBufferSize;
+    public static final String SettingsFile, EmptyString, Utf8, AllWarnings = "all";
     public static final Object[] EmptyArray;
     private static NQuery<Class> SkipTypes = NQuery.of();
 
@@ -40,14 +41,14 @@ public final class Contract {
         }
     }
 
-    @ErrorCode(value = "args", messageKeys = { "$args" })
+    @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
             throw new SystemException(values(toJsonString(args)), "args");
         }
     }
 
-    @ErrorCode(value = "test", messageKeys = { "$arg" })
+    @ErrorCode(value = "test", messageKeys = {"$arg"})
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
             throw new SystemException(values(arg), "test");
@@ -99,6 +100,14 @@ public final class Contract {
         require(out, func);
 
         return (out.$ = func.apply(state)) != null;
+    }
+
+    public static String toDescription(AccessibleObject accessibleObject) {
+        Description desc = accessibleObject.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
     }
 
     public static String toJsonString(Object arg) {

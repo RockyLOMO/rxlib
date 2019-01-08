@@ -2,8 +2,9 @@ package org.rx.fl.dto.repo;
 
 import lombok.Getter;
 import org.rx.Description;
+import org.rx.util.NEnum;
 
-public enum BalanceSourceKind {
+public enum BalanceSourceKind implements NEnum {
     @Description("签到")
     CheckIn(1),
     @Description("下单")

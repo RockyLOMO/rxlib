@@ -145,32 +145,34 @@ public class MediaService {
 
         List<FindAdvResult> list = new ArrayList<>();
         for (String content : contentArray) {
-            invoke(MediaType.Taobao, media -> {
-                FindAdvResult result = new FindAdvResult();
-                list.add(result);
-                result.setMediaType(media.getType());
-                result.setLink(media.findLink(content));
+            for (MediaType type : getMedias()) {
+                invoke(type, media -> {
+                    FindAdvResult result = new FindAdvResult();
+                    list.add(result);
+                    result.setMediaType(media.getType());
+                    result.setLink(media.findLink(content));
 
-                if (Strings.isNullOrEmpty(result.getLink())) {
-                    result.setFoundStatus(AdvFoundStatus.NoLink);
-                    return;
-                }
+                    if (Strings.isNullOrEmpty(result.getLink())) {
+                        result.setFoundStatus(AdvFoundStatus.NoLink);
+                        return;
+                    }
 
-                result.setGoods(media.findGoods(result.getLink()));
-                if (result.getGoods() == null || Strings.isNullOrEmpty(result.getGoods().getSellerName())) {
-                    result.setFoundStatus(AdvFoundStatus.NoGoods);
-                    return;
-                }
+                    result.setGoods(media.findGoods(result.getLink()));
+                    if (result.getGoods() == null || Strings.isNullOrEmpty(result.getGoods().getSellerName())) {
+                        result.setFoundStatus(AdvFoundStatus.NoGoods);
+                        return;
+                    }
 
-                media.login();
-                result.setShareCode(media.findAdv(result.getGoods()));
-                if (Strings.isNullOrEmpty(result.getShareCode())) {
-                    result.setFoundStatus(AdvFoundStatus.NoAdv);
-                    return;
-                }
+                    media.login();
+                    result.setShareCode(media.findAdv(result.getGoods()));
+                    if (Strings.isNullOrEmpty(result.getShareCode())) {
+                        result.setFoundStatus(AdvFoundStatus.NoAdv);
+                        return;
+                    }
 
-                result.setFoundStatus(AdvFoundStatus.Ok);
-            });
+                    result.setFoundStatus(AdvFoundStatus.Ok);
+                });
+            }
         }
         return list;
     }

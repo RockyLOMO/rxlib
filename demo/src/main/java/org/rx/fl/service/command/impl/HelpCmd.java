@@ -2,11 +2,13 @@ package org.rx.fl.service.command.impl;
 
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import static org.rx.Contract.require;
 
 //↓
+@Order(9)
 @Component
 public class HelpCmd implements Command {
     @Override

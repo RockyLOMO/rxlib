@@ -2,8 +2,9 @@ package org.rx.fl.dto.media;
 
 import lombok.Getter;
 import org.rx.Description;
+import org.rx.util.NEnum;
 
-public enum OrderStatus {
+public enum OrderStatus implements NEnum {
     @Description("付款")
     Paid(1),
     @Description("成功")

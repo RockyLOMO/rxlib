@@ -6,8 +6,8 @@ import static org.rx.Contract.require;
 
 public final class BytesSegment implements AutoCloseable {
     public Consumer<BytesSegment> Closed;
-    public final byte[]           array;
-    public final int              offset, count;
+    public final byte[] array;
+    public final int offset, count;
 
     public byte[] getArray() {
         return array;
