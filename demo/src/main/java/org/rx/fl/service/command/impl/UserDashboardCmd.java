@@ -3,7 +3,7 @@ package org.rx.fl.service.command.impl;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.rx.fl.service.dto.UserInfo;
+import org.rx.fl.dto.repo.UserDto;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -28,7 +28,7 @@ public class UserDashboardCmd implements Command {
     public HandleResult<String> handleMessage(String userId, String message) {
         require(userId, message);
 
-        UserInfo user = userService.queryUser(userId);
+        UserDto user = userService.queryUser(userId);
         return HandleResult.of(String.format("一一一一个 人 信 息一一一一\n" +
                         "总提现金额: %.2f元\n" +
                         "可提现金额: %.2f元\n" +

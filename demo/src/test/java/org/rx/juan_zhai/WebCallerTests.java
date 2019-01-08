@@ -4,7 +4,7 @@ import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.Test;
 import org.rx.bean.DateTime;
-import org.rx.fl.model.OrderInfo;
+import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.fl.util.WebCaller;

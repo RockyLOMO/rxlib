@@ -3,13 +3,36 @@ package org.rx;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.rx.bean.$;
-import org.rx.bean.Const;
 
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class Contract {
+    public interface SettingNames {
+        String JsonSkipTypes  = "app.jsonSkipTypes";
+        String ErrorCodeFiles = "app.errorCodeFiles";
+    }
+
+    public static final int      DefaultBufferSize;
+    public static final String   SettingsFile, EmptyString, Utf8, AllWarnings = "all";
+    public static final Object[] EmptyArray;
+    private static NQuery<Class> SkipTypes = NQuery.of();
+
+    static {
+        DefaultBufferSize = 1024;
+        SettingsFile = "application";
+        EmptyString = "";
+        Utf8 = "UTF-8";
+        EmptyArray = new Object[0];
+
+        Object val = App.readSetting(SettingNames.JsonSkipTypes);
+        if (val != null) {
+            SkipTypes = SkipTypes
+                    .union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
+        }
+    }
+
     @ErrorCode(value = "arg")
     public static void require(Object arg) {
         if (arg == null) {
@@ -76,16 +99,6 @@ public final class Contract {
         require(out, func);
 
         return (out.$ = func.apply(state)) != null;
-    }
-
-    private static NQuery<Class> SkipTypes = NQuery.of();
-
-    static {
-        Object val = App.readSetting(Const.SettingNames.JsonSkipTypes);
-        if (val != null) {
-            SkipTypes = SkipTypes
-                    .union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
-        }
     }
 
     public static String toJsonString(Object arg) {

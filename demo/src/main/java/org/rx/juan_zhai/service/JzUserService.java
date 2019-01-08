@@ -16,7 +16,7 @@ import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.validation.constraints.NotNull;
+import javax.validation.Contract.aints.NotNull;
 import java.util.function.Predicate;
 
 @EnableValid

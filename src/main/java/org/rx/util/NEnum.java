@@ -1,7 +1,7 @@
 package org.rx.util;
 
 import org.rx.App;
-import org.rx.bean.Const;
+import org.rx.Contract;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -10,13 +10,42 @@ import static org.rx.Contract.as;
 import static org.rx.Contract.require;
 
 public interface NEnum {
+    static <T extends Enum<T> & NEnum> T valueOf(Class<T> type, int value) {
+        require(type);
+
+        for (T enumConstant : type.getEnumConstants()) {
+            if (enumConstant.getValue() == value) {
+                return enumConstant;
+            }
+        }
+        return null;
+    }
+
+    static <T extends Enum<T> & NEnum> T fromStrings(Class<T> type, String strings) {
+        require(type, strings);
+
+        NEnum val = null;
+        for (String n : App.split(strings, ", ")) {
+            NEnum e = Enum.valueOf(type, n);
+            if (val == null) {
+                val = e;
+                continue;
+            }
+            val.add(e);
+        }
+        return (T) val;
+    }
+
     int getValue();
 
-    int getFlags();
+    default int getFlags() {
+        return 0;
+    }
 
-    void setFlags(int flags);
+    default void setFlags(int flags) {
+    }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     default void add(NEnum... vals) {
         require(vals);
 
@@ -27,7 +56,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     default void remove(NEnum... vals) {
         require(vals);
 
@@ -38,7 +67,7 @@ public interface NEnum {
         this.setFlags(flags);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     default boolean has(NEnum... vals) {
         require(vals);
 
@@ -49,10 +78,9 @@ public interface NEnum {
         return (this.getFlags() & v) == v;
     }
 
-    default <T extends NEnum> List<T> toEnums() {
+    default <T extends Enum<T> & NEnum> List<T> toEnums() {
         List<T> result = new ArrayList<>();
-        Class type = this.getClass();
-        for (Object o : type.getEnumConstants()) {
+        for (Object o : this.getClass().getEnumConstants()) {
             NEnum e = as(o, NEnum.class);
             if (this.has(e)) {
                 result.add((T) e);
@@ -63,15 +91,5 @@ public interface NEnum {
 
     default String toStrings() {
         return String.join(", ", toEnums().stream().map(p -> p.toString()).collect(Collectors.toList()));
-    }
-
-    default void fromStrings(String strings) {
-        require(strings);
-
-        Class type = this.getClass();
-        for (String n : App.split(strings, ", ")) {
-            NEnum e = (NEnum) Enum.valueOf(type, n);
-            add(e);
-        }
     }
 }

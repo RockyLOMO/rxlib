@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.rx.fl.repository.OrderMapper">
-  <select id="sumRebateAmount" parameterType="org.rx.fl.repository.model.OrderExample" resultType="java.lang.Long">
-    select sum(rebate_amount) from t_order
-    <if test="_parameter != null">
-      <include refid="Example_Where_Clause" />
-    </if>
-  </select>
-
   <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.Order">
     <id column="id" jdbcType="CHAR" property="id" />
     <result column="user_id" jdbcType="CHAR" property="userId" />
@@ -85,7 +78,7 @@
   </sql>
   <sql id="Base_Column_List">
     id, user_id, media_type, order_no, goods_id, goods_name, unit_price, quantity, seller_name, 
-    pay_amount, rebate_amount, status, create_time, modify_time, is_deleted
+    pay_amount, rebate_amount, `status`, create_time, modify_time, is_deleted
   </sql>
   <select id="selectByExample" parameterType="org.rx.fl.repository.model.OrderExample" resultMap="BaseResultMap">
     select
@@ -125,14 +118,11 @@
       <include refid="Example_Where_Clause" />
     </if>
   </delete>
-  <insert id="insert" parameterType="org.rx.fl.repository.model.Order">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Order" useGeneratedKeys="true">
     insert into t_order (user_id, media_type, order_no, 
       goods_id, goods_name, unit_price, 
       quantity, seller_name, pay_amount, 
-      rebate_amount, status, create_time, 
+      rebate_amount, `status`, create_time, 
       modify_time, is_deleted)
     values (#{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{orderNo,jdbcType=VARCHAR}, 
       #{goodsId,jdbcType=VARCHAR}, #{goodsName,jdbcType=VARCHAR}, #{unitPrice,jdbcType=BIGINT}, 
@@ -140,10 +130,7 @@
       #{rebateAmount,jdbcType=BIGINT}, #{status,jdbcType=INTEGER}, #{createTime,jdbcType=TIMESTAMP}, 
       #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
   </insert>
-  <insert id="insertSelective" parameterType="org.rx.fl.repository.model.Order">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Order" useGeneratedKeys="true">
     insert into t_order
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="userId != null">
@@ -177,7 +164,7 @@
         rebate_amount,
       </if>
       <if test="status != null">
-        status,
+        `status`,
       </if>
       <if test="createTime != null">
         create_time,
@@ -277,7 +264,7 @@
         rebate_amount = #{record.rebateAmount,jdbcType=BIGINT},
       </if>
       <if test="record.status != null">
-        status = #{record.status,jdbcType=INTEGER},
+        `status` = #{record.status,jdbcType=INTEGER},
       </if>
       <if test="record.createTime != null">
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
@@ -306,7 +293,7 @@
       seller_name = #{record.sellerName,jdbcType=VARCHAR},
       pay_amount = #{record.payAmount,jdbcType=BIGINT},
       rebate_amount = #{record.rebateAmount,jdbcType=BIGINT},
-      status = #{record.status,jdbcType=INTEGER},
+      `status` = #{record.status,jdbcType=INTEGER},
       create_time = #{record.createTime,jdbcType=TIMESTAMP},
       modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
       is_deleted = #{record.isDeleted,jdbcType=CHAR}
@@ -348,7 +335,7 @@
         rebate_amount = #{rebateAmount,jdbcType=BIGINT},
       </if>
       <if test="status != null">
-        status = #{status,jdbcType=INTEGER},
+        `status` = #{status,jdbcType=INTEGER},
       </if>
       <if test="createTime != null">
         create_time = #{createTime,jdbcType=TIMESTAMP},
@@ -374,10 +361,16 @@
       seller_name = #{sellerName,jdbcType=VARCHAR},
       pay_amount = #{payAmount,jdbcType=BIGINT},
       rebate_amount = #{rebateAmount,jdbcType=BIGINT},
-      status = #{status,jdbcType=INTEGER},
+      `status` = #{status,jdbcType=INTEGER},
       create_time = #{createTime,jdbcType=TIMESTAMP},
       modify_time = #{modifyTime,jdbcType=TIMESTAMP},
       is_deleted = #{isDeleted,jdbcType=CHAR}
     where id = #{id,jdbcType=CHAR}
   </update>
+  <select id="sumRebateAmount" parameterType="org.rx.fl.repository.model.OrderExample" resultType="java.lang.Long">
+    select sum(rebate_amount) from t_order
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
 </mapper>

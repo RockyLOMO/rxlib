@@ -69,37 +69,37 @@ public final class DateTime extends Date {
         return DateTime.valueOf(this.toString(format), format);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);

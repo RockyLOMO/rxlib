@@ -1,19 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.rx.fl.repository.CheckInLogMapper">
-  <select id="sumBonus" parameterType="org.rx.fl.repository.model.CheckInLogExample" resultType="java.lang.Long">
-    select sum(bonus) from t_check_in_log
-    <if test="_parameter != null">
-      <include refid="Example_Where_Clause" />
-    </if>
-  </select>
-
   <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.CheckInLog">
     <id column="id" jdbcType="CHAR" property="id" />
     <result column="user_id" jdbcType="CHAR" property="userId" />
     <result column="client_ip" jdbcType="VARCHAR" property="clientIp" />
     <result column="bonus" jdbcType="BIGINT" property="bonus" />
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+    <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime" />
+    <result column="is_deleted" jdbcType="CHAR" property="isDeleted" />
   </resultMap>
   <sql id="Example_Where_Clause">
     <where>
@@ -74,7 +69,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, user_id, client_ip, bonus, create_time
+    id, user_id, client_ip, bonus, create_time, modify_time, is_deleted
   </sql>
   <select id="selectByExample" parameterType="org.rx.fl.repository.model.CheckInLogExample" resultMap="BaseResultMap">
     select
@@ -99,7 +94,7 @@
     </if>
   </select>
   <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
-    select
+    select 
     <include refid="Base_Column_List" />
     from t_check_in_log
     where id = #{id,jdbcType=CHAR}
@@ -114,19 +109,15 @@
       <include refid="Example_Where_Clause" />
     </if>
   </delete>
-  <insert id="insert" parameterType="org.rx.fl.repository.model.CheckInLog">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
-    insert into t_check_in_log (user_id, client_ip, bonus,
-      create_time)
-    values (#{userId,jdbcType=CHAR}, #{clientIp,jdbcType=VARCHAR}, #{bonus,jdbcType=BIGINT},
-      #{createTime,jdbcType=TIMESTAMP})
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.CheckInLog" useGeneratedKeys="true">
+    insert into t_check_in_log (user_id, client_ip, bonus, 
+      create_time, modify_time, is_deleted
+      )
+    values (#{userId,jdbcType=CHAR}, #{clientIp,jdbcType=VARCHAR}, #{bonus,jdbcType=BIGINT}, 
+      #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
+      )
   </insert>
-  <insert id="insertSelective" parameterType="org.rx.fl.repository.model.CheckInLog">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.CheckInLog" useGeneratedKeys="true">
     insert into t_check_in_log
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="userId != null">
@@ -141,6 +132,12 @@
       <if test="createTime != null">
         create_time,
       </if>
+      <if test="modifyTime != null">
+        modify_time,
+      </if>
+      <if test="isDeleted != null">
+        is_deleted,
+      </if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
       <if test="userId != null">
@@ -154,6 +151,12 @@
       </if>
       <if test="createTime != null">
         #{createTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="modifyTime != null">
+        #{modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="isDeleted != null">
+        #{isDeleted,jdbcType=CHAR},
       </if>
     </trim>
   </insert>
@@ -181,6 +184,12 @@
       <if test="record.createTime != null">
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="record.modifyTime != null">
+        modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="record.isDeleted != null">
+        is_deleted = #{record.isDeleted,jdbcType=CHAR},
+      </if>
     </set>
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
@@ -192,7 +201,9 @@
       user_id = #{record.userId,jdbcType=CHAR},
       client_ip = #{record.clientIp,jdbcType=VARCHAR},
       bonus = #{record.bonus,jdbcType=BIGINT},
-      create_time = #{record.createTime,jdbcType=TIMESTAMP}
+      create_time = #{record.createTime,jdbcType=TIMESTAMP},
+      modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
+      is_deleted = #{record.isDeleted,jdbcType=CHAR}
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
     </if>
@@ -212,6 +223,12 @@
       <if test="createTime != null">
         create_time = #{createTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="modifyTime != null">
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="isDeleted != null">
+        is_deleted = #{isDeleted,jdbcType=CHAR},
+      </if>
     </set>
     where id = #{id,jdbcType=CHAR}
   </update>
@@ -220,7 +237,15 @@
     set user_id = #{userId,jdbcType=CHAR},
       client_ip = #{clientIp,jdbcType=VARCHAR},
       bonus = #{bonus,jdbcType=BIGINT},
-      create_time = #{createTime,jdbcType=TIMESTAMP}
+      create_time = #{createTime,jdbcType=TIMESTAMP},
+      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+      is_deleted = #{isDeleted,jdbcType=CHAR}
     where id = #{id,jdbcType=CHAR}
   </update>
+  <select id="sumBonus" parameterType="org.rx.fl.repository.model.CheckInLogExample" resultType="java.lang.Long">
+    select sum(bonus) from t_check_in_log
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
 </mapper>

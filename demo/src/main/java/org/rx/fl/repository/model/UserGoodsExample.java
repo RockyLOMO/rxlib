@@ -13,7 +13,7 @@ public class UserGoodsExample {
 
     private Integer limit;
 
-    private Integer offset;
+    private Long offset;
 
     public UserGoodsExample() {
         oredCriteria = new ArrayList<Criteria>();
@@ -76,11 +76,11 @@ public class UserGoodsExample {
         return limit;
     }
 
-    public void setOffset(Integer offset) {
+    public void setOffset(Long offset) {
         this.offset = offset;
     }
 
-    public Integer getOffset() {
+    public Long getOffset() {
         return offset;
     }
 

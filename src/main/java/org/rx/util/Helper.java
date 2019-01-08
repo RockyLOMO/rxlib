@@ -7,9 +7,8 @@ import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.rx.Logger;
 import org.rx.SystemException;
-import org.rx.bean.Const;
+import org.rx.Contract;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
@@ -19,7 +18,6 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 import static org.rx.Contract.require;
-import static org.rx.Contract.toJsonString;
 
 @Slf4j
 public class Helper {
@@ -33,7 +31,7 @@ public class Helper {
             //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
             marshaller.marshal(obj, stream);
-            return stream.toString(Const.Utf8);
+            return stream.toString(Contract.Utf8);
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }
@@ -45,7 +43,7 @@ public class Helper {
         try {
             JAXBContext jaxbContext = JAXBContext.newInstance(type);
             Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
-            byte[] data = xml.getBytes(Const.Utf8);
+            byte[] data = xml.getBytes(Contract.Utf8);
             ByteArrayInputStream stream = new ByteArrayInputStream(data);
             return (T) unmarshaller.unmarshal(stream);
         } catch (Exception ex) {

@@ -3,6 +3,7 @@ package org.rx.bean;
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.App;
 
+import org.rx.Contract;
 import org.rx.util.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
@@ -83,7 +84,7 @@ public class BeanMapper {
         return instance;
     }
 
-    @SuppressWarnings(Const.AllWarnings)
+    @SuppressWarnings(Contract.AllWarnings)
     public static Function<String, String> match(String... pairs) {
         require(pairs);
         require(pairs, pairs.length % 2 == 0);

@@ -4,7 +4,7 @@ import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import okhttp3.*;
 import org.rx.Disposable;
-import org.rx.bean.Const;
+import org.rx.Contract;
 import org.rx.io.IOStream;
 import org.rx.socks.http.HttpClient;
 
@@ -40,9 +40,9 @@ public final class HttpCaller extends Disposable {
         String[] pairs = queryString.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Const.Utf8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), Const.Utf8).trim()
+                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.Utf8).trim()
                     : "";
             map.put(key, value);
         }

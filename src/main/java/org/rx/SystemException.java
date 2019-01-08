@@ -2,7 +2,6 @@ package org.rx;
 
 import org.rx.bean.$;
 import org.rx.bean.BiTuple;
-import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
 import org.rx.util.StringBuilder;
@@ -27,9 +26,9 @@ public class SystemException extends NestedRuntimeException {
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {
-        return App.getOrStore(SystemException.class, Const.EmptyString, k -> {
+        return App.getOrStore(SystemException.class, Contract.EmptyString, k -> {
             Map<String, Object> codes = App.readSettings(CodeFile);
-            Object val = App.readSetting(Const.SettingNames.ErrorCodeFiles);
+            Object val = App.readSetting(Contract.SettingNames.ErrorCodeFiles);
             if (val != null) {
                 try {
                     for (Object file : App.asList(val)) {
@@ -113,7 +112,7 @@ public class SystemException extends NestedRuntimeException {
         super(cause != null ? cause.getMessage() : null, cause);
 
         if (messageValues == null) {
-            messageValues = Const.EmptyArray;
+            messageValues = Contract.EmptyArray;
         }
         try {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();

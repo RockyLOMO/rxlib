@@ -6,7 +6,7 @@ import org.rx.common.FlConfig;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.rx.fl.service.dto.UserInfo;
+import org.rx.fl.dto.repo.UserDto;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -34,7 +34,7 @@ public class DailyCheckInCmd implements Command {
 
         try {
             long bonus = userService.checkIn(userId, "0.0.0.0");
-            UserInfo user = userService.queryUser(userId);
+            UserDto user = userService.queryUser(userId);
             return HandleResult.of(String.format("一一一一签 到 成 功一一一一\n" +
                     "\n" +
                     "本次签到获得: %.2f元\n" +

@@ -11,9 +11,9 @@ create table t_user
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_user_id_uindex
+	Contract.aint t_user_id_uindex
 		unique (id),
-	constraint t_user_version_uindex
+	Contract.aint t_user_version_uindex
 		unique (version)
 );
 alter table t_user
@@ -29,7 +29,7 @@ create table t_user_goods
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_user_goods_id_uindex
+	Contract.aint t_user_goods_id_uindex
 		unique (id)
 );
 alter table t_user_goods
@@ -52,9 +52,9 @@ create table t_balance_log
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_balance_log_version_uindex
+	Contract.aint t_balance_log_version_uindex
 		unique (version),
-	constraint t_withdraw_log_id_uindex
+	Contract.aint t_withdraw_log_id_uindex
 		unique (id)
 );
 alter table t_balance_log
@@ -72,7 +72,7 @@ create table t_withdraw_log
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_withdraw_log_id_uindex
+	Contract.aint t_withdraw_log_id_uindex
 		unique (id)
 );
 alter table t_withdraw_log
@@ -88,7 +88,7 @@ create table t_check_in_log
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_check_in_log_id_uindex
+	Contract.aint t_check_in_log_id_uindex
 		unique (id)
 );
 alter table t_check_in_log
@@ -105,7 +105,7 @@ create table t_feedback
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_feedback_id_uindex
+	Contract.aint t_feedback_id_uindex
 		unique (id)
 );
 alter table t_feedback
@@ -129,7 +129,7 @@ create table t_order
 	create_time datetime not null,
 	modify_time datetime not null,
 	is_deleted char not null,
-	constraint t_order_id_uindex
+	Contract.aint t_order_id_uindex
 		unique (id)
 );
 alter table t_order

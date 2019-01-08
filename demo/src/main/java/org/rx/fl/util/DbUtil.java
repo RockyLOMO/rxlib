@@ -4,14 +4,13 @@ import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.App;
 import org.rx.InvalidOperationException;
-import org.rx.NQuery;
 import org.rx.bean.DateTime;
+import org.rx.fl.repository.MyBatisBaseDao;
 import org.rx.util.SpringContextUtil;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Date;
 
 import static org.rx.Contract.require;
@@ -35,10 +34,10 @@ public class DbUtil {
         return ((Double) (Double.valueOf(money) * 100)).longValue();
     }
 
-    public <TMapper, T> T selectById(TMapper mapper, String id) {
+    public <T> T selectById(MyBatisBaseDao mapper, String id) {
         require(mapper, id);
 
-        T t = invoke(mapper, "selectByPrimaryKey", id);
+        T t = (T) mapper.selectByPrimaryKey(id);
         if (t == null) {
             throw new InvalidOperationException(String.format("%s.selectByPrimaryKey(%s) is null", mapper.getClass().getSimpleName(), id));
         }
@@ -53,9 +52,7 @@ public class DbUtil {
     public <T> T save(T model, boolean forceInsert) {
         require(model);
 
-        String className = String.format("%s.%sMapper", mapperScan, model.getClass().getTypeName());
-        Object mapper = SpringContextUtil.getBean(App.loadClass(className, false));
-
+        MyBatisBaseDao mapper = getMapper(model.getClass());
         boolean isInsert = false;
         String id = getValue(model, "id");
         if (id == null) {
@@ -76,17 +73,16 @@ public class DbUtil {
         }
 
         if (forceInsert || isInsert) {
-            invoke(mapper, "insertSelective", model);
+            mapper.insertSelective(model);
         } else {
-            invoke(mapper, "updateByPrimaryKeySelective", model);
+            mapper.updateByPrimaryKeySelective(model);
         }
         return model;
     }
 
-    @SneakyThrows
-    private <T> T invoke(Object mapper, String methodName, Object... args) {
-        Method method = mapper.getClass().getDeclaredMethod(methodName, NQuery.of(args).select(p -> (Class) p.getClass()).toArray(Class.class));
-        return (T) method.invoke(mapper, args);
+    private MyBatisBaseDao getMapper(Class modelType) {
+        String className = String.format("%s.%sMapper", mapperScan, modelType.getTypeName());
+        return SpringContextUtil.getBean(App.loadClass(className, false));
     }
 
     @SneakyThrows

@@ -13,7 +13,9 @@ public class UserExample {
 
     private Integer limit;
 
-    private Integer offset;
+    private Long offset;
+
+    private Boolean forUpdate;
 
     public UserExample() {
         oredCriteria = new ArrayList<Criteria>();
@@ -76,12 +78,20 @@ public class UserExample {
         return limit;
     }
 
-    public void setOffset(Integer offset) {
+    public void setOffset(Long offset) {
         this.offset = offset;
     }
 
-    public Integer getOffset() {
+    public Long getOffset() {
         return offset;
+    }
+
+    public void setForUpdate(Boolean forUpdate) {
+        this.forUpdate = forUpdate;
+    }
+
+    public Boolean getForUpdate() {
+        return forUpdate;
     }
 
     protected abstract static class GeneratedCriteria {

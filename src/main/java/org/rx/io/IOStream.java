@@ -5,7 +5,7 @@ import org.rx.App;
 import org.rx.Disposable;
 import org.rx.ErrorCode;
 import org.rx.SystemException;
-import org.rx.bean.Const;
+import org.rx.Contract;
 import org.rx.util.StringBuilder;
 
 import java.io.*;
@@ -15,7 +15,7 @@ import static org.rx.Contract.values;
 
 public class IOStream extends Disposable implements Closeable, Flushable {
     public static String readString(InputStream stream) {
-        return readString(stream, Const.Utf8);
+        return readString(stream, Contract.Utf8);
     }
 
     @SneakyThrows
@@ -24,7 +24,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[Const.DefaultBufferSize];
+            byte[] buffer = new byte[Contract.DefaultBufferSize];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -34,7 +34,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     }
 
     public static void writeString(OutputStream stream, String value) {
-        writeString(stream, value, Const.Utf8);
+        writeString(stream, value, Contract.Utf8);
     }
 
     @SneakyThrows
@@ -50,7 +50,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
-        byte[] buffer = new byte[Const.DefaultBufferSize * 2];
+        byte[] buffer = new byte[Contract.DefaultBufferSize * 2];
         try {
             int read;
             while ((read = from.read(buffer, 0, buffer.length)) > 0) {

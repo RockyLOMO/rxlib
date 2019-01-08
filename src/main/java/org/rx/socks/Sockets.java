@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.*;
 import org.rx.SystemException;
 import org.rx.cache.WeakCache;
+import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Properties;
@@ -110,7 +111,7 @@ public final class Sockets {
         prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));
         prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
-        if (!App.isNullOrEmpty(nonProxyHosts)) {
+        if (!CollectionUtils.isEmpty(nonProxyHosts)) {
             //如"localhost|192.168.0.*"
             prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
         }

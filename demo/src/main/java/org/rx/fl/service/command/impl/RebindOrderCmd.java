@@ -7,7 +7,7 @@ import org.rx.SystemException;
 import org.rx.fl.service.OrderService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.rx.fl.service.dto.RebindOrderResult;
+import org.rx.fl.dto.repo.RebindOrderResult;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
@@ -33,7 +33,7 @@ public class RebindOrderCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("订单绑定");
+        return message.equals("绑定订单");
     }
 
     @Override

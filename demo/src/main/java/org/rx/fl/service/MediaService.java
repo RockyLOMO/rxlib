@@ -6,9 +6,10 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
-import org.rx.fl.model.AdvNotFoundReason;
-import org.rx.fl.model.GoodsInfo;
-import org.rx.fl.model.MediaType;
+import org.rx.NQuery;
+import org.rx.fl.dto.media.AdvFoundStatus;
+import org.rx.fl.dto.media.FindAdvResult;
+import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
@@ -99,6 +100,10 @@ public class MediaService {
         }
     }
 
+    public List<MediaType> getMedias() {
+        return NQuery.of(holder.keySet()).toList();
+    }
+
     private void invoke(MediaType type, Consumer<Media> consumer) {
         require(type, consumer);
 
@@ -110,49 +115,61 @@ public class MediaService {
         }
     }
 
-    public List<String> findAdv(String[] sourceArray) {
-        List<String> list = new ArrayList<>();
-        for (String source : sourceArray) {
+    private <T> T invoke(MediaType type, Function<Media, T> function) {
+        require(type, function);
+
+        Media media = create(type, true);
+        try {
+            return function.apply(media);
+        } finally {
+            release(media);
+        }
+    }
+
+    public String findLink(String content) {
+        require(content);
+
+        for (MediaType type : getMedias()) {
+            String link = invoke(type, p -> {
+                return p.findLink(content);
+            });
+            if (!Strings.isNullOrEmpty(link)) {
+                return link;
+            }
+        }
+        return "";
+    }
+
+    public List<FindAdvResult> findAdv(String... contentArray) {
+        require(contentArray);
+
+        List<FindAdvResult> list = new ArrayList<>();
+        for (String content : contentArray) {
             invoke(MediaType.Taobao, media -> {
-                String url = media.findLink(source);
-                if (Strings.isNullOrEmpty(url)) {
-                    list.add(AdvNotFoundReason.NoLink.name());
+                FindAdvResult result = new FindAdvResult();
+                list.add(result);
+                result.setMediaType(media.getType());
+                result.setLink(media.findLink(content));
+
+                if (Strings.isNullOrEmpty(result.getLink())) {
+                    result.setFoundStatus(AdvFoundStatus.NoLink);
                     return;
                 }
-                GoodsInfo goods = media.findGoods(url);
-                if (goods == null || Strings.isNullOrEmpty(goods.getSellerName())) {
-                    list.add(AdvNotFoundReason.NoGoods.name());
+
+                result.setGoods(media.findGoods(result.getLink()));
+                if (result.getGoods() == null || Strings.isNullOrEmpty(result.getGoods().getSellerName())) {
+                    result.setFoundStatus(AdvFoundStatus.NoGoods);
                     return;
                 }
+
                 media.login();
-                String code = media.findAdv(goods);
-                if (Strings.isNullOrEmpty(code)) {
-                    list.add(AdvNotFoundReason.NoAdv.name());
+                result.setShareCode(media.findAdv(result.getGoods()));
+                if (Strings.isNullOrEmpty(result.getShareCode())) {
+                    result.setFoundStatus(AdvFoundStatus.NoAdv);
                     return;
                 }
 
-                String content;
-                Function<String, Double> convert = p -> {
-                    if (Strings.isNullOrEmpty(p)) {
-                        return 0d;
-                    }
-                    return App.changeType(p.replace("￥", "")
-                            .replace("¥", ""), double.class);
-                };
-                Double payAmount = convert.apply(goods.getPrice())
-                        - convert.apply(goods.getRebateAmount())
-                        - convert.apply(goods.getCouponAmount());
-                content = String.format("约反      %s\n优惠券  ￥%s\n付费价  ￥%.2f\n复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-                        goods.getRebateAmount(), goods.getCouponAmount(), payAmount, code);
-//                try {
-//                    content = String.format("http://taoyouhui.ml/tb.html#/%s/%s",
-//                            code.replace("￥", ""),
-//                            URLEncoder.encode(goods.getImageUrl(), "utf-8"));
-//                } catch (Exception e) {
-//                    throw new InvalidOperationException(e);
-//                }
-
-                list.add(content);
+                result.setFoundStatus(AdvFoundStatus.Ok);
             });
         }
         return list;

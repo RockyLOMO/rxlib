@@ -5,7 +5,7 @@ import org.rx.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.rx.fl.service.dto.WithdrawResult;
+import org.rx.fl.dto.repo.WithdrawResult;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 

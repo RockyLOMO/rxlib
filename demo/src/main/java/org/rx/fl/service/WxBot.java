@@ -6,13 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.App;
 import org.rx.NQuery;
 import org.rx.bean.DateTime;
-import org.rx.fl.model.MessageInfo;
+import org.rx.fl.dto.MessageInfo;
 import org.rx.util.ManualResetEvent;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
 import weixin.popular.bean.xmlmessage.XMLTextMessage;
-import weixin.popular.support.ExpireKey;
-import weixin.popular.support.expirekey.DefaultExpireKey;
 import weixin.popular.util.SignatureUtil;
 import weixin.popular.util.XMLConverUtil;
 

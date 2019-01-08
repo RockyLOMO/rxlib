@@ -97,6 +97,9 @@
         limit ${limit}
       </if>
     </if>
+    <if test="forUpdate != null and forUpdate == true">
+      for update
+    </if>
   </select>
   <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
     select 
@@ -114,10 +117,7 @@
       <include refid="Example_Where_Clause" />
     </if>
   </delete>
-  <insert id="insert" parameterType="org.rx.fl.repository.model.User">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.User" useGeneratedKeys="true">
     insert into t_user (nickname, open_id, alipay_name, 
       alipay_account, balance, freeze_amount, 
       version, create_time, modify_time, 
@@ -127,10 +127,7 @@
       #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
       #{isDeleted,jdbcType=CHAR})
   </insert>
-  <insert id="insertSelective" parameterType="org.rx.fl.repository.model.User">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.User" useGeneratedKeys="true">
     insert into t_user
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="nickname != null">

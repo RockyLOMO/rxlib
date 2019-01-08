@@ -4,7 +4,6 @@ import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.bean.$;
-import org.rx.bean.Const;
 import org.rx.bean.Tuple;
 import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
@@ -171,7 +170,7 @@ public class App {
     public static <T> T newInstance(Class<T> type, Object... args) {
         require(type);
         if (args == null) {
-            args = Const.EmptyArray;
+            args = Contract.EmptyArray;
         }
 
         try {
@@ -392,7 +391,7 @@ public class App {
     }
 
     public static Object readSetting(String key) {
-        return readSetting(key, Const.SettingsFile, false);
+        return readSetting(key, Contract.SettingsFile, false);
     }
 
     @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
@@ -482,14 +481,6 @@ public class App {
 
     public static <E> boolean isNullOrEmpty(E[] input) {
         return input == null || input.length == 0;
-    }
-
-    public static <E> boolean isNullOrEmpty(Collection<E> input) {
-        return input == null || input.size() == 0;
-    }
-
-    public static <K, V> boolean isNullOrEmpty(Map<K, V> input) {
-        return input == null || input.size() == 0;
     }
 
     public static boolean equals(String s1, String s2, boolean ignoreCase) {
@@ -652,14 +643,14 @@ public class App {
         require(data);
 
         byte[] ret = Base64.getEncoder().encode(data);
-        return new String(ret, Const.Utf8);
+        return new String(ret, Contract.Utf8);
     }
 
     @SneakyThrows
     public static byte[] convertFromBase64String(String base64) {
         require(base64);
 
-        byte[] data = base64.getBytes(Const.Utf8);
+        byte[] data = base64.getBytes(Contract.Utf8);
         return Base64.getDecoder().decode(data);
     }
 
@@ -742,7 +733,7 @@ public class App {
         }
 
         File file = new File(filePath);
-        response.setCharacterEncoding(Const.Utf8);
+        response.setCharacterEncoding(Contract.Utf8);
         response.setContentType("application/octet-stream");
         response.setContentLength((int) file.length());
         response.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));

@@ -4,11 +4,11 @@ import com.google.common.base.Strings;
 import org.rx.*;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
-import org.rx.fl.model.MediaType;
-import org.rx.fl.model.OrderStatus;
+import org.rx.fl.dto.media.MediaType;
+import org.rx.fl.dto.media.OrderStatus;
+import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
-import org.rx.fl.service.dto.*;
 import org.rx.fl.util.DbUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,39 +41,39 @@ public class UserService {
     @Resource
     private DbUtil dbUtil;
 
-    public UserInfo queryUser(String userId) {
+    public UserDto queryUser(String userId) {
         require(userId);
         User user = dbUtil.selectById(userMapper, userId);
 
-        UserInfo userInfo = new UserInfo();
-        userInfo.setUserId(user.getId());
-        userInfo.setBalance(user.getBalance());
-        userInfo.setFreezeAmount(user.getFreezeAmount());
+        UserDto userDto = new UserDto();
+        userDto.setUserId(user.getId());
+        userDto.setBalance(user.getBalance());
+        userDto.setFreezeAmount(user.getFreezeAmount());
 
         BalanceLogExample qBalance = new BalanceLogExample();
         qBalance.createCriteria().andUserIdEqualTo(user.getId())
                 .andSourceEqualTo(BalanceSourceKind.Withdraw.getValue());
-        userInfo.setTotalWithdrawAmount(balanceLogMapper.sumAmount(qBalance));
+        userDto.setTotalWithdrawAmount(balanceLogMapper.sumAmount(qBalance));
 
         WithdrawLogExample qWithdraw = new WithdrawLogExample();
         qWithdraw.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(WithdrawStatus.Wait.getValue());
-        userInfo.setWithdrawingAmount(withdrawLogMapper.sumAmount(qWithdraw));
+        userDto.setWithdrawingAmount(withdrawLogMapper.sumAmount(qWithdraw));
 
         OrderExample qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(OrderStatus.Paid.getValue());
-        userInfo.setUnconfirmedOrderAmount(orderMapper.sumRebateAmount(qOrder));
+        userDto.setUnconfirmedOrderAmount(orderMapper.sumRebateAmount(qOrder));
         qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusIn(Arrays.asList(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()));
-        userInfo.setConfirmedOrderCount(orderMapper.countByExample(qOrder));
+        userDto.setConfirmedOrderCount(orderMapper.countByExample(qOrder));
 
         CheckInLogExample query = new CheckInLogExample();
         query.createCriteria().andUserIdEqualTo(user.getId());
-        userInfo.setCheckInCount(checkInLogMapper.countByExample(query));
-        userInfo.setCheckInAmount(checkInLogMapper.sumBonus(query));
-        return userInfo;
+        userDto.setCheckInCount(checkInLogMapper.countByExample(query));
+        userDto.setCheckInAmount(checkInLogMapper.sumBonus(query));
+        return userDto;
     }
 
     public String findUserByGoods(MediaType mediaType, String goodsId) {

@@ -4,8 +4,8 @@ import com.alibaba.fastjson.JSONArray;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.FlConfig;
-import org.rx.fl.model.AdvNotFoundReason;
-import org.rx.fl.model.MessageInfo;
+import org.rx.fl.dto.media.AdvFoundStatus;
+import org.rx.fl.dto.MessageInfo;
 import org.rx.fl.util.HttpCaller;
 import org.springframework.stereotype.Service;
 
@@ -66,9 +66,9 @@ public class BotService {
             }
         }
         if (toMsg == null && adv != null) {
-            AdvNotFoundReason reason = AdvNotFoundReason.safeValueOf(adv);
+            AdvFoundStatus reason = AdvFoundStatus.safeValueOf(adv);
             if (reason != null) {
-                switch (AdvNotFoundReason.safeValueOf(adv)) {
+                switch (AdvFoundStatus.safeValueOf(adv)) {
                     case NoLink:
                         toMsg = defaultSendMessage;
                         break;

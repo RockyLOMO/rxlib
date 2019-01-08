@@ -1,4 +1,4 @@
-package org.rx.fl.model;
+package org.rx.fl.dto.media;
 
 import lombok.Data;
 

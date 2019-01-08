@@ -70,7 +70,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, user_id, content, reply, status, create_time, modify_time, is_deleted
+    id, user_id, content, reply, `status`, create_time, modify_time, is_deleted
   </sql>
   <select id="selectByExample" parameterType="org.rx.fl.repository.model.FeedbackExample" resultMap="BaseResultMap">
     select
@@ -110,21 +110,15 @@
       <include refid="Example_Where_Clause" />
     </if>
   </delete>
-  <insert id="insert" parameterType="org.rx.fl.repository.model.Feedback">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Feedback" useGeneratedKeys="true">
     insert into t_feedback (user_id, content, reply, 
-      status, create_time, modify_time, 
+      `status`, create_time, modify_time, 
       is_deleted)
     values (#{userId,jdbcType=CHAR}, #{content,jdbcType=VARCHAR}, #{reply,jdbcType=VARCHAR}, 
       #{status,jdbcType=INTEGER}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
       #{isDeleted,jdbcType=CHAR})
   </insert>
-  <insert id="insertSelective" parameterType="org.rx.fl.repository.model.Feedback">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Feedback" useGeneratedKeys="true">
     insert into t_feedback
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="userId != null">
@@ -137,7 +131,7 @@
         reply,
       </if>
       <if test="status != null">
-        status,
+        `status`,
       </if>
       <if test="createTime != null">
         create_time,
@@ -195,7 +189,7 @@
         reply = #{record.reply,jdbcType=VARCHAR},
       </if>
       <if test="record.status != null">
-        status = #{record.status,jdbcType=INTEGER},
+        `status` = #{record.status,jdbcType=INTEGER},
       </if>
       <if test="record.createTime != null">
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
@@ -217,7 +211,7 @@
       user_id = #{record.userId,jdbcType=CHAR},
       content = #{record.content,jdbcType=VARCHAR},
       reply = #{record.reply,jdbcType=VARCHAR},
-      status = #{record.status,jdbcType=INTEGER},
+      `status` = #{record.status,jdbcType=INTEGER},
       create_time = #{record.createTime,jdbcType=TIMESTAMP},
       modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
       is_deleted = #{record.isDeleted,jdbcType=CHAR}
@@ -238,7 +232,7 @@
         reply = #{reply,jdbcType=VARCHAR},
       </if>
       <if test="status != null">
-        status = #{status,jdbcType=INTEGER},
+        `status` = #{status,jdbcType=INTEGER},
       </if>
       <if test="createTime != null">
         create_time = #{createTime,jdbcType=TIMESTAMP},
@@ -257,7 +251,7 @@
     set user_id = #{userId,jdbcType=CHAR},
       content = #{content,jdbcType=VARCHAR},
       reply = #{reply,jdbcType=VARCHAR},
-      status = #{status,jdbcType=INTEGER},
+      `status` = #{status,jdbcType=INTEGER},
       create_time = #{createTime,jdbcType=TIMESTAMP},
       modify_time = #{modifyTime,jdbcType=TIMESTAMP},
       is_deleted = #{isDeleted,jdbcType=CHAR}

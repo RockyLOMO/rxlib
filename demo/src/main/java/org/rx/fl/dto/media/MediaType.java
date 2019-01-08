@@ -1,4 +1,4 @@
-package org.rx.fl.model;
+package org.rx.fl.dto.media;
 
 public enum MediaType {
     Taobao, Jd

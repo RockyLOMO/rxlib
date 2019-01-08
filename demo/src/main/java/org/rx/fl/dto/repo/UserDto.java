@@ -1,9 +1,9 @@
-package org.rx.fl.service.dto;
+package org.rx.fl.dto.repo;
 
 import lombok.Data;
 
 @Data
-public class UserInfo {
+public class UserDto {
     private String userId;
     private long balance;
     private long freezeAmount;

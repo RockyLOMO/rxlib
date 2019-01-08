@@ -146,7 +146,6 @@ public class ValidateUtil extends LogInterceptor {
         throw ex;
     }
 
-
     //#region Nested
     public interface RegularExp {
         /**

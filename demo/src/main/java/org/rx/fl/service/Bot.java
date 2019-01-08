@@ -1,6 +1,6 @@
 package org.rx.fl.service;
 
-import org.rx.fl.model.MessageInfo;
+import org.rx.fl.dto.MessageInfo;
 
 import java.util.function.Function;
 

@@ -13,7 +13,9 @@ public class BalanceLogExample {
 
     private Integer limit;
 
-    private Integer offset;
+    private Long offset;
+
+    private Boolean forUpdate;
 
     public BalanceLogExample() {
         oredCriteria = new ArrayList<Criteria>();
@@ -76,12 +78,20 @@ public class BalanceLogExample {
         return limit;
     }
 
-    public void setOffset(Integer offset) {
+    public void setOffset(Long offset) {
         this.offset = offset;
     }
 
-    public Integer getOffset() {
+    public Long getOffset() {
         return offset;
+    }
+
+    public void setForUpdate(Boolean forUpdate) {
+        this.forUpdate = forUpdate;
+    }
+
+    public Boolean getForUpdate() {
+        return forUpdate;
     }
 
     protected abstract static class GeneratedCriteria {
@@ -266,122 +276,122 @@ public class BalanceLogExample {
         }
 
         public Criteria andTypeIsNull() {
-            addCriterion("type is null");
+            addCriterion("`type` is null");
             return (Criteria) this;
         }
 
         public Criteria andTypeIsNotNull() {
-            addCriterion("type is not null");
+            addCriterion("`type` is not null");
             return (Criteria) this;
         }
 
         public Criteria andTypeEqualTo(Integer value) {
-            addCriterion("type =", value, "type");
+            addCriterion("`type` =", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeNotEqualTo(Integer value) {
-            addCriterion("type <>", value, "type");
+            addCriterion("`type` <>", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeGreaterThan(Integer value) {
-            addCriterion("type >", value, "type");
+            addCriterion("`type` >", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeGreaterThanOrEqualTo(Integer value) {
-            addCriterion("type >=", value, "type");
+            addCriterion("`type` >=", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeLessThan(Integer value) {
-            addCriterion("type <", value, "type");
+            addCriterion("`type` <", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeLessThanOrEqualTo(Integer value) {
-            addCriterion("type <=", value, "type");
+            addCriterion("`type` <=", value, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeIn(List<Integer> values) {
-            addCriterion("type in", values, "type");
+            addCriterion("`type` in", values, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeNotIn(List<Integer> values) {
-            addCriterion("type not in", values, "type");
+            addCriterion("`type` not in", values, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeBetween(Integer value1, Integer value2) {
-            addCriterion("type between", value1, value2, "type");
+            addCriterion("`type` between", value1, value2, "type");
             return (Criteria) this;
         }
 
         public Criteria andTypeNotBetween(Integer value1, Integer value2) {
-            addCriterion("type not between", value1, value2, "type");
+            addCriterion("`type` not between", value1, value2, "type");
             return (Criteria) this;
         }
 
         public Criteria andSourceIsNull() {
-            addCriterion("source is null");
+            addCriterion("`source` is null");
             return (Criteria) this;
         }
 
         public Criteria andSourceIsNotNull() {
-            addCriterion("source is not null");
+            addCriterion("`source` is not null");
             return (Criteria) this;
         }
 
         public Criteria andSourceEqualTo(Integer value) {
-            addCriterion("source =", value, "source");
+            addCriterion("`source` =", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceNotEqualTo(Integer value) {
-            addCriterion("source <>", value, "source");
+            addCriterion("`source` <>", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceGreaterThan(Integer value) {
-            addCriterion("source >", value, "source");
+            addCriterion("`source` >", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceGreaterThanOrEqualTo(Integer value) {
-            addCriterion("source >=", value, "source");
+            addCriterion("`source` >=", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceLessThan(Integer value) {
-            addCriterion("source <", value, "source");
+            addCriterion("`source` <", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceLessThanOrEqualTo(Integer value) {
-            addCriterion("source <=", value, "source");
+            addCriterion("`source` <=", value, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceIn(List<Integer> values) {
-            addCriterion("source in", values, "source");
+            addCriterion("`source` in", values, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceNotIn(List<Integer> values) {
-            addCriterion("source not in", values, "source");
+            addCriterion("`source` not in", values, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceBetween(Integer value1, Integer value2) {
-            addCriterion("source between", value1, value2, "source");
+            addCriterion("`source` between", value1, value2, "source");
             return (Criteria) this;
         }
 
         public Criteria andSourceNotBetween(Integer value1, Integer value2) {
-            addCriterion("source not between", value1, value2, "source");
+            addCriterion("`source` not between", value1, value2, "source");
             return (Criteria) this;
         }
 
@@ -646,62 +656,62 @@ public class BalanceLogExample {
         }
 
         public Criteria andValueIsNull() {
-            addCriterion("value is null");
+            addCriterion("`value` is null");
             return (Criteria) this;
         }
 
         public Criteria andValueIsNotNull() {
-            addCriterion("value is not null");
+            addCriterion("`value` is not null");
             return (Criteria) this;
         }
 
         public Criteria andValueEqualTo(Long value) {
-            addCriterion("value =", value, "value");
+            addCriterion("`value` =", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueNotEqualTo(Long value) {
-            addCriterion("value <>", value, "value");
+            addCriterion("`value` <>", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueGreaterThan(Long value) {
-            addCriterion("value >", value, "value");
+            addCriterion("`value` >", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueGreaterThanOrEqualTo(Long value) {
-            addCriterion("value >=", value, "value");
+            addCriterion("`value` >=", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueLessThan(Long value) {
-            addCriterion("value <", value, "value");
+            addCriterion("`value` <", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueLessThanOrEqualTo(Long value) {
-            addCriterion("value <=", value, "value");
+            addCriterion("`value` <=", value, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueIn(List<Long> values) {
-            addCriterion("value in", values, "value");
+            addCriterion("`value` in", values, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueNotIn(List<Long> values) {
-            addCriterion("value not in", values, "value");
+            addCriterion("`value` not in", values, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueBetween(Long value1, Long value2) {
-            addCriterion("value between", value1, value2, "value");
+            addCriterion("`value` between", value1, value2, "value");
             return (Criteria) this;
         }
 
         public Criteria andValueNotBetween(Long value1, Long value2) {
-            addCriterion("value not between", value1, value2, "value");
+            addCriterion("`value` not between", value1, value2, "value");
             return (Criteria) this;
         }
 

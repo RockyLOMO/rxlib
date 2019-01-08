@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.rx.fl.repository.BalanceLogMapper">
-  <select id="sumAmount" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultType="java.lang.Long">
-    select sum(value) from t_balance_log
-    <if test="_parameter != null">
-      <include refid="Example_Where_Clause" />
-    </if>
-  </select>
-
   <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.BalanceLog">
     <id column="id" jdbcType="CHAR" property="id" />
     <result column="user_id" jdbcType="CHAR" property="userId" />
@@ -21,6 +14,8 @@
     <result column="remark" jdbcType="VARCHAR" property="remark" />
     <result column="version" jdbcType="BIGINT" property="version" />
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+    <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime" />
+    <result column="is_deleted" jdbcType="CHAR" property="isDeleted" />
   </resultMap>
   <sql id="Example_Where_Clause">
     <where>
@@ -81,8 +76,8 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, user_id, type, source, source_id, client_ip, pre_balance, post_balance, value, 
-    remark, version, create_time
+    id, user_id, `type`, `source`, source_id, client_ip, pre_balance, post_balance, `value`, 
+    remark, version, create_time, modify_time, is_deleted
   </sql>
   <select id="selectByExample" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultMap="BaseResultMap">
     select
@@ -105,6 +100,9 @@
         limit ${limit}
       </if>
     </if>
+    <if test="forUpdate != null and forUpdate == true">
+      for update
+    </if>
   </select>
   <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
     select 
@@ -122,33 +120,29 @@
       <include refid="Example_Where_Clause" />
     </if>
   </delete>
-  <insert id="insert" parameterType="org.rx.fl.repository.model.BalanceLog">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
-    insert into t_balance_log (user_id, type, source, 
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.BalanceLog" useGeneratedKeys="true">
+    insert into t_balance_log (user_id, `type`, `source`, 
       source_id, client_ip, pre_balance, 
-      post_balance, value, remark, 
-      version, create_time)
+      post_balance, `value`, remark, 
+      version, create_time, modify_time, 
+      is_deleted)
     values (#{userId,jdbcType=CHAR}, #{type,jdbcType=INTEGER}, #{source,jdbcType=INTEGER}, 
       #{sourceId,jdbcType=VARCHAR}, #{clientIp,jdbcType=VARCHAR}, #{preBalance,jdbcType=BIGINT}, 
       #{postBalance,jdbcType=BIGINT}, #{value,jdbcType=BIGINT}, #{remark,jdbcType=VARCHAR}, 
-      #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP})
+      #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
+      #{isDeleted,jdbcType=CHAR})
   </insert>
-  <insert id="insertSelective" parameterType="org.rx.fl.repository.model.BalanceLog">
-    <selectKey keyProperty="id" order="AFTER" resultType="java.lang.String">
-      SELECT LAST_INSERT_ID()
-    </selectKey>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.BalanceLog" useGeneratedKeys="true">
     insert into t_balance_log
     <trim prefix="(" suffix=")" suffixOverrides=",">
       <if test="userId != null">
         user_id,
       </if>
       <if test="type != null">
-        type,
+        `type`,
       </if>
       <if test="source != null">
-        source,
+        `source`,
       </if>
       <if test="sourceId != null">
         source_id,
@@ -163,7 +157,7 @@
         post_balance,
       </if>
       <if test="value != null">
-        value,
+        `value`,
       </if>
       <if test="remark != null">
         remark,
@@ -173,6 +167,12 @@
       </if>
       <if test="createTime != null">
         create_time,
+      </if>
+      <if test="modifyTime != null">
+        modify_time,
+      </if>
+      <if test="isDeleted != null">
+        is_deleted,
       </if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
@@ -209,6 +209,12 @@
       <if test="createTime != null">
         #{createTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="modifyTime != null">
+        #{modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="isDeleted != null">
+        #{isDeleted,jdbcType=CHAR},
+      </if>
     </trim>
   </insert>
   <select id="countByExample" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultType="java.lang.Long">
@@ -227,10 +233,10 @@
         user_id = #{record.userId,jdbcType=CHAR},
       </if>
       <if test="record.type != null">
-        type = #{record.type,jdbcType=INTEGER},
+        `type` = #{record.type,jdbcType=INTEGER},
       </if>
       <if test="record.source != null">
-        source = #{record.source,jdbcType=INTEGER},
+        `source` = #{record.source,jdbcType=INTEGER},
       </if>
       <if test="record.sourceId != null">
         source_id = #{record.sourceId,jdbcType=VARCHAR},
@@ -245,7 +251,7 @@
         post_balance = #{record.postBalance,jdbcType=BIGINT},
       </if>
       <if test="record.value != null">
-        value = #{record.value,jdbcType=BIGINT},
+        `value` = #{record.value,jdbcType=BIGINT},
       </if>
       <if test="record.remark != null">
         remark = #{record.remark,jdbcType=VARCHAR},
@@ -256,6 +262,12 @@
       <if test="record.createTime != null">
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="record.modifyTime != null">
+        modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="record.isDeleted != null">
+        is_deleted = #{record.isDeleted,jdbcType=CHAR},
+      </if>
     </set>
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
@@ -265,16 +277,18 @@
     update t_balance_log
     set id = #{record.id,jdbcType=CHAR},
       user_id = #{record.userId,jdbcType=CHAR},
-      type = #{record.type,jdbcType=INTEGER},
-      source = #{record.source,jdbcType=INTEGER},
+      `type` = #{record.type,jdbcType=INTEGER},
+      `source` = #{record.source,jdbcType=INTEGER},
       source_id = #{record.sourceId,jdbcType=VARCHAR},
       client_ip = #{record.clientIp,jdbcType=VARCHAR},
       pre_balance = #{record.preBalance,jdbcType=BIGINT},
       post_balance = #{record.postBalance,jdbcType=BIGINT},
-      value = #{record.value,jdbcType=BIGINT},
+      `value` = #{record.value,jdbcType=BIGINT},
       remark = #{record.remark,jdbcType=VARCHAR},
       version = #{record.version,jdbcType=BIGINT},
-      create_time = #{record.createTime,jdbcType=TIMESTAMP}
+      create_time = #{record.createTime,jdbcType=TIMESTAMP},
+      modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
+      is_deleted = #{record.isDeleted,jdbcType=CHAR}
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
     </if>
@@ -286,10 +300,10 @@
         user_id = #{userId,jdbcType=CHAR},
       </if>
       <if test="type != null">
-        type = #{type,jdbcType=INTEGER},
+        `type` = #{type,jdbcType=INTEGER},
       </if>
       <if test="source != null">
-        source = #{source,jdbcType=INTEGER},
+        `source` = #{source,jdbcType=INTEGER},
       </if>
       <if test="sourceId != null">
         source_id = #{sourceId,jdbcType=VARCHAR},
@@ -304,7 +318,7 @@
         post_balance = #{postBalance,jdbcType=BIGINT},
       </if>
       <if test="value != null">
-        value = #{value,jdbcType=BIGINT},
+        `value` = #{value,jdbcType=BIGINT},
       </if>
       <if test="remark != null">
         remark = #{remark,jdbcType=VARCHAR},
@@ -315,22 +329,36 @@
       <if test="createTime != null">
         create_time = #{createTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="modifyTime != null">
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="isDeleted != null">
+        is_deleted = #{isDeleted,jdbcType=CHAR},
+      </if>
     </set>
     where id = #{id,jdbcType=CHAR}
   </update>
   <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.BalanceLog">
     update t_balance_log
     set user_id = #{userId,jdbcType=CHAR},
-      type = #{type,jdbcType=INTEGER},
-      source = #{source,jdbcType=INTEGER},
+      `type` = #{type,jdbcType=INTEGER},
+      `source` = #{source,jdbcType=INTEGER},
       source_id = #{sourceId,jdbcType=VARCHAR},
       client_ip = #{clientIp,jdbcType=VARCHAR},
       pre_balance = #{preBalance,jdbcType=BIGINT},
       post_balance = #{postBalance,jdbcType=BIGINT},
-      value = #{value,jdbcType=BIGINT},
+      `value` = #{value,jdbcType=BIGINT},
       remark = #{remark,jdbcType=VARCHAR},
       version = #{version,jdbcType=BIGINT},
-      create_time = #{createTime,jdbcType=TIMESTAMP}
+      create_time = #{createTime,jdbcType=TIMESTAMP},
+      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+      is_deleted = #{isDeleted,jdbcType=CHAR}
     where id = #{id,jdbcType=CHAR}
   </update>
+  <select id="sumAmount" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultType="java.lang.Long">
+    select sum(value) from t_balance_log
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
 </mapper>

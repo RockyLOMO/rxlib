@@ -3,14 +3,15 @@ package org.rx.fl.service;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.*;
-import org.rx.fl.model.MediaType;
-import org.rx.fl.model.OrderInfo;
-import org.rx.fl.model.OrderStatus;
+import org.rx.fl.dto.media.MediaType;
+import org.rx.fl.dto.media.OrderInfo;
+import org.rx.fl.dto.media.OrderStatus;
+import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.repository.OrderMapper;
 import org.rx.fl.repository.model.*;
-import org.rx.fl.service.dto.BalanceSourceKind;
-import org.rx.fl.service.dto.RebindOrderResult;
-import org.rx.fl.service.dto.UserInfo;
+import org.rx.fl.dto.repo.BalanceSourceKind;
+import org.rx.fl.dto.repo.RebindOrderResult;
+import org.rx.fl.dto.repo.UserDto;
 import org.rx.fl.util.DbUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,22 @@ public class OrderService {
     private UserService userService;
     @Resource
     private DbUtil dbUtil;
+
+    public List<OrderResult> queryOrders(String userId) {
+        OrderExample query = new OrderExample();
+        query.createCriteria().andUserIdEqualTo(userId);
+        query.setOrderByClause("createTime desc");
+        List<Order> orders = orderMapper.selectByExample(query);
+        NQuery.of(orders).select(p -> {
+            OrderResult result = new OrderResult();
+            result.setOrderNo(p.getOrderNo());
+            result.setGoodsName(p.getGoodsName());
+            result.setRebateAmount(p.getRebateAmount());
+            result.setStatus(p.getStatus());
+            result.setCreateTime(p.getCreateTime());
+            return result;
+        });
+    }
 
     @Transactional
     public void saveOrders(MediaType mediaType, List<OrderInfo> orderInfos) {
@@ -96,7 +113,7 @@ public class OrderService {
         dbUtil.save(order);
 
         userService.saveUserBalance(userId, "0.0.0.0", BalanceSourceKind.RebindOrder, order.getId(), order.getRebateAmount());
-        UserInfo user = userService.queryUser(userId);
+        UserDto user = userService.queryUser(userId);
 
         RebindOrderResult result = new RebindOrderResult();
         result.setOrderNo(order.getOrderNo());
