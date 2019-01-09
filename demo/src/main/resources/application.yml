@@ -10,18 +10,18 @@ mybatis.mapper-locations: classpath:mybatis/*.xml
 
 app:
   errorCodeFiles:
-  - errorCode.yml
+    - errorCode.yml
   mybatis:
     mapperScan: org.rx.fl.repository
   chrome:
     driver: D:\usr\chrome\chromedriver.exe
-    logPath: D:\usr\chrome\logs
     dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
     isBackground: false
     initSize: 2
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
+    initSize: 0
   media:
     coreSize: 1
     remoteMode: false

@@ -5,16 +5,23 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jboss.netty.util.internal.ConcurrentHashMap;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.ie.InternetExplorerDriver;
+import org.openqa.selenium.ie.InternetExplorerDriverService;
+import org.openqa.selenium.ie.InternetExplorerOptions;
 import org.openqa.selenium.remote.CapabilityType;
+import org.openqa.selenium.remote.DesiredCapabilities;
+import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.remote.service.DriverService;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
+import org.rx.util.function.Action;
 
-import java.io.File;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -28,81 +35,138 @@ import static org.rx.common.Contract.require;
 
 @Slf4j
 public final class WebCaller extends Disposable {
-    private static final ChromeDriverService driverService;
-    private static final ConcurrentLinkedQueue<ChromeDriver> driverPool;
+    public enum DriverType {
+        Chrome,
+        IE
+    }
+
+    private static class PooledItem {
+        public final DriverService driverService;
+        public final ConcurrentLinkedQueue<RemoteWebDriver> drivers;
+
+        public PooledItem(DriverService driverService) {
+            this.driverService = driverService;
+            drivers = new ConcurrentLinkedQueue<>();
+        }
+    }
+
+    private static final ConcurrentHashMap<DriverType, PooledItem> driverPool;
     private static final String dataPath = (String) App.readSetting("app.chrome.dataPath");
     private static volatile int pathCounter;
 
     static {
         System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
-        driverService = new ChromeDriverService.Builder()
-                .usingAnyFreePort()
-                .withLogFile(new File((String) App.readSetting("app.chrome.logPath")))
-                .withVerbose(true).build();
-        driverPool = new ConcurrentLinkedQueue<>();
-        Integer init = (Integer) App.readSetting("app.chrome.initSize");
-        if (init != null) {
-            init(init);
+        System.setProperty("webdriver.ie.driver", (String) App.readSetting("app.ie.driver"));
+        driverPool = new ConcurrentHashMap<>();
+        for (DriverType driverType : DriverType.values()) {
+            Integer init = (Integer) App.readSetting(String.format("app.%s.initSize", driverType.name().toLowerCase()));
+            if (init != null) {
+                init(driverType, init);
+            }
         }
     }
 
-    private static ChromeDriver create(boolean fromPool) {
-        ChromeDriver driver = null;
+    private static RemoteWebDriver create(DriverType driverType, boolean fromPool) {
+        RemoteWebDriver driver = null;
+        PooledItem pooledItem = driverPool.computeIfAbsent(driverType, k -> {
+            DriverService driverService;
+            switch (driverType) {
+                case IE:
+                    driverService = new InternetExplorerDriverService.Builder()
+                            .withSilent(true).build();
+                    break;
+                default:
+                    driverService = new ChromeDriverService.Builder()
+                            .usingAnyFreePort()
+                            .withSilent(true).build();
+                    break;
+            }
+            return new PooledItem(driverService);
+        });
         if (fromPool) {
-            driver = driverPool.poll();
+            driver = pooledItem.drivers.poll();
         }
         if (driver == null) {
-            log.info("create driver...");
-            ChromeOptions opt = new ChromeOptions();
-            opt.setHeadless((boolean) App.readSetting("app.chrome.isBackground"));
-            opt.setAcceptInsecureCerts(true);
-            opt.setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
+            log.info("create {} driver...", driverType);
+            switch (driverType) {
+                case IE: {
+                    InternetExplorerOptions opt = new InternetExplorerOptions();
+                    opt.withInitialBrowserUrl("about:blank")
+                            .ignoreZoomSettings()
+                            .introduceFlakinessByIgnoringSecurityDomains()
+                            .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
-            opt.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
-            opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
-            opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
-            opt.setCapability(CapabilityType.SUPPORTS_NETWORK_CONNECTION, true);
-            opt.setCapability("browserConnectionEnabled", true);
+                    DesiredCapabilities capabilities = DesiredCapabilities.internetExplorer();
+                    capabilities.setAcceptInsecureCerts(true);
+                    capabilities.setJavascriptEnabled(true);
+                    opt.merge(capabilities);
+                    opt.setCapability(InternetExplorerDriver.INTRODUCE_FLAKINESS_BY_IGNORING_SECURITY_DOMAINS, true);
 
-            Map<String, Object> chromePrefs = new HashMap<>();
-            String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
-            App.createDirectory(downloadPath);
-            chromePrefs.put("download.default_directory", downloadPath);
-            chromePrefs.put("profile.default_content_settings.popups", 0);
-            chromePrefs.put("pdfjs.disabled", true);
-            opt.setExperimentalOption("prefs", chromePrefs);
+                    driver = new InternetExplorerDriver((InternetExplorerDriverService) pooledItem.driverService, opt);
+                }
+                break;
+                default: {
+                    ChromeOptions opt = new ChromeOptions();
+                    opt.setHeadless((boolean) App.readSetting("app.chrome.isBackground"))
+                            .setAcceptInsecureCerts(true)
+                            .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
-            opt.addArguments("user-agent=Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko");
+                    opt.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
+                    opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
+                    opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
+                    opt.setCapability(CapabilityType.SUPPORTS_NETWORK_CONNECTION, true);
+                    opt.setCapability("browserConnectionEnabled", true);
 
-            opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
-                    "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
-                    "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
-                    "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
-                    "ash-force-desktop", "disable-background-mode", "no-sandbox", "test-type=webdriver");
-//            opt.addArguments("window-position=", "disable-dev-shm-usage");
-            if (!Strings.isNullOrEmpty(dataPath)) {
-                opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
+                    Map<String, Object> chromePrefs = new HashMap<>();
+                    String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
+                    App.createDirectory(downloadPath);
+                    chromePrefs.put("download.default_directory", downloadPath);
+                    chromePrefs.put("profile.default_content_settings.popups", 0);
+                    chromePrefs.put("pdfjs.disabled", true);
+                    opt.setExperimentalOption("prefs", chromePrefs);
+
+                    opt.addArguments("user-agent=Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko");
+                    opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
+                            "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
+                            "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
+                            "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
+                            "ash-force-desktop", "disable-background-mode", "no-sandbox", "test-type=webdriver");
+//                    opt.addArguments("window-position=", "disable-dev-shm-usage");
+                    if (!Strings.isNullOrEmpty(dataPath)) {
+                        opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
+                    }
+
+                    driver = new ChromeDriver((ChromeDriverService) pooledItem.driverService, opt);
+                }
+                break;
             }
-
-            driver = new ChromeDriver(driverService, opt);
-//        driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
         }
         return driver;
     }
 
-    private static void release(ChromeDriver driver) {
-        driverPool.add(driver);
+    private static void release(RemoteWebDriver driver) {
+        DriverType driverType;
+        if (driver.getClass().equals(InternetExplorerDriver.class)) {
+            driverType = DriverType.IE;
+        } else {
+            driverType = DriverType.Chrome;
+        }
+        PooledItem pooledItem = driverPool.get(driverType);
+        if (pooledItem == null) {
+            return;
+        }
+        pooledItem.drivers.add(driver);
     }
 
-    public static void init(int count) {
+    public static void init(DriverType driverType, int count) {
         int left = count - driverPool.size();
         for (int i = 0; i < left; i++) {
-            release(create(false));
+            release(create(driverType, false));
         }
     }
 
     public synchronized static void purgeAll() {
-        for (ChromeDriver driver : NQuery.of(driverPool).toList()) {
+        for (RemoteWebDriver driver : NQuery.of(driverPool.values()).selectMany(p -> p.drivers)) {
             driver.quit();
         }
         driverPool.clear();
@@ -111,19 +175,8 @@ public final class WebCaller extends Disposable {
     @Getter
     @Setter
     private boolean isShareCookie;
-    private ChromeDriver driver;
-    private ReentrantLock locker;
-
-    private Lock getLocker() {
-        if (locker == null) {
-            synchronized (this) {
-                if (locker == null) {
-                    locker = new ReentrantLock();
-                }
-            }
-        }
-        return locker;
-    }
+    private RemoteWebDriver driver;
+    private Lazy<ReentrantLock> locker;
 
     public String getCurrentUrl() {
         return driver.getCurrentUrl();
@@ -138,7 +191,14 @@ public final class WebCaller extends Disposable {
     }
 
     public WebCaller() {
-        driver = create(true);
+        this(DriverType.Chrome);
+    }
+
+    public WebCaller(DriverType driverType) {
+        require(driverType);
+
+        driver = create(driverType, true);
+        locker = new Lazy<>(ReentrantLock.class);
     }
 
     @Override
@@ -158,17 +218,17 @@ public final class WebCaller extends Disposable {
         checkNotClosed();
         require(consumer);
 
-        Lock locker = getLocker();
-        if (!locker.tryLock()) {
+        Lock lock = locker.getValue();
+        if (!lock.tryLock()) {
             if (skipIfLocked) {
                 return;
             }
-            locker.lock();
+            lock.lock();
         }
         try {
             consumer.accept(this);
         } finally {
-            locker.unlock();
+            lock.unlock();
         }
     }
 
@@ -180,34 +240,42 @@ public final class WebCaller extends Disposable {
         checkNotClosed();
         require(consumer);
 
-        Lock locker = getLocker();
-        if (!locker.tryLock()) {
+        Lock lock = locker.getValue();
+        if (!lock.tryLock()) {
             if (skipIfLocked) {
                 return null;
             }
-            locker.lock();
+            lock.lock();
         }
         try {
             return consumer.apply(this);
         } finally {
-            locker.unlock();
+            lock.unlock();
         }
     }
 
     public void invokeNew(Consumer<WebCaller> consumer) {
-        checkNotClosed();
-        require(consumer);
+        invokeNew(consumer, DriverType.Chrome);
+    }
 
-        try (WebCaller caller = new WebCaller()) {
+    public void invokeNew(Consumer<WebCaller> consumer, DriverType driverType) {
+        checkNotClosed();
+        require(consumer, driverType);
+
+        try (WebCaller caller = new WebCaller(driverType)) {
             consumer.accept(caller);
         }
     }
 
     public <T> T invokeNew(Function<WebCaller, T> consumer) {
-        checkNotClosed();
-        require(consumer);
+        return invokeNew(consumer, DriverType.Chrome);
+    }
 
-        try (WebCaller caller = new WebCaller()) {
+    public <T> T invokeNew(Function<WebCaller, T> consumer, DriverType driverType) {
+        checkNotClosed();
+        require(consumer, driverType);
+
+        try (WebCaller caller = new WebCaller(driverType)) {
             return consumer.apply(caller);
         }
     }
@@ -224,20 +292,19 @@ public final class WebCaller extends Disposable {
         if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
             String host = new URL(url).getHost();
-            try {
+            Action action = () -> {
                 Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
                 for (Cookie p : set) {
                     log.debug("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
                     manage.addCookie(p);
                 }
+            };
+            try {
+                action.invoke();
             } catch (UnableToSetCookieException e) {
-                System.out.println(e.getMessage());
-                driver.get(String.format("%s/404", url));
-                Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
-                for (Cookie p : set) {
-                    log.info("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
-                    manage.addCookie(p);
-                }
+                log.debug(e.getMessage());
+//                driver.get(url);
+//                action.invoke();
             }
         }
         driver.get(url);

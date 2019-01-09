@@ -1,7 +1,6 @@
 package org.rx.fl.util;
 
 import lombok.SneakyThrows;
-import org.apache.commons.lang3.StringUtils;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
@@ -28,7 +27,7 @@ public class DbUtil {
     }
 
     public static long toCent(String money) {
-        if (StringUtils.isBlank(money)) {
+        if (App.isNullOrWhiteSpace(money)) {
             return 0;
         }
         return ((Double) (Double.valueOf(money) * 100)).longValue();
