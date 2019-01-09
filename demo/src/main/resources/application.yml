@@ -20,6 +20,8 @@ app:
     downloadPath: D:\usr\chrome\download
     isBackground: false
     initSize: 2
+  ie:
+    driver: D:\usr\chrome\IEDriverServer.exe
   media:
     coreSize: 1
     remoteMode: false

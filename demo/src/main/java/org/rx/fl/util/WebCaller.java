@@ -72,6 +72,8 @@ public final class WebCaller extends Disposable {
             chromePrefs.put("pdfjs.disabled", true);
             opt.setExperimentalOption("prefs", chromePrefs);
 
+            opt.addArguments("user-agent=Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko");
+
             opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
                     "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                     "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
@@ -84,7 +86,6 @@ public final class WebCaller extends Disposable {
 
             driver = new ChromeDriver(driverService, opt);
 //        driver.manage().timeouts().implicitlyWait(8 * 1000, TimeUnit.MILLISECONDS);
-//            driver.get("http://www.baidu.com");
         }
         return driver;
     }
@@ -222,8 +223,8 @@ public final class WebCaller extends Disposable {
 
         if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
+            String host = new URL(url).getHost();
             try {
-                String host = new URL(url).getHost();
                 Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
                 for (Cookie p : set) {
                     log.debug("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
@@ -231,6 +232,12 @@ public final class WebCaller extends Disposable {
                 }
             } catch (UnableToSetCookieException e) {
                 System.out.println(e.getMessage());
+                driver.get(String.format("%s/404", url));
+                Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
+                for (Cookie p : set) {
+                    log.info("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
+                    manage.addCookie(p);
+                }
             }
         }
         driver.get(url);

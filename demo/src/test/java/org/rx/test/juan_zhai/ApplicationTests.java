@@ -1,4 +1,4 @@
-package org.rx.juan_zhai;
+package org.rx.test.juan_zhai;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
