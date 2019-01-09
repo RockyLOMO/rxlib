@@ -1,4 +1,4 @@
-package org.rx;
+package org.rx.common;
 
 /**
  * 根据Exception来读取errorCode.yml的错误信息

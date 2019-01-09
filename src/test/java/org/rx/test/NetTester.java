@@ -2,7 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.App;
+import org.rx.common.App;
 import org.rx.socks.Sockets;
 import org.rx.socks.proxy.ProxyServer;
 

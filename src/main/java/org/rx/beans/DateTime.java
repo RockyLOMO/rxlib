@@ -1,7 +1,10 @@
-package org.rx.bean;
+package org.rx.beans;
 
 import org.apache.commons.lang3.time.FastDateFormat;
-import org.rx.*;
+import org.rx.annotation.ErrorCode;
+import org.rx.common.Contract;
+import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
@@ -9,9 +12,9 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.bean.$.$;
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.beans.$.$;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 
 /**
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/

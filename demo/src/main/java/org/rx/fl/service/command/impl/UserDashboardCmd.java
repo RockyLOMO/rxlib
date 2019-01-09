@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Order(3)

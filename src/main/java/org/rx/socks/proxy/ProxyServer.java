@@ -18,14 +18,14 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.SneakyThrows;
-import org.rx.App;
-import org.rx.Disposable;
+import org.rx.common.App;
+import org.rx.common.Disposable;
 import org.rx.socks.Sockets;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public final class ProxyServer extends Disposable {
     public static final String Compression_Key = "app.netProxy.compression";
@@ -54,7 +54,7 @@ public final class ProxyServer extends Disposable {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         if (group != null) {
             group.shutdownGracefully();
         }

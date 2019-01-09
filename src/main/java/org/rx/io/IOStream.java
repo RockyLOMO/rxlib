@@ -1,17 +1,17 @@
 package org.rx.io;
 
 import lombok.SneakyThrows;
-import org.rx.App;
-import org.rx.Disposable;
-import org.rx.ErrorCode;
-import org.rx.SystemException;
-import org.rx.Contract;
+import org.rx.common.App;
+import org.rx.common.Disposable;
+import org.rx.annotation.ErrorCode;
+import org.rx.common.SystemException;
+import org.rx.common.Contract;
 import org.rx.util.StringBuilder;
 
 import java.io.*;
 
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 
 public class IOStream extends Disposable implements Closeable, Flushable {
     public static String readString(InputStream stream) {
@@ -47,18 +47,15 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         }
     }
 
+    @SneakyThrows
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
         byte[] buffer = new byte[Contract.DefaultBufferSize * 2];
-        try {
-            int read;
-            while ((read = from.read(buffer, 0, buffer.length)) > 0) {
-                to.write(buffer, 0, read);
-                to.flush();
-            }
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
+        int read;
+        while ((read = from.read(buffer, 0, buffer.length)) > 0) {
+            to.write(buffer, 0, read);
+            to.flush();
         }
     }
 
@@ -110,35 +107,27 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         this.writer = output;
     }
 
+    @SneakyThrows
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         App.catchCall(this::flush);
-        try {
-            writer.close();
-            reader.close();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+
+        writer.close();
+        reader.close();
     }
 
+    @SneakyThrows
     public int available() {
         checkNotClosed();
 
-        try {
-            return reader.available();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.available();
     }
 
+    @SneakyThrows
     public int read() {
         checkNotClosed();
 
-        try {
-            return reader.read();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.read();
     }
 
     public int read(byte[] data) {
@@ -148,26 +137,20 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         return read(data, 0, data.length);
     }
 
+    @SneakyThrows
     public int read(byte[] buffer, int offset, int count) {
         checkNotClosed();
         require(buffer);
         require(offset, offset >= 0);//ignore count 4 BytesSegment
 
-        try {
-            return reader.read(buffer, offset, count);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.read(buffer, offset, count);
     }
 
+    @SneakyThrows
     public void write(int b) {
         checkNotClosed();
 
-        try {
-            writer.write(b);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.write(b);
     }
 
     public void write(byte[] data) {
@@ -177,27 +160,21 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         write(data, 0, data.length);
     }
 
+    @SneakyThrows
     public void write(byte[] buffer, int offset, int count) {
         checkNotClosed();
         require(buffer);
         require(offset, offset >= 0);
 
-        try {
-            writer.write(buffer, offset, count);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.write(buffer, offset, count);
     }
 
+    @SneakyThrows
     @Override
     public void flush() {
         checkNotClosed();
 
-        try {
-            writer.flush();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.flush();
     }
 
     public void copyTo(IOStream to) {

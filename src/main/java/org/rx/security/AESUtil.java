@@ -1,17 +1,15 @@
 package org.rx.security;
 
-import org.rx.App;
-import org.rx.SystemException;
-import org.rx.Contract;
+import lombok.SneakyThrows;
+import org.rx.common.App;
+import org.rx.common.Contract;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.GeneralSecurityException;
 import java.security.Key;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 
 public class AESUtil {
@@ -24,6 +22,7 @@ public class AESUtil {
      * @param key 加密密码
      * @return
      */
+    @SneakyThrows
     public static byte[] encrypt(byte[] data, byte[] key) {
         require(data, key);
         require(key, key.length == 16);
@@ -31,13 +30,9 @@ public class AESUtil {
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
         byte[] enCodeFormat = secretKey.getEncoded();
         SecretKeySpec seckey = new SecretKeySpec(enCodeFormat, "AES");
-        try {
-            Cipher cipher = Cipher.getInstance(AES_ALGORITHM);// 创建密码器
-            cipher.init(Cipher.ENCRYPT_MODE, seckey);// 初始化
-            return cipher.doFinal(data);// 加密
-        } catch (GeneralSecurityException ex) {
-            throw SystemException.wrap(ex);
-        }
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);// 创建密码器
+        cipher.init(Cipher.ENCRYPT_MODE, seckey);// 初始化
+        return cipher.doFinal(data);// 加密
     }
 
     /**
@@ -47,6 +42,7 @@ public class AESUtil {
      * @param key 解密密钥
      * @return
      */
+    @SneakyThrows
     public static byte[] decrypt(byte[] data, byte[] key) {
         require(data, key);
         require(key, key.length == 16);
@@ -54,66 +50,46 @@ public class AESUtil {
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
         byte[] enCodeFormat = secretKey.getEncoded();
         SecretKeySpec seckey = new SecretKeySpec(enCodeFormat, "AES");
-        try {
-            Cipher cipher = Cipher.getInstance(AES_ALGORITHM);// 创建密码器
-            cipher.init(Cipher.DECRYPT_MODE, seckey);// 初始化
-            return cipher.doFinal(data); // 加密
-        } catch (GeneralSecurityException ex) {
-            throw SystemException.wrap(ex);
-        }
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);// 创建密码器
+        cipher.init(Cipher.DECRYPT_MODE, seckey);// 初始化
+        return cipher.doFinal(data); // 加密
     }
 
+    @SneakyThrows
     public static String encryptToBase64(String data, String key) {
         require(data, key);
 
-        try {
-            byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), key.getBytes(Contract.Utf8));
-            return App.convertToBase64String(valueByte);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), key.getBytes(Contract.Utf8));
+        return App.convertToBase64String(valueByte);
     }
 
+    @SneakyThrows
     public static String decryptFromBase64(String data, String key) {
         require(data, key);
 
-        try {
-            byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(Contract.Utf8));
-            return new String(valueByte, Contract.Utf8);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(Contract.Utf8));
+        return new String(valueByte, Contract.Utf8);
     }
 
+    @SneakyThrows
     public static String encryptWithKeyBase64(String data, String key) {
         require(data, key);
 
-        try {
-            byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), App.convertFromBase64String(key));
-            return App.convertToBase64String(valueByte);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), App.convertFromBase64String(key));
+        return App.convertToBase64String(valueByte);
     }
 
+    @SneakyThrows
     public static String decryptWithKeyBase64(String data, String key) {
         require(data, key);
 
-        try {
-            byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
-            return new String(valueByte, Contract.Utf8);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
+        return new String(valueByte, Contract.Utf8);
     }
 
+    @SneakyThrows
     public static byte[] genarateRandomKey() {
-        KeyGenerator keygen;
-        try {
-            keygen = KeyGenerator.getInstance(AES_ALGORITHM);
-        } catch (NoSuchAlgorithmException ex) {
-            throw SystemException.wrap(ex);
-        }
+        KeyGenerator keygen = KeyGenerator.getInstance(AES_ALGORITHM);
         SecureRandom random = new SecureRandom();
         keygen.init(random);
         Key key = keygen.generateKey();

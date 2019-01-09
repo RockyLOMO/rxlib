@@ -1,12 +1,12 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
-import org.rx.Contract;
+import org.rx.common.Contract;
 import org.rx.test.bean.RestApi;
 import org.rx.test.bean.RestParam;
 import org.rx.test.bean.SourceBean;
 import org.rx.test.bean.TargetBean;
-import org.rx.bean.BeanMapper;
+import org.rx.beans.BeanMapper;
 import org.rx.io.BinaryStream;
 import org.rx.io.MemoryStream;
 import org.rx.socks.http.RestClient;

@@ -2,7 +2,11 @@ package org.rx.fl.service;
 
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.*;
+import org.rx.annotation.ErrorCode;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
@@ -20,8 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.util.List;
 
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 import static org.rx.fl.util.DbUtil.toCent;
 
 @Service

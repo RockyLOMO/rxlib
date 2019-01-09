@@ -1,8 +1,8 @@
 package org.rx.util;
 
-import org.rx.Contract;
+import org.rx.common.Contract;
 
-import static org.rx.Contract.isNull;
+import static org.rx.common.Contract.isNull;
 
 public final class StringBuilder {
     private java.lang.StringBuilder buffer;

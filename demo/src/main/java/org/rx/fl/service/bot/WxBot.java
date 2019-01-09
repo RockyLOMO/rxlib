@@ -1,12 +1,12 @@
-package org.rx.fl.service;
+package org.rx.fl.service.bot;
 
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.App;
-import org.rx.NQuery;
-import org.rx.bean.DateTime;
-import org.rx.fl.dto.MessageInfo;
+import org.rx.cache.LRUCache;
+import org.rx.common.App;
+import org.rx.fl.dto.bot.MessageInfo;
+import org.rx.fl.service.UserService;
 import org.rx.util.ManualResetEvent;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
@@ -20,44 +20,28 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-import static org.rx.Contract.toJsonString;
-import static org.rx.util.AsyncTask.TaskFactory;
+import static org.rx.common.Contract.toJsonString;
 
 @Slf4j
 public final class WxBot implements Bot {
     public static final WxBot Instance = new WxBot();
     private static final String token = "wangyoufan";
-//    //重复通知过滤
+    //    //重复通知过滤
 //    private static final ExpireKey expireKey = new DefaultExpireKey();
 
     @Data
     private static class CacheItem {
         private final ManualResetEvent waiter;
-        private final DateTime createTime;
         private String value;
 
         public CacheItem() {
             waiter = new ManualResetEvent(false);
-            createTime = DateTime.utcNow();
         }
     }
 
-    private static final ConcurrentHashMap<String, CacheItem> callCache = new ConcurrentHashMap<>();
-
-    static {
-        TaskFactory.schedule(() -> {
-            for (String k : NQuery.of(callCache.entrySet())
-                    .where(p -> DateTime.utcNow().addMinutes(-1).after(p.getValue().getCreateTime()))
-                    .select(p -> p.getKey())) {
-                callCache.remove(k);
-                log.info("callCache remove {}", k);
-            }
-        }, 40 * 1000);
-    }
-
+    private static final LRUCache<String, CacheItem> callCache = new LRUCache<>(UserService.MaxUserCount, 60, 40 * 1000);
     private Function<MessageInfo, String> event;
 
     private WxBot() {
@@ -121,7 +105,7 @@ public final class WxBot implements Bot {
         if (cacheItem == null) {
             synchronized (callCache) {
                 if ((cacheItem = callCache.get(key)) == null) {
-                    callCache.put(key, cacheItem = new CacheItem());
+                    callCache.add(key, cacheItem = new CacheItem());
                     isProduce = true;
                     log.info("callCache produce {}", key);
                 }

@@ -2,8 +2,10 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.*;
-import org.rx.bean.$;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.$;
+import org.rx.common.App;
+import org.rx.common.SystemException;
 import org.rx.socks.Sockets;
 import org.rx.test.bean.*;
 
@@ -15,9 +17,9 @@ import java.nio.file.Paths;
 import java.util.Date;
 import java.util.Map;
 
-import static org.rx.bean.$.$;
-import static org.rx.Contract.eq;
-import static org.rx.Contract.values;
+import static org.rx.beans.$.$;
+import static org.rx.common.Contract.eq;
+import static org.rx.common.Contract.values;
 
 public class Tester {
     @Test

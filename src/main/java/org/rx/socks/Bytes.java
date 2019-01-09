@@ -2,7 +2,7 @@ package org.rx.socks;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public class Bytes {
     public static String readLine(byte[] buffer) {

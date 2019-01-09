@@ -1,10 +1,13 @@
 package org.rx.util;
 
-import org.rx.*;
+import org.rx.common.App;
+import org.rx.common.Contract;
+import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 
 import java.util.*;
 
-import static org.rx.Contract.*;
+import static org.rx.common.Contract.*;
 
 public interface NEnum {
     static <T extends Enum<T> & NEnum> T valueOf(Class<T> type, int value) {

@@ -11,11 +11,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
-import org.rx.App;
-import org.rx.InvalidOperationException;
-import org.rx.NQuery;
-import org.rx.bean.DateTime;
-import org.rx.bean.Tuple;
+import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
@@ -32,7 +32,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.Contract.toJsonString;
+import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j

@@ -1,9 +1,13 @@
 package org.rx.fl.service;
 
 import com.google.common.base.Strings;
-import org.rx.*;
-import org.rx.bean.DateTime;
-import org.rx.bean.Tuple;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
@@ -18,12 +22,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
 public class UserService {
+    public static final int MaxUserCount = 1000;
     @Resource
     private UserMapper userMapper;
     @Resource
@@ -74,6 +79,10 @@ public class UserService {
         userDto.setCheckInCount(checkInLogMapper.countByExample(query));
         userDto.setCheckInAmount(checkInLogMapper.sumBonus(query));
         return userDto;
+    }
+
+    public String queryOrCreateUser(String openId) {
+        return "";
     }
 
     public String findUserByGoods(MediaType mediaType, String goodsId) {

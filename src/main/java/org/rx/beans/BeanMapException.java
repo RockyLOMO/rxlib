@@ -1,6 +1,6 @@
-package org.rx.bean;
+package org.rx.beans;
 
-import org.rx.SystemException;
+import org.rx.common.SystemException;
 
 import java.util.Set;
 

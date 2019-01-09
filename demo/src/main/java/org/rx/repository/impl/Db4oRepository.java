@@ -5,11 +5,11 @@ import com.db4o.ObjectContainer;
 import com.db4o.ObjectSet;
 import com.db4o.config.Configuration;
 import lombok.SneakyThrows;
-import org.rx.App;
-import org.rx.InvalidOperationException;
-import org.rx.NQuery;
-import org.rx.bean.BeanMapper;
-import org.rx.bean.DateTime;
+import org.rx.beans.BeanMapper;
+import org.rx.beans.DateTime;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
 import org.rx.repository.IRepository;
 import org.rx.repository.DataObject;
 import org.rx.repository.PagedResult;
@@ -23,7 +23,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 @Component
 public class Db4oRepository<T extends DataObject> implements IRepository<T> {

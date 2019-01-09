@@ -15,7 +15,7 @@ import java.lang.reflect.Method;
 
 import org.rx.util.LogInterceptor;
 import org.rx.util.StringBuilder;
-import org.rx.util.ThrowableFunc;
+import org.rx.util.function.ThrowableFunc;
 
 import java.util.Set;
 import java.util.regex.Pattern;

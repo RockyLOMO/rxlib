@@ -1,23 +1,24 @@
-package org.rx.bean;
+package org.rx.beans;
 
 import net.sf.cglib.beans.BeanCopier;
-import org.rx.App;
+import org.rx.common.App;
 
-import org.rx.Contract;
+import org.rx.common.Contract;
+import org.rx.common.Lazy;
 import org.rx.util.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import org.rx.NQuery;
+import org.rx.common.NQuery;
 import org.rx.cache.WeakCache;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-import static org.rx.Contract.isNull;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.isNull;
+import static org.rx.common.Contract.require;
 
 /**
  * map from multi sources https://yq.aliyun.com/articles/14958
@@ -54,7 +55,7 @@ public class BeanMapper {
 
     private static final String                      Get         = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
-    private static BeanMapper                        instance;
+    private static final Lazy<BeanMapper>            instance    = new Lazy<>(BeanMapper.class);
 
     public static String genCode(Class entity) {
         require(entity);
@@ -74,14 +75,7 @@ public class BeanMapper {
     }
 
     public static BeanMapper getInstance() {
-        if (instance == null) {
-            synchronized (methodCache) {
-                if (instance == null) {
-                    instance = new BeanMapper();
-                }
-            }
-        }
-        return instance;
+        return instance.getValue();
     }
 
     @SuppressWarnings(Contract.AllWarnings)

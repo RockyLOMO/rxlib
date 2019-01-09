@@ -1,6 +1,8 @@
-package org.rx;
+package org.rx.common;
 
-import static org.rx.Contract.values;
+import org.rx.annotation.ErrorCode;
+
+import static org.rx.common.Contract.values;
 
 public abstract class Disposable implements AutoCloseable {
     private boolean closed;
@@ -12,24 +14,18 @@ public abstract class Disposable implements AutoCloseable {
     @Override
     protected void finalize() throws Throwable {
         super.finalize();
-        dispose(false);
+        dispose();
     }
 
-    private synchronized void dispose(boolean disposing) {
+    private synchronized void dispose() {
         if (closed) {
             return;
         }
-        if (disposing) {
-            freeManaged();
-        }
-        freeUnmanaged();
+        freeObjects();
         closed = true;
     }
 
-    protected void freeManaged() {
-    }
-
-    protected abstract void freeUnmanaged();
+    protected abstract void freeObjects();
 
     @ErrorCode(messageKeys = { "$type" })
     protected void checkNotClosed() {
@@ -40,6 +36,6 @@ public abstract class Disposable implements AutoCloseable {
 
     @Override
     public void close() {
-        dispose(true);
+        dispose();
     }
 }

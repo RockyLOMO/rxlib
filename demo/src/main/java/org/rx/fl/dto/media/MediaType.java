@@ -1,7 +1,7 @@
 package org.rx.fl.dto.media;
 
 import lombok.Getter;
-import org.rx.Description;
+import org.rx.annotation.Description;
 import org.rx.util.NEnum;
 
 public enum MediaType implements NEnum {

@@ -4,30 +4,24 @@ import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 
-import org.rx.App;
-import org.rx.Logger;
+import org.rx.common.App;
+import org.rx.common.Lazy;
+import org.rx.common.Logger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
 
-import static org.rx.Contract.as;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.as;
+import static org.rx.common.Contract.require;
 
 /**
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
 public class WeakCache<TK, TV> {
-    private static WeakCache<String, Object> instance;
+    private static final Lazy<WeakCache<String, Object>> instance = new Lazy<>(WeakCache::new);
 
     public static WeakCache<String, Object> getInstance() {
-        if (instance == null) {
-            synchronized (WeakCache.class) {
-                if (instance == null) {
-                    instance = new WeakCache<>();
-                }
-            }
-        }
-        return instance;
+        return instance.getValue();
     }
 
     public static Object getOrStore(Class caller, String key, Function<String, Object> supplier) {

@@ -1,8 +1,8 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
-import org.rx.bean.DateTime;
-import org.rx.bean.Tuple;
+import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
 import org.rx.test.bean.ErrorBean;
 
 import java.lang.reflect.Constructor;

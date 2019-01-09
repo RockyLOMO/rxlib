@@ -1,9 +1,9 @@
 package org.rx.juan_zhai.service;
 
-import org.rx.Logger;
-import org.rx.NQuery;
-import org.rx.SystemException;
-import org.rx.bean.DateTime;
+import org.rx.beans.DateTime;
+import org.rx.common.Logger;
+import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 import org.rx.juan_zhai.repository.model.CheckInLog;
 import org.rx.juan_zhai.repository.model.User;
 import org.rx.juan_zhai.repository.model.UserComment;
@@ -16,7 +16,7 @@ import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.validation.Contract.aints.NotNull;
+import javax.validation.constraints.NotNull;
 import java.util.function.Predicate;
 
 @EnableValid

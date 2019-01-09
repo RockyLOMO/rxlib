@@ -7,8 +7,7 @@ import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.rx.SystemException;
-import org.rx.Contract;
+import org.rx.common.Contract;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
@@ -17,38 +16,32 @@ import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 @Slf4j
 public class Helper {
+    @SneakyThrows
     public static <T> String convertToXml(T obj) {
         require(obj);
 
-        try {
-            JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
-            Marshaller marshaller = jaxbContext.createMarshaller();
-            //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
-            //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
-            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            marshaller.marshal(obj, stream);
-            return stream.toString(Contract.Utf8);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        JAXBContext jaxbContext = JAXBContext.newInstance(obj.getClass());
+        Marshaller marshaller = jaxbContext.createMarshaller();
+        //marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); // pretty
+        //marshaller.setProperty(Marshaller.JAXB_ENCODING, "ISO-8859-1"); // specify encoding
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        marshaller.marshal(obj, stream);
+        return stream.toString(Contract.Utf8);
     }
 
+    @SneakyThrows
     public static <T> T convertFromXml(String xml, Class<T> type) {
         require(xml, type);
 
-        try {
-            JAXBContext jaxbContext = JAXBContext.newInstance(type);
-            Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
-            byte[] data = xml.getBytes(Contract.Utf8);
-            ByteArrayInputStream stream = new ByteArrayInputStream(data);
-            return (T) unmarshaller.unmarshal(stream);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        JAXBContext jaxbContext = JAXBContext.newInstance(type);
+        Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
+        byte[] data = xml.getBytes(Contract.Utf8);
+        ByteArrayInputStream stream = new ByteArrayInputStream(data);
+        return (T) unmarshaller.unmarshal(stream);
     }
 
     @SneakyThrows

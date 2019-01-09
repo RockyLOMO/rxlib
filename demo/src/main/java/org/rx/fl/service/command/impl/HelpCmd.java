@@ -5,7 +5,7 @@ import org.rx.fl.service.command.HandleResult;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 //↓
 @Order(9)

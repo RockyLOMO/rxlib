@@ -1,7 +1,7 @@
 package org.rx.repository;
 
 import lombok.Data;
-import org.rx.NQuery;
+import org.rx.common.NQuery;
 
 import java.util.List;
 import java.util.function.Function;

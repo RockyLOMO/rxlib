@@ -1,4 +1,4 @@
-package org.rx.bean;
+package org.rx.beans;
 
 import lombok.EqualsAndHashCode;
 

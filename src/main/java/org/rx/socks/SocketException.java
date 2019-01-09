@@ -1,6 +1,6 @@
 package org.rx.socks;
 
-import org.rx.SystemException;
+import org.rx.common.SystemException;
 
 import java.net.InetSocketAddress;
 

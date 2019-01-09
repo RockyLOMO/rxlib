@@ -2,9 +2,9 @@ package org.rx.fl.util;
 
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
-import org.rx.App;
-import org.rx.InvalidOperationException;
-import org.rx.bean.DateTime;
+import org.rx.beans.DateTime;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
 import org.rx.fl.repository.MyBatisBaseDao;
 import org.rx.util.SpringContextUtil;
 import org.springframework.stereotype.Component;
@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.lang.reflect.Field;
 import java.util.Date;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 @Component
 public class DbUtil {

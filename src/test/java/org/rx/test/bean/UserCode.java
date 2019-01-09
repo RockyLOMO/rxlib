@@ -1,6 +1,6 @@
 package org.rx.test.bean;
 
-import org.rx.ErrorCode;
+import org.rx.annotation.ErrorCode;
 
 public interface UserCode {
     enum xCode {

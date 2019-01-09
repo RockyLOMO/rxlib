@@ -1,12 +1,10 @@
 package org.rx.security;
 
-import org.rx.App;
-import org.rx.Contract;
-import org.rx.SystemException;
-import org.rx.Contract;
+import lombok.SneakyThrows;
+import org.rx.common.App;
+import org.rx.common.Contract;
 
 import javax.crypto.Cipher;
-import java.io.UnsupportedEncodingException;
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -14,7 +12,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public class RSAUtil {
     private static final String SIGN_ALGORITHMS  = "MD5withRSA";
@@ -46,21 +44,18 @@ public class RSAUtil {
      * @param isSHA1 数据的编码方式
      * @return 返回签名信息
      */
+    @SneakyThrows
     public static String sign(String content, String privateKey, boolean isSHA1) {
         require(content, privateKey);
 
         PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey));
-        try {
-            KeyFactory keyf = KeyFactory.getInstance("RSA");
-            PrivateKey priKey = keyf.generatePrivate(keySpec);
+        KeyFactory keyf = KeyFactory.getInstance("RSA");
+        PrivateKey priKey = keyf.generatePrivate(keySpec);
 
-            Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
-            signature.initSign(priKey);
-            signature.update(getContentBytes(content, Contract.Utf8));
-            return App.convertToBase64String(signature.sign());
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
+        signature.initSign(priKey);
+        signature.update(getContentBytes(content, Contract.Utf8));
+        return App.convertToBase64String(signature.sign());
     }
 
     public static boolean verify(TreeMap<String, Object> map, String sign, String publicKey) {
@@ -89,21 +84,17 @@ public class RSAUtil {
      * @param isSHA1 数据的编码方式
      * @return 是否验证通过。{@code True}表示通过
      */
+    @SneakyThrows
     public static boolean verify(String content, String sign, String publicKey, boolean isSHA1) {
         require(content, sign, publicKey);
 
-        try {
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey pubKey = keyFactory
-                    .generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
 
-            Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
-            signature.initVerify(pubKey);
-            signature.update(getContentBytes(content, Contract.Utf8));
-            return signature.verify(App.convertFromBase64String(sign));
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
+        signature.initVerify(pubKey);
+        signature.update(getContentBytes(content, Contract.Utf8));
+        return signature.verify(App.convertFromBase64String(sign));
     }
 
     /**
@@ -113,57 +104,47 @@ public class RSAUtil {
      * @param charset 编码方式
      * @return 所得 byte 数组
      */
+    @SneakyThrows
     private static byte[] getContentBytes(String content, String charset) {
         if (charset == null || "".equals(charset)) {
             return content.getBytes();
         }
 
-        try {
-            return content.getBytes(charset);
-        } catch (UnsupportedEncodingException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return content.getBytes(charset);
     }
 
     /**
      * 加密方法 source： 源数据
      */
+    @SneakyThrows
     public static String encrypt(String source, String publicKey) {
         require(source, publicKey);
 
-        try {
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
-            /** 得到Cipher对象来实现对源数据的RSA加密 */
-            Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, key);
-            byte[] b = cipher.doFinal(source.getBytes());
-            /** 执行加密操作 */
-            return App.convertToBase64String(b);
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
+        /** 得到Cipher对象来实现对源数据的RSA加密 */
+        Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        byte[] b = cipher.doFinal(source.getBytes());
+        /** 执行加密操作 */
+        return App.convertToBase64String(b);
     }
 
     /**
      * 解密算法 cryptograph:密文
      */
+    @SneakyThrows
     public static String decrypt(String cryptograph, String privateKey) {
         require(cryptograph, privateKey);
 
-        try {
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PrivateKey key = keyFactory
-                    .generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
-            /** 得到Cipher对象对已用公钥加密的数据进行RSA解密 */
-            Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, key);
-            byte[] b = App.convertFromBase64String(cryptograph);
-            /** 执行解密操作 */
-            return new String(cipher.doFinal(b));
-        } catch (Exception ex) {
-            throw SystemException.wrap(ex);
-        }
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
+        /** 得到Cipher对象对已用公钥加密的数据进行RSA解密 */
+        Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, key);
+        byte[] b = App.convertFromBase64String(cryptograph);
+        /** 执行解密操作 */
+        return new String(cipher.doFinal(b));
     }
 
     /**
@@ -190,13 +171,9 @@ public class RSAUtil {
         System.out.println("decrypt: " + decrypt(signMsg, privateKey));
     }
 
+    @SneakyThrows
     private static String[] generateKeyPair() {
-        KeyPairGenerator keygen;
-        try {
-            keygen = KeyPairGenerator.getInstance("RSA");
-        } catch (NoSuchAlgorithmException ex) {
-            throw SystemException.wrap(ex);
-        }
+        KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
         keygen.initialize(1024, new SecureRandom());
         KeyPair keys = keygen.genKeyPair();
         PublicKey pubkey = keys.getPublic();

@@ -1,8 +1,8 @@
 package org.rx.socks.http;
 
-import org.rx.App;
-import org.rx.Contract;
-import org.rx.SystemException;
+import org.rx.common.App;
+import org.rx.common.Contract;
+import org.rx.common.SystemException;
 import org.rx.socks.Sockets;
 import org.rx.io.IOStream;
 
@@ -11,8 +11,8 @@ import java.net.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.rx.Contract.eq;
-import static org.rx.Contract.isNull;
+import static org.rx.common.Contract.eq;
+import static org.rx.common.Contract.isNull;
 
 /**
  * http://www.jianshu.com/p/aa3f066263ed

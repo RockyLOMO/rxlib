@@ -2,7 +2,7 @@ package org.rx.socks.proxy;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import org.rx.Logger;
+import org.rx.common.Logger;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public class DirectServerHandler extends SimpleChannelInboundHandler<byte[]> {
     private static class ClientState {

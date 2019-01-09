@@ -1,15 +1,17 @@
-package org.rx;
+package org.rx.common;
 
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
-import org.rx.bean.$;
-import org.rx.bean.Tuple;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.$;
+import org.rx.beans.Tuple;
+import org.rx.cache.LRUCache;
 import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
-import org.rx.bean.DateTime;
-import org.rx.util.Action;
-import org.rx.util.Func;
+import org.rx.beans.DateTime;
+import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 import org.rx.io.MemoryStream;
 import org.rx.util.StringBuilder;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -40,12 +42,13 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 
-import static org.rx.bean.$.$;
-import static org.rx.Contract.*;
+import static org.rx.beans.$.$;
+import static org.rx.common.Contract.*;
 
 public class App {
     //region Nested
     public enum CacheContainerKind {
+        ObjectCache,
         WeakCache,
         ThreadStatic,
         ServletRequest
@@ -53,6 +56,7 @@ public class App {
     //endregion
 
     //region Fields
+    public static final int               MaxSize         = Integer.MAX_VALUE - 8;
     public static final int               TimeoutInfinite = -1;
     private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
@@ -121,26 +125,6 @@ public class App {
             Logger.info("CatchCall %s", ex.getMessage());
         }
         return null;
-    }
-
-    public static <T extends Exception> void catchCall(Action action, Function<Exception, T> exFunc) {
-        require(action);
-
-        try {
-            action.invoke();
-        } catch (Exception ex) {
-            throw new SystemException(isNull(exFunc != null ? exFunc.apply(ex) : null, ex));
-        }
-    }
-
-    public static <T, TE extends Exception> T catchCall(Func<T> action, Function<Exception, TE> exFunc) {
-        require(action);
-
-        try {
-            return action.invoke();
-        } catch (Exception ex) {
-            throw new SystemException(isNull(exFunc != null ? exFunc.apply(ex) : null, ex));
-        }
     }
 
     public static ClassLoader getClassLoader() {
@@ -262,7 +246,7 @@ public class App {
                     }
                     break;
                 default:
-                    System.out.println("getClassesFromPackage skip " + url.getProtocol());
+                    Logger.debug("getClassesFromPackage skip " + url.getProtocol());
                     break;
             }
         }
@@ -319,6 +303,9 @@ public class App {
                 if (v == null) {
                     request.setAttribute(k, v = supplier.apply(k));
                 }
+                break;
+            case ObjectCache:
+                v = LRUCache.getOrStore(caller, key, (Function<String, Object>) supplier);
                 break;
             default:
                 v = WeakCache.getOrStore(caller, key, (Function<String, Object>) supplier);
@@ -473,10 +460,6 @@ public class App {
 
     public static boolean isNullOrWhiteSpace(String input) {
         return isNullOrEmpty(input) || input.trim().length() == 0;
-    }
-
-    public static boolean isNullOrEmpty(Number input) {
-        return input == null || input.equals(0);
     }
 
     public static <E> boolean isNullOrEmpty(E[] input) {

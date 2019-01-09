@@ -1,4 +1,4 @@
-package org.rx.fl.dto;
+package org.rx.fl.dto.bot;
 
 import lombok.Data;
 

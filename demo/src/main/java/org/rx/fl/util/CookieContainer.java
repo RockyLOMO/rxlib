@@ -4,15 +4,14 @@ import lombok.SneakyThrows;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
-import org.rx.NQuery;
+import org.rx.common.NQuery;
 import org.rx.fl.util.cookie.PersistentCookieJar;
 import org.rx.fl.util.cookie.cache.SetCookieCache;
 import org.rx.fl.util.cookie.persistence.MemoryCookiePersistor;
 
-import java.lang.reflect.Field;
 import java.util.*;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public final class CookieContainer implements CookieJar {
     private final PersistentCookieJar cookieJar = new PersistentCookieJar(new SetCookieCache(), new MemoryCookiePersistor());

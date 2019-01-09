@@ -1,10 +1,10 @@
 package org.rx.repository;
 
 import lombok.Data;
-import org.rx.NQuery;
+import org.rx.common.NQuery;
 
-import javax.validation.Contract.aints.Min;
-import javax.validation.Contract.aints.NotNull;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
 
 @Data
 public class PagingParam {

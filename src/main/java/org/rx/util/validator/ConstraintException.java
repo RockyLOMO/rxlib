@@ -1,6 +1,6 @@
 package org.rx.util.validator;
 
-import org.rx.SystemException;
+import org.rx.common.SystemException;
 
 public class ConstraintException extends SystemException {
     private String propertyName;

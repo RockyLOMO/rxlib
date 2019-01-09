@@ -1,6 +1,6 @@
 package org.rx.fl.service.media;
 
-import org.rx.bean.DateTime;
+import org.rx.beans.DateTime;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;

@@ -1,8 +1,7 @@
 package org.rx.juan_zhai.service;
 
-import org.rx.App;
-import org.rx.InvalidOperationException;
-import org.rx.NQuery;
+import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
 import org.rx.juan_zhai.repository.model.Article;
 import org.rx.juan_zhai.repository.model.ArticleType;
 import org.rx.juan_zhai.service.mapper.ArticleMapper;
@@ -12,10 +11,11 @@ import org.rx.repository.PagedResult;
 import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 
-import static org.rx.Contract.eq;
+import static org.rx.common.Contract.eq;
 
 @EnableValid
 @Service
@@ -67,7 +67,7 @@ public class ArticleService {
     public PagedResult<ArticleResponse> queryArticles(QueryArticlesRequest request) {
         return articleIRepository.pageDescending(p -> (request.getArticleId() == null || p.getId().equals(request.getArticleId()))
                 && (request.getTitle() == null || p.getTitle().contains(request.getTitle())
-                && (App.isNullOrEmpty(request.getTypeIds()) || request.getTypeIds().contains(p.getTypeId()))), p -> p.getCreateTime(), request)
+                && (CollectionUtils.isEmpty(request.getTypeIds()) || request.getTypeIds().contains(p.getTypeId()))), p -> p.getCreateTime(), request)
                 .convert(p -> ArticleMapper.INSTANCE.toArticleResponse(p));
     }
 }

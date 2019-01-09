@@ -1,4 +1,4 @@
-package org.rx;
+package org.rx.common;
 
 import org.rx.util.StringBuilder;
 import org.slf4j.LoggerFactory;
@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
-import static org.rx.Contract.isNull;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.isNull;
+import static org.rx.common.Contract.require;
 
 public final class Logger {
     private static final org.slf4j.Logger log1, log2;

@@ -13,13 +13,13 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.SneakyThrows;
-import org.rx.App;
-import org.rx.Disposable;
+import org.rx.common.App;
+import org.rx.common.Disposable;
 
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 import static org.rx.socks.proxy.ProxyServer.Compression_Key;
 
 public class ProxyClient extends Disposable {
@@ -45,7 +45,7 @@ public class ProxyClient extends Disposable {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         if (group != null) {
             group.shutdownGracefully();
         }

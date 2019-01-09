@@ -1,8 +1,10 @@
-package org.rx;
+package org.rx.common;
 
-import org.rx.bean.$;
-import org.rx.bean.BiTuple;
-import org.rx.bean.Tuple;
+import lombok.SneakyThrows;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.$;
+import org.rx.beans.BiTuple;
+import org.rx.beans.Tuple;
 import org.rx.cache.WeakCache;
 import org.rx.util.StringBuilder;
 import org.springframework.core.NestedRuntimeException;
@@ -14,8 +16,8 @@ import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.Contract.*;
-import static org.rx.Contract.toJsonString;
+import static org.rx.common.Contract.*;
+import static org.rx.common.Contract.toJsonString;
 
 /**
  * ex.fillInStackTrace()
@@ -110,81 +112,75 @@ public class SystemException extends NestedRuntimeException {
 
     public SystemException(String errorName, Throwable cause, Object[] messageValues) {
         super(cause != null ? cause.getMessage() : null, cause);
-
         if (messageValues == null) {
             messageValues = Contract.EmptyArray;
         }
-        try {
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
-                StackTraceElement stack = stackTrace[i];
-                Map<String, Object> methodSettings = as(getSettings().get(stack.getClassName()), Map.class);
-                if (methodSettings == null) {
+
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
+            StackTraceElement stack = stackTrace[i];
+            Map<String, Object> methodSettings = as(getSettings().get(stack.getClassName()), Map.class);
+            if (methodSettings == null) {
+                continue;
+            }
+            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(this.getClass(), stack.getClassName(), p -> {
+                Class type = App.loadClass(p, false);
+                return Tuple.of(type, type.getDeclaredMethods());
+            }), Tuple.class);
+            if (caller == null) {
+                continue;
+            }
+
+            Class source = null;
+            Method targetSite = null;
+            ErrorCode errorCode = null;
+            for (Method method : caller.right) {
+                if (!method.getName().equals(stack.getMethodName())) {
                     continue;
                 }
-                Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(this.getClass(), stack.getClassName(), p -> {
-                    Class type = App.loadClass(p, false);
-                    return Tuple.of(type, type.getDeclaredMethods());
-                }), Tuple.class);
-                if (caller == null) {
-                    continue;
-                }
-
-                Class source = null;
-                Method targetSite = null;
-                ErrorCode errorCode = null;
-                for (Method method : caller.right) {
-                    if (!method.getName().equals(stack.getMethodName())) {
-                        continue;
-                    }
-                    //Logger.debug("SystemException: Try find @ErrorCode at %s", method.toString());
-                    if ((errorCode = findCode(method, errorName, cause)) == null) {
-                        continue;
-                    }
-
-                    Logger.debug("SystemException: Found @ErrorCode at %s", method.toString());
-                    source = caller.left;
-                    targetSite = method;
-                    break;
-                }
-                if (errorCode == null) {
+                //Logger.debug("SystemException: Try find @ErrorCode at %s", method.toString());
+                if ((errorCode = findCode(method, errorName, cause)) == null) {
                     continue;
                 }
 
-                this.targetSite = BiTuple.of(source, targetSite, errorCode);
-                setFriendlyMessage(methodSettings, targetSite.getName(), errorCode, messageValues);
+                Logger.debug("SystemException: Found @ErrorCode at %s", method.toString());
+                source = caller.left;
+                targetSite = method;
                 break;
             }
-        } catch (Throwable ex) {
-            ex.printStackTrace();
+            if (errorCode == null) {
+                continue;
+            }
+
+            this.targetSite = BiTuple.of(source, targetSite, errorCode);
+            setFriendlyMessage(methodSettings, targetSite.getName(), errorCode, messageValues);
+            break;
         }
+
         if (friendlyMessage == null) {
             Logger.debug("SystemException: Not found @ErrorCode");
         }
     }
 
+    @SneakyThrows
     public <T extends Enum<T>> SystemException setErrorCode(T enumErrorCode, Object... messageValues) {
         if ((this.errorCode = enumErrorCode) == null) {
             Logger.debug("SystemException.setErrorCode: Parameter errorCode is null");
             return this;
         }
 
-        try {
-            Class type = enumErrorCode.getClass();
-            Map<String, Object> methodSettings = as(getSettings().get(type.getName()), Map.class);
-            if (methodSettings == null) {
-                return this;
-            }
-            Field field = type.getDeclaredField(enumErrorCode.name());
-            ErrorCode errorCode;
-            if ((errorCode = findCode(field, null, null)) == null) {
-                return this;
-            }
-
-            setFriendlyMessage(methodSettings, enumErrorCode.name(), errorCode, messageValues);
-        } catch (Throwable ex) {
-            ex.printStackTrace();
+        Class type = enumErrorCode.getClass();
+        Map<String, Object> methodSettings = as(getSettings().get(type.getName()), Map.class);
+        if (methodSettings == null) {
+            return this;
         }
+        Field field = type.getDeclaredField(enumErrorCode.name());
+        ErrorCode errorCode;
+        if ((errorCode = findCode(field, null, null)) == null) {
+            return this;
+        }
+
+        setFriendlyMessage(methodSettings, enumErrorCode.name(), errorCode, messageValues);
         return this;
     }
 

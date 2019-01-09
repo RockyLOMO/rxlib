@@ -1,11 +1,11 @@
 package org.rx.socks;
 
 import com.google.common.base.Stopwatch;
-import org.rx.App;
-import org.rx.NQuery;
+import org.rx.common.App;
+import org.rx.common.NQuery;
 import org.rx.cache.WeakCache;
-import org.rx.Lazy;
-import org.rx.Logger;
+import org.rx.common.Lazy;
+import org.rx.common.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import static org.rx.Contract.as;
-import static org.rx.Contract.isNull;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.as;
+import static org.rx.common.Contract.isNull;
+import static org.rx.common.Contract.require;
 
 public final class PingClient {
     public class Result {

@@ -1,12 +1,12 @@
 package org.rx.io;
 
-import org.rx.App;
-import org.rx.SystemException;
+import lombok.SneakyThrows;
+import org.rx.common.App;
 import org.rx.socks.Bytes;
 
 import java.io.*;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public class BinaryStream extends IOStream {
     private boolean          leaveOpen;
@@ -53,93 +53,63 @@ public class BinaryStream extends IOStream {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         if (!leaveOpen) {
             baseStream.close();
         }
     }
 
+    @SneakyThrows
     public boolean readBoolean() {
-        try {
-            return reader.readBoolean();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readBoolean();
     }
 
+    @SneakyThrows
     public byte readByte() {
-        try {
-            return reader.readByte();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readByte();
     }
 
+    @SneakyThrows
     public short readShort() {
-        try {
-            return reader.readShort();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readShort();
     }
 
+    @SneakyThrows
     public int readInt() {
-        try {
-            return reader.readInt();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readInt();
     }
 
+    @SneakyThrows
     public long readLong() {
-        try {
-            return reader.readLong();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readLong();
     }
 
+    @SneakyThrows
     public float readFloat() {
-        try {
-            return reader.readFloat();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readFloat();
     }
 
+    @SneakyThrows
     public double readDouble() {
-        try {
-            return reader.readDouble();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readDouble();
     }
 
+    @SneakyThrows
     public char readChar() {
-        try {
-            return reader.readChar();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readChar();
     }
 
+    @SneakyThrows
     public String readString() {
-        try {
-            return reader.readUTF();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader.readUTF();
     }
 
+    @SneakyThrows
     public String readLine() {
         if (reader2 == null) {
             reader2 = new BufferedReader(new InputStreamReader(reader));
         }
-        try {
-            return reader2.readLine();
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        return reader2.readLine();
     }
 
     public <T> T readObject() {
@@ -149,76 +119,49 @@ public class BinaryStream extends IOStream {
         return (T) App.deserialize(data);
     }
 
+    @SneakyThrows
     public void writeBoolean(boolean value) {
-        try {
-            writer.writeBoolean(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeBoolean(value);
     }
 
+    @SneakyThrows
     public void writeByte(byte value) {
-        try {
-            writer.writeByte(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeByte(value);
     }
 
+    @SneakyThrows
     public void writeShort(short value) {
-        try {
-            writer.writeShort(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeShort(value);
     }
 
+    @SneakyThrows
     public void writeInt(int value) {
-        try {
-            writer.writeInt(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeInt(value);
     }
 
+    @SneakyThrows
     public void writeLong(long value) {
-        try {
-            writer.writeLong(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeLong(value);
     }
 
+    @SneakyThrows
     public void writeFloat(float value) {
-        try {
-            writer.writeFloat(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeFloat(value);
     }
 
+    @SneakyThrows
     public void writeDouble(double value) {
-        try {
-            writer.writeDouble(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeDouble(value);
     }
 
+    @SneakyThrows
     public void writeChar(char value) {
-        try {
-            writer.writeChar(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeChar(value);
     }
 
+    @SneakyThrows
     public void writeString(String value) {
-        try {
-            writer.writeUTF(value);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeUTF(value);
     }
 
     public void writeLine(String value) {

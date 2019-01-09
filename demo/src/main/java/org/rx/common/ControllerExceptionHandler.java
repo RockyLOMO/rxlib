@@ -2,8 +2,7 @@ package org.rx.common;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.SystemException;
-import org.rx.util.validator.Contract.aintException;
+import org.rx.util.validator.ConstraintException;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +14,7 @@ import javax.servlet.http.HttpServletRequest;
 
 import java.io.Serializable;
 
-import static org.rx.SystemException.DefaultMessage;
+import static org.rx.common.SystemException.DefaultMessage;
 
 @Slf4j
 @Order(0)
@@ -33,7 +32,7 @@ public class ControllerExceptionHandler {
     public ResponseEntity bizException(Exception e, HttpServletRequest request) {
         String msg = DefaultMessage, dm = null;
         Exception logEx = e;
-        if (e instanceof Contract.aintException) {
+        if (e instanceof ConstraintException) {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logEx = null;

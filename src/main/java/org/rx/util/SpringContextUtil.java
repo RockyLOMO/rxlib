@@ -6,7 +6,7 @@ import org.springframework.context.ApplicationContextAware;
 
 import java.util.Map;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public final class SpringContextUtil implements InitializingBean, ApplicationContextAware {
     /**

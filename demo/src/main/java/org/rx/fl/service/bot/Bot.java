@@ -1,6 +1,6 @@
-package org.rx.fl.service;
+package org.rx.fl.service.bot;
 
-import org.rx.fl.dto.MessageInfo;
+import org.rx.fl.dto.bot.MessageInfo;
 
 import java.util.function.Function;
 

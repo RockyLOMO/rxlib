@@ -5,10 +5,10 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.Contract;
-import org.rx.bean.Tuple;
+import org.rx.common.Contract;
+import org.rx.beans.Tuple;
 
-import org.rx.App;
+import org.rx.common.App;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.PrioritizedParameterNameDiscoverer;
 
@@ -21,7 +21,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-import static org.rx.Contract.isNull;
+import static org.rx.common.Contract.isNull;
 
 public class RestClient {
     private static class DynamicProxy implements InvocationHandler, MethodInterceptor {

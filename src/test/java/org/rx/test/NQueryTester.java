@@ -1,9 +1,9 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
-import org.rx.App;
-import org.rx.Contract;
-import org.rx.NQuery;
+import org.rx.common.App;
+import org.rx.common.Contract;
+import org.rx.common.NQuery;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.Contract.toJsonString;
+import static org.rx.common.Contract.toJsonString;
 
 public class NQueryTester {
     @Test

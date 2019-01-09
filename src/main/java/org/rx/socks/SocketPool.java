@@ -1,12 +1,12 @@
 package org.rx.socks;
 
-import org.rx.NQuery;
-import org.rx.bean.DateTime;
+import org.rx.common.NQuery;
+import org.rx.beans.DateTime;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import org.rx.Logger;
+import org.rx.common.Logger;
 
 import java.util.Map;
 import java.util.Timer;
@@ -14,7 +14,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public final class SocketPool extends Traceable implements AutoCloseable {
     public static final class PooledSocket implements AutoCloseable {
@@ -101,7 +101,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         clear();
     }
 

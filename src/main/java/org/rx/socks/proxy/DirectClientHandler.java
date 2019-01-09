@@ -4,11 +4,11 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import org.rx.Logger;
+import org.rx.common.Logger;
 
 import java.util.function.BiConsumer;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public class DirectClientHandler extends SimpleChannelInboundHandler<byte[]> {
     private BiConsumer<ChannelHandlerContext, byte[]> onReceive;

@@ -1,7 +1,7 @@
 package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.SystemException;
+import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Order(5)

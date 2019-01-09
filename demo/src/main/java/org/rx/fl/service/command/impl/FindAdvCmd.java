@@ -1,26 +1,34 @@
 package org.rx.fl.service.command.impl;
 
+import com.alibaba.fastjson.JSONArray;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
-import org.rx.App;
-import org.rx.NQuery;
+import org.rx.common.App;
+import org.rx.common.FlConfig;
+import org.rx.common.NQuery;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.service.MediaService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.rx.fl.util.HttpCaller;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import static org.rx.Contract.require;
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.rx.common.Contract.require;
 
 @Order(1)
 @Component
 public class FindAdvCmd implements Command {
+    @Resource
+    private FlConfig config;
     @Resource
     private MediaService mediaService;
 
@@ -35,7 +43,16 @@ public class FindAdvCmd implements Command {
     @SneakyThrows
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
-        FindAdvResult advResult = NQuery.of(mediaService.findAdv(message)).first();
+        FindAdvResult advResult;
+        if (config.isRemoteMode()) {
+            Map<String, String> data = new HashMap<>();
+            data.put("contentArray", message);
+            HttpCaller caller = new HttpCaller();
+            String json = caller.post(String.format("http://%s/media/findAdv", config.getRemoteEndpoint()), data);
+            advResult = NQuery.of(JSONArray.parseArray(json, FindAdvResult.class)).first();
+        } else {
+            advResult = NQuery.of(mediaService.findAdv(message)).first();
+        }
         if (advResult.getFoundStatus() != AdvFoundStatus.Ok) {
             return HandleResult.of("一一一一系 统 消 息一一一一\n" +
                     "返利失败！\n" +

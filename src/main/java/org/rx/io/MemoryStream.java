@@ -1,18 +1,20 @@
 package org.rx.io;
 
-import org.rx.bean.$;
-import org.rx.ErrorCode;
-import org.rx.SystemException;
+import lombok.SneakyThrows;
+import org.rx.beans.$;
+import org.rx.annotation.ErrorCode;
+import org.rx.common.App;
+import org.rx.common.SystemException;
 import org.rx.cache.BytesSegment;
 
 import java.io.*;
 
-import static org.rx.Contract.require;
-import static org.rx.Contract.values;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 
 public class MemoryStream extends IOStream {
     private static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = Integer.MAX_VALUE - 8;
+        private volatile int minPosition, length, maxLength = App.MaxSize;
 
         public int getPosition() {
             return count;
@@ -272,15 +274,12 @@ public class MemoryStream extends IOStream {
         writeTo(from.getWriter());
     }
 
+    @SneakyThrows
     public void writeTo(OutputStream from) {
         checkNotClosed();
         require(from);
 
-        try {
-            writer.writeTo(from);
-        } catch (IOException ex) {
-            throw SystemException.wrap(ex);
-        }
+        writer.writeTo(from);
     }
 
     public boolean tryGetBuffer($<BytesSegment> out) {

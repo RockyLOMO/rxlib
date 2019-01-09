@@ -1,7 +1,8 @@
-package org.rx;
+package org.rx.common;
 
 import com.google.common.collect.Streams;
-import org.rx.bean.Tuple;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.Tuple;
 
 import java.lang.reflect.Array;
 import java.util.*;
@@ -12,7 +13,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import static org.rx.Contract.*;
+import static org.rx.common.Contract.*;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx

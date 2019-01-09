@@ -5,8 +5,8 @@ import com.google.common.base.Strings;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.App;
-import org.rx.NQuery;
+import org.rx.common.App;
+import org.rx.common.NQuery;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.MediaType;
@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 @Service
 @Slf4j

@@ -12,7 +12,7 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import org.rx.*;
+import org.rx.common.*;
 
 import java.io.File;
 import java.net.URL;
@@ -23,8 +23,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static org.rx.Contract.eq;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.eq;
+import static org.rx.common.Contract.require;
 
 @Slf4j
 public final class WebCaller extends Disposable {
@@ -141,7 +141,7 @@ public final class WebCaller extends Disposable {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         if (driver == null) {
             return;
         }

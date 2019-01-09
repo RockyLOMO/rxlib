@@ -3,8 +3,7 @@ package org.rx.fl.util;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import okhttp3.*;
-import org.rx.Disposable;
-import org.rx.Contract;
+import org.rx.common.Contract;
 import org.rx.io.IOStream;
 import org.rx.socks.http.HttpClient;
 
@@ -15,10 +14,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import static org.rx.Contract.require;
-import static org.rx.Contract.toJsonString;
+import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.toJsonString;
 
-public final class HttpCaller extends Disposable {
+public final class HttpCaller {
     public static final CookieContainer CookieContainer;
     private static final ConnectionPool pool;
     private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"),
@@ -62,11 +61,6 @@ public final class HttpCaller extends Disposable {
         headers = new Headers.Builder()
                 .set("User-Agent", "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36").build();
         client = createClient();
-    }
-
-    @Override
-    protected void freeUnmanaged() {
-
     }
 
     private OkHttpClient createClient() {

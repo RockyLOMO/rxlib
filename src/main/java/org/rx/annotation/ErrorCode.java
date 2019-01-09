@@ -1,4 +1,4 @@
-package org.rx;
+package org.rx.annotation;
 
 import java.lang.annotation.*;
 

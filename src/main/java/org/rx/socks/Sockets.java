@@ -1,10 +1,8 @@
 package org.rx.socks;
 
-import org.rx.App;
-
 import java.io.IOException;
 import java.net.*;
-import org.rx.SystemException;
+import org.rx.common.SystemException;
 import org.rx.cache.WeakCache;
 import org.springframework.util.CollectionUtils;
 
@@ -12,7 +10,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;

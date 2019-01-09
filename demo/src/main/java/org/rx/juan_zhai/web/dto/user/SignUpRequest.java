@@ -1,9 +1,9 @@
 package org.rx.juan_zhai.web.dto.user;
 
 import lombok.Data;
-import org.hibernate.validator.Contract.aints.Length;
+import org.hibernate.validator.constraints.Length;
 
-import javax.validation.Contract.aints.NotNull;
+import javax.validation.constraints.NotNull;
 
 @Data
 public class SignUpRequest {

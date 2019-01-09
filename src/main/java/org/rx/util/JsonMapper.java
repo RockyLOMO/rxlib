@@ -6,7 +6,7 @@ import com.eclipsesource.v8.V8;
 import com.eclipsesource.v8.V8Object;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.*;
+import org.rx.common.*;
 
 import java.net.URL;
 import java.nio.file.Path;
@@ -15,8 +15,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.Contract.as;
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.as;
+import static org.rx.common.Contract.require;
 
 @Slf4j
 public final class JsonMapper extends Disposable {
@@ -30,12 +30,12 @@ public final class JsonMapper extends Disposable {
         }
     }
 
-    private static final String     DefaultValue = "DEFAULT_VALUE";
-    private static final String     ScriptFunc   = "(function(){var $={},$val=JSON.parse(_x); %s return JSON.stringify($);})()";
-    private static final JsonMapper Instance     = new JsonMapper("jsonMapper/");
+    private static final String     defaultValue = "DEFAULT_VALUE";
+    private static final String     scriptFunc   = "(function(){var $={},$val=JSON.parse(_x); %s return JSON.stringify($);})()";
+    private static final JsonMapper instance     = new JsonMapper("jsonMapper/");
 
     public static <F, T> T map(F from, Class<T> toType) {
-        return Instance.convert(from, toType);
+        return instance.convert(from, toType);
     }
 
     private Map<String, Object> settings;
@@ -56,7 +56,7 @@ public final class JsonMapper extends Disposable {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         if (runtime.isValueCreated()) {
             runtime.getValue().release();
             runtime = null;
@@ -75,7 +75,7 @@ public final class JsonMapper extends Disposable {
         Object val = JSON.toJSON(from);
         JSONObject json = as(val, JSONObject.class);
         if (json == null) {
-            String jsonStr = (String) map.getOrDefault(String.valueOf(val), map.get(DefaultValue));
+            String jsonStr = (String) map.getOrDefault(String.valueOf(val), map.get(defaultValue));
             if (toType.isEnum()) {
                 Enum name = NQuery.of(toType.getEnumConstants()).<Enum> cast().where(p -> p.name().equals(jsonStr))
                         .firstOrDefault();
@@ -89,7 +89,7 @@ public final class JsonMapper extends Disposable {
 
         V8 v8 = runtime.getValue();
         v8.add("_x", json.toJSONString());
-        String result = v8.executeStringScript(String.format(ScriptFunc, map.get("script")));
+        String result = v8.executeStringScript(String.format(scriptFunc, map.get("script")));
         //        System.out.println("result:" + result);
         json.putAll(JSON.parseObject(result));
 

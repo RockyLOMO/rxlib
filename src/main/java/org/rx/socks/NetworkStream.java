@@ -1,13 +1,13 @@
 package org.rx.socks;
 
-import org.rx.Logger;
+import org.rx.common.Logger;
 import org.rx.cache.BytesSegment;
 import org.rx.io.IOStream;
 
 import java.io.IOException;
 import java.net.Socket;
 
-import static org.rx.Contract.require;
+import static org.rx.common.Contract.require;
 import static org.rx.socks.Sockets.shutdown;
 
 public final class NetworkStream extends IOStream {
@@ -62,12 +62,12 @@ public final class NetworkStream extends IOStream {
     }
 
     @Override
-    protected void freeUnmanaged() {
+    protected void freeObjects() {
         try {
-            Logger.info("NetworkStream freeUnmanaged ownsSocket=%s socket[%s][closed=%s]", ownsSocket,
+            Logger.info("NetworkStream freeObjects ownsSocket=%s socket[%s][closed=%s]", ownsSocket,
                     Sockets.getId(socket, false), socket.isClosed());
             if (ownsSocket) {
-                //super.freeUnmanaged(); Ignore this!!
+                //super.freeObjects(); Ignore this!!
                 Sockets.close(socket, 1);
             }
         } finally {

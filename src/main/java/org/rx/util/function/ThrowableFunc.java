@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.util.function;
 
 @FunctionalInterface
 public interface ThrowableFunc<T, TR> {
