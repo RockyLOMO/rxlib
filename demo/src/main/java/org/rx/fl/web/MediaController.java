@@ -1,19 +1,26 @@
 package org.rx.fl.web;
 
+import org.rx.fl.dto.media.FindAdvResult;
+import org.rx.fl.service.MediaService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 @Controller
+@RequestMapping(value = "media", method = RequestMethod.POST)
 public class MediaController {
     @Resource
-    private HttpServletRequest request;
-    @Resource
-    private HttpServletResponse response;
+    private MediaService mediaService;
+
+    @RequestMapping("findAdv")
+    @ResponseBody
+    public FindAdvResult findAdv(String content) {
+        return mediaService.findAdv(content);
+    }
 
     @RequestMapping("coupon.html")
     public String coupon(Model model) {

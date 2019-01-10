@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
+import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.App;
@@ -32,6 +33,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -60,7 +62,7 @@ public class TbMedia implements Media {
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
         caller.setShareCookie(true);
-        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 30 * 1000, "TbMedia");
+        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 60 * 1000, "TbMedia");
     }
 
     @SneakyThrows
@@ -113,15 +115,15 @@ public class TbMedia implements Media {
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
         login();
+        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8"), System.currentTimeMillis());
         return caller.invokeSelf(caller -> {
-            String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8"), System.currentTimeMillis());
             log.info("findAdv step1 {}", url);
-            By first = By.cssSelector(".box-btn-left");
-            caller.navigateUrl(url, first);
-            List<WebElement> eBtns = caller.findElements(first).toList();
+            By waitBy = By.cssSelector(".box-btn-left");
+            caller.navigateUrl(url, waitBy);
+//            List<WebElement> eBtns = caller.findElements(first).toList();
             List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
             List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
-            log.info("findAdv step2 btnSize: {}\tsellerEles: {}\tmoneyEles: {}", eBtns.size(), eSellers.size(), eMoneys.size());
+            log.info("findAdv step2 sellerEles: {}\tmoneyEles: {}", eSellers.size(), eMoneys.size());
             for (int i = 0; i < eSellers.size(); i++) {
                 WebElement eSeller = eSellers.get(i);
                 String sellerName = goodsInfo.getSellerName().trim();
@@ -144,57 +146,61 @@ public class TbMedia implements Media {
                 log.info("findAdv step4-1 ok");
 
                 try {
-                    By waiter = By.cssSelector("button[mx-click=submit]");//.dialog-ft button:eq(0)
-                    WebElement btn42 = caller.findElements(waiter, waiter).first();
+                    By btn42By = By.cssSelector("button[mx-click=submit]");
+                    WebElement btn42 = caller.findElements(btn42By, btn42By).first();
                     try {
-//                        Thread.sleep(sleepMillis);
                         btn42.click();
                     } catch (WebDriverException e) {
                         log.info("findAdv step4-2 click %s", e.getMessage());
                         caller.executeScript("$('button[mx-click=submit]').click();");
                     }
-//                    Thread.sleep(sleepMillis);
                     log.info("findAdv step4-2 ok");
 
-                    By hybridCodeBy = By.cssSelector("#clipboard-target,#clipboard-target-2");
-                    int j = 0;
-                    while (j < 4) {
-                        try {
-                            caller.waitElementLocated(hybridCodeBy, 1, 1);
-                            break;
-                        } catch (Exception e) {
-                            log.info("btn42 reClick -> reason: {}", e.getMessage());
-                            btn42 = caller.findElement(waiter);
-                            btn42.click();
+                    waitBy = By.cssSelector("#clipboard-target");
+                    caller.waitElementLocated(waitBy, 1, 4, p -> {
+                        WebElement code = caller.findElement(By.id("clipboard-target"), false);
+                        if (code != null) {
+                            log.info("code located ok");
+                            return false;
                         }
-                        j++;
-                    }
-//                    Thread.sleep(sleepMillis);
+                        WebElement $btn42 = caller.findElement(btn42By, false);
+                        if ($btn42 == null) {
+                            log.info("btn42 reclick fail");
+                            return false;
+                        }
+                        $btn42.click();
+                        return true;
+                    });
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
                     if (code2 != null) {
+                        String couponUrl = code2.getAttribute("value");
+                        if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                            log.info("findAdv step4-2-2 couponUrl fail and retry");
+                            couponUrl = (String) caller.executeScript("return $('#clipboard-target-2').val();");
+                        }
+                        if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                            log.info("findAdv step4-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
+                            return "0";
+                        }
+                        String $couponUrl = couponUrl;
                         future = TaskFactory.run(() -> {
-                            String couponUrl = code2.getAttribute("value");
-                            if (Strings.isNullOrEmpty(couponUrl)) {
-                                log.info("findAdv step4-2-2 couponUrl fail and retry");
-                                couponUrl = (String) caller.executeScript("return $('#clipboard-target-2').val();");
-                            }
-                            if (Strings.isNullOrEmpty(couponUrl)) {
-                                log.info("findAdv step4-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
-                                return "0";
-                            }
-                            return findCouponAmount(couponUrl);
+                            log.info("findAdv step4-2-2 couponUrl {}", $couponUrl);
+                            return findCouponAmount($couponUrl);
                         });
                     }
 
-                    waiter = By.cssSelector("li[mx-click='tab(4)']");
-                    WebElement btn43 = caller.findElements(waiter, waiter).first();
+//                    waiter = By.cssSelector("li[mx-click='tab(4)']");
+//                    WebElement btn43 = caller.findElements(waiter, waiter).first();
 //                    Thread.sleep(sleepMillis);
-                    btn43.click();
+//                    btn43.click();
+                    waitBy = By.id("magix_vf_code");
+                    caller.waitElementLocated(waitBy);
+                    caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
                     log.info("findAdv step4-3 ok");
 
-                    WebElement codeX = caller.findElement(hybridCodeBy);
+                    WebElement codeX = caller.findElement(By.cssSelector("#clipboard-target,#clipboard-target-2"));
                     String code = codeX.getAttribute("value");
 
                     if (future != null) {
@@ -279,10 +285,20 @@ public class TbMedia implements Media {
                 String url = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
                 By locator = By.id("J_SubmitQuick");
                 caller.navigateUrl(url, locator);
-                caller.findElement(locator).click();
-                while (!caller.getCurrentUrl().startsWith("https://www.alimama.com")) {
-                    Thread.sleep(200);
+                int count = 0;
+                do {
+                    if (count == 0) {
+                        caller.findElement(locator).click();
+                        log.info("login btn click...");
+                    }
+                    log.info("wait login callback...");
+                    Thread.sleep(1000);
+                    count++;
+                    if (count >= 5) {
+                        count = 0;
+                    }
                 }
+                while (caller.getCurrentUrl().startsWith("https://login.taobao.com"));
 
 //                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
 //                String url;

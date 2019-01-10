@@ -2,9 +2,9 @@ package org.rx.fl.util.cookie.persistence;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import okhttp3.Cookie;
-import org.jboss.netty.util.internal.ConcurrentHashMap;
 import org.rx.common.NQuery;
 
 public class MemoryCookiePersistor implements CookiePersistor {

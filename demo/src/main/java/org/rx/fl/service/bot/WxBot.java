@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.cache.LRUCache;
 import org.rx.common.App;
+import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.UserService;
 import org.rx.util.ManualResetEvent;
@@ -43,6 +44,11 @@ public final class WxBot implements Bot {
 
     private static final LRUCache<String, CacheItem> callCache = new LRUCache<>(UserService.MaxUserCount, 60, 40 * 1000);
     private Function<MessageInfo, String> event;
+
+    @Override
+    public BotType getType() {
+        return BotType.WxInterface;
+    }
 
     private WxBot() {
     }

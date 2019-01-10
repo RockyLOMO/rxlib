@@ -25,7 +25,7 @@ public class BotService {
     public String handleMessage(MessageInfo msg) {
         require(msg);
 
-        String userId = userService.queryOrCreateUser(msg.getOpenId());
+        String userId = userService.getUserId(WxBot.Instance.getType(), msg.getOpenId());
         String content = msg.isSubscribe() ? "subscribe" : msg.getContent();
         return commandManager.handleMessage(userId, content);
     }

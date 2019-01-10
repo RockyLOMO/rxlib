@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.jboss.netty.util.internal.ConcurrentHashMap;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -24,11 +23,13 @@ import org.rx.util.function.Action;
 
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.rx.common.Contract.eq;
 import static org.rx.common.Contract.require;
@@ -97,10 +98,10 @@ public final class WebCaller extends Disposable {
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
                     DesiredCapabilities capabilities = DesiredCapabilities.internetExplorer();
-                    capabilities.setAcceptInsecureCerts(true);
+//                    capabilities.setAcceptInsecureCerts(true);
                     capabilities.setJavascriptEnabled(true);
                     opt.merge(capabilities);
-                    opt.setCapability(InternetExplorerDriver.INTRODUCE_FLAKINESS_BY_IGNORING_SECURITY_DOMAINS, true);
+//                    opt.setCapability(InternetExplorerDriver.INTRODUCE_FLAKINESS_BY_IGNORING_SECURITY_DOMAINS, true);
 
                     driver = new InternetExplorerDriver((InternetExplorerDriverService) pooledItem.driverService, opt);
                 }
@@ -319,32 +320,39 @@ public final class WebCaller extends Disposable {
     }
 
     public void waitElementLocated(By locator) {
-        waitElementLocated(locator, 5, 2);
+        waitElementLocated(locator, 5, 2, null);
     }
 
-    public void waitElementLocated(By locator, long timeOutInSeconds, int retryCount) {
-        SystemException lastEx = null;
-        int i = 1;
+    public void waitElementLocated(By locator, long timeOutInSeconds, int retryCount, Predicate<By> onRetry) {
+        require(locator);
 
+        int i = 1;
         while (i <= retryCount) {
             try {
-                WebDriverWait wait = new WebDriverWait(driver, timeOutInSeconds);
-                wait.until(ExpectedConditions.presenceOfElementLocated(locator));
-                return;
-            } catch (Exception e) {
-                log.info("waitElementLocated: {}", e.getMessage());
                 if (findElements(locator).any()) {
                     return;
                 }
-                if (i == retryCount) {
-                    lastEx = SystemException.wrap(e);
+
+                WebDriverWait wait = new WebDriverWait(driver, timeOutInSeconds);
+                wait.until(ExpectedConditions.presenceOfElementLocated(locator));
+                break;
+            } catch (Exception e) {
+                log.info("waitElementLocated {}", e.getMessage());
+                if (findElements(locator).any()) {
+                    break;
                 }
 
-                ++i;
+                if (onRetry != null) {
+                    if (!onRetry.test(locator)) {
+                        break;
+                    }
+                }
+                if (i == retryCount) {
+                    throw SystemException.wrap(e);
+                }
+                i++;
             }
         }
-
-        throw lastEx;
     }
 
     public NQuery<String> getAttributeValues(By by, String attrName) {

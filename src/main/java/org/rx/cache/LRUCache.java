@@ -17,10 +17,16 @@ public final class LRUCache<TK, TV> extends Disposable {
     private class CacheItem {
         private TV       value;
         private DateTime createTime;
+        private int      expireSeconds;
 
-        public CacheItem(TV value) {
+        public CacheItem(TV value, int expireSeconds) {
             this.value = value;
-            this.createTime = DateTime.utcNow();
+            this.expireSeconds = expireSeconds;
+            refresh();
+        }
+
+        public void refresh() {
+            createTime = DateTime.utcNow();
         }
     }
 
@@ -38,6 +44,7 @@ public final class LRUCache<TK, TV> extends Disposable {
     }
 
     private final Map<TK, CacheItem> cache;
+    private int                      expireSeconds;
     private Future                   future;
 
     public LRUCache() {
@@ -46,16 +53,16 @@ public final class LRUCache<TK, TV> extends Disposable {
 
     public LRUCache(int maxSize, int expireSecondsAfterAccess, long checkPeriod) {
         cache = Collections.synchronizedMap(new LRUMap<>(maxSize));
-        if (expireSecondsAfterAccess > -1) {
-            future = TaskFactory.schedule(() -> {
-                for (TK k : NQuery.of(cache.entrySet()).where(
-                        p -> DateTime.utcNow().addSeconds(-expireSecondsAfterAccess).after(p.getValue().createTime))
-                        .select(p -> p.getKey())) {
-                    cache.remove(k);
-                    Logger.debug("LRUCache remove {}", k);
-                }
-            }, checkPeriod);
-        }
+        expireSeconds = expireSecondsAfterAccess;
+        future = TaskFactory.schedule(() -> {
+            for (TK k : NQuery.of(cache.entrySet())
+                    .where(p -> p.getValue().expireSeconds > -1
+                            && DateTime.utcNow().addSeconds(-p.getValue().expireSeconds).after(p.getValue().createTime))
+                    .select(p -> p.getKey())) {
+                cache.remove(k);
+                Logger.debug("LRUCache remove {}", k);
+            }
+        }, checkPeriod);
     }
 
     @Override
@@ -67,9 +74,13 @@ public final class LRUCache<TK, TV> extends Disposable {
     }
 
     public void add(TK key, TV val) {
+        add(key, val, expireSeconds);
+    }
+
+    public void add(TK key, TV val, int expireSecondsAfterAccess) {
         require(key);
 
-        cache.put(key, new CacheItem(val));
+        cache.put(key, new CacheItem(val, expireSecondsAfterAccess));
     }
 
     public void remove(TK key) {
@@ -100,7 +111,7 @@ public final class LRUCache<TK, TV> extends Disposable {
         if (item == null) {
             return null;
         }
-        item.createTime = DateTime.utcNow();
+        item.refresh();
         return item.value;
     }
 
@@ -109,9 +120,9 @@ public final class LRUCache<TK, TV> extends Disposable {
 
         CacheItem item = cache.get(key);
         if (item == null) {
-            cache.put(key, item = new CacheItem(supplier.apply(key)));
+            cache.put(key, item = new CacheItem(supplier.apply(key), expireSeconds));
         } else {
-            item.createTime = DateTime.utcNow();
+            item.refresh();
         }
         return item.value;
     }

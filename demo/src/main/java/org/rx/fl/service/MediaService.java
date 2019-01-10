@@ -1,6 +1,5 @@
 package org.rx.fl.service;
 
-import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -16,11 +15,10 @@ import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 
@@ -104,17 +102,6 @@ public class MediaService {
         return NQuery.of(holder.keySet()).toList();
     }
 
-    private void invoke(MediaType type, Consumer<Media> consumer) {
-        require(type, consumer);
-
-        Media media = create(type, true);
-        try {
-            consumer.accept(media);
-        } finally {
-            release(media);
-        }
-    }
-
     private <T> T invoke(MediaType type, Function<Media, T> function) {
         require(type, function);
 
@@ -130,9 +117,7 @@ public class MediaService {
         require(content);
 
         for (MediaType type : getMedias()) {
-            String link = invoke(type, p -> {
-                return p.findLink(content);
-            });
+            String link = invoke(type, p -> p.findLink(content));
             if (!Strings.isNullOrEmpty(link)) {
                 return link;
             }
@@ -140,40 +125,41 @@ public class MediaService {
         return "";
     }
 
-    public List<FindAdvResult> findAdv(String... contentArray) {
-        require(contentArray);
+    public FindAdvResult findAdv(String content) {
+        require(content);
 
-        List<FindAdvResult> list = new ArrayList<>();
-        for (String content : contentArray) {
-            for (MediaType type : getMedias()) {
-                invoke(type, media -> {
-                    FindAdvResult result = new FindAdvResult();
-                    list.add(result);
-                    result.setMediaType(media.getType());
-                    result.setLink(media.findLink(content));
+        FindAdvResult result = null;
+        for (MediaType type : getMedias()) {
+            result = invoke(type, media -> {
+                FindAdvResult adv = new FindAdvResult();
+                adv.setMediaType(media.getType());
+                adv.setLink(media.findLink(content));
 
-                    if (Strings.isNullOrEmpty(result.getLink())) {
-                        result.setFoundStatus(AdvFoundStatus.NoLink);
-                        return;
-                    }
+                if (Strings.isNullOrEmpty(adv.getLink())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoLink);
+                    return null;
+                }
 
-                    result.setGoods(media.findGoods(result.getLink()));
-                    if (result.getGoods() == null || Strings.isNullOrEmpty(result.getGoods().getSellerName())) {
-                        result.setFoundStatus(AdvFoundStatus.NoGoods);
-                        return;
-                    }
+                adv.setGoods(media.findGoods(adv.getLink()));
+                if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getSellerName())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoGoods);
+                    return null;
+                }
 
-                    media.login();
-                    result.setShareCode(media.findAdv(result.getGoods()));
-                    if (Strings.isNullOrEmpty(result.getShareCode())) {
-                        result.setFoundStatus(AdvFoundStatus.NoAdv);
-                        return;
-                    }
+                media.login();
+                adv.setShareCode(media.findAdv(adv.getGoods()));
+                if (Strings.isNullOrEmpty(adv.getShareCode())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoAdv);
+                    return null;
+                }
 
-                    result.setFoundStatus(AdvFoundStatus.Ok);
-                });
+                adv.setFoundStatus(AdvFoundStatus.Ok);
+                return adv;
+            });
+            if (result != null) {
+                break;
             }
         }
-        return list;
+        return result;
     }
 }

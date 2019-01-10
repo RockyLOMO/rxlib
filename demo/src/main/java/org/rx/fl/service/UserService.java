@@ -8,6 +8,7 @@ import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
+import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
@@ -81,8 +82,20 @@ public class UserService {
         return userDto;
     }
 
-    public String queryOrCreateUser(String openId) {
-        return "";
+    @Transactional
+    public String getUserId(BotType botType, String openId) {
+        require(botType, openId);
+
+        DateTime now = DateTime.now();
+        String userId = App.newComb(botType.getValue() + openId, now).toString();
+        User user = userMapper.selectByPrimaryKey(userId);
+        if (user == null) {
+            user = new User();
+            user.setCreateTime(now);
+            user.setId(userId);
+            dbUtil.save(user, true);
+        }
+        return user.getId();
     }
 
     public String findUserByGoods(MediaType mediaType, String goodsId) {

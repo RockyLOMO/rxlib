@@ -1,12 +1,11 @@
 package org.rx.fl.service.command.impl;
 
-import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.rx.common.App;
 import org.rx.common.FlConfig;
-import org.rx.common.NQuery;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
@@ -46,12 +45,12 @@ public class FindAdvCmd implements Command {
         FindAdvResult advResult;
         if (config.isRemoteMode()) {
             Map<String, String> data = new HashMap<>();
-            data.put("contentArray", message);
+            data.put("content", message);
             HttpCaller caller = new HttpCaller();
             String json = caller.post(String.format("http://%s/media/findAdv", config.getRemoteEndpoint()), data);
-            advResult = NQuery.of(JSONArray.parseArray(json, FindAdvResult.class)).first();
+            advResult = JSONObject.parseObject(json, FindAdvResult.class);
         } else {
-            advResult = NQuery.of(mediaService.findAdv(message)).first();
+            advResult = mediaService.findAdv(message);
         }
         if (advResult.getFoundStatus() != AdvFoundStatus.Ok) {
             return HandleResult.of("一一一一系 统 消 息一一一一\n" +
