@@ -85,13 +85,11 @@ public class UserService {
     @Transactional
     public String getUserId(BotType botType, String openId) {
         require(botType, openId);
-
-        DateTime now = DateTime.now();
-        String userId = App.newComb(botType.getValue() + openId, now).toString();
+        openId = botType.getValue() + openId;
+        String userId = App.hash(openId).toString();
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
             user = new User();
-            user.setCreateTime(now);
             user.setId(userId);
             dbUtil.save(user, true);
         }

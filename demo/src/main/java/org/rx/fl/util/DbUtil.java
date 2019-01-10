@@ -1,6 +1,7 @@
 package org.rx.fl.util;
 
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
@@ -13,8 +14,10 @@ import java.lang.reflect.Field;
 import java.util.Date;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.toJsonString;
 
 @Component
+@Slf4j
 public class DbUtil {
     public static final String IsDeleted_True = "Y", IsDeleted_False = "N";
     private static final String mapperScan = (String) App.readSetting("app.mybatis.mapperScan");
@@ -70,17 +73,19 @@ public class DbUtil {
         if (isDeleted == null) {
             setValue(model, "isDeleted", isDeleted = "N");
         }
-
+        log.info("save model {}", toJsonString(model));
+        int rows;
         if (forceInsert || isInsert) {
-            mapper.insertSelective(model);
+            rows = mapper.insertSelective(model);
         } else {
-            mapper.updateByPrimaryKeySelective(model);
+            rows = mapper.updateByPrimaryKeySelective(model);
         }
+        log.info("save rows {}", rows);
         return model;
     }
 
     private MyBatisBaseDao getMapper(Class modelType) {
-        String className = String.format("%s.%sMapper", mapperScan, modelType.getTypeName());
+        String className = String.format("%s.%sMapper", mapperScan, modelType.getSimpleName());
         return SpringContextUtil.getBean(App.loadClass(className, false));
     }
 

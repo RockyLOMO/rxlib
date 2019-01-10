@@ -42,7 +42,7 @@ public final class WxBot implements Bot {
         }
     }
 
-    private static final LRUCache<String, CacheItem> callCache = new LRUCache<>(UserService.MaxUserCount, 60, 40 * 1000);
+    private static final LRUCache<String, CacheItem> callCache = new LRUCache<>(UserService.MaxUserCount, 60);
     private Function<MessageInfo, String> event;
 
     @Override

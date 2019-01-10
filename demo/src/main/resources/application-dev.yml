@@ -1,0 +1,14 @@
+app:
+  chrome:
+    driver: D:\usr\chrome\chromedriver.exe
+    dataPath: D:\usr\chrome\data
+    downloadPath: D:\usr\chrome\download
+    isBackground: false
+    initSize: 1
+  ie:
+    driver: D:\usr\chrome\IEDriverServer.exe
+    initSize: 1
+  media:
+    coreSize: 1
+    remoteMode: false
+    remoteEndpoint: 127.0.0.1:8080

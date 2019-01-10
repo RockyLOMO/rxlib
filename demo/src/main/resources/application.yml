@@ -1,7 +1,8 @@
 server.port: 8080
 
+spring.profiles.active: dev
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
-spring.datasource.url: jdbc:mysql://localhost:3306/rx_rebate?useUnicode=true&characterEncoding=utf-8
+spring.datasource.url: jdbc:mysql://localhost:3306/rx_rebate?useUnicode=true&characterEncoding=utf-8&useSSL=false
 spring.datasource.username: root
 spring.datasource.password: rx-root
 mybatis.type-aliases-package: org.rx.fl.repository.model
@@ -18,12 +19,12 @@ app:
     dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
     isBackground: false
-    initSize: 1
+    initSize: 0
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
-    initSize: 1
+    initSize: 0
   media:
-    coreSize: 1
+    coreSize: 0
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
   repository:

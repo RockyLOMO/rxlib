@@ -1,5 +1,6 @@
 package org.rx.fl.service.command;
 
+import lombok.extern.slf4j.Slf4j;
 import org.rx.cache.LRUCache;
 import org.rx.common.App;
 import org.rx.common.NQuery;
@@ -13,6 +14,7 @@ import java.util.List;
 import static org.rx.common.Contract.require;
 
 @Component
+@Slf4j
 public class CommandManager {
     private static final List<Class> allCmds;
     private static final LRUCache<String, Command> userCmd;
@@ -22,7 +24,8 @@ public class CommandManager {
             Order order = (Order) p.getAnnotation(Order.class);
             return order == null ? 0 : order.value();
         }).toList();
-        userCmd = new LRUCache<>(UserService.MaxUserCount, 120, 70 * 1000);
+        log.info("load cmd {}", String.join(",", NQuery.of(allCmds).select(p -> p.getSimpleName())));
+        userCmd = new LRUCache<>(UserService.MaxUserCount, 120, 40 * 1000, p -> log.info("remove command %s", p));
     }
 
     public String handleMessage(String userId, String message) {
@@ -35,12 +38,15 @@ public class CommandManager {
         } else {
             for (Class type : allCmds) {
                 cmd = (Command) SpringContextUtil.getBean(type);
+                log.info("Try peek cmd {}", cmd);
                 if (!cmd.peek(message)) {
                     continue;
                 }
+                log.info("Handle cmd {}", cmd);
                 result = cmd.handleMessage(userId, message);
             }
             if (result == null) {
+                log.info("Not found cmd");
                 return "";
             }
         }

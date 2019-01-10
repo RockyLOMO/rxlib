@@ -1,12 +1,13 @@
 package org.rx.cache;
 
-import org.apache.commons.collections4.map.LRUMap;
 import org.rx.common.*;
 import org.rx.beans.DateTime;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.as;
@@ -15,22 +16,32 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 public final class LRUCache<TK, TV> extends Disposable {
     private class CacheItem {
-        private TV       value;
-        private DateTime createTime;
-        private int      expireSeconds;
+        public TV            value;
+        private int          expireSeconds;
+        private DateTime     createTime;
+        private Consumer<TV> expireCallback;
 
-        public CacheItem(TV value, int expireSeconds) {
+        public CacheItem(TV value, int expireSeconds, Consumer<TV> expireCallback) {
             this.value = value;
             this.expireSeconds = expireSeconds;
+            this.expireCallback = expireCallback;
             refresh();
         }
 
         public void refresh() {
-            createTime = DateTime.utcNow();
+            if (expireSeconds > -1) {
+                createTime = DateTime.utcNow();
+            }
+        }
+
+        public void callback() {
+            if (expireCallback != null) {
+                expireCallback.accept(value);
+            }
         }
     }
 
-    private static final Lazy<LRUCache<String, Object>> instance = new Lazy<>(() -> new LRUCache<>(200, 120, 64));
+    private static final Lazy<LRUCache<String, Object>> instance = new Lazy<>(() -> new LRUCache<>(200, 120));
 
     public static LRUCache<String, Object> getInstance() {
         return instance.getValue();
@@ -44,23 +55,34 @@ public final class LRUCache<TK, TV> extends Disposable {
     }
 
     private final Map<TK, CacheItem> cache;
+    private int                      maxCapacity;
     private int                      expireSeconds;
+    private Consumer<TV>             expireCallback;
     private Future                   future;
 
-    public LRUCache() {
-        this(200, 120, 60 * 1000);
+    public LRUCache(int maxSize, int expireSecondsAfterAccess) {
+        this(maxSize, expireSecondsAfterAccess, 20 * 1000, null);
     }
 
-    public LRUCache(int maxSize, int expireSecondsAfterAccess, long checkPeriod) {
-        cache = Collections.synchronizedMap(new LRUMap<>(maxSize));
+    public LRUCache(int maxSize, int expireSecondsAfterAccess, long checkPeriod, Consumer<TV> removeCallback) {
+        cache = Collections.synchronizedMap(new LinkedHashMap<TK, CacheItem>(maxSize + 1, .75F, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<TK, CacheItem> eldest) {
+                boolean remove = size() > maxCapacity;
+                if (remove) {
+                    eldest.getValue().callback();
+                }
+                return remove;
+            }
+        });
+        maxCapacity = maxSize;
         expireSeconds = expireSecondsAfterAccess;
+        expireCallback = removeCallback;
         future = TaskFactory.schedule(() -> {
-            for (TK k : NQuery.of(cache.entrySet())
-                    .where(p -> p.getValue().expireSeconds > -1
-                            && DateTime.utcNow().addSeconds(-p.getValue().expireSeconds).after(p.getValue().createTime))
-                    .select(p -> p.getKey())) {
-                cache.remove(k);
-                Logger.debug("LRUCache remove {}", k);
+            for (Map.Entry<TK, CacheItem> entry : NQuery.of(cache.entrySet()).where(p -> p.getValue().expireSeconds > -1
+                    && DateTime.utcNow().addSeconds(-p.getValue().expireSeconds).after(p.getValue().createTime))) {
+                entry.getValue().callback();
+                cache.remove(entry.getKey());
             }
         }, checkPeriod);
     }
@@ -74,13 +96,13 @@ public final class LRUCache<TK, TV> extends Disposable {
     }
 
     public void add(TK key, TV val) {
-        add(key, val, expireSeconds);
+        add(key, val, expireSeconds, expireCallback);
     }
 
-    public void add(TK key, TV val, int expireSecondsAfterAccess) {
+    public void add(TK key, TV val, int expireSecondsAfterAccess, Consumer<TV> removeCallback) {
         require(key);
 
-        cache.put(key, new CacheItem(val, expireSecondsAfterAccess));
+        cache.put(key, new CacheItem(val, expireSecondsAfterAccess, removeCallback));
     }
 
     public void remove(TK key) {
@@ -120,7 +142,7 @@ public final class LRUCache<TK, TV> extends Disposable {
 
         CacheItem item = cache.get(key);
         if (item == null) {
-            cache.put(key, item = new CacheItem(supplier.apply(key), expireSeconds));
+            cache.put(key, item = new CacheItem(supplier.apply(key), expireSeconds, expireCallback));
         } else {
             item.refresh();
         }
