@@ -10,6 +10,7 @@ import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.service.MediaService;
+import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.rx.fl.util.HttpCaller;
@@ -30,6 +31,8 @@ public class FindAdvCmd implements Command {
     private FlConfig config;
     @Resource
     private MediaService mediaService;
+    @Resource
+    private UserService userService;
 
     @Override
     public boolean peek(String message) {
@@ -58,6 +61,7 @@ public class FindAdvCmd implements Command {
                     "亲，这家没有优惠和返利哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
         }
 
+        userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId());
         GoodsInfo goods = advResult.getGoods();
         Function<String, Double> convert = p -> {
             if (Strings.isNullOrEmpty(p)) {

@@ -1,10 +1,11 @@
 package org.rx.common;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.reflect.ClassPath;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.$;
 import org.rx.beans.Tuple;
 import org.rx.cache.LRUCache;
 import org.rx.cache.WeakCache;
@@ -26,23 +27,15 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
-import java.net.JarURLConnection;
-import java.net.URL;
-import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 
-import static org.rx.beans.$.$;
 import static org.rx.common.Contract.*;
 
 public class App {
@@ -56,9 +49,9 @@ public class App {
     //endregion
 
     //region Fields
-    public static final int               MaxSize         = Integer.MAX_VALUE - 8;
-    public static final int               TimeoutInfinite = -1;
-    private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    public static final int MaxSize = Integer.MAX_VALUE - 8;
+    public static final int TimeoutInfinite = -1;
+    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
 
@@ -183,77 +176,18 @@ public class App {
     }
 
     public static List<Class> getClassesFromPackage(String packageDirName) {
-        return getClassesFromPackage(packageDirName, false);
+        return getClassesFromPackage(packageDirName, getClassLoader());
     }
 
     @SneakyThrows
-    public static List<Class> getClassesFromPackage(String packageDirName, boolean initClass) {
-        require(packageDirName);
-        packageDirName = packageDirName.replace('.', '/');
+    public static List<Class> getClassesFromPackage(String packageDirName, ClassLoader classloader) {
+        require(packageDirName, classloader);
 
-        final String flag = ".class";
-        List<Class> classes = new ArrayList<>();
-        final Consumer<String> loadFunc = n -> {
-            Class type = loadClass(n, initClass, false);
-            if (type == null) {
-                return;
-            }
-            classes.add(type);
-        };
-        Enumeration<URL> dirs = getClassLoader().getResources(packageDirName);
-        while (dirs.hasMoreElements()) {
-            URL url = dirs.nextElement();
-            switch (url.getProtocol()) {
-                case "file":
-                    $<BiConsumer<String, String>> callee = $();
-                    callee.$ = (packageName, filePath) -> {
-                        File dir = new File(filePath);
-                        if (!dir.exists() || !dir.isDirectory()) {
-                            return;
-                        }
-
-                        for (File file : isNull(dir.listFiles(p -> p.isDirectory() || p.getName().endsWith(flag)),
-                                new File[0])) {
-                            if (file.isDirectory()) {
-                                callee.$.accept(packageName + "." + file.getName(), file.getAbsolutePath());
-                                continue;
-                            }
-
-                            String className = packageName + "."
-                                    + file.getName().substring(0, file.getName().length() - flag.length());
-                            loadFunc.accept(className);
-                        }
-                    };
-                    String filePath = URLDecoder.decode(url.getFile(), "UTF-8");
-                    callee.$.accept(packageDirName, filePath);
-                    break;
-                case "jar":
-                    JarFile jar = ((JarURLConnection) url.openConnection()).getJarFile();
-                    Enumeration<JarEntry> tor = jar.entries();
-                    while (tor.hasMoreElements()) {
-                        JarEntry entry = tor.nextElement();
-                        String name = entry.getName();
-                        if (name.charAt(0) == '/') {
-                            name = name.substring(1);
-                        }
-                        if (!(name.startsWith(packageDirName) && name.endsWith(flag))) {
-                            continue;
-                        }
-
-                        String className = entry.getName().replace('/', '.');
-                        className = className.substring(0, className.length() - flag.length());
-                        loadFunc.accept(className);
-                    }
-                    break;
-                default:
-                    Logger.debug("getClassesFromPackage skip " + url.getProtocol());
-                    break;
-            }
-        }
-        return classes;
+        ImmutableSet<ClassPath.ClassInfo> classes = ClassPath.from(classloader).getTopLevelClasses(packageDirName);
+        return NQuery.of(classes).select(p -> (Class) p.load()).toList();
     }
 
-    @ErrorCode(value = "argError", messageKeys = { "type" })
+    @ErrorCode(value = "argError", messageKeys = {"type"})
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 
@@ -381,8 +315,8 @@ public class App {
         return readSetting(key, Contract.SettingsFile, false);
     }
 
-    @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
-    @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
+    @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
+    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
     public static Object readSetting(String key, String yamlFile, boolean throwOnEmpty) {
         Map<String, Object> settings = readSettings(yamlFile + ".yml");
         Object val;
@@ -537,10 +471,10 @@ public class App {
         }
     }
 
-    @ErrorCode(value = "notSupported", messageKeys = { "$fType", "$tType" })
-    @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
+    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
+    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
+    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
+    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
@@ -598,7 +532,7 @@ public class App {
         return (T) value;
     }
 
-    @ErrorCode(messageKeys = { "$type" })
+    @ErrorCode(messageKeys = {"$type"})
     private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
@@ -647,7 +581,7 @@ public class App {
         require(obj);
 
         try (MemoryStream stream = new MemoryStream();
-                ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
+             ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
             return stream.toArray();
         }
@@ -663,7 +597,7 @@ public class App {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
-                ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
+             ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
         }
     }

@@ -25,7 +25,7 @@ public class CommandManager {
             return order == null ? 0 : order.value();
         }).toList();
         log.info("load cmd {}", String.join(",", NQuery.of(allCmds).select(p -> p.getSimpleName())));
-        userCmd = new LRUCache<>(UserService.MaxUserCount, 120, 40 * 1000, p -> log.info("remove command %s", p));
+        userCmd = new LRUCache<>(UserService.MaxUserCount, 120, 40 * 1000, p -> log.info("remove command {}", p));
     }
 
     public String handleMessage(String userId, String message) {
@@ -44,6 +44,7 @@ public class CommandManager {
                 }
                 log.info("Handle cmd {}", cmd);
                 result = cmd.handleMessage(userId, message);
+                break;
             }
             if (result == null) {
                 log.info("Not found cmd");

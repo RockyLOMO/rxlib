@@ -23,7 +23,7 @@ public class DbUtil {
     private static final String mapperScan = (String) App.readSetting("app.mybatis.mapperScan");
 
     public static double toMoney(Long cent) {
-        if (cent == null) {
+        if (cent == null || cent == 0) {
             return 0;
         }
         return (double) cent / 100;
@@ -34,6 +34,13 @@ public class DbUtil {
             return 0;
         }
         return ((Double) (Double.valueOf(money) * 100)).longValue();
+    }
+
+    public static long longValue(Long num) {
+        if (num == null) {
+            return 0;
+        }
+        return num;
     }
 
     public <T> T selectById(MyBatisBaseDao mapper, String id) {

@@ -3,6 +3,7 @@ package org.rx.fl.service;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
@@ -27,6 +28,7 @@ import java.util.List;
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
 import static org.rx.fl.util.DbUtil.toCent;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
 @Slf4j
@@ -36,7 +38,23 @@ public class OrderService {
     @Resource
     private UserService userService;
     @Resource
+    private MediaService mediaService;
+    @Resource
     private DbUtil dbUtil;
+
+    public OrderService() {
+//        TaskFactory.schedule(() -> {
+//            for (MediaType media : mediaService.getMedias()) {
+//                try {
+//                    DateTime now = DateTime.now();
+//                    DateTime start = now.addDays(-1);
+//                    saveOrders(mediaService.findOrders(media, start, now));
+//                } catch (Exception e) {
+//                    log.error("saveOrders", e);
+//                }
+//            }
+//        }, 120 * 1000);
+    }
 
     public List<OrderResult> queryOrders(String userId, int takeCount) {
         require(userId);
@@ -59,21 +77,21 @@ public class OrderService {
     }
 
     @Transactional
-    public void saveOrders(MediaType mediaType, List<OrderInfo> orderInfos) {
-        require(mediaType, orderInfos);
+    public void saveOrders(List<OrderInfo> orderInfos) {
+        require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
             require(media.getOrderNo(), media.getCreateTime());
 
             //do not try catch, exec through trans
-            String orderId = App.newComb(mediaType.getValue() + media.getOrderNo(), media.getCreateTime()).toString();
+            String orderId = App.newComb(media.getMediaType().getValue() + media.getOrderNo(), media.getCreateTime()).toString();
             Order order = orderMapper.selectByPrimaryKey(orderId);
             boolean insert = false;
             if (order == null) {
                 insert = true;
                 order = new Order();
                 order.setId(orderId);
-                order.setMediaType(mediaType.getValue());
+                order.setMediaType(media.getMediaType().getValue());
                 order.setOrderNo(media.getOrderNo());
                 order.setGoodsId(media.getGoodsId());
                 order.setGoodsName(media.getGoodsName());
@@ -83,7 +101,7 @@ public class OrderService {
                 order.setPayAmount(toCent(media.getPayAmount()));
                 order.setRebateAmount(toCent(media.getRebateAmount()));
 
-                String userId = userService.findUserByGoods(mediaType, media.getGoodsId());
+                String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId());
                 if (!Strings.isNullOrEmpty(userId)) {
                     order.setUserId(userId);
                 }

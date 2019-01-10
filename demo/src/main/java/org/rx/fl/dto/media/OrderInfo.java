@@ -7,6 +7,7 @@ import java.util.Date;
 
 @Data
 public class OrderInfo implements Serializable {
+    private MediaType mediaType;
     private String orderNo;
     private String goodsId;
     private String goodsName;

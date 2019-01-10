@@ -47,14 +47,9 @@ public class WebCallerTests {
         System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
         System.setProperty("webdriver.ie.driver", (String) App.readSetting("app.ie.driver"));
         String url = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
-//        DesiredCapabilities ieCaps = DesiredCapabilities.internetExplorer();
-//        ieCaps.setCapability(InternetExplorerDriver.INITIAL_BROWSER_URL, "http://www.baidu.com/");
-        InternetExplorerDriverService service = new InternetExplorerDriverService.Builder()
-//                .withExtractPath(new File("D:\\a"))
-                .build();
         InternetExplorerOptions opt = new InternetExplorerOptions();
         opt.withInitialBrowserUrl("about:blank");
-        InternetExplorerDriver driver = new InternetExplorerDriver(service, opt);
+        InternetExplorerDriver driver = new InternetExplorerDriver(opt);
         driver.get(url);
         Thread.sleep(3000);
         By locator = By.id("J_SubmitQuick");
@@ -69,7 +64,6 @@ public class WebCallerTests {
             System.out.println(cookie.getName());
         }
 //      driver.getCurrentUrl();
-// driver.manage().getCookies();
 //        ChromeDriver chromeDriver = new ChromeDriver();
 //        chromeDriver.get(driver.getCurrentUrl());
 //        System.out.println(chromeDriver.getCurrentUrl());
@@ -83,33 +77,6 @@ public class WebCallerTests {
 //        wait.until(ExpectedConditions.presenceOfElementLocated(locator));
 
 //        ie.executeScript("$('#J_SubmitQuick').click();");
-        Thread.sleep(3000);
-//        HttpCaller.CookieContainer.saveFromResponse(ie.getCurrentUrl(), ie.manage().getCookies());
-//        int num = 0;
-//        while (true)
-//        {
-//            HtmlElement elementById = wb.Document.GetElementById("ra-" + num.ToString());
-//            if (elementById == null)
-//            {
-//                break;
-//            }
-//            string attribute = elementById.GetAttribute("value");
-//            Console.WriteLine(attribute);
-//            if (attribute == "cntaobao" + user)
-//            {
-//                elementById.InvokeMember("Click");
-//                elementById = wb.Document.GetElementById("J_SubmitQuick");
-//                if (elementById != null)
-//                {
-//                    elementById.InvokeMember("Click");
-//                }
-//                return true;
-//            }
-//            num++;
-//        }
-//        return false;
-//        WebCaller webCaller = new WebCaller();
-//        webCaller.navigateUrl("https://pub.alimama.com");
         System.in.read();
     }
 

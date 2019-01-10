@@ -59,17 +59,17 @@ public class UserService {
         BalanceLogExample qBalance = new BalanceLogExample();
         qBalance.createCriteria().andUserIdEqualTo(user.getId())
                 .andSourceEqualTo(BalanceSourceKind.Withdraw.getValue());
-        userDto.setTotalWithdrawAmount(balanceLogMapper.sumAmount(qBalance));
+        userDto.setTotalWithdrawAmount(DbUtil.longValue(balanceLogMapper.sumAmount(qBalance)));
 
         WithdrawLogExample qWithdraw = new WithdrawLogExample();
         qWithdraw.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(WithdrawStatus.Wait.getValue());
-        userDto.setWithdrawingAmount(withdrawLogMapper.sumAmount(qWithdraw));
+        userDto.setWithdrawingAmount(DbUtil.longValue(withdrawLogMapper.sumAmount(qWithdraw)));
 
         OrderExample qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(OrderStatus.Paid.getValue());
-        userDto.setUnconfirmedOrderAmount(orderMapper.sumRebateAmount(qOrder));
+        userDto.setUnconfirmedOrderAmount(DbUtil.longValue(orderMapper.sumRebateAmount(qOrder)));
         qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusIn(Arrays.asList(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()));
@@ -78,7 +78,7 @@ public class UserService {
         CheckInLogExample query = new CheckInLogExample();
         query.createCriteria().andUserIdEqualTo(user.getId());
         userDto.setCheckInCount(checkInLogMapper.countByExample(query));
-        userDto.setCheckInAmount(checkInLogMapper.sumBonus(query));
+        userDto.setCheckInAmount(DbUtil.longValue(checkInLogMapper.sumBonus(query)));
         return userDto;
     }
 
@@ -91,9 +91,30 @@ public class UserService {
         if (user == null) {
             user = new User();
             user.setId(userId);
+            user.setOpenId(openId);
             dbUtil.save(user, true);
         }
         return user.getId();
+    }
+
+    public void addUserGoods(String userId, MediaType mediaType, String goodsId) {
+        require(userId, mediaType, goodsId);
+
+//        DateTime now = DateTime.now().getDateComponent();
+//        String id = App.newComb(userId + mediaType.getValue() + goodsId, now).toString();
+//        UserGoodsExample q = new UserGoodsExample();
+//        q.createCriteria().andIdEqualTo(id);
+//        if (userGoodsMapper.countByExample(q) > 0) {
+//            return;
+//        }
+
+        UserGoods userGoods = new UserGoods();
+//        userGoods.setId(id);
+//        userGoods.setCreateTime(now);
+        userGoods.setUserId(userId);
+        userGoods.setMediaType(mediaType.getValue());
+        userGoods.setGoodsId(goodsId);
+        dbUtil.save(userGoods);
     }
 
     public String findUserByGoods(MediaType mediaType, String goodsId) {
@@ -191,7 +212,7 @@ public class UserService {
 
         FeedbackExample check = new FeedbackExample();
         check.createCriteria().andUserIdEqualTo(user.getId()).andStatusEqualTo(FeedbackStatus.WaitReply.getValue());
-        if (feedbackMapper.countByExample(check) > 0) {
+        if (feedbackMapper.countByExample(check) > 1) {
             throw new SystemException(values(), "alreadyCommit");
         }
 

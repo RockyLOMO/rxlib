@@ -4,17 +4,20 @@ import com.google.common.base.Strings;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.MediaType;
+import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -113,6 +116,12 @@ public class MediaService {
         }
     }
 
+    public List<OrderInfo> findOrders(MediaType type, DateTime start, DateTime end) {
+        require(type, start, end);
+
+        return invoke(type, p -> p.findOrders(start, end));
+    }
+
     public String findLink(String content) {
         require(content);
 
@@ -137,26 +146,26 @@ public class MediaService {
 
                 if (Strings.isNullOrEmpty(adv.getLink())) {
                     adv.setFoundStatus(AdvFoundStatus.NoLink);
-                    return null;
+                    return adv;
                 }
 
                 adv.setGoods(media.findGoods(adv.getLink()));
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getSellerName())) {
                     adv.setFoundStatus(AdvFoundStatus.NoGoods);
-                    return null;
+                    return adv;
                 }
 
                 media.login();
                 adv.setShareCode(media.findAdv(adv.getGoods()));
                 if (Strings.isNullOrEmpty(adv.getShareCode())) {
                     adv.setFoundStatus(AdvFoundStatus.NoAdv);
-                    return null;
+                    return adv;
                 }
 
                 adv.setFoundStatus(AdvFoundStatus.Ok);
                 return adv;
             });
-            if (result != null) {
+            if (result.getFoundStatus() == AdvFoundStatus.Ok) {
                 break;
             }
         }

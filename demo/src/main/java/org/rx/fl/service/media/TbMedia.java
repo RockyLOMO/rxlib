@@ -22,11 +22,13 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
+import org.rx.socks.HttpClient;
 import org.rx.util.Helper;
 import org.springframework.util.CollectionUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.util.*;
 import java.util.concurrent.Future;
@@ -62,7 +64,7 @@ public class TbMedia implements Media {
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
         caller.setShareCookie(true);
-        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 60 * 1000, "TbMedia");
+        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 70 * 1000, "TbMedia");
     }
 
     @SneakyThrows
@@ -96,7 +98,9 @@ public class TbMedia implements Media {
                 Object[] vals = list.get(i);
                 JSONObject json = new JSONObject();
                 json.putAll(tuples.toMap(p -> p.left, p -> vals[p.right]));
-                orders.add(json.toJavaObject(OrderInfo.class));
+                OrderInfo order = json.toJavaObject(OrderInfo.class);
+                order.setMediaType(this.getType());
+                orders.add(order);
             }
         }
         return orders;
@@ -249,6 +253,7 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerName(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
                 }
                 goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
+                goodsInfo.setId(HttpClient.parseQueryString(new URL(caller.getCurrentUrl()).getQuery()).get("id"));
                 log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
                 return goodsInfo;
             } catch (Exception e) {

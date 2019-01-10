@@ -1,8 +1,11 @@
 package org.rx.test.fl;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.common.reflect.ClassPath;
 import lombok.SneakyThrows;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.rx.common.App;
 import org.rx.common.Contract;
 import org.rx.fl.repository.model.User;
 import org.rx.fl.service.command.CommandManager;
@@ -31,24 +34,12 @@ public class DbTests {
     @SneakyThrows
     @Test
     public void hello() {
-      String packageDirName = "org.rx.fl.service.command.impl";
-        packageDirName = packageDirName.replace('.', '/');
-//        String flag = ".class";
-//        List<Class> classes = new ArrayList();
-//        Consumer<String> loadFunc = (n) -> {
-//            Class type = loadClass(n, initClass, false);
-//            if (type != null) {
-//                classes.add(type);
-//            }
-//        };
-        Enumeration dirs = CommandManager.class.getClassLoader().getResources(packageDirName);
-        while (dirs.hasMoreElements()){
-
-            System.out.println(dirs.nextElement());
+        String packageDirName = "org.rx.fl.service.command.impl";
+        for (Class aClass : App.getClassesFromPackage(packageDirName)) {
+            System.out.println(aClass.getName());
         }
 
-
-       // commandManager.handleMessage("4c3d0808-2480-3a17-837d-e6fe068c1a0a","【卡通羊羔绒宝宝绒四件套秋冬立体贴布绣花儿童被子双面绒恐龙被套】https://m.tb.cn/h.3ruLcuh 点击链接，再选择浏览器咑閞；或復·制这段描述￥P1ScbKlP0Lp￥后到淘♂寳♀[来自超级会员的分享]");
+        // commandManager.handleMessage("4c3d0808-2480-3a17-837d-e6fe068c1a0a","【卡通羊羔绒宝宝绒四件套秋冬立体贴布绣花儿童被子双面绒恐龙被套】https://m.tb.cn/h.3ruLcuh 点击链接，再选择浏览器咑閞；或復·制这段描述￥P1ScbKlP0Lp￥后到淘♂寳♀[来自超级会员的分享]");
 
 //        User u = new User();
 ////        Field field = User.class.getDeclaredField("id");

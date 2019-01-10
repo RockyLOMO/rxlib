@@ -7,5 +7,5 @@ import org.rx.fl.repository.model.BalanceLogExample;
  * BalanceLogMapper继承基类
  */
 public interface BalanceLogMapper extends MyBatisBaseDao<BalanceLog, String, BalanceLogExample> {
-    long sumAmount(BalanceLogExample example);
+    Long sumAmount(BalanceLogExample example);
 }
