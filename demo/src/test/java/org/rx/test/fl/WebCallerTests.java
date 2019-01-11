@@ -30,19 +30,41 @@ public class WebCallerTests {
     @SneakyThrows
     @Test
     public void download() {
-
-        String url = "https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=2019-01-05&endTime=2019-01-11";
+        String refUrl = "https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5HmjmiY#!/report/detail/taoke";
+//        HttpUrl.get(refUrl).queryParameter("")
+        String rawCookie = "isg=BCEhEApn2ciykHU8ek0CJg5-OO07zpXAjSi_woP2HSiH6kG8yx6lkE-4StxJOS34; t=70824e08423cb52e5173c58b0dee1a93; cna=6N84E+HCOwcCAXngjNKxcUwW; l=aB7DTtLdyUaWZyQpDMaPsVhISxrxygBPpkTZBMaLzTqGdP8vhtS1fjno-VwkQ_qC5f9L_XtiI; cookie2=1391a802ada07c947d4f6dc4f332bfaa; v=0; _tb_token_=fe5b3865573ee; alimamapwag=TW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV09XNjQ7IFRyaWRlbnQvNy4wOyBydjoxMS4wKSBsaWtlIEdlY2tv; cookie32=da263646f8b7310d20a6241569cb21ca; alimamapw=TgoJAwYAAgoEBmsJUVQABQMFDglSAwAIBVpQBQEKUwMHUVMFCF8EB1NUVQ%3D%3D; cookie31=MzcxNTE0NDcsdzM5NTExNTMyMyxyb2NreXdvbmcuY2huQGdtYWlsLmNvbSxUQg%3D%3D; login=Vq8l%2BKCLz3%2F65A%3D%3D";
+        HttpCaller.CookieContainer.saveFromResponse(HttpUrl.get(refUrl), HttpCaller.parseRawCookie(HttpUrl.get(refUrl), rawCookie));
+        String url = "https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.10.19ef35d9uFsIOb&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=2019-01-05&endTime=2019-01-11";
         HttpCaller caller = new HttpCaller();
-        caller.setHeaders(HttpCaller.parseOriginalHeader("Accept: text/html, application/xhtml+xml, */*\n" +
-                "Referer: https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5LWuydX\n" +
-                "Accept-Language: zh-CN\n" +
-                "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\n" +
-                "Accept-Encoding: gzip, deflate\n" +
-                "Host: pub.alimama.com\n" +
-                "DNT: 1\n" +
-                "Connection: Keep-Alive\n" +
-                "Cookie: t=03a265125320ea172f4360b1d940c0f8; cna=3XG8FCHE4k4CAbSpfvqdxFU0; isg=BCMjBNdqezKLeDcLjOsn_McXumfNGLdad9L-61WAvwL5lEG23ejVq8DGiuaaLw9S; l=aB8LrJg1yYwDOsC62Ma_INaulxrxygBPp3C0BMwkuTqGdP89OCB8yotb-_sIMJNFprPa_e2p52f2h; cookie2=1ab3e590958433bd7649251bc0bb9140; v=0; _tb_token_=f73e33eb3e5e7; alimamapwag=TW96aWxsYS81LjAgKFdpbmRvd3MgTlQgNi4xOyBXT1c2NDsgVHJpZGVudC83LjA7IHJ2OjExLjApIGxpa2UgR2Vja28%3D; cookie32=da263646f8b7310d20a6241569cb21ca; alimamapw=R1EMUAFXAABTVThSBlZWVQUCB1JXUAdfB1AHVlJRBAFRAVUCAQQBVFQDVw%3D%3D; cookie31=MzcxNTE0NDcsdzM5NTExNTMyMyxyb2NreXdvbmcuY2huQGdtYWlsLmNvbSxUQg%3D%3D; login=URm48syIIVrSKA%3D%3D; rurl=aHR0cHM6Ly9wdWIuYWxpbWFtYS5jb20v; 37151447_yxjh-filter-1=true; account-path-guide-s1=true; pub-message-center=1"));
+//        caller.setHeaders(HttpCaller.parseOriginalHeader("Accept: text/html, application/xhtml+xml, image/jxr, */*\n" +
+////                "Referer: https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5khPITz\n" +
+////                "Accept-Language: en-US,en;q=0.8,zh-Hans-CN;q=0.5,zh-Hans;q=0.3\n" +
+////                "User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko\n" +
+////                "Accept-Encoding: gzip, deflate\n" +
+////                "Host: pub.alimama.com\n" +
+////                "Connection: Keep-Alive\n" +
+//                "Cookie: "+rawCookie));
         caller.getDownload(url, "D:\\a.xls");
+//        WebCaller caller = new WebCaller();
+//        caller.setShareCookie(true);
+//        caller.navigateUrl(refUrl);
+//
+//        Thread.sleep(5000);
+//
+//        caller.navigateUrl(refUrl+"&t=t");
+//        System.in.read();
+
+//        GET https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.10.19ef35d9uFsIOb&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=2019-01-05&endTime=2019-01-11 HTTP/1.1
+//        Accept: text/html, application/xhtml+xml, image/jxr, */*
+////Referer: https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5khPITz
+////Accept-Language: en-US,en;q=0.8,zh-Hans-CN;q=0.5,zh-Hans;q=0.3
+////User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko
+////Accept-Encoding: gzip, deflate
+////Host: pub.alimama.com
+////Connection: Keep-Alive
+////Cookie: isg=BFpa-sxa0m0LcF7BHai5oxGjowB8i95lYmXUH2TTBu241_oRTBsudSDlo2FuHFb9; t=70824e08423cb52e5173c58b0dee1a93; cna=6N84E+HCOwcCAXngjNKxcUwW; l=aB7DTtLdyUaWZGbmSMaH2VW5FxrxygBPpNPzBMaLzTqGdP8vhtS1fjno-Vwkc_qC5vvy_XtiI; cookie2=10f3b5f03dc43cb743097f883ef452c6; v=0; _tb_token_=75661b586ee93; alimamapwag=TW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV09XNjQ7IFRyaWRlbnQvNy4wOyBydjoxMS4wKSBsaWtlIEdlY2tv; cookie32=da263646f8b7310d20a6241569cb21ca; alimamapw=TgoJAwYAAgoEBmsJUVQABQMFDglSAwAIBVpQBQEKUwMHUVMFCF8EB1NUVQ%3D%3D; cookie31=MzcxNTE0NDcsdzM5NTExNTMyMyxyb2NreXdvbmcuY2huQGdtYWlsLmNvbSxUQg%3D%3D; login=UIHiLt3xD8xYTw%3D%3D; rurl=aHR0cHM6Ly9wdWIuYWxpbWFtYS5jb20v; account-path-guide-s1=true
+////
+
 
 //        String p1 = "https://pub.alimama.com/myunion.htm";
 //        String p2 = "https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.60a135d9iv17LD&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=2019-01-10&endTime=2019-01-11";
@@ -75,8 +97,8 @@ public class WebCallerTests {
     @SneakyThrows
     @Test
     public void testWebLogin() {
-        System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
-        System.setProperty("webdriver.ie.driver", (String) App.readSetting("app.ie.driver"));
+        System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
+        System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
         String url = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
         InternetExplorerOptions opt = new InternetExplorerOptions();
         opt.withInitialBrowserUrl("about:blank");

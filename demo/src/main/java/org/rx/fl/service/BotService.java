@@ -1,5 +1,6 @@
 package org.rx.fl.service;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
@@ -13,19 +14,22 @@ import static org.rx.common.Contract.require;
 @Service
 @Slf4j
 public class BotService {
+    @Getter
+    @Resource
+    private WxBot wxBot;
     @Resource
     private UserService userService;
     @Resource
     private CommandManager commandManager;
 
     public BotService() {
-        WxBot.Instance.onReceiveMessage(messageInfo -> handleMessage(messageInfo));
+        wxBot.onReceiveMessage(messageInfo -> handleMessage(messageInfo));
     }
 
     public String handleMessage(MessageInfo msg) {
         require(msg);
 
-        String userId = userService.getUserId(WxBot.Instance.getType(), msg.getOpenId());
+        String userId = userService.getUserId(wxBot.getType(), msg.getOpenId());
         String content = msg.isSubscribe() ? "subscribe" : msg.getContent();
         return commandManager.handleMessage(userId, content);
     }

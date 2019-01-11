@@ -3,12 +3,10 @@ package org.rx.fl.service;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
-import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.OrderResult;
@@ -21,7 +19,6 @@ import org.rx.fl.util.DbUtil;
 import org.rx.util.NEnum;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -29,7 +26,6 @@ import java.util.List;
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
 import static org.rx.fl.util.DbUtil.toCent;
-import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
 @Slf4j
@@ -39,27 +35,7 @@ public class OrderService {
     @Resource
     private UserService userService;
     @Resource
-    private MediaService mediaService;
-    @Resource
     private DbUtil dbUtil;
-
-    public OrderService() {
-        TaskFactory.schedule(() -> {
-            for (MediaType media : mediaService.getMedias()) {
-                try {
-                    DateTime now = DateTime.now();
-                    DateTime start = now.addDays(-1);
-                    List<OrderInfo> orders = mediaService.findOrders(media, start, now);
-                    if (CollectionUtils.isEmpty(orders)) {
-                        continue;
-                    }
-                    saveOrders(orders);
-                } catch (Exception e) {
-                    log.error("saveOrders", e);
-                }
-            }
-        }, 60 * 1000, 120 * 1000, "syncOrder");
-    }
 
     public List<OrderResult> queryOrders(String userId, int takeCount) {
         require(userId);

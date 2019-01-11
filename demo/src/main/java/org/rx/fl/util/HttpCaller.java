@@ -36,6 +36,13 @@ public final class HttpCaller {
         pool = new ConnectionPool();
     }
 
+    public static void saveRawCookies(String url, String raw) {
+        require(url, raw);
+
+        HttpUrl httpUrl = HttpUrl.get(url);
+        CookieContainer.saveFromResponse(httpUrl, parseRawCookie(httpUrl, raw));
+    }
+
     public static String toRawCookie(List<Cookie> cookies) {
         if (cookies == null) {
             return "";
@@ -68,13 +75,13 @@ public final class HttpCaller {
     }
 
     @SneakyThrows
-    public static Map<String, String> parseOriginalHeader(String queryString) {
+    public static Map<String, String> parseOriginalHeader(String raw) {
         Map<String, String> map = new LinkedHashMap<>();
-        if (queryString == null) {
+        if (raw == null) {
             return map;
         }
 
-        String[] pairs = queryString.split(Pattern.quote("\n"));
+        String[] pairs = raw.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;

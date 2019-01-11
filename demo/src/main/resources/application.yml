@@ -25,8 +25,13 @@ app:
     initSize: 1
   media:
     coreSize: 1
+    maxUserCount: 1000
+    syncOrderPeriod: 70
+    commandTimeout: 60
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
+    tbKeepPeriod: 80
+    tbCacheSeconds: 130
   repository:
     dbFile: /usr/local/_rx/db/rx.dat
   sms:

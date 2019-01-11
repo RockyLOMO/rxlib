@@ -2,6 +2,7 @@ package org.rx;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.rx.common.Logger;
+import org.rx.fl.service.media.TbMedia;
 import org.rx.socks.Sockets;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -20,6 +21,7 @@ public class Application {
         Logger.debug("app start.."); //init path
 //        Sockets.setHttpProxy("127.0.0.1:8888");
 
+        TbMedia.clearIE();
         SpringApplication.run(Application.class, args);
     }
 }

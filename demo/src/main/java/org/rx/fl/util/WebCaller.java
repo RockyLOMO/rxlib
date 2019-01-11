@@ -53,15 +53,15 @@ public final class WebCaller extends Disposable {
     }
 
     private static final ConcurrentHashMap<DriverType, PooledItem> driverPool;
-    private static final String dataPath = (String) App.readSetting("app.chrome.dataPath");
+    private static final String dataPath = App.readSetting("app.chrome.dataPath");
     private static volatile int pathCounter;
 
     static {
-        System.setProperty("webdriver.chrome.driver", (String) App.readSetting("app.chrome.driver"));
-        System.setProperty("webdriver.ie.driver", (String) App.readSetting("app.ie.driver"));
+        System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
+        System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
         driverPool = new ConcurrentHashMap<>();
         for (DriverType driverType : DriverType.values()) {
-            Integer init = (Integer) App.readSetting(String.format("app.%s.initSize", driverType.name().toLowerCase()));
+            Integer init = App.readSetting(String.format("app.%s.initSize", driverType.name().toLowerCase()));
             if (init != null) {
                 init(driverType, init);
             }
@@ -172,11 +172,6 @@ public final class WebCaller extends Disposable {
             driver.quit();
         }
         driverPool.clear();
-    }
-
-    public static void x(){
-        // todo
-        //IEDriverServer.exe iexplore.exe
     }
 
     @Getter

@@ -29,7 +29,6 @@ import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
 public class UserService {
-    public static final int MaxUserCount = 1000;
     @Resource
     private UserMapper userMapper;
     @Resource

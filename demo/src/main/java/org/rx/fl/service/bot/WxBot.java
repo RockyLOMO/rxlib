@@ -5,16 +5,18 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.cache.LRUCache;
 import org.rx.common.App;
+import org.rx.common.MediaConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
-import org.rx.fl.service.UserService;
 import org.rx.util.ManualResetEvent;
+import org.springframework.stereotype.Component;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
 import weixin.popular.bean.xmlmessage.XMLTextMessage;
 import weixin.popular.util.SignatureUtil;
 import weixin.popular.util.XMLConverUtil;
 
+import javax.annotation.Resource;
 import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
@@ -25,9 +27,9 @@ import java.util.function.Function;
 
 import static org.rx.common.Contract.toJsonString;
 
+@Component
 @Slf4j
 public final class WxBot implements Bot {
-    public static final WxBot Instance = new WxBot();
     private static final String token = "wangyoufan";
     //    //重复通知过滤
 //    private static final ExpireKey expireKey = new DefaultExpireKey();
@@ -42,15 +44,14 @@ public final class WxBot implements Bot {
         }
     }
 
-    private static final LRUCache<String, CacheItem> callCache = new LRUCache<>(UserService.MaxUserCount, 60);
+    @Resource
+    private MediaConfig mediaConfig;
+    private final LRUCache<String, CacheItem> callCache = new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
     private Function<MessageInfo, String> event;
 
     @Override
     public BotType getType() {
         return BotType.WxInterface;
-    }
-
-    private WxBot() {
     }
 
     @Override

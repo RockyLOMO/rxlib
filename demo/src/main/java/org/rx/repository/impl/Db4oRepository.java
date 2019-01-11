@@ -32,7 +32,7 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
 
     @SneakyThrows
     public Db4oRepository() {
-        dbPath = (String) App.readSetting("app.repository.dbFile");
+        dbPath = App.readSetting("app.repository.dbFile");
         if (dbPath == null) {
             throw new InvalidOperationException("app.repository.dbFile is empty");
         }

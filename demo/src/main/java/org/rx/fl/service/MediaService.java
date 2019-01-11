@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
+import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
@@ -16,14 +17,16 @@ import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
-import java.util.ArrayList;
+import javax.annotation.Resource;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
 @Slf4j
@@ -89,7 +92,7 @@ public class MediaService {
     }
 
     static {
-        Integer size = (Integer) App.readSetting("app.media.coreSize");
+        Integer size = App.readSetting("app.media.coreSize");
         if (size == null) {
             size = 1;
         }
@@ -101,8 +104,31 @@ public class MediaService {
         }
     }
 
+    @Resource
+    private OrderService orderService;
+    @Resource
+    private MediaConfig mediaConfig;
+
     public List<MediaType> getMedias() {
         return NQuery.of(holder.keySet()).toList();
+    }
+
+    public MediaService() {
+        TaskFactory.schedule(() -> {
+            for (MediaType media : getMedias()) {
+                try {
+                    DateTime now = DateTime.now();
+                    DateTime start = now.addDays(-3);
+                    List<OrderInfo> orders = findOrders(media, start, now);
+                    if (CollectionUtils.isEmpty(orders)) {
+                        continue;
+                    }
+                    orderService.saveOrders(orders);
+                } catch (Exception e) {
+                    log.error("saveOrders", e);
+                }
+            }
+        }, 60 * 1000, mediaConfig.getSyncOrderPeriod() * 1000, "syncOrder");
     }
 
     private <T> T invoke(MediaType type, Function<Media, T> function) {

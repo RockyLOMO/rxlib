@@ -1,7 +1,7 @@
 package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.FlConfig;
+import org.rx.common.MediaConfig;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
@@ -47,7 +47,7 @@ public class DailyCheckInCmd implements Command {
                     "\n" +
                     "荭苞来啦\n" +
                     "吱富寳搜索：%s\n" +
-                    "最高99", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), FlConfig.AliPayCode));
+                    "最高99", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), MediaConfig.AliPayCode));
 
         } catch (SystemException e) {
             log.warn("DailyCheckInCmd", e);

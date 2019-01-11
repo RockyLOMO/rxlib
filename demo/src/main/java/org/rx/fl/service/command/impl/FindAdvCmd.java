@@ -5,7 +5,7 @@ import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.rx.common.App;
-import org.rx.common.FlConfig;
+import org.rx.common.MediaConfig;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
@@ -28,7 +28,7 @@ import static org.rx.common.Contract.require;
 @Component
 public class FindAdvCmd implements Command {
     @Resource
-    private FlConfig config;
+    private MediaConfig config;
     @Resource
     private MediaService mediaService;
     @Resource

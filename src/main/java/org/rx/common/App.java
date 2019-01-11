@@ -311,17 +311,17 @@ public class App {
         return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
     }
 
-    public static Object readSetting(String key) {
-        return readSetting(key, Contract.SettingsFile, false);
+    public static <T> T readSetting(String key) {
+        return (T) readSetting(key, Contract.SettingsFile, false);
     }
 
     @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
     @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
-    public static Object readSetting(String key, String yamlFile, boolean throwOnEmpty) {
+    public static <T> T readSetting(String key, String yamlFile, boolean throwOnEmpty) {
         Map<String, Object> settings = readSettings(yamlFile + ".yml");
         Object val;
         if ((val = settings.get(key)) != null) {
-            return val;
+            return (T) val;
         }
 
         StringBuilder kBuf = new StringBuilder();
@@ -337,7 +337,7 @@ public class App {
                 continue;
             }
             if (i == c) {
-                return val;
+                return (T) val;
             }
             if ((settings = as(val, Map.class)) == null) {
                 throw new SystemException(values(k, yamlFile), "partialKeyError");

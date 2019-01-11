@@ -7,10 +7,13 @@ import org.springframework.stereotype.Component;
 @Data
 @Component
 @ConfigurationProperties(prefix = "app.media")
-public class FlConfig {
+public class MediaConfig {
     public static String AliPayCode;
 
-    private int initSize;
+    private int coreSize;
+    private int maxUserCount;
+    private long syncOrderPeriod;
+    private int commandTimeout;
     private boolean remoteMode;
     private String remoteEndpoint;
 }

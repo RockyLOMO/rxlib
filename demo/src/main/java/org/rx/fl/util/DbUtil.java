@@ -20,7 +20,7 @@ import static org.rx.common.Contract.toJsonString;
 @Slf4j
 public class DbUtil {
     public static final String IsDeleted_True = "Y", IsDeleted_False = "N";
-    private static final String mapperScan = (String) App.readSetting("app.mybatis.mapperScan");
+    private static final String mapperScan = App.readSetting("app.mybatis.mapperScan");
 
     public static double toMoney(Long cent) {
         if (cent == null || cent == 0) {
