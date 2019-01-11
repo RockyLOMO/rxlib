@@ -2,6 +2,7 @@ package org.rx;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.rx.common.Logger;
+import org.rx.socks.Sockets;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;

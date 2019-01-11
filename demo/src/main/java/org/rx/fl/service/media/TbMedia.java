@@ -8,10 +8,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.HttpUrl;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
-import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.App;
@@ -22,7 +22,7 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.socks.HttpClient;
+import org.rx.socks.http.HttpClient;
 import org.rx.util.Helper;
 import org.springframework.util.CollectionUtils;
 
@@ -35,7 +35,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -63,21 +62,31 @@ public class TbMedia implements Media {
     public TbMedia() {
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
-        caller.setShareCookie(true);
-        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 70 * 1000, "TbMedia");
+//        caller.setShareCookie(true);
+        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, 40 * 1000, "TbMedia");
     }
 
     @SneakyThrows
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
         String fp = "yyyy-MM-dd";
-        String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.60a135d9iv17LD&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
-        log.info("findOrders\n{}", url);
+        String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
 
         String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
         App.createDirectory(downloadPath);
         String filePath = downloadPath + File.separator + "TbMedia-" + DateTime.now().toString(downloadFileDateFormat) + ".xls";
         HttpCaller caller = new HttpCaller();
+        String rawCookie = HttpCaller.toRawCookie(HttpCaller.CookieContainer.loadForRequest(HttpUrl.get(url)));
+        log.info("findOrders load cookie: {}", rawCookie);
+        caller.setHeaders(HttpCaller.parseOriginalHeader("Accept: text/html, application/xhtml+xml, */*\n" +
+                "Referer: https://pub.alimama.com/myunion.htm?spm=a219t.7900221/1.a214tr8.2.2a8f75a5LWuydX\n" +
+                "Accept-Language: zh-CN\n" +
+                "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\n" +
+                "Accept-Encoding: gzip, deflate\n" +
+                "Host: pub.alimama.com\n" +
+                "DNT: 1\n" +
+                "Connection: Keep-Alive\n" +
+                "Cookie: " + rawCookie));
         caller.getDownload(url, filePath);
         List<OrderInfo> orders = new ArrayList<>();
         try (FileInputStream in = new FileInputStream(caller.getDownload(url, filePath))) {
@@ -182,7 +191,7 @@ public class TbMedia implements Media {
                         String couponUrl = code2.getAttribute("value");
                         if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
                             log.info("findAdv step4-2-2 couponUrl fail and retry");
-                            couponUrl = (String) caller.executeScript("return $('#clipboard-target-2').val();");
+                            couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
                         }
                         if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
                             log.info("findAdv step4-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
@@ -315,7 +324,10 @@ public class TbMedia implements Media {
 //                if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com/myunion.htm")) {
 //                    login();
 //                }
+
                 log.info("login ok...");
+                caller.syncCookie();
+//                caller.setShareCookie(true);
                 isLogin = true;
             } catch (Exception e) {
                 throw new InvalidOperationException(e);

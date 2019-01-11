@@ -21,6 +21,7 @@ import org.rx.fl.util.DbUtil;
 import org.rx.util.NEnum;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -43,17 +44,21 @@ public class OrderService {
     private DbUtil dbUtil;
 
     public OrderService() {
-//        TaskFactory.schedule(() -> {
-//            for (MediaType media : mediaService.getMedias()) {
-//                try {
-//                    DateTime now = DateTime.now();
-//                    DateTime start = now.addDays(-1);
-//                    saveOrders(mediaService.findOrders(media, start, now));
-//                } catch (Exception e) {
-//                    log.error("saveOrders", e);
-//                }
-//            }
-//        }, 120 * 1000);
+        TaskFactory.schedule(() -> {
+            for (MediaType media : mediaService.getMedias()) {
+                try {
+                    DateTime now = DateTime.now();
+                    DateTime start = now.addDays(-1);
+                    List<OrderInfo> orders = mediaService.findOrders(media, start, now);
+                    if (CollectionUtils.isEmpty(orders)) {
+                        continue;
+                    }
+                    saveOrders(orders);
+                } catch (Exception e) {
+                    log.error("saveOrders", e);
+                }
+            }
+        }, 60 * 1000, 120 * 1000, "syncOrder");
     }
 
     public List<OrderResult> queryOrders(String userId, int takeCount) {

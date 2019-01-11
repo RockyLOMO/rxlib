@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.HttpUrl;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -21,7 +22,6 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
 import org.rx.util.function.Action;
 
-import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -33,6 +33,7 @@ import java.util.function.Predicate;
 
 import static org.rx.common.Contract.eq;
 import static org.rx.common.Contract.require;
+import static org.rx.fl.util.HttpCaller.IE_UserAgent;
 
 @Slf4j
 public final class WebCaller extends Disposable {
@@ -126,7 +127,7 @@ public final class WebCaller extends Disposable {
                     chromePrefs.put("pdfjs.disabled", true);
                     opt.setExperimentalOption("prefs", chromePrefs);
 
-                    opt.addArguments("user-agent=Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko");
+                    opt.addArguments("user-agent=" + IE_UserAgent);
                     opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
@@ -171,6 +172,11 @@ public final class WebCaller extends Disposable {
             driver.quit();
         }
         driverPool.clear();
+    }
+
+    public static void x(){
+        // todo
+        //IEDriverServer.exe iexplore.exe
     }
 
     @Getter
@@ -292,12 +298,11 @@ public final class WebCaller extends Disposable {
 
         if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
-            String host = new URL(url).getHost();
             Action action = () -> {
                 Set<Cookie> set = HttpCaller.CookieContainer.loadForRequest(url);
-                for (Cookie p : set) {
-                    log.debug("{} load cookie: " + p.getDomain() + " / " + p.getName() + "=" + p.getValue(), host);
-                    manage.addCookie(p);
+                for (Cookie cookie : set) {
+                    manage.addCookie(cookie);
+                    log.info("{} load cookie: {}={}", HttpUrl.get(url).topPrivateDomain(), cookie.getName(), cookie.getValue());
                 }
             };
             try {
@@ -314,6 +319,17 @@ public final class WebCaller extends Disposable {
             waitElementLocated(locator);
         }
         if (isShareCookie) {
+            syncCookie();
+        }
+    }
+
+    public void syncCookie() {
+        if (driver instanceof InternetExplorerDriver) {
+            HttpUrl currentUrl = HttpUrl.get(getCurrentUrl());
+            String cookie = executeScript("return document.cookie;");
+            log.info("{} save cookie: {}", currentUrl.topPrivateDomain(), cookie);
+            HttpCaller.CookieContainer.saveFromResponse(currentUrl, HttpCaller.parseRawCookie(currentUrl, cookie));
+        } else {
             WebDriver.Options manage = driver.manage();
             HttpCaller.CookieContainer.saveFromResponse(getCurrentUrl(), manage.getCookies());
         }
@@ -431,10 +447,10 @@ public final class WebCaller extends Disposable {
         switchTab(current);
     }
 
-    public Object executeScript(String script, Object... args) {
+    public <T> T executeScript(String script, Object... args) {
         checkNotClosed();
         require(script);
 
-        return driver.executeScript(script, args);
+        return (T) driver.executeScript(script, args);
     }
 }

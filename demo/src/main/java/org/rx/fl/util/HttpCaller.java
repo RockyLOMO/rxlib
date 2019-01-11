@@ -4,13 +4,18 @@ import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import okhttp3.*;
 import org.rx.common.Contract;
+import org.rx.common.NQuery;
 import org.rx.io.IOStream;
+import org.rx.socks.Sockets;
 import org.rx.socks.http.HttpClient;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.net.Proxy;
 import java.net.URLDecoder;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -18,6 +23,8 @@ import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
 
 public final class HttpCaller {
+    public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
+    public static final String Chrome_UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
     public static final CookieContainer CookieContainer;
     private static final ConnectionPool pool;
     private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"),
@@ -27,6 +34,37 @@ public final class HttpCaller {
         System.setProperty("jsse.enableSNIExtension", "false");
         CookieContainer = new CookieContainer();
         pool = new ConnectionPool();
+    }
+
+    public static String toRawCookie(List<Cookie> cookies) {
+        if (cookies == null) {
+            return "";
+        }
+
+        return String.join("; ", NQuery.of(cookies).select(p -> p.name() + "=" + p.value()));
+    }
+
+    @SneakyThrows
+    public static List<Cookie> parseRawCookie(HttpUrl httpUrl, String raw) {
+        require(httpUrl, raw);
+
+        List<Cookie> cookies = new ArrayList<>();
+        String domain = httpUrl.topPrivateDomain();
+        for (String pair : raw.split(Pattern.quote("; "))) {
+            int i = pair.indexOf("=");
+            if (i == -1) {
+                continue;
+            }
+            Cookie.Builder builder = new Cookie.Builder();
+            if (domain != null) {
+                builder = builder.domain(domain);
+            }
+//            if (httpUrl.isHttps()) {
+//                builder = builder.secure();
+//            }
+            cookies.add(builder.path("/").name(pair.substring(0, i)).value(pair.substring(i + 1)).build());
+        }
+        return cookies;
     }
 
     @SneakyThrows
@@ -59,12 +97,15 @@ public final class HttpCaller {
 
     public HttpCaller() {
         headers = new Headers.Builder()
-                .set("User-Agent", "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36").build();
+                .set("User-Agent", IE_UserAgent).build();
         client = createClient();
     }
 
     private OkHttpClient createClient() {
-        return new OkHttpClient.Builder().connectionPool(pool).cookieJar(CookieContainer).retryOnConnectionFailure(false).build();
+//        Proxy proxy = new Proxy(Proxy.Type.HTTP, Sockets.parseAddress("127.0.0.1:8888"));
+        return new OkHttpClient.Builder().connectionPool(pool).cookieJar(CookieContainer).retryOnConnectionFailure(false)
+//                .proxy(proxy)
+                .build();
     }
 
     private Request.Builder createRequest(String url) {

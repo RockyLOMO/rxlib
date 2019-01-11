@@ -19,7 +19,7 @@ app:
     dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
     isBackground: false
-    initSize: 1
+    initSize: 0
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
     initSize: 1
