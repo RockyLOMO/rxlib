@@ -1,9 +1,12 @@
 package org.rx.test;
 
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
+import org.rx.annotation.Description;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.test.bean.ErrorBean;
+import org.rx.util.NEnum;
 
 import java.lang.reflect.Constructor;
 
@@ -48,5 +51,24 @@ public class BeanTester {
     public void testConstructor() throws Exception {
         Constructor constructor = ErrorBean.class.getConstructor(new Class[0]);
         System.out.println(constructor != null);
+    }
+
+    public enum TestEnum implements NEnum<TestEnum> {
+        @Description("1")
+        One(1),
+        @Description("2")
+        Two(2);
+
+        @Getter
+        private int value;
+
+        TestEnum(int val) {
+            value = val;
+        }
+    }
+
+    @Test
+    public void testEnum(){
+        System.out.println(   TestEnum.Two.toDescription());
     }
 }

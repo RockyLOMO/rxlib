@@ -3,10 +3,12 @@ package org.rx.fl.service;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
+import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.OrderResult;
@@ -23,8 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.util.List;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.values;
+import static org.rx.common.Contract.*;
 import static org.rx.fl.util.DbUtil.toCent;
 
 @Service
@@ -48,6 +49,7 @@ public class OrderService {
         List<Order> orders = orderMapper.selectByExample(query);
         return NQuery.of(orders).select(p -> {
             OrderResult result = new OrderResult();
+            result.setMediaType(NEnum.valueOf(MediaType.class, p.getMediaType()));
             result.setOrderNo(p.getOrderNo());
             result.setGoodsName(p.getGoodsName());
             result.setRebateAmount(p.getRebateAmount());
@@ -62,8 +64,9 @@ public class OrderService {
         require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
-            require(media.getOrderNo(), media.getCreateTime());
+            require(media.getMediaType(), media.getOrderNo(), media.getCreateTime());
 
+            media.setCreateTime(new DateTime(media.getCreateTime()).getDateTimeComponent());
             //do not try catch, exec through trans
             String orderId = App.newComb(media.getMediaType().getValue() + media.getOrderNo(), media.getCreateTime()).toString();
             Order order = orderMapper.selectByPrimaryKey(orderId);
@@ -71,6 +74,7 @@ public class OrderService {
             if (order == null) {
                 insert = true;
                 order = new Order();
+                order.setCreateTime(media.getCreateTime());
                 order.setId(orderId);
                 order.setMediaType(media.getMediaType().getValue());
                 order.setOrderNo(media.getOrderNo());

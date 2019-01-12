@@ -9,6 +9,7 @@ import org.rx.common.MediaConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.util.ManualResetEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
@@ -16,7 +17,6 @@ import weixin.popular.bean.xmlmessage.XMLTextMessage;
 import weixin.popular.util.SignatureUtil;
 import weixin.popular.util.XMLConverUtil;
 
-import javax.annotation.Resource;
 import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
@@ -44,14 +44,17 @@ public final class WxBot implements Bot {
         }
     }
 
-    @Resource
-    private MediaConfig mediaConfig;
-    private final LRUCache<String, CacheItem> callCache = null;//= new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
+    private final LRUCache<String, CacheItem> callCache;
     private Function<MessageInfo, String> event;
 
     @Override
     public BotType getType() {
         return BotType.WxInterface;
+    }
+
+    @Autowired
+    public WxBot(MediaConfig mediaConfig) {
+        callCache = new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
     }
 
     @Override

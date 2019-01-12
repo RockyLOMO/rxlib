@@ -37,11 +37,11 @@ public class QueryOrderCmd implements Command {
                 "最近20笔订单详细:\n\n");
         for (OrderResult order : orders) {
             out.append(String.format("时间: %s\n" +
-                            "%s %s %s\n" +
+                            "%s %s 已%s\n" +
                             "返利金额: %.2f元\n" +
                             "\n", new DateTime(order.getCreateTime()).toDateTimeString(),
-                    order.getMediaType().toDescriptions(), App.filterPrivacy(order.getOrderNo()),
-                    order.getStatus().toDescriptions(), toMoney(order.getRebateAmount())));
+                    order.getMediaType().toDescription(), App.filterPrivacy(order.getOrderNo()),
+                    order.getStatus().toDescription(), toMoney(order.getRebateAmount())));
         }
         return HandleResult.of(out.toString());
     }

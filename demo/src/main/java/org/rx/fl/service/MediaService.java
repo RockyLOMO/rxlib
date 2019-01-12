@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
@@ -123,6 +124,7 @@ public class MediaService {
                     if (CollectionUtils.isEmpty(orders)) {
                         continue;
                     }
+                    log.info("saveOrders {}", toJsonString(orders));
                     orderService.saveOrders(orders);
                 } catch (Exception e) {
                     log.error("saveOrders", e);

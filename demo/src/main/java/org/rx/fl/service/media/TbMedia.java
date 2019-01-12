@@ -19,6 +19,7 @@ import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
+import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.socks.http.HttpClient;
@@ -34,6 +35,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -109,7 +111,7 @@ public class TbMedia implements Media {
                 return Collections.emptyList();
             }
 
-            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#预估收入,status#订单状态,createTime#创建时间";
+            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#效果预估,status#订单状态,createTime#创建时间";
             Object[] cols = list.get(0);
             NQuery<Tuple<String, Integer>> tuples = NQuery.of(mapStr.split(","))
                     .select(p -> {
@@ -122,6 +124,20 @@ public class TbMedia implements Media {
                 json.putAll(tuples.toMap(p -> p.left, p -> vals[p.right]));
                 OrderInfo order = json.toJavaObject(OrderInfo.class);
                 order.setMediaType(this.getType());
+                switch (json.getString("status").trim()) {
+                    case "订单结算":
+                        order.setStatus(OrderStatus.Settlement);
+                        break;
+                    case "订单成功":
+                        order.setStatus(OrderStatus.Success);
+                        break;
+                    case "订单付款":
+                        order.setStatus(OrderStatus.Paid);
+                        break;
+                    default:
+                        order.setStatus(OrderStatus.Invalid);
+                        break;
+                }
                 orders.add(order);
             }
         }

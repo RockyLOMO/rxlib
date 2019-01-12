@@ -57,8 +57,8 @@ public class Tester {
     }
 
     @Test
-    @ErrorCode(messageKeys = { "$x" })
-    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = { "$x" })
+    @ErrorCode(messageKeys = {"$x"})
+    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = {"$x"})
     public void testCode() {
         System.out.println(App.getBootstrapPath());
 
@@ -91,10 +91,10 @@ public class Tester {
         Object v = App.readSetting("not");
         assert v == null;
 
-        v = App.readSetting("org.rx.test.Tester", SystemException.CodeFile, true);
+        v = App.readSetting("org.rx.test.Tester", SystemException.CodeFile, true, null);
         assert v instanceof Map;
 
-        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.CodeFile, true);
+        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.CodeFile, true, null);
         assert eq(v, "This is IllegalArgumentException! $x");
     }
 

@@ -20,9 +20,9 @@ import static org.rx.common.Contract.values;
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
 public final class DateTime extends Date {
-    public static final TimeZone       UtcZone  = TimeZone.getTimeZone("UTC");
-    public static final DateTime       BaseDate = new DateTime(2000, 1, 1);
-    public static final NQuery<String> Formats  = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS",
+    public static final TimeZone UtcZone = TimeZone.getTimeZone("UTC");
+    public static final DateTime BaseDate = new DateTime(2000, 1, 1);
+    public static final NQuery<String> Formats = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS",
             "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
 
     public static DateTime now() {
@@ -33,7 +33,7 @@ public final class DateTime extends Date {
         return now().asUniversalTime();
     }
 
-    @ErrorCode(cause = ParseException.class, messageKeys = { "$formats", "$date" })
+    @ErrorCode(cause = ParseException.class, messageKeys = {"$formats", "$date"})
     public static DateTime valueOf(String dateString) {
         SystemException lastEx = null;
         for (String format : Formats) {
@@ -69,6 +69,11 @@ public final class DateTime extends Date {
 
     public DateTime getDateComponent() {
         String format = "yyyyMMdd";
+        return DateTime.valueOf(this.toString(format), format);
+    }
+
+    public DateTime getDateTimeComponent() {
+        String format = "yyyyMMddHHmmss";
         return DateTime.valueOf(this.toString(format), format);
     }
 
