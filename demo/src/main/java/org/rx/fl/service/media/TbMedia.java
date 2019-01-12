@@ -45,7 +45,7 @@ public class TbMedia implements Media {
             "https://pub.alimama.com/manage/overview/index.htm?spm=a219t.7900221/1.1998910419.dbb742793.6f2075a54ffHxF",
             "https://pub.alimama.com/manage/selection/list.htm?spm=a219t.7900221/1.1998910419.d3d9c63c9.6f2075a54ffHxF"};
     private static final Cache<String, Object> cache = CacheBuilder.newBuilder()
-            .expireAfterAccess(App.readSetting("app.media.tbCacheSeconds"), TimeUnit.SECONDS).build();
+            .expireAfterAccess(App.readSetting("app.media.tbCacheSeconds", long.class), TimeUnit.SECONDS).build();
 
     public static void clearIE() {
         String[] pNames = {"IEDriverServer.exe", "iexplore.exe"};
@@ -76,7 +76,7 @@ public class TbMedia implements Media {
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
 //        caller.setShareCookie(true);
-        long period = App.readSetting("app.media.tbKeepPeriod");
+        long period = App.readSetting("app.media.tbKeepPeriod", long.class);
         TaskFactory.schedule(() -> keepLogin(), 2 * 1000, period * 1000, "TbMedia");
     }
 

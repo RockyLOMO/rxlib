@@ -46,7 +46,7 @@ public final class WxBot implements Bot {
 
     @Resource
     private MediaConfig mediaConfig;
-    private final LRUCache<String, CacheItem> callCache = new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
+    private final LRUCache<String, CacheItem> callCache = null;//= new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
     private Function<MessageInfo, String> event;
 
     @Override

@@ -16,6 +16,7 @@ import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
@@ -106,14 +107,13 @@ public class MediaService {
 
     @Resource
     private OrderService orderService;
-    @Resource
-    private MediaConfig mediaConfig;
 
     public List<MediaType> getMedias() {
         return NQuery.of(holder.keySet()).toList();
     }
 
-    public MediaService() {
+    @Autowired
+    public MediaService(MediaConfig mediaConfig) {
         TaskFactory.schedule(() -> {
             for (MediaType media : getMedias()) {
                 try {

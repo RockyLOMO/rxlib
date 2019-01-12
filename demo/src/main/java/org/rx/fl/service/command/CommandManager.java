@@ -6,10 +6,10 @@ import org.rx.common.App;
 import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
 import org.rx.util.SpringContextUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Resource;
 import java.util.List;
 
 import static org.rx.common.Contract.require;
@@ -17,12 +17,11 @@ import static org.rx.common.Contract.require;
 @Component
 @Slf4j
 public class CommandManager {
-    @Resource
-    private MediaConfig mediaConfig;
     private final List<Class> allCmds;
     private final LRUCache<String, Command> userCmd;
 
-    public CommandManager() {
+    @Autowired
+    public CommandManager(MediaConfig mediaConfig) {
         allCmds = NQuery.of(App.getClassesFromPackage("org.rx.fl.service.command.impl")).orderBy(p -> {
             Order order = (Order) p.getAnnotation(Order.class);
             return order == null ? 0 : order.value();

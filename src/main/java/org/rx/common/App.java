@@ -312,16 +312,20 @@ public class App {
     }
 
     public static <T> T readSetting(String key) {
-        return (T) readSetting(key, Contract.SettingsFile, false);
+        return readSetting(key, null);
+    }
+
+    public static <T> T readSetting(String key, Class returnType) {
+        return readSetting(key, Contract.SettingsFile, false, returnType);
     }
 
     @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
     @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
-    public static <T> T readSetting(String key, String yamlFile, boolean throwOnEmpty) {
+    public static <T> T readSetting(String key, String yamlFile, boolean throwOnEmpty, Class returnType) {
         Map<String, Object> settings = readSettings(yamlFile + ".yml");
         Object val;
         if ((val = settings.get(key)) != null) {
-            return (T) val;
+            return (T) (returnType == null ? val : changeType(val, returnType));
         }
 
         StringBuilder kBuf = new StringBuilder();
@@ -337,7 +341,7 @@ public class App {
                 continue;
             }
             if (i == c) {
-                return (T) val;
+                return (T) (returnType == null ? val : changeType(val, returnType));
             }
             if ((settings = as(val, Map.class)) == null) {
                 throw new SystemException(values(k, yamlFile), "partialKeyError");
