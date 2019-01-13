@@ -3,6 +3,7 @@ package org.rx.fl.service.command.impl;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
@@ -35,7 +36,7 @@ public class BindPaymentCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("绑定");
+        return NQuery.of("绑定", "2").contains(message);
     }
 
     @Override

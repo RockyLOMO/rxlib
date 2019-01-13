@@ -1,5 +1,6 @@
 package org.rx.fl.service.command.impl;
 
+import org.rx.common.NQuery;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
@@ -23,7 +24,7 @@ public class UserDashboardCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("个人信息");
+        return NQuery.of("个人信息", "1").contains(message);
     }
 
     @Override
@@ -40,7 +41,7 @@ public class UserDashboardCmd implements Command {
                         "\n" +
                         "签到次数: %s次\n" +
                         "签到奖励: %.2f元\n" +
-                        "    提现中: %.2f元", toMoney(user.getTotalWithdrawAmount()), toMoney(user.getBalance()),
+                        "    提现中: %.2f元", toMoney(-user.getTotalWithdrawAmount()), toMoney(user.getBalance()),
                 toMoney(user.getFreezeAmount()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(),
                 user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getWithdrawingAmount())));
     }

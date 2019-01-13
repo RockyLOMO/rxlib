@@ -3,6 +3,7 @@ package org.rx.fl.service.command.impl;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
@@ -33,7 +34,7 @@ public class FeedbackCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.startsWith("反映问题");
+        return NQuery.of("反映问题", "4").contains(message);
     }
 
     @Override

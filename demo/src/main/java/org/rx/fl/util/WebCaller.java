@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
 import org.openqa.selenium.*;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -74,8 +75,9 @@ public final class WebCaller extends Disposable {
             DriverService driverService;
             switch (driverType) {
                 case IE:
-                    driverService = new InternetExplorerDriverService.Builder()
-                            .withSilent(true).build();
+                    driverService = null;
+//                    driverService = new InternetExplorerDriverService.Builder()
+//                            .withSilent(true).build();
                     break;
                 default:
                     driverService = new ChromeDriverService.Builder()
@@ -102,14 +104,16 @@ public final class WebCaller extends Disposable {
 //                    capabilities.setAcceptInsecureCerts(true);
                     capabilities.setJavascriptEnabled(true);
                     opt.merge(capabilities);
+                    //NoSuchWindowException
 //                    opt.setCapability(InternetExplorerDriver.INTRODUCE_FLAKINESS_BY_IGNORING_SECURITY_DOMAINS, true);
 
-                    driver = new InternetExplorerDriver((InternetExplorerDriverService) pooledItem.driverService, opt);
+                    driver = new InternetExplorerDriver(opt);
+//                    driver = new InternetExplorerDriver((InternetExplorerDriverService) pooledItem.driverService, opt);
                 }
                 break;
                 default: {
                     ChromeOptions opt = new ChromeOptions();
-                    opt.setHeadless((boolean) App.readSetting("app.chrome.isBackground"))
+                    opt.setHeadless(App.readSetting("app.chrome.isBackground"))
                             .setAcceptInsecureCerts(true)
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
@@ -120,7 +124,7 @@ public final class WebCaller extends Disposable {
                     opt.setCapability("browserConnectionEnabled", true);
 
                     Map<String, Object> chromePrefs = new HashMap<>();
-                    String downloadPath = (String) App.readSetting("app.chrome.downloadPath");
+                    String downloadPath = App.readSetting("app.chrome.downloadPath");
                     App.createDirectory(downloadPath);
                     chromePrefs.put("download.default_directory", downloadPath);
                     chromePrefs.put("profile.default_content_settings.popups", 0);
@@ -286,8 +290,12 @@ public final class WebCaller extends Disposable {
         navigateUrl(url, null);
     }
 
-    @SneakyThrows
     public void navigateUrl(String url, By locator) {
+        navigateUrl(url, locator, 4, 2, null);
+    }
+
+    @SneakyThrows
+    public synchronized void navigateUrl(String url, By locator, long timeOutInSeconds, int retryCount, Predicate<By> onRetry) {
         checkNotClosed();
         require(url);
 
@@ -308,10 +316,19 @@ public final class WebCaller extends Disposable {
 //                action.invoke();
             }
         }
-        driver.get(url);
+        try {
+            driver.get(url);
+        } catch (NoSuchWindowException e) {
+            if (driver instanceof InternetExplorerDriver) {
+                RemoteWebDriver temp = driver;
+                driver = create(DriverType.IE, true);
+                driver.get(url);
+                temp.quit();
+            }
+        }
 
         if (locator != null) {
-            waitElementLocated(locator);
+            waitElementLocated(locator, timeOutInSeconds, retryCount, onRetry);
         }
         if (isShareCookie) {
             syncCookie();
@@ -331,7 +348,7 @@ public final class WebCaller extends Disposable {
     }
 
     public void waitElementLocated(By locator) {
-        waitElementLocated(locator, 5, 2, null);
+        waitElementLocated(locator, 4, 2, null);
     }
 
     public void waitElementLocated(By locator, long timeOutInSeconds, int retryCount, Predicate<By> onRetry) {
@@ -388,14 +405,21 @@ public final class WebCaller extends Disposable {
         checkNotClosed();
         require(by);
 
-        NQuery<WebElement> elements = findElements(by);
-        if (!elements.any()) {
+        try {
+            NQuery<WebElement> elements = findElements(by);
+            if (!elements.any()) {
+                if (throwOnEmpty) {
+                    throw new InvalidOperationException("Element %s not found", by);
+                }
+                return null;
+            }
+            return elements.first();
+        } catch (NoSuchElementException e) {
             if (throwOnEmpty) {
-                throw new InvalidOperationException("Element %s not found", by);
+                throw e;
             }
             return null;
         }
-        return elements.first();
     }
 
     public NQuery<WebElement> findElements(By by) {

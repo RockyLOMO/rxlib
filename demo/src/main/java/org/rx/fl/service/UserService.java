@@ -96,20 +96,20 @@ public class UserService {
         return user.getId();
     }
 
+    @Transactional
     public void addUserGoods(String userId, MediaType mediaType, String goodsId) {
         require(userId, mediaType, goodsId);
 
-//        DateTime now = DateTime.now().getDateComponent();
-//        String id = App.newComb(userId + mediaType.getValue() + goodsId, now).toString();
-//        UserGoodsExample q = new UserGoodsExample();
-//        q.createCriteria().andIdEqualTo(id);
-//        if (userGoodsMapper.countByExample(q) > 0) {
-//            return;
-//        }
+        UserGoods updateRecord = new UserGoods();
+        updateRecord.setIsDeleted(DbUtil.IsDeleted_True);
+        UserGoodsExample updateQuery = new UserGoodsExample();
+        updateQuery.createCriteria()
+                .andUserIdEqualTo(userId)
+                .andMediaTypeEqualTo(mediaType.getValue())
+                .andGoodsIdEqualTo(goodsId);
+        userGoodsMapper.updateByExampleSelective(updateRecord, updateQuery);
 
         UserGoods userGoods = new UserGoods();
-//        userGoods.setId(id);
-//        userGoods.setCreateTime(now);
         userGoods.setUserId(userId);
         userGoods.setMediaType(mediaType.getValue());
         userGoods.setGoodsId(goodsId);
@@ -119,25 +119,15 @@ public class UserService {
     public String findUserByGoods(MediaType mediaType, String goodsId) {
         require(mediaType, goodsId);
 
-        UserGoodsExample q = new UserGoodsExample();
-        q.setLimit(2);
-        q.createCriteria().andMediaTypeEqualTo(mediaType.getValue())
-                .andGoodsIdEqualTo(goodsId)
-                .andCreateTimeGreaterThanOrEqualTo(DateTime.now().addDays(-1))
-                .andIsDeletedEqualTo(DbUtil.IsDeleted_False);
-        List<UserGoods> userGoodsList = userGoodsMapper.selectByExample(q);
-        if (userGoodsList.size() != 1) {
+        UserGoods q = new UserGoods();
+        q.setMediaType(mediaType.getValue());
+        q.setGoodsId(goodsId);
+        q.setCreateTime(DateTime.now().addDays(-1));
+        List<String> userIds = userGoodsMapper.selectUserIdByGoods(q);
+        if (userIds.size() != 1) {
             return "";
         }
-
-        UserGoods userGoods = userGoodsList.get(0);
-
-        UserGoods toUpdate = new UserGoods();
-        toUpdate.setId(userGoods.getId());
-        toUpdate.setIsDeleted(DbUtil.IsDeleted_True);
-        userGoodsMapper.updateByPrimaryKeySelective(toUpdate);
-
-        return userGoods.getUserId();
+        return userIds.get(0);
     }
 
     public boolean hasSettleOrder(String userId, String orderId) {

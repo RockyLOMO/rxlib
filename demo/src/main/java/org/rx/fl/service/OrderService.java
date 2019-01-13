@@ -68,7 +68,7 @@ public class OrderService {
 
             media.setCreateTime(new DateTime(media.getCreateTime()).getDateTimeComponent());
             //do not try catch, exec through trans
-            String orderId = App.newComb(media.getMediaType().getValue() + media.getOrderNo(), media.getCreateTime()).toString();
+            String orderId = App.newComb(media.getMediaType().getValue() + media.getOrderNo() + media.getGoodsId(), media.getCreateTime()).toString();
             Order order = orderMapper.selectByPrimaryKey(orderId);
             boolean insert = false;
             if (order == null) {

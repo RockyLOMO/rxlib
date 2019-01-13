@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.HttpUrl;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
@@ -140,6 +141,9 @@ public class TbMedia implements Media {
                 }
                 orders.add(order);
             }
+        } catch (Exception e) {
+            log.error("readExcel", e);
+            login();
         }
         return orders;
     }
@@ -157,12 +161,12 @@ public class TbMedia implements Media {
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
         login();
-        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8"), System.currentTimeMillis());
+        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8").replace("+", "%20"), System.currentTimeMillis());
         return caller.invokeSelf(caller -> {
             log.info("findAdv step1 {}", url);
             By waitBy = By.cssSelector(".box-btn-left");
-            caller.navigateUrl(url, waitBy);
-//            List<WebElement> eBtns = caller.findElements(first).toList();
+            caller.navigateUrl(url, waitBy, 1, 4,
+                    p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
             List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
             List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
             log.info("findAdv step2 sellerEles: {}\tmoneyEles: {}", eSellers.size(), eMoneys.size());
@@ -303,17 +307,26 @@ public class TbMedia implements Media {
 
     @Override
     public String findLink(String content) {
-        int s = content.indexOf("http"), e;
-        if (s == -1) {
+        int start = content.indexOf("http"), end;
+        if (start == -1) {
             log.info("Start flag not found {}", content);
             return null;
         }
-        e = content.indexOf(" ", s);
-        if (e == -1) {
+        end = content.indexOf(" ", start);
+        if (end == -1) {
+            String url = String.format(content, start);
+            try {
+                HttpUrl httpUrl = HttpUrl.get(url);
+                if (NQuery.of("tmall.com", "taobao.com").contains(httpUrl.topPrivateDomain())) {
+                    return url;
+                }
+            } catch (Exception e) {
+                log.info("End domain not found {} {}", url, e.getMessage());
+            }
             log.info("End flag not found {}", content);
             return null;
         }
-        return content.substring(s, e);
+        return content.substring(start, end);
     }
 
     @SneakyThrows
@@ -375,7 +388,7 @@ public class TbMedia implements Media {
             String rawCookie = caller.findElement(rx).getAttribute("value");
             log.info("getIECookie: {}", rawCookie);
 //            HttpCaller.saveRawCookies(localHost, rawCookie);
-        }, true);
+        });
     }
 
     @SneakyThrows

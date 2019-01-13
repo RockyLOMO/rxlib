@@ -1,6 +1,7 @@
 package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
@@ -30,7 +31,7 @@ public class WithdrawCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("提现");
+        return NQuery.of("提现", "3").contains(message);
     }
 
     @Override

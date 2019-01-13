@@ -2,6 +2,7 @@ package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.MediaConfig;
+import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
@@ -27,7 +28,7 @@ public class DailyCheckInCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("签到");
+        return NQuery.of("签到", "8").contains(message);
     }
 
     @Override

@@ -2,6 +2,7 @@ package org.rx.fl.service.command.impl;
 
 import org.rx.beans.DateTime;
 import org.rx.common.App;
+import org.rx.common.NQuery;
 import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.service.OrderService;
 import org.rx.fl.service.command.Command;
@@ -25,7 +26,7 @@ public class QueryOrderCmd implements Command {
         require(message);
         message = message.trim();
 
-        return message.equals("查询订单");
+        return NQuery.of("查询订单", "6").contains(message);
     }
 
     @Override
