@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-public class UserGoodsExample {
+public class FreezeLogExample {
     protected String orderByClause;
 
     protected boolean distinct;
@@ -17,7 +17,7 @@ public class UserGoodsExample {
 
     private Boolean forUpdate;
 
-    public UserGoodsExample() {
+    public FreezeLogExample() {
         oredCriteria = new ArrayList<Criteria>();
     }
 
@@ -275,133 +275,203 @@ public class UserGoodsExample {
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeIsNull() {
-            addCriterion("media_type is null");
+        public Criteria andBalanceLogIdIsNull() {
+            addCriterion("balance_log_id is null");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeIsNotNull() {
-            addCriterion("media_type is not null");
+        public Criteria andBalanceLogIdIsNotNull() {
+            addCriterion("balance_log_id is not null");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeEqualTo(Integer value) {
-            addCriterion("media_type =", value, "mediaType");
+        public Criteria andBalanceLogIdEqualTo(String value) {
+            addCriterion("balance_log_id =", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeNotEqualTo(Integer value) {
-            addCriterion("media_type <>", value, "mediaType");
+        public Criteria andBalanceLogIdNotEqualTo(String value) {
+            addCriterion("balance_log_id <>", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeGreaterThan(Integer value) {
-            addCriterion("media_type >", value, "mediaType");
+        public Criteria andBalanceLogIdGreaterThan(String value) {
+            addCriterion("balance_log_id >", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeGreaterThanOrEqualTo(Integer value) {
-            addCriterion("media_type >=", value, "mediaType");
+        public Criteria andBalanceLogIdGreaterThanOrEqualTo(String value) {
+            addCriterion("balance_log_id >=", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeLessThan(Integer value) {
-            addCriterion("media_type <", value, "mediaType");
+        public Criteria andBalanceLogIdLessThan(String value) {
+            addCriterion("balance_log_id <", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeLessThanOrEqualTo(Integer value) {
-            addCriterion("media_type <=", value, "mediaType");
+        public Criteria andBalanceLogIdLessThanOrEqualTo(String value) {
+            addCriterion("balance_log_id <=", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeIn(List<Integer> values) {
-            addCriterion("media_type in", values, "mediaType");
+        public Criteria andBalanceLogIdLike(String value) {
+            addCriterion("balance_log_id like", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeNotIn(List<Integer> values) {
-            addCriterion("media_type not in", values, "mediaType");
+        public Criteria andBalanceLogIdNotLike(String value) {
+            addCriterion("balance_log_id not like", value, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeBetween(Integer value1, Integer value2) {
-            addCriterion("media_type between", value1, value2, "mediaType");
+        public Criteria andBalanceLogIdIn(List<String> values) {
+            addCriterion("balance_log_id in", values, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andMediaTypeNotBetween(Integer value1, Integer value2) {
-            addCriterion("media_type not between", value1, value2, "mediaType");
+        public Criteria andBalanceLogIdNotIn(List<String> values) {
+            addCriterion("balance_log_id not in", values, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdIsNull() {
-            addCriterion("goods_id is null");
+        public Criteria andBalanceLogIdBetween(String value1, String value2) {
+            addCriterion("balance_log_id between", value1, value2, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdIsNotNull() {
-            addCriterion("goods_id is not null");
+        public Criteria andBalanceLogIdNotBetween(String value1, String value2) {
+            addCriterion("balance_log_id not between", value1, value2, "balanceLogId");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdEqualTo(String value) {
-            addCriterion("goods_id =", value, "goodsId");
+        public Criteria andAmountIsNull() {
+            addCriterion("amount is null");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdNotEqualTo(String value) {
-            addCriterion("goods_id <>", value, "goodsId");
+        public Criteria andAmountIsNotNull() {
+            addCriterion("amount is not null");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdGreaterThan(String value) {
-            addCriterion("goods_id >", value, "goodsId");
+        public Criteria andAmountEqualTo(Long value) {
+            addCriterion("amount =", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdGreaterThanOrEqualTo(String value) {
-            addCriterion("goods_id >=", value, "goodsId");
+        public Criteria andAmountNotEqualTo(Long value) {
+            addCriterion("amount <>", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdLessThan(String value) {
-            addCriterion("goods_id <", value, "goodsId");
+        public Criteria andAmountGreaterThan(Long value) {
+            addCriterion("amount >", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdLessThanOrEqualTo(String value) {
-            addCriterion("goods_id <=", value, "goodsId");
+        public Criteria andAmountGreaterThanOrEqualTo(Long value) {
+            addCriterion("amount >=", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdLike(String value) {
-            addCriterion("goods_id like", value, "goodsId");
+        public Criteria andAmountLessThan(Long value) {
+            addCriterion("amount <", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdNotLike(String value) {
-            addCriterion("goods_id not like", value, "goodsId");
+        public Criteria andAmountLessThanOrEqualTo(Long value) {
+            addCriterion("amount <=", value, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdIn(List<String> values) {
-            addCriterion("goods_id in", values, "goodsId");
+        public Criteria andAmountIn(List<Long> values) {
+            addCriterion("amount in", values, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdNotIn(List<String> values) {
-            addCriterion("goods_id not in", values, "goodsId");
+        public Criteria andAmountNotIn(List<Long> values) {
+            addCriterion("amount not in", values, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdBetween(String value1, String value2) {
-            addCriterion("goods_id between", value1, value2, "goodsId");
+        public Criteria andAmountBetween(Long value1, Long value2) {
+            addCriterion("amount between", value1, value2, "amount");
             return (Criteria) this;
         }
 
-        public Criteria andGoodsIdNotBetween(String value1, String value2) {
-            addCriterion("goods_id not between", value1, value2, "goodsId");
+        public Criteria andAmountNotBetween(Long value1, Long value2) {
+            addCriterion("amount not between", value1, value2, "amount");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkIsNull() {
+            addCriterion("remark is null");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkIsNotNull() {
+            addCriterion("remark is not null");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkEqualTo(String value) {
+            addCriterion("remark =", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkNotEqualTo(String value) {
+            addCriterion("remark <>", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkGreaterThan(String value) {
+            addCriterion("remark >", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkGreaterThanOrEqualTo(String value) {
+            addCriterion("remark >=", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkLessThan(String value) {
+            addCriterion("remark <", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkLessThanOrEqualTo(String value) {
+            addCriterion("remark <=", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkLike(String value) {
+            addCriterion("remark like", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkNotLike(String value) {
+            addCriterion("remark not like", value, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkIn(List<String> values) {
+            addCriterion("remark in", values, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkNotIn(List<String> values) {
+            addCriterion("remark not in", values, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkBetween(String value1, String value2) {
+            addCriterion("remark between", value1, value2, "remark");
+            return (Criteria) this;
+        }
+
+        public Criteria andRemarkNotBetween(String value1, String value2) {
+            addCriterion("remark not between", value1, value2, "remark");
             return (Criteria) this;
         }
 

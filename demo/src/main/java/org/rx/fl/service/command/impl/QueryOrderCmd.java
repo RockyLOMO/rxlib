@@ -37,12 +37,13 @@ public class QueryOrderCmd implements Command {
         StringBuilder out = new StringBuilder("一一一一订 单 详 细一一一一\n" +
                 "最近20笔订单详细:\n\n");
         for (OrderResult order : orders) {
-            out.append(String.format("时间: %s\n" +
-                            "%s %s 已%s\n" +
+            out.append(String.format("%s  已%s\n" +
+                            "%s %s\n" +
+                            "%s\n" +
                             "返利金额: %.2f元\n" +
-                            "\n", new DateTime(order.getCreateTime()).toDateTimeString(),
+                            "\n", new DateTime(order.getCreateTime()).toDateTimeString(), order.getStatus().toDescription(),
                     order.getMediaType().toDescription(), App.filterPrivacy(order.getOrderNo()),
-                    order.getStatus().toDescription(), toMoney(order.getRebateAmount())));
+                    order.getGoodsName(), toMoney(order.getRebateAmount())));
         }
         return HandleResult.of(out.toString());
     }

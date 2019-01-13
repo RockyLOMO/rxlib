@@ -80,14 +80,14 @@ public class DbUtil {
         if (isDeleted == null) {
             setValue(model, "isDeleted", isDeleted = "N");
         }
-        log.info("save model {}", toJsonString(model));
+//        log.info("save model {}", toJsonString(model));
         int rows;
         if (forceInsert || isInsert) {
             rows = mapper.insertSelective(model);
         } else {
             rows = mapper.updateByPrimaryKeySelective(model);
         }
-        log.info("save rows {}", rows);
+//        log.info("save rows {}", rows);
         return model;
     }
 

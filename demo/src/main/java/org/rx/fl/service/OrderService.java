@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
-import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.dto.media.MediaType;
@@ -91,18 +90,34 @@ public class OrderService {
                     order.setUserId(userId);
                 }
             }
-            order.setStatus(media.getStatus().getValue());
-            dbUtil.save(order, insert);
+            order.setSettleAmount(toCent(media.getSettleAmount()));
 
-            if (!Strings.isNullOrEmpty(order.getUserId())
-                    && NQuery.of(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()).contains(order.getStatus())
-                    && !userService.hasSettleOrder(order.getUserId(), order.getId())) {
-                userService.saveUserBalance(order.getUserId(), "0.0.0.0", BalanceSourceKind.Order, order.getId(), order.getRebateAmount());
+            order.setStatus(media.getStatus().getValue());
+            if (!Strings.isNullOrEmpty(order.getUserId()) && media.getStatus() != OrderStatus.Paid) {
+                boolean hasSettleOrder = userService.hasSettleOrder(order.getUserId(), order.getId());
+                String clientIp = "0.0.0.0";
+                Long amount = isNull(order.getSettleAmount(), order.getRebateAmount());
+                switch (media.getStatus()) {
+                    case Success:
+                    case Settlement:
+                        if (!hasSettleOrder) {
+                            userService.saveUserBalance(order.getUserId(), clientIp, BalanceSourceKind.Order, order.getId(), amount);
+                        }
+                        break;
+                    case Invalid:
+                        if (hasSettleOrder) {
+                            userService.saveUserBalance(order.getUserId(), clientIp, BalanceSourceKind.InvalidOrder, order.getId(), amount);
+                        }
+                        break;
+                }
             }
+
+            dbUtil.save(order, insert);
         }
     }
 
     @ErrorCode(value = "orderNotExist", messageKeys = {"$orderNo"})
+    @ErrorCode(value = "mediaUnknown", messageKeys = {"$orderNo"})
     @Transactional
     public RebindOrderResult rebindOrder(String userId, String orderNo) {
         require(userId, orderNo);
@@ -115,7 +130,7 @@ public class OrderService {
             throw new SystemException(values(orderNo), "orderNotExist");
         }
         if (orders.size() > 1) {
-            throw new InvalidOperationException(String.format("OrderNo %s have more then one orders", orderNo));
+            throw new SystemException(values(orderNo), "mediaUnknown");
         }
 
         Order order = orders.get(0);

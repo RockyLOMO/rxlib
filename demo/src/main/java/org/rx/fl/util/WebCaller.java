@@ -97,8 +97,10 @@ public final class WebCaller extends Disposable {
                     InternetExplorerOptions opt = new InternetExplorerOptions();
                     opt.withInitialBrowserUrl("about:blank")
                             .ignoreZoomSettings()
-                            .introduceFlakinessByIgnoringSecurityDomains()
+//                            .introduceFlakinessByIgnoringSecurityDomains()
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
+
+                    opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
 
                     DesiredCapabilities capabilities = DesiredCapabilities.internetExplorer();
 //                    capabilities.setAcceptInsecureCerts(true);
@@ -120,8 +122,6 @@ public final class WebCaller extends Disposable {
                     opt.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
                     opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
                     opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
-                    opt.setCapability(CapabilityType.SUPPORTS_NETWORK_CONNECTION, true);
-                    opt.setCapability("browserConnectionEnabled", true);
 
                     Map<String, Object> chromePrefs = new HashMap<>();
                     String downloadPath = App.readSetting("app.chrome.downloadPath");

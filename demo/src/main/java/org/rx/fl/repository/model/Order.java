@@ -30,6 +30,8 @@ public class Order implements Serializable {
 
     private Long rebateAmount;
 
+    private Long settleAmount;
+
     private Integer status;
 
     private Date createTime;
@@ -128,6 +130,14 @@ public class Order implements Serializable {
         this.rebateAmount = rebateAmount;
     }
 
+    public Long getSettleAmount() {
+        return settleAmount;
+    }
+
+    public void setSettleAmount(Long settleAmount) {
+        this.settleAmount = settleAmount;
+    }
+
     public Integer getStatus() {
         return status;
     }
@@ -158,5 +168,85 @@ public class Order implements Serializable {
 
     public void setIsDeleted(String isDeleted) {
         this.isDeleted = isDeleted;
+    }
+
+    @Override
+    public boolean equals(Object that) {
+        if (this == that) {
+            return true;
+        }
+        if (that == null) {
+            return false;
+        }
+        if (getClass() != that.getClass()) {
+            return false;
+        }
+        Order other = (Order) that;
+        return (this.getId() == null ? other.getId() == null : this.getId().equals(other.getId()))
+            && (this.getUserId() == null ? other.getUserId() == null : this.getUserId().equals(other.getUserId()))
+            && (this.getMediaType() == null ? other.getMediaType() == null : this.getMediaType().equals(other.getMediaType()))
+            && (this.getOrderNo() == null ? other.getOrderNo() == null : this.getOrderNo().equals(other.getOrderNo()))
+            && (this.getGoodsId() == null ? other.getGoodsId() == null : this.getGoodsId().equals(other.getGoodsId()))
+            && (this.getGoodsName() == null ? other.getGoodsName() == null : this.getGoodsName().equals(other.getGoodsName()))
+            && (this.getUnitPrice() == null ? other.getUnitPrice() == null : this.getUnitPrice().equals(other.getUnitPrice()))
+            && (this.getQuantity() == null ? other.getQuantity() == null : this.getQuantity().equals(other.getQuantity()))
+            && (this.getSellerName() == null ? other.getSellerName() == null : this.getSellerName().equals(other.getSellerName()))
+            && (this.getPayAmount() == null ? other.getPayAmount() == null : this.getPayAmount().equals(other.getPayAmount()))
+            && (this.getRebateAmount() == null ? other.getRebateAmount() == null : this.getRebateAmount().equals(other.getRebateAmount()))
+            && (this.getSettleAmount() == null ? other.getSettleAmount() == null : this.getSettleAmount().equals(other.getSettleAmount()))
+            && (this.getStatus() == null ? other.getStatus() == null : this.getStatus().equals(other.getStatus()))
+            && (this.getCreateTime() == null ? other.getCreateTime() == null : this.getCreateTime().equals(other.getCreateTime()))
+            && (this.getModifyTime() == null ? other.getModifyTime() == null : this.getModifyTime().equals(other.getModifyTime()))
+            && (this.getIsDeleted() == null ? other.getIsDeleted() == null : this.getIsDeleted().equals(other.getIsDeleted()));
+    }
+
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((getId() == null) ? 0 : getId().hashCode());
+        result = prime * result + ((getUserId() == null) ? 0 : getUserId().hashCode());
+        result = prime * result + ((getMediaType() == null) ? 0 : getMediaType().hashCode());
+        result = prime * result + ((getOrderNo() == null) ? 0 : getOrderNo().hashCode());
+        result = prime * result + ((getGoodsId() == null) ? 0 : getGoodsId().hashCode());
+        result = prime * result + ((getGoodsName() == null) ? 0 : getGoodsName().hashCode());
+        result = prime * result + ((getUnitPrice() == null) ? 0 : getUnitPrice().hashCode());
+        result = prime * result + ((getQuantity() == null) ? 0 : getQuantity().hashCode());
+        result = prime * result + ((getSellerName() == null) ? 0 : getSellerName().hashCode());
+        result = prime * result + ((getPayAmount() == null) ? 0 : getPayAmount().hashCode());
+        result = prime * result + ((getRebateAmount() == null) ? 0 : getRebateAmount().hashCode());
+        result = prime * result + ((getSettleAmount() == null) ? 0 : getSettleAmount().hashCode());
+        result = prime * result + ((getStatus() == null) ? 0 : getStatus().hashCode());
+        result = prime * result + ((getCreateTime() == null) ? 0 : getCreateTime().hashCode());
+        result = prime * result + ((getModifyTime() == null) ? 0 : getModifyTime().hashCode());
+        result = prime * result + ((getIsDeleted() == null) ? 0 : getIsDeleted().hashCode());
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getClass().getSimpleName());
+        sb.append(" [");
+        sb.append("Hash = ").append(hashCode());
+        sb.append(", id=").append(id);
+        sb.append(", userId=").append(userId);
+        sb.append(", mediaType=").append(mediaType);
+        sb.append(", orderNo=").append(orderNo);
+        sb.append(", goodsId=").append(goodsId);
+        sb.append(", goodsName=").append(goodsName);
+        sb.append(", unitPrice=").append(unitPrice);
+        sb.append(", quantity=").append(quantity);
+        sb.append(", sellerName=").append(sellerName);
+        sb.append(", payAmount=").append(payAmount);
+        sb.append(", rebateAmount=").append(rebateAmount);
+        sb.append(", settleAmount=").append(settleAmount);
+        sb.append(", status=").append(status);
+        sb.append(", createTime=").append(createTime);
+        sb.append(", modifyTime=").append(modifyTime);
+        sb.append(", isDeleted=").append(isDeleted);
+        sb.append(", serialVersionUID=").append(serialVersionUID);
+        sb.append("]");
+        return sb.toString();
     }
 }

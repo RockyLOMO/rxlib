@@ -15,6 +15,8 @@ public class OrderExample {
 
     private Long offset;
 
+    private Boolean forUpdate;
+
     public OrderExample() {
         oredCriteria = new ArrayList<Criteria>();
     }
@@ -82,6 +84,14 @@ public class OrderExample {
 
     public Long getOffset() {
         return offset;
+    }
+
+    public void setForUpdate(Boolean forUpdate) {
+        this.forUpdate = forUpdate;
+    }
+
+    public Boolean getForUpdate() {
+        return forUpdate;
     }
 
     protected abstract static class GeneratedCriteria {
@@ -842,6 +852,66 @@ public class OrderExample {
 
         public Criteria andRebateAmountNotBetween(Long value1, Long value2) {
             addCriterion("rebate_amount not between", value1, value2, "rebateAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountIsNull() {
+            addCriterion("settle_amount is null");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountIsNotNull() {
+            addCriterion("settle_amount is not null");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountEqualTo(Long value) {
+            addCriterion("settle_amount =", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountNotEqualTo(Long value) {
+            addCriterion("settle_amount <>", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountGreaterThan(Long value) {
+            addCriterion("settle_amount >", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountGreaterThanOrEqualTo(Long value) {
+            addCriterion("settle_amount >=", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountLessThan(Long value) {
+            addCriterion("settle_amount <", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountLessThanOrEqualTo(Long value) {
+            addCriterion("settle_amount <=", value, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountIn(List<Long> values) {
+            addCriterion("settle_amount in", values, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountNotIn(List<Long> values) {
+            addCriterion("settle_amount not in", values, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountBetween(Long value1, Long value2) {
+            addCriterion("settle_amount between", value1, value2, "settleAmount");
+            return (Criteria) this;
+        }
+
+        public Criteria andSettleAmountNotBetween(Long value1, Long value2) {
+            addCriterion("settle_amount not between", value1, value2, "settleAmount");
             return (Criteria) this;
         }
 

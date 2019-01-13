@@ -15,6 +15,8 @@ public class FeedbackExample {
 
     private Long offset;
 
+    private Boolean forUpdate;
+
     public FeedbackExample() {
         oredCriteria = new ArrayList<Criteria>();
     }
@@ -82,6 +84,14 @@ public class FeedbackExample {
 
     public Long getOffset() {
         return offset;
+    }
+
+    public void setForUpdate(Boolean forUpdate) {
+        this.forUpdate = forUpdate;
+    }
+
+    public Boolean getForUpdate() {
+        return forUpdate;
     }
 
     protected abstract static class GeneratedCriteria {

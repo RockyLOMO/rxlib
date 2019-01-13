@@ -49,7 +49,7 @@ public final class WxBot implements Bot {
 
     @Override
     public BotType getType() {
-        return BotType.WxInterface;
+        return BotType.WxService;
     }
 
     @Autowired
@@ -129,6 +129,8 @@ public final class WxBot implements Bot {
                 messageInfo.setSubscribe(true);
             } else if ("text".equals(eventMessage.getMsgType())) {
                 messageInfo.setContent(eventMessage.getContent());
+            }else {
+
             }
             if (event != null) {
                 cacheItem.setValue(toMsg = event.apply(messageInfo));

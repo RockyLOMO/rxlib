@@ -6,7 +6,9 @@ import org.rx.util.NEnum;
 
 public enum BotType implements NEnum {
     @Description("微信公众号")
-    WxInterface(1);
+    WxService(1),
+    @Description("微信")
+    Wx(2);
 
     @Getter
     private int value;

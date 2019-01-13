@@ -112,7 +112,7 @@ public class TbMedia implements Media {
                 return Collections.emptyList();
             }
 
-            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#效果预估,status#订单状态,createTime#创建时间";
+            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#效果预估,settleAmount#预估收入,status#订单状态,createTime#创建时间";
             Object[] cols = list.get(0);
             NQuery<Tuple<String, Integer>> tuples = NQuery.of(mapStr.split(","))
                     .select(p -> {

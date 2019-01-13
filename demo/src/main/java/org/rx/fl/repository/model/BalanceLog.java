@@ -28,8 +28,6 @@ public class BalanceLog implements Serializable {
 
     private String remark;
 
-    private Long version;
-
     private Date createTime;
 
     private Date modifyTime;
@@ -118,14 +116,6 @@ public class BalanceLog implements Serializable {
         this.remark = remark;
     }
 
-    public Long getVersion() {
-        return version;
-    }
-
-    public void setVersion(Long version) {
-        this.version = version;
-    }
-
     public Date getCreateTime() {
         return createTime;
     }
@@ -148,5 +138,76 @@ public class BalanceLog implements Serializable {
 
     public void setIsDeleted(String isDeleted) {
         this.isDeleted = isDeleted;
+    }
+
+    @Override
+    public boolean equals(Object that) {
+        if (this == that) {
+            return true;
+        }
+        if (that == null) {
+            return false;
+        }
+        if (getClass() != that.getClass()) {
+            return false;
+        }
+        BalanceLog other = (BalanceLog) that;
+        return (this.getId() == null ? other.getId() == null : this.getId().equals(other.getId()))
+            && (this.getUserId() == null ? other.getUserId() == null : this.getUserId().equals(other.getUserId()))
+            && (this.getType() == null ? other.getType() == null : this.getType().equals(other.getType()))
+            && (this.getSource() == null ? other.getSource() == null : this.getSource().equals(other.getSource()))
+            && (this.getSourceId() == null ? other.getSourceId() == null : this.getSourceId().equals(other.getSourceId()))
+            && (this.getClientIp() == null ? other.getClientIp() == null : this.getClientIp().equals(other.getClientIp()))
+            && (this.getPreBalance() == null ? other.getPreBalance() == null : this.getPreBalance().equals(other.getPreBalance()))
+            && (this.getPostBalance() == null ? other.getPostBalance() == null : this.getPostBalance().equals(other.getPostBalance()))
+            && (this.getValue() == null ? other.getValue() == null : this.getValue().equals(other.getValue()))
+            && (this.getRemark() == null ? other.getRemark() == null : this.getRemark().equals(other.getRemark()))
+            && (this.getCreateTime() == null ? other.getCreateTime() == null : this.getCreateTime().equals(other.getCreateTime()))
+            && (this.getModifyTime() == null ? other.getModifyTime() == null : this.getModifyTime().equals(other.getModifyTime()))
+            && (this.getIsDeleted() == null ? other.getIsDeleted() == null : this.getIsDeleted().equals(other.getIsDeleted()));
+    }
+
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((getId() == null) ? 0 : getId().hashCode());
+        result = prime * result + ((getUserId() == null) ? 0 : getUserId().hashCode());
+        result = prime * result + ((getType() == null) ? 0 : getType().hashCode());
+        result = prime * result + ((getSource() == null) ? 0 : getSource().hashCode());
+        result = prime * result + ((getSourceId() == null) ? 0 : getSourceId().hashCode());
+        result = prime * result + ((getClientIp() == null) ? 0 : getClientIp().hashCode());
+        result = prime * result + ((getPreBalance() == null) ? 0 : getPreBalance().hashCode());
+        result = prime * result + ((getPostBalance() == null) ? 0 : getPostBalance().hashCode());
+        result = prime * result + ((getValue() == null) ? 0 : getValue().hashCode());
+        result = prime * result + ((getRemark() == null) ? 0 : getRemark().hashCode());
+        result = prime * result + ((getCreateTime() == null) ? 0 : getCreateTime().hashCode());
+        result = prime * result + ((getModifyTime() == null) ? 0 : getModifyTime().hashCode());
+        result = prime * result + ((getIsDeleted() == null) ? 0 : getIsDeleted().hashCode());
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getClass().getSimpleName());
+        sb.append(" [");
+        sb.append("Hash = ").append(hashCode());
+        sb.append(", id=").append(id);
+        sb.append(", userId=").append(userId);
+        sb.append(", type=").append(type);
+        sb.append(", source=").append(source);
+        sb.append(", sourceId=").append(sourceId);
+        sb.append(", clientIp=").append(clientIp);
+        sb.append(", preBalance=").append(preBalance);
+        sb.append(", postBalance=").append(postBalance);
+        sb.append(", value=").append(value);
+        sb.append(", remark=").append(remark);
+        sb.append(", createTime=").append(createTime);
+        sb.append(", modifyTime=").append(modifyTime);
+        sb.append(", isDeleted=").append(isDeleted);
+        sb.append(", serialVersionUID=").append(serialVersionUID);
+        sb.append("]");
+        return sb.toString();
     }
 }

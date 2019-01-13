@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="org.rx.fl.repository.CheckInLogMapper">
-    <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.CheckInLog">
+<mapper namespace="org.rx.fl.repository.FreezeLogMapper">
+    <resultMap id="BaseResultMap" type="org.rx.fl.repository.model.FreezeLog">
         <id column="id" jdbcType="CHAR" property="id"/>
         <result column="user_id" jdbcType="CHAR" property="userId"/>
-        <result column="client_ip" jdbcType="VARCHAR" property="clientIp"/>
-        <result column="bonus" jdbcType="BIGINT" property="bonus"/>
+        <result column="balance_log_id" jdbcType="CHAR" property="balanceLogId"/>
+        <result column="amount" jdbcType="BIGINT" property="amount"/>
+        <result column="remark" jdbcType="VARCHAR" property="remark"/>
         <result column="create_time" jdbcType="TIMESTAMP" property="createTime"/>
         <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime"/>
         <result column="is_deleted" jdbcType="CHAR" property="isDeleted"/>
@@ -71,15 +72,15 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, client_ip, bonus, create_time, modify_time, is_deleted
+    id, user_id, balance_log_id, amount, remark, create_time, modify_time, is_deleted
   </sql>
-    <select id="selectByExample" parameterType="org.rx.fl.repository.model.CheckInLogExample" resultMap="BaseResultMap">
+    <select id="selectByExample" parameterType="org.rx.fl.repository.model.FreezeLogExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
             distinct
         </if>
         <include refid="Base_Column_List"/>
-        from t_check_in_log
+        from t_freeze_log
         <if test="_parameter != null">
             <include refid="Example_Where_Clause"/>
         </if>
@@ -101,31 +102,31 @@
     <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
         select
         <include refid="Base_Column_List"/>
-        from t_check_in_log
+        from t_freeze_log
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_check_in_log
+    delete from t_freeze_log
     where id = #{id,jdbcType=CHAR}
   </delete>
-    <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.CheckInLogExample">
-        delete from t_check_in_log
+    <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.FreezeLogExample">
+        delete from t_freeze_log
         <if test="_parameter != null">
             <include refid="Example_Where_Clause"/>
         </if>
     </delete>
-    <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.CheckInLog"
+    <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.FreezeLog"
             useGeneratedKeys="true">
-    insert into t_check_in_log (user_id, client_ip, bonus, 
-      create_time, modify_time, is_deleted
-      )
-    values (#{userId,jdbcType=CHAR}, #{clientIp,jdbcType=VARCHAR}, #{bonus,jdbcType=BIGINT}, 
-      #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
-      )
+    insert into t_freeze_log (user_id, balance_log_id, amount, 
+      remark, create_time, modify_time, 
+      is_deleted)
+    values (#{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT}, 
+      #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
+      #{isDeleted,jdbcType=CHAR})
   </insert>
-    <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.CheckInLog"
+    <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.FreezeLog"
             useGeneratedKeys="true">
-        insert into t_check_in_log
+        insert into t_freeze_log
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="id != null">
                 id,
@@ -133,11 +134,14 @@
             <if test="userId != null">
                 user_id,
             </if>
-            <if test="clientIp != null">
-                client_ip,
+            <if test="balanceLogId != null">
+                balance_log_id,
             </if>
-            <if test="bonus != null">
-                bonus,
+            <if test="amount != null">
+                amount,
+            </if>
+            <if test="remark != null">
+                remark,
             </if>
             <if test="createTime != null">
                 create_time,
@@ -156,11 +160,14 @@
             <if test="userId != null">
                 #{userId,jdbcType=CHAR},
             </if>
-            <if test="clientIp != null">
-                #{clientIp,jdbcType=VARCHAR},
+            <if test="balanceLogId != null">
+                #{balanceLogId,jdbcType=CHAR},
             </if>
-            <if test="bonus != null">
-                #{bonus,jdbcType=BIGINT},
+            <if test="amount != null">
+                #{amount,jdbcType=BIGINT},
+            </if>
+            <if test="remark != null">
+                #{remark,jdbcType=VARCHAR},
             </if>
             <if test="createTime != null">
                 #{createTime,jdbcType=TIMESTAMP},
@@ -173,15 +180,14 @@
             </if>
         </trim>
     </insert>
-    <select id="countByExample" parameterType="org.rx.fl.repository.model.CheckInLogExample"
-            resultType="java.lang.Long">
-        select count(*) from t_check_in_log
+    <select id="countByExample" parameterType="org.rx.fl.repository.model.FreezeLogExample" resultType="java.lang.Long">
+        select count(*) from t_freeze_log
         <if test="_parameter != null">
             <include refid="Example_Where_Clause"/>
         </if>
     </select>
     <update id="updateByExampleSelective" parameterType="map">
-        update t_check_in_log
+        update t_freeze_log
         <set>
             <if test="record.id != null">
                 id = #{record.id,jdbcType=CHAR},
@@ -189,11 +195,14 @@
             <if test="record.userId != null">
                 user_id = #{record.userId,jdbcType=CHAR},
             </if>
-            <if test="record.clientIp != null">
-                client_ip = #{record.clientIp,jdbcType=VARCHAR},
+            <if test="record.balanceLogId != null">
+                balance_log_id = #{record.balanceLogId,jdbcType=CHAR},
             </if>
-            <if test="record.bonus != null">
-                bonus = #{record.bonus,jdbcType=BIGINT},
+            <if test="record.amount != null">
+                amount = #{record.amount,jdbcType=BIGINT},
+            </if>
+            <if test="record.remark != null">
+                remark = #{record.remark,jdbcType=VARCHAR},
             </if>
             <if test="record.createTime != null">
                 create_time = #{record.createTime,jdbcType=TIMESTAMP},
@@ -210,11 +219,12 @@
         </if>
     </update>
     <update id="updateByExample" parameterType="map">
-        update t_check_in_log
+        update t_freeze_log
         set id = #{record.id,jdbcType=CHAR},
         user_id = #{record.userId,jdbcType=CHAR},
-        client_ip = #{record.clientIp,jdbcType=VARCHAR},
-        bonus = #{record.bonus,jdbcType=BIGINT},
+        balance_log_id = #{record.balanceLogId,jdbcType=CHAR},
+        amount = #{record.amount,jdbcType=BIGINT},
+        remark = #{record.remark,jdbcType=VARCHAR},
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
         modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
         is_deleted = #{record.isDeleted,jdbcType=CHAR}
@@ -222,17 +232,20 @@
             <include refid="Update_By_Example_Where_Clause"/>
         </if>
     </update>
-    <update id="updateByPrimaryKeySelective" parameterType="org.rx.fl.repository.model.CheckInLog">
-        update t_check_in_log
+    <update id="updateByPrimaryKeySelective" parameterType="org.rx.fl.repository.model.FreezeLog">
+        update t_freeze_log
         <set>
             <if test="userId != null">
                 user_id = #{userId,jdbcType=CHAR},
             </if>
-            <if test="clientIp != null">
-                client_ip = #{clientIp,jdbcType=VARCHAR},
+            <if test="balanceLogId != null">
+                balance_log_id = #{balanceLogId,jdbcType=CHAR},
             </if>
-            <if test="bonus != null">
-                bonus = #{bonus,jdbcType=BIGINT},
+            <if test="amount != null">
+                amount = #{amount,jdbcType=BIGINT},
+            </if>
+            <if test="remark != null">
+                remark = #{remark,jdbcType=VARCHAR},
             </if>
             <if test="createTime != null">
                 create_time = #{createTime,jdbcType=TIMESTAMP},
@@ -246,20 +259,15 @@
         </set>
         where id = #{id,jdbcType=CHAR}
     </update>
-    <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.CheckInLog">
-    update t_check_in_log
+    <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.FreezeLog">
+    update t_freeze_log
     set user_id = #{userId,jdbcType=CHAR},
-      client_ip = #{clientIp,jdbcType=VARCHAR},
-      bonus = #{bonus,jdbcType=BIGINT},
+      balance_log_id = #{balanceLogId,jdbcType=CHAR},
+      amount = #{amount,jdbcType=BIGINT},
+      remark = #{remark,jdbcType=VARCHAR},
       create_time = #{createTime,jdbcType=TIMESTAMP},
       modify_time = #{modifyTime,jdbcType=TIMESTAMP},
       is_deleted = #{isDeleted,jdbcType=CHAR}
     where id = #{id,jdbcType=CHAR}
   </update>
-    <select id="sumBonus" parameterType="org.rx.fl.repository.model.CheckInLogExample" resultType="java.lang.Long">
-        select sum(bonus) from t_check_in_log
-        <if test="_parameter != null">
-            <include refid="Example_Where_Clause"/>
-        </if>
-    </select>
 </mapper>

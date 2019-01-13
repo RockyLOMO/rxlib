@@ -84,13 +84,20 @@ public class UserService {
     @Transactional
     public String getUserId(BotType botType, String openId) {
         require(botType, openId);
-        openId = botType.getValue() + openId;
-        String userId = App.hash(openId).toString();
+
+        String userId = App.hash(botType.getValue() + openId).toString();
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
             user = new User();
             user.setId(userId);
-            user.setOpenId(openId);
+            switch (botType) {
+                case WxService:
+                    user.setWxSvcOpenId(openId);
+                    break;
+                case Wx:
+                    user.setWxOpenId(openId);
+                    break;
+            }
             dbUtil.save(user, true);
         }
         return user.getId();
@@ -256,7 +263,6 @@ public class UserService {
             balanceLog.setValue(money);
 
             balanceLog.setClientIp(clientIp);
-            balanceLog.setVersion(1L);
             dbUtil.save(balanceLog);
 
             UserExample selective = new UserExample();

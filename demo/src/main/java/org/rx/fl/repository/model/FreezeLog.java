@@ -4,19 +4,19 @@ import java.io.Serializable;
 import java.util.Date;
 
 /**
- * t_feedback
+ * t_freeze_log
  * @author 
  */
-public class Feedback implements Serializable {
+public class FreezeLog implements Serializable {
     private String id;
 
     private String userId;
 
-    private String content;
+    private String balanceLogId;
 
-    private String reply;
+    private Long amount;
 
-    private Integer status;
+    private String remark;
 
     private Date createTime;
 
@@ -42,28 +42,28 @@ public class Feedback implements Serializable {
         this.userId = userId;
     }
 
-    public String getContent() {
-        return content;
+    public String getBalanceLogId() {
+        return balanceLogId;
     }
 
-    public void setContent(String content) {
-        this.content = content;
+    public void setBalanceLogId(String balanceLogId) {
+        this.balanceLogId = balanceLogId;
     }
 
-    public String getReply() {
-        return reply;
+    public Long getAmount() {
+        return amount;
     }
 
-    public void setReply(String reply) {
-        this.reply = reply;
+    public void setAmount(Long amount) {
+        this.amount = amount;
     }
 
-    public Integer getStatus() {
-        return status;
+    public String getRemark() {
+        return remark;
     }
 
-    public void setStatus(Integer status) {
-        this.status = status;
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 
     public Date getCreateTime() {
@@ -101,12 +101,12 @@ public class Feedback implements Serializable {
         if (getClass() != that.getClass()) {
             return false;
         }
-        Feedback other = (Feedback) that;
+        FreezeLog other = (FreezeLog) that;
         return (this.getId() == null ? other.getId() == null : this.getId().equals(other.getId()))
             && (this.getUserId() == null ? other.getUserId() == null : this.getUserId().equals(other.getUserId()))
-            && (this.getContent() == null ? other.getContent() == null : this.getContent().equals(other.getContent()))
-            && (this.getReply() == null ? other.getReply() == null : this.getReply().equals(other.getReply()))
-            && (this.getStatus() == null ? other.getStatus() == null : this.getStatus().equals(other.getStatus()))
+            && (this.getBalanceLogId() == null ? other.getBalanceLogId() == null : this.getBalanceLogId().equals(other.getBalanceLogId()))
+            && (this.getAmount() == null ? other.getAmount() == null : this.getAmount().equals(other.getAmount()))
+            && (this.getRemark() == null ? other.getRemark() == null : this.getRemark().equals(other.getRemark()))
             && (this.getCreateTime() == null ? other.getCreateTime() == null : this.getCreateTime().equals(other.getCreateTime()))
             && (this.getModifyTime() == null ? other.getModifyTime() == null : this.getModifyTime().equals(other.getModifyTime()))
             && (this.getIsDeleted() == null ? other.getIsDeleted() == null : this.getIsDeleted().equals(other.getIsDeleted()));
@@ -118,9 +118,9 @@ public class Feedback implements Serializable {
         int result = 1;
         result = prime * result + ((getId() == null) ? 0 : getId().hashCode());
         result = prime * result + ((getUserId() == null) ? 0 : getUserId().hashCode());
-        result = prime * result + ((getContent() == null) ? 0 : getContent().hashCode());
-        result = prime * result + ((getReply() == null) ? 0 : getReply().hashCode());
-        result = prime * result + ((getStatus() == null) ? 0 : getStatus().hashCode());
+        result = prime * result + ((getBalanceLogId() == null) ? 0 : getBalanceLogId().hashCode());
+        result = prime * result + ((getAmount() == null) ? 0 : getAmount().hashCode());
+        result = prime * result + ((getRemark() == null) ? 0 : getRemark().hashCode());
         result = prime * result + ((getCreateTime() == null) ? 0 : getCreateTime().hashCode());
         result = prime * result + ((getModifyTime() == null) ? 0 : getModifyTime().hashCode());
         result = prime * result + ((getIsDeleted() == null) ? 0 : getIsDeleted().hashCode());
@@ -135,9 +135,9 @@ public class Feedback implements Serializable {
         sb.append("Hash = ").append(hashCode());
         sb.append(", id=").append(id);
         sb.append(", userId=").append(userId);
-        sb.append(", content=").append(content);
-        sb.append(", reply=").append(reply);
-        sb.append(", status=").append(status);
+        sb.append(", balanceLogId=").append(balanceLogId);
+        sb.append(", amount=").append(amount);
+        sb.append(", remark=").append(remark);
         sb.append(", createTime=").append(createTime);
         sb.append(", modifyTime=").append(modifyTime);
         sb.append(", isDeleted=").append(isDeleted);

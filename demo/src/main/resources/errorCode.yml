@@ -9,3 +9,4 @@ org.rx.fl.service.UserService:
 
 org.rx.fl.service.OrderService:
   rebindOrder[orderNotExist]: 系统没有查询到订单号$orderNo，只有通过返利链接或返利口令购买的商品才会返利。
+  rebindOrder[mediaUnknown]: 订单号$orderNo未能正确绑定，请联系客服处理。

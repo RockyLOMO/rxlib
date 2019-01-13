@@ -94,6 +94,9 @@
                 limit ${limit}
             </if>
         </if>
+        <if test="forUpdate != null and forUpdate == true">
+            for update
+        </if>
     </select>
     <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
         select
@@ -252,12 +255,10 @@
       is_deleted = #{isDeleted,jdbcType=CHAR}
     where id = #{id,jdbcType=CHAR}
   </update>
-
-    <select id="selectUserIdByGoods" parameterType="org.rx.fl.repository.model.UserGoods"
-            resultMap="java.lang.String">
+    <select id="selectUserIdByGoods" parameterType="org.rx.fl.repository.model.UserGoods" resultType="java.lang.String">
     select user_id from t_user_goods
-    where is_deleted = 'N' and media_id = #{mediaType,jdbcType=INTEGER}
-     and goods_id = #{goodsId,jdbcType=CHAR} and create_time >= #{createTime,jdbcType=TIMESTAMP},
+    where is_deleted = 'N' and media_type = #{mediaType,jdbcType=INTEGER}
+     and goods_id = #{goodsId,jdbcType=CHAR} and create_time &gt;= #{createTime,jdbcType=TIMESTAMP}
     group by user_id, media_type, goods_id
     limit 2;
   </select>
