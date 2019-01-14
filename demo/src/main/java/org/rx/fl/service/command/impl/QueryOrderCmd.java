@@ -1,8 +1,10 @@
 package org.rx.fl.service.command.impl;
 
 import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
 import org.rx.common.App;
 import org.rx.common.NQuery;
+import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.service.OrderService;
 import org.rx.fl.service.command.Command;
@@ -36,15 +38,31 @@ public class QueryOrderCmd implements Command {
         List<OrderResult> orders = orderService.queryOrders(userId, 20);
         StringBuilder out = new StringBuilder("一一一一订 单 详 细一一一一\n" +
                 "最近20笔订单详细:\n\n");
-        for (OrderResult order : orders) {
-            out.append(String.format("%s  已%s\n" +
-                            "%s %s\n" +
-                            "%s\n" +
-                            "返利金额: %.2f元\n" +
-                            "\n", new DateTime(order.getCreateTime()).toDateTimeString(), order.getStatus().toDescription(),
-                    order.getMediaType().toDescription(), App.filterPrivacy(order.getOrderNo()),
-                    order.getGoodsName(), toMoney(order.getRebateAmount())));
-        }
+        NQuery<NQuery<OrderResult>> nQuery = NQuery.of(orders).groupBy(p -> p.getOrderNo(), p -> p.right).orderByDescending(p -> p.first().getCreateTime());
+        for (NQuery<OrderResult> orderResults : nQuery) {
+            OrderResult order = orderResults.first();
+            out.append(String.format("[%s]  %s\n" +
+                            "订单号: %s\n", order.getMediaType().toDescription(),
+                    new DateTime(order.getCreateTime()).toDateTimeString(),
+                    App.filterPrivacy(order.getOrderNo())));
+            for (OrderResult goods : orderResults) {
+                out.append(String.format("一一一一一一一一\n" +
+                                "商品: %s\n" +
+                                "返利金额: %.2f元  状态: %s\n", goods.getGoodsName(),
+                        toMoney(goods.getRebateAmount()),
+                        goods.getStatus().toDescription()));
+            }
+            out.append("\n\n");
+        }.
+//        for (OrderResult order : orders) {
+//            out.append(String.format("%s  已%s\n" +
+//                            "%s %s\n" +
+//                            "%s\n" +
+//                            "返利金额: %.2f元\n" +
+//                            "\n", new DateTime(order.getCreateTime()).toDateTimeString(), order.getStatus().toDescription(),
+//                    order.getMediaType().toDescription(), App.filterPrivacy(order.getOrderNo()),
+//                    order.getGoodsName(), toMoney(order.getRebateAmount())));
+//        }
         return HandleResult.of(out.toString());
     }
 }
