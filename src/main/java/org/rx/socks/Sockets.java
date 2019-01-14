@@ -25,7 +25,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore(Sockets.class, host, p -> {
+        return (InetAddress[]) WeakCache.getOrStore("Sockets" + host, p -> {
             try {
                 return InetAddress.getAllByName(p);
             } catch (UnknownHostException ex) {

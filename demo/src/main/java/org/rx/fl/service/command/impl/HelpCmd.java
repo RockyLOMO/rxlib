@@ -18,7 +18,7 @@ public class HelpCmd implements Command {
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
-        require(userId, message);
+        require(userId);
 
         return HandleResult.of("一一一一帮 助 信 息一一一一\n" +
                 "\n" +

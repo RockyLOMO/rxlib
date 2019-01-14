@@ -28,7 +28,7 @@ public class SystemException extends NestedRuntimeException {
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {
-        return App.getOrStore(SystemException.class, Contract.EmptyString, k -> {
+        return App.getOrStore("SystemException", k -> {
             Map<String, Object> codes = App.readSettings(CodeFile);
             Object val = App.readSetting(Contract.SettingNames.ErrorCodeFiles);
             if (val != null) {
@@ -123,7 +123,7 @@ public class SystemException extends NestedRuntimeException {
             if (methodSettings == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(this.getClass(), stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore("SystemException" + stack.getClassName(), p -> {
                 Class type = App.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);

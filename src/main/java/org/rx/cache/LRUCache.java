@@ -41,17 +41,16 @@ public final class LRUCache<TK, TV> extends Disposable {
         }
     }
 
-    private static final Lazy<LRUCache<String, Object>> instance = new Lazy<>(() -> new LRUCache<>(200, 120));
+    private static final Lazy<LRUCache<String, Object>> instance = new Lazy<>(() -> new LRUCache<>(1000, 120));
 
     public static LRUCache<String, Object> getInstance() {
         return instance.getValue();
     }
 
-    public static Object getOrStore(Class caller, String key, Function<String, Object> supplier) {
-        require(caller, key, supplier);
+    public static Object getOrStore(String key, Function<String, Object> supplier) {
+        require(key, supplier);
 
-        String k = App.cacheKey(caller.getName() + key);
-        return getInstance().getOrAdd(k, p -> supplier.apply(key));
+        return getInstance().getOrAdd(App.cacheKey(key), p -> supplier.apply(key));
     }
 
     private final Map<TK, CacheItem> cache;
@@ -61,7 +60,7 @@ public final class LRUCache<TK, TV> extends Disposable {
     private Future                   future;
 
     public LRUCache(int maxSize, int expireSecondsAfterAccess) {
-        this(maxSize, expireSecondsAfterAccess, 20 * 1000, null);
+        this(maxSize, expireSecondsAfterAccess, 8 * 1000, null);
     }
 
     public LRUCache(int maxSize, int expireSecondsAfterAccess, long checkPeriod, Consumer<TV> removeCallback) {

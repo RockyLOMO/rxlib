@@ -39,7 +39,7 @@ public final class Logger {
             }
             return org.slf4j.LoggerFactory.getLogger(owner);
         };
-        return cacheMethodName != null ? App.getOrStore(Logger.class, signature.getName() + cacheMethodName, func)
+        return cacheMethodName != null ? App.getOrStore("Logger" + signature.getName() + cacheMethodName, func)
                 : func.apply(null);
     }
 

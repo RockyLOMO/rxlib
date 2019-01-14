@@ -129,8 +129,6 @@ public final class WxBot implements Bot {
                 messageInfo.setSubscribe(true);
             } else if ("text".equals(eventMessage.getMsgType())) {
                 messageInfo.setContent(eventMessage.getContent());
-            }else {
-
             }
             if (event != null) {
                 cacheItem.setValue(toMsg = event.apply(messageInfo));

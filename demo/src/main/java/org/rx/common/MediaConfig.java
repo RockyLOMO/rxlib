@@ -14,6 +14,7 @@ public class MediaConfig {
     private int maxUserCount;
     private long syncOrderPeriod;
     private int commandTimeout;
+    private long cacheSeconds;
     private boolean remoteMode;
     private String remoteEndpoint;
 }

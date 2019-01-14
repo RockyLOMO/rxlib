@@ -24,11 +24,10 @@ public class WeakCache<TK, TV> {
         return instance.getValue();
     }
 
-    public static Object getOrStore(Class caller, String key, Function<String, Object> supplier) {
-        require(caller, key, supplier);
+    public static Object getOrStore(String key, Function<String, Object> supplier) {
+        require(key, supplier);
 
-        String k = App.cacheKey(caller.getName() + key);
-        return getInstance().getOrAdd(k, p -> supplier.apply(key));
+        return getInstance().getOrAdd(App.cacheKey(key), p -> supplier.apply(key));
     }
 
     private ConcurrentMap<TK, Reference> container;

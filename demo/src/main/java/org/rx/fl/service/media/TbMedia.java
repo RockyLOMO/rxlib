@@ -2,8 +2,6 @@ package org.rx.fl.service.media;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
@@ -34,9 +32,7 @@ import java.net.URLEncoder;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 
-import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -47,8 +43,6 @@ public class TbMedia implements Media {
             "https://pub.alimama.com/myunion.htm#!/report/zone/zone_self?spm=a219t.7664554.a214tr8.2.a0e435d9ahtooV",
             "https://pub.alimama.com/manage/overview/index.htm?spm=a219t.7900221/1.1998910419.dbb742793.6f2075a54ffHxF",
             "https://pub.alimama.com/manage/selection/list.htm?spm=a219t.7900221/1.1998910419.d3d9c63c9.6f2075a54ffHxF"};
-    private static final Cache<String, Object> cache = CacheBuilder.newBuilder()
-            .expireAfterAccess(App.readSetting("app.media.tbCacheSeconds", long.class), TimeUnit.SECONDS).build();
 
     public static void clearIE() {
         String[] pNames = {"IEDriverServer.exe", "iexplore.exe"};
@@ -80,7 +74,7 @@ public class TbMedia implements Media {
         caller = new WebCaller(WebCaller.DriverType.IE);
 //        caller.setShareCookie(true);
         long period = App.readSetting("app.media.tbKeepPeriod", long.class);
-        TaskFactory.schedule(() -> keepLogin(), 2 * 1000, period * 1000, "TbMedia");
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, "TbMedia");
     }
 
     @SneakyThrows
@@ -143,7 +137,7 @@ public class TbMedia implements Media {
             }
         } catch (Exception e) {
             log.error("readExcel", e);
-            login();
+            keepLogin(true);
         }
         return orders;
     }
@@ -165,7 +159,7 @@ public class TbMedia implements Media {
         return caller.invokeSelf(caller -> {
             log.info("findAdv step1 {}", url);
             By waitBy = By.cssSelector(".box-btn-left");
-            caller.navigateUrl(url, waitBy, 1, 4,
+            caller.navigateUrl(url, waitBy, 4, 1,
                     p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
             List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
             List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
@@ -203,7 +197,7 @@ public class TbMedia implements Media {
                     log.info("findAdv step4-2 ok");
 
                     waitBy = By.cssSelector("#clipboard-target");
-                    caller.waitElementLocated(waitBy, 1, 4, p -> {
+                    caller.waitElementLocated(waitBy, 4, 1, p -> {
                         WebElement code = caller.findElement(By.id("clipboard-target"), false);
                         if (code != null) {
                             log.info("code located ok");
@@ -259,7 +253,8 @@ public class TbMedia implements Media {
                     log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
                     return code;
                 } catch (Exception e) {
-                    throw new InvalidOperationException(e);
+                    log.error("findAdv", e);
+                    keepLogin(false);
                 }
             }
             log.info("Goods {} not found", goodsInfo.getName());
@@ -270,7 +265,7 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public String findCouponAmount(String url) {
-        return (String) cache.get(url, () -> caller.invokeNew(caller -> {
+        return getOrStore(url, k -> caller.invokeNew(caller -> {
             By first = By.cssSelector(".coupons-price");
             caller.navigateUrl(url, first);
             return caller.findElement(first).getText().trim();
@@ -280,7 +275,7 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public GoodsInfo findGoods(String url) {
-        return (GoodsInfo) cache.get(url, () -> caller.invokeNew(caller -> {
+        return getOrStore(url, k -> caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 By hybridSelector = By.cssSelector(".tb-main-title,input[name=title]");
@@ -309,7 +304,7 @@ public class TbMedia implements Media {
     public String findLink(String content) {
         int start = content.indexOf("http"), end;
         if (start == -1) {
-            log.info("Start flag not found {}", content);
+            log.info("Http start flag not found {}", content);
             return null;
         }
         end = content.indexOf(" ", start);
@@ -321,9 +316,9 @@ public class TbMedia implements Media {
                     return url;
                 }
             } catch (Exception e) {
-                log.info("End domain not found {} {}", url, e.getMessage());
+                log.info("Http domain not found {} {}", url, e.getMessage());
             }
-            log.info("End flag not found {}", content);
+            log.info("Http end flag not found {}", content);
             return null;
         }
         return content.substring(start, end);
@@ -336,25 +331,11 @@ public class TbMedia implements Media {
             return;
         }
 
+        String loginUrl = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
         caller.invokeSelf(caller -> {
-            try {
-                String url = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
-                By locator = By.id("J_SubmitQuick");
-                caller.navigateUrl(url, locator);
-                int count = 0;
-                do {
-                    if (count == 0) {
-                        caller.findElement(locator).click();
-                        log.info("login btn click...");
-                    }
-                    log.info("wait login callback...");
-                    Thread.sleep(1000);
-                    count++;
-                    if (count >= 5) {
-                        count = 0;
-                    }
-                }
-                while (caller.getCurrentUrl().startsWith("https://login.taobao.com"));
+            By locator = By.id("J_SubmitQuick");
+            caller.navigateUrl(loginUrl, locator);
+            caller.waitClickComplete(locator, 6, s -> caller.getCurrentUrl().startsWith("https://login.taobao.com"), null);
 
 //                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
 //                String url;
@@ -365,15 +346,12 @@ public class TbMedia implements Media {
 //                }
 //                if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com/myunion.htm")) {
 //                    login();
-//                }
+//                };
 
-                log.info("login ok...");
+            log.info("login ok...");
 //                caller.syncCookie();
-                getIECookie();
-                isLogin = true;
-            } catch (Exception e) {
-                throw new InvalidOperationException(e);
-            }
+            getIECookie();
+            isLogin = true;
         });
     }
 
@@ -392,7 +370,7 @@ public class TbMedia implements Media {
     }
 
     @SneakyThrows
-    private void keepLogin() {
+    private void keepLogin(boolean skipIfBusy) {
         caller.invokeSelf(caller -> {
             String noCache = String.format("&_t=%s", System.currentTimeMillis());
             int i = ThreadLocalRandom.current().nextInt(0, keepLoginUrl.length);
@@ -405,6 +383,6 @@ public class TbMedia implements Media {
                 log.info("login ok...");
                 isLogin = true;
             }
-        }, true);
+        }, skipIfBusy);
     }
 }

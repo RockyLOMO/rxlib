@@ -31,7 +31,7 @@ app:
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
     tbKeepPeriod: 80
-    tbCacheSeconds: 130
+    cacheSeconds: 180
   repository:
     dbFile: /usr/local/_rx/db/rx.dat
   sms:

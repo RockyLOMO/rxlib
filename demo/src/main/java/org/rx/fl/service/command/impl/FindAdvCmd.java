@@ -68,7 +68,7 @@ public class FindAdvCmd implements Command {
                 return 0d;
             }
             return App.changeType(p.replace("￥", "")
-                    .replace("¥", ""), double.class);
+                    .replace("¥", "").replace("元", ""), double.class);
         };
         Double payAmount = convert.apply(goods.getPrice())
                 - convert.apply(goods.getRebateAmount())

@@ -291,11 +291,11 @@ public final class WebCaller extends Disposable {
     }
 
     public void navigateUrl(String url, By locator) {
-        navigateUrl(url, locator, 4, 2, null);
+        navigateUrl(url, locator, 2, 4, null);
     }
 
     @SneakyThrows
-    public synchronized void navigateUrl(String url, By locator, long timeOutInSeconds, int retryCount, Predicate<By> onRetry) {
+    public void navigateUrl(String url, By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
         checkNotClosed();
         require(url);
 
@@ -328,7 +328,7 @@ public final class WebCaller extends Disposable {
         }
 
         if (locator != null) {
-            waitElementLocated(locator, timeOutInSeconds, retryCount, onRetry);
+            waitElementLocated(locator, retryCount, timeOutInSeconds, onRetry);
         }
         if (isShareCookie) {
             syncCookie();
@@ -348,10 +348,10 @@ public final class WebCaller extends Disposable {
     }
 
     public void waitElementLocated(By locator) {
-        waitElementLocated(locator, 4, 2, null);
+        waitElementLocated(locator, 2, 4, null);
     }
 
-    public void waitElementLocated(By locator, long timeOutInSeconds, int retryCount, Predicate<By> onRetry) {
+    public void waitElementLocated(By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
         require(locator);
 
         int i = 1;
@@ -370,10 +370,8 @@ public final class WebCaller extends Disposable {
                     break;
                 }
 
-                if (onRetry != null) {
-                    if (!onRetry.test(locator)) {
-                        break;
-                    }
+                if (onRetry != null && !onRetry.test(locator)) {
+                    break;
                 }
                 if (i == retryCount) {
                     throw SystemException.wrap(e);
@@ -381,6 +379,37 @@ public final class WebCaller extends Disposable {
                 i++;
             }
         }
+    }
+
+    @SneakyThrows
+    public <T> void waitClickComplete(By clickBy, int reClickCount, Predicate<T> checkState, T state) {
+        int count = 0;
+        do {
+            if (count == 0) {
+                findElement(clickBy).click();
+                log.info("btn-{} click...", clickBy);
+            }
+            log.info("wait btn-{} callback...", clickBy);
+            Thread.sleep(500);
+            count++;
+            if (count >= reClickCount) {
+                count = 0;
+            }
+        }
+        while (checkState.test(state));
+    }
+
+    @SneakyThrows
+    public <T> void wait(int retryCount, long sleepMillis, Predicate<T> onRetry, T state) {
+        int count = 0;
+        do {
+            if (onRetry != null && !onRetry.test(state)) {
+                break;
+            }
+            Thread.sleep(sleepMillis);
+            count++;
+        }
+        while (count < retryCount);
     }
 
     public NQuery<String> getAttributeValues(By by, String attrName) {
