@@ -53,7 +53,7 @@ public class QueryOrderCmd implements Command {
                         goods.getStatus().toDescription()));
             }
             out.append("\n\n");
-        }.
+        }
 //        for (OrderResult order : orders) {
 //            out.append(String.format("%s  已%s\n" +
 //                            "%s %s\n" +

@@ -1,4 +1,4 @@
-package org.rx.test.fl;
+package org.rx.test.util;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -171,5 +171,4 @@ public class InstallCert {
             tm.checkServerTrusted(chain, authType);
         }
     }
-
 }

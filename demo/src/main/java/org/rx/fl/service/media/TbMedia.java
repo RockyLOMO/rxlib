@@ -21,14 +21,11 @@ import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.socks.http.HttpClient;
 import org.rx.util.Helper;
 import org.springframework.util.CollectionUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
@@ -38,30 +35,21 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class TbMedia implements Media {
+    private static final String loginUrl = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
     private static final String[] keepLoginUrl = {"https://pub.alimama.com/myunion.htm?spm=a219t.7664554.a214tr8.2.a0e435d9ahtooV",
             "https://pub.alimama.com/myunion.htm#!/report/detail/taoke?spm=a219t.7664554.a214tr8.2.a0e435d9ahtooV",
             "https://pub.alimama.com/myunion.htm#!/report/zone/zone_self?spm=a219t.7664554.a214tr8.2.a0e435d9ahtooV",
             "https://pub.alimama.com/manage/overview/index.htm?spm=a219t.7900221/1.1998910419.dbb742793.6f2075a54ffHxF",
             "https://pub.alimama.com/manage/selection/list.htm?spm=a219t.7900221/1.1998910419.d3d9c63c9.6f2075a54ffHxF"};
 
-    public static void clearIE() {
-        String[] pNames = {"IEDriverServer.exe", "iexplore.exe"};
-        try {
-            for (String pName : pNames) {
-                Process process = Runtime.getRuntime().exec("taskkill /F /IM " + pName);
-                process.waitFor();
-            }
-            Thread.sleep(2000);
-        } catch (Exception e) {
-            log.info("clearProcesses", e);
-        }
-    }
-
     @Getter
     private volatile boolean isLogin;
     @Getter
     @Setter
-    private String downloadFileDateFormat;
+    private volatile boolean shareCookie;
+    @Getter
+    @Setter
+    private volatile String downloadFileDateFormat;
     private WebCaller caller;
 
     @Override
@@ -70,9 +58,9 @@ public class TbMedia implements Media {
     }
 
     public TbMedia() {
+        shareCookie = true;
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
-//        caller.setShareCookie(true);
         long period = App.readSetting("app.media.tbKeepPeriod", long.class);
         TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, "TbMedia");
     }
@@ -80,6 +68,10 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
+        if (!shareCookie) {
+            return Collections.emptyList();
+        }
+
         String fp = "yyyy-MM-dd";
         String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
         log.info("findOrders\n{}", url);
@@ -151,13 +143,12 @@ public class TbMedia implements Media {
         throw new InvalidOperationException(String.format("%s index not found", name));
     }
 
-    @SneakyThrows
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
         login();
-        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", URLEncoder.encode(goodsInfo.getName(), "utf-8").replace("+", "%20"), System.currentTimeMillis());
+        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", HttpCaller.encodeUrl(goodsInfo.getName().trim()), System.currentTimeMillis());
+        log.info("findAdv step1 {}", url);
         return caller.invokeSelf(caller -> {
-            log.info("findAdv step1 {}", url);
             By waitBy = By.cssSelector(".box-btn-left");
             caller.navigateUrl(url, waitBy, 4, 1,
                     p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
@@ -281,8 +272,14 @@ public class TbMedia implements Media {
                 By hybridSelector = By.cssSelector(".tb-main-title,input[name=title]");
                 caller.navigateUrl(url, hybridSelector);
                 WebElement hybridElement = caller.findElement(hybridSelector);
-                if (caller.getCurrentUrl().contains(".taobao.com/")) {
-                    goodsInfo.setName(hybridElement.getText().trim());
+                String currentUrl = caller.getCurrentUrl();
+                if (currentUrl.contains(".taobao.com/")) {
+                    String name = hybridElement.getText().trim();
+                    WebElement eStatus = caller.findElement(By.cssSelector(".tb-stuff-status"), false);
+                    if (eStatus != null) {
+                        name = name.substring(eStatus.getText().trim().length() + 1);
+                    }
+                    goodsInfo.setName(name);
                     goodsInfo.setSellerName(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
                 } else {
                     goodsInfo.setName(hybridElement.getAttribute("value"));
@@ -290,8 +287,8 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerName(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
                 }
                 goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
-                goodsInfo.setId(HttpClient.parseQueryString(new URL(caller.getCurrentUrl()).getQuery()).get("id"));
-                log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
+                goodsInfo.setId(HttpUrl.get(currentUrl).queryParameter("id"));
+                log.info("FindGoods {}\n -> {} -> {}", url, currentUrl, toJsonString(goodsInfo));
                 return goodsInfo;
             } catch (Exception e) {
                 log.error("findGoods", e);
@@ -304,24 +301,26 @@ public class TbMedia implements Media {
     public String findLink(String content) {
         int start = content.indexOf("http"), end;
         if (start == -1) {
-            log.info("Http start flag not found {}", content);
+            log.info("Http flag not found {}", content);
             return null;
         }
+        String url;
         end = content.indexOf(" ", start);
         if (end == -1) {
-            String url = String.format(content, start);
-            try {
-                HttpUrl httpUrl = HttpUrl.get(url);
-                if (NQuery.of("tmall.com", "taobao.com").contains(httpUrl.topPrivateDomain())) {
-                    return url;
-                }
-            } catch (Exception e) {
-                log.info("Http domain not found {} {}", url, e.getMessage());
-            }
-            log.info("Http end flag not found {}", content);
-            return null;
+            url = content;
+        } else {
+            url = content.substring(start, end);
         }
-        return content.substring(start, end);
+        try {
+            HttpUrl httpUrl = HttpUrl.get(url);
+            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com").contains(httpUrl.topPrivateDomain())) {
+                return url;
+            }
+        } catch (Exception e) {
+            log.info("Http domain not found {} {}", url, e.getMessage());
+        }
+        log.info("Http flag not found {}", content);
+        return null;
     }
 
     @SneakyThrows
@@ -331,7 +330,6 @@ public class TbMedia implements Media {
             return;
         }
 
-        String loginUrl = "https://login.taobao.com/member/login.jhtml?style=mini&newMini2=true&from=alimama&redirectURL=http:%2F%2Flogin.taobao.com%2Fmember%2Ftaobaoke%2Flogin.htm%3Fis_login%3d1&full_redirect=true&disableQuickLogin=false";
         caller.invokeSelf(caller -> {
             By locator = By.id("J_SubmitQuick");
             caller.navigateUrl(loginUrl, locator);
@@ -349,23 +347,10 @@ public class TbMedia implements Media {
 //                };
 
             log.info("login ok...");
-//                caller.syncCookie();
-            getIECookie();
+            if (shareCookie) {
+                caller.syncCookie();
+            }
             isLogin = true;
-        });
-    }
-
-    /**
-     * 需要配置hosts
-     */
-    private void getIECookie() {
-        String localHost = "http://pubrx.alimama.com:8080/media/coupon.html?rx=1";
-        caller.invokeSelf(caller -> {
-            By rx = By.id("rx");
-            caller.navigateUrl(localHost, rx);
-            String rawCookie = caller.findElement(rx).getAttribute("value");
-            log.info("getIECookie: {}", rawCookie);
-//            HttpCaller.saveRawCookies(localHost, rawCookie);
         });
     }
 

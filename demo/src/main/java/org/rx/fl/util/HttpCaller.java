@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.net.Proxy;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -91,6 +92,15 @@ public final class HttpCaller {
             map.put(key, value);
         }
         return map;
+    }
+
+    @SneakyThrows
+    public static String encodeUrl(String str) {
+        if (Strings.isNullOrEmpty(str)) {
+            return "";
+        }
+
+        return URLEncoder.encode(str, "utf-8").replace("+", "%20");
     }
 
     private Headers headers;

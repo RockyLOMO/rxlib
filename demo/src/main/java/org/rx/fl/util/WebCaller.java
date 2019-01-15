@@ -119,7 +119,6 @@ public final class WebCaller extends Disposable {
                             .setAcceptInsecureCerts(true)
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
-                    opt.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
                     opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
                     opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
 
@@ -132,7 +131,7 @@ public final class WebCaller extends Disposable {
                     opt.setExperimentalOption("prefs", chromePrefs);
 
                     opt.addArguments("user-agent=" + IE_UserAgent);
-                    opt.addArguments("no-first-run", "homepage=about:blank", "window-size=1024,800",
+                    opt.addArguments("no-first-run", "homepage=https://cn.bing.com", "window-size=1024,800",
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
@@ -176,6 +175,19 @@ public final class WebCaller extends Disposable {
             driver.quit();
         }
         driverPool.clear();
+    }
+
+    public static void clearProcesses() {
+        String[] pNames = {"IEDriverServer.exe", "iexplore.exe", "chromedriver.exe"};
+        try {
+            for (String pName : pNames) {
+                Process process = Runtime.getRuntime().exec("taskkill /F /IM " + pName);
+                process.waitFor();
+            }
+            Thread.sleep(2000);
+        } catch (Exception e) {
+            log.info("clearProcesses", e);
+        }
     }
 
     @Getter
@@ -337,10 +349,14 @@ public final class WebCaller extends Disposable {
 
     public void syncCookie() {
         if (driver instanceof InternetExplorerDriver) {
-            HttpUrl currentUrl = HttpUrl.get(getCurrentUrl());
-            String cookie = executeScript("return document.cookie;");
-            log.info("{} save cookie: {}", currentUrl.topPrivateDomain(), cookie);
-            HttpCaller.CookieContainer.saveFromResponse(currentUrl, HttpCaller.parseRawCookie(currentUrl, cookie));
+            String localHost = App.readSetting("app.ie.getCookieUrl");
+            invokeSelf(caller -> {
+                By rx = By.id("rx");
+                caller.navigateUrl(localHost, rx);
+                String rawCookie = caller.findElement(rx).getAttribute("value");
+                log.info("getIECookie: {}", rawCookie);
+                HttpCaller.saveRawCookies(localHost, rawCookie);
+            });
         } else {
             WebDriver.Options manage = driver.manage();
             HttpCaller.CookieContainer.saveFromResponse(getCurrentUrl(), manage.getCookies());

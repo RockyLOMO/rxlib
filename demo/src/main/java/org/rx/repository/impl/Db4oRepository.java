@@ -55,7 +55,7 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
 
         List<R> result = new ArrayList<>();
 //        ObjectContainer db = Db4o.openFile(config, dbPath);
-        ObjectContainer db = App.getOrStore(Db4oRepository.class, "threadDb", k -> Db4o.openFile(config, dbPath));
+        ObjectContainer db = App.getOrStore("Db4oRepository-threadDb", k -> Db4o.openFile(config, dbPath));
         try {
             for (Function<ObjectContainer, R> function : funcList) {
                 result.add(function.apply(db));

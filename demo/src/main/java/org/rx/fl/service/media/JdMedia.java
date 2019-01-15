@@ -12,6 +12,7 @@ import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
+import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.socks.http.HttpClient;
 
@@ -43,7 +44,31 @@ public class JdMedia implements Media {
 
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
-        return null;
+        login();
+        String url = String.format("https://union.jd.com/#/proManager/index?keywords=%s&pageNo=1", HttpCaller.encodeUrl(goodsInfo.getName().trim()));
+        log.info("findAdv step1 {}", url);
+        return caller.invokeSelf(caller -> {
+            By idBy = By.cssSelector(".imgbox");
+            caller.navigateUrl(url, idBy);
+            List<WebElement> eIds = caller.findElements(idBy).toList();
+            List<WebElement> ePrices = caller.findElements(By.cssSelector(".three")).toList();
+            for (int i = 0; i < eIds.size(); i++) {
+                WebElement eId = eIds.get(i);
+                String goodsUrl = eId.getAttribute("href");
+                String goodsId = getGoodsId(goodsUrl);
+                if (!goodsId.equals(goodsInfo.getId())) {
+                    continue;
+                }
+
+                goodsInfo.setPrice(ePrices.get(i).getText().trim());
+                String rebateStr = caller.executeScript("return $(\".one:eq(" + i + ") b\").text();");
+                int j = rebateStr.indexOf("%");
+                goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
+                goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
+            }
+            log.info("Goods {} not found", goodsInfo.getName());
+            return null;
+        });
     }
 
     @Override
@@ -65,12 +90,18 @@ public class JdMedia implements Media {
                 caller.navigateUrl(url, hybridSelector);
                 WebElement hybridElement = caller.findElement(hybridSelector);
                 goodsInfo.setName(hybridElement.getText().trim());
-                //re.jd.com & jd.com
-                goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#spec-img")).getAttribute("src"));
+                WebElement eSeller = caller.findElement(By.cssSelector(".name:last-child"), false);
+                if (eSeller != null) {
+                    goodsInfo.setSellerName(eSeller.getText().trim());
+                }
                 String currentUrl = caller.getCurrentUrl();
-                int start = currentUrl.lastIndexOf("/"), end = currentUrl.lastIndexOf(".");
-                goodsInfo.setId(currentUrl.substring(start + 1, end));
-                log.info("FindGoods {}\n -> {} -> {}", url, caller.getCurrentUrl(), toJsonString(goodsInfo));
+                if (currentUrl.contains("re.jd.com/")) {
+                    goodsInfo.setImageUrl(caller.findElement(By.cssSelector(".focus_img")).getAttribute("src"));
+                } else {
+                    goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#spec-img")).getAttribute("src"));
+                }
+                goodsInfo.setId(getGoodsId(currentUrl));
+                log.info("FindGoods {}\n -> {} -> {}", url, currentUrl, toJsonString(goodsInfo));
                 return goodsInfo;
             } catch (Exception e) {
                 log.error("findGoods", e);
@@ -79,28 +110,35 @@ public class JdMedia implements Media {
         }));
     }
 
+    private String getGoodsId(String url) {
+        int start = url.lastIndexOf("/"), end = url.lastIndexOf(".");
+        return url.substring(start + 1, end);
+    }
+
     @Override
     public String findLink(String content) {
         int start = content.indexOf("http"), end;
         if (start == -1) {
-            log.info("Http start flag not found {}", content);
+            log.info("Http flag not found {}", content);
             return null;
         }
+        String url;
         end = content.indexOf(" ", start);
         if (end == -1) {
-            String url = String.format(content, start);
-            try {
-                HttpUrl httpUrl = HttpUrl.get(url);
-                if (NQuery.of("jd.com").contains(httpUrl.topPrivateDomain())) {
-                    return url;
-                }
-            } catch (Exception e) {
-                log.info("Http domain not found {} {}", url, e.getMessage());
-            }
-            log.info("Http end flag not found {}", content);
-            return null;
+            url = content;
+        } else {
+            url = content.substring(start, end);
         }
-        return content.substring(start, end);
+        try {
+            HttpUrl httpUrl = HttpUrl.get(url);
+            if (NQuery.of("jd.com").contains(httpUrl.topPrivateDomain())) {
+                return url;
+            }
+        } catch (Exception e) {
+            log.info("Http domain not found {} {}", url, e.getMessage());
+        }
+        log.info("Http flag not found {}", content);
+        return null;
     }
 
     @Override
@@ -115,9 +153,9 @@ public class JdMedia implements Media {
             Predicate<Object> doLogin = s -> !caller.getCurrentUrl().equals(loginUrl);
             caller.wait(2, 500, doLogin, null);
             if (doLogin.test(null)) {
-                caller.findElement(By.cssSelector("#loginname")).sendKeys("");
-                caller.findElement(By.cssSelector("#nloginpwd")).sendKeys("");
-                caller.waitClickComplete(By.cssSelector("#paipaiLoginSubmit"), 6, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
+                caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
+                        "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
+                caller.waitClickComplete(By.cssSelector("#paipaiLoginSubmit"), 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
             }
             log.info("login ok...");
             isLogin = true;

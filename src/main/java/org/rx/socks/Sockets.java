@@ -25,9 +25,10 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore("Sockets" + host, p -> {
+        String prefix = "Sockets-";
+        return (InetAddress[]) WeakCache.getOrStore(prefix + host, p -> {
             try {
-                return InetAddress.getAllByName(p);
+                return InetAddress.getAllByName(p.substring(prefix.length()));
             } catch (UnknownHostException ex) {
                 throw SystemException.wrap(ex);
             }

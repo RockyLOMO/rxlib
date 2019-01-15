@@ -123,7 +123,7 @@ public class SystemException extends NestedRuntimeException {
             if (methodSettings == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore("SystemException" + stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(stack.getClassName(), p -> {
                 Class type = App.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);

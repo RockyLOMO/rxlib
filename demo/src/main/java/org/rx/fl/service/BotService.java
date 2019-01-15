@@ -7,13 +7,14 @@ import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.command.CommandManager;
 import org.rx.fl.service.command.impl.HelpCmd;
+import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import javax.validation.constraints.NotNull;
 
-import static org.rx.common.Contract.require;
-
+@EnableValid
 @Service
 @Slf4j
 public class BotService {
@@ -32,9 +33,7 @@ public class BotService {
         wxBot.onReceiveMessage(messageInfo -> handleMessage(messageInfo));
     }
 
-    public String handleMessage(MessageInfo msg) {
-        require(msg);
-
+    public String handleMessage(@NotNull MessageInfo msg) {
         String userId = userService.getUserId(wxBot.getType(), msg.getOpenId());
         String content = msg.isSubscribe() ? "subscribe" : msg.getContent();
         if (App.isNullOrWhiteSpace(msg.getContent())) {
