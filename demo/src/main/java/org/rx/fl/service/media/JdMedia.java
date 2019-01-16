@@ -18,9 +18,11 @@ import org.rx.socks.http.HttpClient;
 
 import java.net.URL;
 import java.util.List;
+import java.util.concurrent.Future;
 import java.util.function.Predicate;
 
 import static org.rx.common.Contract.toJsonString;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class JdMedia implements Media {
@@ -51,7 +53,7 @@ public class JdMedia implements Media {
             By idBy = By.cssSelector(".imgbox");
             caller.navigateUrl(url, idBy);
             List<WebElement> eIds = caller.findElements(idBy).toList();
-            List<WebElement> ePrices = caller.findElements(By.cssSelector(".three")).toList();
+//            List<WebElement> ePrices = caller.findElements(By.cssSelector(".three")).toList();
             for (int i = 0; i < eIds.size(); i++) {
                 WebElement eId = eIds.get(i);
                 String goodsUrl = eId.getAttribute("href");
@@ -60,11 +62,32 @@ public class JdMedia implements Media {
                     continue;
                 }
 
-                goodsInfo.setPrice(ePrices.get(i).getText().trim());
-                String rebateStr = caller.executeScript("return $(\".one:eq(" + i + ") b\").text();");
+//                goodsInfo.setPrice(ePrices.get(i).getText().trim());
+                String result = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
+                        "return [$(\".three:eq(" + i + ")\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
+                String[] jArray = result.split(",");
+                goodsInfo.setPrice(jArray[0].trim());
+                String rebateStr = jArray[1];
                 int j = rebateStr.indexOf("%");
                 goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                 goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
+
+
+//                goodsInfo.setCouponAmount("0");
+//                Future<String> future = null;
+//
+//                future = TaskFactory.run(() -> {
+//                    log.info("findAdv step4-2-2 couponUrl {}", $couponUrl);
+//                    return findCouponAmount($couponUrl);
+//                });
+//
+//                if (future != null) {
+//                    try {
+//                        goodsInfo.setCouponAmount(future.get());
+//                    } catch (Exception e) {
+//                        log.info("get coupon amount result fail -> {}", e.getMessage());
+//                    }
+//                }
             }
             log.info("Goods {} not found", goodsInfo.getName());
             return null;

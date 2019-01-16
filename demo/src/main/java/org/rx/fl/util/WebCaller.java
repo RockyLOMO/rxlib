@@ -131,7 +131,7 @@ public final class WebCaller extends Disposable {
                     opt.setExperimentalOption("prefs", chromePrefs);
 
                     opt.addArguments("user-agent=" + IE_UserAgent);
-                    opt.addArguments("no-first-run", "homepage=https://cn.bing.com", "window-size=1024,800",
+                    opt.addArguments("no-first-run", "homepage=chrome://crash", "window-size=1024,800",
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",

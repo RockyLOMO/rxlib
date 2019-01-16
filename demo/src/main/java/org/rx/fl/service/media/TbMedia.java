@@ -313,7 +313,7 @@ public class TbMedia implements Media {
         }
         try {
             HttpUrl httpUrl = HttpUrl.get(url);
-            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com").contains(httpUrl.topPrivateDomain())) {
+            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com", "tb.cn").contains(httpUrl.topPrivateDomain())) {
                 return url;
             }
         } catch (Exception e) {

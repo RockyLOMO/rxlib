@@ -57,7 +57,7 @@ public class MediaTests {
     @Test
     public void tbMedia() {
         String userMessage =
-                "复制整段信息，打开手机天猫，即可查看此商品:【防水加厚保暖浴帘浴室套装免打孔卫生间洗澡淋浴隔断挂帘子门帘布】(未安装App点这里：http://yukhj.com/s/8mUtL?tm=caf77e )喵口令";
+                "【秋冬休闲显瘦加绒宽松小脚裤子潮,很有运动感觉的裤子，给人一种赏心悦目的感觉】，https://m.tb.cn/h.3HOkQtK 点击链接，再选择浏览器咑閞；或復·制这段描述￥7VyEbr7qdIt￥后咑閞淘♂寳♀";
 
         TbMedia media = new TbMedia();
         media.setShareCookie(false);
