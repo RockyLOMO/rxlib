@@ -21,7 +21,7 @@ app:
     getCookieUrl: http://pubrx.alimama.com:8080/media/coupon.html?rx=1  #需要配置hosts
     initSize: 0
   media:
-    coreSize: 1
+    coreSize: 0
     maxUserCount: 1000
     syncOrderPeriod: 70
     commandTimeout: 60

@@ -57,7 +57,7 @@ public class MediaTests {
     @Test
     public void tbMedia() {
         String userMessage =
-                "【秋冬休闲显瘦加绒宽松小脚裤子潮,很有运动感觉的裤子，给人一种赏心悦目的感觉】，https://m.tb.cn/h.3HOkQtK 点击链接，再选择浏览器咑閞；或復·制这段描述￥7VyEbr7qdIt￥后咑閞淘♂寳♀";
+                "https://item.taobao.com/item.htm?spm=a230r.1.14.316.5aec2f1f1KyoMC&id=580168318999&ns=1&abbucket=1#detail";
 
         TbMedia media = new TbMedia();
         media.setShareCookie(false);

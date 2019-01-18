@@ -63,11 +63,11 @@ public class JdMedia implements Media {
                 }
 
 //                goodsInfo.setPrice(ePrices.get(i).getText().trim());
-                String result = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
+                String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
                         "return [$(\".three:eq(" + i + ")\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
-                String[] jArray = result.split(",");
-                goodsInfo.setPrice(jArray[0].trim());
-                String rebateStr = jArray[1];
+                String[] strings = text.split(",");
+                goodsInfo.setPrice(strings[0].trim());
+                String rebateStr = strings[1];
                 int j = rebateStr.indexOf("%");
                 goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                 goodsInfo.setRebateAmount(rebateStr.substring(j).trim());

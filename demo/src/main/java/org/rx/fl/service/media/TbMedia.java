@@ -30,6 +30,7 @@ import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -280,7 +281,12 @@ public class TbMedia implements Media {
                         name = name.substring(eStatus.getText().trim().length() + 1);
                     }
                     goodsInfo.setName(name);
-                    goodsInfo.setSellerName(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
+//                    goodsInfo.setSellerName(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
+                    String g_config = caller.executeScript("return [g_config.sellerId,g_config.sellerNick].toString()");
+                    String[] strings = g_config.split(",");
+                    require(strings, strings.length == 2);
+                    goodsInfo.setSellerId(strings[0]);
+                    goodsInfo.setSellerName(strings[1]);
                 } else {
                     goodsInfo.setName(hybridElement.getAttribute("value"));
                     goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault().trim());
