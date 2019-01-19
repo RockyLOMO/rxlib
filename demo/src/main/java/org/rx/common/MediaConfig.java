@@ -12,9 +12,10 @@ public class MediaConfig {
 
     private int coreSize;
     private int maxUserCount;
-    private long syncOrderPeriod;
+    private int syncWeeklyOrderSeconds;
+    private int syncMonthlyOrderSeconds;
     private int commandTimeout;
-    private long cacheSeconds;
+    private int cacheSeconds;
     private boolean remoteMode;
     private String remoteEndpoint;
 }

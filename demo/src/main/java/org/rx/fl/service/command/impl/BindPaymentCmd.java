@@ -22,8 +22,6 @@ import static org.rx.common.Contract.require;
 @Slf4j
 public class BindPaymentCmd implements Command {
     @Resource
-    private HelpCmd helpCmd;
-    @Resource
     private FeedbackCmd feedbackCmd;
     @Resource
     private UserService userService;
@@ -46,7 +44,7 @@ public class BindPaymentCmd implements Command {
         switch (step) {
             case 1:
                 step = 2;
-                return HandleResult.of("一一一一绑 定 账 号一一一一\n" +
+                return HandleResult.ok("一一一一绑 定 账 号一一一一\n" +
                         "亲，回复如下格式绑定:\n" +
                         "姓名***支付宝*********\n" +
                         "\n" +
@@ -57,7 +55,7 @@ public class BindPaymentCmd implements Command {
                 String k1 = "姓名", k2 = "支付宝";
                 int s1 = message.indexOf(k1), s2 = message.indexOf(k2);
                 if (!(s1 != -1 && s2 != -1 && s1 < s2)) {
-                    return HandleResult.of("一一一一绑 定 失 败一一一一\n" +
+                    return HandleResult.ok("一一一一绑 定 失 败一一一一\n" +
                             "亲，回复格式错误，请回复如下格式绑定:\n" +
                             "姓名***支付宝*********\n" +
                             "\n" +
@@ -66,15 +64,15 @@ public class BindPaymentCmd implements Command {
                 try {
                     String name = message.substring(s1 + k1.length(), s2).trim(), account = message.substring(s2 + k2.length()).trim();
                     userService.bindPayment(userId, name, account);
-                    return HandleResult.of("一一一一绑 定 成 功一一一一\n" +
+                    return HandleResult.ok("一一一一绑 定 成 功一一一一\n" +
                             "    亲，您已成功绑定！");
                 } catch (SystemException e) {
                     log.warn("BindPaymentCmd", e);
                     feedbackCmd.setStep(2);
-                    return HandleResult.of("一一一一绑 定 失 败一一一一\n" + e.getFriendlyMessage() +
+                    return HandleResult.ok("一一一一绑 定 失 败一一一一\n" + e.getFriendlyMessage() +
                             "\n如果支付宝或姓名错误，请回复新的支付宝和姓名，系统会在24小时内为您处理。", feedbackCmd);
                 }
         }
-        return helpCmd.handleMessage(userId, message);
+        return HandleResult.fail();
     }
 }

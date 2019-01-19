@@ -16,13 +16,11 @@ import javax.annotation.Resource;
 
 import static org.rx.common.Contract.require;
 
-@Order(7)
+@Order(8)
 @Component
 @Scope("prototype")
 @Slf4j
 public class FeedbackCmd implements Command {
-    @Resource
-    private HelpCmd helpCmd;
     @Resource
     private UserService userService;
     @Getter
@@ -44,7 +42,7 @@ public class FeedbackCmd implements Command {
         switch (step) {
             case 1:
                 this.step = 2;
-                return HandleResult.of("一一一一提 交 问 题一一一一\n" +
+                return HandleResult.ok("一一一一提 交 问 题一一一一\n" +
                         "亲，当您在使用中遇到问题可使用本命令提交问题，客服会在24小时内为您处理。\n" +
                         "请回复您的问题。\n" +
                         "\n" +
@@ -56,13 +54,13 @@ public class FeedbackCmd implements Command {
                         msg = msg.substring(4);
                     }
                     userService.feedback(userId, msg);
-                    return HandleResult.of("一一一一提 交 成 功一一一一\n" +
+                    return HandleResult.ok("一一一一提 交 成 功一一一一\n" +
                             "亲，问题提交成功，客服会在24小时内为您处理，处理结果会以消息形式通知。");
                 } catch (SystemException e) {
                     log.warn("FeedbackCmd", e);
-                    return HandleResult.of("一一一一提 交 失 败一一一一\n" + e.getFriendlyMessage());
+                    return HandleResult.ok("一一一一提 交 失 败一一一一\n" + e.getFriendlyMessage());
                 }
         }
-        return helpCmd.handleMessage(userId, message);
+        return HandleResult.fail();
     }
 }

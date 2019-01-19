@@ -1,11 +1,13 @@
 package org.rx.socks;
 
+import org.rx.common.LogWriter;
 import org.rx.common.NQuery;
 import org.rx.beans.DateTime;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+
 import org.rx.common.Logger;
 
 import java.util.Map;
@@ -19,8 +21,8 @@ import static org.rx.common.Contract.require;
 public final class SocketPool extends Traceable implements AutoCloseable {
     public static final class PooledSocket implements AutoCloseable {
         private final SocketPool owner;
-        private DateTime         lastActive;
-        public final Socket      socket;
+        private DateTime lastActive;
+        public final Socket socket;
 
         public boolean isConnected() {
             return !owner.isClosed() && !socket.isClosed() && socket.isConnected();
@@ -46,16 +48,16 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         }
     }
 
-    public static final SocketPool                                                          Pool                   = new SocketPool();
-    private static final int                                                                DefaultConnectTimeout  = 30000;
-    private static final int                                                                DefaultMaxIdleMillis   = 120000;
-    private static final int                                                                DefaultMaxSocketsCount = 64;
+    public static final SocketPool Pool = new SocketPool();
+    private static final int DefaultConnectTimeout = 30000;
+    private static final int DefaultMaxIdleMillis = 120000;
+    private static final int DefaultMaxSocketsCount = 64;
     private final ConcurrentHashMap<InetSocketAddress, ConcurrentLinkedDeque<PooledSocket>> pool;
-    private volatile int                                                                    connectTimeout;
-    private volatile int                                                                    maxIdleMillis;
-    private volatile int                                                                    maxSocketsCount;
-    private final Timer                                                                     timer;
-    private volatile boolean                                                                isTimerRun;
+    private volatile int connectTimeout;
+    private volatile int maxIdleMillis;
+    private volatile int maxSocketsCount;
+    private final Timer timer;
+    private volatile boolean isTimerRun;
 
     public int getConnectTimeout() {
         return connectTimeout;
@@ -94,9 +96,9 @@ public final class SocketPool extends Traceable implements AutoCloseable {
         maxSocketsCount = DefaultMaxSocketsCount;
         String n = "SocketPool";
         timer = new Timer(n, true);
-        Logger tracer = new Logger();
+        LogWriter tracer = new LogWriter();
         tracer.setPrefix(n + " ");
-        tracer.writeLine("started..");
+        tracer.info("started..");
         setTracer(tracer);
     }
 
@@ -123,7 +125,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             }, period, period);
             isTimerRun = true;
         }
-        getTracer().writeLine("runTimer..");
+        getTracer().info("runTimer..");
     }
 
     private void clearIdleSockets() {
@@ -137,7 +139,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                 if (!socket.isConnected()
                         || DateTime.utcNow().subtract(socket.getLastActive()).getTotalMilliseconds() >= maxIdleMillis) {
                     sockets.remove(socket);
-                    getTracer().writeLine("clear idle socket[local=%s, remote=%s]..",
+                    getTracer().info("clear idle socket[local=%s, remote=%s]..",
                             Sockets.getId(socket.socket, false), Sockets.getId(socket.socket, true));
                 }
             }
@@ -156,7 +158,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             timer.purge();
             isTimerRun = false;
         }
-        getTracer().writeLine("stopTimer..");
+        getTracer().info("stopTimer..");
     }
 
     private ConcurrentLinkedDeque<PooledSocket> getSockets(InetSocketAddress remoteAddr) {
@@ -192,7 +194,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             return borrowSocket(remoteAddr);
         }
         Socket sock = pooledSocket.socket;
-        getTracer().writeLine("borrow %s socket[local=%s, remote=%s]..", isExisted ? "existed" : "new",
+        getTracer().info("borrow %s socket[local=%s, remote=%s]..", isExisted ? "existed" : "new",
                 Sockets.getId(sock, false), Sockets.getId(sock, true));
         return pooledSocket;
     }
@@ -218,7 +220,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
             sockets.addFirst(pooledSocket);
         } finally {
             Socket sock = pooledSocket.socket;
-            getTracer().writeLine("%s socket[local=%s, remote=%s]..", action, Sockets.getId(sock, false),
+            getTracer().info("%s socket[local=%s, remote=%s]..", action, Sockets.getId(sock, false),
                     Sockets.getId(sock, true));
         }
     }
@@ -228,7 +230,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
 
         for (Socket socket : NQuery.of(pool.values()).selectMany(p -> p).select(p -> p.socket)) {
             try {
-                getTracer().writeLine("clear socket[local=%s, remote=%s]..", Sockets.getId(socket, false),
+                getTracer().info("clear socket[local=%s, remote=%s]..", Sockets.getId(socket, false),
                         Sockets.getId(socket, true));
                 Sockets.close(socket);
             } catch (Exception ex) {

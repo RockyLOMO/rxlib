@@ -7,16 +7,14 @@ import okhttp3.HttpUrl;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
-import org.rx.common.InvalidOperationException;
+import org.rx.common.LogWriter;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.socks.http.HttpClient;
 
-import java.net.URL;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
@@ -48,50 +46,72 @@ public class JdMedia implements Media {
     public String findAdv(GoodsInfo goodsInfo) {
         login();
         String url = String.format("https://union.jd.com/#/proManager/index?keywords=%s&pageNo=1", HttpCaller.encodeUrl(goodsInfo.getName().trim()));
-        log.info("findAdv step1 {}", url);
-        return caller.invokeSelf(caller -> {
-            By idBy = By.cssSelector(".imgbox");
-            caller.navigateUrl(url, idBy);
-            List<WebElement> eIds = caller.findElements(idBy).toList();
+        try (LogWriter log = new LogWriter(JdMedia.log)) {
+            log.setPrefix(this.getType().name());
+            log.info("findAdv step1 {}", url);
+            return caller.invokeSelf(caller -> {
+                By idBy = By.cssSelector(".imgbox");
+                caller.navigateUrl(url, idBy);
+                List<WebElement> eIds = caller.findElements(idBy).toList();
 //            List<WebElement> ePrices = caller.findElements(By.cssSelector(".three")).toList();
-            for (int i = 0; i < eIds.size(); i++) {
-                WebElement eId = eIds.get(i);
-                String goodsUrl = eId.getAttribute("href");
-                String goodsId = getGoodsId(goodsUrl);
-                if (!goodsId.equals(goodsInfo.getId())) {
-                    continue;
-                }
+                for (int i = 0; i < eIds.size(); i++) {
+                    WebElement eId = eIds.get(i);
+                    String goodsUrl = eId.getAttribute("href");
+                    String goodsId = getGoodsId(goodsUrl);
+                    if (!goodsId.equals(goodsInfo.getId())) {
+                        continue;
+                    }
 
 //                goodsInfo.setPrice(ePrices.get(i).getText().trim());
-                String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
-                        "return [$(\".three:eq(" + i + ")\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
-                String[] strings = text.split(",");
-                goodsInfo.setPrice(strings[0].trim());
-                String rebateStr = strings[1];
-                int j = rebateStr.indexOf("%");
-                goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
-                goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
+                    String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
+                            "return [$(\".three:eq(" + i + ")\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
+                    log.info("findAdv step2 ok");
+                    String[] strings = text.split(",");
+                    goodsInfo.setPrice(strings[0].trim());
+                    String rebateStr = strings[1];
+                    int j = rebateStr.indexOf("%");
+                    goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
+                    goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
 
+                    String[] combo = {"#socialPromotion", "input[placeholder=请选择社交媒体]", ".el-select-dropdown__item:last",
+                            "input[placeholder=请输入推广位]", ".el-select-dropdown__item:last", ".operation:last .el-button--primary"};
+                    for (int k = 0; k < combo.length; k++) {
+                        String x = combo[k];
+                        if (k == 2 || k == 4 || k == 5) {
+                            caller.executeScript(String.format("$(\"%s\").click();", x));
+                        } else {
+                            caller.waitElementLocated(By.cssSelector(x)).first().click();
+                        }
+                        log.info("findAdv step3 combo({}) click..", x);
+                    }
 
-//                goodsInfo.setCouponAmount("0");
-//                Future<String> future = null;
-//
-//                future = TaskFactory.run(() -> {
-//                    log.info("findAdv step4-2-2 couponUrl {}", $couponUrl);
-//                    return findCouponAmount($couponUrl);
-//                });
-//
-//                if (future != null) {
-//                    try {
-//                        goodsInfo.setCouponAmount(future.get());
-//                    } catch (Exception e) {
-//                        log.info("get coupon amount result fail -> {}", e.getMessage());
-//                    }
-//                }
-            }
-            log.info("Goods {} not found", goodsInfo.getName());
-            return null;
-        });
+                    By waiter = By.cssSelector("#pane-0 input");
+                    NQuery<WebElement> codes = caller.waitElementLocated(waiter);
+                    goodsInfo.setCouponAmount("0");
+                    Future<String> future = null;
+                    if (codes.count() == 2) {
+                        String couponUrl = codes.last().getAttribute("value");
+                        future = TaskFactory.run(() -> {
+                            log.info("findAdv step3-2 couponUrl {}", couponUrl);
+                            return findCouponAmount(couponUrl);
+                        });
+                    }
+                    String code = codes.last().getAttribute("value");
+
+                    if (future != null) {
+                        try {
+                            goodsInfo.setCouponAmount(future.get());
+                        } catch (Exception e) {
+                            log.info("get coupon amount result fail -> {}", e.getMessage());
+                        }
+                    }
+                    log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
+                    return code;
+                }
+                log.info("Goods {} not found", goodsInfo.getName());
+                return null;
+            });
+        }
     }
 
     @Override
@@ -176,9 +196,13 @@ public class JdMedia implements Media {
             Predicate<Object> doLogin = s -> !caller.getCurrentUrl().equals(loginUrl);
             caller.wait(2, 500, doLogin, null);
             if (doLogin.test(null)) {
-                caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
-                        "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
-                caller.waitClickComplete(By.cssSelector("#paipaiLoginSubmit"), 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
+                try {
+                    caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
+                            "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
+                    caller.waitClickComplete(By.cssSelector("#paipaiLoginSubmit"), 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
+                } catch (Exception e) {
+                    log.info("login error {}...", e.getMessage());
+                }
             }
             log.info("login ok...");
             isLogin = true;

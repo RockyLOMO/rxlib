@@ -1,18 +1,18 @@
 package org.rx.socks;
 
 import org.rx.common.Disposable;
-import org.rx.common.Logger;
+import org.rx.common.LogWriter;
 
 import static org.rx.common.Contract.isNull;
 
 public abstract class Traceable extends Disposable {
-    private Logger tracer;
+    private LogWriter tracer;
 
-    public Logger getTracer() {
+    public LogWriter getTracer() {
         return tracer;
     }
 
-    public synchronized void setTracer(Logger tracer) {
-        this.tracer = isNull(tracer, new Logger());
+    public synchronized void setTracer(LogWriter tracer) {
+        this.tracer = isNull(tracer, new LogWriter());
     }
 }

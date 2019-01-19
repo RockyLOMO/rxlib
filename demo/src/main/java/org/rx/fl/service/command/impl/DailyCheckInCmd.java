@@ -38,7 +38,7 @@ public class DailyCheckInCmd implements Command {
         try {
             long bonus = userService.checkIn(userId, "0.0.0.0");
             UserDto user = userService.queryUser(userId);
-            return HandleResult.of(String.format("一一一一签 到 成 功一一一一\n" +
+            return HandleResult.ok(String.format("一一一一签 到 成 功一一一一\n" +
                     "\n" +
                     "本次签到获得: %.2f元\n" +
                     "        累计签到: %s次\n" +
@@ -52,7 +52,7 @@ public class DailyCheckInCmd implements Command {
 
         } catch (SystemException e) {
             log.warn("DailyCheckInCmd", e);
-            return HandleResult.of("一一一一签 到 失 败一一一一\n" + e.getFriendlyMessage());
+            return HandleResult.ok("一一一一签 到 失 败一一一一\n" + e.getFriendlyMessage());
         }
     }
 }

@@ -22,18 +22,19 @@ public class MediaTests {
     public void jdMedia() {
         String userMessage = "https://u.jd.com/bdJddY";
         userMessage = "https://u.jd.com/lRB5js";
-        userMessage = "https://item.jd.com/3167821.html?jd_pop=8284c4cb-9a27-4849-a2f0-1cae25583d40";
+        userMessage = "https://item.jd.com/23030257143.html";
 
         JdMedia media = new JdMedia();
 
-//        String url = media.findLink(userMessage);
-//        assert url != null;
-//        GoodsInfo goods = media.findGoods(url);
-//        assert goods != null;
+        String url = media.findLink(userMessage);
+        assert url != null;
+        GoodsInfo goods = media.findGoods(url);
+        assert goods != null;
 
         media.login();
-//        String code = media.findAdv(goods);
-//
+        String code = media.findAdv(goods);
+        System.out.println(code);
+
 //        Function<String, Double> convert = p -> {
 //            if (Strings.isNullOrEmpty(p)) {
 //                return 0d;
@@ -50,7 +51,7 @@ public class MediaTests {
 //        List<OrderInfo> orders = media.findOrders(DateTime.now().addDays(-7), DateTime.now());
 //        System.out.println(toJsonString(orders));
 
-        Thread.sleep(2000);
+        System.in.read();
     }
 
     @SneakyThrows

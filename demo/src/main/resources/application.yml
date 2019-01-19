@@ -15,22 +15,23 @@ app:
     dataPath: D:\usr\chrome\data
     downloadPath: D:\usr\chrome\download
     isBackground: false
-    initSize: 0
+    initSize: 1
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
     getCookieUrl: http://pubrx.alimama.com:8080/media/coupon.html?rx=1  #需要配置hosts
-    initSize: 0
+    initSize: 1
   media:
-    coreSize: 0
+    coreSize: 1
     maxUserCount: 1000
-    syncOrderPeriod: 70
+    syncWeeklyOrderSeconds: 80
+    syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
     tbKeepPeriod: 80
     cacheSeconds: 180
   errorCodeFiles:
-  - errorCode.yml
+    - errorCode.yml
   mybatis:
     mapperScan: org.rx.fl.repository
   repository:

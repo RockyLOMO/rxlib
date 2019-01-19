@@ -10,6 +10,7 @@ import java.util.Date;
 public class OrderResult {
     private MediaType mediaType;
     private String orderNo;
+    private String goodsId;
     private String goodsName;
     private long rebateAmount;
     private OrderStatus status;

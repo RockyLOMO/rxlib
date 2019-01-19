@@ -58,6 +58,8 @@ public final class WebCaller extends Disposable {
     private static volatile int pathCounter;
 
     static {
+        clearProcesses();
+
         System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
         System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
         driverPool = new ConcurrentHashMap<>();
@@ -119,7 +121,6 @@ public final class WebCaller extends Disposable {
                             .setAcceptInsecureCerts(true)
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
-                    opt.setCapability(CapabilityType.SUPPORTS_ALERTS, false);
                     opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
 
                     Map<String, Object> chromePrefs = new HashMap<>();
@@ -131,7 +132,7 @@ public final class WebCaller extends Disposable {
                     opt.setExperimentalOption("prefs", chromePrefs);
 
                     opt.addArguments("user-agent=" + IE_UserAgent);
-                    opt.addArguments("no-first-run", "homepage=chrome://crash", "window-size=1024,800",
+                    opt.addArguments("no-first-run", "--homepage=chrome://crash", "window-size=1024,800",
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
@@ -177,17 +178,11 @@ public final class WebCaller extends Disposable {
         driverPool.clear();
     }
 
+    @SneakyThrows
     public static void clearProcesses() {
-        String[] pNames = {"IEDriverServer.exe", "iexplore.exe", "chromedriver.exe"};
-        try {
-            for (String pName : pNames) {
-                Process process = Runtime.getRuntime().exec("taskkill /F /IM " + pName);
-                process.waitFor();
-            }
-            Thread.sleep(2000);
-        } catch (Exception e) {
-            log.info("clearProcesses", e);
-        }
+        String[] pNames = {"chromedriver.exe", "IEDriverServer.exe", "iexplore.exe"};
+        App.execShell(null, NQuery.of(pNames).select(p -> "taskkill /F /IM " + p).toArray(String.class));
+        Thread.sleep(4000);
     }
 
     @Getter
@@ -202,10 +197,6 @@ public final class WebCaller extends Disposable {
 
     public String getCurrentHandle() {
         return driver.getWindowHandle();
-    }
-
-    public String getReadyState() {
-        return driver.executeScript("return document.readyState;").toString();
     }
 
     public WebCaller() {
@@ -303,11 +294,11 @@ public final class WebCaller extends Disposable {
     }
 
     public void navigateUrl(String url, By locator) {
-        navigateUrl(url, locator, 2, 4, null);
+        navigateUrl(url, locator, 4, null);
     }
 
     @SneakyThrows
-    public void navigateUrl(String url, By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
+    public void navigateUrl(String url, By locator, int retryCount, Predicate<By> onRetry) {
         checkNotClosed();
         require(url);
 
@@ -340,7 +331,7 @@ public final class WebCaller extends Disposable {
         }
 
         if (locator != null) {
-            waitElementLocated(locator, retryCount, timeOutInSeconds, onRetry);
+            waitElementLocated(locator, retryCount, 1, onRetry);
         }
         if (isShareCookie) {
             syncCookie();
@@ -348,6 +339,8 @@ public final class WebCaller extends Disposable {
     }
 
     public void syncCookie() {
+        checkNotClosed();
+
         if (driver instanceof InternetExplorerDriver) {
             String localHost = App.readSetting("app.ie.getCookieUrl");
             invokeSelf(caller -> {
@@ -363,27 +356,36 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    public void waitElementLocated(By locator) {
-        waitElementLocated(locator, 2, 4, null);
+    public NQuery<WebElement> waitElementLocated(By locator) {
+        return waitElementLocated(locator, 4, 1, null);
     }
 
-    public void waitElementLocated(By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
+    public NQuery<WebElement> waitElementLocated(By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
         require(locator);
 
+        SystemException lastEx = null;
+        WebDriverWait wait = null;
         int i = 1;
         while (i <= retryCount) {
             try {
-                if (findElements(locator).any()) {
-                    return;
+                NQuery<WebElement> elements = findElements(locator, false);
+                if (elements.any()) {
+                    log.info("Wait {} located ok", locator);
+                    return elements;
                 }
 
-                WebDriverWait wait = new WebDriverWait(driver, timeOutInSeconds);
+                if (wait == null) {
+                    wait = new WebDriverWait(driver, timeOutInSeconds);
+                }
                 wait.until(ExpectedConditions.presenceOfElementLocated(locator));
-                break;
             } catch (Exception e) {
                 log.info("waitElementLocated {}", e.getMessage());
-                if (findElements(locator).any()) {
-                    break;
+                lastEx = SystemException.wrap(e);
+
+                NQuery<WebElement> elements = findElements(locator, false);
+                if (elements.any()) {
+                    log.info("Wait {} located ok", locator);
+                    return elements;
                 }
 
                 if (onRetry != null && !onRetry.test(locator)) {
@@ -395,6 +397,11 @@ public final class WebCaller extends Disposable {
                 i++;
             }
         }
+
+        if (lastEx != null) {
+            throw lastEx;
+        }
+        throw new InvalidOperationException("No such elements");
     }
 
     @SneakyThrows
@@ -402,10 +409,15 @@ public final class WebCaller extends Disposable {
         int count = 0;
         do {
             if (count == 0) {
-                findElement(clickBy).click();
-                log.info("btn-{} click...", clickBy);
+                WebElement btn = findElement(clickBy, false);
+                if (btn == null) {
+                    log.info("btn-{} missing..", clickBy);
+                    break;
+                }
+                btn.click();
+                log.info("btn-{} click..", clickBy);
             }
-            log.info("wait btn-{} callback...", clickBy);
+            log.info("wait btn-{} callback..", clickBy);
             Thread.sleep(500);
             count++;
             if (count >= reClickCount) {
@@ -450,35 +462,32 @@ public final class WebCaller extends Disposable {
         checkNotClosed();
         require(by);
 
-        try {
-            NQuery<WebElement> elements = findElements(by);
-            if (!elements.any()) {
-                if (throwOnEmpty) {
-                    throw new InvalidOperationException("Element %s not found", by);
-                }
-                return null;
+        NQuery<WebElement> elements = findElements(by, throwOnEmpty);
+        if (!elements.any()) {
+            if (throwOnEmpty) {
+                throw new InvalidOperationException("Element %s not found", by);
             }
-            return elements.first();
+            return null;
+        }
+        return elements.first();
+    }
+
+    public NQuery<WebElement> findElements(By by) {
+        return findElements(by, true);
+    }
+
+    public NQuery<WebElement> findElements(By by, boolean throwOnEmpty) {
+        checkNotClosed();
+        require(by);
+
+        try {
+            return NQuery.of(driver.findElements(by));
         } catch (NoSuchElementException e) {
             if (throwOnEmpty) {
                 throw e;
             }
-            return null;
+            return NQuery.of();
         }
-    }
-
-    public NQuery<WebElement> findElements(By by) {
-        return findElements(by, null);
-    }
-
-    public NQuery<WebElement> findElements(By by, By waiter) {
-        checkNotClosed();
-        require(by);
-
-        if (waiter != null) {
-            waitElementLocated(waiter);
-        }
-        return NQuery.of(driver.findElements(by));
     }
 
     public String openTab() {

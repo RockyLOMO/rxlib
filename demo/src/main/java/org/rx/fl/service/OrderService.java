@@ -10,12 +10,9 @@ import org.rx.common.SystemException;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
-import org.rx.fl.dto.repo.OrderResult;
+import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.OrderMapper;
 import org.rx.fl.repository.model.*;
-import org.rx.fl.dto.repo.BalanceSourceKind;
-import org.rx.fl.dto.repo.RebindOrderResult;
-import org.rx.fl.dto.repo.UserDto;
 import org.rx.fl.util.DbUtil;
 import org.rx.util.NEnum;
 import org.springframework.stereotype.Service;
@@ -37,19 +34,28 @@ public class OrderService {
     @Resource
     private DbUtil dbUtil;
 
-    public List<OrderResult> queryOrders(String userId, int takeCount) {
-        require(userId);
-        require(takeCount, takeCount > 0);
+    public List<OrderResult> queryOrders(QueryOrdersParameter parameter) {
+        require(parameter, parameter.getUserId());
 
         OrderExample query = new OrderExample();
-        query.setLimit(takeCount);
-        query.createCriteria().andUserIdEqualTo(userId);
+        query.setLimit(100);
+        OrderExample.Criteria criteria = query.createCriteria().andUserIdEqualTo(parameter.getUserId());
+        if (parameter.getOrderNo() != null) {
+            criteria.andOrderNoEqualTo(parameter.getOrderNo());
+        }
+        if (parameter.getStartTime() != null) {
+            criteria.andCreateTimeGreaterThanOrEqualTo(parameter.getStartTime());
+        }
+        if (parameter.getEndTime() != null) {
+            criteria.andCreateTimeLessThanOrEqualTo(parameter.getEndTime());
+        }
         query.setOrderByClause("create_time desc");
         List<Order> orders = orderMapper.selectByExample(query);
         return NQuery.of(orders).select(p -> {
             OrderResult result = new OrderResult();
             result.setMediaType(NEnum.valueOf(MediaType.class, p.getMediaType()));
             result.setOrderNo(p.getOrderNo());
+            result.setGoodsId(p.getGoodsId());
             result.setGoodsName(p.getGoodsName());
             result.setRebateAmount(p.getRebateAmount());
             result.setStatus(NEnum.valueOf(OrderStatus.class, p.getStatus()));

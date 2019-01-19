@@ -2,13 +2,11 @@ package org.rx.fl.service.command.impl;
 
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import static org.rx.common.Contract.require;
 
 //↓
-@Order(9)
 @Component
 public class HelpCmd implements Command {
     @Override
@@ -20,7 +18,7 @@ public class HelpCmd implements Command {
     public HandleResult<String> handleMessage(String userId, String message) {
         require(userId);
 
-        return HandleResult.of("一一一一帮 助 信 息一一一一\n" +
+        return HandleResult.ok("一一一一帮 助 信 息一一一一\n" +
                 "\n" +
                 "[1]----------查看个人信息\n" +
                 "[2]----------关联上支付宝\n" +

@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.rx.common.Contract.require;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Order(1)
 @Component
@@ -56,12 +57,12 @@ public class FindAdvCmd implements Command {
             advResult = mediaService.findAdv(message);
         }
         if (advResult.getFoundStatus() != AdvFoundStatus.Ok) {
-            return HandleResult.of("一一一一系 统 消 息一一一一\n" +
+            return HandleResult.ok("一一一一系 统 消 息一一一一\n" +
                     "返利失败！\n" +
                     "亲，这家没有优惠和返利哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
         }
 
-        userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId());
+        TaskFactory.run(() -> userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId()));
         GoodsInfo goods = advResult.getGoods();
         Function<String, Double> convert = p -> {
             if (Strings.isNullOrEmpty(p)) {
@@ -73,14 +74,25 @@ public class FindAdvCmd implements Command {
         Double payAmount = convert.apply(goods.getPrice())
                 - convert.apply(goods.getRebateAmount())
                 - convert.apply(goods.getCouponAmount());
-        return HandleResult.of(String.format("一一一一系 统 消 息一一一一\n" +
+        StringBuilder reply = new StringBuilder(String.format("一一一一系 统 消 息一一一一\n" +
                         "约反      %s\n" +
                         "优惠券  ￥%s\n" +
-                        "付费价  ￥%.2f\n" +
-                        "复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-                goods.getRebateAmount(), goods.getCouponAmount(), payAmount, advResult.getShareCode()));
+                        "付费价  ￥%.2f\n",
+                goods.getRebateAmount(), goods.getCouponAmount(), payAmount));
+        switch (advResult.getMediaType()) {
+            case Jd:
+                reply.append(String.format("点击框内链接 %s ，即可「领取优惠券」并购买",
+                        advResult.getShareCode()));
+                break;
+            case Taobao:
+                reply.append(String.format("复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
+                        advResult.getShareCode()));
+                break;
 //        return HandleResult.of(String.format("http://taoyouhui.ml/tb.html#/%s/%s",
 //                advResult.getShareCode().replace("￥", ""),
 //                URLEncoder.encode(goods.getImageUrl(), "utf-8")));
+
+        }
+        return HandleResult.ok(reply.toString());
     }
 }

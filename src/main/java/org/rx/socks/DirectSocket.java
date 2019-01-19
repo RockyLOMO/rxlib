@@ -25,11 +25,11 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     }
 
     private static class ClientItem {
-        private final DirectSocket  owner;
+        private final DirectSocket owner;
         private final BufferSegment segment;
-        public final NetworkStream  stream;
-        public final AutoCloseable  toSock;
-        public final NetworkStream  toStream;
+        public final NetworkStream stream;
+        public final AutoCloseable toSock;
+        public final NetworkStream toStream;
 
         public ClientItem(Socket client, DirectSocket owner) {
             this.owner = owner;
@@ -68,14 +68,14 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         }
 
         public void closeSocket() {
-            owner.getTracer().writeLine("client close socket[%s->%s]..", Sockets.getId(stream.getSocket(), false),
+            owner.getTracer().info("client close socket[%s->%s]..", Sockets.getId(stream.getSocket(), false),
                     Sockets.getId(stream.getSocket(), true));
             owner.clients.remove(this);
             stream.close();
         }
 
         public void closeToSocket(boolean pooling) {
-            owner.getTracer().writeLine("client %s socket[%s->%s]..", pooling ? "pooling" : "close",
+            owner.getTracer().info("client %s socket[%s->%s]..", pooling ? "pooling" : "close",
                     Sockets.getId(toStream.getSocket(), false), Sockets.getId(toStream.getSocket(), true));
             if (pooling) {
                 try {
@@ -89,31 +89,31 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         }
     }
 
-    public static final SocketSupplier HttpSupplier             = pack -> {
-                                                                    String line = Bytes.readLine(pack.getBuffer());
-                                                                    if (line == null) {
-                                                                        return null;
-                                                                    }
-                                                                    InetSocketAddress authority;
-                                                                    try {
-                                                                        authority = Sockets.parseAddress(
-                                                                                new URL(line.split(" ")[1])
-                                                                                        .getAuthority());
-                                                                    } catch (MalformedURLException ex) {
-                                                                        throw SystemException.wrap(ex);
-                                                                    }
-                                                                    SocketPool.PooledSocket pooledSocket = App.retry(
-                                                                            p -> SocketPool.Pool.borrowSocket(p),
-                                                                            authority, 2);
-                                                                    return Tuple.of(pooledSocket, pooledSocket.socket);
-                                                                };
-    private static final int           DefaultBacklog           = 128;
-    private static final int           DefaultConnectRetryCount = 4;
-    private final ServerSocket         server;
-    private final List<ClientItem>     clients;
-    private volatile int               connectRetryCount;
-    private InetSocketAddress          directAddress;
-    private SocketSupplier             directSupplier;
+    public static final SocketSupplier HttpSupplier = pack -> {
+        String line = Bytes.readLine(pack.getBuffer());
+        if (line == null) {
+            return null;
+        }
+        InetSocketAddress authority;
+        try {
+            authority = Sockets.parseAddress(
+                    new URL(line.split(" ")[1])
+                            .getAuthority());
+        } catch (MalformedURLException ex) {
+            throw SystemException.wrap(ex);
+        }
+        SocketPool.PooledSocket pooledSocket = App.retry(
+                p -> SocketPool.Pool.borrowSocket(p),
+                authority, 2);
+        return Tuple.of(pooledSocket, pooledSocket.socket);
+    };
+    private static final int DefaultBacklog = 128;
+    private static final int DefaultConnectRetryCount = 4;
+    private final ServerSocket server;
+    private final List<ClientItem> clients;
+    private volatile int connectRetryCount;
+    private InetSocketAddress directAddress;
+    private SocketSupplier directSupplier;
 
     @Override
     public boolean isClosed() {
@@ -159,11 +159,11 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         clients = Collections.synchronizedList(new ArrayList<>());
         connectRetryCount = DefaultConnectRetryCount;
         String taskName = String.format("DirectSocket[%s->%s]", listenAddr, isNull(directAddress, "autoAddress"));
-        Logger tracer = new Logger();
+        LogWriter tracer = new LogWriter();
         tracer.setPrefix(taskName + " ");
         setTracer(tracer);
         AsyncTask.TaskFactory.run(() -> {
-            getTracer().writeLine("start..");
+            getTracer().info("start..");
             while (!isClosed()) {
                 try {
                     ClientItem client = new ClientItem(server.accept(), this);
@@ -188,19 +188,19 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         } catch (IOException ex) {
             Logger.error(ex, "DirectSocket close");
         }
-        getTracer().writeLine("stop..");
+        getTracer().info("stop..");
     }
 
     private void onReceive(ClientItem client, String taskName) {
         AsyncTask.TaskFactory.run(() -> {
             try {
                 int recv = client.stream.directTo(client.toStream, (p1, p2) -> {
-                    getTracer().writeLine("sent %s bytes from %s to %s..", p2,
+                    getTracer().info("sent %s bytes from %s to %s..", p2,
                             Sockets.getId(client.stream.getSocket(), true),
                             Sockets.getId(client.toStream.getSocket(), false));
                     return true;
                 });
-                getTracer().writeLine("socket[%s->%s] closing with %s", Sockets.getId(client.stream.getSocket(), false),
+                getTracer().info("socket[%s->%s] closing with %s", Sockets.getId(client.stream.getSocket(), false),
                         Sockets.getId(client.stream.getSocket(), true), recv);
             } catch (SystemException ex) {
                 $<java.net.SocketException> out = $();
@@ -220,12 +220,12 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             int recv = NetworkStream.StreamEOF;
             try {
                 recv = client.toStream.directTo(client.stream, (p1, p2) -> {
-                    getTracer().writeLine("recv %s bytes from %s to %s..", p2,
+                    getTracer().info("recv %s bytes from %s to %s..", p2,
                             Sockets.getId(client.toStream.getSocket(), false),
                             Sockets.getId(client.stream.getSocket(), true));
                     return true;
                 });
-                getTracer().writeLine("socket[%s->%s] closing with %s",
+                getTracer().info("socket[%s->%s] closing with %s",
                         Sockets.getId(client.toStream.getSocket(), false),
                         Sockets.getId(client.toStream.getSocket(), true), recv);
             } catch (SystemException ex) {

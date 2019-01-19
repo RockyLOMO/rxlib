@@ -12,9 +12,7 @@ import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
-import org.rx.common.App;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.NQuery;
+import org.rx.common.*;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
@@ -148,110 +146,99 @@ public class TbMedia implements Media {
     public String findAdv(GoodsInfo goodsInfo) {
         login();
         String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s", HttpCaller.encodeUrl(goodsInfo.getName().trim()), System.currentTimeMillis());
-        log.info("findAdv step1 {}", url);
-        return caller.invokeSelf(caller -> {
-            By waitBy = By.cssSelector(".box-btn-left");
-            caller.navigateUrl(url, waitBy, 4, 1,
-                    p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
-            List<WebElement> eSellers = caller.findElements(By.cssSelector("a[vclick-ignore]")).skip(1).toList();
-            List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
-            log.info("findAdv step2 sellerEles: {}\tmoneyEles: {}", eSellers.size(), eMoneys.size());
-            for (int i = 0; i < eSellers.size(); i++) {
-                WebElement eSeller = eSellers.get(i);
-                String sellerName = goodsInfo.getSellerName().trim();
-                log.info("findAdv step3 {} == {}", sellerName, eSeller.getText());
-                if (!sellerName.equals(eSeller.getText().trim())) {
-                    continue;
-                }
+        try (LogWriter log = new LogWriter(TbMedia.log)) {
+            log.setPrefix(this.getType().name());
+            log.info("findAdv step1 {}", url);
+            return caller.invokeSelf(caller -> {
+                By waitBy = By.cssSelector(".box-btn-left");
+                caller.navigateUrl(url, waitBy, 4,
+                        p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
+                List<WebElement> eGoodUrls = caller.findElements(By.cssSelector(".color-m")).toList();
+                List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
+                log.info("findAdv step2-1 goodUrls: {}\tmoneys: {}", eGoodUrls.size(), eMoneys.size());
+                for (int i = 0; i < eGoodUrls.size(); i++) {
+                    String goodsId = goodsInfo.getId().trim(),
+                            eGoodId = HttpUrl.get(eGoodUrls.get(i).getAttribute("href")).queryParameter("id");
+                    log.info("findAdv step2-2 {} {}=={}", goodsInfo.getSellerName(), goodsId, eGoodId);
+                    if (!goodsId.equals(eGoodId)) {
+                        continue;
+                    }
 
-                int offset = i * 3;
-                goodsInfo.setPrice(eMoneys.get(offset).getText().trim());
-                goodsInfo.setRebateRatio(eMoneys.get(offset + 1).getText().trim());
-                goodsInfo.setRebateAmount(eMoneys.get(offset + 2).getText().trim());
-//                try {
-//                    Thread.sleep(sleepMillis);  //睡不睡都会step4-1 click unknown error
-//                    eBtns.get(i).click();
-//                } catch (WebDriverException e) {
-//                    log.info("findAdv step4-1 click {}", e.getMessage());
-                caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
-//                }
-                log.info("findAdv step4-1 ok");
+                    int offset = i * 3;
+                    goodsInfo.setPrice(eMoneys.get(offset).getText().trim());
+                    goodsInfo.setRebateRatio(eMoneys.get(offset + 1).getText().trim());
+                    goodsInfo.setRebateAmount(eMoneys.get(offset + 2).getText().trim());
 
-                try {
-                    By btn42By = By.cssSelector("button[mx-click=submit]");
-                    WebElement btn42 = caller.findElements(btn42By, btn42By).first();
+                    caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
+                    log.info("findAdv step3-1 ok");
+
                     try {
-                        btn42.click();
-                    } catch (WebDriverException e) {
-                        log.info("findAdv step4-2 click %s", e.getMessage());
-                        caller.executeScript("$('button[mx-click=submit]').click();");
-                    }
-                    log.info("findAdv step4-2 ok");
-
-                    waitBy = By.cssSelector("#clipboard-target");
-                    caller.waitElementLocated(waitBy, 4, 1, p -> {
-                        WebElement code = caller.findElement(By.id("clipboard-target"), false);
-                        if (code != null) {
-                            log.info("code located ok");
-                            return false;
-                        }
-                        WebElement $btn42 = caller.findElement(btn42By, false);
-                        if ($btn42 == null) {
-                            log.info("btn42 reclick fail");
-                            return false;
-                        }
-                        $btn42.click();
-                        return true;
-                    });
-                    goodsInfo.setCouponAmount("0");
-                    Future<String> future = null;
-                    WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
-                    if (code2 != null) {
-                        String couponUrl = code2.getAttribute("value");
-                        if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
-                            log.info("findAdv step4-2-2 couponUrl fail and retry");
-                            couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
-                        }
-                        if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
-                            log.info("findAdv step4-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
-                            return "0";
-                        }
-                        String $couponUrl = couponUrl;
-                        future = TaskFactory.run(() -> {
-                            log.info("findAdv step4-2-2 couponUrl {}", $couponUrl);
-                            return findCouponAmount($couponUrl);
-                        });
-                    }
-
-//                    waiter = By.cssSelector("li[mx-click='tab(4)']");
-//                    WebElement btn43 = caller.findElements(waiter, waiter).first();
-//                    Thread.sleep(sleepMillis);
-//                    btn43.click();
-                    waitBy = By.id("magix_vf_code");
-                    caller.waitElementLocated(waitBy);
-                    caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
-                    log.info("findAdv step4-3 ok");
-
-                    WebElement codeX = caller.findElement(By.cssSelector("#clipboard-target,#clipboard-target-2"));
-                    String code = codeX.getAttribute("value");
-
-                    if (future != null) {
+                        By btn32By = By.cssSelector("button[mx-click=submit]");
                         try {
-                            goodsInfo.setCouponAmount(future.get());
-                        } catch (Exception e) {
-                            log.info("get coupon amount result fail -> {}", e.getMessage());
+                            caller.waitElementLocated(btn32By).first().click();
+                        } catch (WebDriverException e) {
+                            log.info("findAdv step3-2 click {}", e.getMessage());
+                            caller.executeScript("$('button[mx-click=submit]').click();");
                         }
+                        log.info("findAdv step3-2 ok");
+
+                        waitBy = By.cssSelector("#clipboard-target");
+                        caller.waitElementLocated(waitBy, 4, 1, p -> {
+                            WebElement $btn32 = caller.findElement(btn32By, false);
+                            if ($btn32 == null) {
+                                log.info("findAdv btn32 reClick fail");
+                                return false;
+                            }
+                            $btn32.click();
+                            log.info("findAdv btn32 reClick ok");
+                            return true;
+                        });
+                        goodsInfo.setCouponAmount("0");
+                        Future<String> future = null;
+                        WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
+                        if (code2 != null) {
+                            String couponUrl = code2.getAttribute("value");
+                            if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                                log.info("findAdv step3-2-2 couponUrl fail and retry");
+                                couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
+                            }
+                            if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                                log.info("findAdv step3-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
+                                return "0";
+                            }
+                            String $couponUrl = couponUrl;
+                            future = TaskFactory.run(() -> {
+                                log.info("findAdv step3-2-2 couponUrl {}", $couponUrl);
+                                return findCouponAmount($couponUrl);
+                            });
+                        }
+
+                        waitBy = By.id("magix_vf_code");
+                        caller.waitElementLocated(waitBy);
+                        caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
+                        log.info("findAdv step3-3 ok");
+
+                        WebElement codeX = caller.findElement(By.cssSelector("#clipboard-target,#clipboard-target-2"));
+                        String code = codeX.getAttribute("value");
+
+                        if (future != null) {
+                            try {
+                                goodsInfo.setCouponAmount(future.get());
+                            } catch (Exception e) {
+                                log.info("get coupon amount result fail -> {}", e.getMessage());
+                            }
+                        }
+                        log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
+                        return code;
+                    } catch (Exception e) {
+                        log.error("findAdv", e);
+                        keepLogin(false);
                     }
-                    log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
-                    return code;
-                } catch (Exception e) {
-                    log.error("findAdv", e);
-                    keepLogin(false);
                 }
-            }
-            log.info("Goods {} not found", goodsInfo.getName());
-            return null;
-        });
+                log.info("Goods {} not found", goodsInfo.getName());
+                return null;
+            });
+        }
     }
 
     @SneakyThrows
@@ -281,8 +268,7 @@ public class TbMedia implements Media {
                         name = name.substring(eStatus.getText().trim().length() + 1);
                     }
                     goodsInfo.setName(name);
-//                    goodsInfo.setSellerName(caller.findElement(By.cssSelector(".shop-name-link,.tb-shop-name")).getText().trim());
-                    String g_config = caller.executeScript("return [g_config.sellerId,g_config.sellerNick].toString()");
+                    String g_config = caller.executeScript("return [g_config.shopId,g_config.shopName].toString()");
                     String[] strings = g_config.split(",");
                     require(strings, strings.length == 2);
                     goodsInfo.setSellerId(strings[0]);

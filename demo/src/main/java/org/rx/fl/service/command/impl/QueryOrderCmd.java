@@ -1,14 +1,17 @@
 package org.rx.fl.service.command.impl;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.rx.beans.DateTime;
-import org.rx.beans.Tuple;
 import org.rx.common.App;
 import org.rx.common.NQuery;
-import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.repo.OrderResult;
+import org.rx.fl.dto.repo.QueryOrdersParameter;
 import org.rx.fl.service.OrderService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.springframework.context.annotation.Scope;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -18,10 +21,15 @@ import java.util.List;
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
+@Order(7)
 @Component
+@Scope("prototype")
 public class QueryOrderCmd implements Command {
     @Resource
     private OrderService orderService;
+    @Getter
+    @Setter
+    private int step = 1;
 
     @Override
     public boolean peek(String message) {
@@ -35,10 +43,56 @@ public class QueryOrderCmd implements Command {
     public HandleResult<String> handleMessage(String userId, String message) {
         require(userId, message);
 
-        List<OrderResult> orders = orderService.queryOrders(userId, 20);
-        StringBuilder out = new StringBuilder("一一一一订 单 详 细一一一一\n" +
-                "最近20笔订单详细:\n\n");
-        NQuery<NQuery<OrderResult>> nQuery = NQuery.of(orders).groupBy(p -> p.getOrderNo(), p -> p.right).orderByDescending(p -> p.first().getCreateTime());
+        switch (step) {
+            case 1:
+                step = 2;
+                return HandleResult.ok("一一一一查 询 订 单一一一一\n" +
+                        "\n" +
+                        "[1]---------3天内订单\n" +
+                        "[2]---------4-7天内订单\n" +
+                        "[3]---------8-15天内订单\n" +
+                        "\n" +
+                        "    亲，请输入[ ]内的数字序号或订单号查询。");
+            case 2:
+                StringBuilder out = new StringBuilder();
+                QueryOrdersParameter parameter = new QueryOrdersParameter();
+                parameter.setUserId(userId);
+                DateTime now = DateTime.now().getDateComponent();
+                switch (message.trim()) {
+                    case "1":
+                        parameter.setStartTime(now.addDays(-3));
+                        parameter.setEndTime(now);
+                        out.append("一一一一订 单 详 细一一一一\n" +
+                                "最近3天内订单:\n\n");
+                        break;
+                    case "2":
+                        parameter.setStartTime(now.addDays(-7));
+                        parameter.setEndTime(now.addDays(-4));
+                        out.append("一一一一订 单 详 细一一一一\n" +
+                                "最近4-7天内订单:\n\n");
+                        break;
+                    case "3":
+                        parameter.setStartTime(now.addDays(-8));
+                        parameter.setEndTime(now.addDays(-15));
+                        out.append("一一一一订 单 详 细一一一一\n" +
+                                "最近8-15天内订单:\n\n");
+                        break;
+                    default:
+                        String orderNo = message.trim();
+                        parameter.setOrderNo(orderNo);
+                        out.append(String.format("一一一一订 单 详 细一一一一\n" +
+                                "订单号: %s 查询:\n\n", orderNo));
+                        break;
+                }
+                renderOrder(parameter, out);
+                return HandleResult.ok(out.toString());
+        }
+        return HandleResult.fail();
+    }
+
+    private void renderOrder(QueryOrdersParameter parameter, StringBuilder out) {
+        List<OrderResult> orders = orderService.queryOrders(parameter);
+        NQuery<NQuery<OrderResult>> nQuery = NQuery.of(orders).groupBy(p -> p.getOrderNo(), p -> p.right).orderBy(p -> p.first().getCreateTime());
         for (NQuery<OrderResult> orderResults : nQuery) {
             OrderResult order = orderResults.first();
             out.append(String.format("[%s]  %s\n" +
@@ -54,15 +108,5 @@ public class QueryOrderCmd implements Command {
             }
             out.append("\n\n");
         }
-//        for (OrderResult order : orders) {
-//            out.append(String.format("%s  已%s\n" +
-//                            "%s %s\n" +
-//                            "%s\n" +
-//                            "返利金额: %.2f元\n" +
-//                            "\n", new DateTime(order.getCreateTime()).toDateTimeString(), order.getStatus().toDescription(),
-//                    order.getMediaType().toDescription(), App.filterPrivacy(order.getOrderNo()),
-//                    order.getGoodsName(), toMoney(order.getRebateAmount())));
-//        }
-        return HandleResult.of(out.toString());
     }
 }

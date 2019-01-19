@@ -50,10 +50,10 @@ public class WithdrawCmd implements Command {
                         "\n" +
                         "如:姓名小范支付宝15888888888\n";
             }
-            return HandleResult.of(String.format(msg, toMoney(result.getWithdrawAmount()), toMoney(result.getFreezeAmount())), result.isHasAliPay() ? null : bindPaymentCmd);
+            return HandleResult.ok(String.format(msg, toMoney(result.getWithdrawAmount()), toMoney(result.getFreezeAmount())), result.isHasAliPay() ? null : bindPaymentCmd);
         } catch (SystemException e) {
             log.warn("WithdrawCmd", e);
-            return HandleResult.of("一一一一申 请 失 败一一一一\n" +
+            return HandleResult.ok("一一一一申 请 失 败一一一一\n" +
                     "申请提现失败！\n" + e.getFriendlyMessage());
         }
     }

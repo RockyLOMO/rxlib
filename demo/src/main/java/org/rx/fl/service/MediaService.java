@@ -112,22 +112,25 @@ public class MediaService {
 
     @Autowired
     public MediaService(MediaConfig mediaConfig) {
-        TaskFactory.schedule(() -> {
-            for (MediaType media : getMedias()) {
-                try {
-                    DateTime now = DateTime.now();
-                    DateTime start = now.addDays(-3);
-                    List<OrderInfo> orders = findOrders(media, start, now);
-                    if (CollectionUtils.isEmpty(orders)) {
-                        continue;
-                    }
-                    log.info("saveOrders {}", toJsonString(orders));
-                    orderService.saveOrders(orders);
-                } catch (Exception e) {
-                    log.error("saveOrders", e);
+        TaskFactory.schedule(() -> syncOrder(8), 60 * 1000, mediaConfig.getSyncWeeklyOrderSeconds() * 1000, "syncWeeklyOrder");
+        TaskFactory.schedule(() -> syncOrder(-31), mediaConfig.getSyncMonthlyOrderSeconds() * 1000);
+    }
+
+    private void syncOrder(int daysAgo) {
+        for (MediaType media : getMedias()) {
+            try {
+                DateTime now = DateTime.now();
+                DateTime start = now.addDays(-daysAgo);
+                List<OrderInfo> orders = findOrders(media, start, now);
+                if (CollectionUtils.isEmpty(orders)) {
+                    continue;
                 }
+                log.info("syncOrder {}", toJsonString(orders));
+                orderService.saveOrders(orders);
+            } catch (Exception e) {
+                log.error("syncOrder", e);
             }
-        }, 60 * 1000, mediaConfig.getSyncOrderPeriod() * 1000, "syncOrder");
+        }
     }
 
     private <T> T invoke(MediaType type, Function<Media, T> function) {
