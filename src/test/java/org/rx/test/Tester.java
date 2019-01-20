@@ -101,7 +101,7 @@ public class Tester {
     @Test
     @SneakyThrows
     public void testJson() {
-        URL e = App.getClassLoader().getResource("jsonMapper/");
+        URL e = App.getClassLoader().getResource("jScript/");
         System.out.println(e);
         for (Path path : App.fileStream(Paths.get(e.toURI()))) {
             System.out.println(path);

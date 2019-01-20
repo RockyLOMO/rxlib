@@ -71,8 +71,7 @@ public class TbMedia implements Media {
             return Collections.emptyList();
         }
 
-        String fp = "yyyy-MM-dd";
-        String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toString(fp), end.toString(fp));
+        String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toDateString(), end.toDateString());
         log.info("findOrders\n{}", url);
 
         String downloadPath = App.readSetting("app.chrome.downloadPath");

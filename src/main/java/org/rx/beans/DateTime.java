@@ -236,6 +236,10 @@ public final class DateTime extends Date {
         return this;
     }
 
+    public String toDateString() {
+        return toString("yyyy-MM-dd");
+    }
+
     public String toDateTimeString() {
         return toString(Formats.first());
     }

@@ -226,7 +226,7 @@ public class App {
         return NQuery.of(classes).select(p -> (Class) p.load()).toList();
     }
 
-    @ErrorCode(value = "argError", messageKeys = {"type"})
+    @ErrorCode(value = "argError", messageKeys = {"$type"})
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 

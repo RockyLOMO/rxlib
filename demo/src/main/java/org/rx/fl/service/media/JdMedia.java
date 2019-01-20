@@ -1,5 +1,8 @@
 package org.rx.fl.service.media;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +17,10 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
+import org.rx.util.JsonMapper;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
@@ -35,11 +41,50 @@ public class JdMedia implements Media {
 
     public JdMedia() {
         caller = new WebCaller();
+//        caller.setShareCookie(true);
     }
 
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
-        return null;
+        String url = "https://union.jd.com/api/report/queryOrderDetail";
+        String param = String.format("{\"data\":{\"endTime\":\"%s\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"%s\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}", start.toDateString(), end.toDateString());
+
+//        caller.invokeSelf(caller -> {
+//            String script = String.format("$.ajax({\n" +
+//                    "    type: \"post\",\n" +
+//                    "    url: \"%s\",\n" +
+//                    "    data: JSON.stringify(%s),\n" +
+//                    "    async: false,\n" +
+//                    "    contentType: \"application/json; charset=utf-8\",\n" +
+//                    "    dataType: \"json\",\n" +
+//                    "    success: function (data) {\n" +
+//                    "        window._x = data;\n" +
+//                    "    }\n" +
+//                    "});\n" +
+//                    "return window._x;", url, param);
+//            System.out.println(script);
+//            String result = caller.executeScript(script);
+//            System.out.println(result);
+//        }, true);
+
+        HttpCaller caller = new HttpCaller();
+
+
+        String result = caller.post("https://union.jd.com/api/report/queryOrderDetail", param);
+        System.out.println(result);
+//        JSONObject json = JSON.parseObject(result).getJSONObject("data");
+//        if (json == null) {
+        return Collections.emptyList();
+//        }
+//
+//        List<OrderInfo> list = new ArrayList<>();
+//        JSONArray array = json.getJSONArray("orderDetailInfos");
+//        for (int i = 0; i < array.size(); i++) {
+//            JSONObject item = array.getJSONObject(i);
+//            OrderInfo orderInfo = JsonMapper.Default.convert("jdQueryOrderDetail", item, OrderInfo.class);
+//            list.add(orderInfo);
+//        }
+//        return list;
     }
 
     @Override
@@ -64,7 +109,7 @@ public class JdMedia implements Media {
 
 //                goodsInfo.setPrice(ePrices.get(i).getText().trim());
                     String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
-                            "return [$(\".three:eq(" + i + ")\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
+                            "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
                     log.info("findAdv step2 ok");
                     String[] strings = text.split(",");
                     goodsInfo.setPrice(strings[0].trim());
@@ -205,6 +250,7 @@ public class JdMedia implements Media {
                 }
             }
             log.info("login ok...");
+            caller.syncCookie();
             isLogin = true;
         });
     }

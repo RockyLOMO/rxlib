@@ -17,39 +17,40 @@ import java.util.function.Function;
 import static org.rx.common.Contract.toJsonString;
 
 public class MediaTests {
+    static final Function<String, Double> convert = p -> {
+        if (Strings.isNullOrEmpty(p)) {
+            return 0d;
+        }
+        return App.changeType(p.replace("￥", "")
+                .replace("¥", "").replace("元", ""), double.class);
+    };
+
     @SneakyThrows
     @Test
     public void jdMedia() {
         String userMessage = "https://u.jd.com/bdJddY";
         userMessage = "https://u.jd.com/lRB5js";
-        userMessage = "https://item.jd.com/23030257143.html";
+//        userMessage = "https://item.jd.com/23030257143.html";
 
         JdMedia media = new JdMedia();
 
-        String url = media.findLink(userMessage);
-        assert url != null;
-        GoodsInfo goods = media.findGoods(url);
-        assert goods != null;
+//        String url = media.findLink(userMessage);
+//        assert url != null;
+//        GoodsInfo goods = media.findGoods(url);
+//        assert goods != null;
 
         media.login();
-        String code = media.findAdv(goods);
-        System.out.println(code);
-
-//        Function<String, Double> convert = p -> {
-//            if (Strings.isNullOrEmpty(p)) {
-//                return 0d;
-//            }
-//            return App.changeType(p.replace("￥", ""), double.class);
-//        };
+//        String code = media.findAdv(goods);
+//
 //        Double payAmount = convert.apply(goods.getPrice())
 //                - convert.apply(goods.getRebateAmount())
 //                - convert.apply(goods.getCouponAmount());
 //        String content = String.format("约反%s 优惠券%s 付费价￥%.2f；复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
 //                goods.getRebateAmount(), goods.getCouponAmount(), payAmount, code);
 //        System.out.println(content);
-//
-//        List<OrderInfo> orders = media.findOrders(DateTime.now().addDays(-7), DateTime.now());
-//        System.out.println(toJsonString(orders));
+
+        List<OrderInfo> orders = media.findOrders(DateTime.now().addDays(-17), DateTime.now());
+        System.out.println(toJsonString(orders));
 
         System.in.read();
     }
@@ -71,13 +72,6 @@ public class MediaTests {
         media.login();
         String code = media.findAdv(goods);
 
-        Function<String, Double> convert = p -> {
-            if (Strings.isNullOrEmpty(p)) {
-                return 0d;
-            }
-            return App.changeType(p.replace("￥", "")
-                    .replace("¥", ""), double.class);
-        };
         Double payAmount = convert.apply(goods.getPrice())
                 - convert.apply(goods.getRebateAmount())
                 - convert.apply(goods.getCouponAmount());
@@ -88,7 +82,6 @@ public class MediaTests {
         List<OrderInfo> orders = media.findOrders(DateTime.now().addDays(-7), DateTime.now());
         System.out.println(toJsonString(orders));
 
-//        Thread.sleep(2000);
         System.in.read();
     }
 }

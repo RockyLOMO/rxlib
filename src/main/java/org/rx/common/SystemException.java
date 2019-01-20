@@ -52,19 +52,19 @@ public class SystemException extends NestedRuntimeException {
         if (cause == null) {
             return null;
         }
-        if (SystemException.class.isInstance(cause)) {
+        if (cause instanceof SystemException) {
             return (SystemException) cause;
         }
         return new SystemException(cause);
     }
 
-    private String                            friendlyMessage;
-    private Map<String, Object>               data;
+    private String friendlyMessage;
+    private Map<String, Object> data;
     /**
      * Gets the method that throws the current cause.
      */
     private BiTuple<Class, Method, ErrorCode> targetSite;
-    private Enum                              errorCode;
+    private Enum errorCode;
 
     @Override
     public String getMessage() {

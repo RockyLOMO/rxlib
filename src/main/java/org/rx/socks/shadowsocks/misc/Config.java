@@ -31,10 +31,9 @@
 
 package org.rx.socks.shadowsocks.misc;
 
+import com.alibaba.fastjson.JSONObject;
 import org.rx.socks.shadowsocks.network.proxy.IProxy;
 import org.rx.socks.shadowsocks.ss.AesCrypt;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
 
 /**
  * Data class for configuration to bring up server
@@ -105,8 +104,7 @@ public class Config {
         _proxyType = IProxy.TYPE.AUTO;
         if (value.toLowerCase().equals(IProxy.TYPE.HTTP.toString().toLowerCase())) {
             _proxyType = IProxy.TYPE.HTTP;
-        }
-        else if (value.toLowerCase().equals(IProxy.TYPE.SOCKS5.toString().toLowerCase())) {
+        } else if (value.toLowerCase().equals(IProxy.TYPE.SOCKS5.toString().toLowerCase())) {
             _proxyType = IProxy.TYPE.SOCKS5;
         }
     }
@@ -114,6 +112,7 @@ public class Config {
     public void setProxyType(IProxy.TYPE value) {
         _proxyType = value;
     }
+
     public IProxy.TYPE getProxyType() {
         return _proxyType;
     }
@@ -148,14 +147,14 @@ public class Config {
             jsonStr = "{}";
         }
 
-        JSONObject jObj = (JSONObject)JSONValue.parse(jsonStr);
-        _ipAddr = (String)jObj.getOrDefault("remoteIpAddress", "");
-        _port = ((Number)jObj.getOrDefault("remotePort", 1080)).intValue();
-        _localIpAddr = (String)jObj.getOrDefault("localIpAddress", "127.0.0.1");
-        _localPort = ((Number)jObj.getOrDefault("localPort", 1080)).intValue();
-        _method = (String)jObj.getOrDefault("method", AesCrypt.CIPHER_AES_256_CFB);
-        _password = (String)jObj.getOrDefault("password", "");
-        _logLevel = (String)jObj.getOrDefault("logLevel", "INFO");
+        JSONObject jObj = JSONObject.parseObject(jsonStr);
+        _ipAddr = (String) jObj.getOrDefault("remoteIpAddress", "");
+        _port = ((Number) jObj.getOrDefault("remotePort", 1080)).intValue();
+        _localIpAddr = (String) jObj.getOrDefault("localIpAddress", "127.0.0.1");
+        _localPort = ((Number) jObj.getOrDefault("localPort", 1080)).intValue();
+        _method = (String) jObj.getOrDefault("method", AesCrypt.CIPHER_AES_256_CFB);
+        _password = (String) jObj.getOrDefault("password", "");
+        _logLevel = (String) jObj.getOrDefault("logLevel", "INFO");
         setProxyType((String) jObj.getOrDefault("proxyType", IProxy.TYPE.SOCKS5.toString().toLowerCase()));
         setLogLevel(_logLevel);
     }

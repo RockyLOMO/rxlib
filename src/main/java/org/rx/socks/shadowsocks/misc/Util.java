@@ -31,8 +31,8 @@
 
 package org.rx.socks.shadowsocks.misc;
 
+import com.alibaba.fastjson.JSONObject;
 import org.rx.socks.shadowsocks.network.proxy.Socks5Proxy;
-import org.json.simple.JSONObject;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -46,7 +46,7 @@ import java.security.SecureRandom;
 public class Util {
     public static String dumpBytes(byte[] a) {
         StringBuilder sb = new StringBuilder(a.length * 2);
-        for(byte b: a)
+        for (byte b : a)
             sb.append(String.format("%x", b & 0xff));
         return sb.toString();
     }
@@ -79,32 +79,26 @@ public class Util {
                     super.write(LINE_SEP);
                     indentLevel++;
                     writeIndentation();
-                }
-                else if (ch == ']' || ch == '}') {
+                } else if (ch == ']' || ch == '}') {
                     super.write(LINE_SEP);
                     indentLevel--;
                     writeIndentation();
                     super.write(c);
-                }
-                else if (ch == ':') {
+                } else if (ch == ':') {
                     super.write(c);
                     super.write(" ");
-                }
-                else if (ch == ',') {
+                } else if (ch == ',') {
                     super.write(c);
                     super.write(LINE_SEP);
                     writeIndentation();
-                }
-                else {
+                } else {
                     super.write(c);
                 }
 
             }
 
-            private void writeIndentation()
-            {
-                for (int i = 0; i < indentLevel; i++)
-                {
+            private void writeIndentation() {
+                for (int i = 0; i < indentLevel; i++) {
                     super.write(indent);
                 }
             }
@@ -113,7 +107,7 @@ public class Util {
         try {
             jObj.writeJSONString(writer);
             retValue = writer.toString();
-        } catch (IOException e) {
+        } catch (Exception e) {
             // something wrong with writer, use the original method
             retValue = jObj.toJSONString();
         }
@@ -178,12 +172,12 @@ public class Util {
         byte[] respData = new byte[host.length() + 4];
 
         respData[0] = Socks5Proxy.ATYP_DOMAIN_NAME;
-        respData[1] = (byte)host.length();
+        respData[1] = (byte) host.length();
         System.arraycopy(host.getBytes(), 0, respData, 2, host.length());
-        respData[host.length() + 2] = (byte)(port >> 8);
-        respData[host.length() + 3] = (byte)(port & 0xFF);
+        respData[host.length() + 2] = (byte) (port >> 8);
+        respData[host.length() + 3] = (byte) (port & 0xFF);
 
-        return  respData;
+        return respData;
     }
 
     public static boolean saveFile(String fn, String content) {
@@ -211,7 +205,7 @@ public class Util {
     }
 
     private static short byteToUnsignedByte(byte b) {
-        return (short)(b & 0xff);
+        return (short) (b & 0xff);
     }
 
     private static int getPort(byte b, byte b1) {

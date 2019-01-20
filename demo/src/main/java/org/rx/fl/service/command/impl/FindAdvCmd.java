@@ -1,7 +1,6 @@
 package org.rx.fl.service.command.impl;
 
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import org.rx.common.App;
@@ -21,6 +20,7 @@ import javax.annotation.Resource;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;

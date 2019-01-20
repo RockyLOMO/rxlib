@@ -8,18 +8,46 @@
 <script src="https://code.jquery.com/jquery-2.2.4.js"></script>
 <script>
     function f() {
-        var users = [];
-        $(".chat_item").attr("rx", 0);
-        $(".web_wechat_reddot_middle").each(function (i, o) {
-            var me = $(o), chatItem = me.parent().parent();
-            chatItem.attr("rx", 1);
-            users.push({
-                openId: chatItem.attr("data-username"),
-                nickname: chatItem.find(".nickname_text").text(),
-                unread: me.text()
-            });
-        });
-        return users.toString();
+        if (!window._submitForm) {
+            window._submitForm = function (url, data, isJsonType) {
+                var form = $("#_xf");
+                if (form.length == 0) {
+                    $("<iframe id='_xi' name='_xi' style='display:none'></iframe>").appendTo("body");
+                    form = $("<form id='_xf' method='post' target='_xi' style='display: none'></form>");
+                }
+                form.attr('action', url);
+                if (isJsonType) {
+                    form.attr("enctype", "text/plain");
+                } else {
+                    form.attr("enctype", "multipart/form-data");
+                }
+                for (var m in data) {
+                    console.log(m, "=", data[m]);
+                    var val = isJsonType ? JSON.stringify(data[m]) : data[m];
+                    form.append("<input type='hidden' name='" + m + "' value='" + val + "' />");
+                }
+                form.appendTo("body");
+                form.submit();
+                return $($("#_xi")[0].contentDocument).html();
+            }
+        }
+
+        _submitForm("https://union.jd.com/api/report/queryOrderDetail",
+            JSON.parse("{\"data\":{\"endTime\":\"2019-01-20\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"2019-01-12\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}"), true);
+
+
+        // $.ajax({
+        //     type: "post",
+        //     url: "",
+        //     data: "",
+        //     async: false,
+        //     contentType: "application/json; charset=utf-8",
+        //     dataType: "json",
+        //     success: function (data) {
+        //         window._x = data;
+        //     }
+        // });
+        // return window._x;
     }
 </script>
 </body>

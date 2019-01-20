@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -107,12 +108,13 @@ public class MediaService {
     private OrderService orderService;
 
     public List<MediaType> getMedias() {
-        return NQuery.of(holder.keySet()).toList();
+        return Arrays.asList(MediaType.Jd);
+//        return NQuery.of(holder.keySet()).toList();
     }
 
     @Autowired
     public MediaService(MediaConfig mediaConfig) {
-        TaskFactory.schedule(() -> syncOrder(8), 60 * 1000, mediaConfig.getSyncWeeklyOrderSeconds() * 1000, "syncWeeklyOrder");
+        TaskFactory.schedule(() -> syncOrder(8), 2 * 1000, mediaConfig.getSyncWeeklyOrderSeconds() * 1000, "syncWeeklyOrder");
         TaskFactory.schedule(() -> syncOrder(-31), mediaConfig.getSyncMonthlyOrderSeconds() * 1000);
     }
 

@@ -18,6 +18,7 @@ import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.remote.service.DriverService;
+import org.openqa.selenium.remote.session.CapabilityTransform;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
@@ -84,7 +85,8 @@ public final class WebCaller extends Disposable {
                 default:
                     driverService = new ChromeDriverService.Builder()
                             .usingAnyFreePort()
-                            .withSilent(true).build();
+//                            .withVerbose(true)
+                            .withSilent(false).build();
                     break;
             }
             return new PooledItem(driverService);
@@ -143,6 +145,7 @@ public final class WebCaller extends Disposable {
                     }
 
                     driver = new ChromeDriver((ChromeDriverService) pooledItem.driverService, opt);
+//                    driver = new ChromeDriver(opt);
                 }
                 break;
             }
@@ -341,19 +344,19 @@ public final class WebCaller extends Disposable {
     public void syncCookie() {
         checkNotClosed();
 
-        if (driver instanceof InternetExplorerDriver) {
+//        if (driver instanceof InternetExplorerDriver) {
             String localHost = App.readSetting("app.ie.getCookieUrl");
             invokeSelf(caller -> {
                 By rx = By.id("rx");
                 caller.navigateUrl(localHost, rx);
                 String rawCookie = caller.findElement(rx).getAttribute("value");
                 log.info("getIECookie: {}", rawCookie);
-                HttpCaller.saveRawCookies(localHost, rawCookie);
+//                HttpCaller.saveRawCookies(localHost, rawCookie);
             });
-        } else {
-            WebDriver.Options manage = driver.manage();
-            HttpCaller.CookieContainer.saveFromResponse(getCurrentUrl(), manage.getCookies());
-        }
+//        } else {
+//            WebDriver.Options manage = driver.manage();
+//            HttpCaller.CookieContainer.saveFromResponse(getCurrentUrl(), manage.getCookies());
+//        }
     }
 
     public NQuery<WebElement> waitElementLocated(By locator) {

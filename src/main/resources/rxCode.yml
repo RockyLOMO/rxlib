@@ -33,6 +33,9 @@ org.rx.io.IOStream:
 org.rx.io.MemoryStream:
   getBuffer: The MemoryStream instance was not created with a publicly visible buffer
 
+org.rx.util.JsonMapper:
+  getScript[keyError]: Config key $key not found
+
 
 org.rx.test.Tester:
   testCode: Method Error Code value=$x
