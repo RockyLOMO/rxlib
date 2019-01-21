@@ -39,7 +39,7 @@ public class MediaTests {
 //        GoodsInfo goods = media.findGoods(url);
 //        assert goods != null;
 
-        media.login();
+//        media.login();
 //        String code = media.findAdv(goods);
 //
 //        Double payAmount = convert.apply(goods.getPrice())

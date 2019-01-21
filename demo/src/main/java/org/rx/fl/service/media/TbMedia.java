@@ -67,6 +67,7 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
+        login();
         if (!shareCookie) {
             return Collections.emptyList();
         }
@@ -339,7 +340,8 @@ public class TbMedia implements Media {
 
             log.info("login ok...");
             if (shareCookie) {
-                caller.syncCookie();
+                String localHost = App.readSetting("app.media.tbCookieUrl");
+                caller.syncCookie(localHost);
             }
             isLogin = true;
         });

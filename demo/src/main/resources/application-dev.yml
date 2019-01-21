@@ -7,14 +7,16 @@ app:
     initSize: 0
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
-    getCookieUrl: http://pubrx.alimama.com:8080/media/coupon.html?rx=1  #需要配置hosts
     initSize: 0
   media:
     coreSize: 0
     maxUserCount: 1000
-    syncOrderPeriod: 70
+    syncWeeklyOrderSeconds: 80
+    syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
-    tbKeepPeriod: 80
     cacheSeconds: 180
+    tbKeepPeriod: 80
+    tbCookieUrl: http://xpub.alimama.com:8080/media/index.html?rx=1  #需要配置hosts
+    jdCookieUrl: http://xunion.jd.com:8080/media/index.html?rx=1

@@ -108,8 +108,7 @@ public class MediaService {
     private OrderService orderService;
 
     public List<MediaType> getMedias() {
-        return Arrays.asList(MediaType.Jd);
-//        return NQuery.of(holder.keySet()).toList();
+        return NQuery.of(holder.keySet()).toList();
     }
 
     @Autowired

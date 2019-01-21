@@ -1,7 +1,10 @@
 package org.rx.fl.web;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.DateTime;
 import org.rx.fl.dto.media.FindAdvResult;
+import org.rx.fl.dto.media.MediaType;
+import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.service.MediaService;
 import org.rx.fl.util.HttpCaller;
 import org.springframework.stereotype.Controller;
@@ -12,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 @Controller
 @RequestMapping(value = "media", method = {RequestMethod.POST, RequestMethod.GET})
@@ -28,8 +32,15 @@ public class MediaController {
         return mediaService.findAdv(content);
     }
 
-    @RequestMapping("coupon.html")
-    public String coupon(String rx, Model model) {
+    @RequestMapping("findOrders")
+    @ResponseBody
+    public List<OrderInfo> findOrders(MediaType type, int days) {
+        DateTime now = DateTime.now();
+        return mediaService.findOrders(type, now.addDays(-days), now);
+    }
+
+    @RequestMapping("index.html")
+    public String index(String rx, Model model) {
         model.addAttribute("name", "rx");
         String rawCookie = request.getHeader("Cookie");
         model.addAttribute("rx", rawCookie);
@@ -38,6 +49,6 @@ public class MediaController {
             HttpCaller.saveRawCookies(reqUrl, rawCookie);
             log.info("{} save cookie: {}", reqUrl, rawCookie);
         }
-        return "coupon";
+        return "index";
     }
 }
