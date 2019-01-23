@@ -33,6 +33,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.rx.common.Contract.eq;
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.HttpCaller.IE_UserAgent;
 
@@ -58,8 +59,6 @@ public final class WebCaller extends Disposable {
     private static volatile int pathCounter;
 
     static {
-        clearProcesses();
-
         System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
         System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
         driverPool = new ConcurrentHashMap<>();
@@ -69,6 +68,14 @@ public final class WebCaller extends Disposable {
                 init(driverType, init);
             }
         }
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                clearProcesses();
+            } catch (Exception ex) {
+                log.error("addShutdownHook", ex);
+            }
+        }));
     }
 
     private static RemoteWebDriver create(DriverType driverType, boolean fromPool) {
@@ -294,12 +301,12 @@ public final class WebCaller extends Disposable {
         navigateUrl(url, null);
     }
 
-    public void navigateUrl(String url, By locator) {
-        navigateUrl(url, locator, 4, null);
+    public NQuery<WebElement> navigateUrl(String url, String locatorSelector) {
+        return navigateUrl(url, locatorSelector, 4, null);
     }
 
     @SneakyThrows
-    public void navigateUrl(String url, By locator, int retryCount, Predicate<By> onRetry) {
+    public NQuery<WebElement> navigateUrl(String url, String locatorSelector, int retryCount, Predicate<By> onRetry) {
         checkNotClosed();
         require(url);
 
@@ -331,12 +338,16 @@ public final class WebCaller extends Disposable {
             }
         }
 
-        if (locator != null) {
-            waitElementLocated(locator, retryCount, 1, onRetry);
+        NQuery<WebElement> elements;
+        if (locatorSelector == null) {
+            elements = NQuery.of();
+        } else {
+            elements = waitElementLocated(locatorSelector, retryCount, 1, onRetry);
         }
         if (isShareCookie) {
             syncCookie();
         }
+        return elements;
     }
 
     public void syncCookie() {
@@ -346,9 +357,9 @@ public final class WebCaller extends Disposable {
             String localHost = String.format((String) App.readSetting("app.ie.cookieUrl"),
                     HttpUrl.get(getCurrentUrl()).topPrivateDomain());
             invokeSelf(caller -> {
-                By rx = By.id("rx");
-                caller.navigateUrl(localHost, rx);
-                String rawCookie = caller.findElement(rx).getAttribute("value");
+                String selector = "#rx";
+                caller.navigateUrl(localHost, selector);
+                String rawCookie = caller.attrElement(selector, "value");
                 log.info("getIECookie: {}", rawCookie);
             });
         } else {
@@ -357,12 +368,13 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    public NQuery<WebElement> waitElementLocated(By locator) {
-        return waitElementLocated(locator, 4, 1, null);
+    public NQuery<WebElement> waitElementLocated(String selector) {
+        return waitElementLocated(selector, 4, 1, null);
     }
 
-    public NQuery<WebElement> waitElementLocated(By locator, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
-        require(locator);
+    public NQuery<WebElement> waitElementLocated(String selector, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
+        require(selector);
+        By locator = By.cssSelector(selector);
 
         SystemException lastEx = null;
         WebDriverWait wait = null;
@@ -406,7 +418,10 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public <T> void waitClickComplete(By clickBy, int reClickCount, Predicate<T> checkState, T state) {
+    public <T> void waitClickComplete(String selector, int reClickCount, Predicate<T> checkState, T state) {
+        require(selector);
+        By clickBy = By.cssSelector(selector);
+
         int count = 0;
         do {
             if (count == 0) {
@@ -439,20 +454,6 @@ public final class WebCaller extends Disposable {
             count++;
         }
         while (count < retryCount);
-    }
-
-    public NQuery<String> getAttributeValues(By by, String attrName) {
-        checkNotClosed();
-        require(by, attrName);
-
-        return findElements(by).select(p -> p.getAttribute(attrName));
-    }
-
-    public NQuery<WebElement> findElementsByAttribute(By by, String attrName, String attrVal) {
-        checkNotClosed();
-        require(by, attrName);
-
-        return findElements(by).where(p -> eq(attrVal, p.getAttribute(attrName)));
     }
 
     public WebElement findElement(By by) {
@@ -491,6 +492,55 @@ public final class WebCaller extends Disposable {
         }
     }
 
+    public String attrElement(String selector, String... attrArgs) {
+        return isNull(attrElements(selector, attrArgs).firstOrDefault(), "");
+    }
+
+    public NQuery<String> attrElements(String selector, String... attrArgs) {
+        checkNotClosed();
+        require(selector, attrArgs);
+        require(attrArgs, attrArgs.length > 0);
+
+        String attrName = attrArgs[0], attrVal = attrArgs.length > 1 ? attrArgs[1] : null;
+        NQuery<WebElement> elements = findElements(By.cssSelector(selector));
+        if (attrVal != null) {
+            for (WebElement elm : elements) {
+                executeScript("arguments[0].setAttribute(arguments[1], arguments[2]);", elm, attrName, attrVal);
+            }
+            return NQuery.of();
+        }
+        return elements.select(p -> p.getAttribute(attrName));
+    }
+
+    public void clickElement(String selector) {
+        clickElement(selector, false);
+    }
+
+    public void clickElement(String selector, boolean waitElementLocated) {
+        checkNotClosed();
+        require(selector);
+
+        WebElement element;
+        if (waitElementLocated) {
+            element = waitElementLocated(selector).first();
+        } else {
+            element = findElement(By.cssSelector(selector));
+        }
+        try {
+            element.click();
+        } catch (WebDriverException e) {
+            log.info("Script click element {}", selector);
+            executeScript(String.format("$('%s').click();", selector));
+        }
+    }
+
+    public <T> T executeScript(String script, Object... args) {
+        checkNotClosed();
+        require(script);
+
+        return (T) driver.executeScript(script, args);
+    }
+
     public String openTab() {
         checkNotClosed();
 
@@ -519,12 +569,5 @@ public final class WebCaller extends Disposable {
             current = NQuery.of(driver.getWindowHandles()).first();
         }
         switchTab(current);
-    }
-
-    public <T> T executeScript(String script, Object... args) {
-        checkNotClosed();
-        require(script);
-
-        return (T) driver.executeScript(script, args);
     }
 }

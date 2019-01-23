@@ -19,11 +19,14 @@ import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.JsonMapper;
+import org.rx.util.function.Func;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.rx.common.Contract.toJsonString;
@@ -49,59 +52,25 @@ public class JdMedia implements Media {
         login();
         String url = "http://xunion.jd.com/api/report/queryOrderDetail";
         caller.invokeSelf(caller -> {
-caller.navigateUrl(url);
-            ".has-gutter th";
+            String btnSelector = ".find-order-btn";
+            caller.navigateUrl(url, btnSelector);
+
+            caller.clickElement("input[placeholder=开始日期]");
+            Func<Integer> getLength = () -> App.changeType(caller.executeScript("return $('.available').length"), int.class);
+            int availableLength = getLength.invoke();
+            int days = App.changeType(end.subtract(start).getTotalDays(), int.class);
+            if (availableLength < days) {
+                caller.clickElement(".el-icon-arrow-left");
+                availableLength = getLength.invoke();
+            }
+            int maxOffset = availableLength - 1;
+            caller.executeScript(String.format("$('.available:eq(%s)').click();$('.available:eq(%s)').click();", maxOffset - days, maxOffset));
+
+            caller.clickElement(btnSelector);
+
+            NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
         }, true);
-        String param = String.format("{\"data\":{\"endTime\":\"%s\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"%s\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}", start.toDateString(), end.toDateString());
-
-//        caller.invokeSelf(caller -> {
-//            String script = String.format("$.ajax({\n" +
-//                    "    type: \"post\",\n" +
-//                    "    url: \"%s\",\n" +
-//                    "    data: JSON.stringify(%s),\n" +
-//                    "    async: false,\n" +
-//                    "    contentType: \"application/json; charset=utf-8\",\n" +
-//                    "    dataType: \"json\",\n" +
-//                    "    success: function (data) {\n" +
-//                    "        window._x = data;\n" +
-//                    "    }\n" +
-//                    "});\n" +
-//                    "return window._x;", url, param);
-//            System.out.println(script);
-//            String result = caller.executeScript(script);
-//            System.out.println(result);
-//        }, true);
-
-        HttpCaller caller = new HttpCaller();
-
-        String rawCookie = "__jdv=209449046|direct|-|none|-|1547533053480; __jdu=15475330534791632634422; 3AB9D23F7A4B3C9B=MKWBZ3GMH6HVTHDORPUB4GOFXUCVZGFZKQ3VGCLKJSBCZKPE7QJURV3VJQE7NTYD5MFUTKKTOW2LVM5GFQW3JSEWSA; TrackID=1ttlj0-zhO8tvgfOESdNMvWuFlEgzgBnjjXJ34enXidDnMuPV-PueWLY4QYY311ZG_yg4usaEnncb36xYMgytkg; pinId=MNQEl-BugMlGID1tlqy4kA; unick=%E9%97%B2%E7%9D%80%E7%BD%91%E8%B4%AD; ceshi3.com=201; _tp=rQSihfQT%2FVwcShkp%2FHvuMg%3D%3D; logining=1; _pst=youngcoder; __jda=95931165.15475330534791632634422.1547533053.1547543704.1548065470.4; __jdc=95931165; __jdb=95931165.10.15475330534791632634422|4.1548065470";
-        log.info("findOrders load cookie: {}", rawCookie);
-        caller.setHeaders(HttpCaller.parseOriginalHeader("Connection: keep-alive\n" +
-                "Pragma: no-cache\n" +
-                "Cache-Control: no-cache\n" +
-                "Accept: application/json, text/plain, */*\n" +
-                "Origin: https://union.jd.com\n" +
-                "User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36\n" +
-                "Content-Type: application/json;charset=UTF-8\n" +
-                "Referer: https://union.jd.com/order\n" +
-                "Accept-Encoding: gzip, deflate, br\n" +
-                "Accept-Language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7\n" +
-                "Cookie: shshshfpa=71d42fb4-d6e1-8245-ddf3-6cba2b268ad2-1533007071; sid=90d40d6dfe42cd29b2dd1273b646b0a0; shshshfpb=1125e480b4a0d42aea46184f431a3f60b03bdcaabc75b03185ae9895c0; ipLoc-djd=12-988-53563-0.137838736; sidebarStatus=1; ssid=\"1iwP9LhkTyuVK8lArcQzxw==\"; login=true; V_youngcoder_overview=true; V_youngcoder_promotion=true; V_youngcoder_webMng=true; V_youngcoder_socialPromotion=true; MMsgIdyoungcoder=19401; unick=%E9%97%B2%E7%9D%80%E7%BD%91%E8%B4%AD; ceshi3.com=201; _tp=rQSihfQT%2FVwcShkp%2FHvuMg%3D%3D; _pst=youngcoder; mt_xid=V2_52007VwMWUlxZUlMaQB9aDWMAElNYX1ZcGUwebABuBBRaWV1WRkxKS14ZYgFHBUFQAl1IVRBUAmQHFwBYXgVaGnkaXQVvHxNSQVhWSx9AEl0GbAAVYl9oUWocSB9UAGIzElZc; ipLocation=%u6c5f%u82cf; V_jd_759f867040f60_socialPromotion=true; pinId=MNQEl-BugMlGID1tlqy4kA; pin=youngcoder; unpl=V2_ZzNtbRJVFkchXRRUeE5UAmJRFQpLURcddg5BUHgdVANlAxZZclRCFX0UR1RnGVsUZwMZX0NcQhBFCEdkexhdBGYKGlRKVXMVcQ8oVRUZVQBXMxFdclZzFXEIR1V7EFkMYQUaWUFXQhByDEBSfh5sNWcLFm1ygOq7o4TggMKzi7flMxZbQVFHFHQJRWR6KV01LG0TEEJTQxR0CE9Rch9aDWMAElxHUEcTcw1BZHkZXQFhMxE%3d; __jdv=122270672%7Ckong%7Ct_1000027277_101745%7Czssc%7C06297e7f-9a66-4321-95ee-e1f1cc889f0c-p_1999-pr_1524-at_101745%7C1547609432093; PCSYCityID=2; __jdu=15100184877952104657746; user-key=3fee60c2-bdf7-47c6-af2b-1c890f506a57; TrackID=1TMxTSkdRiBbsUP9PbOCFEP56jFaUD_mdteqMnb5T0RqTBANfULJK_oyh3rzlD2ROaH_R4vIJzbz3llhayxC7-tUcVUzCEcfLyEG8zw_KKIY; MNoticeIdyoungcoder=195; cn=9; _gcl_au=1.1.241906024.1548058992; shshshfp=d4bb58ff8a6120b10afb10355f98d50d; 3AB9D23F7A4B3C9B=7DE5L4U3UDBSA73JGSN2QSD5QD5OMTEPMLI5RICC7TJFD5QJGDXEA5XQRU2XB5YCMCLNSIFODR7RNYJNYE7ZO4EHHM; __jdc=209449046; thor=95815463ABE92DC8E3947CE59B225B4BCB3D6DFCC5B5FD47848598BD5F745A7FD5A93A6BA2AC84ED4825992720EE5749434E200091E64DF71EE2C0581C446F9FD4BD77351FD9977CAE3AE149E3B56AC2B987B718EF16B49EFF5EB5E6D92453CAD8DA6DF6963E7AC2271951951AD90F3E295120B49E28D92D285991122EED3204C28CCEA7B1C44DF027549B550B56450E; __jda=209449046.15100184877952104657746.1510018488.1548058992.1548066939.333; __jdb=209449046.5.15100184877952104657746|333.1548066939"));
-        String result = caller.post(url, param);
-        System.out.println(result);
-//        JSONObject json = JSON.parseObject(result).getJSONObject("data");
-//        if (json == null) {
-        return Collections.emptyList();
-//        }
-//
-//        List<OrderInfo> list = new ArrayList<>();
-//        JSONArray array = json.getJSONArray("orderDetailInfos");
-//        for (int i = 0; i < array.size(); i++) {
-//            JSONObject item = array.getJSONObject(i);
-//            OrderInfo orderInfo = JsonMapper.Default.convert("jdQueryOrderDetail", item, OrderInfo.class);
-//            list.add(orderInfo);
-//        }
-//        return list;
+        return null;
     }
 
     @Override
@@ -112,9 +81,7 @@ caller.navigateUrl(url);
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                By idBy = By.cssSelector(".imgbox");
-                caller.navigateUrl(url, idBy);
-                List<WebElement> eIds = caller.findElements(idBy).toList();
+                List<WebElement> eIds = caller.navigateUrl(url, ".imgbox").toList();
                 for (int i = 0; i < eIds.size(); i++) {
                     WebElement eId = eIds.get(i);
                     String goodsUrl = eId.getAttribute("href");
@@ -140,13 +107,12 @@ caller.navigateUrl(url);
                         if (k == 2 || k == 4 || k == 5) {
                             caller.executeScript(String.format("$(\"%s\").click();", x));
                         } else {
-                            caller.waitElementLocated(By.cssSelector(x)).first().click();
+                            caller.clickElement(x, true);
                         }
                         log.info("findAdv step3 combo({}) click..", x);
                     }
 
-                    By waiter = By.cssSelector("#pane-0 input");
-                    NQuery<WebElement> codes = caller.waitElementLocated(waiter);
+                    NQuery<WebElement> codes = caller.waitElementLocated("#pane-0 input");
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     if (codes.count() == 2) {
@@ -177,9 +143,7 @@ caller.navigateUrl(url);
     @Override
     public String findCouponAmount(String url) {
         return getOrStore(url, k -> caller.invokeNew(caller -> {
-            By first = By.cssSelector(".price span");
-            caller.navigateUrl(url, first);
-            return caller.findElement(first).getText().trim();
+            return caller.navigateUrl(url, ".price span").first().getText().trim();
         }));
     }
 
@@ -189,9 +153,7 @@ caller.navigateUrl(url);
         return getOrStore(url, k -> caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
-                By hybridSelector = By.cssSelector(".sku-name,.shop_intro h2");
-                caller.navigateUrl(url, hybridSelector);
-                WebElement hybridElement = caller.findElement(hybridSelector);
+                WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2").first();
                 goodsInfo.setName(hybridElement.getText().trim());
                 WebElement eSeller = caller.findElement(By.cssSelector(".name:last-child"), false);
                 if (eSeller != null) {
@@ -252,14 +214,14 @@ caller.navigateUrl(url);
 
         caller.invokeSelf(caller -> {
             String advUrl = "https://union.jd.com/#/order", loginUrl = "https://union.jd.com/#/login";
-            caller.navigateUrl(advUrl, By.cssSelector("body"));
+            caller.navigateUrl(advUrl, "body");
             Predicate<Object> doLogin = s -> !caller.getCurrentUrl().equals(loginUrl);
             caller.wait(2, 500, doLogin, null);
             if (doLogin.test(null)) {
                 try {
                     caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
                             "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
-                    caller.waitClickComplete(By.cssSelector("#paipaiLoginSubmit"), 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
+                    caller.waitClickComplete("#paipaiLoginSubmit", 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
                 } catch (Exception e) {
                     log.info("login error {}...", e.getMessage());
                 }

@@ -8,7 +8,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
 import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
@@ -150,8 +149,7 @@ public class TbMedia implements Media {
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                By waitBy = By.cssSelector(".box-btn-left");
-                caller.navigateUrl(url, waitBy, 4,
+                caller.navigateUrl(url, ".box-btn-left", 4,
                         p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
                 List<WebElement> eGoodUrls = caller.findElements(By.cssSelector(".color-m")).toList();
                 List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
@@ -173,18 +171,11 @@ public class TbMedia implements Media {
                     log.info("findAdv step3-1 ok");
 
                     try {
-                        By btn32By = By.cssSelector("button[mx-click=submit]");
-                        try {
-                            caller.waitElementLocated(btn32By).first().click();
-                        } catch (WebDriverException e) {
-                            log.info("findAdv step3-2 click {}", e.getMessage());
-                            caller.executeScript("$('button[mx-click=submit]').click();");
-                        }
+                        caller.clickElement("button[mx-click=submit]", true);
                         log.info("findAdv step3-2 ok");
 
-                        waitBy = By.cssSelector("#clipboard-target");
-                        caller.waitElementLocated(waitBy, 4, 1, p -> {
-                            WebElement $btn32 = caller.findElement(btn32By, false);
+                        caller.waitElementLocated("#clipboard-target", 4, 1, p -> {
+                            WebElement $btn32 = caller.findElement(By.cssSelector("button[mx-click=submit]"), false);
                             if ($btn32 == null) {
                                 log.info("findAdv btn32 reClick fail");
                                 return false;
@@ -213,8 +204,7 @@ public class TbMedia implements Media {
                             });
                         }
 
-                        waitBy = By.id("magix_vf_code");
-                        caller.waitElementLocated(waitBy);
+                        caller.waitElementLocated("#magix_vf_code");
                         caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
                         log.info("findAdv step3-3 ok");
 
@@ -245,9 +235,7 @@ public class TbMedia implements Media {
     @Override
     public String findCouponAmount(String url) {
         return getOrStore(url, k -> caller.invokeNew(caller -> {
-            By first = By.cssSelector(".coupons-price");
-            caller.navigateUrl(url, first);
-            return caller.findElement(first).getText().trim();
+            return caller.navigateUrl(url, ".coupons-price").first().getText().trim();
         }));
     }
 
@@ -257,9 +245,7 @@ public class TbMedia implements Media {
         return getOrStore(url, k -> caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
-                By hybridSelector = By.cssSelector(".tb-main-title,input[name=title]");
-                caller.navigateUrl(url, hybridSelector);
-                WebElement hybridElement = caller.findElement(hybridSelector);
+                WebElement hybridElement = caller.navigateUrl(url, ".tb-main-title,input[name=title]").first();
                 String currentUrl = caller.getCurrentUrl();
                 if (currentUrl.contains(".taobao.com/")) {
                     String name = hybridElement.getText().trim();
@@ -275,8 +261,8 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerName(strings[1]);
                 } else {
                     goodsInfo.setName(hybridElement.getAttribute("value"));
-                    goodsInfo.setSellerId(caller.getAttributeValues(By.name("seller_id"), "value").firstOrDefault().trim());
-                    goodsInfo.setSellerName(caller.getAttributeValues(By.name("seller_nickname"), "value").firstOrDefault().trim());
+                    goodsInfo.setSellerId(caller.attrElement("input[name=seller_id]", "value").trim());
+                    goodsInfo.setSellerName(caller.attrElement("input[name=seller_nickname]", "value").trim());
                 }
                 goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
                 goodsInfo.setId(HttpUrl.get(currentUrl).queryParameter("id"));
@@ -323,9 +309,9 @@ public class TbMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            By locator = By.id("J_SubmitQuick");
-            caller.navigateUrl(loginUrl, locator);
-            caller.waitClickComplete(locator, 6, s -> caller.getCurrentUrl().startsWith("https://login.taobao.com"), null);
+            String selector = "#J_SubmitQuick";
+            caller.navigateUrl(loginUrl, selector);
+            caller.waitClickComplete(selector, 6, s -> caller.getCurrentUrl().startsWith("https://login.taobao.com"), null);
 
 //                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
 //                String url;
@@ -340,8 +326,7 @@ public class TbMedia implements Media {
 
             log.info("login ok...");
             if (shareCookie) {
-                String localHost = App.readSetting("app.media.tbCookieUrl");
-                caller.syncCookie(localHost);
+                caller.syncCookie();
             }
             isLogin = true;
         });
