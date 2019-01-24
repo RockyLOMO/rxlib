@@ -1,13 +1,10 @@
 package org.rx.fl.service.media;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
-import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
@@ -18,15 +15,10 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.util.JsonMapper;
 import org.rx.util.function.Func;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.rx.common.Contract.toJsonString;
@@ -55,18 +47,18 @@ public class JdMedia implements Media {
             String btnSelector = ".find-order-btn";
             caller.navigateUrl(url, btnSelector);
 
-            caller.clickElement("input[placeholder=开始日期]");
+            caller.elementClick("input[placeholder=开始日期]");
             Func<Integer> getLength = () -> App.changeType(caller.executeScript("return $('.available').length"), int.class);
             int availableLength = getLength.invoke();
             int days = App.changeType(end.subtract(start).getTotalDays(), int.class);
             if (availableLength < days) {
-                caller.clickElement(".el-icon-arrow-left");
+                caller.elementClick(".el-icon-arrow-left");
                 availableLength = getLength.invoke();
             }
             int maxOffset = availableLength - 1;
             caller.executeScript(String.format("$('.available:eq(%s)').click();$('.available:eq(%s)').click();", maxOffset - days, maxOffset));
 
-            caller.clickElement(btnSelector);
+            caller.elementClick(btnSelector);
 
             NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
         }, true);
@@ -107,7 +99,7 @@ public class JdMedia implements Media {
                         if (k == 2 || k == 4 || k == 5) {
                             caller.executeScript(String.format("$(\"%s\").click();", x));
                         } else {
-                            caller.clickElement(x, true);
+                            caller.elementClick(x, true);
                         }
                         log.info("findAdv step3 combo({}) click..", x);
                     }
@@ -155,15 +147,15 @@ public class JdMedia implements Media {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2").first();
                 goodsInfo.setName(hybridElement.getText().trim());
-                WebElement eSeller = caller.findElement(By.cssSelector(".name:last-child"), false);
-                if (eSeller != null) {
-                    goodsInfo.setSellerName(eSeller.getText().trim());
+                String eSeller = caller.elementText(".name:last-child");
+                if (!Strings.isNullOrEmpty(eSeller)) {
+                    goodsInfo.setSellerName(eSeller.trim());
                 }
                 String currentUrl = caller.getCurrentUrl();
                 if (currentUrl.contains("re.jd.com/")) {
-                    goodsInfo.setImageUrl(caller.findElement(By.cssSelector(".focus_img")).getAttribute("src"));
+                    goodsInfo.setImageUrl(caller.elementAttr(".focus_img", "src"));
                 } else {
-                    goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#spec-img")).getAttribute("src"));
+                    goodsInfo.setImageUrl(caller.elementAttr("#spec-img", "src"));
                 }
                 goodsInfo.setId(getGoodsId(currentUrl));
                 log.info("FindGoods {}\n -> {} -> {}", url, currentUrl, toJsonString(goodsInfo));

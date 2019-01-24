@@ -12,7 +12,6 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.ie.InternetExplorerDriver;
-import org.openqa.selenium.ie.InternetExplorerDriverService;
 import org.openqa.selenium.ie.InternetExplorerOptions;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
@@ -32,7 +31,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.common.Contract.eq;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.HttpCaller.IE_UserAgent;
@@ -359,7 +357,7 @@ public final class WebCaller extends Disposable {
             invokeSelf(caller -> {
                 String selector = "#rx";
                 caller.navigateUrl(localHost, selector);
-                String rawCookie = caller.attrElement(selector, "value");
+                String rawCookie = caller.elementAttr(selector, "value");
                 log.info("getIECookie: {}", rawCookie);
             });
         } else {
@@ -456,11 +454,11 @@ public final class WebCaller extends Disposable {
         while (count < retryCount);
     }
 
-    public WebElement findElement(By by) {
+    private WebElement findElement(By by) {
         return findElement(by, true);
     }
 
-    public WebElement findElement(By by, boolean throwOnEmpty) {
+    private WebElement findElement(By by, boolean throwOnEmpty) {
         checkNotClosed();
         require(by);
 
@@ -474,11 +472,7 @@ public final class WebCaller extends Disposable {
         return elements.first();
     }
 
-    public NQuery<WebElement> findElements(By by) {
-        return findElements(by, true);
-    }
-
-    public NQuery<WebElement> findElements(By by, boolean throwOnEmpty) {
+    private NQuery<WebElement> findElements(By by, boolean throwOnEmpty) {
         checkNotClosed();
         require(by);
 
@@ -492,17 +486,40 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    public String attrElement(String selector, String... attrArgs) {
-        return isNull(attrElements(selector, attrArgs).firstOrDefault(), "");
+    public boolean hasElement(String selector) {
+        return findElements(By.cssSelector(selector), false).any();
     }
 
-    public NQuery<String> attrElements(String selector, String... attrArgs) {
+    public String elementText(String selector) {
+        return isNull(elementsText(selector).firstOrDefault(), "");
+    }
+
+    public NQuery<String> elementsText(String selector) {
+        checkNotClosed();
+        require(selector);
+
+        return findElements(By.cssSelector(selector), false).select(p -> p.getText());
+    }
+
+    public String elementVal(String selector) {
+        return isNull(elementsVal(selector).firstOrDefault(), "");
+    }
+
+    public NQuery<String> elementsVal(String selector) {
+        return elementsAttr(selector, "value");
+    }
+
+    public String elementAttr(String selector, String... attrArgs) {
+        return isNull(elementsAttr(selector, attrArgs).firstOrDefault(), "");
+    }
+
+    public NQuery<String> elementsAttr(String selector, String... attrArgs) {
         checkNotClosed();
         require(selector, attrArgs);
         require(attrArgs, attrArgs.length > 0);
 
         String attrName = attrArgs[0], attrVal = attrArgs.length > 1 ? attrArgs[1] : null;
-        NQuery<WebElement> elements = findElements(By.cssSelector(selector));
+        NQuery<WebElement> elements = findElements(By.cssSelector(selector), false);
         if (attrVal != null) {
             for (WebElement elm : elements) {
                 executeScript("arguments[0].setAttribute(arguments[1], arguments[2]);", elm, attrName, attrVal);
@@ -512,11 +529,11 @@ public final class WebCaller extends Disposable {
         return elements.select(p -> p.getAttribute(attrName));
     }
 
-    public void clickElement(String selector) {
-        clickElement(selector, false);
+    public void elementClick(String selector) {
+        elementClick(selector, false);
     }
 
-    public void clickElement(String selector, boolean waitElementLocated) {
+    public void elementClick(String selector, boolean waitElementLocated) {
         checkNotClosed();
         require(selector);
 

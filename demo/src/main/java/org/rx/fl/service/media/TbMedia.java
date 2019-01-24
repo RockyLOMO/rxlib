@@ -7,7 +7,6 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
-import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
@@ -149,47 +148,45 @@ public class TbMedia implements Media {
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                caller.navigateUrl(url, ".box-btn-left", 4,
-                        p -> caller.findElement(By.cssSelector(".bg-search-empty")) == null);
-                List<WebElement> eGoodUrls = caller.findElements(By.cssSelector(".color-m")).toList();
-                List<WebElement> eMoneys = caller.findElements(By.cssSelector(".number-16")).toList();
+                caller.navigateUrl(url, ".box-btn-left", 4, p -> !caller.hasElement(".bg-search-empty"));
+                List<String> eGoodUrls = caller.elementsAttr(".color-m", "href").toList();
+                List<String> eMoneys = caller.elementsText(".number-16").toList();
                 log.info("findAdv step2-1 goodUrls: {}\tmoneys: {}", eGoodUrls.size(), eMoneys.size());
                 for (int i = 0; i < eGoodUrls.size(); i++) {
                     String goodsId = goodsInfo.getId().trim(),
-                            eGoodId = HttpUrl.get(eGoodUrls.get(i).getAttribute("href")).queryParameter("id");
+                            eGoodId = HttpUrl.get(eGoodUrls.get(i)).queryParameter("id");
                     log.info("findAdv step2-2 {} {}=={}", goodsInfo.getSellerName(), goodsId, eGoodId);
                     if (!goodsId.equals(eGoodId)) {
                         continue;
                     }
 
                     int offset = i * 3;
-                    goodsInfo.setPrice(eMoneys.get(offset).getText().trim());
-                    goodsInfo.setRebateRatio(eMoneys.get(offset + 1).getText().trim());
-                    goodsInfo.setRebateAmount(eMoneys.get(offset + 2).getText().trim());
+                    goodsInfo.setPrice(eMoneys.get(offset).trim());
+                    goodsInfo.setRebateRatio(eMoneys.get(offset + 1).trim());
+                    goodsInfo.setRebateAmount(eMoneys.get(offset + 2).trim());
 
                     caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
                     log.info("findAdv step3-1 ok");
 
                     try {
-                        caller.clickElement("button[mx-click=submit]", true);
+                        caller.elementClick("button[mx-click=submit]", true);
                         log.info("findAdv step3-2 ok");
 
                         caller.waitElementLocated("#clipboard-target", 4, 1, p -> {
-                            WebElement $btn32 = caller.findElement(By.cssSelector("button[mx-click=submit]"), false);
-                            if ($btn32 == null) {
+                            try {
+                                caller.elementClick("button[mx-click=submit]");
+                                log.info("findAdv btn32 reClick ok");
+                                return true;
+                            } catch (Exception e) {
                                 log.info("findAdv btn32 reClick fail");
                                 return false;
                             }
-                            $btn32.click();
-                            log.info("findAdv btn32 reClick ok");
-                            return true;
                         });
                         goodsInfo.setCouponAmount("0");
                         Future<String> future = null;
-                        WebElement code2 = caller.findElement(By.cssSelector("#clipboard-target-2"), false);
-                        if (code2 != null) {
-                            String couponUrl = code2.getAttribute("value");
-                            if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                        String couponUrl = caller.elementVal("#clipboard-target-2");
+                        if (!Strings.isNullOrEmpty(couponUrl)) {
+                            if (!couponUrl.startsWith("http")) {
                                 log.info("findAdv step3-2-2 couponUrl fail and retry");
                                 couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
                             }
@@ -208,8 +205,7 @@ public class TbMedia implements Media {
                         caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
                         log.info("findAdv step3-3 ok");
 
-                        WebElement codeX = caller.findElement(By.cssSelector("#clipboard-target,#clipboard-target-2"));
-                        String code = codeX.getAttribute("value");
+                        String code = caller.elementVal("#clipboard-target,#clipboard-target-2");
 
                         if (future != null) {
                             try {
@@ -249,9 +245,9 @@ public class TbMedia implements Media {
                 String currentUrl = caller.getCurrentUrl();
                 if (currentUrl.contains(".taobao.com/")) {
                     String name = hybridElement.getText().trim();
-                    WebElement eStatus = caller.findElement(By.cssSelector(".tb-stuff-status"), false);
-                    if (eStatus != null) {
-                        name = name.substring(eStatus.getText().trim().length() + 1);
+                    String statusString = caller.elementText(".tb-stuff-status");
+                    if (!Strings.isNullOrEmpty(statusString)) {
+                        name = name.substring(statusString.trim().length() + 1);
                     }
                     goodsInfo.setName(name);
                     String g_config = caller.executeScript("return [g_config.shopId,g_config.shopName].toString()");
@@ -261,10 +257,10 @@ public class TbMedia implements Media {
                     goodsInfo.setSellerName(strings[1]);
                 } else {
                     goodsInfo.setName(hybridElement.getAttribute("value"));
-                    goodsInfo.setSellerId(caller.attrElement("input[name=seller_id]", "value").trim());
-                    goodsInfo.setSellerName(caller.attrElement("input[name=seller_nickname]", "value").trim());
+                    goodsInfo.setSellerId(caller.elementVal("input[name=seller_id]").trim());
+                    goodsInfo.setSellerName(caller.elementVal("input[name=seller_nickname]").trim());
                 }
-                goodsInfo.setImageUrl(caller.findElement(By.cssSelector("#J_ImgBooth")).getAttribute("src"));
+                goodsInfo.setImageUrl(caller.elementAttr("#J_ImgBooth", "src"));
                 goodsInfo.setId(HttpUrl.get(currentUrl).queryParameter("id"));
                 log.info("FindGoods {}\n -> {} -> {}", url, currentUrl, toJsonString(goodsInfo));
                 return goodsInfo;
