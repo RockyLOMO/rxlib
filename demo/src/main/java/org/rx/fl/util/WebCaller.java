@@ -454,10 +454,6 @@ public final class WebCaller extends Disposable {
         while (count < retryCount);
     }
 
-    private WebElement findElement(By by) {
-        return findElement(by, true);
-    }
-
     private WebElement findElement(By by, boolean throwOnEmpty) {
         checkNotClosed();
         require(by);
@@ -541,7 +537,7 @@ public final class WebCaller extends Disposable {
         if (waitElementLocated) {
             element = waitElementLocated(selector).first();
         } else {
-            element = findElement(By.cssSelector(selector));
+            element = findElement(By.cssSelector(selector), true);
         }
         try {
             element.click();

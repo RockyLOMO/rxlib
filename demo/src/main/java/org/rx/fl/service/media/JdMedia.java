@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
+import org.json.JSONArray;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
@@ -59,7 +60,30 @@ public class JdMedia implements Media {
             caller.executeScript(String.format("$('.available:eq(%s)').click();$('.available:eq(%s)').click();", maxOffset - days, maxOffset));
 
             caller.elementClick(btnSelector);
+            Thread.sleep(1000);
 
+            String json = caller.executeScript("        var thArr = [];\n" +
+                    "        $(\".has-gutter th\").each(function (i, o) {\n" +
+                    "            thArr.push($(o).text());\n" +
+                    "        });\n" +
+                    "        thArr.length--;\n" +
+                    "        var trArr = [];\n" +
+                    "        trArr.push(thArr);\n" +
+                    "        $(\".el-table__body tr\").each(function (i, o) {\n" +
+                    "            var tdArr = [];\n" +
+                    "            $(o).find(\"td\").each(function () {\n" +
+                    "                tdArr.push($(arguments[1]).text());\n" +
+                    "            });\n" +
+                    "            trArr.push(tdArr);\n" +
+                    "        });\n" +
+                    "        return JSON.stringify(trArr);");
+            JSONArray jArray = JSONArray.parse(json);
+            List cols = jArray.getJSONArray(0).toList();
+            for (int i = 1; i < jArray.length(); i++) {
+                jArray.getJSONArray(i);
+            }
+            "无效-拆单";
+            List<String> cols = caller.elementsText(".has-gutter th").toList();
             NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
         }, true);
         return null;

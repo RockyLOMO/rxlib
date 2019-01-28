@@ -48,6 +48,22 @@
         //     }
         // });
         // return window._x;
+
+        var thArr = [];
+        $(".has-gutter th").each(function (i, o) {
+            thArr.push($(o).text());
+        });
+        thArr.length--;
+        var trArr = [];
+        trArr.push(thArr);
+        $(".el-table__body tr").each(function (i, o) {
+            var tdArr = [];
+            $(o).find("td").each(function () {
+                tdArr.push($(arguments[1]).text());
+            });
+            trArr.push(tdArr);
+        });
+        return JSON.stringify(trArr);
     }
 </script>
 </body>
