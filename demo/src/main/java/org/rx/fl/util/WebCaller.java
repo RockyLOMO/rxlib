@@ -21,6 +21,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
 import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -442,13 +443,18 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public <T> void wait(int retryCount, long sleepMillis, Predicate<T> onRetry, T state) {
+    public void wait(int retryCount, long sleepMillis, Func<Boolean> onRetry, boolean sleepFirst) {
         int count = 0;
         do {
-            if (onRetry != null && !onRetry.test(state)) {
+            if (sleepFirst) {
+                Thread.sleep(sleepMillis);
+            }
+            if (onRetry != null && onRetry.invoke()) {
                 break;
             }
-            Thread.sleep(sleepMillis);
+            if (!sleepFirst) {
+                Thread.sleep(sleepMillis);
+            }
             count++;
         }
         while (count < retryCount);

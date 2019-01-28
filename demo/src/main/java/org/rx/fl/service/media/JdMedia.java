@@ -1,12 +1,14 @@
 package org.rx.fl.service.media;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
-import org.json.JSONArray;
 import org.openqa.selenium.WebElement;
+import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.LogWriter;
@@ -18,10 +20,11 @@ import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.function.Func;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
-import java.util.function.Predicate;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -44,7 +47,7 @@ public class JdMedia implements Media {
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
         login();
         String url = "http://xunion.jd.com/api/report/queryOrderDetail";
-        caller.invokeSelf(caller -> {
+        return caller.invokeSelf(caller -> {
             String btnSelector = ".find-order-btn";
             caller.navigateUrl(url, btnSelector);
 
@@ -60,33 +63,59 @@ public class JdMedia implements Media {
             caller.executeScript(String.format("$('.available:eq(%s)').click();$('.available:eq(%s)').click();", maxOffset - days, maxOffset));
 
             caller.elementClick(btnSelector);
-            Thread.sleep(1000);
 
-            String json = caller.executeScript("        var thArr = [];\n" +
-                    "        $(\".has-gutter th\").each(function (i, o) {\n" +
-                    "            thArr.push($(o).text());\n" +
-                    "        });\n" +
-                    "        thArr.length--;\n" +
-                    "        var trArr = [];\n" +
-                    "        trArr.push(thArr);\n" +
-                    "        $(\".el-table__body tr\").each(function (i, o) {\n" +
-                    "            var tdArr = [];\n" +
-                    "            $(o).find(\"td\").each(function () {\n" +
-                    "                tdArr.push($(arguments[1]).text());\n" +
-                    "            });\n" +
-                    "            trArr.push(tdArr);\n" +
-                    "        });\n" +
-                    "        return JSON.stringify(trArr);");
-            JSONArray jArray = JSONArray.parse(json);
-            List cols = jArray.getJSONArray(0).toList();
-            for (int i = 1; i < jArray.length(); i++) {
-                jArray.getJSONArray(i);
+            List<OrderInfo> result = new ArrayList<>();
+            $<JSONArray> out = $();
+            caller.wait(4, 1000, () -> {
+                String json = caller.executeScript("        var thArr = [];\n" +
+                        "        $(\".has-gutter th\").each(function (i, o) {\n" +
+                        "            thArr.push($(o).text());\n" +
+                        "        });\n" +
+                        "        thArr.length--;\n" +
+                        "        var trArr = [];\n" +
+                        "        trArr.push(thArr);\n" +
+                        "        $(\".el-table__body tr\").each(function (i, o) {\n" +
+                        "            var tdArr = [];\n" +
+                        "            $(o).find(\"td\").each(function () {\n" +
+                        "                tdArr.push($(arguments[1]).text());\n" +
+                        "            });\n" +
+                        "            trArr.push(tdArr);\n" +
+                        "        });\n" +
+                        "        return JSON.stringify(trArr);");
+                JSONArray jArray = JSON.parseArray(json);
+                out.$ = jArray;
+                return !jArray.isEmpty();
+            }, true);
+            if (out.$ == null) {
+                return result;
             }
-            "无效-拆单";
-            List<String> cols = caller.elementsText(".has-gutter th").toList();
-            NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
+
+            final String mapStr = "orderNo#订单号,status#订单状态,createTime#下单时间,商品付款金额佣金比例实际分成比例预估佣金完成时间实际金额实际佣金结算时间下单平台平台";
+            return result;
+//            String json = caller.executeScript("        var thArr = [];\n" +
+//                    "        $(\".has-gutter th\").each(function (i, o) {\n" +
+//                    "            thArr.push($(o).text());\n" +
+//                    "        });\n" +
+//                    "        thArr.length--;\n" +
+//                    "        var trArr = [];\n" +
+//                    "        trArr.push(thArr);\n" +
+//                    "        $(\".el-table__body tr\").each(function (i, o) {\n" +
+//                    "            var tdArr = [];\n" +
+//                    "            $(o).find(\"td\").each(function () {\n" +
+//                    "                tdArr.push($(arguments[1]).text());\n" +
+//                    "            });\n" +
+//                    "            trArr.push(tdArr);\n" +
+//                    "        });\n" +
+//                    "        return JSON.stringify(trArr);");
+//            JSONArray jArray = JSONArray.parse(json);
+//            List cols = jArray.getJSONArray(0).toList();
+//            for (int i = 1; i < jArray.length(); i++) {
+//                jArray.getJSONArray(i);
+//            }
+//            "无效-拆单";
+//            List<String> cols = caller.elementsText(".has-gutter th").toList();
+//            NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
         }, true);
-        return null;
     }
 
     @Override
@@ -231,9 +260,9 @@ public class JdMedia implements Media {
         caller.invokeSelf(caller -> {
             String advUrl = "https://union.jd.com/#/order", loginUrl = "https://union.jd.com/#/login";
             caller.navigateUrl(advUrl, "body");
-            Predicate<Object> doLogin = s -> !caller.getCurrentUrl().equals(loginUrl);
-            caller.wait(2, 500, doLogin, null);
-            if (doLogin.test(null)) {
+            Func<Boolean> doLogin = () -> caller.getCurrentUrl().equals(loginUrl);
+            caller.wait(2, 500, doLogin, false);
+            if (doLogin.invoke()) {
                 try {
                     caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
                             "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
