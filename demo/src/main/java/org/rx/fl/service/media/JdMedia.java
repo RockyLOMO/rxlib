@@ -31,7 +31,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class JdMedia implements Media {
-    private static final String loginUrl = "https://union.jd.com/#/login";
+    private static final String loginUrl = "https://union.jd.com/login";
     private static final String[] keepLoginUrl = {"https://union.jd.com/order",
             "https://union.jd.com/report",
             "https://union.jd.com/accountingCenter",
@@ -219,9 +219,9 @@ public class JdMedia implements Media {
         return getOrStore(url, k -> caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
-                WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2").first();
+                WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2,#itemName").first();
                 goodsInfo.setName(hybridElement.getText().trim());
-                String eSeller = caller.elementText(".name:last");
+                String eSeller = caller.elementText(".name:last,._n");
                 if (!Strings.isNullOrEmpty(eSeller)) {
                     goodsInfo.setSellerName(eSeller.trim());
                 }
@@ -229,7 +229,7 @@ public class JdMedia implements Media {
                 if (currentUrl.contains("re.jd.com/")) {
                     goodsInfo.setImageUrl(caller.elementAttr(".focus_img", "src"));
                 } else {
-                    goodsInfo.setImageUrl(caller.elementAttr("#spec-img", "src"));
+                    goodsInfo.setImageUrl(caller.elementAttr("#spec-img,#firstImg", "src"));
                 }
                 goodsInfo.setId(getGoodsId(currentUrl));
                 log.info("FindGoods {}\n -> {} -> {}", url, currentUrl, toJsonString(goodsInfo));
@@ -279,8 +279,7 @@ public class JdMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            String advUrl = "https://union.jd.com/#/order";
-            caller.navigateUrl(advUrl, "body");
+            caller.navigateUrl(keepLoginUrl[0], "body");
             caller.wait(4, () -> caller.getCurrentUrl().equals(loginUrl), false);
             if (caller.getCurrentUrl().equals(loginUrl)) {
                 try {

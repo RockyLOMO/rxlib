@@ -13,8 +13,7 @@ public final class Logger {
     static final org.slf4j.Logger log1, log2;
 
     static {
-        System.setProperty("BootstrapPath", App.getBootstrapPath());
-        System.out.println("BootstrapPath: " + App.getBootstrapPath());
+        System.setProperty("bootstrapPath", App.getBootstrapPath());
         log1 = LoggerFactory.getLogger("infoLogger");
         log2 = LoggerFactory.getLogger("errorLogger");
     }

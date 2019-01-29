@@ -39,13 +39,11 @@ public class DailyCheckInCmd implements Command {
             long bonus = userService.checkIn(userId, "0.0.0.0");
             UserDto user = userService.queryUser(userId);
             return HandleResult.ok(String.format("一一一一签 到 成 功一一一一\n" +
-                    "\n" +
                     "本次签到获得: %.2f元\n" +
                     "        累计签到: %s次\n" +
                     "        累计奖励: %.2f元\n" +
                     "    可提现金额: %.2f元\n" +
-                    "----------------------------------------\n" +
-                    "\n" +
+                    "--------------------------------------\n" +
                     "荭苞来啦\n" +
                     "吱富寳搜索：%s\n" +
                     "最高99", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), MediaConfig.AliPayCode));

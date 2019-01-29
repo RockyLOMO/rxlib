@@ -8,7 +8,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
-//@SpringBootApplication(scanBasePackages = PackName)
 @SpringBootApplication
 @ImportResource("classpath:applicationContext.xml")
 @EnableTransactionManagement

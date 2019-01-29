@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" debug="false">
-    <property name="log.dir" value="./"/>
+    <property name="log.dir" value="/_rx/app_rebate"/>
     <logger name="org.rx.fl.repository" level="debug"/>
     <logger name="com.ibatis" level="debug"/>
     <logger name="com.ibatis.common.jdbc.SimpleDataSource" level="debug"/>

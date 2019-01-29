@@ -28,6 +28,7 @@ public class BindPaymentCmd implements Command {
     @Getter
     @Setter
     private int step = 1;
+    private int errorCount = 0;
 
     @Override
     public boolean peek(String message) {
@@ -59,7 +60,7 @@ public class BindPaymentCmd implements Command {
                             "亲，回复格式错误，请回复如下格式绑定:\n" +
                             "姓名***支付宝*********\n" +
                             "\n" +
-                            "如:姓名小范支付宝15888888888", this);
+                            "如:姓名小范支付宝15888888888", ++errorCount > 2 ? null : this);
                 }
                 try {
                     String name = message.substring(s1 + k1.length(), s2).trim(), account = message.substring(s2 + k2.length()).trim();

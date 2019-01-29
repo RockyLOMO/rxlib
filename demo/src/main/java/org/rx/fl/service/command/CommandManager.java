@@ -10,6 +10,7 @@ import org.rx.util.SpringContextUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -26,7 +27,7 @@ public class CommandManager {
 
     @Autowired
     public CommandManager(MediaConfig mediaConfig) {
-        allCmds = NQuery.of(App.getClassesFromPackage("org.rx.fl.service.command.impl"))
+        allCmds = NQuery.of(getClassesFromPackage())
                 .where(p -> p.getAnnotation(Order.class) != null)
                 .orderBy(p -> {
                     Order order = (Order) p.getAnnotation(Order.class);
@@ -34,6 +35,16 @@ public class CommandManager {
                 }).toList();
         log.info("load cmd {}", String.join(",", NQuery.of(allCmds).select(p -> p.getSimpleName())));
         userCmd = new LRUCache<>(mediaConfig.getMaxUserCount(), mediaConfig.getCommandTimeout(), 10 * 1000, p -> log.info("Command {} timeout", p));
+    }
+
+    private List<Class> getClassesFromPackage() {
+        String packName = "org.rx.fl.service.command.impl";
+        List<Class> types = App.getClassesFromPackage(packName);
+        if (CollectionUtils.isEmpty(types)) {
+            String commandList = App.readSetting("app.commandList");
+            types = NQuery.of(commandList.split(",")).select(p -> (Class) App.loadClass(String.format("%s.%s", packName, p), false)).toList();
+        }
+        return types;
     }
 
     public String handleMessage(String userId, String message) {

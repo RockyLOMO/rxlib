@@ -305,9 +305,12 @@ public class TbMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            String selector = "#J_SubmitQuick";
-            caller.navigateUrl(loginUrl, selector);
-            caller.waitClickComplete(selector, 6, () -> caller.getCurrentUrl().startsWith("https://login.taobao.com"));
+            caller.navigateUrl(keepLoginUrl[0], "body");
+            caller.wait(4, () -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
+            if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
+                String selector = "#J_SubmitQuick";
+                caller.navigateUrl(loginUrl, selector);
+                caller.waitClickComplete(selector, 6, () -> caller.getCurrentUrl().startsWith("https://login.taobao.com"));
 
 //                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
 //                String url;
@@ -319,7 +322,7 @@ public class TbMedia implements Media {
 //                if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com/myunion.htm")) {
 //                    login();
 //                };
-
+            }
             log.info("login ok...");
             if (shareCookie) {
                 caller.syncCookie();

@@ -99,7 +99,7 @@ public final class WxBot implements Bot {
 
         String toMsg = "";
         //转换XML
-        EventMessage eventMessage = XMLConverUtil.convertToObject(EventMessage.class, in);
+        EventMessage eventMessage = XMLConverUtil.convertToObject(EventMessage.class, in, StandardCharsets.UTF_8);
         String key = App.cacheKey(eventMessage.getFromUserName() + "__"
                 + eventMessage.getToUserName() + "__"
                 + eventMessage.getMsgId() + "__"

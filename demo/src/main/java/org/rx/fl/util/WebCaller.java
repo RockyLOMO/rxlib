@@ -59,6 +59,8 @@ public final class WebCaller extends Disposable {
     private static volatile int pathCounter;
 
     static {
+        clearProcesses();
+
         System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
         System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
         driverPool = new ConcurrentHashMap<>();
@@ -187,10 +189,10 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public static void clearProcesses() {
+    private static void clearProcesses() {
         String[] pNames = {"chromedriver.exe", "IEDriverServer.exe", "iexplore.exe"};
         App.execShell(null, NQuery.of(pNames).select(p -> "taskkill /F /IM " + p).toArray(String.class));
-        Thread.sleep(4000);
+        Thread.sleep(5000);
     }
 
     @Getter

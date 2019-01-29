@@ -47,12 +47,11 @@ public class QueryOrderCmd implements Command {
             case 1:
                 step = 2;
                 return HandleResult.ok("一一一一查 询 订 单一一一一\n" +
-                        "\n" +
                         "[1]---------3天内订单\n" +
                         "[2]---------4-7天内订单\n" +
                         "[3]---------8-15天内订单\n" +
                         "\n" +
-                        "    亲，请输入[ ]内的数字序号或订单号查询。");
+                        "    亲，请输入[ ]内的数字序号或订单号查询。", this);
             case 2:
                 StringBuilder out = new StringBuilder();
                 QueryOrdersParameter parameter = new QueryOrdersParameter();

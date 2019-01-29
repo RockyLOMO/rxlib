@@ -71,16 +71,18 @@ public class FindAdvCmd implements Command {
             return App.changeType(p.replace("￥", "")
                     .replace("¥", "").replace("元", ""), double.class);
         };
-        Double payAmount = convert.apply(goods.getPrice())
-                - convert.apply(goods.getRebateAmount())
-                - convert.apply(goods.getCouponAmount());
+        Double rebateAmount = convert.apply(goods.getRebateAmount()),
+                couponAmount = convert.apply(goods.getCouponAmount()),
+                payAmount = convert.apply(goods.getPrice())
+                        - rebateAmount
+                        - couponAmount;
         StringBuilder reply = new StringBuilder(String.format("一一一一系 统 消 息一一一一\n" +
                         "【%s】%s\n" +
-                        "——————————————\n" +
-                        "约反    ￥%s\n" +
-                        "优惠券  ￥%s\n" +
+                        "--------------------------------------\n" +
+                        "约反      ￥%.2f\n" +
+                        "优惠券  ￥%.2f\n" +
                         "付费价  ￥%.2f\n", advResult.getMediaType().toDescription(), goods.getName(),
-                goods.getRebateAmount(), goods.getCouponAmount(), payAmount));
+                rebateAmount, couponAmount, payAmount));
         switch (advResult.getMediaType()) {
             case Jd:
                 reply.append(String.format("抢购链接: %s", advResult.getShareCode()));
