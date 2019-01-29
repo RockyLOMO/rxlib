@@ -30,11 +30,11 @@ public final class JsonMapper extends Disposable {
         }
     }
 
-    public static final JsonMapper Default = new JsonMapper("jScript/");
-    private static final String scriptFunc = "(function(){var $={},$val=JSON.parse(_x); %s; return JSON.stringify($);})()";
+    public static final JsonMapper Default    = new JsonMapper("jScript/");
+    private static final String    scriptFunc = "(function(){var $={},$val=JSON.parse(_x); %s; return JSON.stringify($);})()";
 
-    private Map<String, Object> settings;
-    private Lazy<V8> runtime;
+    private Map<String, Object>    settings;
+    private Lazy<V8>               runtime;
 
     public JsonMapper(String configPath) {
         settings = refreshSettings(configPath);
@@ -43,7 +43,7 @@ public final class JsonMapper extends Disposable {
             V8Object v8Console = new V8Object(v8);
             v8.add("console", v8Console);
             V8Console console = new V8Console();
-            Class[] argTypes = new Class[]{String.class};
+            Class[] argTypes = new Class[] { String.class };
             v8Console.registerJavaMethod(console, "log", "log", argTypes);
             v8Console.registerJavaMethod(console, "error", "error", argTypes);
             v8.executeScript("console.log('V8 start..');");
@@ -59,23 +59,23 @@ public final class JsonMapper extends Disposable {
         }
     }
 
-    public <F, T> T convert(F from, Class<T> toType) {
-        require(from, toType);
+    public <F, T> T convertTo(Class<T> toType, F from) {
+        require(toType, from);
 
-        return convert(from.getClass().getName(), from, toType);
+        return convertTo(toType, from.getClass().getName(), from);
     }
 
-    public <T> T convert(String configKey, Object jValue, Class<T> toType) {
-        require(configKey, toType);
+    public <T> T convertTo(Class<T> toType, String configKey, Object sourceValue) {
+        require(toType, configKey);
 
         String script = getScript(toType, configKey);
         V8 v8 = runtime.getValue();
-        v8.add("_x", toJsonString(jValue));
+        v8.add("_x", toJsonString(sourceValue));
         String jResult = v8.executeStringScript(String.format(scriptFunc, script));
         return JSONObject.parseObject(jResult, toType);
     }
 
-    @ErrorCode(value = "keyError", messageKeys = {"$key"})
+    @ErrorCode(value = "keyError", messageKeys = { "$key" })
     private String getScript(Class tType, String key) {
         String tKey = tType.getName();
         Map<String, Object> v = as(settings.get(tKey), Map.class);

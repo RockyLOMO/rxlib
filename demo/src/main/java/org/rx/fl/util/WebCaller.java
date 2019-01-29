@@ -26,6 +26,7 @@ import org.rx.util.function.Func;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -193,6 +194,8 @@ public final class WebCaller extends Disposable {
     }
 
     @Getter
+    private long waitMillis = 500;
+    @Getter
     @Setter
     private boolean isShareCookie;
     private RemoteWebDriver driver;
@@ -329,6 +332,7 @@ public final class WebCaller extends Disposable {
         try {
             driver.get(url);
         } catch (NoSuchWindowException e) {
+            log.info("navigateUrl {}", e.getMessage());
             if (driver instanceof InternetExplorerDriver) {
                 RemoteWebDriver temp = driver;
                 driver = create(DriverType.IE, true);
@@ -341,7 +345,7 @@ public final class WebCaller extends Disposable {
         if (locatorSelector == null) {
             elements = NQuery.of();
         } else {
-            elements = waitElementLocated(locatorSelector, retryCount, 1, onRetry);
+            elements = waitElementLocated(locatorSelector, retryCount, onRetry);
         }
         if (isShareCookie) {
             syncCookie();
@@ -368,10 +372,10 @@ public final class WebCaller extends Disposable {
     }
 
     public NQuery<WebElement> waitElementLocated(String selector) {
-        return waitElementLocated(selector, 4, 1, null);
+        return waitElementLocated(selector, 4, null);
     }
 
-    public NQuery<WebElement> waitElementLocated(String selector, int retryCount, long timeOutInSeconds, Predicate<By> onRetry) {
+    public NQuery<WebElement> waitElementLocated(String selector, int retryCount, Predicate<By> onRetry) {
         require(selector);
         By locator = By.cssSelector(selector);
 
@@ -387,7 +391,7 @@ public final class WebCaller extends Disposable {
                 }
 
                 if (wait == null) {
-                    wait = new WebDriverWait(driver, timeOutInSeconds);
+                    wait = new WebDriverWait(driver, 1);
                 }
                 wait.until(ExpectedConditions.presenceOfElementLocated(locator));
             } catch (Exception e) {
@@ -417,8 +421,8 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public <T> void waitClickComplete(String selector, int reClickCount, Predicate<T> checkState, T state) {
-        require(selector);
+    public void waitClickComplete(String selector, int reClickCount, Func<Boolean> checkState) {
+        require(selector, checkState);
         By clickBy = By.cssSelector(selector);
 
         int count = 0;
@@ -433,31 +437,33 @@ public final class WebCaller extends Disposable {
                 log.info("btn-{} click..", clickBy);
             }
             log.info("wait btn-{} callback..", clickBy);
-            Thread.sleep(500);
+            Thread.sleep(waitMillis);
             count++;
             if (count >= reClickCount) {
                 count = 0;
             }
         }
-        while (checkState.test(state));
+        while (checkState.invoke());
     }
 
     @SneakyThrows
-    public void wait(int retryCount, long sleepMillis, Func<Boolean> onRetry, boolean sleepFirst) {
+    public void wait(int checkCount, Func<Boolean> checkState, boolean sleepFirst) {
+        require(checkState);
+
         int count = 0;
         do {
             if (sleepFirst) {
-                Thread.sleep(sleepMillis);
+                Thread.sleep(waitMillis);
             }
-            if (onRetry != null && onRetry.invoke()) {
+            if (checkState.invoke()) {
                 break;
             }
             if (!sleepFirst) {
-                Thread.sleep(sleepMillis);
+                Thread.sleep(waitMillis);
             }
             count++;
         }
-        while (count < retryCount);
+        while (count < checkCount);
     }
 
     private WebElement findElement(By by, boolean throwOnEmpty) {

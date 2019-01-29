@@ -19,6 +19,7 @@ import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.socks.Sockets;
 import org.rx.socks.http.HttpClient;
+import org.rx.util.JsonMapper;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -27,6 +28,92 @@ import java.util.List;
 import java.util.Set;
 
 public class WebCallerTests {
+    @Test
+    public void beanMapper() {
+        OrderInfo to = JsonMapper.Default.convertTo(OrderInfo.class, "jdQueryOrderDetail", "{\n" +
+                "        \"orderId\": 86053762470,\n" +
+                "        \"parentId\": 0,\n" +
+                "        \"orderTime\": 0,\n" +
+                "        \"orderTimeStr\": \"2019-01-25 16:34:16\",\n" +
+                "        \"finishTime\": 0,\n" +
+                "        \"finishTimeStr\": \"2019-01-27 09:01:15\",\n" +
+                "        \"payMonth\": 0,\n" +
+                "        \"payMonthStr\": \"\",\n" +
+                "        \"validCode\": 17,\n" +
+                "        \"validCodeStr\": \"已完成\",\n" +
+                "        \"validCodeUrl\": \"\",\n" +
+                "        \"orderEmt\": 0,\n" +
+                "        \"orderEmtStr\": \"无线\",\n" +
+                "        \"plus\": 1,\n" +
+                "        \"plusStr\": \"是\",\n" +
+                "        \"isAfterSale\": 0,\n" +
+                "        \"orderSkuDetailInfos\": [\n" +
+                "          {\n" +
+                "            \"skuId\": 32641401757,\n" +
+                "            \"skuName\": \"威刚（ADATA）XPG 龙耀D41  RGB幻光渐层内存 DDR4 台式机电脑内存灯条 单条【8G】 2666 频率\",\n" +
+                "            \"skuNum\": 1,\n" +
+                "            \"skuReturnNum\": 0,\n" +
+                "            \"frozenSkuNum\": 0,\n" +
+                "            \"price\": 429,\n" +
+                "            \"payPrice\": 402,\n" +
+                "            \"commissionRate\": 1.8,\n" +
+                "            \"subSideRate\": 90,\n" +
+                "            \"subsidyRate\": 0,\n" +
+                "            \"finalRate\": 90,\n" +
+                "            \"estimateCosPrice\": 404,\n" +
+                "            \"estimateCommission\": 7.27,\n" +
+                "            \"estimateFee\": 6.54,\n" +
+                "            \"actualCosPrice\": 402,\n" +
+                "            \"actualCommission\": 7.24,\n" +
+                "            \"actualFee\": 6.52,\n" +
+                "            \"validCode\": 17,\n" +
+                "            \"validCodeStr\": \"已完成\",\n" +
+                "            \"traceType\": 2,\n" +
+                "            \"traceTypeStr\": \"同店\",\n" +
+                "            \"spId\": 0,\n" +
+                "            \"spIdStr\": \"--\",\n" +
+                "            \"siteId\": 0,\n" +
+                "            \"unionAlias\": \"\",\n" +
+                "            \"pid\": \"\",\n" +
+                "            \"orderId\": 86053762470,\n" +
+                "            \"plus\": 1,\n" +
+                "            \"plusStr\": \"是\",\n" +
+                "            \"imgUrl\": \"jfs/t1/14451/33/5692/91502/5c419750E93662438/ac74aa942d0ef01a.jpg\",\n" +
+                "            \"orderTimeStr\": \"2019-01-25 16:34:16\",\n" +
+                "            \"finishTimeStr\": \"2019-01-27 09:01:15\",\n" +
+                "            \"payMonthStr\": \"\",\n" +
+                "            \"validCodeUrl\": \"\",\n" +
+                "            \"subsidyParty\": \"\",\n" +
+                "            \"subsidyPartyStr\": \"-\",\n" +
+                "            \"unionTrafficGroup\": 5,\n" +
+                "            \"unionTrafficTypeStr\": \"京东\",\n" +
+                "            \"unionTag\": \"00000000\",\n" +
+                "            \"isPinGouStr\": \"否\",\n" +
+                "            \"isJXRedRocket\": \"否\"\n" +
+                "          }\n" +
+                "        ],\n" +
+                "        \"imgUrlS\": [\n" +
+                "          \"jfs/t1/14451/33/5692/91502/5c419750E93662438/ac74aa942d0ef01a.jpg\"\n" +
+                "        ],\n" +
+                "        \"skuLists\": [],\n" +
+                "        \"payPriceSum\": 404,\n" +
+                "        \"commissionRateOrderStr\": \"1.80\",\n" +
+                "        \"finalRateOrderStr\": \"90.00\",\n" +
+                "        \"estimateFeeOrder\": 6.54,\n" +
+                "        \"actualFeeOrder\": 6.52,\n" +
+                "        \"actualCosPriceOrder\": 402,\n" +
+                "        \"unionTrafficGroup\": 5,\n" +
+                "        \"unionTrafficTypeStr\": \"京东\",\n" +
+                "        \"spId\": 0,\n" +
+                "        \"spIdStr\": \"--\",\n" +
+                "        \"siteId\": 0,\n" +
+                "        \"pid\": \"\",\n" +
+                "        \"isPinGouStr\": \"否\",\n" +
+                "        \"isJXRedRocket\": \"否\"\n" +
+                "      }");
+        System.out.println(to);
+    }
+
     @SneakyThrows
     @Test
     public void download() {

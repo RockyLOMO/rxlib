@@ -58,8 +58,8 @@ public class TbMedia implements Media {
         shareCookie = true;
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
-        long period = App.readSetting("app.media.tbKeepPeriod", long.class);
-        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, "TbMedia");
+        int period = App.readSetting("app.media.taobao.keepLoginSeconds");
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, this.getType().name());
     }
 
     @SneakyThrows
@@ -86,9 +86,9 @@ public class TbMedia implements Media {
 //                "Accept-Encoding: gzip, deflate\n" +
 //                "Connection: Keep-Alive\n" +
 //                "Cookie: " + rawCookie));
-        caller.getDownload(url, filePath);
+        File file = caller.getDownload(url, filePath);
         List<OrderInfo> orders = new ArrayList<>();
-        try (FileInputStream in = new FileInputStream(caller.getDownload(url, filePath))) {
+        try (FileInputStream in = new FileInputStream(file)) {
             Map<String, List<Object[]>> excel = Helper.readExcel(in, false);
             List<Object[]> list = excel.get("Page1");
             if (CollectionUtils.isEmpty(list)) {
@@ -172,7 +172,7 @@ public class TbMedia implements Media {
                         caller.elementClick("button[mx-click=submit]", true);
                         log.info("findAdv step3-2 ok");
 
-                        caller.waitElementLocated("#clipboard-target", 4, 1, p -> {
+                        caller.waitElementLocated("#clipboard-target,#clipboard-target-2", 4, p -> {
                             try {
                                 caller.elementClick("button[mx-click=submit]");
                                 log.info("findAdv btn32 reClick ok");
@@ -219,6 +219,7 @@ public class TbMedia implements Media {
                     } catch (Exception e) {
                         log.error("findAdv", e);
                         keepLogin(false);
+                        break;
                     }
                 }
                 log.info("Goods {} not found", goodsInfo.getName());
@@ -297,7 +298,6 @@ public class TbMedia implements Media {
         return null;
     }
 
-    @SneakyThrows
     @Override
     public void login() {
         if (isLogin) {
@@ -307,7 +307,7 @@ public class TbMedia implements Media {
         caller.invokeSelf(caller -> {
             String selector = "#J_SubmitQuick";
             caller.navigateUrl(loginUrl, selector);
-            caller.waitClickComplete(selector, 6, s -> caller.getCurrentUrl().startsWith("https://login.taobao.com"), null);
+            caller.waitClickComplete(selector, 6, () -> caller.getCurrentUrl().startsWith("https://login.taobao.com"));
 
 //                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
 //                String url;
@@ -328,7 +328,6 @@ public class TbMedia implements Media {
         });
     }
 
-    @SneakyThrows
     private void keepLogin(boolean skipIfBusy) {
         caller.invokeSelf(caller -> {
             String noCache = String.format("&_t=%s", System.currentTimeMillis());

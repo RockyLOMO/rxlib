@@ -36,34 +36,45 @@
             JSON.parse("{\"data\":{\"endTime\":\"2019-01-20\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"2019-01-12\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}"), true);
 
 
-        // $.ajax({
-        //     type: "post",
-        //     url: "",
-        //     data: "",
-        //     async: false,
-        //     contentType: "application/json; charset=utf-8",
-        //     dataType: "json",
-        //     success: function (data) {
-        //         window._x = data;
-        //     }
-        // });
-        // return window._x;
+        $.ajax({
+            type: "post",
+            url: "https://union.jd.com/api/report/queryOrderDetail",
+            data: JSON.stringify({
+                "data": {
+                    "endTime": "2019-01-29",
+                    "opType": "1",
+                    "orderId": 0,
+                    "orderStatus": "0",
+                    "orderType": "0",
+                    "startTime": "2019-01-01",
+                    "unionTraffictType": "0"
+                }, "pageNo": 1, "pageSize": 1000
+            }),
+            async: false,
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            success: function (data) {
+                console.log(data);
+                window._callbackValue = data;
+            }
+        });
+        return JSON.stringify(window._callbackValue);
 
-        var thArr = [];
-        $(".has-gutter th").each(function (i, o) {
-            thArr.push($(o).text());
-        });
-        thArr.length--;
-        var trArr = [];
-        trArr.push(thArr);
-        $(".el-table__body tr").each(function (i, o) {
-            var tdArr = [];
-            $(o).find("td").each(function () {
-                tdArr.push($(arguments[1]).text());
-            });
-            trArr.push(tdArr);
-        });
-        return JSON.stringify(trArr);
+        // var thArr = [];
+        // $(".has-gutter th").each(function (i, o) {
+        //     thArr.push($(o).text());
+        // });
+        // thArr.length--;
+        // var trArr = [];
+        // trArr.push(thArr);
+        // $(".el-table__body tr").each(function (i, o) {
+        //     var tdArr = [];
+        //     $(o).find("td").each(function () {
+        //         tdArr.push($(arguments[1]).text());
+        //     });
+        //     trArr.push(tdArr);
+        // });
+        // return JSON.stringify(trArr);
     }
 </script>
 </body>

@@ -5,7 +5,6 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
-import org.rx.common.App;
 import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.*;
@@ -18,10 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
@@ -91,19 +90,6 @@ public class MediaService {
         log.info("reset waitHandle");
     }
 
-    static {
-        Integer size = App.readSetting("app.media.coreSize");
-        if (size == null) {
-            size = 1;
-        }
-        log.info("init each media {} size", size);
-        for (MediaType type : MediaType.values()) {
-            for (int i = 0; i < size; i++) {
-                release(create(type, false));
-            }
-        }
-    }
-
     @Resource
     private OrderService orderService;
 
@@ -113,7 +99,26 @@ public class MediaService {
 
     @Autowired
     public MediaService(MediaConfig mediaConfig) {
-        TaskFactory.schedule(() -> syncOrder(8), 2 * 1000, mediaConfig.getSyncWeeklyOrderSeconds() * 1000, "syncWeeklyOrder");
+        BiConsumer<MediaType, Integer> consumer = (p1, p2) -> {
+            for (int i = 0; i < p2; i++) {
+                release(create(p1, false));
+            }
+            log.info("Create {} media {} size", p1, p2);
+        };
+        for (MediaType type : MediaType.values()) {
+            int coreSize = 1;
+            switch (type) {
+                case Taobao:
+                    coreSize = mediaConfig.getTaobaoConfig().getCoreSize();
+                    break;
+                case Jd:
+                    coreSize = mediaConfig.getJdConfig().getCoreSize();
+                    break;
+            }
+            consumer.accept(type, coreSize);
+        }
+
+        TaskFactory.schedule(() -> syncOrder(8), mediaConfig.getSyncWeeklyOrderSeconds() * 1000);
         TaskFactory.schedule(() -> syncOrder(-31), mediaConfig.getSyncMonthlyOrderSeconds() * 1000);
     }
 
@@ -179,7 +184,7 @@ public class MediaService {
                 }
 
                 adv.setGoods(media.findGoods(adv.getLink()));
-                if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getSellerName())) {
+                if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
                     adv.setFoundStatus(AdvFoundStatus.NoGoods);
                     return adv;
                 }

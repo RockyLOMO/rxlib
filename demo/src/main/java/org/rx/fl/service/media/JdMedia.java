@@ -2,13 +2,13 @@ package org.rx.fl.service.media;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
 import org.openqa.selenium.WebElement;
-import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.LogWriter;
@@ -16,20 +16,27 @@ import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
+import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.util.function.Func;
+import org.rx.util.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class JdMedia implements Media {
+    private static final String loginUrl = "https://union.jd.com/#/login";
+    private static final String[] keepLoginUrl = {"https://union.jd.com/order",
+            "https://union.jd.com/report",
+            "https://union.jd.com/accountingCenter",
+            "https://union.jd.com/accounts"};
+
     @Getter
     private volatile boolean isLogin;
     private WebCaller caller;
@@ -41,80 +48,83 @@ public class JdMedia implements Media {
 
     public JdMedia() {
         caller = new WebCaller();
+        int period = App.readSetting("app.media.jd.keepLoginSeconds");
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, this.getType().name());
     }
 
     @Override
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
         login();
-        String url = "http://xunion.jd.com/api/report/queryOrderDetail";
         return caller.invokeSelf(caller -> {
-            String btnSelector = ".find-order-btn";
-            caller.navigateUrl(url, btnSelector);
+            caller.navigateUrl("https://union.jd.com/order", "body");
 
-            caller.elementClick("input[placeholder=开始日期]");
-            Func<Integer> getLength = () -> App.changeType(caller.executeScript("return $('.available').length"), int.class);
-            int availableLength = getLength.invoke();
-            int days = App.changeType(end.subtract(start).getTotalDays(), int.class);
-            if (availableLength < days) {
-                caller.elementClick(".el-icon-arrow-left");
-                availableLength = getLength.invoke();
-            }
-            int maxOffset = availableLength - 1;
-            caller.executeScript(String.format("$('.available:eq(%s)').click();$('.available:eq(%s)').click();", maxOffset - days, maxOffset));
+            int pageNo = 1, pageSize = 100;
+            String jData = String.format("{\n" +
+                    "                \"data\": {\n" +
+                    "                    \"endTime\": \"%s\",\n" +
+                    "                    \"opType\": \"1\",\n" +
+                    "                    \"orderId\": 0,\n" +
+                    "                    \"orderStatus\": \"0\",\n" +
+                    "                    \"orderType\": \"0\",\n" +
+                    "                    \"startTime\": \"%s\",\n" +
+                    "                    \"unionTraffictType\": \"0\"\n" +
+                    "                }, \"pageNo\": %s, \"pageSize\": %s\n" +
+                    "            }", end.toDateString(), start.toDateString(), pageNo, pageSize);
+            log.info("findOrders data\n{}", jData);
 
-            caller.elementClick(btnSelector);
-
-            List<OrderInfo> result = new ArrayList<>();
-            $<JSONArray> out = $();
-            caller.wait(4, 1000, () -> {
-                String json = caller.executeScript("        var thArr = [];\n" +
-                        "        $(\".has-gutter th\").each(function (i, o) {\n" +
-                        "            thArr.push($(o).text());\n" +
+            List<OrderInfo> list = new ArrayList<>();
+            JSONObject json;
+            do {
+                String callback = caller.executeScript(String.format("$.ajax({\n" +
+                        "            type: \"post\",\n" +
+                        "            url: \"https://union.jd.com/api/report/queryOrderDetail\",\n" +
+                        "            data: JSON.stringify(%s),\n" +
+                        "            async: false,\n" +
+                        "            contentType: \"application/json; charset=utf-8\",\n" +
+                        "            dataType: \"json\",\n" +
+                        "            success: function (data) {\n" +
+                        "                console.log(data);\n" +
+                        "                window._callbackValue = data;\n" +
+                        "            }\n" +
                         "        });\n" +
-                        "        thArr.length--;\n" +
-                        "        var trArr = [];\n" +
-                        "        trArr.push(thArr);\n" +
-                        "        $(\".el-table__body tr\").each(function (i, o) {\n" +
-                        "            var tdArr = [];\n" +
-                        "            $(o).find(\"td\").each(function () {\n" +
-                        "                tdArr.push($(arguments[1]).text());\n" +
-                        "            });\n" +
-                        "            trArr.push(tdArr);\n" +
-                        "        });\n" +
-                        "        return JSON.stringify(trArr);");
-                JSONArray jArray = JSON.parseArray(json);
-                out.$ = jArray;
-                return !jArray.isEmpty();
-            }, true);
-            if (out.$ == null) {
-                return result;
-            }
+                        "        return JSON.stringify(window._callbackValue);", jData));
+                log.info("findOrders callbackValue {}", callback);
+                JSONObject jsVal = JSON.parseObject(callback);
+                if (jsVal.getIntValue("code") != 200) {
+                    keepLogin(false);
+                    break;
+                }
+                json = JSON.parseObject(callback).getJSONObject("data");
+                JSONArray orders = json.getJSONArray("orderDetailInfos");
+                if (orders.isEmpty()) {
+                    break;
+                }
 
-            final String mapStr = "orderNo#订单号,status#订单状态,createTime#下单时间,商品付款金额佣金比例实际分成比例预估佣金完成时间实际金额实际佣金结算时间下单平台平台";
-            return result;
-//            String json = caller.executeScript("        var thArr = [];\n" +
-//                    "        $(\".has-gutter th\").each(function (i, o) {\n" +
-//                    "            thArr.push($(o).text());\n" +
-//                    "        });\n" +
-//                    "        thArr.length--;\n" +
-//                    "        var trArr = [];\n" +
-//                    "        trArr.push(thArr);\n" +
-//                    "        $(\".el-table__body tr\").each(function (i, o) {\n" +
-//                    "            var tdArr = [];\n" +
-//                    "            $(o).find(\"td\").each(function () {\n" +
-//                    "                tdArr.push($(arguments[1]).text());\n" +
-//                    "            });\n" +
-//                    "            trArr.push(tdArr);\n" +
-//                    "        });\n" +
-//                    "        return JSON.stringify(trArr);");
-//            JSONArray jArray = JSONArray.parse(json);
-//            List cols = jArray.getJSONArray(0).toList();
-//            for (int i = 1; i < jArray.length(); i++) {
-//                jArray.getJSONArray(i);
-//            }
-//            "无效-拆单";
-//            List<String> cols = caller.elementsText(".has-gutter th").toList();
-//            NQuery<WebElement> colElms = caller.waitElementLocated(".has-gutter th");
+                for (int i = 0; i < orders.size(); i++) {
+                    JSONObject row = orders.getJSONObject(i);
+                    OrderInfo order = JsonMapper.Default.convertTo(OrderInfo.class, "jdQueryOrderDetail", row);
+                    order.setMediaType(this.getType());
+                    switch (row.getString("validCodeStr").trim()) {
+                        case "已结算":
+                            order.setStatus(OrderStatus.Settlement);
+                            break;
+                        case "已完成":
+                            order.setStatus(OrderStatus.Success);
+                            break;
+                        case "已付款":
+                            order.setStatus(OrderStatus.Paid);
+                            break;
+                        default:
+                            order.setStatus(OrderStatus.Invalid);
+                            break;
+                    }
+                    list.add(order);
+                }
+
+                pageNo++;
+            } while (json.getBooleanValue("moreData"));
+
+            return list;
         }, true);
     }
 
@@ -135,7 +145,30 @@ public class JdMedia implements Media {
                         continue;
                     }
 
-                    String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
+                    //old logic
+//                    String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
+//                            "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
+//                    log.info("findAdv step2 ok");
+//                    String[] strings = text.split(",");
+//                    goodsInfo.setPrice(strings[0].trim());
+//                    String rebateStr = strings[1];
+//                    int j = rebateStr.indexOf("%");
+//                    goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
+//                    goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
+//
+//                    String[] combo = {"#socialPromotion", "input[placeholder=请选择社交媒体]", ".el-select-dropdown__item:last",
+//                            "input[placeholder=请输入推广位]", ".el-select-dropdown__item:last", ".operation:last .el-button--primary"};
+//                    for (int k = 0; k < combo.length; k++) {
+//                        String x = combo[k];
+//                        if (k == 2 || k == 4 || k == 5) {
+//                            caller.executeScript(String.format("$(\"%s\").click();", x));
+//                        } else {
+//                            caller.elementClick(x, true);
+//                        }
+//                        log.info("findAdv step3 combo({}) click..", x);
+//                    }
+                    //new logic
+                    String text = caller.executeScript("$(\".card-button:eq(" + i + 1 + ")\").click();" +
                             "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
                     log.info("findAdv step2 ok");
                     String[] strings = text.split(",");
@@ -144,18 +177,6 @@ public class JdMedia implements Media {
                     int j = rebateStr.indexOf("%");
                     goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                     goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
-
-                    String[] combo = {"#socialPromotion", "input[placeholder=请选择社交媒体]", ".el-select-dropdown__item:last",
-                            "input[placeholder=请输入推广位]", ".el-select-dropdown__item:last", ".operation:last .el-button--primary"};
-                    for (int k = 0; k < combo.length; k++) {
-                        String x = combo[k];
-                        if (k == 2 || k == 4 || k == 5) {
-                            caller.executeScript(String.format("$(\"%s\").click();", x));
-                        } else {
-                            caller.elementClick(x, true);
-                        }
-                        log.info("findAdv step3 combo({}) click..", x);
-                    }
 
                     NQuery<WebElement> codes = caller.waitElementLocated("#pane-0 input");
                     goodsInfo.setCouponAmount("0");
@@ -200,7 +221,7 @@ public class JdMedia implements Media {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2").first();
                 goodsInfo.setName(hybridElement.getText().trim());
-                String eSeller = caller.elementText(".name:last-child");
+                String eSeller = caller.elementText(".name:last");
                 if (!Strings.isNullOrEmpty(eSeller)) {
                     goodsInfo.setSellerName(eSeller.trim());
                 }
@@ -258,15 +279,14 @@ public class JdMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            String advUrl = "https://union.jd.com/#/order", loginUrl = "https://union.jd.com/#/login";
+            String advUrl = "https://union.jd.com/#/order";
             caller.navigateUrl(advUrl, "body");
-            Func<Boolean> doLogin = () -> caller.getCurrentUrl().equals(loginUrl);
-            caller.wait(2, 500, doLogin, false);
-            if (doLogin.invoke()) {
+            caller.wait(4, () -> caller.getCurrentUrl().equals(loginUrl), false);
+            if (caller.getCurrentUrl().equals(loginUrl)) {
                 try {
                     caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
                             "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
-                    caller.waitClickComplete("#paipaiLoginSubmit", 10, s -> caller.getCurrentUrl().startsWith(loginUrl), null);
+                    caller.waitClickComplete("#paipaiLoginSubmit", 10, () -> caller.getCurrentUrl().startsWith(loginUrl));
                 } catch (Exception e) {
                     log.info("login error {}...", e.getMessage());
                 }
@@ -276,7 +296,20 @@ public class JdMedia implements Media {
         });
     }
 
-    private void keepLogin() {
-
+    @SneakyThrows
+    private void keepLogin(boolean skipIfBusy) {
+        caller.invokeSelf(caller -> {
+            String noCache = String.format("?_t=%s", System.currentTimeMillis());
+            int i = ThreadLocalRandom.current().nextInt(0, keepLoginUrl.length);
+            caller.navigateUrl(keepLoginUrl[i] + noCache);
+            if (caller.getCurrentUrl().equals(loginUrl)) {
+                log.info("login expired...");
+                isLogin = false;
+                login();
+            } else {
+                log.info("login ok...");
+                isLogin = true;
+            }
+        }, skipIfBusy);
     }
 }

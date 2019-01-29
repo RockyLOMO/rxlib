@@ -1,14 +1,27 @@
 server.port: 8080
 
-spring.profiles.active: dev
+spring.profiles.active: prd
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
-#spring.datasource.url: jdbc:mysql://r.x.org:3306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
-#spring.datasource.username: rx_rebate_dev_user
-#spring.datasource.password: e)ud(yB_g8uO
+spring.datasource.url: jdbc:mysql://r.x.org:3306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
 mybatis.type-aliases-package: org.rx.fl.repository.model
 mybatis.config-location: classpath:mybatis-config.xml
 mybatis.mapper-locations: classpath:mybatis/*.xml
 
+app.errorCodeFiles:
+  - errorCode.yml
+app.mybatis.mapperScan: org.rx.fl.repository
+app.repository.dbFile: /usr/local/_rx/db/rx.dat
+app.sms.appId: 1400123840
+app.sms.appKey: 0decfdc628b7d885a790524133f22339
+app.sms.smsSign: 隽斋
+
+---
+
+spring:
+  profiles: dev
+  datasource:
+    username: rx_rebate_dev_user
+    password: e)ud(yB_g8uO
 app:
   chrome:
     driver: D:\usr\chrome\chromedriver.exe
@@ -18,10 +31,9 @@ app:
     initSize: 0
   ie:
     driver: D:\usr\chrome\IEDriverServer.exe
-    cookieUrl: http://x.%s:${server.port}/media/index.html?rx=1  #需要配置hosts
+    cookieUrl: http://x.%s:8080/media/index.html?rx=1  #需要配置hosts
     initSize: 0
   media:
-    coreSize: 0
     maxUserCount: 1000
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
@@ -29,14 +41,42 @@ app:
     remoteMode: false
     remoteEndpoint: 127.0.0.1:8080
     cacheSeconds: 180
-    tbKeepPeriod: 80
-  errorCodeFiles:
-  - errorCode.yml
-  mybatis:
-    mapperScan: org.rx.fl.repository
-  repository:
-    dbFile: /usr/local/_rx/db/rx.dat
-  sms:
-    appId: 1400123840
-    appKey: 0decfdc628b7d885a790524133f22339
-    smsSign: 隽斋
+    taobao:
+      coreSize: 0
+      keepLoginSeconds: 90
+    jd:
+      coreSize: 1
+      keepLoginSeconds: 60
+
+---
+
+spring:
+  profiles: prd
+  datasource:
+    username: rx_rebate_prd_user
+    password: pL1ae4Q%L8TK$sD%
+app:
+  chrome:
+    driver: C:\_rx\chrome\chromedriver.exe
+    dataPath: C:\_rx\chrome\data
+    downloadPath: C:\_rx\chrome\download
+    isBackground: false
+    initSize: 3
+  ie:
+    driver: C:\_rx\chrome\IEDriverServer.exe
+    cookieUrl: http://x.%s:8080/media/index.html?rx=1
+    initSize: 1
+  media:
+    maxUserCount: 1000
+    syncWeeklyOrderSeconds: 80
+    syncMonthlyOrderSeconds: 28800
+    commandTimeout: 60
+    remoteMode: false
+    remoteEndpoint: 127.0.0.1:8080
+    cacheSeconds: 180
+    taobao:
+      coreSize: 1
+      keepLoginSeconds: 90
+    jd:
+      coreSize: 1
+      keepLoginSeconds: 60

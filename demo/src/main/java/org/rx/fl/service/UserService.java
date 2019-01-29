@@ -248,7 +248,7 @@ public class UserService {
     Tuple<User, String> saveUserBalance(String userId, String clientIp, BalanceSourceKind sourceKind, String sourceId, long money) {
         require(money, money != 0);
 
-        return App.retry(p -> {
+        return App.retry(2, p -> {
             User user = dbUtil.selectById(userMapper, userId);
 
             BalanceLog balanceLog = new BalanceLog();
@@ -279,6 +279,6 @@ public class UserService {
                 throw new InvalidOperationException("Concurrent update fail");
             }
             return Tuple.of(user, balanceLog.getId());
-        }, null, 2);
+        }, null);
     }
 }
