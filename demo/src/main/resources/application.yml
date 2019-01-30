@@ -1,6 +1,6 @@
 server.port: 8080
 
-spring.profiles.active: dev
+spring.profiles.active: prd
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
 mybatis.type-aliases-package: org.rx.fl.repository.model
 mybatis.config-location: classpath:mybatis-config.xml
@@ -10,6 +10,7 @@ app.errorCodeFiles:
   - errorCode.yml
 app.mybatis.mapperScan: org.rx.fl.repository
 app.commandList: FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,SubscribeCmd
+app.awtBot.delay: 10
 app.sms.appId: 1400123840
 app.sms.appKey: 0decfdc628b7d885a790524133f22339
 app.sms.smsSign: 隽斋
@@ -28,7 +29,7 @@ app:
     dataPath: /usr/chrome/data
     downloadPath: /usr/chrome/download
     isBackground: false
-    initSize: 0
+    initSize: 2
   ie:
     driver: /usr/chrome/IEDriverServer.exe
     cookieUrl: http://x.%s:8080/media/index.html?rx=1  #需要配置hosts
@@ -45,7 +46,7 @@ app:
       coreSize: 0
       keepLoginSeconds: 90
     jd:
-      coreSize: 0
+      coreSize: 1
       keepLoginSeconds: 60
   repository.dbFile: /usr/lr.db
 

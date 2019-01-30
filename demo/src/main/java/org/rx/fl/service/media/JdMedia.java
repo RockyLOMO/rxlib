@@ -9,7 +9,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
 import org.openqa.selenium.WebElement;
+import org.rx.beans.$;
 import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
 import org.rx.common.App;
 import org.rx.common.LogWriter;
 import org.rx.common.NQuery;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -155,27 +158,24 @@ public class JdMedia implements Media {
                     goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                     goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
 
-                    NQuery<String> codes;
-                    try {
-                        codes = caller.waitElementLocated("#pane-0 input").select(p -> p.getAttribute("value"));
-                    } catch (Exception e) {
-                        String callback = caller.executeScript("var val = [];\n" +
-                                "        $(\"#pane-0 input\").each(function (i, o) {\n" +
-                                "            val.push($(o).val());\n" +
-                                "        });\n" +
-                                "        return val.toString();");
-                        codes = NQuery.of(callback.split(","));
-                    }
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
-                    if (codes.count() == 2) {
-                        String couponUrl = codes.last();
+                    $<Tuple<Boolean, String>> $code = $();
+                    caller.waitCheck(8, () -> {
+                        List<String> vals = caller.elementsVal(".el-input__inner").toList();
+                        log.info("Codes values: {}", String.join(",", vals));
+                        boolean hasCoupon = vals.size() == 10;
+                        String xCode = vals.get(hasCoupon ? 7 : 6);
+                        $code.$ = Tuple.of(hasCoupon, xCode);
+                        return !Strings.isNullOrEmpty(xCode) && xCode.startsWith("http");
+                    }, true);
+                    String code = $code.$.right;
+                    if ($code.$.left) {
                         future = TaskFactory.run(() -> {
-                            log.info("findAdv step3-2 couponUrl {}", couponUrl);
-                            return findCouponAmount(couponUrl);
+                            log.info("findAdv step3-2 couponUrl {}", code);
+                            return findCouponAmount(code);
                         });
                     }
-                    String code = codes.last();
 
                     if (future != null) {
                         try {
@@ -267,7 +267,7 @@ public class JdMedia implements Media {
 
         caller.invokeSelf(caller -> {
             caller.navigateUrl(keepLoginUrl[0], "body");
-            caller.wait(4, () -> caller.getCurrentUrl().equals(loginUrl), false);
+            caller.waitCheck(4, () -> caller.getCurrentUrl().equals(loginUrl), false);
             if (caller.getCurrentUrl().equals(loginUrl)) {
                 try {
                     caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +

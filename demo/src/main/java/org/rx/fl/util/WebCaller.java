@@ -26,7 +26,6 @@ import org.rx.util.function.Func;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -449,23 +448,21 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public void wait(int checkCount, Func<Boolean> checkState, boolean sleepFirst) {
+    public void waitCheck(int checkCount, Func<Boolean> checkState, boolean throwOnFail) {
         require(checkState);
 
         int count = 0;
         do {
-            if (sleepFirst) {
-                Thread.sleep(waitMillis);
-            }
             if (checkState.invoke()) {
-                break;
+                return;
             }
-            if (!sleepFirst) {
-                Thread.sleep(waitMillis);
-            }
+            Thread.sleep(waitMillis);
             count++;
         }
         while (count < checkCount);
+        if (throwOnFail) {
+            throw new InvalidOperationException("Wait check fail");
+        }
     }
 
     private WebElement findElement(By by, boolean throwOnEmpty) {

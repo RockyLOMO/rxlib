@@ -306,7 +306,7 @@ public class TbMedia implements Media {
 
         caller.invokeSelf(caller -> {
             caller.navigateUrl(keepLoginUrl[0], "body");
-            caller.wait(4, () -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
+            caller.waitCheck(4, () -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
             if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
                 String selector = "#J_SubmitQuick";
                 caller.navigateUrl(loginUrl, selector);
