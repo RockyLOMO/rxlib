@@ -145,29 +145,6 @@ public class JdMedia implements Media {
                         continue;
                     }
 
-                    //old logic
-//                    String text = caller.executeScript("$(\".card-button:eq(" + i + ")\").click();" +
-//                            "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
-//                    log.info("findAdv step2 ok");
-//                    String[] strings = text.split(",");
-//                    goodsInfo.setPrice(strings[0].trim());
-//                    String rebateStr = strings[1];
-//                    int j = rebateStr.indexOf("%");
-//                    goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
-//                    goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
-//
-//                    String[] combo = {"#socialPromotion", "input[placeholder=请选择社交媒体]", ".el-select-dropdown__item:last",
-//                            "input[placeholder=请输入推广位]", ".el-select-dropdown__item:last", ".operation:last .el-button--primary"};
-//                    for (int k = 0; k < combo.length; k++) {
-//                        String x = combo[k];
-//                        if (k == 2 || k == 4 || k == 5) {
-//                            caller.executeScript(String.format("$(\"%s\").click();", x));
-//                        } else {
-//                            caller.elementClick(x, true);
-//                        }
-//                        log.info("findAdv step3 combo({}) click..", x);
-//                    }
-                    //new logic
                     String text = caller.executeScript("$(\".card-button:eq(" + i + 1 + ")\").click();" +
                             "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
                     log.info("findAdv step2 ok");
@@ -178,17 +155,27 @@ public class JdMedia implements Media {
                     goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                     goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
 
-                    NQuery<WebElement> codes = caller.waitElementLocated("#pane-0 input");
+                    NQuery<String> codes;
+                    try {
+                        codes = caller.waitElementLocated("#pane-0 input").select(p -> p.getAttribute("value"));
+                    } catch (Exception e) {
+                        String callback = caller.executeScript("var val = [];\n" +
+                                "        $(\"#pane-0 input\").each(function (i, o) {\n" +
+                                "            val.push($(o).val());\n" +
+                                "        });\n" +
+                                "        return val.toString();");
+                        codes = NQuery.of(callback.split(","));
+                    }
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     if (codes.count() == 2) {
-                        String couponUrl = codes.last().getAttribute("value");
+                        String couponUrl = codes.last();
                         future = TaskFactory.run(() -> {
                             log.info("findAdv step3-2 couponUrl {}", couponUrl);
                             return findCouponAmount(couponUrl);
                         });
                     }
-                    String code = codes.last().getAttribute("value");
+                    String code = codes.last();
 
                     if (future != null) {
                         try {

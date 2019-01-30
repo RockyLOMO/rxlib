@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<configuration scan="true" debug="false">
-    <property name="log.dir" value="${bootstrapPath}"/>
+<configuration scan="false">
+    <property name="log.dir" value="/_rx/app_rebate"/>
+    <logger name="org.rx.fl.repository" level="debug"/>
+
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder charset="UTF-8">
             <pattern>%d %-5p [%t] %c - %m%n</pattern>
         </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
     </appender>
     <appender name="infoAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${log.dir}/logs/${HOSTNAME}_info.log</file>
@@ -12,8 +17,11 @@
             <level>DEBUG</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${log.dir}/logs/${HOSTNAME}_info.%d{yyyyMMdd}.log</fileNamePattern>
-            <maxHistory>60</maxHistory>
+            <fileNamePattern>${log.dir}/logs/${HOSTNAME}_info.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>500MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>7</maxHistory>
         </rollingPolicy>
         <encoder charset="UTF-8">
             <pattern>%d %-5p [%t] %c - %m%n</pattern>
@@ -25,40 +33,28 @@
             <level>WARN</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${log.dir}/logs/${HOSTNAME}_error.%d{yyyyMMdd}.log</fileNamePattern>
-            <maxHistory>30</maxHistory>
+            <fileNamePattern>${log.dir}/logs/${HOSTNAME}_error.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>500MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>7</maxHistory>
         </rollingPolicy>
         <encoder charset="UTF-8">
             <pattern>%d %-5p [%t] %c %m%n</pattern>
         </encoder>
     </appender>
-
-    <logger name="org.apache" additivity="false">
-        <level value="INFO"/>
-        <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
-    <logger name="org.springframework" additivity="false">
-        <level value="INFO"/>
-        <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
-    <logger name="com.netflix" additivity="false">
-        <level value="INFO"/>
-        <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
-    <logger name="infoLogger">
+    <logger name="infoLogger" additivity="false">
         <level value="DEBUG"/>
         <appender-ref ref="infoAppender"/>
     </logger>
-    <logger name="errorLogger">
+    <logger name="errorLogger" additivity="false">
         <level value="WARN"/>
         <appender-ref ref="errorAppender"/>
     </logger>
 
-    <root>
-        <level value="INFO"/>
+    <root level="INFO">
         <appender-ref ref="STDOUT"/>
+        <appender-ref ref="infoAppender"/>
+        <appender-ref ref="errorAppender"/>
     </root>
 </configuration>
