@@ -23,6 +23,7 @@ import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.JsonMapper;
 
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -139,7 +140,7 @@ public class JdMedia implements Media {
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                List<WebElement> eIds = caller.navigateUrl(url, ".imgbox").toList();
+                List<WebElement> eIds = caller.navigateUrl(url, ".imgbox,.nodata").toList();
                 for (int i = 0; i < eIds.size(); i++) {
                     WebElement eId = eIds.get(i);
                     String goodsUrl = eId.getAttribute("href");
@@ -148,6 +149,8 @@ public class JdMedia implements Media {
                         continue;
                     }
 
+                    //fix bug
+                    caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
                     String text = caller.executeScript("$(\".card-button:eq(" + i + 1 + ")\").click();" +
                             "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
                     log.info("findAdv step2 ok");
@@ -161,7 +164,7 @@ public class JdMedia implements Media {
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     $<Tuple<Boolean, String>> $code = $();
-                    caller.waitCheck(8, () -> {
+                    caller.waitComplete(4, p -> {
                         List<String> vals = caller.elementsVal(".el-input__inner").toList();
                         log.info("Codes values: {}", String.join(",", vals));
                         boolean hasCoupon = vals.size() == 10;
@@ -267,14 +270,23 @@ public class JdMedia implements Media {
 
         caller.invokeSelf(caller -> {
             caller.navigateUrl(keepLoginUrl[0], "body");
-            caller.waitCheck(4, () -> caller.getCurrentUrl().equals(loginUrl), false);
+            caller.waitComplete(2, i -> caller.getCurrentUrl().equals(loginUrl), false);
             if (caller.getCurrentUrl().equals(loginUrl)) {
-                try {
-                    caller.executeScript("$(\"#loginname\",$(\"#indexIframe\")[0].contentDocument).val(\"youngcoder\");" +
-                            "$(\"#nloginpwd\",$(\"#indexIframe\")[0].contentDocument).val(\"jinjin&R4ever\");");
-                    caller.waitClickComplete("#paipaiLoginSubmit", 10, () -> caller.getCurrentUrl().startsWith(loginUrl));
-                } catch (Exception e) {
-                    log.info("login error {}...", e.getMessage());
+                caller.executeScript("        var doc = $(\"#indexIframe\")[0].contentDocument;\n" +
+                        "        $(\"#loginname\", doc).val(\"17091916400\");\n" +
+                        "        $(\"#nloginpwd\", doc).val(window.atob(\"amluamluJlI0ZXZlcg==\"));\n" +
+                        "        $(\"#paipaiLoginSubmit\", doc).click();");
+                caller.waitComplete(2, i -> !caller.getCurrentUrl().equals(loginUrl), false);
+//                Rectangle rectangle = caller.getWindowRectangle();
+//                caller.maximize();
+//                caller.switchToFrame("#indexIframe");
+//                byte[] srcs = Base64.getDecoder().decode(caller.elementAttr(".JDJRV-bigimg img", "src"));
+//                BufferedImage bgImg = ImageIO.read(new ByteArrayInputStream(srcs));
+//
+//                caller.setWindowRectangle(rectangle);
+                if (caller.getCurrentUrl().equals(loginUrl)) {
+                    login();
+                    return;
                 }
             }
             log.info("login ok...");

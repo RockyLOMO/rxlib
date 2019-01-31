@@ -7,6 +7,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
@@ -148,40 +149,33 @@ public class TbMedia implements Media {
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                caller.navigateUrl(url, ".box-btn-left", 4, p -> !caller.hasElement(".bg-search-empty"));
-                List<String> eGoodUrls = caller.elementsAttr(".color-m", "href").toList();
-                List<String> eMoneys = caller.elementsText(".number-16").toList();
-                log.info("findAdv step2-1 goodUrls: {}\tmoneys: {}", eGoodUrls.size(), eMoneys.size());
+                List<WebElement> eGoodUrls = caller.navigateUrl(url, ".color-m,.bg-search-empty").toList();
+                log.info("findAdv step2-1 goodUrls: {}", eGoodUrls.size());
                 for (int i = 0; i < eGoodUrls.size(); i++) {
                     String goodsId = goodsInfo.getId().trim(),
-                            eGoodId = HttpUrl.get(eGoodUrls.get(i)).queryParameter("id");
+                            eGoodId = HttpUrl.get(eGoodUrls.get(i).getAttribute("href")).queryParameter("id");
                     log.info("findAdv step2-2 {} {}=={}", goodsInfo.getSellerName(), goodsId, eGoodId);
                     if (!goodsId.equals(eGoodId)) {
                         continue;
                     }
 
                     int offset = i * 3;
-                    goodsInfo.setPrice(eMoneys.get(offset).trim());
-                    goodsInfo.setRebateRatio(eMoneys.get(offset + 1).trim());
-                    goodsInfo.setRebateAmount(eMoneys.get(offset + 2).trim());
-
-                    caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();");
+                    String text = caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();\n" +
+                            "        var result = [], offset = " + offset + ";\n" +
+                            "        for (var i = 0; i < 3; i++) {\n" +
+                            "            var index = offset + i;\n" +
+                            "            result.push($('.number-16:eq(' + index + ')').text());\n" +
+                            "        }\n" +
+                            "        return result.toString();");
                     log.info("findAdv step3-1 ok");
+                    String[] strings = text.split(",");
+                    goodsInfo.setPrice(strings[0].trim());
+                    goodsInfo.setRebateRatio(strings[1].trim());
+                    goodsInfo.setRebateAmount(strings[2].trim());
 
                     try {
-                        caller.elementClick("button[mx-click=submit]", true);
+                        caller.waitClickComplete(9, p -> caller.hasElement("#clipboard-target,#clipboard-target-2"), "button[mx-click=submit]", 4);
                         log.info("findAdv step3-2 ok");
-
-                        caller.waitElementLocated("#clipboard-target,#clipboard-target-2", 4, p -> {
-                            try {
-                                caller.elementClick("button[mx-click=submit]");
-                                log.info("findAdv btn32 reClick ok");
-                                return true;
-                            } catch (Exception e) {
-                                log.info("findAdv btn32 reClick fail");
-                                return false;
-                            }
-                        });
                         goodsInfo.setCouponAmount("0");
                         Future<String> future = null;
                         String couponUrl = caller.elementVal("#clipboard-target-2");
@@ -306,22 +300,16 @@ public class TbMedia implements Media {
 
         caller.invokeSelf(caller -> {
             caller.navigateUrl(keepLoginUrl[0], "body");
-            caller.waitCheck(4, () -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
+            caller.waitComplete(2, i -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
             if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
                 String selector = "#J_SubmitQuick";
                 caller.navigateUrl(loginUrl, selector);
-                caller.waitClickComplete(selector, 6, () -> caller.getCurrentUrl().startsWith("https://login.taobao.com"));
-
-//                caller.navigateUrl("https://pub.alimama.com/myunion.htm");
-//                String url;
-//                while ((url = caller.getCurrentUrl()).startsWith("https://www.alimama.com/member/login.htm")) {
-//                    log.info("please login {}", url);
-//                    isLogin = false;
-//                    Thread.sleep(1000);
-//                }
-//                if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com/myunion.htm")) {
-//                    login();
-//                };
+                try {
+                    caller.waitClickComplete(19, i -> !caller.getCurrentUrl().startsWith("https://login.taobao.com"), selector, 6);
+                } catch (TimeoutException e) {
+                    login();
+                    return;
+                }
             }
             log.info("login ok...");
             if (shareCookie) {

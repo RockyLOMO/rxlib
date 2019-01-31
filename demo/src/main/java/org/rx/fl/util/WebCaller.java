@@ -23,6 +23,8 @@ import org.rx.common.*;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.awt.Rectangle;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -70,13 +72,13 @@ public final class WebCaller extends Disposable {
             }
         }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                clearProcesses();
-            } catch (Exception ex) {
-                log.error("addShutdownHook", ex);
-            }
-        }));
+//        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+//            try {
+//                clearProcesses();
+//            } catch (Exception ex) {
+//                log.error("addShutdownHook", ex);
+//            }
+//        }));
     }
 
     private static RemoteWebDriver create(DriverType driverType, boolean fromPool) {
@@ -195,10 +197,10 @@ public final class WebCaller extends Disposable {
     }
 
     @Getter
-    private long waitMillis = 500;
-    @Getter
     @Setter
     private boolean isShareCookie;
+    @Getter
+    private long waitMillis;
     private RemoteWebDriver driver;
     private Lazy<ReentrantLock> locker;
 
@@ -210,6 +212,24 @@ public final class WebCaller extends Disposable {
         return driver.getWindowHandle();
     }
 
+    public Rectangle getWindowRectangle() {
+        checkNotClosed();
+
+        WebDriver.Window window = driver.manage().window();
+        Point point = window.getPosition();
+        Dimension size = window.getSize();
+        return new Rectangle(point.x, point.y, size.width, size.height);
+    }
+
+    public void setWindowRectangle(Rectangle rectangle) {
+        checkNotClosed();
+        require(rectangle);
+
+        WebDriver.Window window = driver.manage().window();
+        window.setPosition(new Point(rectangle.x, rectangle.y));
+        window.setSize(new Dimension(rectangle.width, rectangle.height));
+    }
+
     public WebCaller() {
         this(DriverType.Chrome);
     }
@@ -217,6 +237,7 @@ public final class WebCaller extends Disposable {
     public WebCaller(DriverType driverType) {
         require(driverType);
 
+        waitMillis = 400;
         driver = create(driverType, true);
         locker = new Lazy<>(ReentrantLock.class);
     }
@@ -228,6 +249,26 @@ public final class WebCaller extends Disposable {
         }
         release(driver);
         driver = null;
+    }
+
+    public void maximize() {
+        checkNotClosed();
+
+        WebDriver.Window window = driver.manage().window();
+        window.maximize();
+    }
+
+    public void switchToDefault() {
+        checkNotClosed();
+        driver.switchTo().defaultContent();
+    }
+
+    public void switchToFrame(String selector) {
+        checkNotClosed();
+        require(selector);
+        WebElement element = findElement(By.cssSelector(selector), true);
+
+        driver.switchTo().frame(element);
     }
 
     public void invokeSelf(Consumer<WebCaller> consumer) {
@@ -309,10 +350,11 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public NQuery<WebElement> navigateUrl(String url, String locatorSelector, int retryCount, Predicate<By> onRetry) {
+    public NQuery<WebElement> navigateUrl(String url, String locatorSelector, int timeoutSeconds, Predicate<Integer> checkComplete) {
         checkNotClosed();
         require(url);
 
+        boolean setCookie = false;
         if (isShareCookie) {
             WebDriver.Options manage = driver.manage();
             Action action = () -> {
@@ -324,10 +366,9 @@ public final class WebCaller extends Disposable {
             };
             try {
                 action.invoke();
+                setCookie = true;
             } catch (UnableToSetCookieException e) {
                 log.debug(e.getMessage());
-//                driver.get(url);
-//                action.invoke();
             }
         }
         try {
@@ -339,6 +380,7 @@ public final class WebCaller extends Disposable {
                 driver = create(DriverType.IE, true);
                 driver.get(url);
                 temp.quit();
+                log.info("exchange driver for {}", url);
             }
         }
 
@@ -346,9 +388,9 @@ public final class WebCaller extends Disposable {
         if (locatorSelector == null) {
             elements = NQuery.of();
         } else {
-            elements = waitElementLocated(locatorSelector, retryCount, onRetry);
+            elements = waitElementLocated(locatorSelector, timeoutSeconds, checkComplete);
         }
-        if (isShareCookie) {
+        if (setCookie) {
             syncCookie();
         }
         return elements;
@@ -376,92 +418,77 @@ public final class WebCaller extends Disposable {
         return waitElementLocated(selector, 4, null);
     }
 
-    public NQuery<WebElement> waitElementLocated(String selector, int retryCount, Predicate<By> onRetry) {
+    public NQuery<WebElement> waitElementLocated(String selector, int timeoutSeconds, Predicate<Integer> checkComplete) {
         require(selector);
         By locator = By.cssSelector(selector);
 
         SystemException lastEx = null;
         WebDriverWait wait = null;
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                NQuery<WebElement> elements = findElements(locator, false);
-                if (elements.any()) {
-                    log.info("Wait {} located ok", locator);
-                    return elements;
-                }
+        int count = 0, loopCount = Math.round(timeoutSeconds * 1000f / waitMillis);
+        do {
+            NQuery<WebElement> elements = findElements(locator, false);
+            if (elements.any()) {
+                log.info("Wait {} located ok", locator);
+                return elements;
+            }
 
+            try {
                 if (wait == null) {
                     wait = new WebDriverWait(driver, 1);
+                    wait.withTimeout(Duration.ofMillis(waitMillis));
                 }
                 wait.until(ExpectedConditions.presenceOfElementLocated(locator));
             } catch (Exception e) {
                 log.info("waitElementLocated {}", e.getMessage());
                 lastEx = SystemException.wrap(e);
-
-                NQuery<WebElement> elements = findElements(locator, false);
-                if (elements.any()) {
-                    log.info("Wait {} located ok", locator);
-                    return elements;
-                }
-
-                if (onRetry != null && !onRetry.test(locator)) {
-                    break;
-                }
-                if (i == retryCount) {
-                    throw SystemException.wrap(e);
-                }
-                i++;
             }
-        }
 
-        if (lastEx != null) {
-            throw lastEx;
-        }
-        throw new InvalidOperationException("No such elements");
+            elements = findElements(locator, false);
+            if (elements.any()) {
+                log.info("Wait {} located ok", locator);
+                return elements;
+            }
+            if (checkComplete != null && checkComplete.test(count)) {
+                return elements;
+            }
+        } while (count++ < loopCount);
+        throw lastEx != null ? lastEx : new InvalidOperationException("No such elements");
     }
 
     @SneakyThrows
-    public void waitClickComplete(String selector, int reClickCount, Func<Boolean> checkState) {
-        require(selector, checkState);
-        By clickBy = By.cssSelector(selector);
+    public void waitClickComplete(int timeoutSeconds, Predicate<Integer> checkComplete, String selector, int reClickPerSeconds) {
+        require(selector, checkComplete);
 
-        int count = 0;
-        do {
-            if (count == 0) {
-                WebElement btn = findElement(clickBy, false);
-                if (btn == null) {
-                    log.info("btn-{} missing..", clickBy);
-                    break;
+        int reClickCount = Math.round(reClickPerSeconds * 1000f / waitMillis);
+        waitComplete(timeoutSeconds, count -> {
+            if (reClickCount > 0 && count % reClickCount == 0) {
+                try {
+                    elementClick(selector, true);
+                    log.info("Element {} click..", selector);
+                } catch (InvalidOperationException e) {
+                    log.info(e.getMessage());
+                    return true;
                 }
-                btn.click();
-                log.info("btn-{} click..", clickBy);
             }
-            log.info("wait btn-{} callback..", clickBy);
-            Thread.sleep(waitMillis);
-            count++;
-            if (count >= reClickCount) {
-                count = 0;
-            }
-        }
-        while (checkState.invoke());
+            log.info("Wait element {} click callback..", selector);
+            return checkComplete.test(count);
+        }, true);
     }
 
     @SneakyThrows
-    public void waitCheck(int checkCount, Func<Boolean> checkState, boolean throwOnFail) {
-        require(checkState);
+    public void waitComplete(int timeoutSeconds, Predicate<Integer> checkComplete, boolean throwOnFail) {
+        require(checkComplete);
 
-        int count = 0;
+        int count = 0, loopCount = Math.round(timeoutSeconds * 1000f / waitMillis);
         do {
-            if (checkState.invoke()) {
+            if (checkComplete.test(count)) {
                 return;
             }
             Thread.sleep(waitMillis);
-            count++;
         }
-        while (count < checkCount);
+        while (count++ < loopCount);
         if (throwOnFail) {
-            throw new InvalidOperationException("Wait check fail");
+            throw new TimeoutException("Wait complete fail");
         }
     }
 
@@ -546,9 +573,12 @@ public final class WebCaller extends Disposable {
 
         WebElement element;
         if (waitElementLocated) {
-            element = waitElementLocated(selector).first();
+            element = waitElementLocated(selector).firstOrDefault();
         } else {
-            element = findElement(By.cssSelector(selector), true);
+            element = findElement(By.cssSelector(selector), false);
+        }
+        if (element == null) {
+            throw new InvalidOperationException("Element {} missing..");
         }
         try {
             element.click();

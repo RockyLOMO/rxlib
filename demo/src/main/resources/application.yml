@@ -1,4 +1,4 @@
-server.port: 8080
+server.port: 80
 
 spring.profiles.active: prd
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
@@ -32,7 +32,7 @@ app:
     initSize: 2
   ie:
     driver: /usr/chrome/IEDriverServer.exe
-    cookieUrl: http://x.%s:8080/media/index.html?rx=1  #需要配置hosts
+    cookieUrl: http://x.%s/media/index.html?rx=1  #需要配置hosts
     initSize: 0
   media:
     maxUserCount: 1000
@@ -40,7 +40,7 @@ app:
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 30
     remoteMode: false
-    remoteEndpoint: 127.0.0.1:8080
+    remoteEndpoint: 127.0.0.1:80
     cacheSeconds: 180
     taobao:
       coreSize: 0
@@ -67,7 +67,7 @@ app:
     initSize: 3
   ie:
     driver: C:\_rx\chrome\IEDriverServer.exe
-    cookieUrl: http://x.%s:8080/media/index.html?rx=1
+    cookieUrl: http://x.%s/media/index.html?rx=1
     initSize: 1
   media:
     maxUserCount: 1000
@@ -75,7 +75,7 @@ app:
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false
-    remoteEndpoint: 127.0.0.1:8080
+    remoteEndpoint: 127.0.0.1:80
     cacheSeconds: 180
     taobao:
       coreSize: 1

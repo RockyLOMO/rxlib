@@ -34,14 +34,26 @@
 
         _submitForm("https://union.jd.com/api/report/queryOrderDetail",
             JSON.parse("{\"data\":{\"endTime\":\"2019-01-20\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"2019-01-12\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}"), true);
+    }
 
+    function tb_getMoney() {
+        $('.box-btn-left:eq(0)').click();
+        var result = [], offset = 0;
+        for (var i = 0; i < 3; i++) {
+            var index = offset + i;
+            result.push($('.number-16:eq(' + index + ')').text());
+        }
+        return result.toString();
+    }
 
-        var val = [];
-        $("#pane-0 input").each(function (i, o) {
-            val.push($(o).val());
-        });
-        return val.toString();
+    function jd_login() {
+        var doc = $("#indexIframe")[0].contentDocument;
+        $("#loginname", doc).val("17091916400");
+        $("#nloginpwd", doc).val(window.atob("amluamluJlI0ZXZlcg=="));
+        $("#paipaiLoginSubmit", doc).click();
+    }
 
+    function jd_orders() {
         $.ajax({
             type: "post",
             url: "https://union.jd.com/api/report/queryOrderDetail",

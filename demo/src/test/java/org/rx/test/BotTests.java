@@ -2,6 +2,9 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.Test;
+import org.rx.common.App;
+import org.rx.common.Contract;
+import org.rx.common.SystemException;
 import org.rx.fl.util.AwtBot;
 
 import javax.imageio.ImageIO;
@@ -9,6 +12,7 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.Map;
 
 public class BotTests {
     @SneakyThrows
@@ -34,6 +38,5 @@ public class BotTests {
 //        for (int i = 0; i < 5; i++) {
 //            bot.keysPress(KeyEvent.VK_DOWN);
 //            bot.delay(1000);
-//        }
     }
 }
