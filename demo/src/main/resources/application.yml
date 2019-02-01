@@ -72,7 +72,7 @@ app:
     initSize: 0
   media:
     maxUserCount: 1000
-    syncWeeklyOrderSeconds: 20
+    syncWeeklyOrderSeconds: 15
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false

@@ -69,6 +69,7 @@ public class OrderService {
         require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
+            System.out.println("asdaskjdlkajdlkasdakld1");
             require(media.getMediaType(), media.getOrderNo(), media.getCreateTime());
 
             media.setCreateTime(new DateTime(media.getCreateTime()).getDateTimeComponent());
