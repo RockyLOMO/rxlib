@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -14,11 +15,15 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
+import java.io.InputStream;
 
 import static org.rx.common.Contract.require;
 
 public class AwtBot {
+    public static void init() {
+        System.setProperty("java.awt.headless", "false");
+    }
+
     @SneakyThrows
     public static String getClipboardString() {
         Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -27,6 +32,17 @@ public class AwtBot {
             return (String) t.getTransferData(DataFlavor.stringFlavor);
         }
         return "";
+    }
+
+    @SneakyThrows
+    public static BufferedImage getImageFromResource(Class owner, String resourceName) {
+        require(owner, resourceName);
+        InputStream stream = owner.getResourceAsStream(resourceName);
+        if (stream == null) {
+            throw new InvalidOperationException(String.format("%s missing", resourceName));
+        }
+
+        return ImageIO.read(stream);
     }
 
     public static boolean partEquals(BufferedImage image, int imageX, int imageY, BufferedImage partImage) {
@@ -57,6 +73,17 @@ public class AwtBot {
 
     public void delay(int delay) {
         bot.delay(delay);
+    }
+
+    public void clickByImage(BufferedImage keyImg) {
+        require(keyImg);
+        Point point = getScreenPoint(keyImg);
+        if (point == null) {
+            throw new InvalidOperationException("Point not found");
+        }
+
+        int x = point.x + keyImg.getWidth() / 2, y = point.y + keyImg.getHeight() / 2;
+        mouseLeftClick(x, y);
     }
 
     @SneakyThrows

@@ -29,6 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
+import static org.rx.fl.util.WebCaller.BodySelector;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
@@ -159,14 +160,14 @@ public class TbMedia implements Media {
                         continue;
                     }
 
-                    int offset = i * 3;
-                    String text = caller.executeScript("$('.box-btn-left:eq(" + i + ")').click();\n" +
-                            "        var result = [], offset = " + offset + ";\n" +
+                    String btn1Selector = String.format(".box-btn-left:eq(%s)", i);
+                    String text = caller.executeScript(String.format("$('%s').click();\n" +
+                            "        var result = [], offset = %s;\n" +
                             "        for (var i = 0; i < 3; i++) {\n" +
                             "            var index = offset + i;\n" +
                             "            result.push($('.number-16:eq(' + index + ')').text());\n" +
                             "        }\n" +
-                            "        return result.toString();");
+                            "        return result.toString();", btn1Selector, i * 3));
                     log.info("findAdv step3-1 ok");
                     String[] strings = text.split(",");
                     goodsInfo.setPrice(strings[0].trim());
@@ -174,8 +175,14 @@ public class TbMedia implements Media {
                     goodsInfo.setRebateAmount(strings[2].trim());
 
                     try {
-                        caller.waitClickComplete(9, p -> caller.hasElement("#clipboard-target,#clipboard-target-2"), "button[mx-click=submit]", 4);
+                        final int reClickEachSeconds = 4, waitTimeout = reClickEachSeconds * 2 + 1;
+                        String btn2Selector = "button[mx-click=submit]";
+                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+
+                        String codeSelector = "#clipboard-target,#clipboard-target-2";
+                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(codeSelector), btn2Selector, reClickEachSeconds, false);
                         log.info("findAdv step3-2 ok");
+
                         goodsInfo.setCouponAmount("0");
                         Future<String> future = null;
                         String couponUrl = caller.elementVal("#clipboard-target-2");
@@ -196,10 +203,10 @@ public class TbMedia implements Media {
                         }
 
                         caller.waitElementLocated("#magix_vf_code");
-                        caller.executeScript("$('.tab-nav li:eq(3)').click();return true;");
+                        caller.executeScript("$('.tab-nav li:eq(3)').click();");
                         log.info("findAdv step3-3 ok");
 
-                        String code = caller.elementVal("#clipboard-target,#clipboard-target-2");
+                        String code = caller.elementVal(codeSelector);
 
                         if (future != null) {
                             try {
@@ -299,13 +306,13 @@ public class TbMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            caller.navigateUrl(keepLoginUrl[0], "body");
+            caller.navigateUrl(keepLoginUrl[0], BodySelector);
             caller.waitComplete(2, i -> !caller.getCurrentUrl().startsWith("https://pub.alimama.com"), false);
             if (!caller.getCurrentUrl().startsWith("https://pub.alimama.com")) {
                 String selector = "#J_SubmitQuick";
                 caller.navigateUrl(loginUrl, selector);
                 try {
-                    caller.waitClickComplete(19, i -> !caller.getCurrentUrl().startsWith("https://login.taobao.com"), selector, 6);
+                    caller.waitClickComplete(19, i -> !caller.getCurrentUrl().startsWith("https://login.taobao.com"), selector, 6, false);
                 } catch (TimeoutException e) {
                     login();
                     return;

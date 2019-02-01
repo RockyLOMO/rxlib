@@ -127,6 +127,16 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.monkeywie</groupId>
+            <artifactId>proxyee</artifactId>
+            <version>1.0.4</version>
+        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -155,7 +165,6 @@
             <artifactId>com.db4o.nativequery</artifactId>
             <version>7.7.67</version>
         </dependency>
-
         <dependency>
             <groupId>com.github.qcloudsms</groupId>
             <artifactId>qcloudsms</artifactId>

@@ -32,6 +32,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.beans.$.$;
 import static org.rx.common.Contract.toJsonString;
+import static org.rx.fl.util.WebCaller.BodySelector;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
@@ -44,6 +45,7 @@ public class JdMedia implements Media {
 
     @Getter
     private volatile boolean isLogin;
+    private JdLogin helper;
     private WebCaller caller;
 
     @Override
@@ -52,6 +54,8 @@ public class JdMedia implements Media {
     }
 
     public JdMedia() {
+        int loginPort = App.readSetting("app.media.jd.loginPort");
+        helper = new JdLogin(loginPort);
         caller = new WebCaller();
         int period = App.readSetting("app.media.jd.keepLoginSeconds");
         TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, this.getType().name());
@@ -61,7 +65,7 @@ public class JdMedia implements Media {
     public List<OrderInfo> findOrders(DateTime start, DateTime end) {
         login();
         return caller.invokeSelf(caller -> {
-            caller.navigateUrl("https://union.jd.com/order", "body");
+            caller.navigateUrl("https://union.jd.com/order", BodySelector);
 
             int pageNo = 1, pageSize = 100;
             String jData = String.format("{\n" +
@@ -150,10 +154,11 @@ public class JdMedia implements Media {
                         continue;
                     }
 
-                    //fix bug
+                    //rect需要focus才呈现?
                     caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
-                    String text = caller.executeScript("$(\".card-button:eq(" + offset + ")\").click();" +
-                            "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
+                    String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
+                    String text = caller.executeScript(String.format("$('%s').click();" +
+                            "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));
                     log.info("findAdv step2 ok");
                     String[] strings = text.split(",");
                     goodsInfo.setPrice(strings[0].trim());
@@ -165,7 +170,7 @@ public class JdMedia implements Media {
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     $<Tuple<Boolean, String>> $code = $();
-                    caller.waitComplete(4, p -> {
+                    caller.waitClickComplete(7, p -> {
                         String selector = ".el-input__inner";
                         List<String> vals = caller.elementsVal(selector).toList();
                         if (vals.isEmpty()) {
@@ -176,7 +181,7 @@ public class JdMedia implements Media {
                         String xCode = vals.get(hasCoupon ? 7 : 6);
                         $code.$ = Tuple.of(hasCoupon, xCode);
                         return !Strings.isNullOrEmpty(xCode) && xCode.startsWith("http");
-                    }, true);
+                    }, btn1Selector, 3, true);
                     String code = $code.$.right;
                     if ($code.$.left) {
                         future = TaskFactory.run(() -> {
@@ -274,21 +279,17 @@ public class JdMedia implements Media {
         }
 
         caller.invokeSelf(caller -> {
-            caller.navigateUrl(keepLoginUrl[0], "body");
+            caller.navigateUrl(keepLoginUrl[0], BodySelector);
             caller.waitComplete(2, i -> caller.getCurrentUrl().equals(loginUrl), false);
             if (caller.getCurrentUrl().equals(loginUrl)) {
-                caller.executeScript("        var doc = $(\"#indexIframe\")[0].contentDocument;\n" +
-                        "        $(\"#loginname\", doc).val(\"17091916400\");\n" +
-                        "        $(\"#nloginpwd\", doc).val(window.atob(\"amluamluJlI0ZXZlcg==\"));\n" +
-                        "        $(\"#paipaiLoginSubmit\", doc).click();");
-                caller.waitComplete(2, i -> !caller.getCurrentUrl().equals(loginUrl), false);
-//                Rectangle rectangle = caller.getWindowRectangle();
-//                caller.maximize();
-//                caller.switchToFrame("#indexIframe");
-//                byte[] srcs = Base64.getDecoder().decode(caller.elementAttr(".JDJRV-bigimg img", "src"));
-//                BufferedImage bgImg = ImageIO.read(new ByteArrayInputStream(srcs));
+//                caller.executeScript("var doc = $(\"#indexIframe\")[0].contentDocument;\n" +
+//                        "        $(\"#loginname\", doc).val(\"17091916400\");\n" +
+//                        "        $(\"#nloginpwd\", doc).val(window.atob(\"amluamluJlI0ZXZlcg==\"));\n" +
+//                        "        $(\"#paipaiLoginSubmit\", doc).click();");
+//                caller.waitComplete(8, i -> !caller.getCurrentUrl().equals(loginUrl), false);
 //
-//                caller.setWindowRectangle(rectangle);
+                caller.navigateUrl(helper.produceKey(), BodySelector);
+
                 if (caller.getCurrentUrl().equals(loginUrl)) {
                     login();
                     return;

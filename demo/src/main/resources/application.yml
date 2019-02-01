@@ -29,7 +29,7 @@ app:
     dataPath: /usr/chrome/data
     downloadPath: /usr/chrome/download
     isBackground: false
-    initSize: 2
+    initSize: 1
   ie:
     driver: /usr/chrome/IEDriverServer.exe
     cookieUrl: http://x.%s/media/index.html?rx=1  #需要配置hosts
@@ -48,6 +48,7 @@ app:
     jd:
       coreSize: 1
       keepLoginSeconds: 60
+      loginPort: 8081
   repository.dbFile: /usr/lr.db
 
 ---
@@ -83,4 +84,5 @@ app:
     jd:
       coreSize: 1
       keepLoginSeconds: 60
+      loginPort: 8081
   repository.dbFile: /_rx/lr.db

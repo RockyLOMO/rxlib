@@ -21,7 +21,6 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
 import org.rx.util.function.Action;
-import org.rx.util.function.Func;
 
 import java.awt.Rectangle;
 import java.time.Duration;
@@ -55,6 +54,7 @@ public final class WebCaller extends Disposable {
         }
     }
 
+    public static final String BodySelector = "body";
     private static final ConcurrentHashMap<DriverType, PooledItem> driverPool;
     private static final String dataPath = App.readSetting("app.chrome.dataPath");
     private static volatile int pathCounter;
@@ -71,14 +71,6 @@ public final class WebCaller extends Disposable {
                 init(driverType, init);
             }
         }
-
-//        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-//            try {
-//                clearProcesses();
-//            } catch (Exception ex) {
-//                log.error("addShutdownHook", ex);
-//            }
-//        }));
     }
 
     private static RemoteWebDriver create(DriverType driverType, boolean fromPool) {
@@ -147,8 +139,8 @@ public final class WebCaller extends Disposable {
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
-                            "ash-force-desktop", "disable-background-mode", "no-sandbox", "test-type=webdriver");
-//                    opt.addArguments("window-position=", "disable-dev-shm-usage");
+                            "ash-force-desktop", "disable-background-mode", "no-sandbox");
+//                    opt.addArguments("disable-dev-shm-usage");
                     if (!Strings.isNullOrEmpty(dataPath)) {
                         opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
                     }
@@ -193,7 +185,7 @@ public final class WebCaller extends Disposable {
     private static void clearProcesses() {
         String[] pNames = {"chromedriver.exe", "IEDriverServer.exe", "iexplore.exe"};
         App.execShell(null, NQuery.of(pNames).select(p -> "taskkill /F /IM " + p).toArray(String.class));
-        Thread.sleep(5000);
+        Thread.sleep(4000);
     }
 
     @Getter
@@ -456,21 +448,22 @@ public final class WebCaller extends Disposable {
     }
 
     @SneakyThrows
-    public void waitClickComplete(int timeoutSeconds, Predicate<Integer> checkComplete, String selector, int reClickPerSeconds) {
-        require(selector, checkComplete);
+    public void waitClickComplete(int timeoutSeconds, Predicate<Integer> checkComplete, String btnSelector, int reClickEachSeconds, boolean skipFirstClick) {
+        require(checkComplete, btnSelector);
+        require(reClickEachSeconds, reClickEachSeconds > 0);
 
-        int reClickCount = Math.round(reClickPerSeconds * 1000f / waitMillis);
+        int reClickCount = Math.round(reClickEachSeconds * 1000f / waitMillis);
         waitComplete(timeoutSeconds, count -> {
-            if (reClickCount > 0 && count % reClickCount == 0) {
+            if (!(count == 0 && skipFirstClick) && count % reClickCount == 0) {
                 try {
-                    elementClick(selector, true);
-                    log.info("Element {} click..", selector);
+                    elementClick(btnSelector, true);
+                    log.info("Element {} click..", btnSelector);
                 } catch (InvalidOperationException e) {
                     log.info(e.getMessage());
                     return true;
                 }
             }
-            log.info("Wait element {} click callback..", selector);
+            log.info("Wait element {} click callback..", btnSelector);
             return checkComplete.test(count);
         }, true);
     }
