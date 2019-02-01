@@ -13,6 +13,7 @@ import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
 import org.rx.common.LogWriter;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.GoodsInfo;
@@ -165,7 +166,11 @@ public class JdMedia implements Media {
                     Future<String> future = null;
                     $<Tuple<Boolean, String>> $code = $();
                     caller.waitComplete(4, p -> {
-                        List<String> vals = caller.elementsVal(".el-input__inner").toList();
+                        String selector = ".el-input__inner";
+                        List<String> vals = caller.elementsVal(selector).toList();
+                        if (vals.isEmpty()) {
+                            throw new InvalidOperationException(String.format("Wait %s missing.. -> %s", selector, url));
+                        }
                         log.info("Codes values: {}", String.join(",", vals));
                         boolean hasCoupon = vals.size() == 10;
                         String xCode = vals.get(hasCoupon ? 7 : 6);
