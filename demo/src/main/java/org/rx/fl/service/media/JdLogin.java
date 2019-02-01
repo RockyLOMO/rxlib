@@ -1,10 +1,8 @@
 package org.rx.fl.service.media;
 
-import com.github.monkeywie.proxyee.exception.HttpProxyExceptionHandle;
 import com.github.monkeywie.proxyee.intercept.HttpProxyIntercept;
 import com.github.monkeywie.proxyee.intercept.HttpProxyInterceptInitializer;
 import com.github.monkeywie.proxyee.intercept.HttpProxyInterceptPipeline;
-import com.github.monkeywie.proxyee.intercept.common.CertDownIntercept;
 import com.github.monkeywie.proxyee.server.HttpProxyServer;
 import com.github.monkeywie.proxyee.server.HttpProxyServerConfig;
 import io.netty.channel.Channel;
@@ -40,7 +38,7 @@ public final class JdLogin extends Disposable {
     private HttpProxyServer proxyServer;
 
     public JdLogin(int port) {
-        waiter = new ManualResetEvent(false);
+        waiter = new ManualResetEvent();
         bot = new AwtBot();
         TaskFactory.run(() -> listen(port));
     }
@@ -52,13 +50,11 @@ public final class JdLogin extends Disposable {
 
     private void listen(int port) {
         HttpProxyServerConfig config = new HttpProxyServerConfig();
-        config.setHandleSsl(true);
+        config.setHandleSsl(false);
         proxyServer = new HttpProxyServer().serverConfig(config)
-//        .proxyConfig(new ProxyConfig(ProxyType.SOCKS5, "127.0.0.1", 1085))  //使用socks5二级代理
                 .proxyInterceptInitializer(new HttpProxyInterceptInitializer() {
                     @Override
                     public void init(HttpProxyInterceptPipeline pipeline) {
-//                        pipeline.addLast(new CertDownIntercept());  //处理证书下载
                         pipeline.addLast(new HttpProxyIntercept() {
                             @Override
                             public void beforeRequest(Channel clientChannel, HttpRequest httpRequest, HttpProxyInterceptPipeline pipeline) throws Exception {
@@ -78,10 +74,7 @@ public final class JdLogin extends Disposable {
                                     if (url.startsWith("passport.jd.com/uc/nplogin?")) {
                                         log.info("JdLogin detect {}", url);
                                         loginKey = "http://" + url;
-                                        waiter.set();
-
-                                        Thread.sleep(200);
-                                        waiter.reset();
+                                        waiter.setThenReset(3000);
                                         clientChannel.close();
                                         return;
                                     }
@@ -98,16 +91,6 @@ public final class JdLogin extends Disposable {
                             }
                         });
                     }
-                })
-                .httpProxyExceptionHandle(new HttpProxyExceptionHandle() {
-                    @Override
-                    public void beforeCatch(Channel clientChannel, Throwable cause) throws Exception {
-                    }
-
-                    @Override
-                    public void afterCatch(Channel clientChannel, Channel proxyChannel, Throwable cause) throws Exception {
-                        log.error("JdLogin", cause);
-                    }
                 });
         proxyServer.start(port);
     }
@@ -121,7 +104,7 @@ public final class JdLogin extends Disposable {
         bot.clickByImage(jdKey);
         log.info("step1 clickByImage ok");
 
-        waiter.waitOne();
+        waiter.waitOne(6 * 1000);
         log.info("step2 wait proxy callback");
 
         try {

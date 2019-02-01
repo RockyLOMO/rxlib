@@ -1,5 +1,3 @@
-org.rx:
-  util:
-    DemoBean:
-      demoKey: ->
-      $.id=$val.id;
+org.rx.util.DemoBean:
+  demoKey: >
+  $.id=$val.id;

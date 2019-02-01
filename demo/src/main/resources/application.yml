@@ -36,7 +36,7 @@ app:
     initSize: 0
   media:
     maxUserCount: 1000
-    syncWeeklyOrderSeconds: 80
+    syncWeeklyOrderSeconds: 20
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 30
     remoteMode: false
@@ -65,21 +65,21 @@ app:
     dataPath: C:\_rx\chrome\data
     downloadPath: C:\_rx\chrome\download
     isBackground: false
-    initSize: 3
+    initSize: 0
   ie:
     driver: C:\_rx\chrome\IEDriverServer.exe
     cookieUrl: http://x.%s/media/index.html?rx=1
-    initSize: 1
+    initSize: 0
   media:
     maxUserCount: 1000
-    syncWeeklyOrderSeconds: 80
+    syncWeeklyOrderSeconds: 20
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
     cacheSeconds: 180
     taobao:
-      coreSize: 1
+      coreSize: 0
       keepLoginSeconds: 90
     jd:
       coreSize: 1

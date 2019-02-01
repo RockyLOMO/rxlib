@@ -24,7 +24,6 @@ import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.JsonMapper;
 
-import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -98,14 +97,16 @@ public class JdMedia implements Media {
                         "        });\n" +
                         "        return JSON.stringify(window._callbackValue);", jData));
                 log.info("findOrders callbackValue {}", callback);
-                JSONObject jsVal = JSON.parseObject(callback);
-                if (jsVal.getIntValue("code") != 200) {
+                json = JSON.parseObject(callback);
+                if (json.getIntValue("code") != 200) {
+                    log.info("check login");
                     keepLogin(false);
                     break;
                 }
-                json = JSON.parseObject(callback).getJSONObject("data");
+                json = json.getJSONObject("data");
                 JSONArray orders = json.getJSONArray("orderDetailInfos");
                 if (orders.isEmpty()) {
+                    log.info("no data");
                     break;
                 }
 
@@ -132,7 +133,7 @@ public class JdMedia implements Media {
 
                 pageNo++;
             } while (json.getBooleanValue("moreData"));
-
+            log.info("get {} size orders", list.size());
             return list;
         }, true);
     }
@@ -155,7 +156,7 @@ public class JdMedia implements Media {
                     }
 
                     //rect需要focus才呈现?
-                    caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
+//                    caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
                     String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));
@@ -272,6 +273,7 @@ public class JdMedia implements Media {
         return null;
     }
 
+    @SneakyThrows
     @Override
     public void login() {
         if (isLogin) {
@@ -281,18 +283,22 @@ public class JdMedia implements Media {
         caller.invokeSelf(caller -> {
             caller.navigateUrl(keepLoginUrl[0], BodySelector);
             caller.waitComplete(2, i -> caller.getCurrentUrl().equals(loginUrl), false);
-            if (caller.getCurrentUrl().equals(loginUrl)) {
+            while (caller.getCurrentUrl().equals(loginUrl)) {
 //                caller.executeScript("var doc = $(\"#indexIframe\")[0].contentDocument;\n" +
 //                        "        $(\"#loginname\", doc).val(\"17091916400\");\n" +
 //                        "        $(\"#nloginpwd\", doc).val(window.atob(\"amluamluJlI0ZXZlcg==\"));\n" +
 //                        "        $(\"#paipaiLoginSubmit\", doc).click();");
 //                caller.waitComplete(8, i -> !caller.getCurrentUrl().equals(loginUrl), false);
 //
-                caller.navigateUrl(helper.produceKey(), BodySelector);
+                try {
+                    String key = helper.produceKey();
+                    log.info("produce key {}", key);
+                    caller.navigateUrl(key, BodySelector);
+                    log.info("consume key {}", caller.getCurrentUrl());
 
-                if (caller.getCurrentUrl().equals(loginUrl)) {
-                    login();
-                    return;
+                    Thread.sleep(2000);
+                } catch (Exception e) {
+                    log.error("login", e);
                 }
             }
             log.info("login ok...");

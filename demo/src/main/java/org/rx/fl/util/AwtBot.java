@@ -3,6 +3,7 @@ package org.rx.fl.util;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 
@@ -19,9 +20,12 @@ import java.io.InputStream;
 
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public class AwtBot {
     public static void init() {
         System.setProperty("java.awt.headless", "false");
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        log.info("ScreenSize: {}", screenSize);
     }
 
     @SneakyThrows

@@ -33,7 +33,7 @@ public class MediaService {
     @Data
     private static class HoldItem {
         private final ConcurrentLinkedQueue<Media> queue = new ConcurrentLinkedQueue<>();
-        private final ManualResetEvent waiter = new ManualResetEvent(false);
+        private final ManualResetEvent waiter = new ManualResetEvent();
     }
 
     private static final ConcurrentHashMap<MediaType, HoldItem> holder = new ConcurrentHashMap<>();
@@ -128,9 +128,6 @@ public class MediaService {
                 DateTime now = DateTime.now();
                 DateTime start = now.addDays(-daysAgo);
                 List<OrderInfo> orders = findOrders(media, start, now);
-                if (CollectionUtils.isEmpty(orders)) {
-                    continue;
-                }
                 log.info("syncOrder {}", toJsonString(orders));
                 orderService.saveOrders(orders);
             } catch (Exception e) {

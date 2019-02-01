@@ -40,7 +40,7 @@ public final class WxBot implements Bot {
         private String value;
 
         public CacheItem() {
-            waiter = new ManualResetEvent(false);
+            waiter = new ManualResetEvent();
         }
     }
 
