@@ -151,7 +151,7 @@ public class JdMedia implements Media {
 
                     //fix bug
                     caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
-                    String text = caller.executeScript("$(\".card-button:eq(" + i + 1 + ")\").click();" +
+                    String text = caller.executeScript("$(\".card-button:eq(" + offset + ")\").click();" +
                             "return [$(\".three:eq(" + i + ") span:first\").text(),$(\".one:eq(" + i + ") b\").text()].toString();");
                     log.info("findAdv step2 ok");
                     String[] strings = text.split(",");
