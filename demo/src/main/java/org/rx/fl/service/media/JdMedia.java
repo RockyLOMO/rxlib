@@ -63,7 +63,7 @@ public class JdMedia implements Media {
         return caller.invokeSelf(caller -> {
             caller.navigateUrl("https://union.jd.com/order", BodySelector);
 
-            int pageNo = 1, pageSize = 100;
+            int pageNo = 1, pageSize = 80;
             String jData = String.format("{\n" +
                     "                \"data\": {\n" +
                     "                    \"endTime\": \"%s\",\n" +
@@ -78,80 +78,78 @@ public class JdMedia implements Media {
             log.info("findOrders data\n{}", jData);
 
             List<OrderInfo> list = new ArrayList<>();
-            try {
-                JSONObject json;
-                do {
-                    try {
-                        Thread.sleep(2000);
-                        String callback = caller.executeScript(String.format("$.ajax({\n" +
-                                "            type: \"post\",\n" +
-                                "            url: \"https://union.jd.com/api/report/queryOrderDetail\",\n" +
-                                "            data: JSON.stringify(%s),\n" +
-                                "            async: false,\n" +
-                                "            contentType: \"application/json; charset=utf-8\",\n" +
-                                "            dataType: \"json\",\n" +
-                                "            success: function (data) {\n" +
-                                "                console.log(data);\n" +
-                                "                window._callbackValue = data;\n" +
-                                "            }\n" +
-                                "        });\n" +
-                                "        return JSON.stringify(window._callbackValue);", jData));
-                        log.info("findOrders callbackValue {}", callback);
-                        json = JSON.parseObject(callback);
-                        if (json.getIntValue("code") != 200) {
-                            log.info("check login");
-                            keepLogin(false);
+            JSONObject json;
+            do {
+                String callback = caller.executeScript(String.format("$.ajax({\n" +
+                        "            type: \"post\",\n" +
+                        "            url: \"https://union.jd.com/api/report/queryOrderDetail\",\n" +
+                        "            data: JSON.stringify(%s),\n" +
+                        "            async: false,\n" +
+                        "            contentType: \"application/json; charset=utf-8\",\n" +
+                        "            dataType: \"json\",\n" +
+                        "            success: function (data) {\n" +
+                        "                // console.log(data);\n" +
+                        "                window._callbackValue = data;\n" +
+                        "            }\n" +
+                        "        });\n" +
+                        "        var json = {error: false}, result = window._callbackValue;\n" +
+                        "        if (result.code != 200) {\n" +
+                        "            json.error = true;\n" +
+                        "            return JSON.stringify(json);\n" +
+                        "        }\n" +
+                        "        result = result.data;\n" +
+                        "        json.moreData = result.moreData;\n" +
+                        "        json.orders = [];\n" +
+                        "        var orderDetailInfos = result.orderDetailInfos;\n" +
+                        "        for (var i = 0; i < orderDetailInfos.length; i++) {\n" +
+                        "            var order = {}, item = orderDetailInfos[i];\n" +
+                        "            order.orderNo = item.orderId;\n" +
+                        "            order.goodsId = item.orderSkuDetailInfos[0].skuId;\n" +
+                        "            order.goodsName = item.orderSkuDetailInfos[0].skuName;\n" +
+                        "            order.unitPrice = item.orderSkuDetailInfos[0].price;\n" +
+                        "            order.quantity = item.orderSkuDetailInfos[0].skuNum;\n" +
+                        "            order.sellerName = \"\";\n" +
+                        "            order.payAmount = item.payPriceSum;\n" +
+                        "            order.rebateAmount = item.estimateFeeOrder;\n" +
+                        "            order.settleAmount = item.actualFeeOrder;\n" +
+                        "            order.createTime = item.orderTimeStr;\n" +
+                        "            order.validCodeStr = item.validCodeStr;\n" +
+                        "            json.orders.push(order);\n" +
+                        "        }\n" +
+                        "        return JSON.stringify(json);", jData));
+                log.info("findOrders callbackValue {}", callback);
+                json = JSON.parseObject(callback);
+                if (json.getBooleanValue("error")) {
+                    log.info("check login");
+                    keepLogin(false);
+                    break;
+                }
+                JSONArray orders = json.getJSONArray("orders");
+                log.info("findOrders get {} orders", orders.size());
+                for (int i = 0; i < orders.size(); i++) {
+                    JSONObject row = orders.getJSONObject(i);
+                    //spring boot error
+//                        OrderInfo order = JsonMapper.Default.convertTo(OrderInfo.class, "jdQueryOrderDetail", row);
+                    OrderInfo order = row.toJavaObject(OrderInfo.class);
+                    order.setMediaType(this.getType());
+                    switch (row.getString("validCodeStr").trim()) {
+                        case "已结算":
+                            order.setStatus(OrderStatus.Settlement);
                             break;
-                        }
-                        json = json.getJSONObject("data");
-                        JSONArray orders = json.getJSONArray("orderDetailInfos");
-                        if (orders.isEmpty()) {
-                            log.info("no data");
+                        case "已完成":
+                            order.setStatus(OrderStatus.Success);
                             break;
-                        }
-                        System.out.println("asdasasdasdas");
-                        for (int i = 0; i < orders.size(); i++) {
-                            JSONObject row = orders.getJSONObject(i);
-                            System.out.println("111111");
-                            OrderInfo order = JsonMapper.Default.convertTo(OrderInfo.class, "jdQueryOrderDetail", row);
-                            System.out.println("22222");
-                            order.setMediaType(this.getType());
-                            switch (row.getString("validCodeStr").trim()) {
-                                case "已结算":
-                                    order.setStatus(OrderStatus.Settlement);
-                                    break;
-                                case "已完成":
-                                    order.setStatus(OrderStatus.Success);
-                                    break;
-                                case "已付款":
-                                    order.setStatus(OrderStatus.Paid);
-                                    break;
-                                default:
-                                    order.setStatus(OrderStatus.Invalid);
-                                    break;
-                            }
-                            System.out.println("3333333333333333333333");
-                            list.add(order);
-                        }
-
-                    } catch (Exception e) {
-                        System.out.println("5555555555555555555555555555");
-                        e.printStackTrace();
-                        throw SystemException.wrap(e);
+                        case "已付款":
+                            order.setStatus(OrderStatus.Paid);
+                            break;
+                        default:
+                            order.setStatus(OrderStatus.Invalid);
+                            break;
                     }
-
-
-                    pageNo++;
-                } while (json.getBooleanValue("moreData"));
-                System.out.println("444444444444444444444444444");
-            } catch (Exception e) {
-                System.out.println("6666666666666666666666");
-                e.printStackTrace();
-            } finally {
-                log.info("get {} size orders", list.size());
-            }
-
-
+                    list.add(order);
+                }
+                pageNo++;
+            } while (json.getBooleanValue("moreData"));
             return list;
         }, true);
     }

@@ -3,6 +3,7 @@ package org.rx.util;
 import com.alibaba.fastjson.JSONObject;
 import com.eclipsesource.v8.V8;
 import com.eclipsesource.v8.V8Object;
+import com.google.common.annotations.Beta;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.Map;
 
 import static org.rx.common.Contract.*;
 
+@Beta
 @Slf4j
 public final class JsonMapper extends Disposable {
     private static class V8Console {

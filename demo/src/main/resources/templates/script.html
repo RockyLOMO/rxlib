@@ -53,6 +53,19 @@
         $("#paipaiLoginSubmit", doc).click();
     }
 
+    function jd_orders2() {
+        $.orderNo = $val.orderId;
+        $.goodsId = $val.orderSkuDetailInfos[0].skuId;
+        $.goodsName = $val.orderSkuDetailInfos[0].skuName;
+        $.unitPrice = $val.orderSkuDetailInfos[0].price;
+        $.quantity = $val.orderSkuDetailInfos[0].skuNum;
+        $.sellerName = null;
+        $.payAmount = $val.payPriceSum;
+        $.rebateAmount = $val.estimateFeeOrder;
+        $.settleAmount = $val.actualFeeOrder;
+        $.createTime = $val.orderTimeStr;
+    }
+
     function jd_orders() {
         $.ajax({
             type: "post",
@@ -72,11 +85,35 @@
             contentType: "application/json; charset=utf-8",
             dataType: "json",
             success: function (data) {
-                console.log(data);
+                // console.log(data);
                 window._callbackValue = data;
             }
         });
-        return JSON.stringify(window._callbackValue);
+        var json = {error: false}, result = window._callbackValue;
+        if (result.code != 200) {
+            json.error = true;
+            return JSON.stringify(json);
+        }
+        result = result.data;
+        json.moreData = result.moreData;
+        json.orders = [];
+        var orderDetailInfos = result.orderDetailInfos;
+        for (var i = 0; i < orderDetailInfos.length; i++) {
+            var order = {}, item = orderDetailInfos[i];
+            order.orderNo = item.orderId;
+            order.goodsId = item.orderSkuDetailInfos[0].skuId;
+            order.goodsName = item.orderSkuDetailInfos[0].skuName;
+            order.unitPrice = item.orderSkuDetailInfos[0].price;
+            order.quantity = item.orderSkuDetailInfos[0].skuNum;
+            order.sellerName = "";
+            order.payAmount = item.payPriceSum;
+            order.rebateAmount = item.estimateFeeOrder;
+            order.settleAmount = item.actualFeeOrder;
+            order.createTime = item.orderTimeStr;
+            order.validCodeStr = item.validCodeStr;
+            json.orders.push(order);
+        }
+        return JSON.stringify(json);
     }
 </script>
 </body>

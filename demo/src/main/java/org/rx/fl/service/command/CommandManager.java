@@ -39,8 +39,9 @@ public class CommandManager {
 
     private List<Class> getClassesFromPackage() {
         String packName = "org.rx.fl.service.command.impl";
-        List<Class> types = App.getClassesFromPackage(packName);
+        List<Class> types = App.getClassesFromPackage(packName, this.getClass().getClassLoader());
         if (CollectionUtils.isEmpty(types)) {
+            log.info("Use config to get classes from package");
             String commandList = App.readSetting("app.commandList");
             types = NQuery.of(commandList.split(",")).select(p -> (Class) App.loadClass(String.format("%s.%s", packName, p), false)).toList();
         }

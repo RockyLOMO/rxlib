@@ -29,14 +29,14 @@ app:
     dataPath: /usr/chrome/data
     downloadPath: /usr/chrome/download
     isBackground: false
-    initSize: 1
+    initSize: 0
   ie:
     driver: /usr/chrome/IEDriverServer.exe
     cookieUrl: http://x.%s/media/index.html?rx=1  #需要配置hosts
     initSize: 0
   media:
     maxUserCount: 1000
-    syncWeeklyOrderSeconds: 20
+    syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 30
     remoteMode: false
@@ -65,21 +65,21 @@ app:
     dataPath: C:\_rx\chrome\data
     downloadPath: C:\_rx\chrome\download
     isBackground: false
-    initSize: 0
+    initSize: 3
   ie:
     driver: C:\_rx\chrome\IEDriverServer.exe
     cookieUrl: http://x.%s/media/index.html?rx=1
-    initSize: 0
+    initSize: 1
   media:
     maxUserCount: 1000
-    syncWeeklyOrderSeconds: 15
+    syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 60
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
     cacheSeconds: 180
     taobao:
-      coreSize: 0
+      coreSize: 1
       keepLoginSeconds: 90
     jd:
       coreSize: 1

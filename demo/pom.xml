@@ -12,21 +12,20 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.1.1.RELEASE</version>
+        <version>2.1.2.RELEASE</version>
     </parent>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>1.8</java.version>
-        <spring.boot.version>2.1.1.RELEASE</spring.boot.version>
+        <spring.boot.version>2.1.2.RELEASE</spring.boot.version>
         <swagger.ver>2.8.0</swagger.ver>
         <projectlombok.version>1.18.4</projectlombok.version>
         <selenium.version>3.141.59</selenium.version>
         <mapstruct.version>1.2.0.Final</mapstruct.version>
         <rxlib.version>2.0-SNAPSHOT</rxlib.version>
         <guava.version>27.0.1-jre</guava.version>
-        <v8.version>4.6.0</v8.version>
     </properties>
 
     <dependencies>
@@ -127,28 +126,6 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.eclipsesource.j2v8</groupId>
-            <artifactId>j2v8_win32_x86_64</artifactId>
-            <version>${v8.version}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.eclipsesource.j2v8</groupId>
-            <artifactId>j2v8_linux_x86_64</artifactId>
-            <version>${v8.version}</version>
-            <scope>compile</scope>
-        </dependency>
-        <!--<dependency>-->
-            <!--<groupId>ch.qos.logback</groupId>-->
-            <!--<artifactId>logback-classic</artifactId>-->
-            <!--<version>1.2.3</version>-->
-        <!--</dependency>-->
-        <dependency>
-            <groupId>com.github.monkeywie</groupId>
-            <artifactId>proxyee</artifactId>
-            <version>1.0.4</version>
         </dependency>
 
         <dependency>

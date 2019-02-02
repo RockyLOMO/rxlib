@@ -1,10 +1,5 @@
 package org.rx.fl.service.media;
 
-import com.github.monkeywie.proxyee.intercept.HttpProxyIntercept;
-import com.github.monkeywie.proxyee.intercept.HttpProxyInterceptInitializer;
-import com.github.monkeywie.proxyee.intercept.HttpProxyInterceptPipeline;
-import com.github.monkeywie.proxyee.server.HttpProxyServer;
-import com.github.monkeywie.proxyee.server.HttpProxyServerConfig;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
@@ -14,6 +9,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.common.Disposable;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.HttpCaller;
+import org.rx.socks.proxyee.intercept.HttpProxyIntercept;
+import org.rx.socks.proxyee.intercept.HttpProxyInterceptInitializer;
+import org.rx.socks.proxyee.intercept.HttpProxyInterceptPipeline;
+import org.rx.socks.proxyee.server.HttpProxyServer;
+import org.rx.socks.proxyee.server.HttpProxyServerConfig;
 import org.rx.util.ManualResetEvent;
 
 import java.awt.image.BufferedImage;
