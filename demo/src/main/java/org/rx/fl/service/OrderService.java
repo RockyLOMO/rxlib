@@ -64,17 +64,20 @@ public class OrderService {
         }).toList();
     }
 
+    /**
+     * do not try catch, exec through trans
+     * do not use newComb
+     *
+     * @param orderInfos
+     */
     @Transactional
     public void saveOrders(List<OrderInfo> orderInfos) {
         require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
-            System.out.println("asdaskjdlkajdlkasdakld1");
-            require(media.getMediaType(), media.getOrderNo(), media.getCreateTime());
+            require(media.getMediaType(), media.getOrderNo(), media.getGoodsId());
 
-            media.setCreateTime(new DateTime(media.getCreateTime()).getDateTimeComponent());
-            //do not try catch, exec through trans
-            String orderId = App.newComb(media.getMediaType().getValue() + media.getOrderNo() + media.getGoodsId(), media.getCreateTime()).toString();
+            String orderId = App.hash(media.getMediaType().getValue() + media.getOrderNo() + media.getGoodsId()).toString();
             Order order = orderMapper.selectByPrimaryKey(orderId);
             boolean insert = false;
             if (order == null) {
