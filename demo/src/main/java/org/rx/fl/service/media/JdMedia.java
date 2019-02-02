@@ -21,6 +21,7 @@ import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
 import org.rx.util.JsonMapper;
 
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -102,7 +103,11 @@ public class JdMedia implements Media {
                         "        json.orders = [];\n" +
                         "        var orderDetailInfos = result.orderDetailInfos;\n" +
                         "        for (var i = 0; i < orderDetailInfos.length; i++) {\n" +
-                        "            var order = {}, item = orderDetailInfos[i];\n" +
+                        "            var item = orderDetailInfos[i];\n" +
+                        "            if (item.validCodeStr == \"无效-拆单\") {\n" +
+                        "                continue;\n" +
+                        "            }\n" +
+                        "            var order = {};\n" +
                         "            order.orderNo = item.orderId;\n" +
                         "            order.goodsId = item.orderSkuDetailInfos[0].skuId;\n" +
                         "            order.goodsName = item.orderSkuDetailInfos[0].skuName;\n" +
@@ -171,8 +176,8 @@ public class JdMedia implements Media {
                         continue;
                     }
 
-                    //rect需要focus才呈现?
-//                    caller.setWindowRectangle(new Rectangle(0, 0, 800, 600));
+                    //rect需要focus才呈现
+                    caller.setWindowRectangle(new Rectangle(0, 0, 400, 300));
                     String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));

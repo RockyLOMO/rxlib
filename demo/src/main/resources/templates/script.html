@@ -99,7 +99,11 @@
         json.orders = [];
         var orderDetailInfos = result.orderDetailInfos;
         for (var i = 0; i < orderDetailInfos.length; i++) {
-            var order = {}, item = orderDetailInfos[i];
+            var item = orderDetailInfos[i];
+            if (item.validCodeStr == "无效-拆单") {
+                continue;
+            }
+            var order = {};
             order.orderNo = item.orderId;
             order.goodsId = item.orderSkuDetailInfos[0].skuId;
             order.goodsName = item.orderSkuDetailInfos[0].skuName;
