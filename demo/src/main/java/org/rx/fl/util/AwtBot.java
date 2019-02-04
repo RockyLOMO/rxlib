@@ -4,8 +4,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.$;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -17,12 +19,19 @@ import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
 @Slf4j
 public class AwtBot {
+    public static final String ImageFormat = "png";
+    private static final String logPath = App.readSetting("app.awtBot.logPath");
+
     public static void init() {
         System.setProperty("java.awt.headless", "false");
         Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
@@ -50,14 +59,29 @@ public class AwtBot {
         return ImageIO.read(stream);
     }
 
+    public static List<Point> findPoints(BufferedImage image, BufferedImage pointImage) {
+        require(image, pointImage);
+
+        List<Point> points = new ArrayList<>();
+        int w = image.getWidth() - pointImage.getWidth(), h = image.getHeight() - pointImage.getHeight();
+        for (int x = 0; x < w; x++) {
+            for (int y = 0; y < h; y++) {
+                if (partEquals(image, x, y, pointImage)) {
+                    points.add(new Point(x, y));
+                }
+            }
+        }
+        return points;
+    }
+
     public static boolean partEquals(BufferedImage image, int imageX, int imageY, BufferedImage partImage) {
         require(image, partImage);
 
         int partW = partImage.getWidth();
         int partH = partImage.getHeight();
-        for (int w = 0; w < partW; w++) {
-            for (int h = 0; h < partH; h++) {
-                if (image.getRGB(imageX + w, imageY + h) != partImage.getRGB(w, h)) {
+        for (int x = 0; x < partW; x++) {
+            for (int y = 0; y < partH; y++) {
+                if (image.getRGB(imageX + x, imageY + y) != partImage.getRGB(x, y)) {
                     return false;
                 }
             }
@@ -75,6 +99,7 @@ public class AwtBot {
         return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
     }
 
+
     public void setScreenRectangle(Rectangle screenRectangle) {
         require(screenRectangle);
 
@@ -91,10 +116,14 @@ public class AwtBot {
         bot.delay(delay);
     }
 
+    @SneakyThrows
     public void clickByImage(BufferedImage keyImg) {
         require(keyImg);
-        Point point = getScreenPoint(keyImg);
+
+        $<BufferedImage> out = $();
+        Point point = findScreenPoint(keyImg, out);
         if (point == null) {
+            ImageIO.write(out.$, ImageFormat, new File(String.format("%s/clickFail_%s.png", logPath, UUID.randomUUID().toString())));
             throw new InvalidOperationException("Point not found");
         }
 
@@ -103,25 +132,43 @@ public class AwtBot {
     }
 
     @SneakyThrows
-    public Point getScreenPoint(String imageFile) {
-        require(imageFile);
+    public Point findScreenPoint(String partImageFile) {
+        require(partImageFile);
 
-        return getScreenPoint(ImageIO.read(new File(imageFile)));
+        return findScreenPoint(ImageIO.read(new File(partImageFile)));
     }
 
-    public Point getScreenPoint(BufferedImage partImage) {
+    public Point findScreenPoint(BufferedImage partImage) {
+        return findScreenPoint(partImage, null);
+    }
+
+    public Point findScreenPoint(BufferedImage partImage, $<BufferedImage> outScreenImage) {
         require(partImage);
 
         BufferedImage screenImage = captureScreen();
-        int width = screenImage.getWidth(), height = screenImage.getHeight();
-        for (int x = 0; x < width; x++) {
-            for (int y = 0; y < height; y++) {
-                if (partEquals(screenImage, x, y, partImage)) {
-                    return new Point(x, y);
-                }
-            }
+        if (outScreenImage != null) {
+            outScreenImage.$ = screenImage;
         }
-        return null;
+        return NQuery.of(findPoints(screenImage, partImage)).firstOrDefault();
+    }
+
+    public BufferedImage captureScreen() {
+        return captureScreen(getScreenRectangle());
+    }
+
+    public BufferedImage captureScreen(int x, int y, int width, int height) {
+        return captureScreen(new Rectangle(x, y, width, height));
+    }
+
+    public BufferedImage captureScreen(Rectangle rectangle) {
+        require(rectangle);
+
+        return bot.createScreenCapture(rectangle);
+    }
+
+    public void mouseMove(int x, int y) {
+        bot.mouseMove(x, y);
+        bot.delay(autoDelay);
     }
 
     public void mouseLeftClick(int x, int y) {
@@ -176,13 +223,5 @@ public class AwtBot {
         bot.keyRelease(KeyEvent.VK_V);
         bot.keyRelease(KeyEvent.VK_CONTROL);
         bot.delay(autoDelay);
-    }
-
-    public BufferedImage captureScreen() {
-        return bot.createScreenCapture(getScreenRectangle());
-    }
-
-    public BufferedImage captureScreen(int x, int y, int width, int height) {
-        return bot.createScreenCapture(new Rectangle(x, y, width, height));
     }
 }
