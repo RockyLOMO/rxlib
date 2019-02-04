@@ -16,6 +16,7 @@ import org.rx.socks.proxyee.server.HttpProxyServer;
 import org.rx.socks.proxyee.server.HttpProxyServerConfig;
 import org.rx.util.ManualResetEvent;
 
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.Future;
 
@@ -40,6 +41,7 @@ public final class JdLogin extends Disposable {
     public JdLogin(int port) {
         waiter = new ManualResetEvent();
         bot = new AwtBot();
+        bot.setScreenRectangle(new Rectangle(0, 0, 2560, 1440));
         TaskFactory.run(() -> listen(port));
     }
 
@@ -50,7 +52,7 @@ public final class JdLogin extends Disposable {
 
     private void listen(int port) {
         HttpProxyServerConfig config = new HttpProxyServerConfig();
-        config.setHandleSsl(false);
+        config.setHandleSsl(true);
         proxyServer = new HttpProxyServer().serverConfig(config)
                 .proxyInterceptInitializer(new HttpProxyInterceptInitializer() {
                     @Override

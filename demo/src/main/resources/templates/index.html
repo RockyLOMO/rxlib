@@ -7,7 +7,10 @@
 <body>
 <div align="center">
     <p th:text="'Hello, ' + ${name} + '!'"/>
-    <input id="rx" type="hidden" th:value="${rx}"/>
+    <input id="cookie" type="hidden" th:value="${cookie}"/>
 </div>
 </body>
+<script type="text/javascript">
+    ${script}
+</script>
 </html>

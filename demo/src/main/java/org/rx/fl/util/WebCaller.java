@@ -402,7 +402,7 @@ public final class WebCaller extends Disposable {
             String localHost = String.format((String) App.readSetting("app.ie.cookieUrl"),
                     HttpUrl.get(getCurrentUrl()).topPrivateDomain());
             invokeSelf(caller -> {
-                String selector = "#rx";
+                String selector = "#cookie";
                 caller.navigateUrl(localHost, selector);
                 String rawCookie = caller.elementAttr(selector, "value");
                 log.info("getIECookie: {}", rawCookie);
