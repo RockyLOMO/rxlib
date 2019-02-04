@@ -374,6 +374,13 @@ public final class WebCaller extends Disposable {
                 temp.quit();
                 log.info("exchange driver for {}", url);
             }
+        } catch (WebDriverException e) {
+            if (driver instanceof ChromeDriver && e.getMessage().contains("session deleted because of page crash")) {
+                driver = create(DriverType.Chrome, true);
+                driver.get(url);
+                log.info("exchange driver for {}", url);
+            }
+            throw e;
         }
 
         NQuery<WebElement> elements;
