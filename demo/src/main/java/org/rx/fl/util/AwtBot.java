@@ -18,6 +18,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
 @Slf4j
@@ -68,6 +69,17 @@ public class AwtBot {
     @Getter
     @Setter
     private volatile int autoDelay;
+    private volatile Rectangle screenRectangle;
+
+    public Rectangle getScreenRectangle() {
+        return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+    }
+
+    public void setScreenRectangle(Rectangle screenRectangle) {
+        require(screenRectangle);
+
+        this.screenRectangle = screenRectangle;
+    }
 
     @SneakyThrows
     public AwtBot() {
@@ -100,7 +112,7 @@ public class AwtBot {
     public Point getScreenPoint(BufferedImage partImage) {
         require(partImage);
 
-        BufferedImage screenImage = captureFullScreen();
+        BufferedImage screenImage = captureScreen();
         int width = screenImage.getWidth(), height = screenImage.getHeight();
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
@@ -166,11 +178,11 @@ public class AwtBot {
         bot.delay(autoDelay);
     }
 
-    public BufferedImage captureFullScreen() {
-        return bot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+    public BufferedImage captureScreen() {
+        return bot.createScreenCapture(getScreenRectangle());
     }
 
-    public BufferedImage capturePartScreen(int x, int y, int width, int height) {
+    public BufferedImage captureScreen(int x, int y, int width, int height) {
         return bot.createScreenCapture(new Rectangle(x, y, width, height));
     }
 }
