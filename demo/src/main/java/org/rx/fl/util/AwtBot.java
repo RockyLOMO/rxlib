@@ -1,12 +1,13 @@
 package org.rx.fl.util;
 
+import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
-import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -25,8 +26,6 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class AwtBot {
-    private static final String logPath = App.readSetting("app.awtBot.logPath");
-
     public static void init() {
         System.setProperty("java.awt.headless", "false");
         Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
@@ -47,10 +46,10 @@ public class AwtBot {
     @Getter
     @Setter
     private volatile int autoDelay;
-    private volatile Rectangle screenRectangle;
     @Getter
     @Setter
-    private volatile boolean debug;
+    private volatile String logPath;
+    private volatile Rectangle screenRectangle;
 
     public Rectangle getScreenRectangle() {
         return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
@@ -62,10 +61,15 @@ public class AwtBot {
         this.screenRectangle = screenRectangle;
     }
 
-    @SneakyThrows
     public AwtBot() {
+        this(10, null);
+    }
+
+    @SneakyThrows
+    public AwtBot(int autoDelay, String logPath) {
         bot = new Robot();
-        autoDelay = App.readSetting("app.awtBot.delay");
+        this.autoDelay = autoDelay;
+        this.logPath = logPath;
     }
 
     public void delay(int delay) {
@@ -91,7 +95,7 @@ public class AwtBot {
     }
 
     private void debug(BufferedImage img, String msg) {
-        if (!debug) {
+        if (Strings.isNullOrEmpty(logPath)) {
             return;
         }
 
@@ -119,7 +123,12 @@ public class AwtBot {
     public Point findScreenPoint(BufferedImage partImage, Rectangle screenRectangle) {
         require(partImage, screenRectangle);
 
-        return ImageUtil.findPoint(captureScreen(screenRectangle), partImage, false);
+        Point point = ImageUtil.findPoint(captureScreen(screenRectangle), partImage, false);
+        if (point != null) {
+            point.x += screenRectangle.x;
+            point.y += screenRectangle.y;
+        }
+        return point;
     }
 
     public List<Point> findScreenPoints(BufferedImage partImage) {
@@ -129,7 +138,11 @@ public class AwtBot {
     public List<Point> findScreenPoints(BufferedImage partImage, Rectangle screenRectangle) {
         require(partImage, screenRectangle);
 
-        return ImageUtil.findPoints(captureScreen(screenRectangle), partImage);
+        return NQuery.of(ImageUtil.findPoints(captureScreen(screenRectangle), partImage)).select(p -> {
+            p.x += screenRectangle.x;
+            p.y += screenRectangle.y;
+            return p;
+        }).toList();
     }
 
     public BufferedImage captureScreen() {
@@ -146,9 +159,17 @@ public class AwtBot {
         return bot.createScreenCapture(rectangle);
     }
 
+    public Point getMouseLocation() {
+        return MouseInfo.getPointerInfo().getLocation();
+    }
+
     public void mouseMove(int x, int y) {
         bot.mouseMove(x, y);
         bot.delay(autoDelay);
+    }
+
+    public void mouseLeftClick(Point point) {
+        mouseLeftClick(point.x, point.y);
     }
 
     public void mouseLeftClick(int x, int y) {

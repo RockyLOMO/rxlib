@@ -1,8 +1,8 @@
 package org.rx.fl.service.bot;
 
 import com.google.common.base.Strings;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
-import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
@@ -19,8 +19,9 @@ import java.util.function.Function;
 
 import static org.rx.util.AsyncTask.TaskFactory;
 
+@Slf4j
 public class WxMobileBot implements Bot {
-    private interface KeyImages {
+    public interface KeyImages {
         BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
@@ -30,8 +31,9 @@ public class WxMobileBot implements Bot {
     private AwtBot bot;
     private Point windowPoint;
     private DateTime lastTime;
-    private int maxCaptureMessageCount, maxScrollMessageCount;
+    private int maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
     private Function<MessageInfo, String> event;
+    private volatile boolean clickDefaultUser;
 
     @Override
     public BotType getType() {
@@ -54,13 +56,13 @@ public class WxMobileBot implements Bot {
         return windowPoint;
     }
 
-    public WxMobileBot() {
+    public WxMobileBot(int capturePeriod, int maxCheckMessageCount, int maxCaptureMessageCount, int maxScrollMessageCount) {
         bot = new AwtBot();
+        this.maxCheckMessageCount = maxCheckMessageCount;
+        this.maxCaptureMessageCount = maxCaptureMessageCount;
+        this.maxScrollMessageCount = maxScrollMessageCount;
         lastTime = DateTime.now();
-        int period = App.readSetting("app.wxMobileBot.captureUserPeriod");
-        TaskFactory.schedule(() -> captureUsers(), period);
-        maxCaptureMessageCount = App.readSetting("app.wxMobileBot.maxCaptureMessageCount");
-        maxScrollMessageCount = App.readSetting("app.wxMobileBot.maxScrollMessageCount");
+        TaskFactory.schedule(() -> captureUsers(), capturePeriod);
     }
 
     private BufferedImage getWindowImage() {
@@ -71,60 +73,80 @@ public class WxMobileBot implements Bot {
     private void captureUsers() {
         Point point = getAbsolutePoint(61, 63);
         Rectangle rectangle = new Rectangle(point, new Dimension(250, 438));
-        for (BufferedImage partImg : new BufferedImage[]{KeyImages.Unread0, KeyImages.Unread1}) {
-            Point screenPoint;
-            while ((screenPoint = bot.findScreenPoint(partImg, rectangle)) != null) {
-                bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
+//        log.info("captureUsers at {}", rectangle);
+        int checkCount = 0;
+        do {
+            for (BufferedImage partImg : new BufferedImage[]{KeyImages.Unread0, KeyImages.Unread1}) {
+                Point screenPoint;
+                while ((screenPoint = bot.findScreenPoint(partImg, rectangle)) != null) {
+                    clickDefaultUser = true;
+                    checkCount = 0;
+                    log.info("step1 captureUser at {}", screenPoint);
+                    bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
+                    bot.delay(100);
 
-                Point msgPoint = getAbsolutePoint(311, 63);
-                bot.mouseMove(msgPoint.x + 20, msgPoint.y + 20);
+                    Point msgPoint = getAbsolutePoint(311, 63);
+                    bot.mouseMove(msgPoint.x + 20, msgPoint.y + 20);
 
-                MessageInfo messageInfo = new MessageInfo();
-                messageInfo.setBotType(this.getType());
-                Set<String> msgList = new LinkedHashSet<>();
-                int scrollMessageCount = 0;
-                Rectangle msgRectangle = new Rectangle(msgPoint, new Dimension(400, 294));
-                do {
-                    List<Point> points = bot.findScreenPoints(KeyImages.Msg, msgRectangle);
-                    for (int i = points.size() - 1; i >= 0; i--) {
-                        Point p = points.get(i);
-                        if (messageInfo.getOpenId() == null) {
-                            int x = p.x - 22, y = p.y + 12;
-                            bot.mouseLeftClick(x, y);
-                            bot.mouseDoubleLeftClick(x + 94, y + 72);
-                            bot.keyCopy();
-                            messageInfo.setOpenId(AwtBot.getClipboardString());
-                            if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
-                                throw new InvalidOperationException("Can not found openId");
+                    MessageInfo messageInfo = new MessageInfo();
+                    messageInfo.setBotType(this.getType());
+                    Set<String> msgList = new LinkedHashSet<>();
+                    int scrollMessageCount = 0;
+                    Rectangle msgRectangle = new Rectangle(msgPoint, new Dimension(400, 294));
+                    do {
+                        List<Point> points = bot.findScreenPoints(KeyImages.Msg, msgRectangle);
+                        log.info("step2 captureMessages {}", points.size());
+                        for (int i = points.size() - 1; i >= 0; i--) {
+                            Point p = points.get(i);
+                            if (messageInfo.getOpenId() == null) {
+                                int x = p.x - 22, y = p.y + 12;
+                                bot.mouseLeftClick(x, y);
+                                bot.delay(100);
+
+                                bot.mouseDoubleLeftClick(x + 94, y + 72);
+                                bot.keyCopy();
+                                String openId = AwtBot.getClipboardString();
+                                log.info("step2-1 capture openId {}", openId);
+                                if (Strings.isNullOrEmpty(openId)) {
+                                    throw new InvalidOperationException("Can not found openId");
+                                }
+                                messageInfo.setOpenId(openId);
+                                bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
+                                bot.delay(100);
                             }
+                            int x = p.x + KeyImages.Msg.getWidth() + 8, y = p.y + KeyImages.Msg.getHeight() / 2;
+                            bot.mouseDoubleLeftClick(x, y);
+                            bot.keyCopy();
+                            String msg = AwtBot.getClipboardString();
+                            log.info("step2-2 capture msg {}", msg);
+                            msgList.add(msg);
                         }
-                        int x = msgPoint.x + p.x + KeyImages.Msg.getWidth() / 2, y = msgPoint.y + p.y + KeyImages.Msg.getHeight() / 2;
-                        bot.mouseDoubleLeftClick(x, y);
-                        bot.keyCopy();
-//                        bot.mouseRightClick(x, y);
-//                        bot.delay(200);
-//                        bot.mouseLeftClick(x + 38, y + 16);
-//                        bot.delay(50);
-                        String msg = AwtBot.getClipboardString();
-                        msgList.add(msg);
-                    }
 
-                    bot.mouseWheel(-5);
-                    bot.delay(1000);
-                    scrollMessageCount++;
-                }
-                while (scrollMessageCount < maxScrollMessageCount && msgList.size() < maxCaptureMessageCount);
-                if (msgList.isEmpty()) {
-                    continue;
-                }
-                messageInfo.setContent(NQuery.of(msgList).first());
-                if (event != null) {
-                    TaskFactory.run(() -> {
-                        String toMsg = event.apply(messageInfo);
-                        sendMessage(messageInfo.getOpenId(), toMsg);
-                    });
+                        if (msgList.size() < maxCaptureMessageCount) {
+                            bot.mouseWheel(-5);
+                            bot.delay(1000);
+                            scrollMessageCount++;
+                        }
+                    }
+                    while (scrollMessageCount < maxScrollMessageCount && msgList.size() < maxCaptureMessageCount);
+                    if (msgList.isEmpty()) {
+                        continue;
+                    }
+                    messageInfo.setContent(NQuery.of(msgList).first());
+                    if (event != null) {
+                        TaskFactory.run(() -> {
+                            String toMsg = event.apply(messageInfo);
+                            sendMessage(messageInfo.getOpenId(), toMsg);
+                        });
+                    }
                 }
             }
+            checkCount++;
+        } while (checkCount < maxCheckMessageCount);
+
+        if (clickDefaultUser) {
+            bot.mouseLeftClick(getAbsolutePoint(94, 478));
+            clickDefaultUser = false;
         }
     }
 

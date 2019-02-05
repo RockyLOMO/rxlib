@@ -28,6 +28,13 @@ public class ImageUtil {
     }
 
     @SneakyThrows
+    public static BufferedImage loadImage(String filePath) {
+        require(filePath);
+
+        return ImageIO.read(new File(filePath));
+    }
+
+    @SneakyThrows
     public static void saveImage(BufferedImage img, String filePath) {
         require(img, filePath);
 

@@ -421,7 +421,9 @@ public class App {
                 result = map;
                 continue;
             }
-            result.putAll(map);
+            if (map != null) {
+                result.putAll(map);
+            }
         }
         if (result == null) {
             result = new HashMap<>();

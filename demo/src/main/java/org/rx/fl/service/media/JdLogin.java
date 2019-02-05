@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.common.Disposable;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.HttpCaller;
+import org.rx.fl.util.ImageUtil;
 import org.rx.socks.proxyee.intercept.HttpProxyIntercept;
 import org.rx.socks.proxyee.intercept.HttpProxyInterceptInitializer;
 import org.rx.socks.proxyee.intercept.HttpProxyInterceptPipeline;
@@ -28,8 +29,8 @@ public final class JdLogin extends Disposable {
 
     static {
         Class owner = JdLogin.class;
-        jdKey = AwtBot.getImageFromResource(owner, "/static/jdKey.png");
-        jdKey2 = AwtBot.getImageFromResource(owner, "/static/jdKey2.png");
+        jdKey = ImageUtil.getImageFromResource(owner, "/static/jdKey.png");
+        jdKey2 = ImageUtil.getImageFromResource(owner, "/static/jdKey2.png");
     }
 
     private String loginKey;

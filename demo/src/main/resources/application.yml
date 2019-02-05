@@ -23,13 +23,14 @@ spring:
     username: rx_rebate_dev_user
     password: e)ud(yB_g8uO
 app:
-  awtBot:
+  bot:
     logPath: /usr/awtBot
     delay: 10
-  wxMobileBot:
-    captureUserPeriod: 500
-    maxCaptureMessageCount: 1
-    maxScrollMessageCount: 1
+    wx-mobile:
+      capturePeriod: 500
+      maxCheckMessageCount: 2
+      maxCaptureMessageCount: 1
+      maxScrollMessageCount: 1
   chrome:
     driver: /usr/chrome/chromedriver.exe
     dataPath: /usr/chrome/data
@@ -45,9 +46,9 @@ app:
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 30
+    cacheSeconds: 180
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
-    cacheSeconds: 180
     taobao:
       coreSize: 0
       keepLoginSeconds: 90
