@@ -177,7 +177,7 @@ public class JdMedia implements Media {
                     }
 
                     //rect需要focus才呈现
-                    caller.setWindowRectangle(new Rectangle(0, 0, 400, 300));
+                    caller.setWindowRectangle(new Rectangle(280, 0, 400, 300));
                     String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));

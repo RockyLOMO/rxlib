@@ -36,7 +36,7 @@ public class BotService {
     public String handleMessage(@NotNull MessageInfo msg) {
         String userId = userService.getUserId(wxBot.getType(), msg.getOpenId());
         String content = msg.isSubscribe() ? "subscribe" : msg.getContent();
-        if (App.isNullOrWhiteSpace(msg.getContent())) {
+        if (App.isNullOrWhiteSpace(content)) {
             //图片之类不处理
             return helpCmd.handleMessage(userId, content).getValue();
         }

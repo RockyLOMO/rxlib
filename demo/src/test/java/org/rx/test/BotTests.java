@@ -33,6 +33,7 @@ public class BotTests {
         bot.onReceiveMessage(p -> {
             System.out.println(JSON.toJSONString(p));
             return "已收到消息：" + p.getContent();
+//            return "";
         });
         System.out.println("start...");
         System.in.read();

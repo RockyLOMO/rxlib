@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
+import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
@@ -28,6 +29,8 @@ public class WxMobileBot implements Bot {
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
     }
+
+    private static final NQuery<String> skipOpenIds = NQuery.of("weixin");
 
     private AwtBot bot;
     private Point windowPoint;
@@ -96,7 +99,7 @@ public class WxMobileBot implements Bot {
                         checkCount = 0;
                         log.info("step1 captureUser at {}", screenPoint);
                         bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
-                        bot.delay(100);
+                        bot.delay(50);
 
                         Point msgPoint = getAbsolutePoint(311, 63);
                         bot.mouseMove(msgPoint.x + 20, msgPoint.y + 20);
@@ -106,6 +109,7 @@ public class WxMobileBot implements Bot {
                         Set<String> msgList = new LinkedHashSet<>();
                         int scrollMessageCount = 0;
                         Rectangle msgRectangle = new Rectangle(msgPoint, new Dimension(400, 294));
+                        boolean doLoop = true;
                         do {
                             List<Point> points = bot.findScreenPoints(KeyImages.Msg, msgRectangle);
                             log.info("step2 captureMessages {}", points.size());
@@ -114,21 +118,26 @@ public class WxMobileBot implements Bot {
                                 if (messageInfo.getOpenId() == null) {
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
-                                    bot.delay(100);
+                                    bot.delay(50);
 
                                     bot.mouseDoubleLeftClick(x + 94, y + 72);
-                                    String openId = bot.getKeyCopyString();
+                                    String openId = bot.keyCopyString();
                                     log.info("step2-1 capture openId {}", openId);
                                     if (Strings.isNullOrEmpty(openId)) {
                                         throw new InvalidOperationException("Can not found openId");
                                     }
+                                    if (skipOpenIds.contains(openId)) {
+                                        log.info("skip openId {}", openId);
+                                        doLoop = false;
+                                        break;
+                                    }
                                     messageInfo.setOpenId(openId);
                                     bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
-                                    bot.delay(100);
+                                    bot.delay(50);
                                 }
                                 int x = p.x + KeyImages.Msg.getWidth() + 8, y = p.y + KeyImages.Msg.getHeight() / 2;
                                 bot.mouseDoubleLeftClick(x, y);
-                                String msg = bot.getKeyCopyString();
+                                String msg = bot.keyCopyString();
                                 log.info("step2-2 capture msg {}", msg);
                                 msgList.add(msg);
                                 if (msgList.size() >= maxCaptureMessageCount) {
@@ -136,13 +145,16 @@ public class WxMobileBot implements Bot {
                                 }
                             }
 
-                            if (msgList.size() < maxCaptureMessageCount) {
+                            if (doLoop && msgList.size() < maxCaptureMessageCount) {
                                 bot.mouseWheel(-5);
                                 bot.delay(1000);
                                 scrollMessageCount++;
                             }
                         }
-                        while (scrollMessageCount <= maxScrollMessageCount && msgList.size() < maxCaptureMessageCount);
+                        while (doLoop && scrollMessageCount <= maxScrollMessageCount && msgList.size() < maxCaptureMessageCount);
+                        if (!doLoop) {
+                            continue;
+                        }
 //                        if (msgList.isEmpty()) {
 //                            continue;
 //                        }
@@ -162,6 +174,7 @@ public class WxMobileBot implements Bot {
 
             if (clickDefaultUser) {
                 bot.mouseLeftClick(getAbsolutePoint(94, 478));
+                bot.delay(50);
                 clickDefaultUser = false;
             }
         } finally {
@@ -181,9 +194,39 @@ public class WxMobileBot implements Bot {
 
     @Override
     public void sendMessage(String openId, String msg) {
+        require(openId, msg);
+        if (skipOpenIds.contains(openId)) {
+            return;
+        }
+
         locker.lock();
         try {
+            Point point = getAbsolutePoint(108, 38);
+            bot.mouseLeftClick(point);
+            //双击2次确认
+            bot.delay(50);
+//            bot.mouseLeftClick(point);
+//            bot.delay(50);
+            log.info("step1 click input ok");
 
+            bot.keyParseString(openId);
+//            bot.keyPressSpace();
+            bot.delay(800);
+            log.info("step1-1 input openId {}", openId);
+
+            bot.mouseLeftClick(getAbsolutePoint(166, 132));
+            bot.delay(50);
+            log.info("step1-2 click user {}", openId);
+
+            bot.keyParseString(msg);
+            bot.keyPressEnter();
+            bot.delay(200);
+            log.info("step2 send msg {} to user {}", msg, openId);
+
+            bot.mouseLeftClick(getAbsolutePoint(30, 92));
+            bot.delay(50);
+            bot.mouseLeftClick(getAbsolutePoint(94, 478));
+            bot.delay(50);
         } finally {
             locker.unlock();
         }

@@ -7,6 +7,7 @@ import io.netty.handler.codec.http.HttpResponse;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.Disposable;
+import org.rx.common.InvalidOperationException;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.ImageUtil;
@@ -37,6 +38,7 @@ public final class JdLogin extends Disposable {
     private ManualResetEvent waiter;
     private Future future;
     private AwtBot bot;
+    private Point lastPoint;
     private HttpProxyServer proxyServer;
 
     public JdLogin(int port) {
@@ -104,8 +106,17 @@ public final class JdLogin extends Disposable {
             future.cancel(true);
         }
 
-        bot.clickByImage(jdKey);
-        log.info("step1 clickByImage ok");
+        try {
+            lastPoint = bot.clickByImage(jdKey);
+            log.info("step1 clickByImage ok");
+        } catch (InvalidOperationException e) {
+            if (lastPoint != null) {
+                bot.mouseLeftClick(lastPoint);
+                log.info("step1 retry clickByImage {} ok", lastPoint);
+            } else {
+                throw e;
+            }
+        }
 
         waiter.waitOne(6 * 1000);
         log.info("step2 wait proxy callback");

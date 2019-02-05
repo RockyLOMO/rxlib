@@ -16,7 +16,6 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
 import java.util.List;
 
 import static org.rx.common.Contract.isNull;
@@ -40,20 +39,22 @@ public class AwtBot {
         }
         return (String) t.getTransferData(DataFlavor.stringFlavor);
     }
-    GlobalScreen
-    public void setClipboardString(String text) {
+
+    public static void setClipboardString(String text) {
         Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         clipboard.setContents(new StringSelection(text), null);
     }
 
     public static void setClipboardImage(Image image) {
-        Transferable trans = new Transferable() {
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        clipboard.setContents(new Transferable() {
             @Override
-            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException, IOException {
-                if (isDataFlavorSupported(flavor)) {
-                    return image;
+            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+                if (!isDataFlavorSupported(flavor)) {
+                    throw new UnsupportedFlavorException(flavor);
+
                 }
-                throw new UnsupportedFlavorException(flavor);
+                return image;
             }
 
             @Override
@@ -65,9 +66,7 @@ public class AwtBot {
             public boolean isDataFlavorSupported(DataFlavor flavor) {
                 return DataFlavor.imageFlavor.equals(flavor);
             }
-        };
-
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(trans, null);
+        }, null);
     }
 
     private final Robot bot;
@@ -104,12 +103,12 @@ public class AwtBot {
         bot.delay(delay);
     }
 
-    public void clickByImage(BufferedImage keyImg) {
-        clickByImage(keyImg, getScreenRectangle());
+    public Point clickByImage(BufferedImage keyImg) {
+        return clickByImage(keyImg, getScreenRectangle());
     }
 
     @SneakyThrows
-    public void clickByImage(BufferedImage keyImg, Rectangle screenRectangle) {
+    public Point clickByImage(BufferedImage keyImg, Rectangle screenRectangle) {
         require(keyImg);
 
         Point point = findScreenPoint(keyImg, screenRectangle);
@@ -118,8 +117,10 @@ public class AwtBot {
             throw new InvalidOperationException("Can not found point");
         }
 
-        int x = point.x + keyImg.getWidth() / 2, y = point.y + keyImg.getHeight() / 2;
-        mouseLeftClick(x, y);
+        point.x += keyImg.getWidth() / 2;
+        point.y += keyImg.getHeight() / 2;
+        mouseLeftClick(point);
+        return point;
     }
 
     private void debug(BufferedImage img, String msg) {
@@ -228,6 +229,14 @@ public class AwtBot {
         bot.delay(autoDelay);
     }
 
+    public void keyPressSpace() {
+        keysPress(KeyEvent.VK_SPACE);
+    }
+
+    public void keyPressEnter() {
+        keysPress(KeyEvent.VK_ENTER);
+    }
+
     public void keysPress(int... keys) {
         require(keys);
 
@@ -238,7 +247,7 @@ public class AwtBot {
         }
     }
 
-    public String getKeyCopyString() {
+    public String keyCopyString() {
         keyCopy();
         return AwtBot.getClipboardString();
     }
@@ -249,6 +258,12 @@ public class AwtBot {
         bot.keyRelease(KeyEvent.VK_C);
         bot.keyRelease(KeyEvent.VK_CONTROL);
         bot.delay(autoDelay);
+    }
+
+    public void keyParseString(String text) {
+        AwtBot.setClipboardString(text);
+        bot.delay(50);
+        keyParse();
     }
 
     public void keyParse() {
