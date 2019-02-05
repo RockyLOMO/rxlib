@@ -32,7 +32,7 @@ public class BotTests {
         WxMobileBot bot = new WxMobileBot(500, 2, 1, 1);
         bot.onReceiveMessage(p -> {
             System.out.println(JSON.toJSONString(p));
-            return "";
+            return "已收到消息：" + p.getContent();
         });
         System.out.println("start...");
         System.in.read();
@@ -50,13 +50,21 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void getScreenPoint() {
+//        AwtBot bot = new AwtBot();
+//        List<Point> points = bot.findScreenPoints(ImageUtil.loadImage("D:\\4.png"));
+//        System.out.println(points);
+//        points = bot.findScreenPoints(ImageUtil.loadImage("D:\\1.png"));
+//        System.out.println(points);
+
+        Class owner = AwtBot.class;
         AwtBot bot = new AwtBot();
-        List<Point> points = bot.findScreenPoints(ImageUtil.loadImage("D:\\4.png"));
+        List<Point> points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread0.png"));
         System.out.println(points);
-        points = bot.findScreenPoints(ImageUtil.loadImage("D:\\1.png"));
+        points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread1.png"));
+//        points = bot.findScreenPoints(ImageUtil.loadImage("D:\\1.png"));
         System.out.println(points);
-//        Class owner = AwtBot.class;
-//
+
+
 //        AwtBot bot = new AwtBot();
 //        Point point = bot.findScreenPoint(AwtBot.getImageFromResource(owner, "/static/wxKey.png"));
 //        System.out.println(point);

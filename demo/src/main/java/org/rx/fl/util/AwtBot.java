@@ -210,6 +210,11 @@ public class AwtBot {
         }
     }
 
+    public String getKeyCopyString() {
+        keyCopy();
+        return AwtBot.getClipboardString();
+    }
+
     public void keyCopy() {
         bot.keyPress(KeyEvent.VK_CONTROL);
         bot.keyPress(KeyEvent.VK_C);
