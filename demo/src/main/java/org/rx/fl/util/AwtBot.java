@@ -11,13 +11,12 @@ import org.rx.common.NQuery;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 import static org.rx.common.Contract.isNull;
@@ -36,10 +35,39 @@ public class AwtBot {
     public static String getClipboardString() {
         Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         Transferable t = clipboard.getContents(null);
-        if (null != t && t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-            return (String) t.getTransferData(DataFlavor.stringFlavor);
+        if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+            return null;
         }
-        return "";
+        return (String) t.getTransferData(DataFlavor.stringFlavor);
+    }
+    GlobalScreen
+    public void setClipboardString(String text) {
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        clipboard.setContents(new StringSelection(text), null);
+    }
+
+    public static void setClipboardImage(Image image) {
+        Transferable trans = new Transferable() {
+            @Override
+            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException, IOException {
+                if (isDataFlavorSupported(flavor)) {
+                    return image;
+                }
+                throw new UnsupportedFlavorException(flavor);
+            }
+
+            @Override
+            public DataFlavor[] getTransferDataFlavors() {
+                return new DataFlavor[]{DataFlavor.imageFlavor};
+            }
+
+            @Override
+            public boolean isDataFlavorSupported(DataFlavor flavor) {
+                return DataFlavor.imageFlavor.equals(flavor);
+            }
+        };
+
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(trans, null);
     }
 
     private final Robot bot;
