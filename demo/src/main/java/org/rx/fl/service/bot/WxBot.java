@@ -58,11 +58,6 @@ public final class WxBot implements Bot {
     }
 
     @Override
-    public void login() {
-
-    }
-
-    @Override
     public void onReceiveMessage(Function<MessageInfo, String> event) {
         this.event = event;
     }
@@ -124,6 +119,7 @@ public final class WxBot implements Bot {
         if (isProduce) {
             log.info("recv: {}", toJsonString(eventMessage));
             MessageInfo messageInfo = new MessageInfo();
+            messageInfo.setBotType(this.getType());
             messageInfo.setOpenId(eventMessage.getFromUserName());
             if ("subscribe".equalsIgnoreCase(eventMessage.getEvent())) {
                 messageInfo.setSubscribe(true);

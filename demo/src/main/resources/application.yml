@@ -1,6 +1,6 @@
 server.port: 80
 
-spring.profiles.active: prd
+spring.profiles.active: dev
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
 mybatis.type-aliases-package: org.rx.fl.repository.model
 mybatis.config-location: classpath:mybatis-config.xml
@@ -26,6 +26,10 @@ app:
   awtBot:
     logPath: /usr/awtBot
     delay: 10
+  wxMobileBot:
+    captureUserPeriod: 500
+    maxCaptureMessageCount: 1
+    maxScrollMessageCount: 1
   chrome:
     driver: /usr/chrome/chromedriver.exe
     dataPath: /usr/chrome/data
@@ -54,40 +58,40 @@ app:
   repository.dbFile: /usr/lr.db
 
 ---
-
-spring:
-  profiles: prd
-  datasource:
-    url: jdbc:mysql://r.x.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
-    username: rx_rebate_prd_user
-    password: pL1ae4Q%L8TK$sD%
-app:
-  awtBot:
-    logPath: C:\_rx\awtBot
-    delay: 10
-  chrome:
-    driver: C:\_rx\chrome\chromedriver.exe
-    dataPath: C:\_rx\chrome\data
-    downloadPath: C:\_rx\chrome\download
-    isBackground: false
-    initSize: 3
-  ie:
-    driver: C:\_rx\chrome\IEDriverServer.exe
-    cookieUrl: http://x.%s/index.html?cookie=1
-    initSize: 1
-  media:
-    maxUserCount: 1000
-    syncWeeklyOrderSeconds: 80
-    syncMonthlyOrderSeconds: 28800
-    commandTimeout: 60
-    remoteMode: false
-    remoteEndpoint: 127.0.0.1:80
-    cacheSeconds: 180
-    taobao:
-      coreSize: 1
-      keepLoginSeconds: 90
-    jd:
-      coreSize: 1
-      keepLoginSeconds: 60
-      loginPort: 8081
-  repository.dbFile: /_rx/lr.db
+#
+#spring:
+#  profiles: prd
+#  datasource:
+#    url: jdbc:mysql://r.x.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
+#    username: rx_rebate_prd_user
+#    password: pL1ae4Q%L8TK$sD%
+#app:
+#  awtBot:
+#    logPath: C:\_rx\awtBot
+#    delay: 10
+#  chrome:
+#    driver: C:\_rx\chrome\chromedriver.exe
+#    dataPath: C:\_rx\chrome\data
+#    downloadPath: C:\_rx\chrome\download
+#    isBackground: false
+#    initSize: 3
+#  ie:
+#    driver: C:\_rx\chrome\IEDriverServer.exe
+#    cookieUrl: http://x.%s/index.html?cookie=1
+#    initSize: 1
+#  media:
+#    maxUserCount: 1000
+#    syncWeeklyOrderSeconds: 80
+#    syncMonthlyOrderSeconds: 28800
+#    commandTimeout: 60
+#    remoteMode: false
+#    remoteEndpoint: 127.0.0.1:80
+#    cacheSeconds: 180
+#    taobao:
+#      coreSize: 1
+#      keepLoginSeconds: 90
+#    jd:
+#      coreSize: 1
+#      keepLoginSeconds: 60
+#      loginPort: 8081
+#  repository.dbFile: /_rx/lr.db

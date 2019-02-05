@@ -8,7 +8,8 @@ import java.util.function.Function;
 public interface Bot {
     BotType getType();
 
-    void login();
+    default void login() {
+    }
 
     void onReceiveMessage(Function<MessageInfo, String> event);
 
