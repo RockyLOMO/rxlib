@@ -1,7 +1,8 @@
 package org.rx.fl.service.command;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.cache.LRUCache;
 import org.rx.common.App;
 import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
@@ -14,6 +15,7 @@ import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.common.Contract.require;
 
@@ -23,7 +25,7 @@ public class CommandManager {
     @Resource
     private HelpCmd helpCmd;
     private final List<Class> allCmds;
-    private final LRUCache<String, Command> userCmd;
+    private final Cache<String, Command> userCmd;
 
     @Autowired
     public CommandManager(MediaConfig mediaConfig) {
@@ -34,7 +36,7 @@ public class CommandManager {
                     return order.value();
                 }).toList();
         log.info("load cmd {}", String.join(",", NQuery.of(allCmds).select(p -> p.getSimpleName())));
-        userCmd = new LRUCache<>(mediaConfig.getMaxUserCount(), mediaConfig.getCommandTimeout(), 10 * 1000, p -> log.info("Command {} timeout", p));
+        userCmd = CacheBuilder.newBuilder().expireAfterAccess(mediaConfig.getCommandTimeout(), TimeUnit.SECONDS).build();
     }
 
     private List<Class> getClassesFromPackage() {
@@ -52,7 +54,7 @@ public class CommandManager {
         require(userId, message);
 
         HandleResult<String> result = HandleResult.fail();
-        Command cmd = userCmd.get(userId);
+        Command cmd = userCmd.getIfPresent(userId);
         if (cmd != null) {
             result = cmd.handleMessage(userId, message);
         }
@@ -69,9 +71,9 @@ public class CommandManager {
             }
         }
         if (result.getNext() != null) {
-            userCmd.add(userId, result.getNext());
+            userCmd.put(userId, result.getNext());
         } else {
-            userCmd.remove(userId);
+            userCmd.invalidate(userId);
         }
         if (!result.isOk()) {
             result = helpCmd.handleMessage(userId, message);

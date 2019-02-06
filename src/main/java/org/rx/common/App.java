@@ -7,7 +7,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.Tuple;
-import org.rx.cache.LRUCache;
+import org.rx.cache.MemoryCache;
 import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
@@ -290,7 +290,7 @@ public class App {
                 }
                 break;
             case ObjectCache:
-                v = LRUCache.getOrStore(key, (Function<String, Object>) supplier);
+                v = MemoryCache.getOrStore(key, (Function<String, Object>) supplier);
                 break;
             default:
                 v = WeakCache.getOrStore(key, (Function<String, Object>) supplier);

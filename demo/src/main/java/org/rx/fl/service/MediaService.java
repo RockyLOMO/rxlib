@@ -14,7 +14,6 @@ import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -50,37 +49,41 @@ public class MediaService {
         return holdItem;
     }
 
-    private static Media create(MediaType type, boolean fromPool) {
+    private Media create(MediaType type, boolean fromPool) {
         Media media = null;
-        HoldItem holdItem = null;
         if (fromPool) {
-            holdItem = getHoldItem(type);
-            media = holdItem.queue.poll();
-            log.info("get media from pool {}", media == null ? "fail" : "ok");
-        }
-        if (media == null) {
-            switch (type) {
-                case Jd:
-                    media = new JdMedia();
-                    break;
-                default:
-                    if (holdItem == null) {
-                        media = new TbMedia();
-                    } else {
-                        while ((media = holdItem.queue.poll()) == null) {
-                            log.info("wait media from pool");
-                            holdItem.waiter.waitOne();
-                        }
-                        log.info("wait ok and get media");
-                    }
-                    break;
+            HoldItem holdItem = getHoldItem(type);
+            while ((media = holdItem.queue.poll()) == null) {
+                log.info("wait media from pool");
+                holdItem.waiter.waitOne();
             }
+            log.info("wait ok and get media");
+            return media;
+        }
+
+        switch (type) {
+            case Jd:
+                media = new JdMedia(config) {
+                    @Override
+                    public String findCouponAmount(String url) {
+                        return cache.getOrStore(url, k -> super.findCouponAmount(url), config.getGoodsCacheMinutes());
+                    }
+                };
+                break;
+            case Taobao:
+                media = new TbMedia(config) {
+                    @Override
+                    public String findCouponAmount(String url) {
+                        return cache.getOrStore(url, k -> super.findCouponAmount(url), config.getGoodsCacheMinutes());
+                    }
+                };
+                break;
         }
         return media;
     }
 
     @SneakyThrows
-    private static void release(Media media) {
+    private void release(Media media) {
         HoldItem holdItem = getHoldItem(media.getType());
         holdItem.queue.add(media);
         holdItem.waiter.set();
@@ -92,13 +95,17 @@ public class MediaService {
 
     @Resource
     private OrderService orderService;
+    @Resource
+    private MediaCache cache;
+    private MediaConfig config;
 
     public List<MediaType> getMedias() {
         return NQuery.of(holder.keySet()).toList();
     }
 
     @Autowired
-    public MediaService(MediaConfig mediaConfig) {
+    public MediaService(MediaConfig config) {
+        this.config = config;
         BiConsumer<MediaType, Integer> consumer = (p1, p2) -> {
             for (int i = 0; i < p2; i++) {
                 release(create(p1, false));
@@ -109,17 +116,17 @@ public class MediaService {
             int coreSize = 1;
             switch (type) {
                 case Taobao:
-                    coreSize = mediaConfig.getTaobaoConfig().getCoreSize();
+                    coreSize = config.getTaobaoConfig().getCoreSize();
                     break;
                 case Jd:
-                    coreSize = mediaConfig.getJdConfig().getCoreSize();
+                    coreSize = config.getJdConfig().getCoreSize();
                     break;
             }
             consumer.accept(type, coreSize);
         }
 
-        TaskFactory.schedule(() -> syncOrder(8), mediaConfig.getSyncWeeklyOrderSeconds() * 1000);
-        TaskFactory.schedule(() -> syncOrder(-31), mediaConfig.getSyncMonthlyOrderSeconds() * 1000);
+        TaskFactory.schedule(() -> syncOrder(8), config.getSyncWeeklyOrderSeconds() * 1000);
+        TaskFactory.schedule(() -> syncOrder(-31), config.getSyncMonthlyOrderSeconds() * 1000);
     }
 
     private void syncOrder(int daysAgo) {
@@ -180,14 +187,16 @@ public class MediaService {
                     return adv;
                 }
 
-                adv.setGoods(media.findGoods(adv.getLink()));
+                GoodsInfo goodsInfo = cache.getOrStore(adv.getLink(), k -> media.findGoods(k), config.getGoodsCacheMinutes());
+                adv.setGoods(goodsInfo);
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
                     adv.setFoundStatus(AdvFoundStatus.NoGoods);
                     return adv;
                 }
 
                 media.login();
-                adv.setShareCode(media.findAdv(adv.getGoods()));
+                String code = cache.getOrStore(adv.getMediaType().getValue() + "" + adv.getGoods().getId(), k -> media.findAdv(adv.getGoods()), config.getAdvCacheMinutes());
+                adv.setShareCode(code);
                 if (Strings.isNullOrEmpty(adv.getShareCode())) {
                     adv.setFoundStatus(AdvFoundStatus.NoAdv);
                     return adv;

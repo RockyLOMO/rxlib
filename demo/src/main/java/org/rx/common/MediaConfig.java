@@ -15,6 +15,7 @@ public class MediaConfig {
     @ConfigurationProperties(prefix = "app.media.taobao")
     public class TaobaoConfig {
         private int coreSize;
+        private int keepLoginSeconds;
     }
 
     @Data
@@ -22,6 +23,8 @@ public class MediaConfig {
     @ConfigurationProperties(prefix = "app.media.jd")
     public class JdConfig {
         private int coreSize;
+        private int loginPort;
+        private int keepLoginSeconds;
     }
 
     public static String AliPayCode;
@@ -31,11 +34,11 @@ public class MediaConfig {
     @Resource
     private JdConfig jdConfig;
 
-    private int maxUserCount;
     private int syncWeeklyOrderSeconds;
     private int syncMonthlyOrderSeconds;
     private int commandTimeout;
-    private int cacheSeconds;
+    private int goodsCacheMinutes;
+    private int advCacheMinutes;
     private boolean remoteMode;
     private String remoteEndpoint;
 }

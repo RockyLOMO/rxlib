@@ -1,15 +1,14 @@
 package org.rx.fl.service.bot;
 
+import com.google.common.cache.Cache;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.cache.LRUCache;
+import org.rx.cache.MemoryCache;
 import org.rx.common.App;
-import org.rx.common.MediaConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.util.ManualResetEvent;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import weixin.popular.bean.message.EventMessage;
 import weixin.popular.bean.xmlmessage.XMLMessage;
@@ -44,17 +43,11 @@ public final class WxBot implements Bot {
         }
     }
 
-    private final LRUCache<String, CacheItem> callCache;
     private Function<MessageInfo, String> event;
 
     @Override
     public BotType getType() {
         return BotType.WxService;
-    }
-
-    @Autowired
-    public WxBot(MediaConfig mediaConfig) {
-        callCache = new LRUCache<>(mediaConfig.getMaxUserCount(), 40);
     }
 
     @Override
@@ -64,7 +57,7 @@ public final class WxBot implements Bot {
 
     @Override
     public void sendMessage(String openId, String msg) {
-
+        log.warn("Not supported");
     }
 
     @SneakyThrows
@@ -105,12 +98,13 @@ public final class WxBot implements Bot {
 //            return;
 //        }
 //        expireKey.add(key);
-        CacheItem cacheItem = callCache.get(key);
+        Cache<String, Object> cache = MemoryCache.getInstance();
+        CacheItem cacheItem = (CacheItem) cache.getIfPresent(key);
         boolean isProduce = false;
         if (cacheItem == null) {
-            synchronized (callCache) {
-                if ((cacheItem = callCache.get(key)) == null) {
-                    callCache.add(key, cacheItem = new CacheItem());
+            synchronized (this) {
+                if ((cacheItem = (CacheItem) cache.getIfPresent(key)) == null) {
+                    cache.put(key, cacheItem = new CacheItem());
                     isProduce = true;
                     log.info("callCache produce {}", key);
                 }

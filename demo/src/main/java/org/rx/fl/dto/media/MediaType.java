@@ -8,7 +8,9 @@ public enum MediaType implements NEnum {
     @Description("淘宝")
     Taobao(1),
     @Description("京东")
-    Jd(2);
+    Jd(2),
+    @Description("考拉")
+    Kaola(3);
 
     @Getter
     private int value;

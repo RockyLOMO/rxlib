@@ -56,12 +56,13 @@ public class TbMedia implements Media {
         return MediaType.Taobao;
     }
 
-    public TbMedia() {
+    public TbMedia(MediaConfig config) {
+        require(config);
+
         shareCookie = true;
         downloadFileDateFormat = "yyyy-MM-dd-HH";
         caller = new WebCaller(WebCaller.DriverType.IE);
-        int period = App.readSetting("app.media.taobao.keepLoginSeconds");
-        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, this.getType().name());
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getTaobaoConfig().getKeepLoginSeconds() * 1000, this.getType().name());
     }
 
     @SneakyThrows
@@ -232,15 +233,15 @@ public class TbMedia implements Media {
     @SneakyThrows
     @Override
     public String findCouponAmount(String url) {
-        return getOrStore(url, k -> caller.invokeNew(caller -> {
+        return caller.invokeNew(caller -> {
             return caller.navigateUrl(url, ".coupons-price").first().getText().trim();
-        }));
+        });
     }
 
     @SneakyThrows
     @Override
     public GoodsInfo findGoods(String url) {
-        return getOrStore(url, k -> caller.invokeNew(caller -> {
+        return caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 WebElement hybridElement = caller.navigateUrl(url, ".tb-main-title,input[name=title]").first();
@@ -270,7 +271,7 @@ public class TbMedia implements Media {
                 log.error("findGoods", e);
                 return null;
             }
-        }));
+        });
     }
 
     @Override

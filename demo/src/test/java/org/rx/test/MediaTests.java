@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
+import org.rx.common.MediaConfig;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
@@ -25,6 +26,13 @@ import static org.rx.common.Contract.toJsonString;
 
 @Slf4j
 public class MediaTests {
+    @Test
+    public void x() {
+        String n = GoodsInfo.class.getName();
+        Thread.currentThread().setContextClassLoader(App.class.getClassLoader());
+        System.out.println(App.loadClass(n, false));
+    }
+
     @Test
     public void jdOrders() {
         List<OrderInfo> list = new ArrayList<>();
@@ -75,6 +83,11 @@ public class MediaTests {
                 .replace("¥", "").replace("元", ""), double.class);
     };
 
+    private MediaConfig getConfig() {
+        MediaConfig config = new MediaConfig();
+        return config;
+    }
+
     @SneakyThrows
     @Test
     public void jdMedia() {
@@ -82,7 +95,7 @@ public class MediaTests {
         userMessage = "https://u.jd.com/lRB5js";
 //        userMessage = "https://item.jd.com/23030257143.html";
 
-        JdMedia media = new JdMedia();
+        JdMedia media = new JdMedia(getConfig());
 
 //        String url = media.findLink(userMessage);
 //        assert url != null;
@@ -111,7 +124,7 @@ public class MediaTests {
         String userMessage =
                 "https://item.taobao.com/item.htm?spm=a230r.1.14.316.5aec2f1f1KyoMC&id=580168318999&ns=1&abbucket=1#detail";
 
-        TbMedia media = new TbMedia();
+        TbMedia media = new TbMedia(getConfig());
         media.setShareCookie(false);
 
         String url = media.findLink(userMessage);

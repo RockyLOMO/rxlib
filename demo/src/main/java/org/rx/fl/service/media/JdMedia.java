@@ -19,7 +19,6 @@ import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebCaller;
-import org.rx.util.JsonMapper;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -28,6 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.beans.$.$;
+import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
 import static org.rx.fl.util.WebCaller.BodySelector;
 import static org.rx.util.AsyncTask.TaskFactory;
@@ -50,12 +50,12 @@ public class JdMedia implements Media {
         return MediaType.Jd;
     }
 
-    public JdMedia() {
-        int loginPort = App.readSetting("app.media.jd.loginPort");
-        helper = new JdLogin(loginPort);
+    public JdMedia(MediaConfig config) {
+        require(config);
+
+        helper = new JdLogin(config.getJdConfig().getLoginPort());
         caller = new WebCaller();
-        int period = App.readSetting("app.media.jd.keepLoginSeconds");
-        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, period * 1000, this.getType().name());
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getJdConfig().getKeepLoginSeconds() * 1000, this.getType().name());
     }
 
     @Override
@@ -177,7 +177,7 @@ public class JdMedia implements Media {
                     }
 
                     //rect需要focus才呈现
-                    caller.setWindowRectangle(new Rectangle(280, 0, 400, 300));
+                    caller.setWindowRectangle(new Rectangle(300, 550, 400, 300));
                     String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));
@@ -230,15 +230,15 @@ public class JdMedia implements Media {
 
     @Override
     public String findCouponAmount(String url) {
-        return getOrStore(url, k -> caller.invokeNew(caller -> {
+        return caller.invokeNew(caller -> {
             return caller.navigateUrl(url, ".price span").first().getText().trim();
-        }));
+        });
     }
 
     @SneakyThrows
     @Override
     public GoodsInfo findGoods(String url) {
-        return getOrStore(url, k -> caller.invokeNew(caller -> {
+        return caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
                 WebElement hybridElement = caller.navigateUrl(url, ".sku-name,.shop_intro h2,#itemName").first();
@@ -260,7 +260,7 @@ public class JdMedia implements Media {
                 log.error("findGoods", e);
                 return null;
             }
-        }));
+        });
     }
 
     private String getGoodsId(String url) {
