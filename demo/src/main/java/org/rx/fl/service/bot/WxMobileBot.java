@@ -155,10 +155,11 @@ public class WxMobileBot implements Bot {
                         if (!doLoop) {
                             continue;
                         }
-//                        if (msgList.isEmpty()) {
-//                            continue;
-//                        }
-                        messageInfo.setContent(NQuery.of(msgList).firstOrDefault());
+                        if (msgList.isEmpty()) {
+                            messageInfo.setSubscribe(true);
+                        } else {
+                            messageInfo.setContent(NQuery.of(msgList).firstOrDefault());
+                        }
                         if (event != null) {
                             TaskFactory.run(() -> {
                                 String toMsg = event.apply(messageInfo);

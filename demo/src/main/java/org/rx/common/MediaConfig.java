@@ -23,8 +23,8 @@ public class MediaConfig {
     @ConfigurationProperties(prefix = "app.media.jd")
     public class JdConfig {
         private int coreSize;
-        private int loginPort;
         private int keepLoginSeconds;
+        private int loginPort;
     }
 
     public static String AliPayCode;
@@ -34,6 +34,7 @@ public class MediaConfig {
     @Resource
     private JdConfig jdConfig;
 
+    private String enableMedias;
     private int syncWeeklyOrderSeconds;
     private int syncMonthlyOrderSeconds;
     private int commandTimeout;

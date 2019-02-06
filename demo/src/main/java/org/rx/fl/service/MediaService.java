@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
+import org.rx.common.App;
+import org.rx.common.InvalidOperationException;
 import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.*;
@@ -14,6 +16,7 @@ import org.rx.fl.service.media.TbMedia;
 import org.rx.util.ManualResetEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -78,6 +81,8 @@ public class MediaService {
                     }
                 };
                 break;
+            default:
+                throw new InvalidOperationException("Not supported");
         }
         return media;
     }
@@ -112,7 +117,7 @@ public class MediaService {
             }
             log.info("Create {} media {} size", p1, p2);
         };
-        for (MediaType type : MediaType.values()) {
+        for (MediaType type : NQuery.of(config.getEnableMedias().split(",")).select(p -> MediaType.valueOf(p))) {
             int coreSize = 1;
             switch (type) {
                 case Taobao:
@@ -136,6 +141,9 @@ public class MediaService {
                 DateTime start = now.addDays(-daysAgo);
                 List<OrderInfo> orders = findOrders(media, start, now);
                 log.info("syncOrder {}", toJsonString(orders));
+                if (CollectionUtils.isEmpty(orders)) {
+                    continue;
+                }
                 orderService.saveOrders(orders);
             } catch (Exception e) {
                 log.error("syncOrder", e);
@@ -195,7 +203,13 @@ public class MediaService {
                 }
 
                 media.login();
-                String code = cache.getOrStore(adv.getMediaType().getValue() + "" + adv.getGoods().getId(), k -> media.findAdv(adv.getGoods()), config.getAdvCacheMinutes());
+                String code = cache.getOrStore(adv.getMediaType().getValue() + "" + adv.getGoods().getId(), k ->
+                                App.retry(2, p -> {
+                                    String advCode = media.findAdv(adv.getGoods());
+                                    cache.add(adv.getLink(), adv.getGoods(), config.getGoodsCacheMinutes());
+                                    return advCode;
+                                }, null)
+                        , config.getAdvCacheMinutes());
                 adv.setShareCode(code);
                 if (Strings.isNullOrEmpty(adv.getShareCode())) {
                     adv.setFoundStatus(AdvFoundStatus.NoAdv);

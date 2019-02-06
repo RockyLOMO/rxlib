@@ -51,7 +51,7 @@ public class MediaCache {
         }
         JSONObject json = JSONObject.parseObject(cacheItem.getValue());
         Class type = App.loadClass(json.getString("type"), false);
-        return (T) json.getJSONObject("value").toJavaObject(type);
+        return (T) json.getObject("value", type);
     }
 
     public <T> T add(String key, T value, int liveMinutes) {

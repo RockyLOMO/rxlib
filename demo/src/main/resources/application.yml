@@ -24,6 +24,7 @@ spring:
     password: e)ud(yB_g8uO
 app:
   bot:
+#    enableBots: WxMobileBot
     logPath: /usr/awtBot
     delay: 10
     wx-mobile:
@@ -42,10 +43,12 @@ app:
     cookieUrl: http://x.%s/index.html?cookie=1  #需要配置hosts
     initSize: 0
   media:
+    enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
     commandTimeout: 30
-    goodsCacheMinutes: 720
+    goodsCacheMinutes: 600
+    advCacheMinutes: 720
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
     taobao:
@@ -85,13 +88,14 @@ app:
     cookieUrl: http://x.%s/index.html?cookie=1
     initSize: 1
   media:
-    maxUserCount: 1000
+    enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
-    commandTimeout: 60
+    commandTimeout: 50
+    goodsCacheMinutes: 600
+    advCacheMinutes: 720
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
-    cacheSeconds: 180
     taobao:
       coreSize: 1
       keepLoginSeconds: 90
