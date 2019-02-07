@@ -2,6 +2,7 @@ package org.rx.fl.web;
 
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.BotService;
+import org.rx.fl.service.bot.WxMobileBot;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -24,6 +25,26 @@ public class BotController {
     @RequestMapping("/handleMessage")
     public String handleMessage(@RequestBody MessageInfo msg) {
         return botService.handleMessage(msg);
+    }
+
+    @RequestMapping("/wxMobileBotAction")
+    public void wxMobileBotAction(Integer action) {
+        if (action == null) {
+            action = 2;
+        }
+        WxMobileBot bot = botService.getWxMobileBot();
+        if (bot == null) {
+            return;
+        }
+
+        switch (action) {
+            case 2:
+                bot.stop();
+                break;
+            default:
+                bot.start();
+                break;
+        }
     }
 
     @RequestMapping("/wx")

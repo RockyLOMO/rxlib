@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
+import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 
@@ -24,10 +25,41 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class AwtBot {
+    private static final String debugPath = App.readSetting("app.bot.debugPath");
+    private static final int copyDelay = 50;
+
+    @SneakyThrows
     public static void init() {
         System.setProperty("java.awt.headless", "false");
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        log.info("ScreenSize: {}", screenSize);
+
+        if (Strings.isNullOrEmpty(debugPath)) {
+            return;
+        }
+        Robot bot = new Robot();
+        TaskFactory.schedule(() -> saveScreen(bot, null, null), 30 * 1000);
+    }
+
+    private static void saveScreen(Robot bot, BufferedImage key, String msg) {
+        if (Strings.isNullOrEmpty(debugPath)) {
+            return;
+        }
+
+        try {
+            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+            log.info("ScreenSize: {}", screenSize);
+            App.createDirectory(debugPath);
+
+            String fileName = DateTime.now().toString(DateTime.Formats.skip(2).first());
+            BufferedImage screenCapture = bot.createScreenCapture(new Rectangle(screenSize));
+            ImageUtil.saveImage(screenCapture, String.format("%s/%s.png", debugPath, fileName));
+
+            if (key == null) {
+                return;
+            }
+            ImageUtil.saveImage(key, String.format("%s/%s_%s.png", debugPath, fileName, msg));
+        } catch (Exception e) {
+            log.warn("saveScreen", e);
+        }
     }
 
     @SneakyThrows
@@ -73,9 +105,6 @@ public class AwtBot {
     @Getter
     @Setter
     private volatile int autoDelay;
-    @Getter
-    @Setter
-    private volatile String logPath;
     private volatile Rectangle screenRectangle;
 
     public Rectangle getScreenRectangle() {
@@ -88,19 +117,18 @@ public class AwtBot {
         this.screenRectangle = screenRectangle;
     }
 
-    public AwtBot() {
-        this(10, null);
-    }
-
     @SneakyThrows
-    public AwtBot(int autoDelay, String logPath) {
+    public AwtBot() {
         bot = new Robot();
-        this.autoDelay = autoDelay;
-        this.logPath = logPath;
+        this.autoDelay = 10;
     }
 
     public void delay(int delay) {
         bot.delay(delay);
+    }
+
+    public void saveScreen(BufferedImage key, String msg) {
+        saveScreen(bot, key, msg);
     }
 
     public Point clickByImage(BufferedImage keyImg) {
@@ -113,7 +141,7 @@ public class AwtBot {
 
         Point point = findScreenPoint(keyImg, screenRectangle);
         if (point == null) {
-            debug(keyImg, "clickByImage");
+            saveScreen(bot, keyImg, "clickByImage");
             throw new InvalidOperationException("Can not found point");
         }
 
@@ -121,21 +149,6 @@ public class AwtBot {
         point.y += keyImg.getHeight() / 2;
         mouseLeftClick(point);
         return point;
-    }
-
-    private void debug(BufferedImage img, String msg) {
-        if (Strings.isNullOrEmpty(logPath)) {
-            return;
-        }
-
-        TaskFactory.run(() -> {
-            String fileName = DateTime.now().toString(DateTime.Formats.last());
-            ImageUtil.saveImage(captureScreen(), String.format("%s/%s_0_%s.%s", logPath, fileName, msg, ImageUtil.ImageFormat));
-            if (img == null) {
-                return;
-            }
-            ImageUtil.saveImage(img, String.format("%s/%s_1_%s.%s", logPath, fileName, msg, ImageUtil.ImageFormat));
-        });
     }
 
     @SneakyThrows
@@ -249,6 +262,7 @@ public class AwtBot {
 
     public String keyCopyString() {
         keyCopy();
+        bot.delay(copyDelay);
         return AwtBot.getClipboardString();
     }
 
@@ -262,7 +276,7 @@ public class AwtBot {
 
     public void keyParseString(String text) {
         AwtBot.setClipboardString(text);
-        bot.delay(50);
+        bot.delay(copyDelay);
         keyParse();
     }
 

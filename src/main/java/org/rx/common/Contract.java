@@ -13,26 +13,24 @@ import java.util.function.Supplier;
 
 public final class Contract {
     public interface SettingNames {
-        String JsonSkipTypes  = "app.jsonSkipTypes";
+        String JsonSkipTypes = "app.jsonSkipTypes";
         String ErrorCodeFiles = "app.errorCodeFiles";
     }
 
-    public static final int      DefaultBufferSize;
-    public static final String   SettingsFile, EmptyString, Utf8, AllWarnings = "all";
+    public static final int DefaultBufferSize;
+    public static final String EmptyString, Utf8, AllWarnings = "all";
     public static final Object[] EmptyArray;
     private static NQuery<Class> SkipTypes = NQuery.of();
 
     static {
         DefaultBufferSize = 1024;
-        SettingsFile = "application";
         EmptyString = "";
         Utf8 = "UTF-8";
         EmptyArray = new Object[0];
 
         Object val = App.readSetting(SettingNames.JsonSkipTypes);
         if (val != null) {
-            SkipTypes = SkipTypes
-                    .union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
+            SkipTypes = SkipTypes.union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
 
@@ -43,14 +41,14 @@ public final class Contract {
         }
     }
 
-    @ErrorCode(value = "args", messageKeys = { "$args" })
+    @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
             throw new SystemException(values(toJsonString(args)), "args");
         }
     }
 
-    @ErrorCode(value = "test", messageKeys = { "$arg" })
+    @ErrorCode(value = "test", messageKeys = {"$arg"})
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
             throw new SystemException(values(arg), "test");

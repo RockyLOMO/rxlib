@@ -30,7 +30,7 @@ public class MediaCache {
             } catch (Exception e) {
                 log.error("DbCache", e);
             }
-        }, 60 * 1000);
+        }, 64 * 1000);
     }
 
     public <T> T getOrStore(String key, Function<String, T> supplier, int liveMinutes) {

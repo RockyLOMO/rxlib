@@ -25,11 +25,11 @@ import java.util.concurrent.Future;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
-public final class JdLogin extends Disposable {
+public final class JdLoginBot extends Disposable {
     private static final BufferedImage jdKey, jdKey2;
 
     static {
-        Class owner = JdLogin.class;
+        Class owner = JdLoginBot.class;
         jdKey = ImageUtil.getImageFromResource(owner, "/static/jdKey.png");
         jdKey2 = ImageUtil.getImageFromResource(owner, "/static/jdKey2.png");
     }
@@ -41,10 +41,9 @@ public final class JdLogin extends Disposable {
     private Point lastPoint;
     private HttpProxyServer proxyServer;
 
-    public JdLogin(int port) {
+    public JdLoginBot(int port) {
         waiter = new ManualResetEvent();
         bot = new AwtBot();
-        bot.setScreenRectangle(new Rectangle(0, 0, 2560, 1440));
         TaskFactory.run(() -> listen(port));
     }
 
@@ -77,7 +76,7 @@ public final class JdLogin extends Disposable {
                                     }
                                     log.info("Request: {}", url);
                                     if (url.startsWith("passport.jd.com/uc/nplogin?")) {
-                                        log.info("JdLogin detect {}", url);
+                                        log.info("JdLoginBot detect {}", url);
                                         loginKey = "http://" + url;
                                         waiter.setThenReset(3000);
                                         clientChannel.close();

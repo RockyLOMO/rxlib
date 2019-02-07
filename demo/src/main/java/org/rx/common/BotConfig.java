@@ -21,8 +21,5 @@ public class BotConfig {
     }
 
     @Resource
-    private WxMobileConfig wxMobileConfig;
-
-    private String logPath;
-    private int delay;
+    private WxMobileConfig wxMobile;
 }

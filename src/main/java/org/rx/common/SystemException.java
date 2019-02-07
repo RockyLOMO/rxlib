@@ -1,6 +1,7 @@
 package org.rx.common;
 
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
 import org.rx.beans.BiTuple;
@@ -23,18 +24,22 @@ import static org.rx.common.Contract.toJsonString;
  * ex.fillInStackTrace()
  * https://northconcepts.com/blog/2013/01/18/6-tips-to-improve-your-exception-handling/
  */
+@Slf4j
 public class SystemException extends NestedRuntimeException {
-    public static final String CodeFile = "rxCode.yml";
+    public static final String CodeFile = "code.yml";
     public static final String DefaultMessage;
 
     private static Map<String, Object> getSettings() {
         return App.getOrStore("SystemException", k -> {
-            Map<String, Object> codes = App.readSettings(CodeFile);
+            Map<String, Object> codes = App.loadYaml(CodeFile);
+            if (codes.isEmpty()) {
+                log.warn("load code.yml fail");
+            }
             Object val = App.readSetting(Contract.SettingNames.ErrorCodeFiles);
             if (val != null) {
                 try {
                     for (Object file : App.asList(val)) {
-                        codes.putAll(App.readSettings(String.valueOf(file)));
+                        codes.putAll(App.loadYaml(String.valueOf(file)));
                     }
                 } catch (Exception e) {
                     Logger.debug("getSettings: %s", e);

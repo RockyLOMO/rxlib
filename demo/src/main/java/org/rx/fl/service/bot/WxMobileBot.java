@@ -15,6 +15,7 @@ import java.awt.image.BufferedImage;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
@@ -30,15 +31,16 @@ public class WxMobileBot implements Bot {
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
     }
 
-    private static final NQuery<String> skipOpenIds = NQuery.of("weixin");
+    private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
     private AwtBot bot;
-    private Point windowPoint;
     private DateTime lastTime;
-    private int maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
+    private Point windowPoint;
     private Function<MessageInfo, String> event;
-    private volatile boolean clickDefaultUser;
+    private int capturePeriod, maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
     private final ReentrantLock locker;
+    private volatile boolean clickDefaultUser;
+    private volatile Future future;
 
     @Override
     public BotType getType() {
@@ -52,6 +54,7 @@ public class WxMobileBot implements Bot {
         if (windowPoint == null) {
             Point point = bot.findScreenPoint(KeyImages.Key);
             if (point == null) {
+                bot.saveScreen(KeyImages.Key, "WxMobile");
                 throw new InvalidOperationException("WxMobile window not found");
             }
 
@@ -62,14 +65,24 @@ public class WxMobileBot implements Bot {
     }
 
     public WxMobileBot(int capturePeriod, int maxCheckMessageCount, int maxCaptureMessageCount, int maxScrollMessageCount) {
-        locker = new ReentrantLock(true);
         bot = new AwtBot();
+        lastTime = DateTime.now();
+        getWindowPoint();
+
+        this.capturePeriod = capturePeriod;
         this.maxCheckMessageCount = maxCheckMessageCount;
         this.maxCaptureMessageCount = maxCaptureMessageCount;
         this.maxScrollMessageCount = maxScrollMessageCount;
+        locker = new ReentrantLock(true);
         clickDefaultUser = true;
-        lastTime = DateTime.now();
-        TaskFactory.schedule(() -> {
+    }
+
+    public void start() {
+        if (future != null) {
+            return;
+        }
+
+        future = TaskFactory.schedule(() -> {
             try {
                 //抛异常会卡住
                 captureUsers();
@@ -79,10 +92,19 @@ public class WxMobileBot implements Bot {
         }, capturePeriod);
     }
 
-    private BufferedImage getWindowImage() {
-        Point point = getWindowPoint();
-        return bot.captureScreen(point.x, point.y, 710, 500);
+    public void stop() {
+        if (future == null) {
+            return;
+        }
+
+        future.cancel(false);
+        future = null;
     }
+
+//    private BufferedImage getWindowImage() {
+//        Point point = getWindowPoint();
+//        return bot.captureScreen(point.x, point.y, 710, 500);
+//    }
 
     private void captureUsers() {
         locker.lock();
@@ -124,7 +146,10 @@ public class WxMobileBot implements Bot {
                                     String openId = bot.keyCopyString();
                                     log.info("step2-1 capture openId {}", openId);
                                     if (Strings.isNullOrEmpty(openId)) {
-                                        throw new InvalidOperationException("Can not found openId");
+                                        log.warn("Can not found openId");
+                                        doLoop = false;
+                                        break;
+//                                        throw new InvalidOperationException("Can not found openId");
                                     }
                                     if (skipOpenIds.contains(openId)) {
                                         log.info("skip openId {}", openId);

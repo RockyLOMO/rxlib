@@ -18,9 +18,8 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
-import org.rx.fl.util.WebCaller;
+import org.rx.fl.util.WebBrowser;
 
-import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -29,7 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import static org.rx.beans.$.$;
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
-import static org.rx.fl.util.WebCaller.BodySelector;
+import static org.rx.fl.util.WebBrowser.BodySelector;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
@@ -42,8 +41,8 @@ public class JdMedia implements Media {
 
     @Getter
     private volatile boolean isLogin;
-    private JdLogin helper;
-    private WebCaller caller;
+    private JdLoginBot helper;
+    private WebBrowser caller;
 
     @Override
     public MediaType getType() {
@@ -53,9 +52,9 @@ public class JdMedia implements Media {
     public JdMedia(MediaConfig config) {
         require(config);
 
-        helper = new JdLogin(config.getJdConfig().getLoginPort());
-        caller = new WebCaller();
-        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getJdConfig().getKeepLoginSeconds() * 1000, this.getType().name());
+        helper = new JdLoginBot(config.getJd().getLoginPort());
+        caller = new WebBrowser();
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getJd().getKeepLoginSeconds() * 1000, this.getType().name());
     }
 
     @Override
@@ -177,7 +176,7 @@ public class JdMedia implements Media {
                     }
 
                     //rect需要focus才呈现
-                    caller.setWindowRectangle(new Rectangle(300, 550, 400, 300));
+                    caller.setWindowRectangle(WebBrowser.WindowRectangle);
                     String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));
@@ -270,6 +269,7 @@ public class JdMedia implements Media {
 
     @Override
     public String findLink(String content) {
+        content = content.toLowerCase();
         int start = content.indexOf("http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);
@@ -278,7 +278,7 @@ public class JdMedia implements Media {
         String url;
         end = content.indexOf(" ", start);
         if (end == -1) {
-            url = content;
+            url = content.substring(start);
         } else {
             url = content.substring(start, end);
         }

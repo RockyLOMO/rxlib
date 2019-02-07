@@ -1,5 +1,6 @@
 package org.rx.fl.util;
 
+import com.alibaba.fastjson.JSON;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,7 +23,6 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.rx.common.*;
 import org.rx.util.function.Action;
 
-import java.awt.Rectangle;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,7 +38,7 @@ import static org.rx.common.Contract.require;
 import static org.rx.fl.util.HttpCaller.IE_UserAgent;
 
 @Slf4j
-public final class WebCaller extends Disposable {
+public final class WebBrowser extends Disposable {
     public enum DriverType {
         Chrome,
         IE
@@ -55,21 +55,36 @@ public final class WebCaller extends Disposable {
     }
 
     public static final String BodySelector = "body";
+    public static final BrowserConfig BrowserConfig;
+    public static final Rectangle WindowRectangle;
+    private static volatile int chromeCounter;
     private static final ConcurrentHashMap<DriverType, PooledItem> driverPool;
-    private static final String dataPath = App.readSetting("app.chrome.dataPath");
-    private static volatile int pathCounter;
 
     static {
         clearProcesses();
 
-        System.setProperty("webdriver.chrome.driver", App.readSetting("app.chrome.driver"));
-        System.setProperty("webdriver.ie.driver", App.readSetting("app.ie.driver"));
+        BrowserConfig = App.readSetting("app.browser", BrowserConfig.class);
+        log.info("WebBrowser load config {}", JSON.toJSONString(BrowserConfig));
+        if (!Strings.isNullOrEmpty(BrowserConfig.getWindowRectangle())) {
+            List<Integer> list = NQuery.of(BrowserConfig.getWindowRectangle().split(",")).select(p -> Integer.valueOf(p)).toList();
+            WindowRectangle = new Rectangle(list.get(0), list.get(1), list.get(2), list.get(3));
+        } else {
+            WindowRectangle = null;
+        }
+        System.setProperty("webdriver.chrome.driver", BrowserConfig.getChrome().getDriver());
+        System.setProperty("webdriver.ie.driver", BrowserConfig.getIe().getDriver());
         driverPool = new ConcurrentHashMap<>();
         for (DriverType driverType : DriverType.values()) {
-            Integer init = App.readSetting(String.format("app.%s.initSize", driverType.name().toLowerCase()));
-            if (init != null) {
-                init(driverType, init);
+            int size;
+            switch (driverType) {
+                case IE:
+                    size = BrowserConfig.getIe().getInitSize();
+                    break;
+                default:
+                    size = BrowserConfig.getChrome().getInitSize();
+                    break;
             }
+            init(driverType, size);
         }
     }
 
@@ -119,35 +134,40 @@ public final class WebCaller extends Disposable {
                 }
                 break;
                 default: {
+                    BrowserConfig.ChromeConfig chrome = BrowserConfig.getChrome();
                     ChromeOptions opt = new ChromeOptions();
-                    opt.setHeadless(App.readSetting("app.chrome.isBackground"))
+                    opt.setHeadless(chrome.isBackground())
                             .setAcceptInsecureCerts(true)
                             .setUnhandledPromptBehaviour(UnexpectedAlertBehaviour.IGNORE);
 
                     opt.setCapability(CapabilityType.SUPPORTS_APPLICATION_CACHE, true);
 
                     Map<String, Object> chromePrefs = new HashMap<>();
-                    String downloadPath = App.readSetting("app.chrome.downloadPath");
-                    App.createDirectory(downloadPath);
-                    chromePrefs.put("download.default_directory", downloadPath);
+                    App.createDirectory(chrome.getDownloadPath());
+                    chromePrefs.put("download.default_directory", chrome.getDownloadPath());
                     chromePrefs.put("profile.default_content_settings.popups", 0);
                     chromePrefs.put("pdfjs.disabled", true);
                     opt.setExperimentalOption("prefs", chromePrefs);
 
                     opt.addArguments("user-agent=" + IE_UserAgent);
-                    opt.addArguments("no-first-run", "--homepage=chrome://crash", "window-size=1024,800",
+                    opt.addArguments("no-first-run", "--homepage=chrome://crash",
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
                             "ash-force-desktop", "disable-background-mode", "no-sandbox");
 //                    opt.addArguments("disable-dev-shm-usage");
-                    if (!Strings.isNullOrEmpty(dataPath)) {
-                        opt.addArguments("user-data-dir=" + dataPath + pathCounter++, "restore-last-session");
+                    if (!Strings.isNullOrEmpty(chrome.getDataPath())) {
+                        opt.addArguments("user-data-dir=" + chrome.getDataPath() + chromeCounter++, "restore-last-session");
                     }
 
                     driver = new ChromeDriver((ChromeDriverService) pooledItem.driverService, opt);
                 }
                 break;
+            }
+            if (WindowRectangle != null) {
+                WebDriver.Window window = driver.manage().window();
+                window.setPosition(WindowRectangle.getPoint());
+                window.setSize(WindowRectangle.getDimension());
             }
         }
         return driver;
@@ -155,7 +175,7 @@ public final class WebCaller extends Disposable {
 
     private static void release(RemoteWebDriver driver) {
         DriverType driverType;
-        if (driver.getClass().equals(InternetExplorerDriver.class)) {
+        if (driver instanceof InternetExplorerDriver) {
             driverType = DriverType.IE;
         } else {
             driverType = DriverType.Chrome;
@@ -218,15 +238,15 @@ public final class WebCaller extends Disposable {
         require(rectangle);
 
         WebDriver.Window window = driver.manage().window();
-        window.setPosition(new Point(rectangle.x, rectangle.y));
-        window.setSize(new Dimension(rectangle.width, rectangle.height));
+        window.setPosition(rectangle.getPoint());
+        window.setSize(rectangle.getDimension());
     }
 
-    public WebCaller() {
+    public WebBrowser() {
         this(DriverType.Chrome);
     }
 
-    public WebCaller(DriverType driverType) {
+    public WebBrowser(DriverType driverType) {
         require(driverType);
 
         waitMillis = 400;
@@ -263,11 +283,11 @@ public final class WebCaller extends Disposable {
         driver.switchTo().frame(element);
     }
 
-    public void invokeSelf(Consumer<WebCaller> consumer) {
+    public void invokeSelf(Consumer<WebBrowser> consumer) {
         invokeSelf(consumer, false);
     }
 
-    public void invokeSelf(Consumer<WebCaller> consumer, boolean skipIfLocked) {
+    public void invokeSelf(Consumer<WebBrowser> consumer, boolean skipIfLocked) {
         checkNotClosed();
         require(consumer);
 
@@ -285,11 +305,11 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    public <T> T invokeSelf(Function<WebCaller, T> consumer) {
+    public <T> T invokeSelf(Function<WebBrowser, T> consumer) {
         return invokeSelf(consumer, false);
     }
 
-    public <T> T invokeSelf(Function<WebCaller, T> consumer, boolean skipIfLocked) {
+    public <T> T invokeSelf(Function<WebBrowser, T> consumer, boolean skipIfLocked) {
         checkNotClosed();
         require(consumer);
 
@@ -307,28 +327,28 @@ public final class WebCaller extends Disposable {
         }
     }
 
-    public void invokeNew(Consumer<WebCaller> consumer) {
+    public void invokeNew(Consumer<WebBrowser> consumer) {
         invokeNew(consumer, DriverType.Chrome);
     }
 
-    public void invokeNew(Consumer<WebCaller> consumer, DriverType driverType) {
+    public void invokeNew(Consumer<WebBrowser> consumer, DriverType driverType) {
         checkNotClosed();
         require(consumer, driverType);
 
-        try (WebCaller caller = new WebCaller(driverType)) {
+        try (WebBrowser caller = new WebBrowser(driverType)) {
             consumer.accept(caller);
         }
     }
 
-    public <T> T invokeNew(Function<WebCaller, T> consumer) {
+    public <T> T invokeNew(Function<WebBrowser, T> consumer) {
         return invokeNew(consumer, DriverType.Chrome);
     }
 
-    public <T> T invokeNew(Function<WebCaller, T> consumer, DriverType driverType) {
+    public <T> T invokeNew(Function<WebBrowser, T> consumer, DriverType driverType) {
         checkNotClosed();
         require(consumer, driverType);
 
-        try (WebCaller caller = new WebCaller(driverType)) {
+        try (WebBrowser caller = new WebBrowser(driverType)) {
             return consumer.apply(caller);
         }
     }
@@ -399,8 +419,7 @@ public final class WebCaller extends Disposable {
         checkNotClosed();
 
         if (driver instanceof InternetExplorerDriver) {
-            String localHost = String.format((String) App.readSetting("app.ie.cookieUrl"),
-                    HttpUrl.get(getCurrentUrl()).topPrivateDomain());
+            String localHost = String.format(BrowserConfig.getIe().getCookieUrl(), HttpUrl.get(getCurrentUrl()).topPrivateDomain());
             invokeSelf(caller -> {
                 String selector = "#cookie";
                 caller.navigateUrl(localHost, selector);

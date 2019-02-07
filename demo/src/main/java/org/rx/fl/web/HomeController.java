@@ -1,7 +1,7 @@
 package org.rx.fl.web;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.fl.service.media.JdLogin;
+import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.HttpCaller;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -32,7 +32,7 @@ public class HomeController {
     @RequestMapping("/uc/nplogin")
     public String jdLogin(String test, Model model) throws Exception {
         if ("1".equals(test)) {
-            JdLogin login = new JdLogin(8081);
+            JdLoginBot login = new JdLoginBot(8081);
             Thread.sleep(2000);
             log.info("jdLogin test result {}", login.produceKey());
         }

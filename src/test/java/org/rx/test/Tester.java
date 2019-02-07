@@ -88,13 +88,16 @@ public class Tester {
 
     @Test
     public void testReadSetting() {
+        Map<String, Object> map = App.loadYaml("application.yml");
+        System.out.println(map);
+
         Object v = App.readSetting("not");
         assert v == null;
 
-        v = App.readSetting("org.rx.test.Tester", SystemException.CodeFile, true, null);
+        v = App.readSetting("org.rx.test.Tester", null, SystemException.CodeFile);
         assert v instanceof Map;
 
-        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", SystemException.CodeFile, true, null);
+        v = App.readSetting("org.rx.test.Tester.testCode<IllegalArgumentException>", null, SystemException.CodeFile);
         assert eq(v, "This is IllegalArgumentException! $x");
     }
 
@@ -105,7 +108,7 @@ public class Tester {
         System.out.println(e);
         for (Path path : App.fileStream(Paths.get(e.toURI()))) {
             System.out.println(path);
-            Map<String, Object> map = App.readSettings(path.toString(), false);
+            Map<String, Object> map = App.loadYaml(path.toString());
             for (Map.Entry<String, Object> entry : map.entrySet()) {
                 System.out.println(entry.getKey() + ": " + entry.getValue());
             }

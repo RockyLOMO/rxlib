@@ -1,5 +1,6 @@
 package org.rx.common;
 
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.ClassPath;
@@ -50,9 +51,9 @@ public class App {
     //endregion
 
     //region Fields
-    public static final int               MaxSize         = Integer.MAX_VALUE - 8;
-    public static final int               TimeoutInfinite = -1;
-    private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    public static final int MaxSize = Integer.MAX_VALUE - 8;
+    public static final int TimeoutInfinite = -1;
+    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
 
@@ -84,7 +85,7 @@ public class App {
                 if (windowsOS()) {
                     process = Runtime.getRuntime().exec(shellString, null, dir);
                 } else {
-                    process = Runtime.getRuntime().exec(new String[] { "/bin/sh", "-c", shellString }, null, dir);
+                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", shellString}, null, dir);
                 }
                 try (LineNumberReader input = new LineNumberReader(
                         new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -240,7 +241,7 @@ public class App {
         return NQuery.of(classes).select(p -> (Class) p.load()).toList();
     }
 
-    @ErrorCode(value = "argError", messageKeys = { "$type" })
+    @ErrorCode(value = "argError", messageKeys = {"$type"})
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 
@@ -366,17 +367,29 @@ public class App {
         return readSetting(key, null);
     }
 
-    public static <T> T readSetting(String key, Class returnType) {
-        return readSetting(key, Contract.SettingsFile, false, returnType);
+    public static <T> T readSetting(String key, Class<T> type) {
+        return readSetting(key, type, "application.yml");
     }
 
-    @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
-    @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
-    public static <T> T readSetting(String key, String yamlFile, boolean throwOnEmpty, Class returnType) {
-        Map<String, Object> settings = readSettings(yamlFile + ".yml");
+    @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
+    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
+    public static <T> T readSetting(String key, Class<T> type, String yamlFile) {
+        require(key, yamlFile);
+
+        Function<Object, T> func = p -> {
+            if (type == null) {
+                return (T) p;
+            }
+            Map<String, Object> map = as(p, Map.class);
+            if (map != null) {
+                return new JSONObject(map).toJavaObject(type);
+            }
+            return changeType(p, type);
+        };
+        Map<String, Object> settings = loadYaml(yamlFile);
         Object val;
         if ((val = settings.get(key)) != null) {
-            return (T) (returnType == null ? val : changeType(val, returnType));
+            return func.apply(val);
         }
 
         StringBuilder kBuf = new StringBuilder();
@@ -392,7 +405,7 @@ public class App {
                 continue;
             }
             if (i == c) {
-                return (T) (returnType == null ? val : changeType(val, returnType));
+                return func.apply(val);
             }
             if ((settings = as(val, Map.class)) == null) {
                 throw new SystemException(values(k, yamlFile), "partialKeyError");
@@ -400,22 +413,18 @@ public class App {
             kBuf.setLength(0);
         }
 
-        if (!throwOnEmpty) {
-            return null;
-        }
-        throw new SystemException(values(key, yamlFile), "keyError");
-    }
-
-    public static Map<String, Object> readSettings(String yamlFile) {
-        return readSettings(yamlFile, true);
+        return null;
+//        throw new SystemException(values(key, yamlFile), "keyError");
     }
 
     @SneakyThrows
-    public static Map<String, Object> readSettings(String yamlFile, boolean isResource) {
+    public static Map<String, Object> loadYaml(String yamlFile) {
+        require(yamlFile);
+
+        File file = new File(yamlFile);
         Map<String, Object> result = null;
         Yaml yaml = new Yaml(new SafeConstructor());
-        for (Object data : yaml
-                .loadAll(isResource ? getClassLoader().getResourceAsStream(yamlFile) : new FileInputStream(yamlFile))) {
+        for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yamlFile))) {
             Map<String, Object> map = (Map<String, Object>) data;
             if (result == null) {
                 result = map;
@@ -429,6 +438,20 @@ public class App {
             result = new HashMap<>();
         }
         return result;
+    }
+
+    public static <T> T loadYaml(InputStream yamlStream, Class<T> type) {
+        require(yamlStream, type);
+
+        Yaml yaml = new Yaml();
+        return yaml.loadAs(yamlStream, type);
+    }
+
+    public static <T> String dumpYaml(T bean) {
+        require(bean);
+
+        Yaml yaml = new Yaml();
+        return yaml.dumpAsMap(bean);
     }
 
     public static void createDirectory(String dirPath) {
@@ -451,10 +474,6 @@ public class App {
 
     public static boolean isNullOrWhiteSpace(String input) {
         return isNullOrEmpty(input) || input.trim().length() == 0;
-    }
-
-    public static <E> boolean isNullOrEmpty(E[] input) {
-        return input == null || input.length == 0;
     }
 
     public static boolean equals(String s1, String s2, boolean ignoreCase) {
@@ -528,10 +547,10 @@ public class App {
         }
     }
 
-    @ErrorCode(value = "notSupported", messageKeys = { "$fType", "$tType" })
-    @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
+    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
+    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
+    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
+    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
@@ -589,7 +608,7 @@ public class App {
         return (T) value;
     }
 
-    @ErrorCode(messageKeys = { "$type" })
+    @ErrorCode(messageKeys = {"$type"})
     private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
@@ -638,7 +657,7 @@ public class App {
         require(obj);
 
         try (MemoryStream stream = new MemoryStream();
-                ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
+             ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
             return stream.toArray();
         }
@@ -654,7 +673,7 @@ public class App {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
-                ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
+             ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
         }
     }

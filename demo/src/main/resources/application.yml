@@ -10,6 +10,8 @@ app.errorCodeFiles:
   - errorCode.yml
 app.mybatis.mapperScan: org.rx.fl.repository
 app.commandList: FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,SubscribeCmd
+app.bot.debugPath: /_rx/bot/
+app.repository.dbFile: /_rx/lr.db
 app.sms.appId: 1400123840
 app.sms.appKey: 0decfdc628b7d885a790524133f22339
 app.sms.smsSign: 隽斋
@@ -24,24 +26,11 @@ spring:
     password: e)ud(yB_g8uO
 app:
   bot:
-#    enableBots: WxMobileBot
-    logPath: /usr/awtBot
-    delay: 10
     wx-mobile:
       capturePeriod: 500
       maxCheckMessageCount: 2
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
-  chrome:
-    driver: /usr/chrome/chromedriver.exe
-    dataPath: /usr/chrome/data
-    downloadPath: /usr/chrome/download
-    isBackground: false
-    initSize: 0
-  ie:
-    driver: /usr/chrome/IEDriverServer.exe
-    cookieUrl: http://x.%s/index.html?cookie=1  #需要配置hosts
-    initSize: 0
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
@@ -58,7 +47,18 @@ app:
       coreSize: 1
       keepLoginSeconds: 60
       loginPort: 8081
-  repository.dbFile: /usr/lr.db
+  browser:
+    windowRectangle: 0,0,1024,800
+    chrome:
+      driver: /usr/chrome/chromedriver.exe
+      dataPath: /usr/chrome/data
+      downloadPath: /usr/chrome/download
+      isBackground: false
+      initSize: 0
+    ie:
+      driver: /usr/chrome/IEDriverServer.exe
+      cookieUrl: http://x.%s/index.html?cookie=1
+      initSize: 0
 
 ---
 
@@ -70,28 +70,16 @@ spring:
     password: pL1ae4Q%L8TK$sD%
 app:
   bot:
-    logPath: C:\_rx\awtBot
-    delay: 10
     wx-mobile:
       capturePeriod: 500
       maxCheckMessageCount: 2
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
-  chrome:
-    driver: C:\_rx\chrome\chromedriver.exe
-    dataPath: C:\_rx\chrome\data
-    downloadPath: C:\_rx\chrome\download
-    isBackground: false
-    initSize: 3
-  ie:
-    driver: C:\_rx\chrome\IEDriverServer.exe
-    cookieUrl: http://x.%s/index.html?cookie=1
-    initSize: 1
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
-    commandTimeout: 50
+    commandTimeout: 40
     goodsCacheMinutes: 600
     advCacheMinutes: 720
     remoteMode: false
@@ -103,4 +91,15 @@ app:
       coreSize: 1
       keepLoginSeconds: 60
       loginPort: 8081
-  repository.dbFile: /_rx/lr.db
+  browser:
+    windowRectangle: -810,0,800,600
+    chrome:
+      driver: C:\_rx\chrome\chromedriver.exe
+      dataPath: C:\_rx\chrome\data
+      downloadPath: C:\_rx\chrome\download
+      isBackground: false
+      initSize: 3
+    ie:
+      driver: C:\_rx\chrome\IEDriverServer.exe
+      cookieUrl: http://x.%s/index.html?cookie=1
+      initSize: 1

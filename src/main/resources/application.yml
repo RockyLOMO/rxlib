@@ -3,8 +3,5 @@ app:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
     - org.springframework.ui.Model
-  netProxy:
-    compression: true
-    listenBlock: false
 #  errorCodeFiles:
-#    - rxCode.yml
+#    - errorCode.yml

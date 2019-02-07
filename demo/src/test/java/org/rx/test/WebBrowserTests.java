@@ -7,27 +7,26 @@ import okhttp3.HttpUrl;
 import org.junit.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.ie.InternetExplorerDriver;
-import org.openqa.selenium.ie.InternetExplorerDriverService;
 import org.openqa.selenium.ie.InternetExplorerOptions;
-import org.rx.beans.DateTime;
 import org.rx.common.App;
+import org.rx.common.BrowserConfig;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.media.OrderInfo;
-import org.rx.fl.service.media.Media;
-import org.rx.fl.service.media.TbMedia;
 import org.rx.fl.util.HttpCaller;
-import org.rx.fl.util.WebCaller;
-import org.rx.socks.Sockets;
-import org.rx.socks.http.HttpClient;
+import org.rx.fl.util.WebBrowser;
 import org.rx.util.JsonMapper;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
-import java.util.Set;
 
-public class WebCallerTests {
+public class WebBrowserTests {
+    @Test
+    public void config() {
+        BrowserConfig browserConfig = App.readSetting("app.browser", BrowserConfig.class);
+        System.out.println(JSON.toJSONString(browserConfig));
+    }
+
     @Test
     public void beanMapper() {
         OrderInfo to = JsonMapper.Default.convertTo(OrderInfo.class, "jdQueryOrderDetail", "{\n" +
@@ -132,7 +131,7 @@ public class WebCallerTests {
 ////                "Connection: Keep-Alive\n" +
 //                "Cookie: "+rawCookie));
         caller.getDownload(url, "D:\\a.xls");
-//        WebCaller caller = new WebCaller();
+//        WebBrowser caller = new WebBrowser();
 //        caller.setShareCookie(true);
 //        caller.navigateUrl(refUrl);
 //
@@ -175,9 +174,9 @@ public class WebCallerTests {
             String[] x = p.split("=");
             return new Cookie.Builder().name(x[0]).value(x[1]).domain("alimama.com").build();
         }).toList());
-        WebCaller webCaller = new WebCaller();
-        webCaller.setShareCookie(true);
-        webCaller.navigateUrl("https://pub.alimama.com");
+        WebBrowser webBrowser = new WebBrowser();
+        webBrowser.setShareCookie(true);
+        webBrowser.navigateUrl("https://pub.alimama.com");
         System.in.read();
     }
 
@@ -223,7 +222,7 @@ public class WebCallerTests {
     @SneakyThrows
     @Test
     public void testTab() {
-        WebCaller caller = new WebCaller();
+        WebBrowser caller = new WebBrowser();
         String currentHandle = caller.getCurrentHandle();
         System.out.println(currentHandle);
 

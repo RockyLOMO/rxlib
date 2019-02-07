@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.apache.commons.lang3.ArrayUtils;
 import org.rx.common.Contract;
 import org.rx.beans.Tuple;
 
@@ -25,7 +26,7 @@ import static org.rx.common.Contract.isNull;
 
 public class RestClient {
     private static class DynamicProxy implements InvocationHandler, MethodInterceptor {
-        private String                  baseUrl, proxyHost;
+        private String baseUrl, proxyHost;
         private ParameterNameDiscoverer parameterNameDiscoverer = new PrioritizedParameterNameDiscoverer();
 
         private DynamicProxy(String baseUrl, String proxyHost) {
@@ -40,7 +41,7 @@ public class RestClient {
             }
 
             String apiPath = method.getName(),
-                    httpMethod = App.isNullOrEmpty(args) ? HttpClient.GetMethod : HttpClient.PostMethod;
+                    httpMethod = ArrayUtils.isEmpty(args) ? HttpClient.GetMethod : HttpClient.PostMethod;
             boolean isFormParam = args != null && args.length > 1;
             RestMethod restMethod = method.getDeclaredAnnotation(RestMethod.class);
             if (restMethod != null) {
@@ -62,9 +63,9 @@ public class RestClient {
 
             Parameter[] parameters = method.getParameters();
             String[] parameterNames = parameterNameDiscoverer.getParameterNames(method);
-            Function<Integer, String> func = offset -> !App.isNullOrEmpty(parameterNames)
+            Function<Integer, String> func = offset -> !ArrayUtils.isEmpty(parameterNames)
                     && parameters.length == parameterNames.length ? parameterNames[offset]
-                            : parameters[offset].getName();
+                    : parameters[offset].getName();
             System.out.println(method.getDeclaringClass().getName() + " pNames: " + Arrays.toString(parameterNames));
             if (!isFormParam && parameters.length == 1) {
                 return setResult(method, client.httpPost(url, args[0]));
@@ -114,6 +115,6 @@ public class RestClient {
     public static <T> T create(Class<? extends T> restInterface, String baseUrl, String proxyHost, boolean byCglib) {
         DynamicProxy handler = new DynamicProxy(baseUrl, proxyHost);
         return (T) (byCglib ? Enhancer.create(restInterface, handler)
-                : Proxy.newProxyInstance(handler.getClass().getClassLoader(), new Class[] { restInterface }, handler));
+                : Proxy.newProxyInstance(handler.getClass().getClassLoader(), new Class[]{restInterface}, handler));
     }
 }

@@ -5,10 +5,7 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
-import org.rx.common.App;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.MediaConfig;
-import org.rx.common.NQuery;
+import org.rx.common.*;
 import org.rx.fl.dto.media.*;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
@@ -53,7 +50,7 @@ public class MediaService {
     }
 
     private Media create(MediaType type, boolean fromPool) {
-        Media media = null;
+        Media media;
         if (fromPool) {
             HoldItem holdItem = getHoldItem(type);
             while ((media = holdItem.queue.poll()) == null) {
@@ -121,10 +118,10 @@ public class MediaService {
             int coreSize = 1;
             switch (type) {
                 case Taobao:
-                    coreSize = config.getTaobaoConfig().getCoreSize();
+                    coreSize = config.getTaobao().getCoreSize();
                     break;
                 case Jd:
-                    coreSize = config.getJdConfig().getCoreSize();
+                    coreSize = config.getJd().getCoreSize();
                     break;
             }
             consumer.accept(type, coreSize);

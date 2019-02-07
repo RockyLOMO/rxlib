@@ -4,24 +4,13 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 import org.rx.common.App;
-import org.rx.common.Contract;
-import org.rx.common.NQuery;
-import org.rx.common.SystemException;
 import org.rx.fl.service.bot.WxMobileBot;
-import org.rx.fl.service.media.JdLogin;
+import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.junit4.SpringRunner;
 
-import javax.imageio.ImageIO;
 import java.awt.*;
-import java.awt.event.KeyEvent;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.util.*;
 import java.util.List;
 
 //@RunWith(SpringRunner.class)
@@ -51,7 +40,7 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void jdHack() {
-        JdLogin login = new JdLogin(8081);
+        JdLoginBot login = new JdLoginBot(8081);
         Thread.sleep(2000);
         System.out.println(login.produceKey());
         System.in.read();

@@ -17,7 +17,7 @@ import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.util.HttpCaller;
-import org.rx.fl.util.WebCaller;
+import org.rx.fl.util.WebBrowser;
 import org.rx.util.Helper;
 import org.springframework.util.CollectionUtils;
 
@@ -29,7 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
-import static org.rx.fl.util.WebCaller.BodySelector;
+import static org.rx.fl.util.WebBrowser.BodySelector;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
@@ -49,7 +49,7 @@ public class TbMedia implements Media {
     @Getter
     @Setter
     private volatile String downloadFileDateFormat;
-    private WebCaller caller;
+    private WebBrowser caller;
 
     @Override
     public MediaType getType() {
@@ -61,8 +61,8 @@ public class TbMedia implements Media {
 
         shareCookie = true;
         downloadFileDateFormat = "yyyy-MM-dd-HH";
-        caller = new WebCaller(WebCaller.DriverType.IE);
-        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getTaobaoConfig().getKeepLoginSeconds() * 1000, this.getType().name());
+        caller = new WebBrowser(WebBrowser.DriverType.IE);
+        TaskFactory.schedule(() -> keepLogin(true), 2 * 1000, config.getTaobao().getKeepLoginSeconds() * 1000, this.getType().name());
     }
 
     @SneakyThrows
@@ -76,7 +76,7 @@ public class TbMedia implements Media {
         String url = String.format("https://pub.alimama.com/report/getTbkPaymentDetails.json?spm=a219t.7664554.1998457203.54.353135d9SjsRTc&queryType=1&payStatus=&DownloadID=DOWNLOAD_REPORT_INCOME_NEW&startTime=%s&endTime=%s", start.toDateString(), end.toDateString());
         log.info("findOrders\n{}", url);
 
-        String downloadPath = App.readSetting("app.chrome.downloadPath");
+        String downloadPath = WebBrowser.BrowserConfig.getChrome().getDownloadPath();
         App.createDirectory(downloadPath);
         String filePath = downloadPath + File.separator + "TbMedia-" + DateTime.now().toString(downloadFileDateFormat) + ".xls";
         HttpCaller caller = new HttpCaller();
@@ -276,6 +276,7 @@ public class TbMedia implements Media {
 
     @Override
     public String findLink(String content) {
+        content = content.toLowerCase();
         int start = content.indexOf("http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);
@@ -284,7 +285,7 @@ public class TbMedia implements Media {
         String url;
         end = content.indexOf(" ", start);
         if (end == -1) {
-            url = content;
+            url = content.substring(start);
         } else {
             url = content.substring(start, end);
         }

@@ -30,9 +30,9 @@ public class MediaConfig {
     public static String AliPayCode;
 
     @Resource
-    private TaobaoConfig taobaoConfig;
+    private TaobaoConfig taobao;
     @Resource
-    private JdConfig jdConfig;
+    private JdConfig jd;
 
     private String enableMedias;
     private int syncWeeklyOrderSeconds;
