@@ -19,14 +19,22 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.List;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.*;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class AwtBot {
     private static final String debugPath = App.readSetting("app.bot.debugPath");
-    private static final int copyDelay = 50;
+    private static Clipboard clipboard;
+    public static final int getCopyDelay = 20, setCopyDelay = 80;
+
+    public static Clipboard getClipboard() {
+        if (clipboard == null) {
+            clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        }
+        return clipboard;
+//        return  Toolkit.getDefaultToolkit().getSystemClipboard();
+    }
 
     @SneakyThrows
     public static void init() {
@@ -63,23 +71,20 @@ public class AwtBot {
     }
 
     @SneakyThrows
-    public static String getClipboardString() {
-        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        Transferable t = clipboard.getContents(null);
+    public synchronized static String getClipboardString() {
+        Transferable t = getClipboard().getContents(null);
         if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
             return null;
         }
         return (String) t.getTransferData(DataFlavor.stringFlavor);
     }
 
-    public static void setClipboardString(String text) {
-        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        clipboard.setContents(new StringSelection(text), null);
+    public synchronized static void setClipboardString(String text) {
+        getClipboard().setContents(new StringSelection(text), null);
     }
 
-    public static void setClipboardImage(Image image) {
-        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        clipboard.setContents(new Transferable() {
+    public synchronized static void setClipboardImage(Image image) {
+        getClipboard().setContents(new Transferable() {
             @Override
             public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
                 if (!isDataFlavorSupported(flavor)) {
@@ -135,12 +140,19 @@ public class AwtBot {
         return clickByImage(keyImg, getScreenRectangle());
     }
 
-    @SneakyThrows
     public Point clickByImage(BufferedImage keyImg, Rectangle screenRectangle) {
+        return clickByImage(keyImg, screenRectangle, true);
+    }
+
+    @SneakyThrows
+    public Point clickByImage(BufferedImage keyImg, Rectangle screenRectangle, boolean throwOnEmpty) {
         require(keyImg);
 
         Point point = findScreenPoint(keyImg, screenRectangle);
         if (point == null) {
+            if (!throwOnEmpty) {
+                return null;
+            }
             saveScreen(bot, keyImg, "clickByImage");
             throw new InvalidOperationException("Can not found point");
         }
@@ -250,6 +262,17 @@ public class AwtBot {
         keysPress(KeyEvent.VK_ENTER);
     }
 
+//    public void keyPressFind() {
+//        bot.keyPress(KeyEvent.VK_CONTROL);
+//        bot.delay(5);
+//        bot.keyPress(KeyEvent.VK_F);
+//        bot.delay(5);
+//        bot.keyRelease(KeyEvent.VK_F);
+//        bot.delay(5);
+//        bot.keyRelease(KeyEvent.VK_CONTROL);
+//        bot.delay(autoDelay);
+//    }
+
     public void keysPress(int... keys) {
         require(keys);
 
@@ -262,8 +285,18 @@ public class AwtBot {
 
     public String keyCopyString() {
         keyCopy();
-        bot.delay(copyDelay);
-        return AwtBot.getClipboardString();
+        bot.delay(getCopyDelay);
+        return getClipboardString();
+//        String s0 = getClipboardString(), s1 = "";
+//        keyCopy();
+//        for (int i = 0; i < 2; i++) {
+//            bot.delay(copyDelay);
+//            s1 = getClipboardString();
+//            if (!eq(s0, s1)) {
+//                break;
+//            }
+//        }
+//        return s1;
     }
 
     public void keyCopy() {
@@ -275,9 +308,18 @@ public class AwtBot {
     }
 
     public void keyParseString(String text) {
-        AwtBot.setClipboardString(text);
-        bot.delay(copyDelay);
+        setClipboardString(text);
+        bot.delay(setCopyDelay);
         keyParse();
+//        setClipboardString(text);
+//        for (int i = 0; i < 2; i++) {
+//            bot.delay(copyDelay);
+//            String s1 = getClipboardString();
+//            if (eq(s1, text)) {
+//                return;
+//            }
+//        }
+//        keyParse();
     }
 
     public void keyParse() {

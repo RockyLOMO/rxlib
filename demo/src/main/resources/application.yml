@@ -10,7 +10,7 @@ app.errorCodeFiles:
   - errorCode.yml
 app.mybatis.mapperScan: org.rx.fl.repository
 app.commandList: FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,SubscribeCmd
-app.bot.debugPath: /_rx/bot/
+#app.bot.debugPath: /_rx/bot/
 app.repository.dbFile: /_rx/lr.db
 app.sms.appId: 1400123840
 app.sms.appKey: 0decfdc628b7d885a790524133f22339
@@ -92,7 +92,7 @@ app:
       keepLoginSeconds: 60
       loginPort: 8081
   browser:
-    windowRectangle: -810,0,800,600
+    windowRectangle: 1200,900,800,600
     chrome:
       driver: C:\_rx\chrome\chromedriver.exe
       dataPath: C:\_rx\chrome\data

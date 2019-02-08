@@ -19,6 +19,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
+import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -29,6 +30,7 @@ public class WxMobileBot implements Bot {
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
+        BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxBrowser.png");
     }
 
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
@@ -87,7 +89,7 @@ public class WxMobileBot implements Bot {
                 //抛异常会卡住
                 captureUsers();
             } catch (Exception e) {
-                log.warn(e.getMessage());
+                log.warn(e.getMessage(), e);
             }
         }, capturePeriod);
     }
@@ -100,11 +102,6 @@ public class WxMobileBot implements Bot {
         future.cancel(false);
         future = null;
     }
-
-//    private BufferedImage getWindowImage() {
-//        Point point = getWindowPoint();
-//        return bot.captureScreen(point.x, point.y, 710, 500);
-//    }
 
     private void captureUsers() {
         locker.lock();
@@ -140,7 +137,7 @@ public class WxMobileBot implements Bot {
                                 if (messageInfo.getOpenId() == null) {
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
-                                    bot.delay(50);
+                                    bot.delay(100);
 
                                     bot.mouseDoubleLeftClick(x + 94, y + 72);
                                     String openId = bot.keyCopyString();
@@ -157,11 +154,29 @@ public class WxMobileBot implements Bot {
                                         break;
                                     }
                                     messageInfo.setOpenId(openId);
+                                    if (messageInfo.getOpenId().startsWith("wxid_")) {
+                                        bot.mouseDoubleLeftClick(x + 42, y + 45);
+                                        String userName = bot.keyCopyString();
+                                        log.info("step2-1-1 capture userName {}", userName);
+                                        if (Strings.isNullOrEmpty(userName)) {
+                                            log.warn("Can not found userName");
+                                        }
+                                        messageInfo.setUserName(userName);
+                                    }
                                     bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
-                                    bot.delay(50);
+                                    bot.delay(100);
                                 }
                                 int x = p.x + KeyImages.Msg.getWidth() + 8, y = p.y + KeyImages.Msg.getHeight() / 2;
                                 bot.mouseDoubleLeftClick(x, y);
+
+                                bot.delay(100);
+                                Point pBrowser = getAbsolutePoint(348, 402);
+                                Point pCopy = bot.clickByImage(KeyImages.Browser, new Rectangle(pBrowser, new Dimension(355, 95)), false);
+                                log.info("step2-2 capture url {}", pCopy);
+                                if (pCopy != null) {
+                                    bot.mouseLeftClick(pCopy.x + KeyImages.Browser.getWidth() / 2, pCopy.y + KeyImages.Browser.getHeight() / 2);
+                                    bot.delay(AwtBot.setCopyDelay);
+                                }
                                 String msg = bot.keyCopyString();
                                 log.info("step2-2 capture msg {}", msg);
                                 msgList.add(msg);
@@ -189,7 +204,7 @@ public class WxMobileBot implements Bot {
                             TaskFactory.run(() -> {
                                 String toMsg = event.apply(messageInfo);
                                 if (!Strings.isNullOrEmpty(toMsg)) {
-                                    sendMessage(messageInfo.getOpenId(), toMsg);
+                                    sendMessage(isNull(messageInfo.getUserName(), messageInfo.getOpenId()), toMsg);
                                 }
                             });
                         }
@@ -199,7 +214,7 @@ public class WxMobileBot implements Bot {
             } while (checkCount < maxCheckMessageCount);
 
             if (clickDefaultUser) {
-                bot.mouseLeftClick(getAbsolutePoint(94, 478));
+                bot.mouseLeftClick(getAbsolutePoint(94, 415));
                 bot.delay(50);
                 clickDefaultUser = false;
             }
@@ -227,17 +242,23 @@ public class WxMobileBot implements Bot {
 
         locker.lock();
         try {
-            Point point = getAbsolutePoint(108, 38);
-            bot.mouseLeftClick(point);
-            //双击2次确认
-            bot.delay(50);
+//            Point point = getAbsolutePoint(110, 38);
+//            bot.mouseLeftClick(point);
+//            //双击2次确认
+//            bot.delay(1000);
 //            bot.mouseLeftClick(point);
 //            bot.delay(50);
-            log.info("step1 click input ok");
+//            log.info("step1 click input ok");
+//            bot.keyPressFind();
+            bot.mouseLeftClick(getAbsolutePoint(32, 92));
+            bot.delay(50);
+            bot.mouseLeftClick(getAbsolutePoint(110, 38));
+            bot.delay(100);
+            log.info("step1 focus input ok");
 
             bot.keyParseString(openId);
 //            bot.keyPressSpace();
-            bot.delay(800);
+            bot.delay(900);
             log.info("step1-1 input openId {}", openId);
 
             bot.mouseLeftClick(getAbsolutePoint(166, 132));

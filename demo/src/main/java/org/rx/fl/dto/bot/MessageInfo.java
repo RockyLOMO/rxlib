@@ -11,5 +11,6 @@ public class MessageInfo {
     private boolean subscribe;
     @NotNull
     private String openId;
+    private String userName;
     private String content;
 }

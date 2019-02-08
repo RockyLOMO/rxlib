@@ -33,6 +33,7 @@ public class BotTests {
             return "已收到消息：" + p.getContent();
 //            return "";
         });
+        bot.start();
         System.out.println("start...");
         System.in.read();
     }

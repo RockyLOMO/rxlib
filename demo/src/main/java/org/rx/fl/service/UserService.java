@@ -103,6 +103,16 @@ public class UserService {
         return user.getId();
     }
 
+    public List<Tuple<BotType, String>> getOpenIds(String userId) {
+        require(userId);
+
+        User user = userMapper.selectByPrimaryKey(userId);
+        if (user == null) {
+            throw new InvalidOperationException("user not found");
+        }
+        return NQuery.of(Tuple.of(BotType.WxService, user.getWxSvcOpenId()), Tuple.of(BotType.Wx, user.getWxOpenId())).toList();
+    }
+
     @Transactional
     public void addUserGoods(String userId, MediaType mediaType, String goodsId) {
         require(userId, mediaType, goodsId);

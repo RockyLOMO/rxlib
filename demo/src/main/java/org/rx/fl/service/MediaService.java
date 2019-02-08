@@ -5,8 +5,13 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
 import org.rx.common.*;
+import org.rx.fl.dto.bot.BotType;
+import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.media.*;
+import org.rx.fl.dto.repo.UserDto;
+import org.rx.fl.repository.model.Order;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
@@ -16,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -24,6 +30,7 @@ import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
+import static org.rx.fl.util.DbUtil.toMoney;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
@@ -98,6 +105,10 @@ public class MediaService {
     @Resource
     private OrderService orderService;
     @Resource
+    private UserService userService;
+    @Resource
+    private BotService botService;
+    @Resource
     private MediaCache cache;
     private MediaConfig config;
 
@@ -141,7 +152,34 @@ public class MediaService {
                 if (CollectionUtils.isEmpty(orders)) {
                     continue;
                 }
-                orderService.saveOrders(orders);
+                List<Order> settleOrders = new ArrayList<>();
+                orderService.saveOrders(orders, settleOrders);
+                for (Order settleOrder : settleOrders) {
+                    List<Tuple<BotType, String>> openIds = userService.getOpenIds(settleOrder.getUserId());
+                    List<MessageInfo> list = NQuery.of(openIds).select(p -> {
+                        MessageInfo msg = new MessageInfo();
+                        msg.setBotType(p.left);
+                        msg.setOpenId(p.right);
+                        UserDto user = userService.queryUser(settleOrder.getUserId());
+                        msg.setContent(String.format("一一一一收 货 成 功一一一一\n" +
+                                        "%s\n" +
+                                        "订单编号:\n" +
+                                        "%s\n" +
+                                        "付费金额: %.2f元\n" +
+                                        "红包补贴: %.2f元\n" +
+                                        "\n" +
+                                        "可提现金额: %.2f元\n" +
+                                        "未收货金额: %.2f元\n" +
+                                        "总成功订单: %s单\n" +
+                                        "-------------------------------\n" +
+                                        "回复 提现 两个字，给你补贴红包\n" +
+                                        "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
+                                toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
+                                toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount()));
+                        return msg;
+                    }).toList();
+                    botService.pushMessages(list);
+                }
             } catch (Exception e) {
                 log.error("syncOrder", e);
             }
@@ -192,7 +230,10 @@ public class MediaService {
                     return adv;
                 }
 
-                GoodsInfo goodsInfo = cache.getOrStore(adv.getLink(), k -> media.findGoods(k), config.getGoodsCacheMinutes());
+                GoodsInfo goodsInfo = cache.get(adv.getLink());
+                if (goodsInfo == null) {
+                    goodsInfo = media.findGoods(adv.getLink());
+                }
                 adv.setGoods(goodsInfo);
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
                     adv.setFoundStatus(AdvFoundStatus.NoGoods);
@@ -200,13 +241,15 @@ public class MediaService {
                 }
 
                 media.login();
-                String code = cache.getOrStore(adv.getMediaType().getValue() + "" + adv.getGoods().getId(), k ->
-                                App.retry(2, p -> {
-                                    String advCode = media.findAdv(adv.getGoods());
-                                    cache.add(adv.getLink(), adv.getGoods(), config.getGoodsCacheMinutes());
-                                    return advCode;
-                                }, null)
-                        , config.getAdvCacheMinutes());
+                String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
+                String code = cache.get(key);
+                if (Strings.isNullOrEmpty(code)) {
+                    code = App.retry(2, p -> media.findAdv(adv.getGoods()), null);
+                    if (!Strings.isNullOrEmpty(code)) {
+                        cache.add(adv.getLink(), adv.getGoods(), config.getGoodsCacheMinutes());
+                        cache.add(key, code, config.getAdvCacheMinutes());
+                    }
+                }
                 adv.setShareCode(code);
                 if (Strings.isNullOrEmpty(adv.getShareCode())) {
                     adv.setFoundStatus(AdvFoundStatus.NoAdv);

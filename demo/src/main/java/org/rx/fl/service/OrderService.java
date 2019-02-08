@@ -70,7 +70,7 @@ public class OrderService {
      * @param orderInfos
      */
     @Transactional
-    public void saveOrders(List<OrderInfo> orderInfos) {
+    public void saveOrders(List<OrderInfo> orderInfos, List<Order> settleOrders) {
         require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
@@ -111,6 +111,9 @@ public class OrderService {
                     case Settlement:
                         if (!hasSettleOrder) {
                             userService.saveUserBalance(order.getUserId(), clientIp, BalanceSourceKind.Order, order.getId(), amount);
+                            if (settleOrders != null) {
+                                settleOrders.add(order);
+                            }
                         }
                         break;
                     case Invalid:

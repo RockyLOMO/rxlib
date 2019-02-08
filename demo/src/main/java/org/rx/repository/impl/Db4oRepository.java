@@ -37,10 +37,10 @@ public class Db4oRepository<T extends DataObject> implements IRepository<T> {
             throw new InvalidOperationException("app.repository.dbFile is empty");
         }
         String dir = dbPath;
-//        int i = dir.lastIndexOf("/");
-//        if (i != -1) {
-//            dir = dir.substring(0, i);
-//        }
+        int i = dir.lastIndexOf("/");
+        if (i != -1) {
+            dir = dir.substring(0, i);
+        }
         App.createDirectory(dir);
 
         config = Db4o.newConfiguration();
