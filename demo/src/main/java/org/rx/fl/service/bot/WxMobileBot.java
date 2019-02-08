@@ -31,6 +31,7 @@ public class WxMobileBot implements Bot {
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
         BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxBrowser.png");
+//        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
     }
 
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
@@ -135,34 +136,19 @@ public class WxMobileBot implements Bot {
                             for (int i = points.size() - 1; i >= 0; i--) {
                                 Point p = points.get(i);
                                 if (messageInfo.getOpenId() == null) {
+                                    AwtBot.setClipboardString("");
+                                    bot.delay(AwtBot.setCopyDelay);
+
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
                                     bot.delay(100);
 
-                                    bot.mouseDoubleLeftClick(x + 94, y + 72);
-                                    String openId = bot.keyCopyString();
-                                    log.info("step2-1 capture openId {}", openId);
-                                    if (Strings.isNullOrEmpty(openId)) {
-                                        log.warn("Can not found openId");
-                                        doLoop = false;
-                                        break;
-//                                        throw new InvalidOperationException("Can not found openId");
-                                    }
-                                    if (skipOpenIds.contains(openId)) {
-                                        log.info("skip openId {}", openId);
+                                    fillOpenId(messageInfo, new Point(x, y), false);
+                                    if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
                                         doLoop = false;
                                         break;
                                     }
-                                    messageInfo.setOpenId(openId);
-                                    if (messageInfo.getOpenId().startsWith("wxid_")) {
-                                        bot.mouseDoubleLeftClick(x + 42, y + 45);
-                                        String userName = bot.keyCopyString();
-                                        log.info("step2-1-1 capture userName {}", userName);
-                                        if (Strings.isNullOrEmpty(userName)) {
-                                            log.warn("Can not found userName");
-                                        }
-                                        messageInfo.setUserName(userName);
-                                    }
+
                                     bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
                                     bot.delay(100);
                                 }
@@ -196,16 +182,25 @@ public class WxMobileBot implements Bot {
                             continue;
                         }
                         if (msgList.isEmpty()) {
-                            messageInfo.setSubscribe(true);
+                            if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
+                                bot.mouseLeftClick(getAbsolutePoint(350, 38));
+                                bot.delay(500); //多100
+                                Point p = getAbsolutePoint(808, 52);
+                                bot.mouseLeftClick(p);
+                                fillOpenId(messageInfo, p, true);
+                            }
+                            messageInfo.setContent(Bot.SubscribeContent);
                         } else {
-                            messageInfo.setContent(NQuery.of(msgList).firstOrDefault());
+                            messageInfo.setContent(NQuery.of(msgList).first());
                         }
                         if (event != null) {
                             TaskFactory.run(() -> {
                                 String toMsg = event.apply(messageInfo);
-                                if (!Strings.isNullOrEmpty(toMsg)) {
-                                    sendMessage(isNull(messageInfo.getUserName(), messageInfo.getOpenId()), toMsg);
+                                if (Strings.isNullOrEmpty(toMsg)) {
+                                    return;
                                 }
+                                messageInfo.setContent(toMsg);
+                                sendMessage(messageInfo);
                             });
                         }
                     }
@@ -223,6 +218,28 @@ public class WxMobileBot implements Bot {
         }
     }
 
+    private void fillOpenId(MessageInfo message, Point point, boolean captureNickname) {
+        bot.mouseDoubleLeftClick(point.x + 94, point.y + 72);
+        String openId = bot.keyCopyString();
+        log.info("step2-1 capture openId {}", openId);
+        if (Strings.isNullOrEmpty(openId) || skipOpenIds.contains(openId)) {
+            log.warn("Can not found openId {}", openId);
+            return;
+        }
+        message.setOpenId(openId);
+        if (message.getOpenId().startsWith("wxid_") || captureNickname) {
+            bot.mouseDoubleLeftClick(point.x + 42, point.y + 45);
+            String nickname = bot.keyCopyString();
+            log.info("step2-1 capture nickname {}", nickname);
+            if (Strings.isNullOrEmpty(nickname)) {
+                log.warn("Can not found nickname");
+                return;
+            }
+            message.setNickname(nickname);
+            bot.mouseLeftClick(point.x + 106, point.y + 146);
+        }
+    }
+
     private Point getAbsolutePoint(int relativeX, int relativeY) {
         Point windowPoint = getWindowPoint();
         return new Point(windowPoint.x + relativeX, windowPoint.y + relativeY);
@@ -234,18 +251,15 @@ public class WxMobileBot implements Bot {
     }
 
     @Override
-    public void sendMessage(String openId, String msg) {
-        require(openId, msg);
-        if (skipOpenIds.contains(openId)) {
+    public void sendMessage(MessageInfo message) {
+        require(message);
+        if (skipOpenIds.contains(message.getOpenId())) {
             return;
         }
 
         locker.lock();
         try {
 //            Point point = getAbsolutePoint(110, 38);
-//            bot.mouseLeftClick(point);
-//            //双击2次确认
-//            bot.delay(1000);
 //            bot.mouseLeftClick(point);
 //            bot.delay(50);
 //            log.info("step1 click input ok");
@@ -256,13 +270,14 @@ public class WxMobileBot implements Bot {
             bot.delay(100);
             log.info("step1 focus input ok");
 
+            String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
             bot.keyParseString(openId);
 //            bot.keyPressSpace();
-            bot.delay(900);
+            bot.delay(1000); //多100
             log.info("step1-1 input openId {}", openId);
 
             bot.mouseLeftClick(getAbsolutePoint(166, 132));
-            bot.delay(50);
+            bot.delay(100);
             log.info("step1-2 click user {}", openId);
 
             bot.keyParseString(msg);

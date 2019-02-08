@@ -7,6 +7,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
+import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
@@ -276,7 +277,7 @@ public class TbMedia implements Media {
 
     @Override
     public String findLink(String content) {
-        content = content.toLowerCase();
+//        StringUtils.indexOfIgnoreCase(content, "http")  无效
         int start = content.indexOf("http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);

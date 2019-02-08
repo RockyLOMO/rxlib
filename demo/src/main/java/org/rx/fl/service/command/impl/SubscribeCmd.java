@@ -1,5 +1,6 @@
 package org.rx.fl.service.command.impl;
 
+import org.rx.fl.service.bot.Bot;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.core.annotation.Order;
@@ -10,7 +11,7 @@ import org.springframework.stereotype.Component;
 public class SubscribeCmd implements Command {
     @Override
     public boolean peek(String message) {
-        return "subscribe".equals(message);
+        return Bot.SubscribeContent.equals(message);
     }
 
     @Override

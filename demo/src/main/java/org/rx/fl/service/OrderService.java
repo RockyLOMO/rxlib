@@ -150,7 +150,7 @@ public class OrderService {
         dbUtil.save(order);
 
         userService.saveUserBalance(userId, "0.0.0.0", BalanceSourceKind.RebindOrder, order.getId(), order.getRebateAmount());
-        UserDto user = userService.queryUser(userId);
+        UserInfo user = userService.queryUser(userId);
 
         RebindOrderResult result = new RebindOrderResult();
         result.setOrderNo(order.getOrderNo());

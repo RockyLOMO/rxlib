@@ -7,7 +7,7 @@ import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
-import org.rx.fl.dto.repo.UserDto;
+import org.rx.fl.dto.repo.UserInfo;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +37,7 @@ public class DailyCheckInCmd implements Command {
 
         try {
             long bonus = userService.checkIn(userId, "0.0.0.0");
-            UserDto user = userService.queryUser(userId);
+            UserInfo user = userService.queryUser(userId);
             return HandleResult.ok(String.format("一一一一签 到 成 功一一一一\n" +
                     "本次签到获得: %.2f元\n" +
                     "        累计签到: %s次\n" +

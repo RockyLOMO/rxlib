@@ -72,7 +72,7 @@ public class MediaCache {
         cacheItem.setValue(json.toJSONString());
 
         DateTime expireTime = DateTime.now().addMinutes(liveMinutes);
-        DateTime maxTime = DateTime.valueOf(String.format("%s 23:52:00", DateTime.now().toDateString()), DateTime.Formats.first());
+        DateTime maxTime = DateTime.valueOf(String.format("%s 23:56:00", DateTime.now().toDateString()), DateTime.Formats.first());
         if (expireTime.after(maxTime)) {
             expireTime = maxTime;
         }

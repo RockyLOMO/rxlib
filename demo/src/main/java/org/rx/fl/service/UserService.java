@@ -9,6 +9,7 @@ import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.dto.bot.BotType;
+import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
@@ -46,56 +47,57 @@ public class UserService {
     @Resource
     private DbUtil dbUtil;
 
-    public UserDto queryUser(String userId) {
+    public UserInfo queryUser(String userId) {
         require(userId);
         User user = dbUtil.selectById(userMapper, userId);
 
-        UserDto userDto = new UserDto();
-        userDto.setUserId(user.getId());
-        userDto.setBalance(user.getBalance());
-        userDto.setFreezeAmount(user.getFreezeAmount());
+        UserInfo userInfo = new UserInfo();
+        userInfo.setUserId(user.getId());
+        userInfo.setBalance(user.getBalance());
+        userInfo.setFreezeAmount(user.getFreezeAmount());
 
         BalanceLogExample qBalance = new BalanceLogExample();
         qBalance.createCriteria().andUserIdEqualTo(user.getId())
                 .andSourceEqualTo(BalanceSourceKind.Withdraw.getValue());
-        userDto.setTotalWithdrawAmount(DbUtil.longValue(balanceLogMapper.sumAmount(qBalance)));
+        userInfo.setTotalWithdrawAmount(DbUtil.longValue(balanceLogMapper.sumAmount(qBalance)));
 
         WithdrawLogExample qWithdraw = new WithdrawLogExample();
         qWithdraw.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(WithdrawStatus.Wait.getValue());
-        userDto.setWithdrawingAmount(DbUtil.longValue(withdrawLogMapper.sumAmount(qWithdraw)));
+        userInfo.setWithdrawingAmount(DbUtil.longValue(withdrawLogMapper.sumAmount(qWithdraw)));
 
         OrderExample qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusEqualTo(OrderStatus.Paid.getValue());
-        userDto.setUnconfirmedOrderAmount(DbUtil.longValue(orderMapper.sumRebateAmount(qOrder)));
+        userInfo.setUnconfirmedOrderAmount(DbUtil.longValue(orderMapper.sumRebateAmount(qOrder)));
         qOrder = new OrderExample();
         qOrder.createCriteria().andUserIdEqualTo(user.getId())
                 .andStatusIn(Arrays.asList(OrderStatus.Success.getValue(), OrderStatus.Settlement.getValue()));
-        userDto.setConfirmedOrderCount(orderMapper.countByExample(qOrder));
+        userInfo.setConfirmedOrderCount(orderMapper.countByExample(qOrder));
 
         CheckInLogExample query = new CheckInLogExample();
         query.createCriteria().andUserIdEqualTo(user.getId());
-        userDto.setCheckInCount(checkInLogMapper.countByExample(query));
-        userDto.setCheckInAmount(DbUtil.longValue(checkInLogMapper.sumBonus(query)));
-        return userDto;
+        userInfo.setCheckInCount(checkInLogMapper.countByExample(query));
+        userInfo.setCheckInAmount(DbUtil.longValue(checkInLogMapper.sumBonus(query)));
+        return userInfo;
     }
 
     @Transactional
-    public String getUserId(BotType botType, String openId) {
-        require(botType, openId);
+    public String getUserId(OpenIdInfo openId) {
+        require(openId);
 
-        String userId = App.hash(botType.getValue() + openId).toString();
+        String userId = App.hash(openId.getBotType().getValue() + openId.getOpenId()).toString();
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
             user = new User();
             user.setId(userId);
-            switch (botType) {
+            user.setNickname(openId.getNickname());
+            switch (openId.getBotType()) {
                 case WxService:
-                    user.setWxSvcOpenId(openId);
+                    user.setWxSvcOpenId(openId.getOpenId());
                     break;
                 case Wx:
-                    user.setWxOpenId(openId);
+                    user.setWxOpenId(openId.getOpenId());
                     break;
             }
             dbUtil.save(user, true);

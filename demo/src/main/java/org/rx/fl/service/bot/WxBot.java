@@ -56,7 +56,7 @@ public final class WxBot implements Bot {
     }
 
     @Override
-    public void sendMessage(String openId, String msg) {
+    public void sendMessage(MessageInfo message) {
         log.warn("Not supported");
     }
 
@@ -116,7 +116,7 @@ public final class WxBot implements Bot {
             messageInfo.setBotType(this.getType());
             messageInfo.setOpenId(eventMessage.getFromUserName());
             if ("subscribe".equalsIgnoreCase(eventMessage.getEvent())) {
-                messageInfo.setSubscribe(true);
+                messageInfo.setContent(Bot.SubscribeContent);
             } else if ("text".equals(eventMessage.getMsgType())) {
                 messageInfo.setContent(eventMessage.getContent());
             }

@@ -10,7 +10,7 @@ import org.rx.common.*;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.media.*;
-import org.rx.fl.dto.repo.UserDto;
+import org.rx.fl.dto.repo.UserInfo;
 import org.rx.fl.repository.model.Order;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
@@ -160,7 +160,7 @@ public class MediaService {
                         MessageInfo msg = new MessageInfo();
                         msg.setBotType(p.left);
                         msg.setOpenId(p.right);
-                        UserDto user = userService.queryUser(settleOrder.getUserId());
+                        UserInfo user = userService.queryUser(settleOrder.getUserId());
                         msg.setContent(String.format("一一一一收 货 成 功一一一一\n" +
                                         "%s\n" +
                                         "订单编号:\n" +

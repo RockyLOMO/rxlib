@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
+import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.$;
 import org.rx.beans.DateTime;
@@ -269,7 +270,6 @@ public class JdMedia implements Media {
 
     @Override
     public String findLink(String content) {
-        content = content.toLowerCase();
         int start = content.indexOf("http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);

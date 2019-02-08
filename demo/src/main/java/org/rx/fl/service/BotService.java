@@ -1,6 +1,5 @@
 package org.rx.fl.service;
 
-import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.BotConfig;
@@ -19,8 +18,6 @@ import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
 import java.util.List;
 import java.util.function.Function;
-
-import static org.rx.common.Contract.isNull;
 
 @EnableValid
 @Service
@@ -52,16 +49,15 @@ public class BotService {
         }
     }
 
-    public String handleMessage(@NotNull MessageInfo msg) {
-        String userId = userService.getUserId(msg.getBotType(), msg.getOpenId());
-        String content = msg.isSubscribe() || Strings.isNullOrEmpty(msg.getContent()) ? "subscribe" : msg.getContent();
-        return commandManager.handleMessage(userId, content);
+    public String handleMessage(@NotNull MessageInfo message) {
+        String userId = userService.getUserId(message);
+        return commandManager.handleMessage(userId, message.getContent());
     }
 
     public void pushMessages(@NotNull List<MessageInfo> pushMessages) {
         if (wxMobileBot != null) {
-            for (MessageInfo msg : NQuery.of(pushMessages).where(p -> p.getBotType() == BotType.Wx)) {
-                wxMobileBot.sendMessage(isNull(msg.getUserName(), msg.getOpenId()), msg.getContent());
+            for (MessageInfo message : NQuery.of(pushMessages).where(p -> p.getBotType() == BotType.Wx)) {
+                wxMobileBot.sendMessage(message);
             }
         }
     }
