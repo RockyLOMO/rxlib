@@ -70,7 +70,7 @@ public class OrderService {
      * @param orderInfos
      */
     @Transactional
-    public void saveOrders(List<OrderInfo> orderInfos, List<Order> settleOrders) {
+    public void saveOrders(List<OrderInfo> orderInfos, List<Order> paidOrders, List<Order> settleOrders) {
         require(orderInfos);
 
         for (OrderInfo media : orderInfos) {
@@ -97,6 +97,9 @@ public class OrderService {
                 String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId());
                 if (!Strings.isNullOrEmpty(userId)) {
                     order.setUserId(userId);
+                    if (media.getStatus() == OrderStatus.Paid && paidOrders != null) {
+                        paidOrders.add(order);
+                    }
                 }
             }
             order.setSettleAmount(toCent(media.getSettleAmount()));

@@ -3,6 +3,7 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.Test;
 import org.rx.common.App;
 import org.rx.fl.service.bot.WxMobileBot;
@@ -18,10 +19,12 @@ import java.util.List;
 public class BotTests {
     @Test
     public void x() {
-        String j = "{\"type\":\"java.lang.String\",\"value\":\"https://u.jd.com/zWt0Rl\"}";
-        JSONObject json = JSONObject.parseObject(j);
-        Class type = App.loadClass(json.getString("type"), false);
-        System.out.println((String) json.getObject("value", type));
+        System.out.println(   StringUtils.indexOfIgnoreCase("asdasdasdsadsadsadasd https://www.jd.com asdsadasdasd","http"));
+
+//        String j = "{\"type\":\"java.lang.String\",\"value\":\"https://u.jd.com/zWt0Rl\"}";
+//        JSONObject json = JSONObject.parseObject(j);
+//        Class type = App.loadClass(json.getString("type"), false);
+//        System.out.println((String) json.getObject("value", type));
     }
 
     @SneakyThrows

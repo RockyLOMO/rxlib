@@ -4,8 +4,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
-import org.rx.common.NQuery;
-import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
@@ -16,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
-import java.util.List;
 import java.util.function.Function;
 
 @EnableValid
@@ -54,11 +51,16 @@ public class BotService {
         return commandManager.handleMessage(userId, message.getContent());
     }
 
-    public void pushMessages(@NotNull List<MessageInfo> pushMessages) {
-        if (wxMobileBot != null) {
-            for (MessageInfo message : NQuery.of(pushMessages).where(p -> p.getBotType() == BotType.Wx)) {
-                wxMobileBot.sendMessage(message);
-            }
+    public void pushMessages(@NotNull MessageInfo pushMessage) {
+        switch (pushMessage.getBotType()) {
+            case Wx:
+                if (wxMobileBot != null) {
+                    wxMobileBot.sendMessage(pushMessage);
+                }
+                break;
+            case WxService:
+                wxBot.sendMessage(pushMessage);
+                break;
         }
     }
 }

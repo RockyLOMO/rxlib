@@ -5,10 +5,9 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
-import org.rx.beans.Tuple;
 import org.rx.common.*;
-import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
+import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.media.*;
 import org.rx.fl.dto.repo.UserInfo;
 import org.rx.fl.repository.model.Order;
@@ -152,33 +151,65 @@ public class MediaService {
                 if (CollectionUtils.isEmpty(orders)) {
                     continue;
                 }
-                List<Order> settleOrders = new ArrayList<>();
-                orderService.saveOrders(orders, settleOrders);
-                for (Order settleOrder : settleOrders) {
-                    List<Tuple<BotType, String>> openIds = userService.getOpenIds(settleOrder.getUserId());
-                    List<MessageInfo> list = NQuery.of(openIds).select(p -> {
+                List<Order> paidOrders = new ArrayList<>(), settleOrders = new ArrayList<>();
+                orderService.saveOrders(orders, paidOrders, settleOrders);
+                for (Order paidOrder : paidOrders) {
+                    UserInfo user = userService.queryUser(paidOrder.getUserId());
+                    String content = String.format("一一一一支 付 成 功一一一一\n" +
+                                    "%s\n" +
+                                    "订单编号:\n" +
+                                    "%s\n" +
+                                    "付费金额: %.2f元\n" +
+                                    "红包补贴: %.2f元\n" +
+                                    "\n" +
+                                    "可提现金额: %.2f元\n" +
+                                    "未收货金额: %.2f元\n" +
+                                    "-------------------------------\n" +
+                                    "亲 收货成功后，回复 提现 两个字，给你补贴红包\n" +
+                                    "\n" +
+                                    "将机器人名片推荐给好友，永久享受返利提成", paidOrder.getGoodsName(), paidOrder.getOrderNo(),
+                            toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
+                            toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()));
+                    List<OpenIdInfo> openIds = userService.getOpenIds(paidOrder.getUserId());
+                    for (MessageInfo messageInfo : NQuery.of(openIds).select(p -> {
                         MessageInfo msg = new MessageInfo();
-                        msg.setBotType(p.left);
-                        msg.setOpenId(p.right);
-                        UserInfo user = userService.queryUser(settleOrder.getUserId());
-                        msg.setContent(String.format("一一一一收 货 成 功一一一一\n" +
-                                        "%s\n" +
-                                        "订单编号:\n" +
-                                        "%s\n" +
-                                        "付费金额: %.2f元\n" +
-                                        "红包补贴: %.2f元\n" +
-                                        "\n" +
-                                        "可提现金额: %.2f元\n" +
-                                        "未收货金额: %.2f元\n" +
-                                        "总成功订单: %s单\n" +
-                                        "-------------------------------\n" +
-                                        "回复 提现 两个字，给你补贴红包\n" +
-                                        "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
-                                toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
-                                toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount()));
+                        msg.setBotType(p.getBotType());
+                        msg.setOpenId(p.getOpenId());
+                        msg.setNickname(p.getNickname());
+                        msg.setContent(content);
                         return msg;
-                    }).toList();
-                    botService.pushMessages(list);
+                    })) {
+                        botService.pushMessages(messageInfo);
+                    }
+                }
+                for (Order settleOrder : settleOrders) {
+                    UserInfo user = userService.queryUser(settleOrder.getUserId());
+                    String content = String.format("一一一一收 货 成 功一一一一\n" +
+                                    "%s\n" +
+                                    "订单编号:\n" +
+                                    "%s\n" +
+                                    "付费金额: %.2f元\n" +
+                                    "红包补贴: %.2f元\n" +
+                                    "\n" +
+                                    "可提现金额: %.2f元\n" +
+                                    "未收货金额: %.2f元\n" +
+                                    "总成功订单: %s单\n" +
+                                    "-------------------------------\n" +
+                                    "回复 提现 两个字，给你补贴红包\n" +
+                                    "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
+                            toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
+                            toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount());
+                    List<OpenIdInfo> openIds = userService.getOpenIds(settleOrder.getUserId());
+                    for (MessageInfo messageInfo : NQuery.of(openIds).select(p -> {
+                        MessageInfo msg = new MessageInfo();
+                        msg.setBotType(p.getBotType());
+                        msg.setOpenId(p.getOpenId());
+                        msg.setNickname(p.getNickname());
+                        msg.setContent(content);
+                        return msg;
+                    })) {
+                        botService.pushMessages(messageInfo);
+                    }
                 }
             } catch (Exception e) {
                 log.error("syncOrder", e);
@@ -230,9 +261,11 @@ public class MediaService {
                     return adv;
                 }
 
+                //注意同一个商品分享来源连接会不一致
                 GoodsInfo goodsInfo = cache.get(adv.getLink());
+//                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
                 if (goodsInfo == null) {
-                    goodsInfo = media.findGoods(adv.getLink());
+                    cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
                 }
                 adv.setGoods(goodsInfo);
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
@@ -242,15 +275,17 @@ public class MediaService {
 
                 media.login();
                 String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
-                String code = cache.get(key);
-                if (Strings.isNullOrEmpty(code)) {
-                    code = App.retry(2, p -> media.findAdv(adv.getGoods()), null);
-                    if (!Strings.isNullOrEmpty(code)) {
-                        cache.add(adv.getLink(), adv.getGoods(), config.getGoodsCacheMinutes());
-                        cache.add(key, code, config.getAdvCacheMinutes());
+                FindAdvResult item = cache.get(key);
+                if (item == null) {
+                    item = new FindAdvResult();
+                    item.setShareCode(App.retry(2, p -> media.findAdv(adv.getGoods()), null));
+                    if (!Strings.isNullOrEmpty(item.getShareCode())) {
+                        item.setGoods(adv.getGoods());
+                        cache.add(key, item, config.getAdvCacheMinutes());
                     }
                 }
-                adv.setShareCode(code);
+                adv.setGoods(item.getGoods());
+                adv.setShareCode(item.getShareCode());
                 if (Strings.isNullOrEmpty(adv.getShareCode())) {
                     adv.setFoundStatus(AdvFoundStatus.NoAdv);
                     return adv;

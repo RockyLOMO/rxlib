@@ -36,6 +36,32 @@
             JSON.parse("{\"data\":{\"endTime\":\"2019-01-20\",\"opType\":\"1\",\"orderId\":0,\"orderStatus\":\"0\",\"orderType\":\"0\",\"startTime\":\"2019-01-12\",\"unionTraffictType\":\"0\"},\"pageNo\":1,\"pageSize\":20}"), true);
     }
 
+    function tb_find() {
+        var index = -1, goodsId = "%s", name = "id".replace(/[*+?^$.\[\]{}()|\\\/]/g, "\\$&");
+        $('.color-m').each(function (i, o) {
+            var href = $(o).attr("href");
+            var match = href.match(new RegExp("[?&]" + name + "=([^&]+)(&|$)"));
+            var id = match && decodeURIComponent(match[1].replace(/\+/g, " "));
+            if (goodsId == id) {
+                index = i;
+                return false;
+            }
+        });
+        if (index == -1) {
+            return "";
+        }
+        setTimeout(function () {
+            $('.box-btn-left:eq(' + index + ')').click();
+        }, 800);
+        var result = {index: index, moneys: []}, offset = index * 3;
+        for (var i = 0; i < 3; i++) {
+            var j = offset + i;
+            result.moneys.push($('.number-16:eq(' + j + ')').text());
+        }
+        $('.box-btn-left:eq(' + index + ')').click()
+        return JSON.stringify(result);
+    }
+
     function tb_getMoney() {
         $('.box-btn-left:eq(0)').click();
         var result = [], offset = 0;

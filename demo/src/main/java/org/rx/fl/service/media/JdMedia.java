@@ -270,7 +270,7 @@ public class JdMedia implements Media {
 
     @Override
     public String findLink(String content) {
-        int start = content.indexOf("http"), end;
+        int start = StringUtils.indexOfIgnoreCase(content, "http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);
             return null;

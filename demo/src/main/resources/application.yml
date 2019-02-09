@@ -35,7 +35,7 @@ app:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
-    commandTimeout: 30
+    commandTimeout: 20
     goodsCacheMinutes: 600
     advCacheMinutes: 720
     remoteMode: false
@@ -79,7 +79,7 @@ app:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
     syncMonthlyOrderSeconds: 28800
-    commandTimeout: 40
+    commandTimeout: 30
     goodsCacheMinutes: 600
     advCacheMinutes: 720
     remoteMode: false

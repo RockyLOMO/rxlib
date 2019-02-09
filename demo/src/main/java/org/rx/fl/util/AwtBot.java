@@ -26,7 +26,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 public class AwtBot {
     private static final String debugPath = App.readSetting("app.bot.debugPath");
     private static Clipboard clipboard;
-    public static final int getCopyDelay = 20, setCopyDelay = 80;
+    public static final int clipboardDelay = 80;
 
     public static Clipboard getClipboard() {
         if (clipboard == null) {
@@ -71,40 +71,48 @@ public class AwtBot {
     }
 
     @SneakyThrows
-    public synchronized static String getClipboardString() {
-        Transferable t = getClipboard().getContents(null);
-        if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-            return null;
+    public String getClipboardString() {
+        bot.delay(20);
+        Clipboard clipboard = getClipboard();
+        synchronized (clipboard) {
+            Transferable t = clipboard.getContents(null);
+            if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                return null;
+            }
+            return (String) t.getTransferData(DataFlavor.stringFlavor);
         }
-        return (String) t.getTransferData(DataFlavor.stringFlavor);
     }
 
-    public synchronized static void setClipboardString(String text) {
-        getClipboard().setContents(new StringSelection(text), null);
+    public void setClipboardString(String text) {
+        Clipboard clipboard = getClipboard();
+        synchronized (clipboard) {
+            clipboard.setContents(new StringSelection(text), null);
+        }
+        bot.delay(clipboardDelay);
     }
 
-    public synchronized static void setClipboardImage(Image image) {
-        getClipboard().setContents(new Transferable() {
-            @Override
-            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-                if (!isDataFlavorSupported(flavor)) {
-                    throw new UnsupportedFlavorException(flavor);
-
-                }
-                return image;
-            }
-
-            @Override
-            public DataFlavor[] getTransferDataFlavors() {
-                return new DataFlavor[]{DataFlavor.imageFlavor};
-            }
-
-            @Override
-            public boolean isDataFlavorSupported(DataFlavor flavor) {
-                return DataFlavor.imageFlavor.equals(flavor);
-            }
-        }, null);
-    }
+//    public synchronized static void setClipboardImage(Image image) {
+//        getClipboard().setContents(new Transferable() {
+//            @Override
+//            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+//                if (!isDataFlavorSupported(flavor)) {
+//                    throw new UnsupportedFlavorException(flavor);
+//
+//                }
+//                return image;
+//            }
+//
+//            @Override
+//            public DataFlavor[] getTransferDataFlavors() {
+//                return new DataFlavor[]{DataFlavor.imageFlavor};
+//            }
+//
+//            @Override
+//            public boolean isDataFlavorSupported(DataFlavor flavor) {
+//                return DataFlavor.imageFlavor.equals(flavor);
+//            }
+//        }, null);
+//    }
 
     private final Robot bot;
     @Getter
@@ -285,7 +293,6 @@ public class AwtBot {
 
     public String keyCopyString() {
         keyCopy();
-        bot.delay(getCopyDelay);
         return getClipboardString();
 //        String s0 = getClipboardString(), s1 = "";
 //        keyCopy();
@@ -309,7 +316,6 @@ public class AwtBot {
 
     public void keyParseString(String text) {
         setClipboardString(text);
-        bot.delay(setCopyDelay);
         keyParse();
 //        setClipboardString(text);
 //        for (int i = 0; i < 2; i++) {

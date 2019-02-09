@@ -136,8 +136,7 @@ public class WxMobileBot implements Bot {
                             for (int i = points.size() - 1; i >= 0; i--) {
                                 Point p = points.get(i);
                                 if (messageInfo.getOpenId() == null) {
-                                    AwtBot.setClipboardString("");
-                                    bot.delay(AwtBot.setCopyDelay);
+                                    bot.setClipboardString("");
 
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
@@ -161,7 +160,7 @@ public class WxMobileBot implements Bot {
                                 log.info("step2-2 capture url {}", pCopy);
                                 if (pCopy != null) {
                                     bot.mouseLeftClick(pCopy.x + KeyImages.Browser.getWidth() / 2, pCopy.y + KeyImages.Browser.getHeight() / 2);
-                                    bot.delay(AwtBot.setCopyDelay);
+                                    bot.delay(AwtBot.clipboardDelay);
                                 }
                                 String msg = bot.keyCopyString();
                                 log.info("step2-2 capture msg {}", msg);
@@ -273,7 +272,7 @@ public class WxMobileBot implements Bot {
             String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
             bot.keyParseString(openId);
 //            bot.keyPressSpace();
-            bot.delay(1000); //多100
+            bot.delay(1050); //多100
             log.info("step1-1 input openId {}", openId);
 
             bot.mouseLeftClick(getAbsolutePoint(166, 132));

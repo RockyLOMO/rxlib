@@ -1,5 +1,6 @@
 package org.rx.fl.service.media;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import lombok.Getter;
@@ -152,32 +153,40 @@ public class TbMedia implements Media {
             log.setPrefix(this.getType().name());
             log.info("findAdv step1 {}", url);
             return caller.invokeSelf(caller -> {
-                List<WebElement> eGoodUrls = caller.navigateUrl(url, ".color-m,.bg-search-empty").toList();
-                log.info("findAdv step2-1 goodUrls: {}", eGoodUrls.size());
-                for (int i = 0; i < eGoodUrls.size(); i++) {
-                    String goodsId = goodsInfo.getId().trim(),
-                            eGoodId = HttpUrl.get(eGoodUrls.get(i).getAttribute("href")).queryParameter("id");
-                    log.info("findAdv step2-2 {} {}=={}", goodsInfo.getSellerName(), goodsId, eGoodId);
-                    if (!goodsId.equals(eGoodId)) {
-                        continue;
-                    }
-
-                    String btn1Selector = String.format(".box-btn-left:eq(%s)", i);
-                    String text = caller.executeScript(String.format("$('%s').click();\n" +
-                            "        var result = [], offset = %s;\n" +
-                            "        for (var i = 0; i < 3; i++) {\n" +
-                            "            var index = offset + i;\n" +
-                            "            result.push($('.number-16:eq(' + index + ')').text());\n" +
-                            "        }\n" +
-                            "        return result.toString();", btn1Selector, i * 3));
+                int checkCount = caller.navigateUrl(url, "#J_item_list").count();
+                log.info("findAdv step2-1 goodUrls: {}", checkCount);
+                String text = caller.executeScript(String.format("var index = -1, goodsId = \"%s\", name = \"id\".replace(/[*+?^$.\\[\\]{}()|\\\\\\/]/g, \"\\\\$&\");\n" +
+                        "        $('.color-m').each(function (i, o) {\n" +
+                        "            var href = $(o).attr(\"href\");\n" +
+                        "            var match = href.match(new RegExp(\"[?&]\" + name + \"=([^&]+)(&|$)\"));\n" +
+                        "            var id = match && decodeURIComponent(match[1].replace(/\\+/g, \" \"));\n" +
+                        "            if (goodsId == id) {\n" +
+                        "                index = i;\n" +
+                        "                return false;\n" +
+                        "            }\n" +
+                        "        });\n" +
+                        "        if (index == -1) {\n" +
+                        "            return \"\";\n" +
+                        "        }\n" +
+                        "        var result = {index: index, moneys: []}, offset = index * 3;\n" +
+                        "        for (var i = 0; i < 3; i++) {\n" +
+                        "            var j = offset + i;\n" +
+                        "            result.moneys.push($('.number-16:eq(' + j + ')').text());\n" +
+                        "        }\n" +
+                        "        $('.box-btn-left:eq(' + index + ')').click()\n" +
+                        "        return JSON.stringify(result);", goodsInfo.getId().trim()));
+                if (!Strings.isNullOrEmpty(text)) {
                     log.info("findAdv step3-1 ok");
-                    String[] strings = text.split(",");
-                    goodsInfo.setPrice(strings[0].trim());
-                    goodsInfo.setRebateRatio(strings[1].trim());
-                    goodsInfo.setRebateAmount(strings[2].trim());
+                    JSONObject json = JSONObject.parseObject(text);
+                    int index = json.getIntValue("index");
+                    String btn1Selector = String.format(".box-btn-left:eq(%s)", index);
+                    JSONArray moneys = json.getJSONArray("moneys");
+                    goodsInfo.setPrice(moneys.getString(0).trim());
+                    goodsInfo.setRebateRatio(moneys.getString(1).trim());
+                    goodsInfo.setRebateAmount(moneys.getString(2).trim());
 
                     try {
-                        final int reClickEachSeconds = 4, waitTimeout = reClickEachSeconds * 2 + 1;
+                        final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
                         String btn2Selector = "button[mx-click=submit]";
                         caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
 
@@ -222,7 +231,6 @@ public class TbMedia implements Media {
                     } catch (Exception e) {
                         log.error("findAdv", e);
                         keepLogin(false);
-                        break;
                     }
                 }
                 log.info("Goods {} not found", goodsInfo.getName());
@@ -277,8 +285,7 @@ public class TbMedia implements Media {
 
     @Override
     public String findLink(String content) {
-//        StringUtils.indexOfIgnoreCase(content, "http")  无效
-        int start = content.indexOf("http"), end;
+        int start = StringUtils.indexOfIgnoreCase(content, "http"), end;
         if (start == -1) {
             log.info("Http flag not found {}", content);
             return null;

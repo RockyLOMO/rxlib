@@ -19,7 +19,6 @@ public class HelpCmd implements Command {
         require(userId);
 
         return HandleResult.ok("一一一一帮 助 信 息一一一一\n" +
-                "\n" +
                 "[1]----------查看个人信息\n" +
                 "[2]----------关联上支付宝\n" +
                 "[3]----------提取返利红包\n" +
@@ -28,7 +27,8 @@ public class HelpCmd implements Command {
                 "[6]----------查看历史订单\n" +
                 "[7]----------绑定丢失订单\n" +
                 "[8]----------签到随机红包\n" +
-                "\n" +
-                "    亲，请输入[ ]内的数字序号。");
+                "亲，请输入[ ]内的数字序号。\n\n" +
+                "淘宝返利教程：\nhttp://t.cn/EcS0bfI\n" +
+                "京东返利教程：\nhttp://t.cn/EcSjhnd");
     }
 }

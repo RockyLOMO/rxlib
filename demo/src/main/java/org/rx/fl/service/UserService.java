@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -105,14 +106,29 @@ public class UserService {
         return user.getId();
     }
 
-    public List<Tuple<BotType, String>> getOpenIds(String userId) {
+    public List<OpenIdInfo> getOpenIds(String userId) {
         require(userId);
-
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
             throw new InvalidOperationException("user not found");
         }
-        return NQuery.of(Tuple.of(BotType.WxService, user.getWxSvcOpenId()), Tuple.of(BotType.Wx, user.getWxOpenId())).toList();
+
+        List<OpenIdInfo> openIds = new ArrayList<>();
+        if (user.getWxOpenId() != null) {
+            OpenIdInfo wx = new OpenIdInfo();
+            wx.setBotType(BotType.Wx);
+            wx.setOpenId(user.getWxOpenId());
+            wx.setNickname(user.getNickname());
+            openIds.add(wx);
+        }
+
+        if (user.getWxSvcOpenId() != null) {
+            OpenIdInfo wxSvc = new OpenIdInfo();
+            wxSvc.setBotType(BotType.WxService);
+            wxSvc.setOpenId(user.getWxSvcOpenId());
+            openIds.add(wxSvc);
+        }
+        return openIds;
     }
 
     @Transactional
