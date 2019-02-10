@@ -160,7 +160,7 @@ public class WxMobileBot implements Bot {
                                 log.info("step2-2 capture url {}", pCopy);
                                 if (pCopy != null) {
                                     bot.mouseLeftClick(pCopy.x + KeyImages.Browser.getWidth() / 2, pCopy.y + KeyImages.Browser.getHeight() / 2);
-                                    bot.delay(AwtBot.clipboardDelay);
+                                    bot.getClipboard().waitSetComplete();
                                 }
                                 String msg = bot.keyCopyString();
                                 log.info("step2-2 capture msg {}", msg);

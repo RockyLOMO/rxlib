@@ -23,15 +23,11 @@ public final class ManualResetEvent {
         synchronized (monitor) {
             while (!open) {
                 monitor.wait(timeout);
+                if (timeout > 0) {
+                    break;
+                }
             }
         }
-    }
-
-    @SneakyThrows
-    public void setThenReset(long delay) {
-        set();
-        Thread.sleep(delay);
-        reset();
     }
 
     public void set() {//open start

@@ -154,7 +154,7 @@ public final class WebBrowser extends Disposable {
                             "disable-infobars", "disable-web-security", "ignore-certificate-errors", "allow-running-insecure-content",
                             "disable-accelerated-video", "disable-java", "disable-plugins", "disable-plugins-discovery", "disable-extensions",
                             "disable-desktop-notifications", "disable-speech-input", "disable-translate", "safebrowsing-disable-download-protection", "no-pings",
-                            "ash-force-desktop", "disable-background-mode", "no-sandbox");
+                            "ash-force-desktop");
 //                    opt.addArguments("disable-dev-shm-usage");
                     if (!Strings.isNullOrEmpty(chrome.getDataPath())) {
                         opt.addArguments("user-data-dir=" + chrome.getDataPath() + chromeCounter++, "restore-last-session");
@@ -386,21 +386,25 @@ public final class WebBrowser extends Disposable {
         try {
             driver.get(url);
         } catch (NoSuchWindowException e) {
-            log.info("navigateUrl {}", e.getMessage());
+            log.info("navigateUrl {} {}", url, e.getMessage());
             if (driver instanceof InternetExplorerDriver) {
-                RemoteWebDriver temp = driver;
-                driver = create(DriverType.IE, true);
-                driver.get(url);
-                temp.quit();
-                log.info("exchange driver for {}", url);
+                exchangeNew(url);
+            } else {
+                throw e;
+            }
+        } catch (TimeoutException e) {
+            log.info("navigateUrl {} {}", url, e.getMessage());
+            if (driver instanceof ChromeDriver) {
+                exchangeNew(url);
+            } else {
+                throw e;
             }
         } catch (WebDriverException e) {
-            if (driver instanceof ChromeDriver && e.getMessage().contains("session deleted because of page crash")) {
-                driver = create(DriverType.Chrome, true);
-                driver.get(url);
-                log.info("exchange driver for {}", url);
+            if (driver instanceof ChromeDriver && e.getMessage() != null && e.getMessage().contains("session deleted because of page crash")) {
+                exchangeNew(url);
+            } else {
+                throw e;
             }
-            throw e;
         }
 
         NQuery<WebElement> elements;
@@ -413,6 +417,20 @@ public final class WebBrowser extends Disposable {
             syncCookie();
         }
         return elements;
+    }
+
+    private synchronized void exchangeNew(String url) {
+        RemoteWebDriver temp = driver;
+        if (driver instanceof ChromeDriver) {
+            driver = create(DriverType.Chrome, true);
+        } else if (driver instanceof InternetExplorerDriver) {
+            driver = create(DriverType.IE, true);
+        } else {
+            throw new InvalidOperationException("Not supported");
+        }
+        log.info("exchange driver for {}", url);
+        driver.get(url);
+        temp.quit();
     }
 
     public void syncCookie() {

@@ -78,7 +78,8 @@ public final class JdLoginBot extends Disposable {
                                     if (url.startsWith("passport.jd.com/uc/nplogin?")) {
                                         log.info("JdLoginBot detect {}", url);
                                         loginKey = "http://" + url;
-                                        waiter.setThenReset(3000);
+                                        waiter.set();
+                                        Thread.sleep(3000);
                                         clientChannel.close();
                                         return;
                                     }
@@ -118,6 +119,7 @@ public final class JdLoginBot extends Disposable {
         }
 
         waiter.waitOne(6 * 1000);
+        waiter.reset();
         log.info("step2 wait proxy callback");
 
         try {
@@ -127,7 +129,11 @@ public final class JdLoginBot extends Disposable {
             loginKey = null;
             future = TaskFactory.schedule(() -> {
                 log.info("step3 try close it");
-                bot.clickByImage(jdKey2);
+//                bot.clickByImage(jdKey2);
+                int y = (int) bot.getScreenRectangle().getHeight();
+                bot.mouseRightClick(220, y - 20);
+                bot.delay(1000);
+                bot.mouseLeftClick(220, y - 64);
                 log.info("step3 closed it");
                 future.cancel(true);
                 future = null;

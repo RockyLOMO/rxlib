@@ -63,6 +63,7 @@ public class MediaService {
                 log.info("wait media from pool");
                 holdItem.waiter.waitOne();
             }
+            holdItem.waiter.reset();
             log.info("wait ok and get media");
             return media;
         }
@@ -90,15 +91,15 @@ public class MediaService {
         return media;
     }
 
-    @SneakyThrows
+    //    @SneakyThrows
     private void release(Media media) {
         HoldItem holdItem = getHoldItem(media.getType());
         holdItem.queue.add(media);
         holdItem.waiter.set();
         log.info("release media and waitHandle");
-        Thread.sleep(50);
-        holdItem.waiter.reset();
-        log.info("reset waitHandle");
+//        Thread.sleep(50);
+//        holdItem.waiter.reset();
+//        log.info("reset waitHandle");
     }
 
     @Resource

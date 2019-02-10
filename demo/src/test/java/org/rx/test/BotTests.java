@@ -1,15 +1,15 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.Test;
-import org.rx.common.App;
+import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.AwtBot;
+import org.rx.fl.util.AwtClipboard;
 import org.rx.fl.util.ImageUtil;
+import org.rx.util.ManualResetEvent;
 
 import java.awt.*;
 import java.util.List;
@@ -17,10 +17,50 @@ import java.util.List;
 //@RunWith(SpringRunner.class)
 //@SpringBootTest
 public class BotTests {
+    @SneakyThrows
     @Test
-    public void x() {
-        System.out.println(   StringUtils.indexOfIgnoreCase("asdasdasdsadsadsadasd https://www.jd.com asdsadasdasd","http"));
-
+    public void normal() {
+        AwtBot bot = new AwtBot();
+        int y = (int) bot.getScreenRectangle().getHeight();
+        bot.mouseRightClick(220, y - 20);
+        bot.delay(1000);
+        bot.mouseLeftClick(220, y - 64);
+//        bot.clickByImage(ImageUtil.getImageFromResource(WxBot.class, "/static/jdKey2.png"));
+////
+//        String x = "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
+//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
+//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
+//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
+//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
+//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
+//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
+//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
+//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
+//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
+//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
+//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
+//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
+//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);";
+//        AwtClipboard l = new AwtClipboard();
+//        l.setContent(x);
+//        l.setContent(x);
+//        System.out.println(x.equals(l.getString()));
+        System.in.read();
 //        String j = "{\"type\":\"java.lang.String\",\"value\":\"https://u.jd.com/zWt0Rl\"}";
 //        JSONObject json = JSONObject.parseObject(j);
 //        Class type = App.loadClass(json.getString("type"), false);

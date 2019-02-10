@@ -8,11 +8,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
+import org.rx.common.Lazy;
 import org.rx.common.NQuery;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
-import java.awt.datatransfer.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
@@ -25,16 +25,6 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class AwtBot {
     private static final String debugPath = App.readSetting("app.bot.debugPath");
-    private static Clipboard clipboard;
-    public static final int clipboardDelay = 80;
-
-    public static Clipboard getClipboard() {
-        if (clipboard == null) {
-            clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        }
-        return clipboard;
-//        return  Toolkit.getDefaultToolkit().getSystemClipboard();
-    }
 
     @SneakyThrows
     public static void init() {
@@ -70,55 +60,25 @@ public class AwtBot {
         }
     }
 
-    @SneakyThrows
     public String getClipboardString() {
-        bot.delay(20);
-        Clipboard clipboard = getClipboard();
-        synchronized (clipboard) {
-            Transferable t = clipboard.getContents(null);
-            if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                return null;
-            }
-            return (String) t.getTransferData(DataFlavor.stringFlavor);
-        }
+//        bot.delay(20);
+        return getClipboard().getString();
     }
 
     public void setClipboardString(String text) {
-        Clipboard clipboard = getClipboard();
-        synchronized (clipboard) {
-            clipboard.setContents(new StringSelection(text), null);
-        }
-        bot.delay(clipboardDelay);
+        getClipboard().setContent(text);
     }
 
-//    public synchronized static void setClipboardImage(Image image) {
-//        getClipboard().setContents(new Transferable() {
-//            @Override
-//            public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-//                if (!isDataFlavorSupported(flavor)) {
-//                    throw new UnsupportedFlavorException(flavor);
-//
-//                }
-//                return image;
-//            }
-//
-//            @Override
-//            public DataFlavor[] getTransferDataFlavors() {
-//                return new DataFlavor[]{DataFlavor.imageFlavor};
-//            }
-//
-//            @Override
-//            public boolean isDataFlavorSupported(DataFlavor flavor) {
-//                return DataFlavor.imageFlavor.equals(flavor);
-//            }
-//        }, null);
-//    }
-
     private final Robot bot;
+    private final Lazy<AwtClipboard> clipboard;
     @Getter
     @Setter
     private volatile int autoDelay;
     private volatile Rectangle screenRectangle;
+
+    public AwtClipboard getClipboard() {
+        return clipboard.getValue();
+    }
 
     public Rectangle getScreenRectangle() {
         return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
@@ -133,6 +93,7 @@ public class AwtBot {
     @SneakyThrows
     public AwtBot() {
         bot = new Robot();
+        clipboard = new Lazy<>(AwtClipboard::new);
         this.autoDelay = 10;
     }
 

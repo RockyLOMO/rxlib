@@ -1,0 +1,1 @@
+mstsc /admin /v:r.x.org /w:2560 /h:1440 /f
