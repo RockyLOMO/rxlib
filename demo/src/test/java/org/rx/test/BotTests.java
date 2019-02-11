@@ -22,9 +22,10 @@ public class BotTests {
     public void normal() {
         AwtBot bot = new AwtBot();
         int y = (int) bot.getScreenRectangle().getHeight();
-        bot.mouseRightClick(220, y - 20);
-        bot.delay(1000);
-        bot.mouseLeftClick(220, y - 64);
+        bot.clickAndAltF4(220, y - 20);
+//        bot.mouseRightClick(220, y - 20);
+//        bot.delay(1000);
+//        bot.mouseLeftClick(220, y - 64);
 //        bot.clickByImage(ImageUtil.getImageFromResource(WxBot.class, "/static/jdKey2.png"));
 ////
 //        String x = "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +

@@ -25,6 +25,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class AwtBot {
     private static final String debugPath = App.readSetting("app.bot.debugPath");
+    private static final Object clickSyncRoot = new Object();
 
     @SneakyThrows
     public static void init() {
@@ -182,6 +183,18 @@ public class AwtBot {
         return bot.createScreenCapture(rectangle);
     }
 
+    public void clickAndAltF4(int x, int y) {
+        synchronized (clickSyncRoot) {
+            mouseLeftClickInner(x, y);
+            bot.delay(autoDelay);
+            bot.keyPress(KeyEvent.VK_ALT);
+            bot.keyPress(KeyEvent.VK_F4);
+            bot.keyRelease(KeyEvent.VK_F4);
+            bot.keyRelease(KeyEvent.VK_ALT);
+        }
+        bot.delay(autoDelay);
+    }
+
     public Point getMouseLocation() {
         return MouseInfo.getPointerInfo().getLocation();
     }
@@ -201,9 +214,11 @@ public class AwtBot {
     }
 
     private void mouseLeftClickInner(int x, int y) {
-        bot.mouseMove(x, y);
-        bot.mousePress(InputEvent.BUTTON1_MASK);
-        bot.mouseRelease(InputEvent.BUTTON1_MASK);
+        synchronized (clickSyncRoot) {
+            bot.mouseMove(x, y);
+            bot.mousePress(InputEvent.BUTTON1_MASK);
+            bot.mouseRelease(InputEvent.BUTTON1_MASK);
+        }
     }
 
     public void mouseDoubleLeftClick(int x, int y) {
@@ -223,24 +238,21 @@ public class AwtBot {
         bot.delay(autoDelay);
     }
 
-    public void keyPressSpace() {
+    public void pressSpace() {
         keysPress(KeyEvent.VK_SPACE);
     }
 
-    public void keyPressEnter() {
+    public void pressEnter() {
         keysPress(KeyEvent.VK_ENTER);
     }
 
-//    public void keyPressFind() {
-//        bot.keyPress(KeyEvent.VK_CONTROL);
-//        bot.delay(5);
-//        bot.keyPress(KeyEvent.VK_F);
-//        bot.delay(5);
-//        bot.keyRelease(KeyEvent.VK_F);
-//        bot.delay(5);
-//        bot.keyRelease(KeyEvent.VK_CONTROL);
-//        bot.delay(autoDelay);
-//    }
+    public void pressCtrlF() {
+        bot.keyPress(KeyEvent.VK_CONTROL);
+        bot.keyPress(KeyEvent.VK_F);
+        bot.keyRelease(KeyEvent.VK_F);
+        bot.keyRelease(KeyEvent.VK_CONTROL);
+        bot.delay(autoDelay);
+    }
 
     public void keysPress(int... keys) {
         require(keys);
@@ -255,16 +267,6 @@ public class AwtBot {
     public String keyCopyString() {
         keyCopy();
         return getClipboardString();
-//        String s0 = getClipboardString(), s1 = "";
-//        keyCopy();
-//        for (int i = 0; i < 2; i++) {
-//            bot.delay(copyDelay);
-//            s1 = getClipboardString();
-//            if (!eq(s0, s1)) {
-//                break;
-//            }
-//        }
-//        return s1;
     }
 
     public void keyCopy() {
@@ -278,15 +280,6 @@ public class AwtBot {
     public void keyParseString(String text) {
         setClipboardString(text);
         keyParse();
-//        setClipboardString(text);
-//        for (int i = 0; i < 2; i++) {
-//            bot.delay(copyDelay);
-//            String s1 = getClipboardString();
-//            if (eq(s1, text)) {
-//                return;
-//            }
-//        }
-//        keyParse();
     }
 
     public void keyParse() {

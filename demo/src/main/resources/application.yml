@@ -92,7 +92,7 @@ app:
       keepLoginSeconds: 60
       loginPort: 8081
   browser:
-    windowRectangle: 1200,900,800,600
+    windowRectangle: 800,1000,800,600
     chrome:
       driver: C:\_rx\chrome\chromedriver.exe
       dataPath: C:\_rx\chrome\data

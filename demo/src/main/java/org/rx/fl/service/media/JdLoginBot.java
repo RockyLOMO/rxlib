@@ -131,9 +131,7 @@ public final class JdLoginBot extends Disposable {
                 log.info("step3 try close it");
 //                bot.clickByImage(jdKey2);
                 int y = (int) bot.getScreenRectangle().getHeight();
-                bot.mouseRightClick(220, y - 20);
-                bot.delay(1000);
-                bot.mouseLeftClick(220, y - 64);
+                bot.clickAndAltF4(220, y - 20);
                 log.info("step3 closed it");
                 future.cancel(true);
                 future = null;

@@ -322,7 +322,7 @@ public class TbMedia implements Media {
                 String selector = "#J_SubmitQuick";
                 caller.navigateUrl(loginUrl, selector);
                 try {
-                    caller.waitClickComplete(19, i -> !caller.getCurrentUrl().startsWith("https://login.taobao.com"), selector, 6, false);
+                    caller.waitClickComplete(13, i -> !caller.getCurrentUrl().startsWith("https://login.taobao.com"), selector, 6, false);
                 } catch (TimeoutException e) {
                     login();
                     return;

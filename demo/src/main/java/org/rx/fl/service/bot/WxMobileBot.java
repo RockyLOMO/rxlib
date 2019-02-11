@@ -208,7 +208,9 @@ public class WxMobileBot implements Bot {
             } while (checkCount < maxCheckMessageCount);
 
             if (clickDefaultUser) {
-                bot.mouseLeftClick(getAbsolutePoint(94, 415));
+//                bot.mouseLeftClick(getAbsolutePoint(94, 415));
+                Point p = getAbsolutePoint(32, 92);
+                bot.mouseDoubleLeftClick(p.x, p.y);
                 bot.delay(50);
                 clickDefaultUser = false;
             }
@@ -271,7 +273,6 @@ public class WxMobileBot implements Bot {
 
             String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
             bot.keyParseString(openId);
-//            bot.keyPressSpace();
             bot.delay(1050); //多100
             log.info("step1-1 input openId {}", openId);
 
@@ -280,13 +281,13 @@ public class WxMobileBot implements Bot {
             log.info("step1-2 click user {}", openId);
 
             bot.keyParseString(msg);
-            bot.keyPressEnter();
+            bot.pressEnter();
             bot.delay(200);
             log.info("step2 send msg {} to user {}", msg, openId);
 
             bot.mouseLeftClick(getAbsolutePoint(30, 92));
             bot.delay(50);
-            bot.mouseLeftClick(getAbsolutePoint(94, 478));
+            bot.mouseLeftClick(getAbsolutePoint(94, 415));
             bot.delay(50);
         } finally {
             locker.unlock();
