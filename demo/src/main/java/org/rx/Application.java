@@ -17,7 +17,7 @@ public class Application {
 
     public static void main(String[] args) {
 //        Sockets.setHttpProxy("127.0.0.1:8888");
-        AwtBot.init();
+        AwtBot.getBot();
         SpringApplication.run(Application.class, args);
     }
 }

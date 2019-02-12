@@ -26,12 +26,11 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public final class JdLoginBot extends Disposable {
-    private static final BufferedImage jdKey, jdKey2;
+    private static final BufferedImage jdKey;
 
     static {
         Class owner = JdLoginBot.class;
         jdKey = ImageUtil.getImageFromResource(owner, "/static/jdKey.png");
-        jdKey2 = ImageUtil.getImageFromResource(owner, "/static/jdKey2.png");
     }
 
     private String loginKey;
@@ -43,7 +42,7 @@ public final class JdLoginBot extends Disposable {
 
     public JdLoginBot(int port) {
         waiter = new ManualResetEvent();
-        bot = new AwtBot();
+        bot = AwtBot.getBot();
         TaskFactory.run(() -> listen(port));
     }
 
@@ -129,7 +128,6 @@ public final class JdLoginBot extends Disposable {
             loginKey = null;
             future = TaskFactory.schedule(() -> {
                 log.info("step3 try close it");
-//                bot.clickByImage(jdKey2);
                 int y = (int) bot.getScreenRectangle().getHeight();
                 bot.clickAndAltF4(220, y - 20);
                 log.info("step3 closed it");

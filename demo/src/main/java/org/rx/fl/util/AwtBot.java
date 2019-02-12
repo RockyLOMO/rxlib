@@ -8,8 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
-import org.rx.common.Lazy;
 import org.rx.common.NQuery;
+import org.rx.util.function.Action;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -18,6 +18,7 @@ import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.rx.common.Contract.*;
 import static org.rx.util.AsyncTask.TaskFactory;
@@ -25,20 +26,65 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class AwtBot {
     private static final String debugPath = App.readSetting("app.bot.debugPath");
-    private static final Object clickSyncRoot = new Object();
+    private static AwtBot awtBot;
 
     @SneakyThrows
-    public static void init() {
+    public static AwtBot getBot() {
         System.setProperty("java.awt.headless", "false");
 
-        if (Strings.isNullOrEmpty(debugPath)) {
-            return;
+        if (awtBot == null) {
+            awtBot = new AwtBot();
+            if (!Strings.isNullOrEmpty(debugPath)) {
+                TaskFactory.schedule(() -> awtBot.saveScreen(null, null), 30 * 1000);
+            }
         }
-        Robot bot = new Robot();
-        TaskFactory.schedule(() -> saveScreen(bot, null, null), 30 * 1000);
+        return awtBot;
     }
 
-    private static void saveScreen(Robot bot, BufferedImage key, String msg) {
+    private final Robot bot;
+    private final ReentrantLock clickLocker, pressLocker;
+    private final AwtClipboard clipboard;
+    @Getter
+    @Setter
+    private volatile int autoDelay;
+    private volatile Rectangle screenRectangle;
+
+    public Rectangle getScreenRectangle() {
+        return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+    }
+
+    public void setScreenRectangle(Rectangle screenRectangle) {
+        require(screenRectangle);
+
+        this.screenRectangle = screenRectangle;
+    }
+
+    public String getClipboardText() {
+        return clipboard.getString();
+    }
+
+    public void setClipboardText(String text) {
+        clipboard.setContent(text);
+    }
+
+    public void waitClipboardSet() {
+        clipboard.waitSetComplete();
+    }
+
+    @SneakyThrows
+    private AwtBot() {
+        bot = new Robot();
+        clickLocker = new ReentrantLock(true);
+        pressLocker = new ReentrantLock(true);
+        clipboard = new AwtClipboard();
+        this.autoDelay = 10;
+    }
+
+    public void delay(int delay) {
+        bot.delay(delay);
+    }
+
+    public void saveScreen(BufferedImage key, String msg) {
         if (Strings.isNullOrEmpty(debugPath)) {
             return;
         }
@@ -61,50 +107,6 @@ public class AwtBot {
         }
     }
 
-    public String getClipboardString() {
-        return getClipboard().getString();
-    }
-
-    public void setClipboardString(String text) {
-        getClipboard().setContent(text);
-    }
-
-    private final Robot bot;
-    private final Lazy<AwtClipboard> clipboard;
-    @Getter
-    @Setter
-    private volatile int autoDelay;
-    private volatile Rectangle screenRectangle;
-
-    public AwtClipboard getClipboard() {
-        return clipboard.getValue();
-    }
-
-    public Rectangle getScreenRectangle() {
-        return isNull(screenRectangle, new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
-    }
-
-    public void setScreenRectangle(Rectangle screenRectangle) {
-        require(screenRectangle);
-
-        this.screenRectangle = screenRectangle;
-    }
-
-    @SneakyThrows
-    public AwtBot() {
-        bot = new Robot();
-        clipboard = new Lazy<>(AwtClipboard::new);
-        this.autoDelay = 10;
-    }
-
-    public void delay(int delay) {
-        bot.delay(delay);
-    }
-
-    public void saveScreen(BufferedImage key, String msg) {
-        saveScreen(bot, key, msg);
-    }
-
     public Point clickByImage(BufferedImage keyImg) {
         return clickByImage(keyImg, getScreenRectangle());
     }
@@ -122,7 +124,7 @@ public class AwtBot {
             if (!throwOnEmpty) {
                 return null;
             }
-            saveScreen(bot, keyImg, "clickByImage");
+            saveScreen(keyImg, "clickByImage");
             throw new InvalidOperationException("Can not found point");
         }
 
@@ -182,54 +184,103 @@ public class AwtBot {
         return bot.createScreenCapture(rectangle);
     }
 
-    public void clickAndAltF4(int x, int y) {
-        synchronized (clickSyncRoot) {
-            mouseLeftClickInner(x, y);
+    //region combo
+    public String copyAndGetText() {
+        return clipboard.lock(() -> {
+            pressCtrlC();
+            try {
+                return getClipboardText();
+            } finally {
+                bot.delay(autoDelay);
+            }
+        });
+    }
+
+    public void setTextAndParse(String text) {
+        clipboard.lock(() -> {
+            setClipboardText(text);
+            pressCtrlV();
             bot.delay(autoDelay);
+            return null;
+        });
+    }
+
+    public void clickAndAltF4(int x, int y) {
+        clickInvoke(() -> pressInvoke(() -> {
+            mouseLeftClick(x, y);
             bot.keyPress(KeyEvent.VK_ALT);
             bot.keyPress(KeyEvent.VK_F4);
             bot.keyRelease(KeyEvent.VK_F4);
             bot.keyRelease(KeyEvent.VK_ALT);
-        }
-        bot.delay(autoDelay);
+            bot.delay(autoDelay);
+        }));
     }
+    //endregion
 
+    //region mouse
     public Point getMouseLocation() {
         return MouseInfo.getPointerInfo().getLocation();
     }
 
+    public void mouseMove(Point point) {
+        require(point);
+
+        mouseMove(point.x, point.y);
+    }
+
     public void mouseMove(int x, int y) {
-        bot.mouseMove(x, y);
-        bot.delay(autoDelay);
+        clickInvoke(() -> {
+            bot.mouseMove(x, y);
+            bot.delay(autoDelay);
+        });
     }
 
     public void mouseLeftClick(Point point) {
+        require(point);
+
         mouseLeftClick(point.x, point.y);
     }
 
     public void mouseLeftClick(int x, int y) {
-        mouseLeftClickInner(x, y);
-        bot.delay(autoDelay);
-    }
-
-    private void mouseLeftClickInner(int x, int y) {
-        synchronized (clickSyncRoot) {
+        clickInvoke(() -> {
             bot.mouseMove(x, y);
             bot.mousePress(InputEvent.BUTTON1_MASK);
             bot.mouseRelease(InputEvent.BUTTON1_MASK);
-        }
+            bot.delay(autoDelay);
+        });
+    }
+
+    public void mouseDoubleLeftClick(Point point) {
+        require(point);
+
+        mouseDoubleLeftClick(point.x, point.y);
     }
 
     public void mouseDoubleLeftClick(int x, int y) {
-        mouseLeftClickInner(x, y);
-        mouseLeftClick(x, y);
+        clickInvoke(() -> {
+            bot.mouseMove(x, y);
+            bot.mousePress(InputEvent.BUTTON1_MASK);
+            bot.mouseRelease(InputEvent.BUTTON1_MASK);
+            bot.delay(autoDelay / 2);
+            bot.mousePress(InputEvent.BUTTON1_MASK);
+            bot.mouseRelease(InputEvent.BUTTON1_MASK);
+            bot.delay(autoDelay);
+        });
+    }
+
+    public void mouseRightClick(Point point) {
+        require(point);
+
+        mouseRightClick(point.x, point.y);
     }
 
     public void mouseRightClick(int x, int y) {
-        bot.mouseMove(x, y);
-        bot.mousePress(InputEvent.BUTTON3_MASK);
-        bot.mouseRelease(InputEvent.BUTTON3_MASK);
-        bot.delay(autoDelay);
+        clickInvoke(() -> {
+            bot.mouseMove(x, y);
+            bot.mousePress(InputEvent.BUTTON3_MASK);
+            bot.mouseRelease(InputEvent.BUTTON3_MASK);
+            bot.delay(autoDelay);
+        });
     }
 
     public void mouseWheel(int wheelAmt) {
@@ -237,55 +288,70 @@ public class AwtBot {
         bot.delay(autoDelay);
     }
 
+    private void clickInvoke(Action action) {
+        clickLocker.lock();
+        try {
+            action.invoke();
+        } finally {
+            clickLocker.unlock();
+        }
+    }
+    //endregion
+
+    //region keyboard
+    public void pressCtrlF() {
+        pressInvoke(() -> {
+            bot.keyPress(KeyEvent.VK_CONTROL);
+            bot.keyPress(KeyEvent.VK_F);
+            bot.keyRelease(KeyEvent.VK_F);
+            bot.keyRelease(KeyEvent.VK_CONTROL);
+            bot.delay(autoDelay);
+        });
+    }
+
+    public void pressCtrlC() {
+        pressInvoke(() -> {
+            bot.keyPress(KeyEvent.VK_CONTROL);
+            bot.keyPress(KeyEvent.VK_C);
+            bot.keyRelease(KeyEvent.VK_C);
+            bot.keyRelease(KeyEvent.VK_CONTROL);
+            bot.delay(autoDelay);
+        });
+    }
+
+    public void pressCtrlV() {
+        pressInvoke(() -> {
+            bot.keyPress(KeyEvent.VK_CONTROL);
+            bot.keyPress(KeyEvent.VK_V);
+            bot.keyRelease(KeyEvent.VK_V);
+            bot.keyRelease(KeyEvent.VK_CONTROL);
+            bot.delay(autoDelay);
+        });
+    }
+
     public void pressSpace() {
-        keysPress(KeyEvent.VK_SPACE);
+        press(KeyEvent.VK_SPACE);
     }
 
     public void pressEnter() {
-        keysPress(KeyEvent.VK_ENTER);
+        press(KeyEvent.VK_ENTER);
     }
 
-    public void pressCtrlF() {
-        bot.keyPress(KeyEvent.VK_CONTROL);
-        bot.keyPress(KeyEvent.VK_F);
-        bot.keyRelease(KeyEvent.VK_F);
-        bot.keyRelease(KeyEvent.VK_CONTROL);
-        bot.delay(autoDelay);
-    }
-
-    public void keysPress(int... keys) {
-        require(keys);
-
-        for (int i = 0; i < keys.length; i++) {
-            bot.keyPress(keys[i]);
-            bot.keyRelease(keys[i]);
+    public void press(int key) {
+        pressInvoke(() -> {
+            bot.keyPress(key);
+            bot.keyRelease(key);
             bot.delay(autoDelay);
+        });
+    }
+
+    private void pressInvoke(Action action) {
+        pressLocker.lock();
+        try {
+            action.invoke();
+        } finally {
+            pressLocker.unlock();
         }
     }
-
-    public String keyCopyString() {
-        keyCopy();
-        return getClipboardString();
-    }
-
-    public void keyCopy() {
-        bot.keyPress(KeyEvent.VK_CONTROL);
-        bot.keyPress(KeyEvent.VK_C);
-        bot.keyRelease(KeyEvent.VK_C);
-        bot.keyRelease(KeyEvent.VK_CONTROL);
-        bot.delay(autoDelay);
-    }
-
-    public void keyParseString(String text) {
-        setClipboardString(text);
-        keyParse();
-    }
-
-    public void keyParse() {
-        bot.keyPress(KeyEvent.VK_CONTROL);
-        bot.keyPress(KeyEvent.VK_V);
-        bot.keyRelease(KeyEvent.VK_V);
-        bot.keyRelease(KeyEvent.VK_CONTROL);
-        bot.delay(autoDelay);
-    }
+    //endregion
 }

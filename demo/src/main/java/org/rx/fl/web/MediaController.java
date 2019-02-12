@@ -24,8 +24,8 @@ public class MediaController {
     }
 
     @RequestMapping("/findOrders")
-    public List<OrderInfo> findOrders(MediaType type, int days) {
+    public List<OrderInfo> findOrders(MediaType type, int daysAgo) {
         DateTime now = DateTime.now();
-        return mediaService.findOrders(type, now.addDays(-days), now);
+        return mediaService.findOrders(type, now.addDays(-daysAgo), now);
     }
 }

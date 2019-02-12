@@ -20,7 +20,7 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
-        AwtBot bot = new AwtBot();
+        AwtBot bot = AwtBot.getBot();
         int y = (int) bot.getScreenRectangle().getHeight();
         bot.clickAndAltF4(220, y - 20);
 //        bot.mouseRightClick(220, y - 20);
@@ -62,10 +62,6 @@ public class BotTests {
 //        l.setContent(x);
 //        System.out.println(x.equals(l.getString()));
         System.in.read();
-//        String j = "{\"type\":\"java.lang.String\",\"value\":\"https://u.jd.com/zWt0Rl\"}";
-//        JSONObject json = JSONObject.parseObject(j);
-//        Class type = App.loadClass(json.getString("type"), false);
-//        System.out.println((String) json.getObject("value", type));
     }
 
     @SneakyThrows
@@ -101,7 +97,7 @@ public class BotTests {
 //        System.out.println(points);
 
         Class owner = AwtBot.class;
-        AwtBot bot = new AwtBot();
+        AwtBot bot = AwtBot.getBot();
         List<Point> points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread0.png"));
         System.out.println(points);
         points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread1.png"));

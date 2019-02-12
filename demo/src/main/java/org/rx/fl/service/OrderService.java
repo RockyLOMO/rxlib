@@ -148,13 +148,12 @@ public class OrderService {
             throw new SystemException(values(orderNo), "mediaUnknown");
         }
 
+        //等待同步订单时候会自动加钱
         Order order = orders.get(0);
         order.setUserId(userId);
         dbUtil.save(order);
 
-        userService.saveUserBalance(userId, "0.0.0.0", BalanceSourceKind.RebindOrder, order.getId(), order.getRebateAmount());
         UserInfo user = userService.queryUser(userId);
-
         RebindOrderResult result = new RebindOrderResult();
         result.setOrderNo(order.getOrderNo());
         result.setPayAmount(order.getPayAmount());

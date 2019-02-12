@@ -1,44 +1,67 @@
 package org.rx.fl.util;
 
+import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.common.InvalidOperationException;
 import org.rx.util.ManualResetEvent;
+import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import java.awt.*;
 import java.awt.datatransfer.*;
+import java.util.concurrent.locks.ReentrantLock;
+
+import static org.rx.common.Contract.require;
 
 @Slf4j
 public class AwtClipboard
 //        implements ClipboardOwner
 {
-    private static final int getDelay = 10, setDelay = 90;  //多10
+    private static final int setDelay = 90;  //多10
     private final Clipboard clipboard;
+    private final ReentrantLock locker;
 //    private ManualResetEvent waiter;
 
     public AwtClipboard() {
         clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        locker = new ReentrantLock(true);
 //        waiter = new ManualResetEvent();
 //        listen();
     }
 
-    @SneakyThrows
+    public <T> T lock(Func<T> action) {
+        require(action);
+
+        locker.lock();
+        try {
+            return action.invoke();
+        } finally {
+            locker.unlock();
+        }
+    }
+
     public String getString() {
-        Thread.sleep(getDelay);
-        synchronized (clipboard) {
+        return lock(() -> {
             Transferable t = clipboard.getContents(null);
             if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                 return null;
             }
-            return (String) t.getTransferData(DataFlavor.stringFlavor);
-        }
+            try {
+                return (String) t.getTransferData(DataFlavor.stringFlavor);
+            } catch (Exception e) {
+                throw new InvalidOperationException(e);
+            }
+        });
     }
 
     @SneakyThrows
     public void setContent(String text) {
-        synchronized (clipboard) {
+        lock(() -> {
             clipboard.setContents(new StringSelection(text), null);
-        }
-        Thread.sleep(setDelay);
+//            Thread.sleep(setDelay);
+            return null;
+        });
     }
 
 //    public void setContent(Image image) {
