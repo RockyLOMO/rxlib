@@ -60,19 +60,19 @@ public class QueryOrderCmd implements Command {
                 switch (message.trim()) {
                     case "1":
                         parameter.setStartTime(now.addDays(-3));
-                        parameter.setEndTime(now);
+                        parameter.setEndTime(now.addDays(1));
                         out.append("一一一一订 单 详 细一一一一\n" +
                                 "最近3天内订单:\n\n");
                         break;
                     case "2":
                         parameter.setStartTime(now.addDays(-7));
-                        parameter.setEndTime(now.addDays(-4));
+                        parameter.setEndTime(now.addDays(-3));
                         out.append("一一一一订 单 详 细一一一一\n" +
                                 "最近4-7天内订单:\n\n");
                         break;
                     case "3":
                         parameter.setStartTime(now.addDays(-8));
-                        parameter.setEndTime(now.addDays(-15));
+                        parameter.setEndTime(now.addDays(-14));
                         out.append("一一一一订 单 详 细一一一一\n" +
                                 "最近8-15天内订单:\n\n");
                         break;

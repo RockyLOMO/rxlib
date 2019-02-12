@@ -26,7 +26,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
+        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey2.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
@@ -182,11 +182,7 @@ public class WxMobileBot implements Bot {
                         }
                         if (msgList.isEmpty()) {
                             if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
-                                bot.mouseLeftClick(getAbsolutePoint(350, 38));
-                                bot.delay(500); //多100
-                                Point p = getAbsolutePoint(808, 52);
-                                bot.mouseLeftClick(p);
-                                fillOpenId(messageInfo, p, true);
+                                fillOpenIdByIntro(messageInfo, true);
                             }
                             messageInfo.setContent(Bot.SubscribeContent);
                         } else {
@@ -208,15 +204,24 @@ public class WxMobileBot implements Bot {
             } while (checkCount < maxCheckMessageCount);
 
             if (clickDefaultUser) {
-//                bot.mouseLeftClick(getAbsolutePoint(94, 415));
-                Point p = getAbsolutePoint(32, 92);
-                bot.mouseDoubleLeftClick(p.x, p.y);
+                bot.mouseLeftClick(getAbsolutePoint(94, 415));
+                bot.mouseWheel(-1);
+//                Point p = getAbsolutePoint(32, 92);
+//                bot.mouseDoubleLeftClick(p.x, p.y);
                 bot.delay(50);
                 clickDefaultUser = false;
             }
         } finally {
             locker.unlock();
         }
+    }
+
+    private void fillOpenIdByIntro(MessageInfo message, boolean captureNickname) {
+        bot.mouseLeftClick(getAbsolutePoint(350, 38));
+        bot.delay(500); //多100
+        Point p = getAbsolutePoint(808, 52);
+        bot.mouseLeftClick(p);
+        fillOpenId(message, p, captureNickname);
     }
 
     private void fillOpenId(MessageInfo message, Point point, boolean captureNickname) {
@@ -260,29 +265,39 @@ public class WxMobileBot implements Bot {
 
         locker.lock();
         try {
+            String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
+            int checkCount = 0;
+            MessageInfo check = new MessageInfo();
+            do {
 //            Point point = getAbsolutePoint(110, 38);
 //            bot.mouseLeftClick(point);
 //            bot.delay(50);
 //            log.info("step1 click input ok");
 //            bot.keyPressFind();
-            bot.mouseLeftClick(getAbsolutePoint(32, 92));
-            bot.delay(50);
-            bot.mouseLeftClick(getAbsolutePoint(110, 38));
-            bot.delay(100);
-            log.info("step1 focus input ok");
+                bot.mouseLeftClick(getAbsolutePoint(32, 92));
+                bot.delay(50);
+                bot.mouseLeftClick(getAbsolutePoint(110, 38));
+                bot.delay(100);
+                log.info("step1 focus input ok");
 
-            String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
-            bot.keyParseString(openId);
-            bot.delay(1050); //多100
-            log.info("step1-1 input openId {}", openId);
+                bot.keyParseString(openId);
+                bot.delay(1050); //多100
+                log.info("step1-1 input openId {}", openId);
 
-            bot.mouseLeftClick(getAbsolutePoint(166, 132));
-            bot.delay(100);
-            log.info("step1-2 click user {}", openId);
+                bot.mouseLeftClick(getAbsolutePoint(166, 132));
+                bot.delay(100);
+                log.info("step1-2 click user {}", openId);
+
+                fillOpenIdByIntro(check, false);
+                checkCount++;
+            }
+            while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
+            Point point = getAbsolutePoint(360, 408);
+            bot.mouseDoubleLeftClick(point.x, point.y);
 
             bot.keyParseString(msg);
             bot.pressEnter();
-            bot.delay(200);
+            bot.delay(300);  //多100
             log.info("step2 send msg {} to user {}", msg, openId);
 
             bot.mouseLeftClick(getAbsolutePoint(30, 92));

@@ -11,7 +11,7 @@ import java.awt.datatransfer.*;
 public class AwtClipboard
 //        implements ClipboardOwner
 {
-    private static final int clipboardDelay = 80;
+    private static final int getDelay = 10, setDelay = 90;  //多10
     private final Clipboard clipboard;
 //    private ManualResetEvent waiter;
 
@@ -23,6 +23,7 @@ public class AwtClipboard
 
     @SneakyThrows
     public String getString() {
+        Thread.sleep(getDelay);
         synchronized (clipboard) {
             Transferable t = clipboard.getContents(null);
             if (t == null || !t.isDataFlavorSupported(DataFlavor.stringFlavor)) {
@@ -37,7 +38,7 @@ public class AwtClipboard
         synchronized (clipboard) {
             clipboard.setContents(new StringSelection(text), null);
         }
-        Thread.sleep(clipboardDelay);
+        Thread.sleep(setDelay);
     }
 
 //    public void setContent(Image image) {
@@ -66,7 +67,7 @@ public class AwtClipboard
 
     @SneakyThrows
     public void waitSetComplete() {
-        Thread.sleep(clipboardDelay);
+        Thread.sleep(setDelay);
 //        waiter.waitOne(clipboardDelay);
 //        log.info("waitSetComplete ok");
 //        waiter.reset();

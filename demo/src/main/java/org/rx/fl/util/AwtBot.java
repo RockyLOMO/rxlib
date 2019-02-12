@@ -62,7 +62,6 @@ public class AwtBot {
     }
 
     public String getClipboardString() {
-//        bot.delay(20);
         return getClipboard().getString();
     }
 
