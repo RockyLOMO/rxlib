@@ -1,4 +1,7 @@
-select * from t_user where wx_open_id = 'yan_131415';
+#查找用户
+select * from t_user t where 1=1
+#and wx_open_id = 'yan_131415'
+order by t.create_time desc;
 
 #查找用户商品
 select * from  t_user_goods t
@@ -16,27 +19,28 @@ order by t.create_time desc;
 #检查商品是否多用户
 select * from t_user_goods where goods_id = '7437788';
 
-select * from t_user_goods t1
-inner join t_order t2 on t1.goods_id = t2.goods_id
-where 1=1
-and t1.user_id = 'c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567'
-order by t2.create_time desc
-and create_time >= '2019-01-13' and goods_id = '580553299436';
-
-select * from t_user t1
+#人工校正流水
+select t1.wx_open_id,t2.* from t_user t1
 inner join t_balance_log t2 on t1.id = t2.user_id
 where 1=1
-and t2.user_id = 'c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567'
+and t1.wx_open_id = 'yan_131415'
+order by t2.create_time desc;
 
-select * from t_balance_log t1
-inner join t_order t2 on t1.source_id = t2.id
+#流水与订单
+select t1.wx_open_id,t2.*,t3.* from t_user t1
+inner join t_balance_log t2 on t1.id = t2.user_id
+inner join t_order t3 on t2.source_id = t2.id
 where 1=1
-and t1.user_id = 'c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567';
+and t1.wx_open_id = 'yan_131415'
+order by t2.create_time desc;
 
+#提现列表
+select t1.wx_open_id,t.* from t_withdraw_log t
+inner join t_user t1 on t.user_id = t1.id
+order by t.create_time asc
 
-
-delete from t_order;
-update t_user_goods set is_deleted = 'N';
-
-delete from rx_rebate_prd.t_cache_item
+# delete from t_order;
+# update t_user_goods set is_deleted = 'N';
+#
+# delete from rx_rebate_prd.t_cache_item
 

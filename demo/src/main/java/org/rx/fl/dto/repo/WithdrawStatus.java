@@ -8,7 +8,9 @@ public enum WithdrawStatus implements NEnum {
     @Description("待转")
     Wait(1),
     @Description("已转")
-    Transferred(2);
+    Transferred(2),
+    @Description("失败")
+    Fail(9);
 
     @Getter
     private int value;

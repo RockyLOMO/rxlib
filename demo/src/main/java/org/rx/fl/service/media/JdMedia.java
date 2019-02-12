@@ -264,8 +264,13 @@ public class JdMedia implements Media {
     }
 
     private String getGoodsId(String url) {
-        int start = url.lastIndexOf("/"), end = url.lastIndexOf(".");
-        return url.substring(start + 1, end);
+        try {
+            int start = url.lastIndexOf("/"), end = url.lastIndexOf(".");
+            return url.substring(start + 1, end);
+        } catch (StringIndexOutOfBoundsException e) {
+            log.warn("getGoodsId {} {}", url, e);
+            throw e;
+        }
     }
 
     @Override

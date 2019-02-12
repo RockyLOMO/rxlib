@@ -194,7 +194,7 @@ public class UserService {
 
         long money = user.getBalance();
 
-        String balanceLogId = saveUserBalance(userId, clientIp, BalanceSourceKind.Withdraw, null, -money).right;
+        String balanceLogId = saveUserBalance(userId, BalanceSourceKind.Withdraw, null, -money, clientIp).right;
 
         WithdrawLog log = new WithdrawLog();
         log.setUserId(user.getId());
@@ -268,13 +268,14 @@ public class UserService {
         log.setClientIp(clientIp);
         dbUtil.save(log);
 
-        saveUserBalance(userId, clientIp, BalanceSourceKind.CheckIn, log.getId(), bonus);
+        saveUserBalance(userId, BalanceSourceKind.CheckIn, log.getId(), bonus, null);
 
         return bonus;
     }
 
-    Tuple<User, String> saveUserBalance(String userId, String clientIp, BalanceSourceKind sourceKind, String sourceId, long money) {
+    Tuple<User, String> saveUserBalance(String userId, BalanceSourceKind sourceKind, String sourceId, long money, String remark) {
         require(money, money != 0);
+        String clientIp = App.getRequestIp(App.getCurrentRequest());
 
         return App.retry(2, p -> {
             User user = dbUtil.selectById(userMapper, userId);
@@ -291,6 +292,7 @@ public class UserService {
             balanceLog.setValue(money);
 
             balanceLog.setClientIp(clientIp);
+            balanceLog.setRemark(remark);
             dbUtil.save(balanceLog);
 
             UserExample selective = new UserExample();
@@ -308,5 +310,44 @@ public class UserService {
             }
             return Tuple.of(user, balanceLog.getId());
         }, null);
+    }
+
+    //人工处理提现
+    @Transactional
+    public String processWithdraw(OpenIdInfo openId, String withdrawId, WithdrawStatus status, String remark) {
+        require(openId, withdrawId, status, remark);
+
+        User user = selectUser(openId);
+        WithdrawLog withdrawLog = withdrawLogMapper.selectByPrimaryKey(withdrawId);
+        if (withdrawLog == null) {
+            throw new InvalidOperationException("WithdrawLog not found");
+        }
+        if (status == WithdrawStatus.Fail) {
+            String balanceLogId = saveUserBalance(user.getId(), BalanceSourceKind.Withdraw, null, withdrawLog.getAmount(), String.format("提现失败，还原余额%s", toMoney(withdrawLog.getAmount()))).right;
+            withdrawLog.setRemark(String.format("提现失败，还原余额流水Id %s", balanceLogId));
+        } else {
+            withdrawLog.setRemark(remark);
+        }
+        withdrawLog.setStatus(status.getValue());
+        dbUtil.save(withdrawLog);
+        return withdrawLog.getId();
+    }
+
+    //人工校正资金流水
+    @Transactional
+    public String correctBalance(OpenIdInfo openId, String sourceId, long money, String remark) {
+        require(openId, sourceId, remark);
+
+        User user = selectUser(openId);
+        return saveUserBalance(user.getId(), BalanceSourceKind.Correct, sourceId, money, remark).right;
+    }
+
+    private User selectUser(OpenIdInfo openId) {
+        String userId = App.hash(openId.getBotType().getValue() + openId.getOpenId()).toString();
+        User user = userMapper.selectByPrimaryKey(userId);
+        if (user == null) {
+            throw new InvalidOperationException("User not found");
+        }
+        return user;
     }
 }

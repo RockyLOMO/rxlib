@@ -113,7 +113,7 @@ public class OrderService {
                     case Success:
                     case Settlement:
                         if (!hasSettleOrder) {
-                            userService.saveUserBalance(order.getUserId(), clientIp, BalanceSourceKind.Order, order.getId(), amount);
+                            userService.saveUserBalance(order.getUserId(), BalanceSourceKind.Order, order.getId(), amount, clientIp);
                             if (settleOrders != null) {
                                 settleOrders.add(order);
                             }
@@ -121,7 +121,7 @@ public class OrderService {
                         break;
                     case Invalid:
                         if (hasSettleOrder) {
-                            userService.saveUserBalance(order.getUserId(), clientIp, BalanceSourceKind.InvalidOrder, order.getId(), amount);
+                            userService.saveUserBalance(order.getUserId(), BalanceSourceKind.InvalidOrder, order.getId(), amount, clientIp);
                         }
                         break;
                 }

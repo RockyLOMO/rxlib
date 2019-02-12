@@ -14,7 +14,9 @@ public enum BalanceSourceKind implements NEnum {
     @Description("失效订单")
     InvalidOrder(12),
     @Description("提现")
-    Withdraw(20);
+    Withdraw(20),
+    @Description("人工校正")
+    Correct(100);
 
     @Getter
     private int value;

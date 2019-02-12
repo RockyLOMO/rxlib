@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping(value = "/user", method = RequestMethod.POST)
-public class UserController {
+public class JzUserController {
     @Autowired
     private JzUserService service;
     @Autowired
