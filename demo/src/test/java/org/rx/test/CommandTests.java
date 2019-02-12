@@ -28,7 +28,7 @@ public class CommandTests {
     public void handleFindAdv() {
         String userId = "4c3d0808-2480-3a17-837d-e6fe068c1a0a";
         String message = "【卡通羊羔绒宝宝绒四件套秋冬立体贴布绣花儿童被子双面绒恐龙被套】https://m.tb.cn/h.3ruLcuh 点击链接，再选择浏览器咑閞；或復·制这段描述￥P1ScbKlP0Lp￥后到淘♂寳♀[来自超级会员的分享]";
-        String content = commandManager.handleMessage(userId, message);
+        List<String> content = commandManager.handleMessage(userId, message);
         System.out.println(content);
     }
 

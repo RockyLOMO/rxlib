@@ -1,11 +1,10 @@
 package org.rx.fl.util;
 
-import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.DateTime;
 import org.rx.common.InvalidOperationException;
 import org.rx.util.ManualResetEvent;
-import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
 import java.awt.*;
@@ -15,19 +14,16 @@ import java.util.concurrent.locks.ReentrantLock;
 import static org.rx.common.Contract.require;
 
 @Slf4j
-public class AwtClipboard
-//        implements ClipboardOwner
-{
-    private static final int setDelay = 90;  //多10
+public class AwtClipboard implements ClipboardOwner {
     private final Clipboard clipboard;
     private final ReentrantLock locker;
-//    private ManualResetEvent waiter;
+    private ManualResetEvent waiter;
 
     public AwtClipboard() {
         clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         locker = new ReentrantLock(true);
-//        waiter = new ManualResetEvent();
-//        listen();
+        waiter = new ManualResetEvent();
+        listen();
     }
 
     public <T> T lock(Func<T> action) {
@@ -58,8 +54,7 @@ public class AwtClipboard
     @SneakyThrows
     public void setContent(String text) {
         lock(() -> {
-            clipboard.setContents(new StringSelection(text), null);
-//            Thread.sleep(setDelay);
+            clipboard.setContents(new StringSelection(text), this);
             return null;
         });
     }
@@ -90,26 +85,26 @@ public class AwtClipboard
 
     @SneakyThrows
     public void waitSetComplete() {
-        Thread.sleep(setDelay);
-//        waiter.waitOne(clipboardDelay);
-//        log.info("waitSetComplete ok");
-//        waiter.reset();
+        log.info("waitSetComplete wait @ {}", DateTime.now().toString());
+        waiter.waitOne(500);
+        log.info("waitSetComplete ok @ {}", DateTime.now().toString());
+        waiter.reset();
     }
 
-//    private void listen() {
-//        clipboard.setContents(clipboard.getContents(null), this);
-//    }
-//
-//    @SneakyThrows
-//    @Override
-//    public void lostOwnership(Clipboard clipboard, Transferable contents) {
-//        log.info("lostOwnership and set waiter");
-//        try {
-//            Thread.sleep(2);
-//            listen();
-//        } catch (Exception e) {
-//            log.warn("lostOwnership", e);
-//        }
-//        waiter.set();
-//    }
+    private void listen() {
+        clipboard.setContents(clipboard.getContents(null), this);
+    }
+
+    @SneakyThrows
+    @Override
+    public void lostOwnership(Clipboard clipboard, Transferable contents) {
+        log.info("lostOwnership and set waiter");
+        try {
+            Thread.sleep(3);
+            listen();
+        } catch (Exception e) {
+            log.warn("lostOwnership", e);
+        }
+        waiter.set();
+    }
 }

@@ -188,6 +188,7 @@ public class AwtBot {
     public String copyAndGetText() {
         return clipboard.lock(() -> {
             pressCtrlC();
+            clipboard.waitSetComplete();
             try {
                 return getClipboardText();
             } finally {

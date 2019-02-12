@@ -2,8 +2,8 @@ package org.rx.fl.service.bot;
 
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
-import org.rx.fl.dto.bot.OpenIdInfo;
 
+import java.util.List;
 import java.util.function.Function;
 
 public interface Bot {
@@ -14,7 +14,7 @@ public interface Bot {
     default void login() {
     }
 
-    void onReceiveMessage(Function<MessageInfo, String> event);
+    void onReceiveMessage(Function<MessageInfo, List<String>> event);
 
     void sendMessage(MessageInfo message);
 }

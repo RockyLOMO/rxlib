@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.List;
 
 @RestController
 @RequestMapping(method = {RequestMethod.POST, RequestMethod.GET})
@@ -23,7 +24,7 @@ public class BotController {
     private BotService botService;
 
     @RequestMapping("/handleMessage")
-    public String handleMessage(@RequestBody MessageInfo msg) {
+    public List<String> handleMessage(@RequestBody MessageInfo msg) {
         return botService.handleMessage(msg);
     }
 

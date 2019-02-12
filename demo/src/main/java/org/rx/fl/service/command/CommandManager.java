@@ -50,7 +50,7 @@ public class CommandManager {
         return types;
     }
 
-    public String handleMessage(String userId, String message) {
+    public List<String> handleMessage(String userId, String message) {
         require(userId, message);
 
         HandleResult<String> result = HandleResult.fail();
@@ -78,6 +78,6 @@ public class CommandManager {
         if (!result.isOk()) {
             result = helpCmd.handleMessage(userId, message);
         }
-        return result.getValue();
+        return result.getValues();
     }
 }

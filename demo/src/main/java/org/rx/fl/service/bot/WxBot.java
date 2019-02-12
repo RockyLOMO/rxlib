@@ -22,6 +22,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.toJsonString;
@@ -43,7 +44,7 @@ public final class WxBot implements Bot {
         }
     }
 
-    private Function<MessageInfo, String> event;
+    private Function<MessageInfo, List<String>> event;
 
     @Override
     public BotType getType() {
@@ -51,7 +52,7 @@ public final class WxBot implements Bot {
     }
 
     @Override
-    public void onReceiveMessage(Function<MessageInfo, String> event) {
+    public void onReceiveMessage(Function<MessageInfo, List<String>> event) {
         this.event = event;
     }
 
@@ -121,7 +122,7 @@ public final class WxBot implements Bot {
                 messageInfo.setContent(eventMessage.getContent());
             }
             if (event != null) {
-                cacheItem.setValue(toMsg = event.apply(messageInfo));
+                cacheItem.setValue(toMsg = String.join("\n", event.apply(messageInfo)));
                 cacheItem.waiter.set();
             }
         } else {

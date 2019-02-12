@@ -2,16 +2,19 @@ package org.rx.fl.service.bot;
 
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.beans.DateTime;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
+import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,7 +29,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey2.png");
+        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
@@ -40,7 +43,7 @@ public class WxMobileBot implements Bot {
     private AwtBot bot;
     private DateTime lastTime;
     private Point windowPoint;
-    private Function<MessageInfo, String> event;
+    private Function<MessageInfo, List<String>> event;
     private int capturePeriod, maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
     private final ReentrantLock locker;
     private volatile boolean clickDefaultUser;
@@ -137,8 +140,6 @@ public class WxMobileBot implements Bot {
                             for (int i = points.size() - 1; i >= 0; i--) {
                                 Point p = points.get(i);
                                 if (messageInfo.getOpenId() == null) {
-                                    bot.setClipboardText("");
-
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
 
@@ -151,6 +152,7 @@ public class WxMobileBot implements Bot {
                                     bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
                                     bot.delay(delay2);
                                 }
+                                String msg;
                                 int x = p.x + KeyImages.Msg.getWidth() + 8, y = p.y + KeyImages.Msg.getHeight() / 2;
                                 bot.mouseDoubleLeftClick(x, y);
 
@@ -161,8 +163,10 @@ public class WxMobileBot implements Bot {
                                 if (pCopy != null) {
                                     bot.mouseLeftClick(pCopy.x + KeyImages.Browser.getWidth() / 2, pCopy.y + KeyImages.Browser.getHeight() / 2);
                                     bot.waitClipboardSet();
+                                    msg = bot.getClipboardText();
+                                } else {
+                                    msg = bot.copyAndGetText();
                                 }
-                                String msg = bot.copyAndGetText();
                                 log.info("step2-2 capture msg {}", msg);
                                 msgList.add(msg);
                                 if (msgList.size() >= maxCaptureMessageCount) {
@@ -190,12 +194,11 @@ public class WxMobileBot implements Bot {
                         }
                         if (event != null) {
                             TaskFactory.run(() -> {
-                                String toMsg = event.apply(messageInfo);
-                                if (Strings.isNullOrEmpty(toMsg)) {
+                                List<String> toMsgs = event.apply(messageInfo);
+                                if (CollectionUtils.isEmpty(toMsgs)) {
                                     return;
                                 }
-                                messageInfo.setContent(toMsg);
-                                sendMessage(messageInfo);
+                                sendMessage(messageInfo, toMsgs);
                             });
                         }
                     }
@@ -208,6 +211,9 @@ public class WxMobileBot implements Bot {
                 bot.mouseWheel(-1);
                 bot.delay(delay1);
                 clickDefaultUser = false;
+            } else {
+                bot.mouseWheel(-1);
+                bot.delay(delay1);
             }
         } finally {
             locker.unlock();
@@ -224,6 +230,7 @@ public class WxMobileBot implements Bot {
 
     //自带delay
     private void fillOpenId(MessageInfo message, Point point, boolean captureNickname) {
+        bot.setClipboardText("");
         bot.delay(delay2);
         bot.mouseDoubleLeftClick(point.x + 94, point.y + 72);
         String openId = bot.copyAndGetText();
@@ -252,12 +259,16 @@ public class WxMobileBot implements Bot {
     }
 
     @Override
-    public void onReceiveMessage(Function<MessageInfo, String> event) {
+    public void onReceiveMessage(Function<MessageInfo, List<String>> event) {
         this.event = event;
     }
 
     @Override
     public void sendMessage(MessageInfo message) {
+        sendMessage(message, Arrays.asList(message.getContent(), "test"));
+    }
+
+    private void sendMessage(OpenIdInfo message, List<String> contents) {
         require(message);
         if (skipOpenIds.contains(message.getOpenId())) {
             return;
@@ -265,7 +276,7 @@ public class WxMobileBot implements Bot {
 
         locker.lock();
         try {
-            String openId = isNull(message.getNickname(), message.getOpenId()), msg = message.getContent();
+            String openId = isNull(message.getNickname(), message.getOpenId());
             int checkCount = 0;
             MessageInfo check = new MessageInfo();
             do {
@@ -287,16 +298,23 @@ public class WxMobileBot implements Bot {
                 checkCount++;
             }
             while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
+            if (!message.getOpenId().equals(check.getOpenId())) {
+                log.info("message openId {} not equals {}", message.getOpenId(), check.getOpenId());
+                return;
+            }
+
             Point point = getAbsolutePoint(360, 408);
             bot.mouseLeftClick(point.x, point.y);
             bot.delay(delay1);
             bot.mouseLeftClick(point.x, point.y);
             bot.delay(delay2);
 
-            bot.setTextAndParse(msg);
-            bot.pressEnter();
-            bot.delay(200);
-            log.info("step2 send msg {} to user {}", msg, openId);
+            for (String msg : contents) {
+                bot.setTextAndParse(msg);
+                bot.pressEnter();
+                bot.delay(200);
+                log.info("step2 send msg {} to user {}", msg, openId);
+            }
 
             bot.mouseLeftClick(getAbsolutePoint(30, 92));
             bot.delay(delay1);

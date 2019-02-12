@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
+import java.util.List;
 import java.util.function.Function;
 
 @EnableValid
@@ -31,7 +32,7 @@ public class BotService {
 
     @Autowired
     public BotService(WxBot wxBot, BotConfig config) {
-        Function<MessageInfo, String> event = messageInfo -> handleMessage(messageInfo);
+        Function<MessageInfo, List<String>> event = messageInfo -> handleMessage(messageInfo);
 
         this.wxBot = wxBot;
         this.wxBot.onReceiveMessage(event);
@@ -46,7 +47,7 @@ public class BotService {
         }
     }
 
-    public String handleMessage(@NotNull MessageInfo message) {
+    public List<String> handleMessage(@NotNull MessageInfo message) {
         String userId = userService.getUserId(message);
         return commandManager.handleMessage(userId, message.getContent());
     }

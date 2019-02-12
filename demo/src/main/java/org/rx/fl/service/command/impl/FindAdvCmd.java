@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -83,6 +84,7 @@ public class FindAdvCmd implements Command {
                         "优惠券  ￥%.2f\n" +
                         "付费价  ￥%.2f\n", advResult.getMediaType().toDescription(), goods.getName(),
                 rebateAmount, couponAmount, payAmount));
+        StringBuilder ps = new StringBuilder();
         switch (advResult.getMediaType()) {
             case Jd:
                 reply.append(String.format("抢购链接: %s", advResult.getShareCode()));
@@ -90,12 +92,13 @@ public class FindAdvCmd implements Command {
             case Taobao:
                 reply.append(String.format("复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
                         advResult.getShareCode()));
+                ps.append("亲，付款时请不要使用红包或淘金币抵扣，会造成无法绑定订单！\n");
                 break;
 //        return HandleResult.of(String.format("http://taoyouhui.ml/tb.html#/%s/%s",
 //                advResult.getShareCode().replace("￥", ""),
 //                URLEncoder.encode(goods.getImageUrl(), "utf-8")));
-
         }
-        return HandleResult.ok(reply.toString());
+        ps.append("付款后超过2分钟未收到成功消息，请发送订单号绑定。");
+        return HandleResult.ok(Arrays.asList(reply.toString(), ps.toString()), null);
     }
 }

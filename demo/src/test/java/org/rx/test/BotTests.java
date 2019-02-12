@@ -3,6 +3,7 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.Test;
+import org.rx.common.NQuery;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.media.JdLoginBot;
@@ -70,8 +71,7 @@ public class BotTests {
         WxMobileBot bot = new WxMobileBot(500, 2, 1, 1);
         bot.onReceiveMessage(p -> {
             System.out.println(JSON.toJSONString(p));
-            return "已收到消息：" + p.getContent();
-//            return "";
+            return NQuery.of(p).select(msg -> "已收到消息：" + msg).toList();
         });
         bot.start();
         System.out.println("start...");

@@ -2,16 +2,23 @@ package org.rx.fl.service.command;
 
 import lombok.Data;
 
+import java.util.Collections;
+import java.util.List;
+
 @Data
 public class HandleResult<T> {
     public static <T> HandleResult<T> ok(T value) {
-        return ok(value, null);
+        return ok(Collections.singletonList(value), null);
     }
 
     public static <T> HandleResult<T> ok(T value, Command next) {
+        return ok(Collections.singletonList(value), next);
+    }
+
+    public static <T> HandleResult<T> ok(List<T> values, Command next) {
         HandleResult<T> result = new HandleResult<>();
         result.setOk(true);
-        result.setValue(value);
+        result.setValues(values);
         result.setNext(next);
         return result;
     }
@@ -21,6 +28,6 @@ public class HandleResult<T> {
     }
 
     private boolean isOk;
-    private T value;
+    private List<T> values;
     private Command next;
 }
