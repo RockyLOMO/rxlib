@@ -26,7 +26,7 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey2.png");
+        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
@@ -293,11 +293,14 @@ public class WxMobileBot implements Bot {
             }
             while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
             Point point = getAbsolutePoint(360, 408);
-            bot.mouseDoubleLeftClick(point.x, point.y);
+            bot.delay(50);
+            bot.mouseLeftClick(point.x, point.y);
+            bot.delay(50);
+            bot.mouseLeftClick(point.x, point.y);
 
             bot.keyParseString(msg);
             bot.pressEnter();
-            bot.delay(300);  //多100
+            bot.delay(200);
             log.info("step2 send msg {} to user {}", msg, openId);
 
             bot.mouseLeftClick(getAbsolutePoint(30, 92));
