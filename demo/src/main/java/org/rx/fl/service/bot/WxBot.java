@@ -57,7 +57,7 @@ public final class WxBot implements Bot {
     }
 
     @Override
-    public void sendMessage(MessageInfo message) {
+    public void sendMessage(List<MessageInfo> messages) {
         log.warn("Not supported");
     }
 

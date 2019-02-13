@@ -2,12 +2,9 @@ package org.rx.fl.service;
 
 import com.google.common.base.Strings;
 import lombok.Data;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.*;
-import org.rx.fl.dto.bot.MessageInfo;
-import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.media.*;
 import org.rx.fl.dto.repo.UserInfo;
 import org.rx.fl.repository.model.Order;
@@ -21,6 +18,7 @@ import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -91,15 +89,11 @@ public class MediaService {
         return media;
     }
 
-    //    @SneakyThrows
     private void release(Media media) {
         HoldItem holdItem = getHoldItem(media.getType());
         holdItem.queue.add(media);
         holdItem.waiter.set();
         log.info("release media and waitHandle");
-//        Thread.sleep(50);
-//        holdItem.waiter.reset();
-//        log.info("reset waitHandle");
     }
 
     @Resource
@@ -107,7 +101,7 @@ public class MediaService {
     @Resource
     private UserService userService;
     @Resource
-    private BotService botService;
+    private NotifyService notifyService;
     @Resource
     private MediaCache cache;
     private MediaConfig config;
@@ -171,17 +165,7 @@ public class MediaService {
                                     "将机器人名片推荐给好友，永久享受返利提成", paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                             toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
                             toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()));
-                    List<OpenIdInfo> openIds = userService.getOpenIds(paidOrder.getUserId());
-                    for (MessageInfo messageInfo : NQuery.of(openIds).select(p -> {
-                        MessageInfo msg = new MessageInfo();
-                        msg.setBotType(p.getBotType());
-                        msg.setOpenId(p.getOpenId());
-                        msg.setNickname(p.getNickname());
-                        msg.setContent(content);
-                        return msg;
-                    })) {
-                        botService.pushMessages(messageInfo);
-                    }
+                    notifyService.add(user.getUserId(), Collections.singletonList(content));
                 }
                 for (Order settleOrder : settleOrders) {
                     UserInfo user = userService.queryUser(settleOrder.getUserId());
@@ -200,17 +184,7 @@ public class MediaService {
                                     "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
                             toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
                             toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount());
-                    List<OpenIdInfo> openIds = userService.getOpenIds(settleOrder.getUserId());
-                    for (MessageInfo messageInfo : NQuery.of(openIds).select(p -> {
-                        MessageInfo msg = new MessageInfo();
-                        msg.setBotType(p.getBotType());
-                        msg.setOpenId(p.getOpenId());
-                        msg.setNickname(p.getNickname());
-                        msg.setContent(content);
-                        return msg;
-                    })) {
-                        botService.pushMessages(messageInfo);
-                    }
+                    notifyService.add(user.getUserId(), Collections.singletonList(content));
                 }
             } catch (Exception e) {
                 log.error("syncOrder", e);

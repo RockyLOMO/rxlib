@@ -35,7 +35,7 @@ public class BindPaymentCmd implements Command {
         require(message);
         message = message.trim();
 
-        return NQuery.of("绑定", "2").contains(message);
+        return NQuery.of("绑定", "7").contains(message);
     }
 
     @Override

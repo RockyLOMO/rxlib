@@ -3,6 +3,7 @@ package org.rx.test;
 import lombok.SneakyThrows;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.rx.common.MediaConfig;
 import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.dto.repo.QueryOrdersParameter;
 import org.rx.fl.service.OrderService;
@@ -23,7 +24,12 @@ public class CommandTests {
     @Resource
     OrderService orderService;
 
-    @SneakyThrows
+    @Test
+    public void handleAliPay() {
+        List<String> list = commandManager.handleMessage(MediaConfig.RxId, "打开支付宝首页搜“546267657”领红包，领到大红包的小伙伴赶紧使用哦！");
+        System.out.println(list);
+    }
+
     @Test
     public void handleFindAdv() {
         String userId = "4c3d0808-2480-3a17-837d-e6fe068c1a0a";

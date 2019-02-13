@@ -31,7 +31,7 @@ public class WithdrawCmd implements Command {
         require(message);
         message = message.trim();
 
-        return NQuery.of("提现", "3").contains(message);
+        return NQuery.of("提现", "4").contains(message);
     }
 
     @Override

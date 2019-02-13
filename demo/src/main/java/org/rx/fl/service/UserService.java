@@ -20,9 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.common.Contract.require;
@@ -47,6 +45,8 @@ public class UserService {
     private UserGoodsMapper userGoodsMapper;
     @Resource
     private DbUtil dbUtil;
+    @Resource
+    private NotifyService notifyService;
 
     public UserInfo queryUser(String userId) {
         require(userId);
@@ -322,14 +322,28 @@ public class UserService {
         if (withdrawLog == null) {
             throw new InvalidOperationException("WithdrawLog not found");
         }
+
+        String content;
         if (status == WithdrawStatus.Fail) {
             String balanceLogId = saveUserBalance(user.getId(), BalanceSourceKind.Withdraw, null, withdrawLog.getAmount(), String.format("提现失败，还原余额%s", toMoney(withdrawLog.getAmount()))).right;
             withdrawLog.setRemark(String.format("提现失败，还原余额流水Id %s", balanceLogId));
+            content = String.format("一一一一提 现 失 败一一一一\n" +
+                    "提现金额 %.2f元 已返回账户可提现金额里\n" +
+                    "失败原因: %s", toMoney(withdrawLog.getAmount()), remark);
         } else {
             withdrawLog.setRemark(remark);
+            String account = Strings.isNullOrEmpty(user.getAlipayAccount()) ? String.format("微信 %s", user.getWxOpenId()) : String.format("%s %s", user.getAlipayName(), user.getAlipayAccount());
+            content = String.format("一一一一提 现 成 功一一一一\n" +
+                    "提现金额: %.2f元\n" +
+                    "转入账户: %s\n" +
+                    "\n" +
+                    "\n" +
+                    "将机器人的名片发送给好友，即可享受20%%返利提成", toMoney(withdrawLog.getAmount()), account);
         }
         withdrawLog.setStatus(status.getValue());
         dbUtil.save(withdrawLog);
+
+        notifyService.add(user.getId(), Collections.singletonList(content));
         return withdrawLog.getId();
     }
 

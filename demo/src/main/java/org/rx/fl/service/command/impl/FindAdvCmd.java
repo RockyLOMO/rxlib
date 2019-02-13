@@ -35,6 +35,8 @@ public class FindAdvCmd implements Command {
     private MediaService mediaService;
     @Resource
     private UserService userService;
+    @Resource
+    private AliPayCmd aliPayCmd;
 
     @Override
     public boolean peek(String message) {
@@ -99,6 +101,7 @@ public class FindAdvCmd implements Command {
 //                URLEncoder.encode(goods.getImageUrl(), "utf-8")));
         }
         ps.append("付款后超过2分钟未收到成功消息，请发送订单号绑定。");
+        ps.append(aliPayCmd.handleMessage(userId, message));
         return HandleResult.ok(Arrays.asList(reply.toString(), ps.toString()), null);
     }
 }

@@ -11,10 +11,7 @@ public interface Bot {
 
     BotType getType();
 
-    default void login() {
-    }
-
     void onReceiveMessage(Function<MessageInfo, List<String>> event);
 
-    void sendMessage(MessageInfo message);
+    void sendMessage(List<MessageInfo> messages);
 }

@@ -34,7 +34,7 @@ public class RebindOrderCmd implements Command {
         require(message);
         message = message.trim();
 
-        return NQuery.of("绑定订单", "7").contains(message);
+        return NQuery.of("绑定订单", "3").contains(message);
     }
 
     @Override

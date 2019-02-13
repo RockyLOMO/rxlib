@@ -36,7 +36,7 @@ public class QueryOrderCmd implements Command {
         require(message);
         message = message.trim();
 
-        return NQuery.of("查询订单", "6").contains(message);
+        return NQuery.of("查询订单", "5").contains(message);
     }
 
     @Override

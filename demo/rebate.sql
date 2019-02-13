@@ -1,5 +1,6 @@
 #查找用户
 select * from t_user t where 1=1
+and wx_open_id != ''
 #and wx_open_id = 'yan_131415'
 order by t.create_time desc;
 

@@ -6,7 +6,7 @@ import org.rx.fl.service.command.HandleResult;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-@Order(19)
+@Order(20)
 @Component
 public class SubscribeCmd implements Command {
     @Override

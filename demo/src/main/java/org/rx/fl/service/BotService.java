@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
+import org.rx.common.NQuery;
+import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
@@ -52,16 +54,11 @@ public class BotService {
         return commandManager.handleMessage(userId, message.getContent());
     }
 
-    public void pushMessages(@NotNull MessageInfo pushMessage) {
-        switch (pushMessage.getBotType()) {
-            case Wx:
-                if (wxMobileBot != null) {
-                    wxMobileBot.sendMessage(pushMessage);
-                }
-                break;
-            case WxService:
-                wxBot.sendMessage(pushMessage);
-                break;
+    public void pushMessages(@NotNull List<MessageInfo> messages) {
+        NQuery<MessageInfo> query = NQuery.of(messages);
+        if (wxMobileBot != null) {
+            wxMobileBot.sendMessage(query.where(p -> p.getBotType() == BotType.Wx).toList());
         }
+        wxBot.sendMessage(query.where(p -> p.getBotType() == BotType.WxService).toList());
     }
 }

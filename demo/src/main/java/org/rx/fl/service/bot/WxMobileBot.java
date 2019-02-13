@@ -4,6 +4,7 @@ import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.beans.DateTime;
+import org.rx.beans.Tuple;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
@@ -264,8 +265,12 @@ public class WxMobileBot implements Bot {
     }
 
     @Override
-    public void sendMessage(MessageInfo message) {
-        sendMessage(message, Arrays.asList(message.getContent(), "test"));
+    public void sendMessage(List<MessageInfo> messages) {
+        for (Tuple<MessageInfo, List<String>> tuple : NQuery.of(messages)
+                .groupBy(p -> p.getBotType().getValue() + p.getOpenId(),
+                        p -> Tuple.of(p.right.first(), p.right.select(p2 -> p2.getContent()).toList()))) {
+            sendMessage(tuple.left, tuple.right);
+        }
     }
 
     private void sendMessage(OpenIdInfo message, List<String> contents) {

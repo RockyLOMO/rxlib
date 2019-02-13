@@ -32,7 +32,7 @@ public class FeedbackCmd implements Command {
         require(message);
         message = message.trim();
 
-        return NQuery.of("反映问题", "4").contains(message);
+        return NQuery.of("反映问题", "8").contains(message);
     }
 
     @Override

@@ -1,7 +1,6 @@
 package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.MediaConfig;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.UserService;
@@ -22,13 +21,15 @@ import static org.rx.fl.util.DbUtil.toMoney;
 public class DailyCheckInCmd implements Command {
     @Resource
     private UserService userService;
+    @Resource
+    private AliPayCmd aliPayCmd;
 
     @Override
     public boolean peek(String message) {
         require(message);
         message = message.trim();
 
-        return NQuery.of("签到", "8").contains(message);
+        return NQuery.of("签到", "2").contains(message);
     }
 
     @Override
@@ -43,10 +44,7 @@ public class DailyCheckInCmd implements Command {
                     "        累计签到: %s次\n" +
                     "        累计奖励: %.2f元\n" +
                     "    可提现金额: %.2f元\n" +
-                    "--------------------------------------\n" +
-                    "荭苞来啦\n" +
-                    "吱富寳搜索：%s\n" +
-                    "最高99", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), MediaConfig.AliPayCode));
+                    "%s", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), aliPayCmd.handleMessage(userId, message)));
 
         } catch (SystemException e) {
             log.warn("DailyCheckInCmd", e);
