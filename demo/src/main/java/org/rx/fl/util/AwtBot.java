@@ -85,6 +85,10 @@ public class AwtBot {
     }
 
     public void saveScreen(BufferedImage key, String msg) {
+        saveScreen(key, msg, debugPath);
+    }
+
+    public void saveScreen(BufferedImage key, String msg, String debugPath) {
         if (Strings.isNullOrEmpty(debugPath)) {
             return;
         }
@@ -209,6 +213,7 @@ public class AwtBot {
     public void clickAndAltF4(int x, int y) {
         clickInvoke(() -> pressInvoke(() -> {
             mouseLeftClick(x, y);
+            bot.delay(autoDelay);
             bot.keyPress(KeyEvent.VK_ALT);
             bot.keyPress(KeyEvent.VK_F4);
             bot.keyRelease(KeyEvent.VK_F4);

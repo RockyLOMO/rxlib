@@ -128,6 +128,7 @@ public final class JdLoginBot extends Disposable {
             loginKey = null;
             future = TaskFactory.schedule(() -> {
                 log.info("step3 try close it");
+//                bot.saveScreen();
                 int y = (int) bot.getScreenRectangle().getHeight();
                 bot.clickAndAltF4(218, y - 20);
                 log.info("step3 closed it");

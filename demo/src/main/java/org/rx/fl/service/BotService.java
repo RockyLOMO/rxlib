@@ -53,19 +53,24 @@ public class BotService {
             wxMobileBot.onReceiveMessage(event);
             wxMobileBot.start();
 
-//            TaskFactory.schedule(() -> {
-//                if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
-//                    return;
-//                }
-//                int hours = DateTime.now().getHours();
-//                if ((0 <= hours && hours <= 1) || (6 <= hours && hours <= 23)) {
-//                    MessageInfo message = new MessageInfo();
-//                    message.setBotType(BotType.Wx);
-//                    message.setOpenId(WxMobileBot.whiteOpenIds.first());
-//                    message.setContent(aliPayCmd.getSourceMessage());
-//                    pushMessages(Collections.singletonList(message));
-//                }
-//            }, 60 * 60 * 1000);
+            TaskFactory.schedule(() -> {
+                if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
+                    return;
+                }
+                int hours = DateTime.now().getHours();
+                switch (hours) {
+                    case 8:
+                    case 11:
+                    case 12:
+                    case 18:
+                        MessageInfo message = new MessageInfo();
+                        message.setBotType(BotType.Wx);
+                        message.setOpenId(WxMobileBot.whiteOpenIds.first());
+                        message.setContent(aliPayCmd.getSourceMessage());
+                        pushMessages(Collections.singletonList(message));
+                        break;
+                }
+            }, 60 * 60 * 1000);
         } catch (InvalidOperationException e) {
             log.warn("BotService", e);
         }

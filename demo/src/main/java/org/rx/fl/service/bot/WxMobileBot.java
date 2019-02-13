@@ -10,13 +10,11 @@ import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
-import org.rx.fl.service.BotService;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,7 +38,7 @@ public class WxMobileBot implements Bot {
     }
 
     public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群");
-    private static final int delay1 = 50, delay2 = 100;
+    private static final int delay1 = 50, delay2 = 100, captureScrollSeconds = 4;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
     private AwtBot bot;
@@ -49,8 +47,9 @@ public class WxMobileBot implements Bot {
     private Function<MessageInfo, List<String>> event;
     private int capturePeriod, maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
     private final ReentrantLock locker;
-    private volatile boolean clickDefaultUser;
-    private volatile Future future;
+    private int captureScrollCount;
+    private volatile byte captureFlag;
+    private volatile Future captureFuture;
 
     @Override
     public BotType getType() {
@@ -84,15 +83,16 @@ public class WxMobileBot implements Bot {
         this.maxCaptureMessageCount = maxCaptureMessageCount;
         this.maxScrollMessageCount = maxScrollMessageCount;
         locker = new ReentrantLock(true);
-        clickDefaultUser = true;
+        captureFlag = 0;
     }
 
     public void start() {
-        if (future != null) {
+        if (captureFuture != null) {
             return;
         }
 
-        future = TaskFactory.schedule(() -> {
+        captureScrollCount = captureScrollSeconds * 1000 / capturePeriod + 1;
+        captureFuture = TaskFactory.schedule(() -> {
             try {
                 //抛异常会卡住
                 captureUsers();
@@ -103,12 +103,12 @@ public class WxMobileBot implements Bot {
     }
 
     public void stop() {
-        if (future == null) {
+        if (captureFuture == null) {
             return;
         }
 
-        future.cancel(false);
-        future = null;
+        captureFuture.cancel(false);
+        captureFuture = null;
     }
 
     private void captureUsers() {
@@ -122,7 +122,7 @@ public class WxMobileBot implements Bot {
                 for (BufferedImage partImg : new BufferedImage[]{KeyImages.Unread0, KeyImages.Unread1}) {
                     Point screenPoint;
                     while ((screenPoint = bot.findScreenPoint(partImg, rectangle)) != null) {
-                        clickDefaultUser = true;
+                        captureFlag = 0;
                         checkCount = 0;
                         log.info("step1 captureUser at {}", screenPoint);
                         bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
@@ -209,16 +209,18 @@ public class WxMobileBot implements Bot {
                 checkCount++;
             } while (checkCount < maxCheckMessageCount);
 
-            if (clickDefaultUser) {
+            if (captureFlag == 0) {
                 bot.mouseLeftClick(getAbsolutePoint(94, 415));
+//                    bot.mouseWheel(-1);
+                bot.delay(delay1);
+                captureFlag = 1;
+            } else if (captureFlag < captureScrollCount) {
+                captureFlag++;
+            } else {
                 bot.mouseWheel(-1);
                 bot.delay(delay1);
-                clickDefaultUser = false;
+                captureFlag = 1;
             }
-//            else {
-//                bot.mouseWheel(-1);
-//                bot.delay(delay1);
-//            }
         } finally {
             locker.unlock();
         }
