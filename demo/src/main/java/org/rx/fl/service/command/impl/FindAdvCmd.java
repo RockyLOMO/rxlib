@@ -101,7 +101,7 @@ public class FindAdvCmd implements Command {
 //                URLEncoder.encode(goods.getImageUrl(), "utf-8")));
         }
         ps.append("付款后超过2分钟未收到成功消息，请发送订单号绑定。");
-        ps.append(aliPayCmd.handleMessage(userId, message));
+        ps.append(String.join("", aliPayCmd.handleMessage(userId, message).getValues()));
         return HandleResult.ok(Arrays.asList(reply.toString(), ps.toString()), null);
     }
 }

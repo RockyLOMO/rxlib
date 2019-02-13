@@ -40,11 +40,12 @@ public class DailyCheckInCmd implements Command {
             long bonus = userService.checkIn(userId, "0.0.0.0");
             UserInfo user = userService.queryUser(userId);
             return HandleResult.ok(String.format("一一一一签 到 成 功一一一一\n" +
-                    "本次签到获得: %.2f元\n" +
-                    "        累计签到: %s次\n" +
-                    "        累计奖励: %.2f元\n" +
-                    "    可提现金额: %.2f元\n" +
-                    "%s", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()), aliPayCmd.handleMessage(userId, message)));
+                            "本次签到获得: %.2f元\n" +
+                            "        累计签到: %s次\n" +
+                            "        累计奖励: %.2f元\n" +
+                            "    可提现金额: %.2f元\n" +
+                            "%s", toMoney(bonus), user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getBalance()),
+                    String.join("", aliPayCmd.handleMessage(userId, message).getValues())));
 
         } catch (SystemException e) {
             log.warn("DailyCheckInCmd", e);
