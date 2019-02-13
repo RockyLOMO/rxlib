@@ -114,7 +114,7 @@ public class UserService {
         }
 
         List<OpenIdInfo> openIds = new ArrayList<>();
-        if (user.getWxOpenId() != null) {
+        if (!Strings.isNullOrEmpty(user.getWxOpenId())) {
             OpenIdInfo wx = new OpenIdInfo();
             wx.setBotType(BotType.Wx);
             wx.setOpenId(user.getWxOpenId());
@@ -122,7 +122,7 @@ public class UserService {
             openIds.add(wx);
         }
 
-        if (user.getWxSvcOpenId() != null) {
+        if (!Strings.isNullOrEmpty(user.getWxSvcOpenId())) {
             OpenIdInfo wxSvc = new OpenIdInfo();
             wxSvc.setBotType(BotType.WxService);
             wxSvc.setOpenId(user.getWxSvcOpenId());

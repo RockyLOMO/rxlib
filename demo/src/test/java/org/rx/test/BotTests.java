@@ -2,6 +2,7 @@ package org.rx.test;
 
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
+import okhttp3.HttpUrl;
 import org.junit.Test;
 import org.rx.common.NQuery;
 import org.rx.fl.service.bot.WxBot;
@@ -21,47 +22,20 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
-        AwtBot bot = AwtBot.getBot();
-        int y = (int) bot.getScreenRectangle().getHeight();
-        bot.clickAndAltF4(220, y - 20);
+//        AwtBot bot = AwtBot.getBot();
+//        int y = (int) bot.getScreenRectangle().getHeight();
+//        bot.clickAndAltF4(220, y - 20);
 //        bot.mouseRightClick(220, y - 20);
 //        bot.delay(1000);
 //        bot.mouseLeftClick(220, y - 64);
 //        bot.clickByImage(ImageUtil.getImageFromResource(WxBot.class, "/static/jdKey2.png"));
-////
-//        String x = "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
-//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
-//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
-//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
-//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
-//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
-//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
-//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
-//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
-//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/FoldingData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.FoldingData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "Exception \"java.lang.ClassNotFoundException: com/intellij/codeInsight/editorActions/ReferenceData\"while constructing DataFlavor for: application/x-java-jvm-local-objectref; class=com.intellij.codeInsight.editorActions.ReferenceData\n" +
-//                "19:49:52.791 [main] INFO org.rx.fl.util.AwtClipboard - set\n" +
-//                "19:49:53.820 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership\n" +
-//                "19:49:54.835 [main] INFO org.rx.fl.util.AwtClipboard - set1\n" +
-//                "19:49:54.835 [AWT-EventQueue-0] INFO org.rx.fl.util.AwtClipboard - lostOwnership1         Thread.sleep(1000);";
-//        AwtClipboard l = new AwtClipboard();
-//        l.setContent(x);
-//        l.setContent(x);
-//        System.out.println(x.equals(l.getString()));
+
+        String url = "https://szsupport.weixin.qq.com/cgi-bin/mmsupport-bin/readtemplate?t=w_redirect_taobao&url=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fspm%3Da230r.1.14.164.436b3078xt4nB5%26id%3D14312037600%26ns%3D1%26abbucket%3D1%23detail&lang=zh_CN";
+        HttpUrl httpUrl = HttpUrl.get(url);
+        for (String name : httpUrl.queryParameterNames()) {
+            System.out.println("name:" + name);
+            System.out.println("value:" + httpUrl.queryParameter(name));
+        }
         System.in.read();
     }
 

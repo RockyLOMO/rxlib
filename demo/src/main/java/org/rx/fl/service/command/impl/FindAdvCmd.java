@@ -90,11 +90,12 @@ public class FindAdvCmd implements Command {
         switch (advResult.getMediaType()) {
             case Jd:
                 reply.append(String.format("抢购链接: %s", advResult.getShareCode()));
+                ps.append("付款时可以使用优惠券、京豆和礼品卡抵扣哦～\n");
                 break;
             case Taobao:
                 reply.append(String.format("复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
                         advResult.getShareCode()));
-                ps.append("亲，付款时请不要使用红包或淘金币抵扣，会造成无法绑定订单！\n");
+                ps.append("付款时可以使用优惠券、淘金币和红包抵扣哦～\n");
                 break;
 //        return HandleResult.of(String.format("http://taoyouhui.ml/tb.html#/%s/%s",
 //                advResult.getShareCode().replace("￥", ""),

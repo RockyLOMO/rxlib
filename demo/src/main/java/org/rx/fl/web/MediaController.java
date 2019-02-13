@@ -13,7 +13,7 @@ import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
-@RequestMapping(value = "media", method = {RequestMethod.POST, RequestMethod.GET})
+@RequestMapping(value = "media", method = {RequestMethod.POST})
 public class MediaController {
     @Resource
     private MediaService mediaService;

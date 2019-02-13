@@ -299,6 +299,10 @@ public class TbMedia implements Media {
         }
         try {
             HttpUrl httpUrl = HttpUrl.get(url);
+            //https://szsupport.weixin.qq.com/cgi-bin/mmsupport-bin/readtemplate?t=w_redirect_taobao&url=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fspm%3Da230r.1.14.164.436b3078xt4nB5%26id%3D14312037600%26ns%3D1%26abbucket%3D1%23detail&lang=zh_CN
+            if (url.contains("//szsupport.weixin.qq.com/")) {
+                httpUrl = HttpUrl.get(httpUrl.queryParameter("url"));
+            }
             if (NQuery.of("tmall.com", "taobao.com", "yukhj.com", "tb.cn").contains(httpUrl.topPrivateDomain())) {
                 return url;
             }

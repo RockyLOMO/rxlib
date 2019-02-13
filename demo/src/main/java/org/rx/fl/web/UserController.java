@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.annotation.Resource;
 
 @RestController
-@RequestMapping(value = "user", method = {RequestMethod.POST, RequestMethod.GET})
+@RequestMapping(value = "user", method = {RequestMethod.POST})
 public class UserController {
     @Resource
     private UserService userService;
