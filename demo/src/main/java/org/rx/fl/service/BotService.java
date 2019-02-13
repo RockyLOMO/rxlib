@@ -1,7 +1,9 @@
 package org.rx.fl.service;
 
+import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.DateTime;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
@@ -10,14 +12,18 @@ import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.command.CommandManager;
+import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
+
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @EnableValid
 @Service
@@ -31,6 +37,8 @@ public class BotService {
     private UserService userService;
     @Resource
     private CommandManager commandManager;
+    @Resource
+    private AliPayCmd aliPayCmd;
 
     @Autowired
     public BotService(WxBot wxBot, BotConfig config) {
@@ -44,6 +52,20 @@ public class BotService {
             wxMobileBot = new WxMobileBot(mConfig.getCapturePeriod(), mConfig.getMaxCheckMessageCount(), mConfig.getMaxCaptureMessageCount(), mConfig.getMaxScrollMessageCount());
             wxMobileBot.onReceiveMessage(event);
             wxMobileBot.start();
+
+            TaskFactory.schedule(() -> {
+                if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
+                    return;
+                }
+                int hours = DateTime.now().getHours();
+                if ((0 <= hours && hours <= 1) || (6 <= hours && hours <= 23)) {
+                    MessageInfo message = new MessageInfo();
+                    message.setBotType(BotType.Wx);
+                    message.setOpenId(WxMobileBot.whiteOpenIds.first());
+                    message.setContent(aliPayCmd.getSourceMessage());
+                    pushMessages(Collections.singletonList(message));
+                }
+            }, 60 * 60 * 1000);
         } catch (InvalidOperationException e) {
             log.warn("BotService", e);
         }

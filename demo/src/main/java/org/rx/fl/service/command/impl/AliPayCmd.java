@@ -1,6 +1,7 @@
 package org.rx.fl.service.command.impl;
 
 import com.google.common.base.Strings;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.MediaConfig;
 import org.rx.fl.service.command.Command;
@@ -15,6 +16,8 @@ import static org.rx.common.Contract.require;
 @Slf4j
 public class AliPayCmd implements Command {
     private String start = "搜“", end = "”领红包";
+    @Getter
+    private String sourceMessage;
     private String code;
 
     //打开支付宝首页搜“546267657”领红包，领到大红包的小伙伴赶紧使用哦！
@@ -36,6 +39,7 @@ public class AliPayCmd implements Command {
             if (s == -1 || e == -1) {
                 return HandleResult.ok("");
             }
+            sourceMessage = message;
             code = message.substring(s + start.length(), e);
         }
         return HandleResult.ok(String.format("\n--------------------------------------\n" +

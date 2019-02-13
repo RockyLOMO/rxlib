@@ -129,7 +129,7 @@ public final class JdLoginBot extends Disposable {
             future = TaskFactory.schedule(() -> {
                 log.info("step3 try close it");
                 int y = (int) bot.getScreenRectangle().getHeight();
-                bot.clickAndAltF4(220, y - 20);
+                bot.clickAndAltF4(218, y - 20);
                 log.info("step3 closed it");
                 future.cancel(true);
                 future = null;

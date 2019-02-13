@@ -10,6 +10,7 @@ import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
+import org.rx.fl.service.BotService;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
 
@@ -38,6 +39,7 @@ public class WxMobileBot implements Bot {
 //        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
     }
 
+    public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群");
     private static final int delay1 = 50, delay2 = 100;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
@@ -212,10 +214,11 @@ public class WxMobileBot implements Bot {
                 bot.mouseWheel(-1);
                 bot.delay(delay1);
                 clickDefaultUser = false;
-            } else {
-                bot.mouseWheel(-1);
-                bot.delay(delay1);
             }
+//            else {
+//                bot.mouseWheel(-1);
+//                bot.delay(delay1);
+//            }
         } finally {
             locker.unlock();
         }
@@ -282,6 +285,7 @@ public class WxMobileBot implements Bot {
         locker.lock();
         try {
             String openId = isNull(message.getNickname(), message.getOpenId());
+            boolean isWhite = whiteOpenIds.contains(message.getOpenId());
             int checkCount = 0;
             MessageInfo check = new MessageInfo();
             do {
@@ -299,11 +303,14 @@ public class WxMobileBot implements Bot {
                 bot.delay(delay2);
                 log.info("step1-2 click user {}", openId);
 
+                if (isWhite) {
+                    break;
+                }
                 fillOpenIdByTab(check, false);
                 checkCount++;
             }
             while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
-            if (!message.getOpenId().equals(check.getOpenId())) {
+            if (!isWhite && !message.getOpenId().equals(check.getOpenId())) {
                 log.info("message openId {} not equals {}", message.getOpenId(), check.getOpenId());
                 return;
             }
