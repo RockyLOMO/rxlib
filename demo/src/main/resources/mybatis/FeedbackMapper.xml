@@ -117,10 +117,10 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Feedback"
             useGeneratedKeys="true">
-    insert into t_feedback (user_id, content, reply, 
+    insert into t_feedback (id, user_id, content, reply,
       `status`, create_time, modify_time, 
       is_deleted)
-    values (#{userId,jdbcType=CHAR}, #{content,jdbcType=VARCHAR}, #{reply,jdbcType=VARCHAR}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{content,jdbcType=VARCHAR}, #{reply,jdbcType=VARCHAR},
       #{status,jdbcType=INTEGER}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
       #{isDeleted,jdbcType=CHAR})
   </insert>

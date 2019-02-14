@@ -122,11 +122,11 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.User"
             useGeneratedKeys="true">
-    insert into t_user (nickname, wx_svc_open_id, wx_open_id, 
+    insert into t_user (id, nickname, wx_svc_open_id, wx_open_id,
       alipay_name, alipay_account, balance, 
       freeze_amount, version, create_time, 
       modify_time, is_deleted)
-    values (#{nickname,jdbcType=VARCHAR}, #{wxSvcOpenId,jdbcType=VARCHAR}, #{wxOpenId,jdbcType=VARCHAR}, 
+    values (#{id,jdbcType=VARCHAR}, #{nickname,jdbcType=VARCHAR}, #{wxSvcOpenId,jdbcType=VARCHAR}, #{wxOpenId,jdbcType=VARCHAR},
       #{alipayName,jdbcType=VARCHAR}, #{alipayAccount,jdbcType=VARCHAR}, #{balance,jdbcType=BIGINT}, 
       #{freezeAmount,jdbcType=BIGINT}, #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP}, 
       #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})

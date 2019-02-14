@@ -117,10 +117,10 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.FreezeLog"
             useGeneratedKeys="true">
-    insert into t_freeze_log (user_id, balance_log_id, amount, 
+    insert into t_freeze_log (id, user_id, balance_log_id, amount,
       remark, create_time, modify_time, 
       is_deleted)
-    values (#{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
       #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
       #{isDeleted,jdbcType=CHAR})
   </insert>

@@ -8,6 +8,6 @@ import org.springframework.stereotype.Component;
 @Component
 @ConfigurationProperties(prefix = "app.user")
 public class UserConfig {
-    private String rootId;
     private String[] adminIds;
+    private int defaultPercent;
 }

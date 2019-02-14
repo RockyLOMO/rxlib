@@ -4,10 +4,7 @@ import com.google.common.base.Strings;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
-import org.rx.common.App;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.NQuery;
-import org.rx.common.SystemException;
+import org.rx.common.*;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.media.MediaType;
@@ -30,6 +27,10 @@ import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
 public class UserService {
+    //#region Fields
+    private static final byte percentValue = 100;
+    @Resource
+    private UserConfig userConfig;
     @Resource
     private UserMapper userMapper;
     @Resource
@@ -48,6 +49,27 @@ public class UserService {
     private DbUtil dbUtil;
     @Resource
     private NotifyService notifyService;
+    @Resource
+    private UserNodeService levelService;
+    //#endregion
+
+    //region level
+    public long compute(String userId, long rebateAmount) {
+        UserNode node = levelService.getNode(userId);
+        int percent = checkPercent(node.getPercent());
+        return (long) Math.floor((double) rebateAmount * percent / percentValue);
+    }
+
+    private int checkPercent(Integer percent) {
+        if (percent == null) {
+            percent = userConfig.getDefaultPercent();
+        }
+        if (percent < 0 || percent > percentValue) {
+            throw new InvalidOperationException("percent error");
+        }
+        return percent;
+    }
+    //endregion
 
     public UserInfo queryUser(String userId) {
         require(userId);

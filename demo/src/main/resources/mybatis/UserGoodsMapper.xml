@@ -116,10 +116,10 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.UserGoods"
             useGeneratedKeys="true">
-    insert into t_user_goods (user_id, media_type, goods_id, 
+    insert into t_user_goods (id, user_id, media_type, goods_id,
       create_time, modify_time, is_deleted
       )
-    values (#{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{goodsId,jdbcType=VARCHAR}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{goodsId,jdbcType=VARCHAR},
       #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
       )
   </insert>

@@ -23,6 +23,7 @@ import java.util.List;
 
 import static org.rx.common.Contract.*;
 import static org.rx.fl.util.DbUtil.toCent;
+import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
 @Slf4j
@@ -126,7 +127,25 @@ public class OrderService {
                 }
             }
 
+            compute(order);
             dbUtil.save(order, insert);
+        }
+    }
+
+    //处理用户返利比例,少于1分给1分钱
+    public void compute(Order order) {
+        require(order, order.getUserId());
+
+        if (order.getRawRebateAmount() == null) {
+            long rebateAmount = order.getRebateAmount();
+            order.setRawRebateAmount(rebateAmount);
+            order.setRebateAmount(Math.max(1, userService.compute(order.getUserId(), rebateAmount)));
+        }
+        if (order.getRawSettleAmount() == null && order.getSettleAmount() != null) {
+            long settleAmount = order.getSettleAmount();
+            order.setRawSettleAmount(settleAmount);
+            //取结算金额中最小的
+            order.setSettleAmount(Math.max(1, Math.min(order.getRebateAmount(), userService.compute(order.getUserId(), settleAmount))));
         }
     }
 

@@ -1,9 +1,6 @@
 package org.rx.fl.repository;
 
-import org.apache.ibatis.annotations.Delete;
-import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.*;
 import org.rx.fl.repository.model.User;
 import org.rx.fl.repository.model.UserExample;
 
@@ -13,7 +10,7 @@ import org.rx.fl.repository.model.UserExample;
  */
 @Mapper
 public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
-    String emptyId = "00000000-0000-0000-0000-000000000000";
+    String rootId = "00000000-0000-0000-0000-000000000000";
 
     /**
      * 查询某一层的节点的数量。
@@ -21,17 +18,17 @@ public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
      * @param level 层级
      * @return 节点数量
      */
-    @Select("SELECT COUNT(*) FROM t_user_tree WHERE ancestor='" + emptyId + "' AND distance=#{level}")
+    @Select("SELECT COUNT(*) FROM t_user_tree WHERE ancestor='" + rootId + "' AND distance=#{level}")
     long selectCountByLayer(int level);
 
     /**
      * 查询某个节点的子树中所有的节点的id，不包括参数所指定的节点
      *
-     * @param ancestorId 节点id
+     * @param descendantId 节点id
      * @return 子节点id
      */
-    @Select("SELECT descendant FROM t_user_tree WHERE ancestor=#{ancestorId} AND distance>0")
-    String[] selectDescendantIds(String ancestorId);
+    @Select("SELECT descendant FROM t_user_tree WHERE ancestor=#{descendantId} AND distance>0")
+    String[] selectDescendantIds(String descendantId);
 
     /**
      * 查询某个节点的第n级子节点
@@ -41,7 +38,7 @@ public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
      * @return 子节点列表
      */
     @Select("SELECT descendant FROM t_user_tree WHERE ancestor=#{ancestorId} AND distance=#{level}")
-    String[] selectSubLayerIds(String ancestorId, int level);
+    String[] selectSubIds(String ancestorId, int level);
 
     /**
      * 查询某个节点的第N级父节点。如果id指定的节点不存在、操作错误或是数据库被外部修改，
@@ -52,11 +49,11 @@ public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
      * @return 父节点id，如果不存在则返回null
      */
     @Select("SELECT ancestor FROM t_user_tree WHERE descendant=#{descendantId} AND distance=#{level}")
-    String selectAncestor(String descendantId, int level);
+    String selectAncestorId(String descendantId, int level);
 
     /**
      * 查询由id指定节点(含)到根节点(不含)的路径
-     * 比下面的<code>selectPathToAncestor</code>简单些。
+     * 比下面的<code>selectPathToAncestorIds</code>简单些。
      *
      * @param descendantId 节点ID
      * @return 路径列表。如果节点不存在，则返回空列表
@@ -76,16 +73,6 @@ public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
             "distance<(SELECT distance FROM t_user_tree WHERE descendant=#{descendantId} AND ancestor=#{ancestorId}) " +
             "ORDER BY distance DESC")
     String[] selectPathToAncestorIds(String descendantId, String ancestorId);
-
-    /**
-     * 查找某节点下的所有直属子节点的id
-     * 该方法与上面的<code>selectSubLayer</code>不同，它只查询节点的id，效率高点
-     *
-     * @param parentId 分类id
-     * @return 子类id数组
-     */
-    @Select("SELECT descendant FROM t_user_tree WHERE ancestor=#{parentId} AND distance=1")
-    String[] selectTopSubIds(String parentId);
 
     /**
      * 查询某节点到它某个祖先节点的距离
@@ -114,6 +101,12 @@ public interface UserMapper extends MyBatisBaseDao<User, String, UserExample> {
      */
     @Insert("INSERT INTO t_user_tree(ancestor,descendant,distance) VALUES(#{id},#{id},0)")
     void insertNode(String id);
+
+    @Update("UPDATE t_user_tree SET percent=#{percent} WHERE descendant=#{id} AND ancestor=#{id} AND distance=0")
+    void updatePercent(String id, Integer percent);
+
+    @Select("SELECT percent FROM t_user_tree WHERE descendant=#{id} AND ancestor=#{id} AND distance=0")
+    Integer selectPercent(String id);
 
     /**
      * 从树中删除某节点的路径。注意指定的节点可能存在子树，而子树的节点在该节点之上的路径并没有改变，

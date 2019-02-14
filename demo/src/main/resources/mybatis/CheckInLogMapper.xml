@@ -116,10 +116,10 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.CheckInLog"
             useGeneratedKeys="true">
-    insert into t_check_in_log (user_id, client_ip, bonus, 
+    insert into t_check_in_log (id, user_id, client_ip, bonus,
       create_time, modify_time, is_deleted
       )
-    values (#{userId,jdbcType=CHAR}, #{clientIp,jdbcType=VARCHAR}, #{bonus,jdbcType=BIGINT}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{clientIp,jdbcType=VARCHAR}, #{bonus,jdbcType=BIGINT},
       #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
       )
   </insert>

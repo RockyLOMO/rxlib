@@ -123,12 +123,12 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.BalanceLog"
             useGeneratedKeys="true">
-    insert into t_balance_log (user_id, `type`, `source`, 
+    insert into t_balance_log (id, user_id, `type`, `source`,
       source_id, client_ip, pre_balance, 
       post_balance, `value`, remark, 
       create_time, modify_time, is_deleted
       )
-    values (#{userId,jdbcType=CHAR}, #{type,jdbcType=INTEGER}, #{source,jdbcType=INTEGER}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{type,jdbcType=INTEGER}, #{source,jdbcType=INTEGER},
       #{sourceId,jdbcType=VARCHAR}, #{clientIp,jdbcType=VARCHAR}, #{preBalance,jdbcType=BIGINT}, 
       #{postBalance,jdbcType=BIGINT}, #{value,jdbcType=BIGINT}, #{remark,jdbcType=VARCHAR}, 
       #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}

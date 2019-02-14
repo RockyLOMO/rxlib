@@ -120,10 +120,10 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.WithdrawLog"
             useGeneratedKeys="true">
-    insert into t_withdraw_log (user_id, balance_log_id, amount, 
+    insert into t_withdraw_log (id, user_id, balance_log_id, amount,
       `status`, remark, create_time, 
       modify_time, is_deleted)
-    values (#{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
       #{status,jdbcType=INTEGER}, #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, 
       #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
   </insert>

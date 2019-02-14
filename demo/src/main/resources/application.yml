@@ -1,6 +1,6 @@
 server.port: 80
 
-spring.profiles.active: prd
+spring.profiles.active: dev
 spring.datasource.driverClassName: com.mysql.jdbc.Driver
 mybatis.type-aliases-package: org.rx.fl.repository.model
 mybatis.config-location: classpath:mybatis-config.xml
@@ -59,51 +59,54 @@ app:
       driver: /usr/chrome/IEDriverServer.exe
       cookieUrl: http://x.%s/index.html?cookie=1
       initSize: 0
-
----
-
-spring:
-  profiles: prd
-  datasource:
-    url: jdbc:mysql://r.x.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
-    username: rx_rebate_prd_user
-    password: pL1ae4Q%L8TK$sD%
-app:
-  bot:
-    wx-mobile:
-      capturePeriod: 600
-      maxCheckMessageCount: 2
-      maxCaptureMessageCount: 1
-      maxScrollMessageCount: 1
-  media:
-    enableMedias: Taobao,Jd
-    syncWeeklyOrderSeconds: 80
-    syncMonthlyOrderSeconds: 28800
-    commandTimeout: 30
-    goodsCacheMinutes: 600
-    advCacheMinutes: 720
-    remoteMode: false
-    remoteEndpoint: 127.0.0.1:80
-    taobao:
-      coreSize: 1
-      keepLoginSeconds: 90
-    jd:
-      coreSize: 1
-      keepLoginSeconds: 60
-      loginPort: 8081
-  browser:
-    windowRectangle: 800,1000,800,600
-    chrome:
-      driver: C:\_rx\chrome\chromedriver.exe
-      dataPath: C:\_rx\chrome\data
-      downloadPath: C:\_rx\chrome\download
-      isBackground: false
-      initSize: 3
-    ie:
-      driver: C:\_rx\chrome\IEDriverServer.exe
-      cookieUrl: http://x.%s/index.html?cookie=1
-      initSize: 1
   user:
-    rootId: 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
+    defaultPercent: 80
+#
+#---
+#
+#spring:
+#  profiles: prd
+#  datasource:
+#    url: jdbc:mysql://r.x.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
+#    username: rx_rebate_prd_user
+#    password: pL1ae4Q%L8TK$sD%
+#app:
+#  bot:
+#    wx-mobile:
+#      capturePeriod: 600
+#      maxCheckMessageCount: 2
+#      maxCaptureMessageCount: 1
+#      maxScrollMessageCount: 1
+#  media:
+#    enableMedias: Taobao,Jd
+#    syncWeeklyOrderSeconds: 80
+#    syncMonthlyOrderSeconds: 28800
+#    commandTimeout: 30
+#    goodsCacheMinutes: 600
+#    advCacheMinutes: 720
+#    remoteMode: false
+#    remoteEndpoint: 127.0.0.1:80
+#    taobao:
+#      coreSize: 1
+#      keepLoginSeconds: 90
+#    jd:
+#      coreSize: 1
+#      keepLoginSeconds: 60
+#      loginPort: 8081
+#  browser:
+#    windowRectangle: 800,1000,800,600
+#    chrome:
+#      driver: C:\_rx\chrome\chromedriver.exe
+#      dataPath: C:\_rx\chrome\data
+#      downloadPath: C:\_rx\chrome\download
+#      isBackground: false
+#      initSize: 3
+#    ie:
+#      driver: C:\_rx\chrome\IEDriverServer.exe
+#      cookieUrl: http://x.%s/index.html?cookie=1
+#      initSize: 1
+#  user:
+#    adminIds:
+#      - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746

@@ -14,6 +14,8 @@
         <result column="pay_amount" jdbcType="BIGINT" property="payAmount"/>
         <result column="rebate_amount" jdbcType="BIGINT" property="rebateAmount"/>
         <result column="settle_amount" jdbcType="BIGINT" property="settleAmount"/>
+        <result column="raw_rebate_amount" jdbcType="BIGINT" property="rawRebateAmount"/>
+        <result column="raw_settle_amount" jdbcType="BIGINT" property="rawSettleAmount"/>
         <result column="status" jdbcType="INTEGER" property="status"/>
         <result column="create_time" jdbcType="TIMESTAMP" property="createTime"/>
         <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime"/>
@@ -81,7 +83,7 @@
     </sql>
     <sql id="Base_Column_List">
     id, user_id, media_type, order_no, goods_id, goods_name, unit_price, quantity, seller_name, 
-    pay_amount, rebate_amount, settle_amount, `status`, create_time, modify_time, is_deleted
+    pay_amount, rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`, create_time, modify_time, is_deleted
   </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.OrderExample" resultMap="BaseResultMap">
         select
@@ -126,16 +128,16 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Order"
             useGeneratedKeys="true">
-    insert into t_order (user_id, media_type, order_no, 
+    insert into t_order (id, user_id, media_type, order_no,
       goods_id, goods_name, unit_price, 
       quantity, seller_name, pay_amount, 
-      rebate_amount, settle_amount, `status`, 
+      rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`,
       create_time, modify_time, is_deleted
       )
-    values (#{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{orderNo,jdbcType=VARCHAR}, 
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{orderNo,jdbcType=VARCHAR},
       #{goodsId,jdbcType=VARCHAR}, #{goodsName,jdbcType=VARCHAR}, #{unitPrice,jdbcType=BIGINT}, 
       #{quantity,jdbcType=INTEGER}, #{sellerName,jdbcType=VARCHAR}, #{payAmount,jdbcType=BIGINT}, 
-      #{rebateAmount,jdbcType=BIGINT}, #{settleAmount,jdbcType=BIGINT}, #{status,jdbcType=INTEGER}, 
+      #{rebateAmount,jdbcType=BIGINT}, #{settleAmount,jdbcType=BIGINT}, #{rawRebateAmount,jdbcType=BIGINT}, #{rawSettleAmount,jdbcType=BIGINT}, #{status,jdbcType=INTEGER},
       #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
       )
   </insert>
@@ -178,6 +180,12 @@
             </if>
             <if test="settleAmount != null">
                 settle_amount,
+            </if>
+            <if test="rawRebateAmount != null">
+                raw_rebate_amount,
+            </if>
+            <if test="rawSettleAmount != null">
+                raw_settle_amount,
             </if>
             <if test="status != null">
                 `status`,
@@ -228,6 +236,12 @@
             </if>
             <if test="settleAmount != null">
                 #{settleAmount,jdbcType=BIGINT},
+            </if>
+            <if test="rawRebateAmount != null">
+                #{rawRebateAmount,jdbcType=BIGINT},
+            </if>
+            <if test="rawSettleAmount != null">
+                #{rawSettleAmount,jdbcType=BIGINT},
             </if>
             <if test="status != null">
                 #{status,jdbcType=INTEGER},
@@ -288,6 +302,12 @@
             <if test="record.settleAmount != null">
                 settle_amount = #{record.settleAmount,jdbcType=BIGINT},
             </if>
+            <if test="record.rawRebateAmount != null">
+                raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
+            </if>
+            <if test="record.rawSettleAmount != null">
+                raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
+            </if>
             <if test="record.status != null">
                 `status` = #{record.status,jdbcType=INTEGER},
             </if>
@@ -319,6 +339,8 @@
         pay_amount = #{record.payAmount,jdbcType=BIGINT},
         rebate_amount = #{record.rebateAmount,jdbcType=BIGINT},
         settle_amount = #{record.settleAmount,jdbcType=BIGINT},
+        raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
+        raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
         `status` = #{record.status,jdbcType=INTEGER},
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
         modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
@@ -360,6 +382,15 @@
             <if test="rebateAmount != null">
                 rebate_amount = #{rebateAmount,jdbcType=BIGINT},
             </if>
+            <if test="record.settleAmount != null">
+                settle_amount = #{record.settleAmount,jdbcType=BIGINT},
+            </if>
+            <if test="record.rawRebateAmount != null">
+                raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
+            </if>
+            <if test="record.rawSettleAmount != null">
+                raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
+            </if>
             <if test="status != null">
                 `status` = #{status,jdbcType=INTEGER},
             </if>
@@ -387,6 +418,9 @@
       seller_name = #{sellerName,jdbcType=VARCHAR},
       pay_amount = #{payAmount,jdbcType=BIGINT},
       rebate_amount = #{rebateAmount,jdbcType=BIGINT},
+      settle_amount = #{record.settleAmount,jdbcType=BIGINT},
+      raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
+      raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
       `status` = #{status,jdbcType=INTEGER},
       create_time = #{createTime,jdbcType=TIMESTAMP},
       modify_time = #{modifyTime,jdbcType=TIMESTAMP},

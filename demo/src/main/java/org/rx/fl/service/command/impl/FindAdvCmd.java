@@ -9,6 +9,7 @@ import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.service.MediaService;
+import org.rx.fl.service.order.OrderService;
 import org.rx.fl.service.user.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
@@ -24,6 +25,8 @@ import java.util.Map;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
+import static org.rx.fl.util.DbUtil.toCent;
+import static org.rx.fl.util.DbUtil.toMoney;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Order(1)
@@ -35,6 +38,8 @@ public class FindAdvCmd implements Command {
     private MediaService mediaService;
     @Resource
     private UserService userService;
+    @Resource
+    private OrderService orderService;
     @Resource
     private AliPayCmd aliPayCmd;
 
@@ -66,7 +71,6 @@ public class FindAdvCmd implements Command {
         }
 
         TaskFactory.run(() -> userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId()));
-        GoodsInfo goods = advResult.getGoods();
         Function<String, Double> convert = p -> {
             if (Strings.isNullOrEmpty(p)) {
                 return 0d;
@@ -74,8 +78,16 @@ public class FindAdvCmd implements Command {
             return App.changeType(p.replace("￥", "")
                     .replace("¥", "").replace("元", ""), double.class);
         };
-        Double rebateAmount = convert.apply(goods.getRebateAmount()),
-                couponAmount = convert.apply(goods.getCouponAmount()),
+        GoodsInfo goods = advResult.getGoods();
+
+        Double rebateAmount = convert.apply(goods.getRebateAmount());
+        org.rx.fl.repository.model.Order computeOrder = new org.rx.fl.repository.model.Order();
+        computeOrder.setUserId(userId);
+        computeOrder.setRebateAmount(toCent(rebateAmount));
+        orderService.compute(computeOrder);
+        rebateAmount = toMoney(computeOrder.getRebateAmount());
+
+        Double couponAmount = convert.apply(goods.getCouponAmount()),
                 payAmount = convert.apply(goods.getPrice())
                         - rebateAmount
                         - couponAmount;
