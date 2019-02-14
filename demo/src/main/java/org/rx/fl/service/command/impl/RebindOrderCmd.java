@@ -5,7 +5,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
-import org.rx.fl.service.OrderService;
+import org.rx.fl.service.order.OrderService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.rx.fl.dto.repo.RebindOrderResult;

@@ -103,3 +103,7 @@ app:
       driver: C:\_rx\chrome\IEDriverServer.exe
       cookieUrl: http://x.%s/index.html?cookie=1
       initSize: 1
+  user:
+    rootId: 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
+    adminIds:
+      - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746

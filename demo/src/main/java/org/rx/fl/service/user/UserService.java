@@ -1,4 +1,4 @@
-package org.rx.fl.service;
+package org.rx.fl.service.user;
 
 import com.google.common.base.Strings;
 import org.rx.annotation.ErrorCode;
@@ -15,6 +15,7 @@ import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
+import org.rx.fl.service.NotifyService;
 import org.rx.fl.util.DbUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -175,6 +176,30 @@ public class UserService {
         return balanceLogMapper.countByExample(q) > 0;
     }
 
+    @Transactional
+    public boolean trySettleOrder(String userId, String orderId, Long amount) {
+        require(userId, orderId);
+
+        boolean hasSettleOrder = hasSettleOrder(userId, orderId);
+        if (!hasSettleOrder) {
+            saveUserBalance(userId, BalanceSourceKind.Order, orderId, amount, App.getRequestIp(App.getCurrentRequest()));
+            return true;
+        }
+        return false;
+    }
+
+    @Transactional
+    public boolean tryRestoreSettleOrder(String userId, String orderId, Long amount) {
+        require(userId, orderId);
+
+        boolean hasSettleOrder = hasSettleOrder(userId, orderId);
+        if (hasSettleOrder) {
+            saveUserBalance(userId, BalanceSourceKind.InvalidOrder, orderId, amount, App.getRequestIp(App.getCurrentRequest()));
+            return true;
+        }
+        return false;
+    }
+
     @ErrorCode("notEnoughBalance")
     @ErrorCode(value = "withdrawing", messageKeys = {"$amount"})
     @Transactional
@@ -273,7 +298,7 @@ public class UserService {
         return bonus;
     }
 
-    Tuple<User, String> saveUserBalance(String userId, BalanceSourceKind sourceKind, String sourceId, long money, String remark) {
+    private Tuple<User, String> saveUserBalance(String userId, BalanceSourceKind sourceKind, String sourceId, long money, String remark) {
         require(money, money != 0);
         String clientIp = App.getRequestIp(App.getCurrentRequest());
 

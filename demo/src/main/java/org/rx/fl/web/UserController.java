@@ -2,7 +2,7 @@ package org.rx.fl.web;
 
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.repo.WithdrawStatus;
-import org.rx.fl.service.UserService;
+import org.rx.fl.service.user.UserService;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;

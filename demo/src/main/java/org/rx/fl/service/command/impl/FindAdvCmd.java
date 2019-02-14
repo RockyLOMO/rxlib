@@ -9,7 +9,7 @@ import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.service.MediaService;
-import org.rx.fl.service.UserService;
+import org.rx.fl.service.user.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.rx.fl.util.HttpCaller;

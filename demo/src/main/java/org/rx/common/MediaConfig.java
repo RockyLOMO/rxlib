@@ -27,8 +27,6 @@ public class MediaConfig {
         private int loginPort;
     }
 
-    public static final String RxId = "678196b6-fbf8-6fa4-bb76-3a0b34fe4746";
-
     @Resource
     private TaobaoConfig taobao;
     @Resource

@@ -3,11 +3,14 @@ package org.rx.fl.service.command.impl;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.MediaConfig;
+import org.rx.common.NQuery;
+import org.rx.common.UserConfig;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
 
 import static org.rx.common.Contract.require;
 
@@ -15,6 +18,8 @@ import static org.rx.common.Contract.require;
 @Component
 @Slf4j
 public class AliPayCmd implements Command {
+    @Resource
+    private UserConfig userConfig;
     private String start = "搜“", end = "”领红包";
     @Getter
     private String sourceMessage;
@@ -32,7 +37,7 @@ public class AliPayCmd implements Command {
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
         if (Strings.isNullOrEmpty(code)) {
-            if (!MediaConfig.RxId.equalsIgnoreCase(userId)) {
+            if (!NQuery.of(userConfig.getAdminIds()).contains(userId)) {
                 return HandleResult.ok("");
             }
             int s = message.indexOf(start), e = message.indexOf(end, s);

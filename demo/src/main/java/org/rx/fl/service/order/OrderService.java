@@ -1,4 +1,4 @@
-package org.rx.fl.service;
+package org.rx.fl.service.order;
 
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +12,7 @@ import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.OrderMapper;
 import org.rx.fl.repository.model.*;
+import org.rx.fl.service.user.UserService;
 import org.rx.fl.util.DbUtil;
 import org.rx.util.NEnum;
 import org.springframework.stereotype.Service;
@@ -70,8 +71,11 @@ public class OrderService {
      * @param orderInfos
      */
     @Transactional
-    public void saveOrders(List<OrderInfo> orderInfos, List<Order> paidOrders, List<Order> settleOrders) {
+    public void saveOrders(List<OrderInfo> orderInfos, NotifyOrdersInfo notify) {
         require(orderInfos);
+        if (notify == null) {
+            notify = new NotifyOrdersInfo();
+        }
 
         for (OrderInfo media : orderInfos) {
             require(media.getMediaType(), media.getOrderNo(), media.getGoodsId());
@@ -97,8 +101,8 @@ public class OrderService {
                 String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId());
                 if (!Strings.isNullOrEmpty(userId)) {
                     order.setUserId(userId);
-                    if (media.getStatus() == OrderStatus.Paid && paidOrders != null) {
-                        paidOrders.add(order);
+                    if (media.getStatus() == OrderStatus.Paid) {
+                        notify.paidOrders.add(order);
                     }
                 }
             }
@@ -106,22 +110,17 @@ public class OrderService {
 
             order.setStatus(media.getStatus().getValue());
             if (!Strings.isNullOrEmpty(order.getUserId()) && media.getStatus() != OrderStatus.Paid) {
-                boolean hasSettleOrder = userService.hasSettleOrder(order.getUserId(), order.getId());
-                String clientIp = "0.0.0.0";
                 Long amount = isNull(order.getSettleAmount(), order.getRebateAmount());
                 switch (media.getStatus()) {
                     case Success:
                     case Settlement:
-                        if (!hasSettleOrder) {
-                            userService.saveUserBalance(order.getUserId(), BalanceSourceKind.Order, order.getId(), amount, clientIp);
-                            if (settleOrders != null) {
-                                settleOrders.add(order);
-                            }
+                        if (userService.trySettleOrder(order.getUserId(), order.getId(), amount)) {
+                            notify.settleOrders.add(order);
                         }
                         break;
                     case Invalid:
-                        if (hasSettleOrder) {
-                            userService.saveUserBalance(order.getUserId(), BalanceSourceKind.InvalidOrder, order.getId(), amount, clientIp);
+                        if (userService.tryRestoreSettleOrder(order.getUserId(), order.getId(), amount)) {
+                            notify.restoreSettleOrder.add(order);
                         }
                         break;
                 }

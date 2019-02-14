@@ -13,6 +13,7 @@ import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.command.CommandManager;
 import org.rx.fl.service.command.impl.AliPayCmd;
+import org.rx.fl.service.user.UserService;
 import org.rx.util.validator.EnableValid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

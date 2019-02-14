@@ -5,6 +5,7 @@ import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
+import org.rx.fl.service.user.UserService;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;

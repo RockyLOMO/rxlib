@@ -5,7 +5,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
-import org.rx.fl.service.UserService;
+import org.rx.fl.service.user.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.context.annotation.Scope;

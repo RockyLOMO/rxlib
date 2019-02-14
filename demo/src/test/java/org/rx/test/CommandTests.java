@@ -1,12 +1,11 @@
 package org.rx.test;
 
-import lombok.SneakyThrows;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.rx.common.MediaConfig;
+import org.rx.common.UserConfig;
 import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.dto.repo.QueryOrdersParameter;
-import org.rx.fl.service.OrderService;
+import org.rx.fl.service.order.OrderService;
 import org.rx.fl.service.command.CommandManager;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
@@ -23,10 +22,12 @@ public class CommandTests {
     CommandManager commandManager;
     @Resource
     OrderService orderService;
+    @Resource
+    UserConfig userConfig;
 
     @Test
     public void handleAliPay() {
-        List<String> list = commandManager.handleMessage(MediaConfig.RxId, "打开支付宝首页搜“546267657”领红包，领到大红包的小伙伴赶紧使用哦！");
+        List<String> list = commandManager.handleMessage(userConfig.getAdminIds()[0], "打开支付宝首页搜“546267657”领红包，领到大红包的小伙伴赶紧使用哦！");
         System.out.println(list);
     }
 

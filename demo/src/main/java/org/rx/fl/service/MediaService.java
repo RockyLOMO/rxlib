@@ -11,13 +11,15 @@ import org.rx.fl.repository.model.Order;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
+import org.rx.fl.service.order.NotifyOrdersInfo;
+import org.rx.fl.service.order.OrderService;
+import org.rx.fl.service.user.UserService;
 import org.rx.util.ManualResetEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -146,9 +148,9 @@ public class MediaService {
                 if (CollectionUtils.isEmpty(orders)) {
                     continue;
                 }
-                List<Order> paidOrders = new ArrayList<>(), settleOrders = new ArrayList<>();
-                orderService.saveOrders(orders, paidOrders, settleOrders);
-                for (Order paidOrder : paidOrders) {
+                NotifyOrdersInfo notify = new NotifyOrdersInfo();
+                orderService.saveOrders(orders, notify);
+                for (Order paidOrder : notify.paidOrders) {
                     UserInfo user = userService.queryUser(paidOrder.getUserId());
                     String content = String.format("一一一一支 付 成 功一一一一\n" +
                                     "%s\n" +
@@ -167,7 +169,7 @@ public class MediaService {
                             toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()));
                     notifyService.add(user.getUserId(), Collections.singletonList(content));
                 }
-                for (Order settleOrder : settleOrders) {
+                for (Order settleOrder : notify.settleOrders) {
                     UserInfo user = userService.queryUser(settleOrder.getUserId());
                     String content = String.format("一一一一收 货 成 功一一一一\n" +
                                     "%s\n" +

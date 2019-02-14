@@ -7,7 +7,7 @@ import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.repo.OrderResult;
 import org.rx.fl.dto.repo.QueryOrdersParameter;
-import org.rx.fl.service.OrderService;
+import org.rx.fl.service.order.OrderService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.context.annotation.Scope;
