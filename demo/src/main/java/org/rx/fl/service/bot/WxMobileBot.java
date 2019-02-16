@@ -67,7 +67,7 @@ public class WxMobileBot implements Bot {
                 throw new InvalidOperationException("WxMobile window not found");
             }
 
-            int x = point.x - 19, y = point.y - 26;
+            int x = point.x - 20, y = point.y - 27;
             windowPoint = new Point(x, y);
         }
         return windowPoint;

@@ -82,9 +82,10 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, media_type, order_no, goods_id, goods_name, unit_price, quantity, seller_name, 
-    pay_amount, rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`, create_time, modify_time, is_deleted
-  </sql>
+        id, user_id, media_type, order_no, goods_id, goods_name, unit_price, quantity, seller_name,
+        pay_amount, rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`, create_time,
+        modify_time, is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.OrderExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -117,9 +118,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_order
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_order
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.OrderExample">
         delete from t_order
         <if test="_parameter != null">
@@ -128,19 +129,21 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Order"
             useGeneratedKeys="true">
-    insert into t_order (id, user_id, media_type, order_no,
-      goods_id, goods_name, unit_price, 
-      quantity, seller_name, pay_amount, 
-      rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`,
-      create_time, modify_time, is_deleted
-      )
-    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{orderNo,jdbcType=VARCHAR},
-      #{goodsId,jdbcType=VARCHAR}, #{goodsName,jdbcType=VARCHAR}, #{unitPrice,jdbcType=BIGINT}, 
-      #{quantity,jdbcType=INTEGER}, #{sellerName,jdbcType=VARCHAR}, #{payAmount,jdbcType=BIGINT}, 
-      #{rebateAmount,jdbcType=BIGINT}, #{settleAmount,jdbcType=BIGINT}, #{rawRebateAmount,jdbcType=BIGINT}, #{rawSettleAmount,jdbcType=BIGINT}, #{status,jdbcType=INTEGER},
-      #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
-      )
-  </insert>
+        insert into t_order (id, user_id, media_type, order_no,
+        goods_id, goods_name, unit_price,
+        quantity, seller_name, pay_amount,
+        rebate_amount, settle_amount, raw_rebate_amount, raw_settle_amount, `status`,
+        create_time, modify_time, is_deleted
+        )
+        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER},
+        #{orderNo,jdbcType=VARCHAR},
+        #{goodsId,jdbcType=VARCHAR}, #{goodsName,jdbcType=VARCHAR}, #{unitPrice,jdbcType=BIGINT},
+        #{quantity,jdbcType=INTEGER}, #{sellerName,jdbcType=VARCHAR}, #{payAmount,jdbcType=BIGINT},
+        #{rebateAmount,jdbcType=BIGINT}, #{settleAmount,jdbcType=BIGINT}, #{rawRebateAmount,jdbcType=BIGINT},
+        #{rawSettleAmount,jdbcType=BIGINT}, #{status,jdbcType=INTEGER},
+        #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
+        )
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Order"
             useGeneratedKeys="true">
         insert into t_order
@@ -382,14 +385,14 @@
             <if test="rebateAmount != null">
                 rebate_amount = #{rebateAmount,jdbcType=BIGINT},
             </if>
-            <if test="record.settleAmount != null">
-                settle_amount = #{record.settleAmount,jdbcType=BIGINT},
+            <if test="settleAmount != null">
+                settle_amount = #{settleAmount,jdbcType=BIGINT},
             </if>
-            <if test="record.rawRebateAmount != null">
-                raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
+            <if test="rawRebateAmount != null">
+                raw_rebate_amount = #{rawRebateAmount,jdbcType=BIGINT},
             </if>
-            <if test="record.rawSettleAmount != null">
-                raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
+            <if test="rawSettleAmount != null">
+                raw_settle_amount = #{rawSettleAmount,jdbcType=BIGINT},
             </if>
             <if test="status != null">
                 `status` = #{status,jdbcType=INTEGER},
@@ -407,26 +410,26 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.Order">
-    update t_order
-    set user_id = #{userId,jdbcType=CHAR},
-      media_type = #{mediaType,jdbcType=INTEGER},
-      order_no = #{orderNo,jdbcType=VARCHAR},
-      goods_id = #{goodsId,jdbcType=VARCHAR},
-      goods_name = #{goodsName,jdbcType=VARCHAR},
-      unit_price = #{unitPrice,jdbcType=BIGINT},
-      quantity = #{quantity,jdbcType=INTEGER},
-      seller_name = #{sellerName,jdbcType=VARCHAR},
-      pay_amount = #{payAmount,jdbcType=BIGINT},
-      rebate_amount = #{rebateAmount,jdbcType=BIGINT},
-      settle_amount = #{record.settleAmount,jdbcType=BIGINT},
-      raw_rebate_amount = #{record.rawRebateAmount,jdbcType=BIGINT},
-      raw_settle_amount = #{record.rawSettleAmount,jdbcType=BIGINT},
-      `status` = #{status,jdbcType=INTEGER},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_order
+        set user_id = #{userId,jdbcType=CHAR},
+        media_type = #{mediaType,jdbcType=INTEGER},
+        order_no = #{orderNo,jdbcType=VARCHAR},
+        goods_id = #{goodsId,jdbcType=VARCHAR},
+        goods_name = #{goodsName,jdbcType=VARCHAR},
+        unit_price = #{unitPrice,jdbcType=BIGINT},
+        quantity = #{quantity,jdbcType=INTEGER},
+        seller_name = #{sellerName,jdbcType=VARCHAR},
+        pay_amount = #{payAmount,jdbcType=BIGINT},
+        rebate_amount = #{rebateAmount,jdbcType=BIGINT},
+        settle_amount = #{settleAmount,jdbcType=BIGINT},
+        raw_rebate_amount = #{rawRebateAmount,jdbcType=BIGINT},
+        raw_settle_amount = #{rawSettleAmount,jdbcType=BIGINT},
+        `status` = #{status,jdbcType=INTEGER},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
     <select id="sumRebateAmount" parameterType="org.rx.fl.repository.model.OrderExample" resultType="java.lang.Long">
         select sum(rebate_amount) from t_order
         <if test="_parameter != null">

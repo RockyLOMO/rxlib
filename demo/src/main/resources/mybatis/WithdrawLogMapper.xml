@@ -73,9 +73,9 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, balance_log_id, amount, `status`, remark, create_time, modify_time, 
-    is_deleted
-  </sql>
+        id, user_id, balance_log_id, amount, `status`, remark, create_time, modify_time,
+        is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.WithdrawLogExample"
             resultMap="BaseResultMap">
         select
@@ -109,9 +109,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_withdraw_log
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_withdraw_log
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.WithdrawLogExample">
         delete from t_withdraw_log
         <if test="_parameter != null">
@@ -120,13 +120,13 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.WithdrawLog"
             useGeneratedKeys="true">
-    insert into t_withdraw_log (id, user_id, balance_log_id, amount,
-      `status`, remark, create_time, 
-      modify_time, is_deleted)
-    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
-      #{status,jdbcType=INTEGER}, #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, 
-      #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
-  </insert>
+        insert into t_withdraw_log (id, user_id, balance_log_id, amount,
+        `status`, remark, create_time,
+        modify_time, is_deleted)
+        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
+        #{status,jdbcType=INTEGER}, #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
+        #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.WithdrawLog"
             useGeneratedKeys="true">
         insert into t_withdraw_log
@@ -277,17 +277,17 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.WithdrawLog">
-    update t_withdraw_log
-    set user_id = #{userId,jdbcType=CHAR},
-      balance_log_id = #{balanceLogId,jdbcType=CHAR},
-      amount = #{amount,jdbcType=BIGINT},
-      `status` = #{status,jdbcType=INTEGER},
-      remark = #{remark,jdbcType=VARCHAR},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_withdraw_log
+        set user_id = #{userId,jdbcType=CHAR},
+        balance_log_id = #{balanceLogId,jdbcType=CHAR},
+        amount = #{amount,jdbcType=BIGINT},
+        `status` = #{status,jdbcType=INTEGER},
+        remark = #{remark,jdbcType=VARCHAR},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
     <select id="sumAmount" parameterType="org.rx.fl.repository.model.WithdrawLogExample" resultType="java.lang.Long">
         select sum(amount) from t_withdraw_log
         <if test="_parameter != null">

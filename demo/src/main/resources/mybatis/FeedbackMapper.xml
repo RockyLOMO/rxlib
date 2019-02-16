@@ -72,8 +72,8 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, content, reply, `status`, create_time, modify_time, is_deleted
-  </sql>
+        id, user_id, content, reply, `status`, create_time, modify_time, is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.FeedbackExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -106,9 +106,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_feedback
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_feedback
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.FeedbackExample">
         delete from t_feedback
         <if test="_parameter != null">
@@ -117,13 +117,13 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Feedback"
             useGeneratedKeys="true">
-    insert into t_feedback (id, user_id, content, reply,
-      `status`, create_time, modify_time, 
-      is_deleted)
-    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{content,jdbcType=VARCHAR}, #{reply,jdbcType=VARCHAR},
-      #{status,jdbcType=INTEGER}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
-      #{isDeleted,jdbcType=CHAR})
-  </insert>
+        insert into t_feedback (id, user_id, content, reply,
+        `status`, create_time, modify_time,
+        is_deleted)
+        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{content,jdbcType=VARCHAR}, #{reply,jdbcType=VARCHAR},
+        #{status,jdbcType=INTEGER}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP},
+        #{isDeleted,jdbcType=CHAR})
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.Feedback"
             useGeneratedKeys="true">
         insert into t_feedback
@@ -260,14 +260,14 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.Feedback">
-    update t_feedback
-    set user_id = #{userId,jdbcType=CHAR},
-      content = #{content,jdbcType=VARCHAR},
-      reply = #{reply,jdbcType=VARCHAR},
-      `status` = #{status,jdbcType=INTEGER},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_feedback
+        set user_id = #{userId,jdbcType=CHAR},
+        content = #{content,jdbcType=VARCHAR},
+        reply = #{reply,jdbcType=VARCHAR},
+        `status` = #{status,jdbcType=INTEGER},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
 </mapper>

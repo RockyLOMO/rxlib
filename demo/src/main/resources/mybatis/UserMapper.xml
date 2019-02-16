@@ -76,9 +76,9 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, nickname, wx_svc_open_id, wx_open_id, alipay_name, alipay_account, balance, freeze_amount, 
-    version, create_time, modify_time, is_deleted
-  </sql>
+        id, nickname, wx_svc_open_id, wx_open_id, alipay_name, alipay_account, balance, freeze_amount,
+        version, create_time, modify_time, is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.UserExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -111,9 +111,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_user
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_user
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.UserExample">
         delete from t_user
         <if test="_parameter != null">
@@ -122,15 +122,16 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.User"
             useGeneratedKeys="true">
-    insert into t_user (id, nickname, wx_svc_open_id, wx_open_id,
-      alipay_name, alipay_account, balance, 
-      freeze_amount, version, create_time, 
-      modify_time, is_deleted)
-    values (#{id,jdbcType=VARCHAR}, #{nickname,jdbcType=VARCHAR}, #{wxSvcOpenId,jdbcType=VARCHAR}, #{wxOpenId,jdbcType=VARCHAR},
-      #{alipayName,jdbcType=VARCHAR}, #{alipayAccount,jdbcType=VARCHAR}, #{balance,jdbcType=BIGINT}, 
-      #{freezeAmount,jdbcType=BIGINT}, #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP}, 
-      #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
-  </insert>
+        insert into t_user (id, nickname, wx_svc_open_id, wx_open_id,
+        alipay_name, alipay_account, balance,
+        freeze_amount, version, create_time,
+        modify_time, is_deleted)
+        values (#{id,jdbcType=VARCHAR}, #{nickname,jdbcType=VARCHAR}, #{wxSvcOpenId,jdbcType=VARCHAR},
+        #{wxOpenId,jdbcType=VARCHAR},
+        #{alipayName,jdbcType=VARCHAR}, #{alipayAccount,jdbcType=VARCHAR}, #{balance,jdbcType=BIGINT},
+        #{freezeAmount,jdbcType=BIGINT}, #{version,jdbcType=BIGINT}, #{createTime,jdbcType=TIMESTAMP},
+        #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR})
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.User"
             useGeneratedKeys="true">
         insert into t_user
@@ -319,18 +320,18 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.User">
-    update t_user
-    set nickname = #{nickname,jdbcType=VARCHAR},
-      wx_svc_open_id = #{wxSvcOpenId,jdbcType=VARCHAR},
-      wx_open_id = #{wxOpenId,jdbcType=VARCHAR},
-      alipay_name = #{alipayName,jdbcType=VARCHAR},
-      alipay_account = #{alipayAccount,jdbcType=VARCHAR},
-      balance = #{balance,jdbcType=BIGINT},
-      freeze_amount = #{freezeAmount,jdbcType=BIGINT},
-      version = #{version,jdbcType=BIGINT},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_user
+        set nickname = #{nickname,jdbcType=VARCHAR},
+        wx_svc_open_id = #{wxSvcOpenId,jdbcType=VARCHAR},
+        wx_open_id = #{wxOpenId,jdbcType=VARCHAR},
+        alipay_name = #{alipayName,jdbcType=VARCHAR},
+        alipay_account = #{alipayAccount,jdbcType=VARCHAR},
+        balance = #{balance,jdbcType=BIGINT},
+        freeze_amount = #{freezeAmount,jdbcType=BIGINT},
+        version = #{version,jdbcType=BIGINT},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
 </mapper>

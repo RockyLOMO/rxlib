@@ -72,8 +72,8 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, balance_log_id, amount, remark, create_time, modify_time, is_deleted
-  </sql>
+        id, user_id, balance_log_id, amount, remark, create_time, modify_time, is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.FreezeLogExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -106,9 +106,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_freeze_log
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_freeze_log
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.FreezeLogExample">
         delete from t_freeze_log
         <if test="_parameter != null">
@@ -117,13 +117,13 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.FreezeLog"
             useGeneratedKeys="true">
-    insert into t_freeze_log (id, user_id, balance_log_id, amount,
-      remark, create_time, modify_time, 
-      is_deleted)
-    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
-      #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
-      #{isDeleted,jdbcType=CHAR})
-  </insert>
+        insert into t_freeze_log (id, user_id, balance_log_id, amount,
+        remark, create_time, modify_time,
+        is_deleted)
+        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{balanceLogId,jdbcType=CHAR}, #{amount,jdbcType=BIGINT},
+        #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP},
+        #{isDeleted,jdbcType=CHAR})
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.FreezeLog"
             useGeneratedKeys="true">
         insert into t_freeze_log
@@ -260,14 +260,14 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.FreezeLog">
-    update t_freeze_log
-    set user_id = #{userId,jdbcType=CHAR},
-      balance_log_id = #{balanceLogId,jdbcType=CHAR},
-      amount = #{amount,jdbcType=BIGINT},
-      remark = #{remark,jdbcType=VARCHAR},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_freeze_log
+        set user_id = #{userId,jdbcType=CHAR},
+        balance_log_id = #{balanceLogId,jdbcType=CHAR},
+        amount = #{amount,jdbcType=BIGINT},
+        remark = #{remark,jdbcType=VARCHAR},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
 </mapper>

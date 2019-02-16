@@ -77,9 +77,9 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    id, user_id, `type`, `source`, source_id, client_ip, pre_balance, post_balance, `value`, 
-    remark, create_time, modify_time, is_deleted
-  </sql>
+        id, user_id, `type`, `source`, source_id, client_ip, pre_balance, post_balance, `value`,
+        remark, create_time, modify_time, is_deleted
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -112,9 +112,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_balance_log
-    where id = #{id,jdbcType=CHAR}
-  </delete>
+        delete from t_balance_log
+        where id = #{id,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.BalanceLogExample">
         delete from t_balance_log
         <if test="_parameter != null">
@@ -123,17 +123,17 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.BalanceLog"
             useGeneratedKeys="true">
-    insert into t_balance_log (id, user_id, `type`, `source`,
-      source_id, client_ip, pre_balance, 
-      post_balance, `value`, remark, 
-      create_time, modify_time, is_deleted
-      )
-    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{type,jdbcType=INTEGER}, #{source,jdbcType=INTEGER},
-      #{sourceId,jdbcType=VARCHAR}, #{clientIp,jdbcType=VARCHAR}, #{preBalance,jdbcType=BIGINT}, 
-      #{postBalance,jdbcType=BIGINT}, #{value,jdbcType=BIGINT}, #{remark,jdbcType=VARCHAR}, 
-      #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
-      )
-  </insert>
+        insert into t_balance_log (id, user_id, `type`, `source`,
+        source_id, client_ip, pre_balance,
+        post_balance, `value`, remark,
+        create_time, modify_time, is_deleted
+        )
+        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{type,jdbcType=INTEGER}, #{source,jdbcType=INTEGER},
+        #{sourceId,jdbcType=VARCHAR}, #{clientIp,jdbcType=VARCHAR}, #{preBalance,jdbcType=BIGINT},
+        #{postBalance,jdbcType=BIGINT}, #{value,jdbcType=BIGINT}, #{remark,jdbcType=VARCHAR},
+        #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
+        )
+    </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.BalanceLog"
             useGeneratedKeys="true">
         insert into t_balance_log
@@ -336,21 +336,21 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.BalanceLog">
-    update t_balance_log
-    set user_id = #{userId,jdbcType=CHAR},
-      `type` = #{type,jdbcType=INTEGER},
-      `source` = #{source,jdbcType=INTEGER},
-      source_id = #{sourceId,jdbcType=VARCHAR},
-      client_ip = #{clientIp,jdbcType=VARCHAR},
-      pre_balance = #{preBalance,jdbcType=BIGINT},
-      post_balance = #{postBalance,jdbcType=BIGINT},
-      `value` = #{value,jdbcType=BIGINT},
-      remark = #{remark,jdbcType=VARCHAR},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-      is_deleted = #{isDeleted,jdbcType=CHAR}
-    where id = #{id,jdbcType=CHAR}
-  </update>
+        update t_balance_log
+        set user_id = #{userId,jdbcType=CHAR},
+        `type` = #{type,jdbcType=INTEGER},
+        `source` = #{source,jdbcType=INTEGER},
+        source_id = #{sourceId,jdbcType=VARCHAR},
+        client_ip = #{clientIp,jdbcType=VARCHAR},
+        pre_balance = #{preBalance,jdbcType=BIGINT},
+        post_balance = #{postBalance,jdbcType=BIGINT},
+        `value` = #{value,jdbcType=BIGINT},
+        remark = #{remark,jdbcType=VARCHAR},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+        is_deleted = #{isDeleted,jdbcType=CHAR}
+        where id = #{id,jdbcType=CHAR}
+    </update>
     <select id="sumAmount" parameterType="org.rx.fl.repository.model.BalanceLogExample" resultType="java.lang.Long">
         select sum(value) from t_balance_log
         <if test="_parameter != null">

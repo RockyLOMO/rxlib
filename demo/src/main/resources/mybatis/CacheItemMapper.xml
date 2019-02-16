@@ -68,8 +68,8 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-    `key`, `value`, create_time, expire_time
-  </sql>
+        `key`, `value`, create_time, expire_time
+    </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.CacheItemExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -102,9 +102,9 @@
         where `key` = #{key,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-    delete from t_cache_item
-    where `key` = #{key,jdbcType=CHAR}
-  </delete>
+        delete from t_cache_item
+        where `key` = #{key,jdbcType=CHAR}
+    </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.CacheItemExample">
         delete from t_cache_item
         <if test="_parameter != null">
@@ -112,11 +112,11 @@
         </if>
     </delete>
     <insert id="insert" parameterType="org.rx.fl.repository.model.CacheItem">
-    insert into t_cache_item (`key`, `value`, create_time, 
-      expire_time)
-    values (#{key,jdbcType=CHAR}, #{value,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, 
-      #{expireTime,jdbcType=TIMESTAMP})
-  </insert>
+        insert into t_cache_item (`key`, `value`, create_time,
+        expire_time)
+        values (#{key,jdbcType=CHAR}, #{value,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
+        #{expireTime,jdbcType=TIMESTAMP})
+    </insert>
     <insert id="insertSelective" parameterType="org.rx.fl.repository.model.CacheItem">
         insert into t_cache_item
         <trim prefix="(" suffix=")" suffixOverrides=",">
@@ -200,10 +200,10 @@
         where `key` = #{key,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.CacheItem">
-    update t_cache_item
-    set `value` = #{value,jdbcType=VARCHAR},
-      create_time = #{createTime,jdbcType=TIMESTAMP},
-      expire_time = #{expireTime,jdbcType=TIMESTAMP}
-    where `key` = #{key,jdbcType=CHAR}
-  </update>
+        update t_cache_item
+        set `value` = #{value,jdbcType=VARCHAR},
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+        expire_time = #{expireTime,jdbcType=TIMESTAMP}
+        where `key` = #{key,jdbcType=CHAR}
+    </update>
 </mapper>

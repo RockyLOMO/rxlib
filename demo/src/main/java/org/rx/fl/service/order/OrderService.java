@@ -127,7 +127,9 @@ public class OrderService {
                 }
             }
 
-            compute(order);
+            if (!Strings.isNullOrEmpty(order.getUserId())) {
+                compute(order);
+            }
             dbUtil.save(order, insert);
         }
     }

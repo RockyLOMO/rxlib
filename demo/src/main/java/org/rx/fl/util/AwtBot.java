@@ -213,7 +213,8 @@ public class AwtBot {
     public void clickAndAltF4(int x, int y) {
         clickInvoke(() -> pressInvoke(() -> {
             mouseLeftClick(x, y);
-            bot.delay(autoDelay);
+            bot.delay(1000);
+            mouseLeftClick(x, y);
             bot.keyPress(KeyEvent.VK_ALT);
             bot.keyPress(KeyEvent.VK_F4);
             bot.keyRelease(KeyEvent.VK_F4);
