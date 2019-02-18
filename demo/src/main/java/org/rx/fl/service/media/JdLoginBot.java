@@ -123,6 +123,9 @@ public final class JdLoginBot extends Disposable {
 
         try {
             log.info("step2 get key {}", loginKey);
+            if (loginKey == null) {
+                throw new InvalidOperationException("produce empty key");
+            }
             return loginKey;
         } finally {
             loginKey = null;

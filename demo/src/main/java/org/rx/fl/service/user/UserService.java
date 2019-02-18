@@ -321,7 +321,7 @@ public class UserService {
     }
 
     private Tuple<User, String> saveUserBalance(String userId, BalanceSourceKind sourceKind, String sourceId, long money, String remark) {
-        require(money, money != 0);
+//        require(money, money != 0);
         String clientIp = App.getRequestIp(App.getCurrentRequest());
 
         return App.retry(2, p -> {

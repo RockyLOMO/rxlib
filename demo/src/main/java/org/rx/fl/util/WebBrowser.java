@@ -400,7 +400,8 @@ public final class WebBrowser extends Disposable {
                 throw e;
             }
         } catch (WebDriverException e) {
-            if (driver instanceof ChromeDriver && e.getMessage() != null && e.getMessage().contains("session deleted because of page crash")) {
+            NQuery<String> hardMsg = NQuery.of("session deleted because of page crash", "Failed to connect to localhost/");
+            if (driver instanceof ChromeDriver && hardMsg.any(p -> p.equals(e.getMessage()))) {
                 exchangeNew(url);
             } else {
                 throw e;
