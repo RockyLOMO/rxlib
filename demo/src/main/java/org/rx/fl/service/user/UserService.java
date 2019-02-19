@@ -67,7 +67,8 @@ public class UserService {
             checkPercent(percent);
             String[] ranges = App.split(pair[0], "-", 2);
             UserPercentConfig config = new UserPercentConfig();
-            config.setRange(new DataRange<>(Integer.valueOf(ranges[0]), Integer.valueOf(ranges[1])));
+            String end = ranges[1];
+            config.setRange(new DataRange<>(Integer.valueOf(ranges[0]), "?".equals(end) ? Integer.MAX_VALUE : Integer.valueOf(ranges[1])));
             config.setPercent(percent);
             return config;
         });

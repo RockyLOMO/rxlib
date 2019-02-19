@@ -38,7 +38,7 @@ public class WxMobileBot implements Bot {
 //        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
     }
 
-    public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群", "A小范省钱官方群");
+    public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群", "A小范省钱分享群");
     private static final int delay1 = 50, delay2 = 100, captureScrollSeconds = 4;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
@@ -294,7 +294,7 @@ public class WxMobileBot implements Bot {
             MessageInfo check = new MessageInfo();
             do {
                 if (checkCount > 0) {
-                    Thread.sleep(1000);
+                    Thread.sleep(2000);
                 }
                 bot.mouseLeftClick(getAbsolutePoint(32, 92));
                 bot.delay(delay1);

@@ -51,9 +51,9 @@ public class App {
     //endregion
 
     //region Fields
-    public static final int               MaxSize         = Integer.MAX_VALUE - 8;
-    public static final int               TimeoutInfinite = -1;
-    private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    public static final int MaxSize = Integer.MAX_VALUE - 8;
+    public static final int TimeoutInfinite = -1;
+    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
 
@@ -85,7 +85,7 @@ public class App {
                 if (windowsOS()) {
                     process = Runtime.getRuntime().exec(shellString, null, dir);
                 } else {
-                    process = Runtime.getRuntime().exec(new String[] { "/bin/sh", "-c", shellString }, null, dir);
+                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", shellString}, null, dir);
                 }
                 try (LineNumberReader input = new LineNumberReader(
                         new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -241,7 +241,7 @@ public class App {
         return NQuery.of(classes).select(p -> (Class) p.load()).toList();
     }
 
-    @ErrorCode(value = "argError", messageKeys = { "$type" })
+    @ErrorCode(value = "argError", messageKeys = {"$type"})
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 
@@ -371,8 +371,8 @@ public class App {
         return readSetting(key, type, "application.yml");
     }
 
-    @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
-    @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
+    @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
+    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
     public static <T> T readSetting(String key, Class<T> type, String yamlFile) {
         require(key, yamlFile);
 
@@ -491,13 +491,13 @@ public class App {
         return split(str, delimiter, null);
     }
 
-    @ErrorCode(value = "lengthError", messageKeys = { "$len" })
+    @ErrorCode(value = "lengthError", messageKeys = {"$len"})
     public static String[] split(String str, String delimiter, Integer length) {
         String[] result;
         if (isNullOrEmpty(str)) {
             result = new String[0];
         } else {
-            result = str.split(Pattern.quote(delimiter), 1);
+            result = str.split(Pattern.quote(delimiter));
         }
         if (length != null && length != result.length) {
             throw new SystemException(values(length), "lengthError");
@@ -558,10 +558,10 @@ public class App {
         }
     }
 
-    @ErrorCode(value = "notSupported", messageKeys = { "$fType", "$tType" })
-    @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
+    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
+    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
+    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
+    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
@@ -619,7 +619,7 @@ public class App {
         return (T) value;
     }
 
-    @ErrorCode(messageKeys = { "$type" })
+    @ErrorCode(messageKeys = {"$type"})
     private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
@@ -668,7 +668,7 @@ public class App {
         require(obj);
 
         try (MemoryStream stream = new MemoryStream();
-                ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
+             ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
             return stream.toArray();
         }
@@ -684,7 +684,7 @@ public class App {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
-                ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
+             ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
         }
     }
