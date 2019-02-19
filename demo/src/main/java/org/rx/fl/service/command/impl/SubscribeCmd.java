@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 public class SubscribeCmd implements Command {
     @Override
     public boolean peek(String message) {
-        return Bot.SubscribeContent.equals(message);
+        return Bot.SubscribeContent.equals(message) || "我通过了你的朋友验证请求，现在我们可以开始聊天了".equals(message);
     }
 
     @Override

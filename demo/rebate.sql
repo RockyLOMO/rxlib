@@ -44,4 +44,3 @@ order by t.create_time asc
 # update t_user_goods set is_deleted = 'N';
 #
 # delete from rx_rebate_prd.t_cache_item
-

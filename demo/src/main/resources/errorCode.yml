@@ -1,12 +1,13 @@
 default: 网络错误，请稍后再试
 
-org.rx.fl.service.UserService:
+org.rx.fl.service.user.UserService:
   feedback[alreadyCommit]: 已提交过问题，请等待问题处理完毕后再次提交。
   checkIn[alreadyCheckIn]: 今天已签到，请明天再来。
   bindPayment[alreadyBind]: 已绑定过支付宝
   withdraw[notEnoughBalance]: 可提现余额不足
   withdraw[withdrawing]: 已申请提现[$amount元]，请等提现成功后再次申请。
 
-org.rx.fl.service.OrderService:
+org.rx.fl.service.order.OrderService:
   rebindOrder[orderNotExist]: 系统没有查询到订单号$orderNo，只有通过返利链接或返利口令购买的商品才会返利。
   rebindOrder[mediaUnknown]: 订单号$orderNo未能正确绑定，请联系客服处理。
+  rebindOrder[alreadyBind]: 订单号$orderNo已被其他用户绑定，请联系客服处理。

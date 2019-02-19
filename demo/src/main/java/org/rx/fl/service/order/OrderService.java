@@ -153,13 +153,13 @@ public class OrderService {
 
     @ErrorCode(value = "orderNotExist", messageKeys = {"$orderNo"})
     @ErrorCode(value = "mediaUnknown", messageKeys = {"$orderNo"})
+    @ErrorCode(value = "alreadyBind", messageKeys = {"$orderNo"})
     @Transactional
     public RebindOrderResult rebindOrder(String userId, String orderNo) {
         require(userId, orderNo);
 
         OrderExample q = new OrderExample();
-        q.createCriteria().andUserIdIsNull()
-                .andOrderNoEqualTo(orderNo);
+        q.createCriteria().andOrderNoEqualTo(orderNo);
         List<Order> orders = orderMapper.selectByExample(q);
         if (orders.isEmpty()) {
             throw new SystemException(values(orderNo), "orderNotExist");
@@ -167,9 +167,12 @@ public class OrderService {
         if (orders.size() > 1) {
             throw new SystemException(values(orderNo), "mediaUnknown");
         }
+        Order order = orders.get(0);
+        if (!Strings.isNullOrEmpty(order.getUserId())) {
+            throw new SystemException(values(orderNo), "alreadyBind");
+        }
 
         //等待同步订单时候会自动加钱
-        Order order = orders.get(0);
         order.setUserId(userId);
         dbUtil.save(order);
 
