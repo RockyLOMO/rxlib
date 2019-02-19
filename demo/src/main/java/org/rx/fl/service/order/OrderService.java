@@ -136,18 +136,19 @@ public class OrderService {
 
     //处理用户返利比例,少于1分给1分钱
     public void compute(Order order) {
-        require(order, order.getUserId());
+        require(order, order.getUserId(), order.getMediaType());
 
+        MediaType mediaType = NEnum.valueOf(MediaType.class, order.getMediaType());
         if (order.getRawRebateAmount() == null) {
             long rebateAmount = order.getRebateAmount();
             order.setRawRebateAmount(rebateAmount);
-            order.setRebateAmount(Math.max(1, userService.compute(order.getUserId(), rebateAmount)));
+            order.setRebateAmount(Math.max(1, userService.compute(order.getUserId(), mediaType, rebateAmount)));
         }
         if (order.getRawSettleAmount() == null && order.getSettleAmount() != null) {
             long settleAmount = order.getSettleAmount();
             order.setRawSettleAmount(settleAmount);
             //取结算金额中最小的
-            order.setSettleAmount(Math.max(1, Math.min(order.getRebateAmount(), userService.compute(order.getUserId(), settleAmount))));
+            order.setSettleAmount(Math.max(1, Math.min(order.getRebateAmount(), userService.compute(order.getUserId(), mediaType, settleAmount))));
         }
     }
 
@@ -168,7 +169,7 @@ public class OrderService {
             throw new SystemException(values(orderNo), "mediaUnknown");
         }
         Order order = orders.get(0);
-        if (!Strings.isNullOrEmpty(order.getUserId())) {
+        if (!Strings.isNullOrEmpty(order.getUserId()) && !userId.equals(order.getUserId())) {
             throw new SystemException(values(orderNo), "alreadyBind");
         }
 

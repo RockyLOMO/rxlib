@@ -16,6 +16,8 @@ public class MediaConfig {
     public class TaobaoConfig {
         private int coreSize;
         private int keepLoginSeconds;
+        private int rootPercent;
+        private String guideUrl;
     }
 
     @Data
@@ -25,6 +27,8 @@ public class MediaConfig {
         private int coreSize;
         private int keepLoginSeconds;
         private int loginPort;
+        private int rootPercent;
+        private String guideUrl;
     }
 
     @Resource

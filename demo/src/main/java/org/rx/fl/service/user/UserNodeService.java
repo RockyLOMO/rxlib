@@ -46,10 +46,14 @@ public class UserNodeService {
 
     //region nodes
     public UserNode getNode(String id) {
+        if (!Boolean.TRUE.equals(userMapper.contains(id))) {
+            throw new InvalidOperationException("User id not found");
+        }
+
         UserNode node = new UserNode();
         node.setId(id);
         node.setPercent(userMapper.selectPercent(id));
-        node.setSave(getLevel(node) != null);
+        node.setExist(getLevel(node) != null);
         return node;
     }
 
@@ -266,7 +270,7 @@ public class UserNodeService {
         if (!isParent && rootId.equals(id)) {
             throw new UnsupportedOperationException("根分类不支持此操作");
         }
-        if (!rootId.equals(id) && userMapper.contains(id) == null) {
+        if (!rootId.equals(id) && !Boolean.TRUE.equals(userMapper.contains(id))) {
             throw new IllegalArgumentException("分类用户不存在");
         }
     }

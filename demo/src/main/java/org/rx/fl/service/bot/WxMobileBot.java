@@ -1,6 +1,7 @@
 package org.rx.fl.service.bot;
 
 import com.google.common.base.Strings;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.beans.DateTime;
@@ -278,6 +279,7 @@ public class WxMobileBot implements Bot {
         }
     }
 
+    @SneakyThrows
     private void sendMessage(OpenIdInfo message, List<String> contents) {
         require(message);
         if (skipOpenIds.contains(message.getOpenId())) {
@@ -291,6 +293,9 @@ public class WxMobileBot implements Bot {
             int checkCount = 0;
             MessageInfo check = new MessageInfo();
             do {
+                if (checkCount > 0) {
+                    Thread.sleep(1000);
+                }
                 bot.mouseLeftClick(getAbsolutePoint(32, 92));
                 bot.delay(delay1);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));

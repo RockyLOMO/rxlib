@@ -2,6 +2,7 @@ package org.rx.fl.service.user;
 
 import com.google.common.base.Strings;
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.DataRange;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.*;
@@ -14,6 +15,7 @@ import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
 import org.rx.fl.util.DbUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,9 +30,10 @@ import static org.rx.fl.util.DbUtil.toMoney;
 @Service
 public class UserService {
     //#region Fields
-    private static final byte percentValue = 100;
+    private static final int percentValue = 100;
+
     @Resource
-    private UserConfig userConfig;
+    private MediaConfig mediaConfig;
     @Resource
     private UserMapper userMapper;
     @Resource
@@ -50,24 +53,71 @@ public class UserService {
     @Resource
     private NotifyService notifyService;
     @Resource
-    private UserNodeService levelService;
+    private UserNodeService nodeService;
+    private UserConfig userConfig;
+    private final NQuery<UserPercentConfig> percentConfigs;
     //#endregion
 
     //region level
-    public long compute(String userId, long rebateAmount) {
-        UserNode node = levelService.getNode(userId);
+    @Autowired
+    public UserService(UserConfig userConfig) {
+        percentConfigs = NQuery.of((this.userConfig = userConfig).getLevels()).select(p -> {
+            String[] pair = App.split(p, ",", 2);
+            int percent = Integer.valueOf(pair[1]);
+            checkPercent(percent);
+            String[] ranges = App.split(pair[0], "-", 2);
+            UserPercentConfig config = new UserPercentConfig();
+            config.setRange(new DataRange<>(Integer.valueOf(ranges[0]), Integer.valueOf(ranges[1])));
+            config.setPercent(percent);
+            return config;
+        });
+    }
+
+    public long compute(String userId, MediaType mediaType, long rebateAmount) {
+        require(userId, mediaType);
+
+        int rootPercent;
+        switch (mediaType) {
+            case Jd:
+                rootPercent = mediaConfig.getJd().getRootPercent();
+                break;
+            case Taobao:
+                rootPercent = mediaConfig.getTaobao().getRootPercent();
+                break;
+            default:
+                rootPercent = 100;
+                break;
+        }
+        checkPercent(rootPercent);
+
+        UserNode node = nodeService.getNode(userId);
         int percent = checkPercent(node.getPercent());
-        return (long) Math.floor((double) rebateAmount * percent / percentValue);
+        return (long) Math.floor((double) rebateAmount * rootPercent / percentValue * percent / percentValue);
     }
 
     private int checkPercent(Integer percent) {
         if (percent == null) {
-            percent = userConfig.getDefaultPercent();
+            percent = percentValue;
         }
         if (percent < 0 || percent > percentValue) {
             throw new InvalidOperationException("percent error");
         }
         return percent;
+    }
+
+    @Transactional
+    public void bindRelation(String userId, String code) {
+        require(userId, code);
+
+        UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
+        if (!parent.isExist()) {
+            nodeService.create(parent);
+            Integer level = nodeService.getLevel(parent);
+            percentConfigs.where(p -> p.getRange().fit(level)).firstOrDefault();
+        }
+        if (!child.isExist()) {
+            nodeService.create(child, parent.getId());
+        }
     }
     //endregion
 

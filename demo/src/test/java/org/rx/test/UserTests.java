@@ -19,7 +19,7 @@ public class UserTests {
     public void testInit() {
         String id = "c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567";
         UserNode userLevel = userLevelService.getNode(id);
-        if (!userLevel.isSave()) {
+        if (!userLevel.isExist()) {
             userLevel.setPercent(100);
             userLevelService.create(userLevel);
         }

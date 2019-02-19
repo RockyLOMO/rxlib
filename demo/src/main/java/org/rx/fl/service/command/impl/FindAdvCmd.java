@@ -83,6 +83,7 @@ public class FindAdvCmd implements Command {
         Double rebateAmount = convert.apply(goods.getRebateAmount());
         org.rx.fl.repository.model.Order computeOrder = new org.rx.fl.repository.model.Order();
         computeOrder.setUserId(userId);
+        computeOrder.setMediaType(advResult.getMediaType().getValue());
         computeOrder.setRebateAmount(toCent(rebateAmount));
         orderService.compute(computeOrder);
         rebateAmount = toMoney(computeOrder.getRebateAmount());

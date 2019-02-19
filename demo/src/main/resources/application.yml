@@ -43,10 +43,14 @@ app:
     taobao:
       coreSize: 0
       keepLoginSeconds: 90
+      rootPercent: 95
+      guideUrl: http://t.cn/EVYaBsn
     jd:
       coreSize: 0
       keepLoginSeconds: 60
       loginPort: 8081
+      rootPercent: 95
+      guideUrl: http://t.cn/EcsaJnC
   browser:
     windowRectangle: 0,0,1024,800
     chrome:
@@ -62,7 +66,9 @@ app:
   user:
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
-    defaultPercent: 80
+    levels:
+      - 1-1,100
+      - 2-?,90
 
 ---
 
@@ -91,10 +97,14 @@ app:
     taobao:
       coreSize: 1
       keepLoginSeconds: 90
+      rootPercent: 100
+      guideUrl: http://t.cn/EVYaBsn
     jd:
       coreSize: 1
       keepLoginSeconds: 60
       loginPort: 8081
+      rootPercent: 95
+      guideUrl: http://t.cn/EcsaJnC
   browser:
     windowRectangle: 800,1000,800,600
     chrome:
@@ -110,4 +120,6 @@ app:
   user:
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
-    defaultPercent: 95
+    levels:
+      - 1-1,100
+      - 2-?,90

@@ -8,5 +8,5 @@ import java.io.Serializable;
 public final class UserNode implements Serializable {
     private String id;
     private Integer percent;
-    private boolean isSave;
+    private boolean isExist;
 }

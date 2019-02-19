@@ -16,6 +16,7 @@ org.rx.common.App:
   readSetting[keyError]: Not found key $key in $file.yml
   readSetting[partialKeyError]: Not found partial key $key in $file.yml
   asList[argError]: Parameter $type isn't an Array or Iterable
+  split[lengthError]: Result array not fit $len length
   changeType[notSupported]: Not supported convert $fType to $tType
   changeType[enumError]: Not found $name in $names of $eType enum
   changeType<NoSuchMethodException>: Not found ValueOf method of $type
