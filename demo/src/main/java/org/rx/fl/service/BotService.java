@@ -64,14 +64,16 @@ public class BotService {
                     case 11:
                     case 12:
                     case 18:
-                        MessageInfo message = new MessageInfo();
-                        message.setBotType(BotType.Wx);
-                        message.setOpenId(WxMobileBot.whiteOpenIds.first());
-                        message.setContent(aliPayCmd.getSourceMessage());
-                        pushMessages(Collections.singletonList(message));
+                        for (String whiteOpenId : WxMobileBot.whiteOpenIds) {
+                            MessageInfo message = new MessageInfo();
+                            message.setBotType(BotType.Wx);
+                            message.setOpenId(whiteOpenId);
+                            message.setContent(aliPayCmd.getSourceMessage());
+                            pushMessages(Collections.singletonList(message));
+                        }
                         break;
                 }
-            }, 60 * 60 * 1000);
+            }, 58 * 60 * 1000);
         } catch (InvalidOperationException e) {
             log.warn("BotService", e);
         }
