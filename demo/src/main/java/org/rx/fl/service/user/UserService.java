@@ -55,18 +55,18 @@ public class UserService {
     @Resource
     private UserNodeService nodeService;
     private UserConfig userConfig;
-    private final NQuery<UserPercentConfig> percentConfigs;
+    private final NQuery<UserDegreeConfig> percentConfigs;
     //#endregion
 
     //region level
     @Autowired
     public UserService(UserConfig userConfig) {
-        percentConfigs = NQuery.of((this.userConfig = userConfig).getLevels()).select(p -> {
+        percentConfigs = NQuery.of((this.userConfig = userConfig).getRelations()).select(p -> {
             String[] pair = App.split(p, ",", 2);
             int percent = Integer.valueOf(pair[1]);
             checkPercent(percent);
             String[] ranges = App.split(pair[0], "-", 2);
-            UserPercentConfig config = new UserPercentConfig();
+            UserDegreeConfig config = new UserDegreeConfig();
             String end = ranges[1];
             config.setRange(new DataRange<>(Integer.valueOf(ranges[0]), "?".equals(end) ? Integer.MAX_VALUE : Integer.valueOf(ranges[1])));
             config.setPercent(percent);
@@ -91,8 +91,9 @@ public class UserService {
         }
         checkPercent(rootPercent);
 
-        UserNode node = nodeService.getNode(userId);
-        int percent = checkPercent(node.getPercent());
+        UserNode child = nodeService.getNode(userId);
+//xiaji
+        int percent = checkPercent(child.getPercent());
         return (long) Math.floor((double) rebateAmount * rootPercent / percentValue * percent / percentValue);
     }
 
@@ -106,6 +107,7 @@ public class UserService {
         return percent;
     }
 
+    @ErrorCode("alreadyBind")
     @Transactional
     public void bindRelation(String userId, String code) {
         require(userId, code);
@@ -113,11 +115,25 @@ public class UserService {
         UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
         if (!parent.isExist()) {
             nodeService.create(parent);
-            Integer level = nodeService.getLevel(parent);
-            percentConfigs.where(p -> p.getRange().fit(level)).firstOrDefault();
+            savePercent(parent);
         }
-        if (!child.isExist()) {
-            nodeService.create(child, parent.getId());
+        if (child.isExist()) {
+            throw new SystemException(values(), "alreadyBind");
+        }
+        nodeService.create(child, parent.getId());
+        savePercent(child);
+    }
+
+    private void savePercent(UserNode userNode) {
+        Integer degree = nodeService.getDegree(userNode);
+        if (degree == null) {
+            throw new InvalidOperationException("user not found");
+        }
+
+        UserDegreeConfig config = percentConfigs.where(p -> p.getRange().fit(degree)).firstOrDefault();
+        if (config != null) {
+            userNode.setPercent(checkPercent(config.getPercent()));
+            nodeService.savePercent(userNode);
         }
     }
     //endregion

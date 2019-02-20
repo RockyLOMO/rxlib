@@ -294,7 +294,7 @@ public class WxMobileBot implements Bot {
             MessageInfo check = new MessageInfo();
             do {
                 if (checkCount > 0) {
-                    Thread.sleep(2000);
+                    Thread.sleep(1800);
                 }
                 bot.mouseLeftClick(getAbsolutePoint(32, 92));
                 bot.delay(delay1);
@@ -329,6 +329,8 @@ public class WxMobileBot implements Bot {
             bot.delay(delay2);
 
             for (String msg : contents) {
+                bot.pressCtrlA();
+                bot.pressDelete();
                 bot.setTextAndParse(msg);
                 bot.pressEnter();
                 bot.delay(200);

@@ -53,7 +53,7 @@ public class UserNodeService {
         UserNode node = new UserNode();
         node.setId(id);
         node.setPercent(userMapper.selectPercent(id));
-        node.setExist(getLevel(node) != null);
+        node.setExist(getDegree(node) != null);
         return node;
     }
 
@@ -122,7 +122,7 @@ public class UserNodeService {
      *
      * @return 级别
      */
-    public Integer getLevel(UserNode user) {
+    public Integer getDegree(UserNode user) {
         require(user);
 
         return userMapper.selectDistance(rootId, user.getId());

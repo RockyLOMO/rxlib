@@ -307,30 +307,26 @@ public class AwtBot {
 
     //region keyboard
     public void pressCtrlF() {
-        pressInvoke(() -> {
-            bot.keyPress(KeyEvent.VK_CONTROL);
-            bot.keyPress(KeyEvent.VK_F);
-            bot.keyRelease(KeyEvent.VK_F);
-            bot.keyRelease(KeyEvent.VK_CONTROL);
-            bot.delay(autoDelay);
-        });
+        pressCtrl(KeyEvent.VK_F);
+    }
+
+    public void pressCtrlA() {
+        pressCtrl(KeyEvent.VK_A);
     }
 
     public void pressCtrlC() {
-        pressInvoke(() -> {
-            bot.keyPress(KeyEvent.VK_CONTROL);
-            bot.keyPress(KeyEvent.VK_C);
-            bot.keyRelease(KeyEvent.VK_C);
-            bot.keyRelease(KeyEvent.VK_CONTROL);
-            bot.delay(autoDelay);
-        });
+        pressCtrl(KeyEvent.VK_C);
     }
 
     public void pressCtrlV() {
+        pressCtrl(KeyEvent.VK_V);
+    }
+
+    private void pressCtrl(int key) {
         pressInvoke(() -> {
             bot.keyPress(KeyEvent.VK_CONTROL);
-            bot.keyPress(KeyEvent.VK_V);
-            bot.keyRelease(KeyEvent.VK_V);
+            bot.keyPress(key);
+            bot.keyRelease(key);
             bot.keyRelease(KeyEvent.VK_CONTROL);
             bot.delay(autoDelay);
         });
@@ -338,6 +334,10 @@ public class AwtBot {
 
     public void pressSpace() {
         press(KeyEvent.VK_SPACE);
+    }
+
+    public void pressDelete() {
+        press(KeyEvent.VK_DELETE);
     }
 
     public void pressEnter() {

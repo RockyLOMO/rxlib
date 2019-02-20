@@ -9,5 +9,5 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.user")
 public class UserConfig {
     private String[] adminIds;
-    private String[] levels;
+    private String[] relations;
 }

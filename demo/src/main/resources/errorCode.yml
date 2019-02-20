@@ -4,6 +4,7 @@ org.rx.fl.service.user.UserService:
   feedback[alreadyCommit]: 已提交过问题，请等待问题处理完毕后再次提交。
   checkIn[alreadyCheckIn]: 今天已签到，请明天再来。
   bindPayment[alreadyBind]: 已绑定过支付宝
+  bindRelation[alreadyBind]: 已关联过伙伴
   withdraw[notEnoughBalance]: 可提现余额不足
   withdraw[withdrawing]: 已申请提现[$amount元]，请等提现成功后再次申请。
 

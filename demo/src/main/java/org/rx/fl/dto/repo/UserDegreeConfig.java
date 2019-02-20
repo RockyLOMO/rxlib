@@ -4,7 +4,7 @@ import lombok.Data;
 import org.rx.beans.DataRange;
 
 @Data
-public class UserPercentConfig {
+public class UserDegreeConfig {
     private DataRange<Integer> range;
     private int percent;
 }
