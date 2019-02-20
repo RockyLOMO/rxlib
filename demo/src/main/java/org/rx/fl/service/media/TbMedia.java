@@ -158,6 +158,13 @@ public class TbMedia implements Media {
                 String text;
                 int retryCount = 0;
                 do {
+                    if (retryCount > 0) {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (Exception e) {
+                            throw SystemException.wrap(e);
+                        }
+                    }
                     text = caller.executeScript(String.format("var index = -1, goodsId = \"%s\", name = \"id\".replace(/[*+?^$.\\[\\]{}()|\\\\\\/]/g, \"\\\\$&\");\n" +
                             "        $('.color-m').each(function (i, o) {\n" +
                             "            var href = $(o).attr(\"href\");\n" +

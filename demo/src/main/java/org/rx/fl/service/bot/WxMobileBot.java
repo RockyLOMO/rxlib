@@ -39,7 +39,7 @@ public class WxMobileBot implements Bot {
     }
 
     public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群", "A小范省钱分享群");
-    private static final int delay1 = 50, delay2 = 100, captureScrollSeconds = 4;
+    private static final int delay1 = 50, delay2 = 100, captureScrollSeconds = 10;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
     private AwtBot bot;
@@ -218,6 +218,7 @@ public class WxMobileBot implements Bot {
             } else if (captureFlag < captureScrollCount) {
                 captureFlag++;
             } else {
+                bot.mouseLeftClick(getAbsolutePoint(94, 415));
                 bot.mouseWheel(-1);
                 bot.delay(delay1);
                 captureFlag = 1;
