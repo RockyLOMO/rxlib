@@ -227,51 +227,56 @@ public class MediaService {
         require(content);
 
         FindAdvResult result = null;
-        for (MediaType type : getMedias()) {
-            result = invoke(type, media -> {
-                FindAdvResult adv = new FindAdvResult();
-                adv.setMediaType(media.getType());
-                adv.setLink(media.findLink(content));
+        for (int i = 0; i < 2; i++) {
+            for (MediaType type : getMedias()) {
+                result = invoke(type, media -> {
+                    FindAdvResult adv = new FindAdvResult();
+                    adv.setMediaType(media.getType());
+                    adv.setLink(media.findLink(content));
 
-                if (Strings.isNullOrEmpty(adv.getLink())) {
-                    adv.setFoundStatus(AdvFoundStatus.NoLink);
-                    return adv;
-                }
-
-                //注意同一个商品分享来源连接会不一致
-                GoodsInfo goodsInfo = cache.get(adv.getLink());
-//                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
-                if (goodsInfo == null) {
-                    cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
-                }
-                adv.setGoods(goodsInfo);
-                if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
-                    adv.setFoundStatus(AdvFoundStatus.NoGoods);
-                    return adv;
-                }
-
-                media.login();
-                String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
-                FindAdvResult item = cache.get(key);
-                if (item == null) {
-                    item = new FindAdvResult();
-                    item.setShareCode(App.retry(2, p -> media.findAdv(adv.getGoods()), null));
-                    if (!Strings.isNullOrEmpty(item.getShareCode())) {
-                        item.setGoods(adv.getGoods());
-                        cache.add(key, item, config.getAdvCacheMinutes());
+                    if (Strings.isNullOrEmpty(adv.getLink())) {
+                        adv.setFoundStatus(AdvFoundStatus.NoLink);
+                        return adv;
                     }
-                }
-                adv.setGoods(item.getGoods());
-                adv.setShareCode(item.getShareCode());
-                if (Strings.isNullOrEmpty(adv.getShareCode())) {
-                    adv.setFoundStatus(AdvFoundStatus.NoAdv);
-                    return adv;
-                }
 
-                adv.setFoundStatus(AdvFoundStatus.Ok);
-                return adv;
-            });
-            if (result.getFoundStatus() == AdvFoundStatus.Ok) {
+                    //注意同一个商品分享来源连接会不一致
+                    GoodsInfo goodsInfo = cache.get(adv.getLink());
+//                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
+                    if (goodsInfo == null) {
+                        cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
+                    }
+                    adv.setGoods(goodsInfo);
+                    if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
+                        adv.setFoundStatus(AdvFoundStatus.NoGoods);
+                        return adv;
+                    }
+
+                    media.login();
+                    String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
+                    FindAdvResult item = cache.get(key);
+                    if (item == null) {
+                        item = new FindAdvResult();
+                        item.setShareCode(App.retry(2, p -> media.findAdv(adv.getGoods()), null));
+                        if (!Strings.isNullOrEmpty(item.getShareCode())) {
+                            item.setGoods(adv.getGoods());
+                            cache.add(key, item, config.getAdvCacheMinutes());
+                        }
+                    }
+                    adv.setGoods(item.getGoods());
+                    adv.setShareCode(item.getShareCode());
+                    if (Strings.isNullOrEmpty(adv.getShareCode())) {
+                        adv.setFoundStatus(AdvFoundStatus.NoAdv);
+                        return adv;
+                    }
+
+                    adv.setFoundStatus(AdvFoundStatus.Ok);
+                    return adv;
+                });
+                if (result.getFoundStatus() == AdvFoundStatus.Ok) {
+                    break;
+                }
+            }
+            if (result != null && result.getFoundStatus() == AdvFoundStatus.Ok) {
                 break;
             }
         }

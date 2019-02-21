@@ -1,6 +1,7 @@
 package org.rx.fl.service.user;
 
 import com.google.common.base.Strings;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.DataRange;
 import org.rx.beans.DateTime;
@@ -28,6 +29,7 @@ import static org.rx.common.Contract.values;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
+@Slf4j
 public class UserService {
     //#region Fields
     private static final int percentValue = 100;
@@ -94,6 +96,7 @@ public class UserService {
         UserNode child = nodeService.getNode(userId);
 //xiaji
         int percent = checkPercent(child.getPercent());
+        log.info("compute percents: {} - {} {}", rebateAmount, rootPercent, percent);
         return (long) Math.floor((double) rebateAmount * rootPercent / percentValue * percent / percentValue);
     }
 
@@ -261,7 +264,8 @@ public class UserService {
         BalanceLogExample q = new BalanceLogExample();
         q.createCriteria().andUserIdEqualTo(userId)
                 .andSourceEqualTo(BalanceSourceKind.Order.getValue())
-                .andSourceIdEqualTo(orderId);
+                .andSourceIdEqualTo(orderId)
+                .andIsDeletedEqualTo(DbUtil.IsDeleted_False);
         return balanceLogMapper.countByExample(q) > 0;
     }
 
@@ -388,7 +392,7 @@ public class UserService {
     }
 
     private Tuple<User, String> saveUserBalance(String userId, BalanceSourceKind sourceKind, String sourceId, long money, String remark) {
-//        require(money, money != 0);
+        require(money, money != 0);
         String clientIp = App.getRequestIp(App.getCurrentRequest());
 
         return App.retry(2, p -> {

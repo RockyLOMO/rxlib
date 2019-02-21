@@ -102,17 +102,20 @@ public class OrderService {
                 String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId());
                 if (!Strings.isNullOrEmpty(userId)) {
                     order.setUserId(userId);
-                    if (media.getStatus() == OrderStatus.Paid) {
-                        notify.paidOrders.add(order);
-                    }
                 }
             }
             order.setSettleAmount(toCent(media.getSettleAmount()));
 
             order.setStatus(media.getStatus().getValue());
-            if (!Strings.isNullOrEmpty(order.getUserId()) && media.getStatus() != OrderStatus.Paid) {
+            if (!Strings.isNullOrEmpty(order.getUserId())) {
+                compute(order);
                 Long amount = isNull(order.getSettleAmount(), order.getRebateAmount());
                 switch (media.getStatus()) {
+                    case Paid:
+                        if (insert) {
+                            notify.paidOrders.add(order);
+                        }
+                        break;
                     case Success:
                     case Settlement:
                         if (userService.trySettleOrder(order.getUserId(), order.getId(), amount)) {
@@ -127,9 +130,6 @@ public class OrderService {
                 }
             }
 
-            if (!Strings.isNullOrEmpty(order.getUserId())) {
-                compute(order);
-            }
             dbUtil.save(order, insert);
         }
     }
@@ -144,7 +144,7 @@ public class OrderService {
             order.setRawRebateAmount(rebateAmount);
             order.setRebateAmount(Math.max(1, userService.compute(order.getUserId(), mediaType, rebateAmount)));
         }
-        if (order.getRawSettleAmount() == null && order.getSettleAmount() != null) {
+        if (order.getRawSettleAmount() == null && order.getSettleAmount() != null && order.getSettleAmount() > 0) {
             long settleAmount = order.getSettleAmount();
             order.setRawSettleAmount(settleAmount);
             //取结算金额中最小的
