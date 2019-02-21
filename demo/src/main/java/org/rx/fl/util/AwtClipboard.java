@@ -93,7 +93,11 @@ public class AwtClipboard implements ClipboardOwner {
     }
 
     private void listen() {
-        clipboard.setContents(clipboard.getContents(null), this);
+        try {
+            clipboard.setContents(clipboard.getContents(null), this);
+        } catch (Exception e) {
+            log.warn("listen", e);
+        }
     }
 
     @SneakyThrows

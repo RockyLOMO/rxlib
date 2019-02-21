@@ -30,7 +30,11 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage Key = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
+        BufferedImage[] Keys = {
+                ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey1.png"),
+                ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png")
+        };
+        BufferedImage KeyNew = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKeyNew.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
@@ -62,14 +66,20 @@ public class WxMobileBot implements Bot {
             windowPoint = null;
         }
         if (windowPoint == null) {
-            Point point = bot.findScreenPoint(KeyImages.Key);
-            if (point == null) {
-                bot.saveScreen(KeyImages.Key, "WxMobile");
-                throw new InvalidOperationException("WxMobile window not found");
-            }
-
-            int x = point.x - 20, y = point.y - 27;
-            windowPoint = new Point(x, y);
+//            Point point = null;
+//            for (BufferedImage key : KeyImages.Keys) {
+//                point = bot.findScreenPoint(key);
+//                if (point != null) {
+//                    break;
+//                }
+//            }
+//            if (point == null) {
+//                bot.saveScreen(KeyImages.Keys[0], "WxMobile");
+//                throw new InvalidOperationException("WxMobile window not found");
+//            }
+//            int x = point.x - 20, y = point.y - 27;
+            // 18 25 -> 2 2
+            windowPoint = new Point(2, 2);
         }
         return windowPoint;
     }
