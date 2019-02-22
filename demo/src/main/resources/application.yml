@@ -53,6 +53,7 @@ app:
       guideUrl: http://t.cn/EcsaJnC
   browser:
     windowRectangle: 0,0,1024,800
+    errorCountToExchange: 4
     chrome:
       driver: /usr/chrome/chromedriver.exe
       dataPath: /usr/chrome/data
@@ -67,8 +68,8 @@ app:
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
     relations:
-      - 1-1,100
-      - 2-?,90
+      - 1-1,90
+      - 2-?,80
 
 ---
 
@@ -107,6 +108,7 @@ app:
       guideUrl: http://t.cn/EcsaJnC
   browser:
     windowRectangle: 800,1000,800,600
+    errorCountToExchange: 3
     chrome:
       driver: C:\_rx\chrome\chromedriver.exe
       dataPath: C:\_rx\chrome\data
@@ -122,4 +124,5 @@ app:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
     relations:
       - 1-1,100
-      - 2-?,90
+      - 2-?,80
+    commissionPreviousCount: 1

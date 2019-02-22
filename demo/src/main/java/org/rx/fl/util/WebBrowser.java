@@ -215,6 +215,7 @@ public final class WebBrowser extends Disposable {
     private long waitMillis;
     private RemoteWebDriver driver;
     private Lazy<ReentrantLock> locker;
+    private int errorCount;
 
     public String getCurrentUrl() {
         return driver.getCurrentUrl();
@@ -385,6 +386,7 @@ public final class WebBrowser extends Disposable {
         }
         try {
             driver.get(url);
+            errorCount = 0;
         } catch (NoSuchWindowException e) {
             log.info("navigateUrl {} {}", url, e.getMessage());
             if (driver instanceof InternetExplorerDriver) {
@@ -392,19 +394,11 @@ public final class WebBrowser extends Disposable {
             } else {
                 throw e;
             }
-        } catch (TimeoutException e) {
-            log.info("navigateUrl {} {}", url, e.getMessage());
-            if (driver instanceof ChromeDriver) {
-                exchangeNew(url);
-            } else {
-                throw e;
-            }
         } catch (WebDriverException e) {
-            NQuery<String> hardMsg = NQuery.of("session deleted because of page crash", "Failed to connect to localhost/");
-            if (driver instanceof ChromeDriver && hardMsg.any(p -> p.equals(e.getMessage()))) {
+            log.warn("navigateUrl {} {}", url, e);
+            if (++errorCount >= BrowserConfig.getErrorCountToExchange()) {
                 exchangeNew(url);
-            } else {
-                throw e;
+                errorCount = 0;
             }
         }
 
@@ -421,7 +415,12 @@ public final class WebBrowser extends Disposable {
     }
 
     private synchronized void exchangeNew(String url) {
-        RemoteWebDriver temp = driver;
+        try {
+            driver.quit();
+        } catch (Exception e) {
+            log.warn("exchangeNew quit old driver", e);
+        }
+//        RemoteWebDriver temp = driver;
         if (driver instanceof ChromeDriver) {
             driver = create(DriverType.Chrome, true);
         } else if (driver instanceof InternetExplorerDriver) {
@@ -431,7 +430,7 @@ public final class WebBrowser extends Disposable {
         }
         log.info("exchange driver for {}", url);
         driver.get(url);
-        temp.quit();
+//        temp.quit();
     }
 
     public void syncCookie() {

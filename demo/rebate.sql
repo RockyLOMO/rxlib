@@ -7,15 +7,17 @@ order by t.create_time desc;
 #查找用户商品
 select * from  t_user_goods t
 inner join t_user t1 on t.user_id = t1.id
-where t1.wx_open_id = 'yan_131415'
+where t1.wx_open_id = 'RockyLOMO'
 order by t.create_time desc;
 
 #匹配用户商品
 select t.*,t1.* from t_order t
 inner join t_user_goods t1 on t.goods_id = t1.goods_id
 inner join t_user t2 on t1.user_id = t2.id
-where t2.wx_open_id = 'yan_131415'
+where t2.wx_open_id = 'RockyLOMO'
 order by t.create_time desc;
+
+#update t_order set raw_settle_amount = null where raw_settle_amount = 0
 
 #检查商品是否多用户
 select * from t_user_goods where goods_id = '7437788';
@@ -38,6 +40,8 @@ order by t2.create_time desc;
 #提现列表
 select t1.wx_open_id,t.* from t_withdraw_log t
 inner join t_user t1 on t.user_id = t1.id
+where 1=1
+#and t.status = 1
 order by t.create_time asc
 
 # delete from t_order;

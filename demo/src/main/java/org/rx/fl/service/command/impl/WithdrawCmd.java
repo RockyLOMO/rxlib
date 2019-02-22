@@ -42,7 +42,10 @@ public class WithdrawCmd implements Command {
             WithdrawResult result = userService.withdraw(userId, "0.0.0.0");
             String msg = "一一一一申 请 成 功一一一一\n" +
                     "申请提现金额: %.2f元\n" +
-                    "      冻结金额: %.2f元\n";
+                    "      冻结金额: %.2f元\n" +
+                    "\n" +
+                    "当天11:00之前的提现，将于当天到账\n" +
+                    "当天11:00之后的提现，将于第二天到账\n";
             if (!result.isHasAliPay()) {
                 msg += "\n" +
                         "亲，为方便您第一时间收到返现，请您回复如下格式绑定支付宝账号:\n" +

@@ -30,14 +30,11 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage[] Keys = {
-                ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey1.png"),
-                ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png")
-        };
-        BufferedImage KeyNew = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKeyNew.png");
+        BufferedImage KeyNew = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
         BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
         BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
+        BufferedImage Msg2 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg2.png");
         BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxBrowser.png");
 //        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
     }
@@ -63,23 +60,18 @@ public class WxMobileBot implements Bot {
 
     private Point getWindowPoint() {
         if (DateTime.now().subtract(lastTime).getTotalMinutes() > 1) {
+            lastTime = DateTime.now();
             windowPoint = null;
         }
         if (windowPoint == null) {
-//            Point point = null;
-//            for (BufferedImage key : KeyImages.Keys) {
-//                point = bot.findScreenPoint(key);
-//                if (point != null) {
-//                    break;
-//                }
-//            }
-//            if (point == null) {
-//                bot.saveScreen(KeyImages.Keys[0], "WxMobile");
-//                throw new InvalidOperationException("WxMobile window not found");
-//            }
-//            int x = point.x - 20, y = point.y - 27;
+            Point point = bot.findScreenPoint(KeyImages.KeyNew);
+            if (point == null) {
+                bot.saveScreen(KeyImages.KeyNew, "WxMobile");
+                throw new InvalidOperationException("WxMobile window not found");
+            }
+            int x = point.x - 21, y = point.y - 469;
             // 18 25 -> 2 2
-            windowPoint = new Point(2, 2);
+            windowPoint = new Point(x, y);
         }
         return windowPoint;
     }
@@ -122,34 +114,56 @@ public class WxMobileBot implements Bot {
         captureFuture = null;
     }
 
+    //region debug
+    public Rectangle getUserRectangle() {
+        Point point = getAbsolutePoint(61, 63);
+        return new Rectangle(point, new Dimension(250, 438));
+    }
+
+    public Rectangle getMessageRectangle() {
+        Point point = getAbsolutePoint(311, 63);
+        return new Rectangle(point, new Dimension(400, 294));
+    }
+
+    public List<Point> findScreenPoints(BufferedImage image) {
+        return bot.findScreenPoints(image);
+    }
+    //endregion
+
     private void captureUsers() {
         locker.lock();
         try {
-            Point point = getAbsolutePoint(61, 63);
-            Rectangle rectangle = new Rectangle(point, new Dimension(250, 438));
+            Rectangle userRect = getUserRectangle();
 //            log.info("captureUsers at {}", rectangle);
             int checkCount = 0;
             do {
                 for (BufferedImage partImg : new BufferedImage[]{KeyImages.Unread0, KeyImages.Unread1}) {
                     Point screenPoint;
-                    while ((screenPoint = bot.findScreenPoint(partImg, rectangle)) != null) {
+                    while ((screenPoint = bot.findScreenPoint(partImg, userRect)) != null) {
                         captureFlag = 0;
                         checkCount = 0;
                         log.info("step1 captureUser at {}", screenPoint);
                         bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
                         bot.delay(delay1);
 
-                        Point msgPoint = getAbsolutePoint(311, 63);
-                        bot.mouseMove(msgPoint.x + 20, msgPoint.y + 20);
+                        Rectangle msgRect = getMessageRectangle();
+                        bot.mouseMove(msgRect.x + 20, msgRect.y + 20);
 
                         MessageInfo messageInfo = new MessageInfo();
                         messageInfo.setBotType(this.getType());
                         Set<String> msgList = new LinkedHashSet<>();
                         int scrollMessageCount = 0;
-                        Rectangle msgRectangle = new Rectangle(msgPoint, new Dimension(400, 294));
                         boolean doLoop = true;
                         do {
-                            List<Point> points = bot.findScreenPoints(KeyImages.Msg, msgRectangle);
+                            if (scrollMessageCount == 0) {
+                                Point point2 = bot.findScreenPoint(KeyImages.Msg2, msgRect);
+                                if (point2 != null) {
+                                    log.info("step2 capture transfer and return");
+                                    doLoop = false;
+                                    break;
+                                }
+                            }
+                            List<Point> points = bot.findScreenPoints(KeyImages.Msg, msgRect);
                             log.info("step2 captureMessages {}", points.size());
                             for (int i = points.size() - 1; i >= 0; i--) {
                                 Point p = points.get(i);
@@ -163,7 +177,7 @@ public class WxMobileBot implements Bot {
                                         break;
                                     }
 
-                                    bot.mouseLeftClick(msgPoint.x + 10, msgPoint.y + 10);
+                                    bot.mouseLeftClick(msgRect.x + 10, msgRect.y + 10);
                                     bot.delay(delay2);
                                 }
                                 String msg;

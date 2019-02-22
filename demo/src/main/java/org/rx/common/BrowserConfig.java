@@ -36,4 +36,5 @@ public class BrowserConfig {
     private IEConfig ie;
 
     private String windowRectangle;
+    private int errorCountToExchange;
 }

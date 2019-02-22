@@ -16,6 +16,7 @@ import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
 import org.rx.fl.util.DbUtil;
+import org.rx.util.function.Action;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
@@ -94,10 +96,46 @@ public class UserService {
         checkPercent(rootPercent);
 
         UserNode child = nodeService.getNode(userId);
-//xiaji
-        int percent = checkPercent(child.getPercent());
+        int percent = checkPercent(child.getPercent()), commission = checkPercent(percentValue - percent);
         log.info("compute percents: {} - {} {}", rebateAmount, rootPercent, percent);
         return (long) Math.floor((double) rebateAmount * rootPercent / percentValue * percent / percentValue);
+    }
+
+    @ErrorCode("alreadyBind")
+    @Transactional
+    public void bindRelation(String userId, String code) {
+        require(userId, code);
+
+        Consumer<UserNode> action = p -> {
+            Integer percent = getPercent(p);
+            if (percent != null) {
+                p.setPercent(percent);
+                nodeService.savePercent(p);
+            }
+        };
+        UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
+        if (!parent.isExist()) {
+            nodeService.create(parent);
+            action.accept(parent);
+        }
+        if (child.isExist()) {
+            throw new SystemException(values(), "alreadyBind");
+        }
+        nodeService.create(child, parent.getId());
+        action.accept(child);
+    }
+
+    private Integer getPercent(UserNode userNode) {
+        Integer degree = nodeService.getDegree(userNode);
+        if (degree == null) {
+            throw new InvalidOperationException("user not found");
+        }
+
+        UserDegreeConfig config = percentConfigs.where(p -> p.getRange().fit(degree)).firstOrDefault();
+        if (config == null) {
+            return null;
+        }
+        return checkPercent(config.getPercent());
     }
 
     private int checkPercent(Integer percent) {
@@ -108,36 +146,6 @@ public class UserService {
             throw new InvalidOperationException("percent error");
         }
         return percent;
-    }
-
-    @ErrorCode("alreadyBind")
-    @Transactional
-    public void bindRelation(String userId, String code) {
-        require(userId, code);
-
-        UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
-        if (!parent.isExist()) {
-            nodeService.create(parent);
-            savePercent(parent);
-        }
-        if (child.isExist()) {
-            throw new SystemException(values(), "alreadyBind");
-        }
-        nodeService.create(child, parent.getId());
-        savePercent(child);
-    }
-
-    private void savePercent(UserNode userNode) {
-        Integer degree = nodeService.getDegree(userNode);
-        if (degree == null) {
-            throw new InvalidOperationException("user not found");
-        }
-
-        UserDegreeConfig config = percentConfigs.where(p -> p.getRange().fit(degree)).firstOrDefault();
-        if (config != null) {
-            userNode.setPercent(checkPercent(config.getPercent()));
-            nodeService.savePercent(userNode);
-        }
     }
     //endregion
 

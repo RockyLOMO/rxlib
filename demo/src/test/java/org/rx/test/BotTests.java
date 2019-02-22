@@ -49,6 +49,12 @@ public class BotTests {
         });
         bot.start();
         System.out.println("start...");
+
+        Thread.sleep(8000);
+        System.out.println("test...");
+        bot.getMessageRectangle();
+        System.out.println(bot.findScreenPoints(WxMobileBot.KeyImages.Msg2));
+
         System.in.read();
     }
 
