@@ -37,6 +37,18 @@ public class DbUtil {
     public static final String IsDeleted_True = "Y", IsDeleted_False = "N";
     private static final String mapperScan = App.readSetting("app.mybatis.mapperScan");
 
+    public static boolean isEmpty(Long num) {
+        return num == null || num == 0;
+    }
+
+    public static long getRebateAmount(long rebateAmount, Long settleAmount) {
+        long amount = rebateAmount;
+        if (!DbUtil.isEmpty(settleAmount)) {
+            amount = settleAmount;
+        }
+        return amount;
+    }
+
     public static double toMoney(Long cent) {
         if (cent == null || cent == 0) {
             return 0;

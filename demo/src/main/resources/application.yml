@@ -9,7 +9,7 @@ mybatis.mapper-locations: classpath:mybatis/*.xml
 app.errorCodeFiles:
   - errorCode.yml
 app.mybatis.mapperScan: org.rx.fl.repository
-app.commandList: FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,AliPayCmd,SubscribeCmd
+app.commandList: CommissionCmd,FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,AliPayCmd,SubscribeCmd
 #app.bot.debugPath: /_rx/bot/
 app.repository.dbFile: /_rx/lr.db
 app.sms.appId: 1400123840
@@ -125,4 +125,3 @@ app:
     relations:
       - 1-1,100
       - 2-?,80
-    commissionPreviousCount: 1

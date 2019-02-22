@@ -42,7 +42,15 @@ select t1.wx_open_id,t.* from t_withdraw_log t
 inner join t_user t1 on t.user_id = t1.id
 where 1=1
 #and t.status = 1
-order by t.create_time asc
+order by t.create_time asc;
+
+#提现流水  ！可用余额为负数，频繁退款！
+select t1.wx_open_id,t.*,t2.* from t_withdraw_log t
+inner join t_user t1 on t.user_id = t1.id
+inner join t_balance_log t2 on t.balance_log_id = t2.id
+where 1=1
+#and t.status = 1
+order by t.create_time desc;
 
 # delete from t_order;
 # update t_user_goods set is_deleted = 'N';

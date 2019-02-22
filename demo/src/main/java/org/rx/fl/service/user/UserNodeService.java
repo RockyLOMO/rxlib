@@ -47,7 +47,7 @@ public class UserNodeService {
     //region nodes
     public UserNode getNode(String id) {
         if (!Boolean.TRUE.equals(userMapper.contains(id))) {
-            throw new InvalidOperationException("User id not found");
+            throw new IllegalArgumentException("User id not found");
         }
 
         UserNode node = new UserNode();
@@ -63,32 +63,32 @@ public class UserNodeService {
 
     /**
      * 查询指定分类往上第n级分类。
-     * getParent: level=1
+     * getParent: degree=1
      *
-     * @param level 距离
+     * @param degree 距离
      * @return 上级分类，如果不存在则为null
      */
-    public UserNode getAncestor(UserNode user, int level) {
+    public UserNode getAncestor(UserNode user, int degree) {
         require(user);
-        DbUtil.checkPositive(level, "level");
+        DbUtil.checkPositive(degree, "degree");
 
-        String parent = userMapper.selectAncestorId(user.getId(), level);
+        String parent = userMapper.selectAncestorId(user.getId(), degree);
         return parent == null ? null : getNode(parent);
     }
 
     /**
      * 分类的下的第n级子分类。
-     * getChildren: level=1
+     * getChildren: degree=1
      *
-     * @param level 向下级数，1表示直属子分类
+     * @param degree 向下级数，1表示直属子分类
      * @return 子类列表，如果id所指定的分类不存在、或没有符合条件的分类，则返回空列表
      * @throws IllegalArgumentException 如果id小于0，或n不是正数
      */
-    public List<UserNode> getChildren(UserNode user, int level) {
+    public List<UserNode> getChildren(UserNode user, int degree) {
         require(user);
-        DbUtil.checkPositive(level, "level");
+        DbUtil.checkPositive(degree, "degree");
 
-        return getNode(userMapper.selectSubIds(user.getId(), level));
+        return getNode(userMapper.selectSubIds(user.getId(), degree));
     }
 
     /**

@@ -85,7 +85,7 @@ public class FindAdvCmd implements Command {
         computeOrder.setUserId(userId);
         computeOrder.setMediaType(advResult.getMediaType().getValue());
         computeOrder.setRebateAmount(toCent(rebateAmount));
-        orderService.compute(computeOrder);
+        orderService.computeRebate(computeOrder);
         rebateAmount = toMoney(computeOrder.getRebateAmount());
 
         Double couponAmount = convert.apply(goods.getCouponAmount()),

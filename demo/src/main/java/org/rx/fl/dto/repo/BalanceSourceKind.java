@@ -9,10 +9,12 @@ public enum BalanceSourceKind implements NEnum {
     CheckIn(1),
     @Description("下单")
     Order(10),
-    @Description("绑定订单")
-    RebindOrder(11),
     @Description("失效订单")
     InvalidOrder(12),
+    @Description("佣金")
+    Commission(13),
+    @Description("失效佣金")
+    InvalidCommission(14),
     @Description("提现")
     Withdraw(20),
     @Description("人工校正")

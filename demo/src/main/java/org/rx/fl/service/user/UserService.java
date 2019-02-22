@@ -16,7 +16,6 @@ import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
 import org.rx.fl.util.DbUtil;
-import org.rx.util.function.Action;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +49,8 @@ public class UserService {
     private FeedbackMapper feedbackMapper;
     @Resource
     private OrderMapper orderMapper;
+    //    @Resource
+//    private OrderService orderService;
     @Resource
     private UserGoodsMapper userGoodsMapper;
     @Resource
@@ -58,14 +59,13 @@ public class UserService {
     private NotifyService notifyService;
     @Resource
     private UserNodeService nodeService;
-    private UserConfig userConfig;
     private final NQuery<UserDegreeConfig> percentConfigs;
     //#endregion
 
-    //region level
+    //region Percent
     @Autowired
     public UserService(UserConfig userConfig) {
-        percentConfigs = NQuery.of((this.userConfig = userConfig).getRelations()).select(p -> {
+        percentConfigs = NQuery.of((userConfig).getRelations()).select(p -> {
             String[] pair = App.split(p, ",", 2);
             int percent = Integer.valueOf(pair[1]);
             checkPercent(percent);
@@ -81,7 +81,7 @@ public class UserService {
     public long compute(String userId, MediaType mediaType, long rebateAmount) {
         require(userId, mediaType);
 
-        int rootPercent;
+        int rootPercent = percentValue;
         switch (mediaType) {
             case Jd:
                 rootPercent = mediaConfig.getJd().getRootPercent();
@@ -89,19 +89,17 @@ public class UserService {
             case Taobao:
                 rootPercent = mediaConfig.getTaobao().getRootPercent();
                 break;
-            default:
-                rootPercent = 100;
-                break;
         }
         checkPercent(rootPercent);
 
         UserNode child = nodeService.getNode(userId);
-        int percent = checkPercent(child.getPercent()), commission = checkPercent(percentValue - percent);
+        int percent = checkPercent(child.getPercent());
         log.info("compute percents: {} - {} {}", rebateAmount, rootPercent, percent);
         return (long) Math.floor((double) rebateAmount * rootPercent / percentValue * percent / percentValue);
     }
 
     @ErrorCode("alreadyBind")
+    @ErrorCode(cause = IllegalArgumentException.class)
     @Transactional
     public void bindRelation(String userId, String code) {
         require(userId, code);
@@ -113,16 +111,20 @@ public class UserService {
                 nodeService.savePercent(p);
             }
         };
-        UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
-        if (!parent.isExist()) {
-            nodeService.create(parent);
-            action.accept(parent);
+        try {
+            UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
+            if (!parent.isExist()) {
+                nodeService.create(parent);
+                action.accept(parent);
+            }
+            if (child.isExist()) {
+                throw new SystemException(values(), "alreadyBind");
+            }
+            nodeService.create(child, parent.getId());
+            action.accept(child);
+        } catch (IllegalArgumentException e) {
+            throw new SystemException(values(), e);
         }
-        if (child.isExist()) {
-            throw new SystemException(values(), "alreadyBind");
-        }
-        nodeService.create(child, parent.getId());
-        action.accept(child);
     }
 
     private Integer getPercent(UserNode userNode) {
@@ -146,6 +148,10 @@ public class UserService {
             throw new InvalidOperationException("percent error");
         }
         return percent;
+    }
+
+    public UserNode getParentRelation(String userId) {
+        return nodeService.getAncestor(nodeService.getNode(userId), 1);
     }
     //endregion
 
@@ -278,24 +284,32 @@ public class UserService {
     }
 
     @Transactional
-    public boolean trySettleOrder(String userId, String orderId, Long amount) {
+    public boolean trySettleOrder(String userId, String orderId, Long amount, Commission commission) {
         require(userId, orderId);
 
         boolean hasSettleOrder = hasSettleOrder(userId, orderId);
         if (!hasSettleOrder) {
-            saveUserBalance(userId, BalanceSourceKind.Order, orderId, amount, App.getRequestIp(App.getCurrentRequest()));
+            String remark = App.getRequestIp(App.getCurrentRequest());
+            saveUserBalance(userId, BalanceSourceKind.Order, orderId, amount, remark);
+            if (commission != null) {
+                saveUserBalance(commission.getUserId(), BalanceSourceKind.Commission, orderId, commission.getAmount(), remark);
+            }
             return true;
         }
         return false;
     }
 
     @Transactional
-    public boolean tryRestoreSettleOrder(String userId, String orderId, Long amount) {
+    public boolean tryRestoreSettleOrder(String userId, String orderId, Long amount, Commission commission) {
         require(userId, orderId);
 
         boolean hasSettleOrder = hasSettleOrder(userId, orderId);
         if (hasSettleOrder) {
-            saveUserBalance(userId, BalanceSourceKind.InvalidOrder, orderId, amount, App.getRequestIp(App.getCurrentRequest()));
+            String remark = App.getRequestIp(App.getCurrentRequest());
+            saveUserBalance(userId, BalanceSourceKind.InvalidOrder, orderId, amount, remark);
+            if (commission != null) {
+                saveUserBalance(commission.getUserId(), BalanceSourceKind.InvalidCommission, orderId, commission.getAmount(), remark);
+            }
             return true;
         }
         return false;
@@ -438,6 +452,7 @@ public class UserService {
         }, null);
     }
 
+    //region Manual
     //人工处理提现
     @Transactional
     public String processWithdraw(OpenIdInfo openId, String withdrawId, WithdrawStatus status, String remark) {
@@ -449,27 +464,29 @@ public class UserService {
             throw new InvalidOperationException("WithdrawLog not found");
         }
 
-        String content;
+        List<String> contents;
         if (status == WithdrawStatus.Fail) {
             String balanceLogId = saveUserBalance(user.getId(), BalanceSourceKind.Withdraw, null, withdrawLog.getAmount(), String.format("提现失败，还原余额%s", toMoney(withdrawLog.getAmount()))).right;
             withdrawLog.setRemark(String.format("提现失败，还原余额流水Id %s", balanceLogId));
-            content = String.format("一一一一提 现 失 败一一一一\n" +
+            contents = Collections.singletonList(String.format("一一一一提 现 失 败一一一一\n" +
                     "提现金额 %.2f元 已返回账户可提现金额里\n" +
-                    "失败原因: %s", toMoney(withdrawLog.getAmount()), remark);
+                    "失败原因: %s", toMoney(withdrawLog.getAmount()), remark));
         } else {
             withdrawLog.setRemark(remark);
             String account = Strings.isNullOrEmpty(user.getAlipayAccount()) ? String.format("微信 %s", user.getWxOpenId()) : String.format("%s %s", user.getAlipayName(), user.getAlipayAccount());
-            content = String.format("一一一一提 现 成 功一一一一\n" +
-                    "提现金额: %.2f元\n" +
-                    "转入账户: %s\n" +
-                    "\n" +
-                    "\n" +
-                    "将机器人的名片发送给好友，即可享受20%%返利提成", toMoney(withdrawLog.getAmount()), account);
+            contents = Arrays.asList(String.format("一一一一提 现 成 功一一一一\n" +
+                            "提现金额: %.2f元\n" +
+                            "转入账户: %s\n" +
+                            "\n" +
+                            "\n" +
+                            "将 小范省钱 名片推荐给好友，永久享受20%%返利提成！\n" +
+                            "好友添加 小范省钱 后发送下方↓↓文字绑定成伙伴哦～", toMoney(withdrawLog.getAmount()), account),
+                    user.getId());
         }
         withdrawLog.setStatus(status.getValue());
         dbUtil.save(withdrawLog);
 
-        notifyService.add(user.getId(), Collections.singletonList(content));
+        notifyService.add(user.getId(), contents);
         return withdrawLog.getId();
     }
 
@@ -490,4 +507,5 @@ public class UserService {
         }
         return user;
     }
+    //endregion
 }

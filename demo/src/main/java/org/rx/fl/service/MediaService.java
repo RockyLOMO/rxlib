@@ -6,21 +6,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.DateTime;
 import org.rx.common.*;
 import org.rx.fl.dto.media.*;
-import org.rx.fl.dto.repo.UserInfo;
-import org.rx.fl.repository.model.Order;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.order.OrderService;
-import org.rx.fl.service.user.UserService;
 import org.rx.util.ManualResetEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -29,7 +25,6 @@ import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
-import static org.rx.fl.util.DbUtil.toMoney;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
@@ -101,8 +96,6 @@ public class MediaService {
     @Resource
     private OrderService orderService;
     @Resource
-    private UserService userService;
-    @Resource
     private NotifyService notifyService;
     @Resource
     private MediaCache cache;
@@ -150,44 +143,7 @@ public class MediaService {
                 }
                 NotifyOrdersInfo notify = new NotifyOrdersInfo();
                 orderService.saveOrders(orders, notify);
-                for (Order paidOrder : notify.paidOrders) {
-                    UserInfo user = userService.queryUser(paidOrder.getUserId());
-                    String content = String.format("一一一一支 付 成 功一一一一\n" +
-                                    "%s\n" +
-                                    "订单编号:\n" +
-                                    "%s\n" +
-                                    "付费金额: %.2f元\n" +
-                                    "红包补贴: %.2f元\n" +
-                                    "\n" +
-                                    "可提现金额: %.2f元\n" +
-                                    "未收货金额: %.2f元\n" +
-                                    "-------------------------------\n" +
-                                    "亲 收货成功后，回复 提现 两个字，给你补贴红包\n" +
-                                    "\n" +
-                                    "将机器人名片推荐给好友，永久享受返利提成", paidOrder.getGoodsName(), paidOrder.getOrderNo(),
-                            toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
-                            toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()));
-                    notifyService.add(user.getUserId(), Collections.singletonList(content));
-                }
-                for (Order settleOrder : notify.settleOrders) {
-                    UserInfo user = userService.queryUser(settleOrder.getUserId());
-                    String content = String.format("一一一一收 货 成 功一一一一\n" +
-                                    "%s\n" +
-                                    "订单编号:\n" +
-                                    "%s\n" +
-                                    "付费金额: %.2f元\n" +
-                                    "红包补贴: %.2f元\n" +
-                                    "\n" +
-                                    "可提现金额: %.2f元\n" +
-                                    "未收货金额: %.2f元\n" +
-                                    "总成功订单: %s单\n" +
-                                    "-------------------------------\n" +
-                                    "回复 提现 两个字，给你补贴红包\n" +
-                                    "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
-                            toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
-                            toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount());
-                    notifyService.add(user.getUserId(), Collections.singletonList(content));
-                }
+                notifyService.add(notify);
             } catch (Exception e) {
                 log.error("syncOrder", e);
             }
