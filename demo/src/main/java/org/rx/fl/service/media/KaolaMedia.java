@@ -1,6 +1,7 @@
 package org.rx.fl.service.media;
 
 import org.rx.beans.DateTime;
+import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
@@ -43,6 +44,11 @@ public class KaolaMedia implements Media {
 
     @Override
     public String findAdv(GoodsInfo goodsInfo) {
+        return null;
+    }
+
+    @Override
+    public FindAdvResult getHighCommissionAdv() {
         return null;
     }
 

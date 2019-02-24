@@ -2,6 +2,8 @@ package org.rx.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.$;
 import org.rx.common.App;
 import org.rx.common.Lazy;
 import org.rx.common.Logger;
@@ -9,14 +11,16 @@ import org.rx.util.function.Func;
 
 import java.util.concurrent.*;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public final class AsyncTask {
     private static class NamedRunnable implements Runnable, Callable {
-        private final String   name;
+        private final String name;
         private final Runnable runnable;
-        private final Func     callable;
+        private final Func callable;
 
         public NamedRunnable(String name, Runnable runnable, Func callable) {
             this.name = name;
@@ -46,11 +50,10 @@ public final class AsyncTask {
         }
     }
 
-    public static final AsyncTask                TaskFactory = new AsyncTask(0, App.MaxSize, 4,
-            new SynchronousQueue<>());
-    public static final int                      ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
-    private final ThreadFactory                  threadFactory;
-    private final ThreadPoolExecutor             executor;
+    public static final AsyncTask TaskFactory = new AsyncTask(0, App.MaxSize, 4, new SynchronousQueue<>());
+    public static final int ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
+    private final ThreadFactory threadFactory;
+    private final ThreadPoolExecutor executor;
     private final Lazy<ScheduledExecutorService> scheduler;
 
     private AsyncTask() {
@@ -61,11 +64,10 @@ public final class AsyncTask {
         threadFactory = new ThreadFactoryBuilder().setDaemon(true)
                 .setUncaughtExceptionHandler((thread, ex) -> Logger.error(ex, thread.getName()))
                 .setNameFormat("AsyncTask-%d").build();
-        executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue,
-                threadFactory, (p1, p2) -> {
-                    Logger.info("AsyncTask rejected task: %s", p1.toString());
-                    p1.run();
-                });
+        executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue, threadFactory, (p1, p2) -> {
+            Logger.info("AsyncTask rejected task: %s", p1.toString());
+            p1.run();
+        });
         scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(ThreadCount, threadFactory));
     }
 
@@ -94,7 +96,23 @@ public final class AsyncTask {
     }
 
     public Future schedule(Runnable task, long initialDelay, long delay, String taskName) {
-        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable(taskName, task, null), initialDelay, delay,
-                TimeUnit.MILLISECONDS);
+        require(task);
+
+        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable(taskName, task, null), initialDelay, delay, TimeUnit.MILLISECONDS);
+    }
+
+    public Future setTimeout(Runnable task, long delay) {
+        require(task);
+
+        $<Future> future = $();
+        future.$ = scheduler.getValue().scheduleWithFixedDelay(() -> {
+            task.run();
+            try {
+                future.$.cancel(true);
+            } catch (Exception e) {
+                log.warn("setTimeout", e);
+            }
+        }, delay, delay, TimeUnit.MILLISECONDS);
+        return future.$;
     }
 }

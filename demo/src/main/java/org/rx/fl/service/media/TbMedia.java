@@ -14,10 +14,7 @@ import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.*;
-import org.rx.fl.dto.media.GoodsInfo;
-import org.rx.fl.dto.media.MediaType;
-import org.rx.fl.dto.media.OrderInfo;
-import org.rx.fl.dto.media.OrderStatus;
+import org.rx.fl.dto.media.*;
 import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.WebBrowser;
 import org.rx.util.Helper;
@@ -248,6 +245,11 @@ public class TbMedia implements Media {
                 return null;
             });
         }
+    }
+
+    @Override
+    public FindAdvResult getHighCommissionAdv() {
+        return null;
     }
 
     @SneakyThrows

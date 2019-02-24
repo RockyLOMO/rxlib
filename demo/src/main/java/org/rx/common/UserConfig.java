@@ -11,4 +11,5 @@ public class UserConfig {
     private String[] adminIds;
     private int heartbeatMinutes;
     private String[] relations;
+    private String aliPayCode;
 }

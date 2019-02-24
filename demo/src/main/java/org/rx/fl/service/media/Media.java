@@ -1,6 +1,7 @@
 package org.rx.fl.service.media;
 
 import org.rx.beans.DateTime;
+import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderInfo;
@@ -23,4 +24,6 @@ public interface Media {
     String findAdv(GoodsInfo goodsInfo);
 
     List<OrderInfo> findOrders(DateTime start, DateTime end);
+
+    FindAdvResult getHighCommissionAdv();
 }

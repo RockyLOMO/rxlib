@@ -8,6 +8,7 @@ import org.rx.common.App;
 import org.rx.common.SystemException;
 import org.rx.socks.Sockets;
 import org.rx.test.bean.*;
+import org.rx.util.AsyncTask;
 
 import java.io.*;
 import java.net.Socket;
@@ -24,7 +25,7 @@ import static org.rx.common.Contract.values;
 
 public class Tester {
     @Test
-    public void testShorterUUID() {
+    public void shorterUUID() {
         UUID id = UUID.randomUUID();
         String sid = App.toShorterUUID(id);
         UUID id2 = App.fromShorterUUID(sid);
@@ -32,9 +33,13 @@ public class Tester {
         assert id.equals(id2);
     }
 
+    @SneakyThrows
     @Test
-    public void testMain() {
-        System.out.println($.class.getName());
+    public void setTimeout() {
+        AsyncTask.TaskFactory.setTimeout(() -> {
+            System.out.println("hi!");
+        }, 1000);
+        System.in.read();
     }
 
     @Test

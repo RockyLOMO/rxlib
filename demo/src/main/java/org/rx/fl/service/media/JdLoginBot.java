@@ -20,7 +20,6 @@ import org.rx.util.ManualResetEvent;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.util.concurrent.Future;
 
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -35,7 +34,6 @@ public final class JdLoginBot extends Disposable {
 
     private String loginKey;
     private ManualResetEvent waiter;
-    private Future future;
     private AwtBot bot;
     private Point lastPoint;
     private HttpProxyServer proxyServer;
@@ -101,10 +99,6 @@ public final class JdLoginBot extends Disposable {
 
     @SneakyThrows
     public synchronized String produceKey() {
-        if (future != null) {
-            future.cancel(true);
-        }
-
         try {
             lastPoint = bot.clickByImage(jdKey);
             log.info("step1 clickByImage ok");
@@ -129,14 +123,12 @@ public final class JdLoginBot extends Disposable {
             return loginKey;
         } finally {
             loginKey = null;
-            future = TaskFactory.schedule(() -> {
+            TaskFactory.setTimeout(() -> {
                 log.info("step3 try close it");
 //                bot.saveScreen();
                 int y = (int) bot.getScreenRectangle().getHeight();
                 bot.clickAndAltF4(218, y - 20);
                 log.info("step3 closed it");
-                future.cancel(true);
-                future = null;
             }, 2 * 1000);
         }
     }

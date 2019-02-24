@@ -72,6 +72,7 @@ app:
     relations:
       - 1-1,90
       - 2-?,80
+    aliPayCode: 打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！
 
 ---
 
@@ -88,7 +89,7 @@ app:
       maxCheckMessageCount: 2
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
-      captureScrollSeconds: 20
+      captureScrollSeconds: 24
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
@@ -129,3 +130,4 @@ app:
     relations:
       - 1-1,100
       - 2-?,80
+    aliPayCode: 打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！

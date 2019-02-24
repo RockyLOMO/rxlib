@@ -3,6 +3,7 @@ package org.rx.fl.service;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
@@ -26,6 +27,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
+import static org.rx.beans.$.$;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @EnableValid
@@ -37,16 +39,16 @@ public class BotService {
     @Getter
     private WxMobileBot wxMobileBot;
     @Resource
-    private UserService userService;
-    @Resource
     private CommandManager commandManager;
+    private UserService userService;
     @Resource
     private AliPayCmd aliPayCmd;
 
     @Autowired
-    public BotService(WxBot wxBot, BotConfig config, UserConfig userConfig) {
+    public BotService(WxBot wxBot, BotConfig config, UserService userService, UserConfig userConfig) {
         Function<MessageInfo, List<String>> event = messageInfo -> handleMessage(messageInfo);
 
+        this.userService = userService;
         this.wxBot = wxBot;
         this.wxBot.onReceiveMessage(event);
 
@@ -58,14 +60,23 @@ public class BotService {
             wxMobileBot.onReceiveMessage(event);
             wxMobileBot.start();
 
+            $<OpenIdInfo> openId = $();
             String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
             if (adminId != null) {
+                openId.$ = userService.getOpenId(adminId, BotType.Wx);
                 TaskFactory.schedule(() -> {
-                    OpenIdInfo openId = userService.getOpenId(adminId, BotType.Wx);
-                    MessageInfo heartbeat = new MessageInfo(openId);
+                    MessageInfo heartbeat = new MessageInfo(openId.$);
                     heartbeat.setContent(String.format("Heartbeat %s", DateTime.now().toString()));
-                    pushMessages(Collections.singletonList(heartbeat));
+                    pushMessages(heartbeat);
                 }, userConfig.getHeartbeatMinutes() * 60 * 1000);
+            }
+
+            if (userConfig.getAliPayCode() != null && openId.$ != null) {
+                TaskFactory.setTimeout(() -> {
+                    MessageInfo msg = new MessageInfo(openId.$);
+                    msg.setContent(userConfig.getAliPayCode());
+                    handleMessage(msg);
+                }, 10 * 1000);
             }
 
             TaskFactory.schedule(() -> {
@@ -83,7 +94,7 @@ public class BotService {
                             message.setBotType(BotType.Wx);
                             message.setOpenId(whiteOpenId);
                             message.setContent(aliPayCmd.getSourceMessage());
-                            pushMessages(Collections.singletonList(message));
+                            pushMessages(message);
                         }
                         break;
                 }
@@ -96,6 +107,10 @@ public class BotService {
     public List<String> handleMessage(@NotNull MessageInfo message) {
         String userId = userService.getUserId(message);
         return commandManager.handleMessage(userId, message.getContent());
+    }
+
+    public void pushMessages(@NotNull MessageInfo message) {
+        pushMessages(Collections.singletonList(message));
     }
 
     public void pushMessages(@NotNull List<MessageInfo> messages) {

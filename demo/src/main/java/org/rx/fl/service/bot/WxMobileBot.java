@@ -233,17 +233,16 @@ public class WxMobileBot implements Bot {
                 checkCount++;
             } while (checkCount < maxCheckMessageCount);
 
-            if (captureFlag == 0) {
-                bot.mouseLeftClick(getAbsolutePoint(94, 415));
-//                    bot.mouseWheel(-1);
-                bot.delay(delay1);
-                captureFlag = 1;
-            } else if (captureFlag < captureScrollCount) {
+            if (captureFlag < captureScrollCount) {
+                if (captureFlag == 0) {
+                    bot.mouseLeftClick(getAbsolutePoint(94, 415));
+                    bot.delay(delay2);
+                }
                 captureFlag++;
             } else {
                 bot.mouseLeftClick(getAbsolutePoint(94, 415));
                 bot.mouseWheel(-1);
-                bot.delay(delay1);
+                bot.delay(delay2);
                 captureFlag = 1;
             }
         } finally {
