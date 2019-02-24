@@ -16,12 +16,22 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.rx.beans.$.$;
 import static org.rx.common.Contract.eq;
 import static org.rx.common.Contract.values;
 
 public class Tester {
+    @Test
+    public void testShorterUUID() {
+        UUID id = UUID.randomUUID();
+        String sid = App.toShorterUUID(id);
+        UUID id2 = App.fromShorterUUID(sid);
+        System.out.printf(sid);
+        assert id.equals(id2);
+    }
+
     @Test
     public void testMain() {
         System.out.println($.class.getName());

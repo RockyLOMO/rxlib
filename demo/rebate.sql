@@ -7,14 +7,16 @@ order by t.create_time desc;
 #查找用户商品
 select * from  t_user_goods t
 inner join t_user t1 on t.user_id = t1.id
-where t1.wx_open_id = 'RockyLOMO'
+where 1=1
+#and t1.wx_open_id = 'RockyLOMO'
 order by t.create_time desc;
 
 #匹配用户商品
 select t.*,t1.* from t_order t
 inner join t_user_goods t1 on t.goods_id = t1.goods_id
 inner join t_user t2 on t1.user_id = t2.id
-where t2.wx_open_id = 'RockyLOMO'
+where 1=1
+#and t2.wx_open_id = 'RockyLOMO'
 order by t.create_time desc;
 
 #update t_order set raw_settle_amount = null where raw_settle_amount = 0

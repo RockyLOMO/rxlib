@@ -31,6 +31,7 @@ app:
       maxCheckMessageCount: 2
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
+      captureScrollSeconds: 10
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
@@ -67,6 +68,7 @@ app:
   user:
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
+    heartbeatMinutes: 20
     relations:
       - 1-1,90
       - 2-?,80
@@ -82,10 +84,11 @@ spring:
 app:
   bot:
     wx-mobile:
-      capturePeriod: 600
+      capturePeriod: 700
       maxCheckMessageCount: 2
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
+      captureScrollSeconds: 20
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
@@ -122,6 +125,7 @@ app:
   user:
     adminIds:
       - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
+    heartbeatMinutes: 30
     relations:
       - 1-1,100
       - 2-?,80

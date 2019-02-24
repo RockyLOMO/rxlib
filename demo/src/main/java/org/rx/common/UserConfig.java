@@ -9,5 +9,6 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.user")
 public class UserConfig {
     private String[] adminIds;
+    private int heartbeatMinutes;
     private String[] relations;
 }

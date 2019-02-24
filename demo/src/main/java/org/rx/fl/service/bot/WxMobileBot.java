@@ -40,16 +40,15 @@ public class WxMobileBot implements Bot {
     }
 
     public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群", "A小范省钱分享群");
-    private static final int delay1 = 50, delay2 = 100, captureScrollSeconds = 10;
+    private static final int delay1 = 50, delay2 = 100;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
     private AwtBot bot;
     private DateTime lastTime;
     private Point windowPoint;
     private Function<MessageInfo, List<String>> event;
-    private int capturePeriod, maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount;
+    private int capturePeriod, maxCheckMessageCount, maxCaptureMessageCount, maxScrollMessageCount, captureScrollCount;
     private final ReentrantLock locker;
-    private int captureScrollCount;
     private volatile byte captureFlag;
     private volatile Future captureFuture;
 
@@ -76,7 +75,7 @@ public class WxMobileBot implements Bot {
         return windowPoint;
     }
 
-    public WxMobileBot(int capturePeriod, int maxCheckMessageCount, int maxCaptureMessageCount, int maxScrollMessageCount) {
+    public WxMobileBot(int capturePeriod, int maxCheckMessageCount, int maxCaptureMessageCount, int maxScrollMessageCount, int captureScrollSeconds) {
         bot = AwtBot.getBot();
         lastTime = DateTime.now();
         getWindowPoint();
@@ -85,6 +84,7 @@ public class WxMobileBot implements Bot {
         this.maxCheckMessageCount = maxCheckMessageCount;
         this.maxCaptureMessageCount = maxCaptureMessageCount;
         this.maxScrollMessageCount = maxScrollMessageCount;
+        captureScrollCount = captureScrollSeconds * 1000 / capturePeriod + 1;
         locker = new ReentrantLock(true);
         captureFlag = 0;
     }
@@ -94,7 +94,6 @@ public class WxMobileBot implements Bot {
             return;
         }
 
-        captureScrollCount = captureScrollSeconds * 1000 / capturePeriod + 1;
         captureFuture = TaskFactory.schedule(() -> {
             try {
                 //抛异常会卡住

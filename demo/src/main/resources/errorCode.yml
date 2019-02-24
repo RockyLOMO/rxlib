@@ -4,10 +4,14 @@ org.rx.fl.service.user.UserService:
   feedback[alreadyCommit]: 已提交过问题，请等待问题处理完毕后再次提交。
   checkIn[alreadyCheckIn]: 今天已签到，请明天再来。
   bindPayment[alreadyBind]: 已绑定过支付宝
+  getOpenIds[notFound]: 用户$id不存在
   bindRelation<IllegalArgumentException>: 邀请码错误
   bindRelation[alreadyBind]: 已关联过伙伴
   withdraw[notEnoughBalance]: 可提现余额不足
   withdraw[withdrawing]: 已申请提现[$amount元]，请等提现成功后再次申请。
+
+org.rx.fl.service.user:
+  getNode[notFound]: 用户$id不存在
 
 org.rx.fl.service.order.OrderService:
   rebindOrder[orderNotExist]: 系统没有查询到订单号$orderNo，只有通过返利链接或返利口令购买的商品才会返利。

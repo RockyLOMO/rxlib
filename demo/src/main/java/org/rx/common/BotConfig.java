@@ -18,6 +18,7 @@ public class BotConfig {
         private int maxCheckMessageCount;
         private int maxCaptureMessageCount;
         private int maxScrollMessageCount;
+        private int captureScrollSeconds;
     }
 
     @Resource

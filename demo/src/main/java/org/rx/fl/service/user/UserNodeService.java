@@ -1,8 +1,10 @@
 package org.rx.fl.service.user;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.annotation.ErrorCode;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
+import org.rx.common.SystemException;
 import org.rx.fl.repository.UserMapper;
 import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.values;
 import static org.rx.fl.repository.UserMapper.rootId;
 
 /**
@@ -45,9 +48,10 @@ public class UserNodeService {
     }
 
     //region nodes
+    @ErrorCode(value = "notFound", messageKeys = {"$id"})
     public UserNode getNode(String id) {
-        if (!Boolean.TRUE.equals(userMapper.contains(id))) {
-            throw new IllegalArgumentException("User id not found");
+        if (!rootId.equals(id) && !Boolean.TRUE.equals(userMapper.contains(id))) {
+            throw new SystemException(values(id), "notFound");
         }
 
         UserNode node = new UserNode();

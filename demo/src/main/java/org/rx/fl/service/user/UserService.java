@@ -15,6 +15,7 @@ import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
+import org.rx.fl.service.command.impl.CommissionCmd;
 import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.function.Consumer;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
+import static org.rx.fl.repository.UserMapper.rootId;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
@@ -118,6 +120,10 @@ public class UserService {
                 action.accept(parent);
             }
             if (child.isExist()) {
+                UserNode parentRelation = getParentRelation(child.getId());
+                if (parentRelation != null && parentRelation.getId().equals(parent.getId())) {
+                    return;
+                }
                 throw new SystemException(values(), "alreadyBind");
             }
             nodeService.create(child, parent.getId());
@@ -151,7 +157,11 @@ public class UserService {
     }
 
     public UserNode getParentRelation(String userId) {
-        return nodeService.getAncestor(nodeService.getNode(userId), 1);
+        UserNode parentNode = nodeService.getAncestor(nodeService.getNode(userId), 1);
+        if (parentNode == null || rootId.equals(parentNode.getId())) {
+            return null;
+        }
+        return parentNode;
     }
     //endregion
 
@@ -213,11 +223,18 @@ public class UserService {
         return user.getId();
     }
 
+    public OpenIdInfo getOpenId(String userId, BotType botType) {
+        require(userId, botType);
+
+        return NQuery.of(getOpenIds(userId)).where(p -> p.getBotType() == botType).first();
+    }
+
+    @ErrorCode(value = "notFound", messageKeys = {"$id"})
     public List<OpenIdInfo> getOpenIds(String userId) {
         require(userId);
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
-            throw new InvalidOperationException("user not found");
+            throw new SystemException(values(userId), "notFound");
         }
 
         List<OpenIdInfo> openIds = new ArrayList<>();
@@ -477,11 +494,9 @@ public class UserService {
             contents = Arrays.asList(String.format("一一一一提 现 成 功一一一一\n" +
                             "提现金额: %.2f元\n" +
                             "转入账户: %s\n" +
-                            "\n" +
-                            "\n" +
-                            "将 小范省钱 名片推荐给好友，永久享受20%%返利提成！\n" +
-                            "好友添加 小范省钱 后发送下方↓↓文字绑定成伙伴哦～", toMoney(withdrawLog.getAmount()), account),
-                    user.getId());
+                            "-------------------------------\n" +
+                            CommissionCmd.codeFormat, toMoney(withdrawLog.getAmount()), account),
+                    CommissionCmd.getCode(user.getId()));
         }
         withdrawLog.setStatus(status.getValue());
         dbUtil.save(withdrawLog);

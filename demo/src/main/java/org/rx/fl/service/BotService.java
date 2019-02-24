@@ -7,8 +7,10 @@ import org.rx.beans.DateTime;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
+import org.rx.common.UserConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
+import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.command.CommandManager;
@@ -42,7 +44,7 @@ public class BotService {
     private AliPayCmd aliPayCmd;
 
     @Autowired
-    public BotService(WxBot wxBot, BotConfig config) {
+    public BotService(WxBot wxBot, BotConfig config, UserConfig userConfig) {
         Function<MessageInfo, List<String>> event = messageInfo -> handleMessage(messageInfo);
 
         this.wxBot = wxBot;
@@ -50,9 +52,21 @@ public class BotService {
 
         try {
             BotConfig.WxMobileConfig mConfig = config.getWxMobile();
-            wxMobileBot = new WxMobileBot(mConfig.getCapturePeriod(), mConfig.getMaxCheckMessageCount(), mConfig.getMaxCaptureMessageCount(), mConfig.getMaxScrollMessageCount());
+            wxMobileBot = new WxMobileBot(mConfig.getCapturePeriod(),
+                    mConfig.getMaxCheckMessageCount(), mConfig.getMaxCaptureMessageCount(), mConfig.getMaxScrollMessageCount(),
+                    mConfig.getCaptureScrollSeconds());
             wxMobileBot.onReceiveMessage(event);
             wxMobileBot.start();
+
+            String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
+            if (adminId != null) {
+                TaskFactory.schedule(() -> {
+                    OpenIdInfo openId = userService.getOpenId(adminId, BotType.Wx);
+                    MessageInfo heartbeat = new MessageInfo(openId);
+                    heartbeat.setContent(String.format("Heartbeat %s", DateTime.now().toString()));
+                    pushMessages(Collections.singletonList(heartbeat));
+                }, userConfig.getHeartbeatMinutes() * 60 * 1000);
+            }
 
             TaskFactory.schedule(() -> {
                 if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
