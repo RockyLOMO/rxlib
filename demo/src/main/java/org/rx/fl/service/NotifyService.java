@@ -1,17 +1,25 @@
 package org.rx.fl.service;
 
+import com.google.common.base.Strings;
 import lombok.SneakyThrows;
+import org.rx.beans.$;
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.NQuery;
+import org.rx.common.UserConfig;
+import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.repo.UserInfo;
 import org.rx.fl.repository.model.Commission;
 import org.rx.fl.repository.model.Order;
+import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.command.Command;
+import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.fl.service.command.impl.CommissionCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.user.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -30,11 +38,54 @@ public class NotifyService {
     private BotService botService;
     @Resource
     private UserService userService;
+    @Resource
+    private AliPayCmd aliPayCmd;
     private final ConcurrentLinkedQueue<List<MessageInfo>> queue;
 
-    public NotifyService() {
+    @Autowired
+    public NotifyService(UserConfig userConfig) {
         queue = new ConcurrentLinkedQueue<>();
         TaskFactory.schedule(this::push, 2 * 1000);
+
+        $<OpenIdInfo> openId = $.$();
+        String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
+        if (adminId != null) {
+            openId.$ = userService.getOpenId(adminId, BotType.Wx);
+            TaskFactory.schedule(() -> {
+                MessageInfo heartbeat = new MessageInfo(openId.$);
+                heartbeat.setContent(String.format("Heartbeat %s", DateTime.now().toString()));
+                botService.pushMessages(heartbeat);
+            }, userConfig.getHeartbeatMinutes() * 60 * 1000);
+        }
+
+        if (userConfig.getAliPayCode() != null && openId.$ != null) {
+            TaskFactory.setTimeout(() -> {
+                MessageInfo msg = new MessageInfo(openId.$);
+                msg.setContent(userConfig.getAliPayCode());
+                botService.handleMessage(msg);
+            }, 10 * 1000);
+        }
+
+        TaskFactory.schedule(() -> {
+            if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
+                return;
+            }
+            int hours = DateTime.now().getHours();
+            switch (hours) {
+                case 8:
+                case 11:
+                case 12:
+                case 18:
+                    for (String whiteOpenId : WxMobileBot.whiteOpenIds) {
+                        MessageInfo message = new MessageInfo();
+                        message.setBotType(BotType.Wx);
+                        message.setOpenId(whiteOpenId);
+                        message.setContent(aliPayCmd.getSourceMessage());
+                        botService.pushMessages(message);
+                    }
+                    break;
+            }
+        }, 58 * 60 * 1000);
     }
 
     @SneakyThrows
