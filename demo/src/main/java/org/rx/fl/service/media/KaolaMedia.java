@@ -48,7 +48,7 @@ public class KaolaMedia implements Media {
     }
 
     @Override
-    public FindAdvResult getHighCommissionAdv() {
+    public FindAdvResult getHighCommissionAdv(String goodsName) {
         return null;
     }
 

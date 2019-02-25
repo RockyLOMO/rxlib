@@ -200,6 +200,15 @@ public class UserService {
         return userInfo;
     }
 
+    public boolean isNoob(String userId) {
+        require(userId);
+
+        UserGoodsExample q = new UserGoodsExample();
+        q.setLimit(1);
+        q.createCriteria().andUserIdEqualTo(userId);
+        return !(userGoodsMapper.countByExample(q) > 0);
+    }
+
     @Transactional
     public String getUserId(OpenIdInfo openId) {
         require(openId);
@@ -495,7 +504,7 @@ public class UserService {
                             "提现金额: %.2f元\n" +
                             "转入账户: %s\n" +
                             "-------------------------------\n" +
-                            CommissionCmd.codeFormat, toMoney(withdrawLog.getAmount()), account),
+                            CommissionCmd.partnerMessage, toMoney(withdrawLog.getAmount()), account),
                     CommissionCmd.getCode(user.getId()));
         }
         withdrawLog.setStatus(status.getValue());

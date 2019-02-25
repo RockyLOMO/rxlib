@@ -27,13 +27,6 @@ import static org.rx.common.Contract.toJsonString;
 @Slf4j
 public class MediaTests {
     @Test
-    public void x() {
-        String n = GoodsInfo.class.getName();
-        Thread.currentThread().setContextClassLoader(App.class.getClassLoader());
-        System.out.println(App.loadClass(n, false));
-    }
-
-    @Test
     public void jdOrders() {
         List<OrderInfo> list = new ArrayList<>();
         JSONObject json;
@@ -73,19 +66,6 @@ public class MediaTests {
             }
         } while (json.getBooleanValue("moreData"));
         System.out.println(JSON.toJSONString(list));
-    }
-
-    static final Function<String, Double> convert = p -> {
-        if (Strings.isNullOrEmpty(p)) {
-            return 0d;
-        }
-        return App.changeType(p.replace("￥", "")
-                .replace("¥", "").replace("元", ""), double.class);
-    };
-
-    private MediaConfig getConfig() {
-        MediaConfig config = new MediaConfig();
-        return config;
     }
 
     @SneakyThrows
@@ -147,4 +127,17 @@ public class MediaTests {
 
         System.in.read();
     }
+
+    private MediaConfig getConfig() {
+        MediaConfig config = new MediaConfig();
+        return config;
+    }
+
+    static final Function<String, Double> convert = p -> {
+        if (Strings.isNullOrEmpty(p)) {
+            return 0d;
+        }
+        return App.changeType(p.replace("￥", "")
+                .replace("¥", "").replace("元", ""), double.class);
+    };
 }

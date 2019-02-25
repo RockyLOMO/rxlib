@@ -94,10 +94,10 @@ public class FindAdvCmd implements Command {
                         - couponAmount;
         StringBuilder reply = new StringBuilder(String.format("一一一一系 统 消 息一一一一\n" +
                         "【%s】%s\n" +
-                        "------------------------------------\n" +
+                        "%s" +
                         "约反      ￥%.2f\n" +
                         "优惠券  ￥%.2f\n" +
-                        "付费价  ￥%.2f\n", advResult.getMediaType().toDescription(), goods.getName(),
+                        "付费价  ￥%.2f\n", advResult.getMediaType().toDescription(), goods.getName(), splitText,
                 rebateAmount, couponAmount, payAmount));
         StringBuilder ps = new StringBuilder();
         switch (advResult.getMediaType()) {

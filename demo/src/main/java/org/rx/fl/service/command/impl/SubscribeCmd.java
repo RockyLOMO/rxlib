@@ -4,6 +4,7 @@ import org.rx.common.MediaConfig;
 import org.rx.fl.service.bot.Bot;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.rx.fl.service.user.UserService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,10 @@ import javax.annotation.Resource;
 public class SubscribeCmd implements Command {
     @Resource
     private MediaConfig mediaConfig;
+    @Resource
+    private UserService userService;
+    @Resource
+    private HelpCmd helpCmd;
 
     @Override
     public boolean peek(String message) {
@@ -22,6 +27,10 @@ public class SubscribeCmd implements Command {
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
+        if (userService.isNoob(userId)) {
+            return helpCmd.handleMessage(userId, message);
+        }
+
         return HandleResult.ok(String.format("一一一一系 统 消 息一一一一\n" +
                 "亲，您可算来啦～\n\n" +
                 "淘宝返利教程：\n%s\n" +

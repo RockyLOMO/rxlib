@@ -3,6 +3,7 @@ package org.rx.fl.service.command.impl;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.Tuple;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.fl.service.user.UserService;
@@ -35,6 +36,11 @@ public class BindPaymentCmd implements Command {
         require(message);
         message = message.trim();
 
+        Tuple<String, String> account = tryGetAccount(message);
+        if (account != null) {
+            step = 2;
+            return true;
+        }
         return NQuery.of("绑定", "6").contains(message);
     }
 
@@ -45,17 +51,16 @@ public class BindPaymentCmd implements Command {
         switch (step) {
             case 1:
                 step = 2;
-                return HandleResult.ok("一一一一绑 定 账 号一一一一\n" +
+                return HandleResult.ok(String.format("一一一一绑 定 账 号一一一一\n" +
                         "亲，回复如下格式绑定:\n" +
                         "姓名***支付宝*********\n" +
                         "\n" +
                         "如:姓名小范支付宝15888888888\n" +
-                        "\n" +
-                        "    本绑定只用于提现到支付宝时使用，支付宝账号应为手机号码或者邮箱地址，如不清楚可打开支付宝APP查看自己的账号。", this);
+                        "%s" +
+                        "本绑定只用于提现到支付宝时使用，支付宝账号应为手机号码或者邮箱地址，如不清楚可打开支付宝APP查看自己的账号。", splitText), this);
             case 2:
-                String k1 = "姓名", k2 = "支付宝";
-                int s1 = message.indexOf(k1), s2 = message.indexOf(k2);
-                if (!(s1 != -1 && s2 != -1 && s1 < s2)) {
+                Tuple<String, String> tuple = tryGetAccount(message);
+                if (tuple == null) {
                     return HandleResult.ok("一一一一绑 定 失 败一一一一\n" +
                             "亲，回复格式错误，请回复如下格式绑定:\n" +
                             "姓名***支付宝*********\n" +
@@ -63,10 +68,10 @@ public class BindPaymentCmd implements Command {
                             "如:姓名小范支付宝15888888888", ++errorCount > 2 ? null : this);
                 }
                 try {
-                    String name = message.substring(s1 + k1.length(), s2).trim(), account = message.substring(s2 + k2.length()).trim();
+                    String name = tuple.left, account = tuple.right;
                     userService.bindPayment(userId, name, account);
                     return HandleResult.ok("一一一一绑 定 成 功一一一一\n" +
-                            "    亲，您已成功绑定！");
+                            "亲，您已成功绑定！");
                 } catch (SystemException e) {
                     log.warn("BindPaymentCmd", e);
                     feedbackCmd.setStep(2);
@@ -75,5 +80,15 @@ public class BindPaymentCmd implements Command {
                 }
         }
         return HandleResult.fail();
+    }
+
+    private Tuple<String, String> tryGetAccount(String message) {
+        String k1 = "姓名", k2 = "支付宝";
+        int s1 = message.indexOf(k1), s2 = message.indexOf(k2);
+        if (!(s1 != -1 && s2 != -1 && s1 < s2)) {
+            return null;
+        }
+        String name = message.substring(s1 + k1.length(), s2).trim(), account = message.substring(s2 + k2.length()).trim();
+        return Tuple.of(name, account);
     }
 }

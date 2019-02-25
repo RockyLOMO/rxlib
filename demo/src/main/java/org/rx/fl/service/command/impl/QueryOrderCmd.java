@@ -50,8 +50,7 @@ public class QueryOrderCmd implements Command {
                         "[1]---------3天内订单\n" +
                         "[2]---------4-7天内订单\n" +
                         "[3]---------8-15天内订单\n" +
-                        "\n" +
-                        "    亲，请输入[ ]内的数字序号或订单号查询。", this);
+                        "亲，请输入[ ]内的数字序号或订单号查询。", this);
             case 2:
                 StringBuilder out = new StringBuilder();
                 QueryOrdersParameter parameter = new QueryOrdersParameter();

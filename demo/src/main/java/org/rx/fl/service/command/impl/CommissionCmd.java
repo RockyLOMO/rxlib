@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import java.util.Collections;
 import java.util.UUID;
 
 import static org.rx.common.Contract.require;
@@ -25,8 +24,8 @@ import static org.rx.common.Contract.require;
 @Scope("prototype")
 @Slf4j
 public class CommissionCmd implements Command {
-    public static final String codeFormat = "将 小范省钱 名片推荐给好友，永久享受20%%返利提成！\n" +
-            "好友添加 小范省钱 后发送下方↓↓文字绑定成伙伴哦～";
+    public static final String partnerMessage = "\n将 小范省钱 名片推荐给好友，永久享受20%%返利提成！\n" +
+            "好友添加 小范省钱 后发送下方↓↓文字即可绑定成伙伴哦～";
 
     public static String getCode(String userId) {
         return App.toShorterUUID(UUID.fromString(userId));
@@ -63,8 +62,8 @@ public class CommissionCmd implements Command {
             userService.bindRelation(userId, parentUserId);
             OpenIdInfo openId = userService.getOpenId(userId, BotType.Wx);
             OpenIdInfo parentOpenId = userService.getOpenId(parentUserId, BotType.Wx);
-            notifyService.add(parentUserId, Collections.singletonList(String.format("一一一一绑 定 成 功一一一一\n" +
-                    "%s与您已绑定成为伙伴～", openId.getOpenId())));
+            notifyService.add(parentUserId, String.format("一一一一绑 定 成 功一一一一\n" +
+                    "%s与您已绑定成为伙伴～", openId.getOpenId()));
             return HandleResult.ok(String.format("一一一一绑 定 成 功一一一一\n" +
                     "您与%s已绑定成为伙伴～", parentOpenId.getOpenId()));
         } catch (SystemException e) {

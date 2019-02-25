@@ -13,7 +13,6 @@ public class GoodsInfo implements Serializable {
     private String name;
     private String imageUrl;
     private String sellerId;
-    @NotNull
     private String sellerName;
     private String price;
     private String rebateRatio;

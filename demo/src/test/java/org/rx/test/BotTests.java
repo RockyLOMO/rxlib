@@ -42,7 +42,7 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void wx() {
-        WxMobileBot bot = new WxMobileBot(500, 2, 1, 1);
+        WxMobileBot bot = new WxMobileBot(500, 2, 1, 1, 20);
         bot.onReceiveMessage(p -> {
             System.out.println(JSON.toJSONString(p));
             return NQuery.of(p).select(msg -> "已收到消息：" + msg).toList();

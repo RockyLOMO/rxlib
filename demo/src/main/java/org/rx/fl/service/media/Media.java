@@ -1,5 +1,6 @@
 package org.rx.fl.service.media;
 
+import lombok.SneakyThrows;
 import org.rx.beans.DateTime;
 import org.rx.fl.dto.media.FindAdvResult;
 import org.rx.fl.dto.media.GoodsInfo;
@@ -10,6 +11,11 @@ import java.util.List;
 
 public interface Media {
     MediaType getType();
+
+    @SneakyThrows
+    default void delay(int millis) {
+        Thread.sleep(millis);
+    }
 
     boolean isLogin();
 
@@ -25,5 +31,5 @@ public interface Media {
 
     List<OrderInfo> findOrders(DateTime start, DateTime end);
 
-    FindAdvResult getHighCommissionAdv();
+    FindAdvResult getHighCommissionAdv(String goodsName);
 }

@@ -47,9 +47,9 @@ public class AliPayCmd implements Command {
             sourceMessage = message;
             code = message.substring(s + start.length(), e);
         }
-        return HandleResult.ok(String.format("\n--------------------------------\n" +
+        return HandleResult.ok(String.format("\n%s" +
                 "【红包】福利来袭【红包】\n" +
                 "支富宝搜数字：“%s”，即可领紅包\n" +
-                "注意，领到就可以花了哦", code));
+                "注意，领到就可以花了哦", splitText, code));
     }
 }

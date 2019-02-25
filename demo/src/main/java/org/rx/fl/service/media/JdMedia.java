@@ -226,7 +226,7 @@ public class JdMedia implements Media {
     }
 
     @Override
-    public FindAdvResult getHighCommissionAdv() {
+    public FindAdvResult getHighCommissionAdv(String goodsName) {
         return null;
     }
 

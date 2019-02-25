@@ -8,6 +8,7 @@ import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.dto.repo.UserInfo;
 import org.rx.fl.repository.model.Commission;
 import org.rx.fl.repository.model.Order;
+import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.impl.CommissionCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.user.UserService;
@@ -45,6 +46,12 @@ public class NotifyService {
         Thread.sleep(200);
     }
 
+    public void add(String userId, String content) {
+        require(userId, content);
+
+        add(userId, Collections.singletonList(content));
+    }
+
     public void add(String userId, List<String> contents) {
         require(userId, contents);
 
@@ -74,17 +81,17 @@ public class NotifyService {
                             "\n" +
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
-                            "-------------------------------\n" +
-                            "亲 确认收货成功后，回复 提现 两个字，给你补贴红包\n" +
-                            "\n" +
-                            CommissionCmd.codeFormat, paidOrder.getGoodsName(), paidOrder.getOrderNo(),
+                            "%s" +
+                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包\n" +
+                            CommissionCmd.partnerMessage,
+                    paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                     toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
-                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount())),
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText),
                     CommissionCmd.getCode(user.getUserId())));
         }
         for (Order settleOrder : notifyInfo.settleOrders) {
             UserInfo user = userService.queryUser(settleOrder.getUserId());
-            add(user.getUserId(), Collections.singletonList(String.format("一一一一收 货 成 功一一一一\n" +
+            add(user.getUserId(), String.format("一一一一收 货 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
                             "%s\n" +
@@ -94,15 +101,16 @@ public class NotifyService {
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "总成功订单: %s单\n" +
-                            "-------------------------------\n" +
-                            "回复 提现 两个字，给你补贴红包\n" +
-                            "补贴红包已转入可提现金额", settleOrder.getGoodsName(), settleOrder.getOrderNo(),
+                            "%s" +
+                            "回复 提现 两个字，给您补贴红包\n" +
+                            "补贴红包已转入可提现金额",
+                    settleOrder.getGoodsName(), settleOrder.getOrderNo(),
                     toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
-                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount())));
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
         }
         for (Order order : notifyInfo.restoreSettleOrder) {
             UserInfo user = userService.queryUser(order.getUserId());
-            add(user.getUserId(), Collections.singletonList(String.format("一一一一退 货 成 功一一一一\n" +
+            add(user.getUserId(), String.format("一一一一退 货 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
                             "%s\n" +
@@ -112,18 +120,18 @@ public class NotifyService {
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "总成功订单: %s单\n" +
-                            "-------------------------------\n" +
+                            "%s" +
                             "补贴红包已从可提现金额扣除", order.getGoodsName(), order.getOrderNo(),
                     toMoney(order.getPayAmount()), toMoney(order.getSettleAmount()),
-                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount())));
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
         }
         for (Commission commission : notifyInfo.paidCommissionOrders) {
-            add(commission.getUserId(), Collections.singletonList(String.format("一一一一伙 伴 支 付一一一一\n" +
-                    "亲，您的伙伴已下单，伙伴确认收货后可收到红包补贴约%.2f元", toMoney(commission.getAmount()))));
+            add(commission.getUserId(), String.format("一一一一伙 伴 支 付一一一一\n" +
+                    "亲，您的伙伴已下单，伙伴确认收货后可收到红包补贴约%.2f元", toMoney(commission.getAmount())));
         }
         for (Commission commission : notifyInfo.settleCommissionOrders) {
-            add(commission.getUserId(), Collections.singletonList(String.format("一一一一伙 伴 收 货一一一一\n" +
-                    "亲，您的伙伴已收货，红包补贴%.2f元已转入可提现金额", toMoney(commission.getAmount()))));
+            add(commission.getUserId(), String.format("一一一一伙 伴 收 货一一一一\n" +
+                    "亲，您的伙伴已收货，红包补贴%.2f元已转入可提现金额", toMoney(commission.getAmount())));
         }
     }
 }

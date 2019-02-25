@@ -1,6 +1,8 @@
 package org.rx.fl.service.command;
 
 public interface Command {
+    String splitText = "-------------------------------\n";
+
     default int getStep() {
         return 1;
     }

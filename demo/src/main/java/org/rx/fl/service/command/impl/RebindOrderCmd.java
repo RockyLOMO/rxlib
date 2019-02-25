@@ -43,7 +43,7 @@ public class RebindOrderCmd implements Command {
             case 1:
                 step = 2;
                 return HandleResult.ok("一一一一订 单 绑 定一一一一\n" +
-                        "    付款成功后如果2分钟内没有订单记录再发送订单编号绑定，订单编号在购买的商品详细页能查看到。", this);
+                        "付款成功后如果2分钟内没有订单记录再发送订单编号绑定，订单编号在购买的商品详细页能查看到。", this);
             case 2:
                 try {
                     RebindOrderResult result = orderService.rebindOrder(userId, message);
