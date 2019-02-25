@@ -365,15 +365,14 @@ public class TbMedia implements Media {
         return caller.invokeNew(caller -> {
             try {
                 GoodsInfo goodsInfo = new GoodsInfo();
-                WebElement hybridElement = caller.navigateUrl(url, ".tb-main-title,input[name=title],.mod-title,.item-title").first();
+                WebElement hybridElement = caller.navigateUrl(url, ".tb-main-title,input[name=title],.item-title").first();
                 String currentUrl = caller.getCurrentUrl();
                 if (currentUrl.contains(".fliggy.com/")) {
                     String name = hybridElement.getText().trim();
                     goodsInfo.setName(name);
                     goodsInfo.setSellerName(caller.elementText(".c-shop-logo-name").trim());
                 } else if (currentUrl.contains(".taobao.com/trip")) {//飞猪h5
-                    String name = hybridElement.getText().trim();
-                    goodsInfo.setName(name);
+                    goodsInfo.setName(caller.elementText(".mod-title").trim());
                     goodsInfo.setSellerName(caller.elementText(".name").trim());
                 } else if (currentUrl.contains(".taobao.com/")) {
                     String name = hybridElement.getText().trim();
@@ -423,7 +422,7 @@ public class TbMedia implements Media {
             if (url.contains("//szsupport.weixin.qq.com/")) {
                 httpUrl = HttpUrl.get(url = httpUrl.queryParameter("url"));
             }
-            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com", "tb.cn").contains(httpUrl.topPrivateDomain())) {
+            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com", "tb.cn", "dfkhgj.com").contains(httpUrl.topPrivateDomain())) {
                 return url;
             }
         } catch (Exception e) {

@@ -36,17 +36,17 @@ import static org.rx.util.AsyncTask.TaskFactory;
 public class NotifyService {
     @Resource
     private BotService botService;
-    @Resource
     private UserService userService;
     @Resource
     private AliPayCmd aliPayCmd;
     private final ConcurrentLinkedQueue<List<MessageInfo>> queue;
 
     @Autowired
-    public NotifyService(UserConfig userConfig) {
+    public NotifyService(UserService userService, UserConfig userConfig) {
         queue = new ConcurrentLinkedQueue<>();
         TaskFactory.schedule(this::push, 2 * 1000);
 
+        this.userService = userService;
         $<OpenIdInfo> openId = $.$();
         String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
         if (adminId != null) {
