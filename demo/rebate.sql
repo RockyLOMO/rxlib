@@ -35,15 +35,15 @@ select * from t_user_goods where goods_id = '7171918';
 select t1.wx_open_id,t2.* from t_user t1
 inner join t_balance_log t2 on t1.id = t2.user_id
 where 1=1
-and t1.wx_open_id = 'Joyce-lee123'
+and t1.wx_open_id = 'RockyLOMO'
 order by t2.create_time desc;
 
 #流水与订单
 select t1.wx_open_id,t2.*,t3.* from t_user t1
 inner join t_balance_log t2 on t1.id = t2.user_id
-inner join t_order t3 on t2.source_id = t2.id
+inner join t_order t3 on t2.source_id = t3.id
 where 1=1
-and t1.wx_open_id = 'yan_131415'
+and t1.wx_open_id = 'RockyLOMO'
 order by t2.create_time desc;
 
 #提现列表

@@ -89,18 +89,18 @@ public class AwtClipboard implements ClipboardOwner {
         waiter.waitOne(500);
         waiter.reset();
         log.info("waitSetComplete ok @ {}", DateTime.now().toString());
-        Thread.sleep(15);
+        Thread.sleep(30);
     }
 
     private void listen() {
-        lock(() -> {
+//        lock(() -> {
             try {
                 clipboard.setContents(clipboard.getContents(null), this);
             } catch (Exception e) {
                 log.warn("listen", e);
             }
-            return null;
-        });
+//            return null;
+//        });
     }
 
     @SneakyThrows

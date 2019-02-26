@@ -18,6 +18,7 @@ import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.user.UserService;
+import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -140,6 +141,10 @@ public class NotifyService {
         }
         for (Order settleOrder : notifyInfo.settleOrders) {
             UserInfo user = userService.queryUser(settleOrder.getUserId());
+            Long amount = DbUtil.getRebateAmount(settleOrder.getRebateAmount(), settleOrder.getSettleAmount());
+            if (DbUtil.isEmpty(amount)) {
+                continue;
+            }
             add(user.getUserId(), String.format("一一一一收 货 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
@@ -154,7 +159,7 @@ public class NotifyService {
                             "回复 提现 两个字，给您补贴红包\n" +
                             "补贴红包已转入可提现金额",
                     settleOrder.getGoodsName(), settleOrder.getOrderNo(),
-                    toMoney(settleOrder.getPayAmount()), toMoney(settleOrder.getSettleAmount()),
+                    toMoney(settleOrder.getPayAmount()), toMoney(amount),
                     toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
         }
         for (Order order : notifyInfo.restoreSettleOrder) {
