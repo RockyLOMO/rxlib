@@ -132,8 +132,7 @@ public class NotifyService {
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "%s" +
-                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包\n" +
-                            "%s",
+                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包",
                     paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                     toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
                     toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText),
