@@ -28,7 +28,8 @@ public class SubscribeCmd implements Command {
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
         if (userService.isNoob(userId)) {
-            return helpCmd.handleMessage(userId, message);
+//            return helpCmd.handleMessage(userId, message);
+            return HandleResult.ok("");
         }
 
         return HandleResult.ok(String.format("一一一一系 统 消 息一一一一\n" +

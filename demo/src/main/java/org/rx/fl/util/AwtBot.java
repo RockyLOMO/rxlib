@@ -291,8 +291,10 @@ public class AwtBot {
     }
 
     public void mouseWheel(int wheelAmt) {
-        bot.mouseWheel(wheelAmt);
-        bot.delay(autoDelay);
+        clickInvoke(() -> {
+            bot.mouseWheel(wheelAmt);
+            bot.delay(autoDelay);
+        });
     }
 
     private void clickInvoke(Action action) {

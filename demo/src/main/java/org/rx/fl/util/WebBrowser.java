@@ -600,11 +600,19 @@ public final class WebBrowser extends Disposable {
         return elements.select(p -> p.getAttribute(attrName));
     }
 
+    public synchronized void focus() {
+        setWindowRectangle(getWindowRectangle());
+    }
+
     public void elementClick(String selector) {
         elementClick(selector, false);
     }
 
     public void elementClick(String selector, boolean waitElementLocated) {
+        elementClick(selector, waitElementLocated, null);
+    }
+
+    public synchronized void elementClick(String selector, boolean waitElementLocated, Function<WebElement, Point> botClick) {
         checkNotClosed();
         require(selector);
 
@@ -620,9 +628,27 @@ public final class WebBrowser extends Disposable {
         try {
             element.click();
         } catch (WebDriverException e) {
-            log.info("Script click element {}", selector);
-            executeScript(String.format("$('%s').click();", selector));
+            if (botClick != null) {
+                Point point = botClick.apply(element);
+                focus();
+                AwtBot.getBot().mouseLeftClick(point.x, point.y);
+                return;
+            }
+            try {
+                executeScript(String.format("$('%s').click();", selector));
+            } catch (WebDriverException ex) {
+                log.warn("Element {} click -> {} {}", selector, e.getMessage(), ex.getMessage());
+            }
         }
+    }
+
+    public void elementPress(String selector, CharSequence keys) {
+        checkNotClosed();
+        require(selector);
+
+        WebElement element = findElement(By.cssSelector(selector), true);
+        element.clear();
+        element.sendKeys(keys);
     }
 
     public <T> T executeScript(String script, Object... args) {

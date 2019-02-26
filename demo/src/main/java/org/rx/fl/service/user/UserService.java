@@ -15,7 +15,6 @@ import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
-import org.rx.fl.service.command.impl.CommissionCmd;
 import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +28,7 @@ import java.util.function.Consumer;
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
 import static org.rx.fl.repository.UserMapper.rootId;
+import static org.rx.fl.service.command.Command.splitText;
 import static org.rx.fl.util.DbUtil.toMoney;
 
 @Service
@@ -163,6 +163,16 @@ public class UserService {
         }
         return parentNode;
     }
+
+    public String getRelationMessage(String userId) {
+        return String.format("\n将 小范省钱 名片推荐给好友，永久享受额外20%%返利提成！\n" +
+                "好友添加 小范省钱 后发送您的微信号 %s 即可绑定成为伙伴哦～", getRelationCode(userId));
+    }
+
+    public String getRelationCode(String userId) {
+        OpenIdInfo openId = getOpenId(userId, BotType.Wx);
+        return openId.getOpenId();
+    }
     //endregion
 
     public UserInfo queryUser(String userId) {
@@ -209,13 +219,20 @@ public class UserService {
         return !(userGoodsMapper.countByExample(q) > 0);
     }
 
-    @Transactional
     public String getUserId(OpenIdInfo openId) {
+        return getUserId(openId, true);
+    }
+
+    @Transactional
+    public String getUserId(OpenIdInfo openId, boolean createOnEmpty) {
         require(openId);
 
         String userId = App.hash(openId.getBotType().getValue() + openId.getOpenId()).toString();
         User user = userMapper.selectByPrimaryKey(userId);
         if (user == null) {
+            if (!createOnEmpty) {
+                return null;
+            }
             user = new User();
             user.setId(userId);
             user.setNickname(openId.getNickname());
@@ -500,12 +517,11 @@ public class UserService {
         } else {
             withdrawLog.setRemark(remark);
             String account = Strings.isNullOrEmpty(user.getAlipayAccount()) ? String.format("微信 %s", user.getWxOpenId()) : String.format("%s %s", user.getAlipayName(), user.getAlipayAccount());
-            contents = Arrays.asList(String.format("一一一一提 现 成 功一一一一\n" +
-                            "提现金额: %.2f元\n" +
-                            "转入账户: %s\n" +
-                            "-------------------------------\n" +
-                            CommissionCmd.partnerMessage, toMoney(withdrawLog.getAmount()), account),
-                    CommissionCmd.getCode(user.getId()));
+            contents = Collections.singletonList(String.format("一一一一提 现 成 功一一一一\n" +
+                    "提现金额: %.2f元\n" +
+                    "转入账户: %s\n" +
+                    "%s" +
+                    "%s", toMoney(withdrawLog.getAmount()), account, splitText, getRelationMessage(user.getId())));
         }
         withdrawLog.setStatus(status.getValue());
         dbUtil.save(withdrawLog);

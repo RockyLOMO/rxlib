@@ -5,6 +5,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.ClassPath;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.ShortUUID;
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
 
 import static org.rx.common.Contract.*;
 
+@Slf4j
 public class App {
     //region Nested
     public enum CacheContainerKind {
@@ -52,9 +54,9 @@ public class App {
     //endregion
 
     //region Fields
-    public static final int MaxSize = Integer.MAX_VALUE - 8;
-    public static final int TimeoutInfinite = -1;
-    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
+    public static final int               MaxSize         = Integer.MAX_VALUE - 8;
+    public static final int               TimeoutInfinite = -1;
+    private static final String           base64Regex     = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
 
@@ -86,7 +88,7 @@ public class App {
                 if (windowsOS()) {
                     process = Runtime.getRuntime().exec(shellString, null, dir);
                 } else {
-                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", shellString}, null, dir);
+                    process = Runtime.getRuntime().exec(new String[] { "/bin/sh", "-c", shellString }, null, dir);
                 }
                 try (LineNumberReader input = new LineNumberReader(
                         new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -96,7 +98,7 @@ public class App {
                     }
                 }
             } catch (Exception e) {
-                Logger.error(e, "execShell");
+                log.error("execShell", e);
                 result.append("ERROR: " + e.getMessage()).append("\n");
             }
             msg.append(String.format("\npost-execShell %s\n\n", result));
@@ -105,7 +107,7 @@ public class App {
             }
             resultList.add(result.toString());
         }
-        Logger.info(msg.toString());
+        log.info(msg.toString());
         return resultList;
     }
 
@@ -164,7 +166,7 @@ public class App {
         try {
             action.invoke();
         } catch (Exception ex) {
-            Logger.info("CatchCall %s", ex.getMessage());
+            log.warn("CatchCall {}", ex.getMessage());
         }
     }
 
@@ -174,7 +176,7 @@ public class App {
         try {
             return action.invoke();
         } catch (Exception ex) {
-            Logger.info("CatchCall %s", ex.getMessage());
+            log.warn("CatchCall {}", ex.getMessage());
         }
         return null;
     }
@@ -242,7 +244,7 @@ public class App {
         return NQuery.of(classes).select(p -> (Class) p.load()).toList();
     }
 
-    @ErrorCode(value = "argError", messageKeys = {"$type"})
+    @ErrorCode(value = "argError", messageKeys = { "$type" })
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 
@@ -391,8 +393,8 @@ public class App {
         return readSetting(key, type, "application.yml");
     }
 
-    @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
-    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
+    @ErrorCode(value = "keyError", messageKeys = { "$key", "$file" })
+    @ErrorCode(value = "partialKeyError", messageKeys = { "$key", "$file" })
     public static <T> T readSetting(String key, Class<T> type, String yamlFile) {
         require(key, yamlFile);
 
@@ -511,7 +513,7 @@ public class App {
         return split(str, delimiter, null);
     }
 
-    @ErrorCode(value = "lengthError", messageKeys = {"$len"})
+    @ErrorCode(value = "lengthError", messageKeys = { "$len" })
     public static String[] split(String str, String delimiter, Integer length) {
         String[] result;
         if (isNullOrEmpty(str)) {
@@ -578,10 +580,10 @@ public class App {
         }
     }
 
-    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
-    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
+    @ErrorCode(value = "notSupported", messageKeys = { "$fType", "$tType" })
+    @ErrorCode(value = "enumError", messageKeys = { "$name", "$names", "$eType" })
+    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = { "$type" })
+    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = { "$fType", "$tType", "$val" })
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
@@ -639,7 +641,7 @@ public class App {
         return (T) value;
     }
 
-    @ErrorCode(messageKeys = {"$type"})
+    @ErrorCode(messageKeys = { "$type" })
     private static Class checkType(Class type) {
         if (!type.isPrimitive()) {
             return type;
@@ -688,7 +690,7 @@ public class App {
         require(obj);
 
         try (MemoryStream stream = new MemoryStream();
-             ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
+                ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
             out.writeObject(obj);
             return stream.toArray();
         }
@@ -704,7 +706,7 @@ public class App {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
-             ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
+                ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
             return in.readObject();
         }
     }

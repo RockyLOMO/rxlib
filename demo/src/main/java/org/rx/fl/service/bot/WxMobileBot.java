@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
+import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.BotType;
@@ -94,14 +95,8 @@ public class WxMobileBot implements Bot {
             return;
         }
 
-        captureFuture = TaskFactory.schedule(() -> {
-            try {
-                //抛异常会卡住
-                captureUsers();
-            } catch (Exception e) {
-                log.warn(e.getMessage(), e);
-            }
-        }, capturePeriod);
+        //抛异常会卡住
+        captureFuture = TaskFactory.schedule(() -> App.catchCall(this::captureUsers), capturePeriod);
     }
 
     public void stop() {
@@ -126,6 +121,14 @@ public class WxMobileBot implements Bot {
 
     public List<Point> findScreenPoints(BufferedImage image) {
         return bot.findScreenPoints(image);
+    }
+
+    private Point getUsersPoint() {
+        return getAbsolutePoint(30, 92);
+    }
+
+    private Point getStandbyPoint() {
+        return getAbsolutePoint(93, 414);
     }
     //endregion
 
@@ -235,14 +238,14 @@ public class WxMobileBot implements Bot {
 
             if (captureFlag < captureScrollCount) {
                 if (captureFlag == 0) {
-                    bot.mouseLeftClick(getAbsolutePoint(94, 415));
-                    bot.delay(delay2);
+                    bot.mouseLeftClick(getStandbyPoint());
+                    bot.delay(delay1);
                 }
                 captureFlag++;
             } else {
-                bot.mouseLeftClick(getAbsolutePoint(94, 415));
+                bot.mouseLeftClick(getStandbyPoint());
                 bot.mouseWheel(-1);
-                bot.delay(delay2);
+                bot.delay(delay1);
                 captureFlag = 1;
             }
         } finally {
@@ -319,7 +322,7 @@ public class WxMobileBot implements Bot {
                 if (checkCount > 0) {
                     Thread.sleep(1800);
                 }
-                bot.mouseLeftClick(getAbsolutePoint(32, 92));
+                bot.mouseLeftClick(getUsersPoint());
                 bot.delay(delay1);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
                 bot.delay(delay2);
@@ -360,9 +363,9 @@ public class WxMobileBot implements Bot {
                 log.info("step2 send msg {} to user {}", msg, openId);
             }
 
-            bot.mouseLeftClick(getAbsolutePoint(30, 92));
+            bot.mouseLeftClick(getUsersPoint());
             bot.delay(delay1);
-            bot.mouseLeftClick(getAbsolutePoint(94, 415));
+            bot.mouseLeftClick(getStandbyPoint());
             bot.delay(delay1);
         } finally {
             locker.unlock();

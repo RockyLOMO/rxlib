@@ -11,6 +11,7 @@ app.errorCodeFiles:
 app.mybatis.mapperScan: org.rx.fl.repository
 app.commandList: CommissionCmd,FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,AliPayCmd,SubscribeCmd
 #app.bot.debugPath: /_rx/bot/
+app.goodsNames: 垃圾袋,
 app.repository.dbFile: /_rx/lr.db
 app.sms.appId: 1400123840
 app.sms.appKey: 0decfdc628b7d885a790524133f22339
@@ -19,7 +20,7 @@ app.sms.smsSign: 隽斋
 ---
 
 spring:
-  profiles: dev
+  profiles: prd
   datasource:
     url: jdbc:mysql://r.x.org:3306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: rx_rebate_dev_user
@@ -48,10 +49,13 @@ app:
       guideUrl: http://t.cn/EVYaBsn
     jd:
       coreSize: 0
-      keepLoginSeconds: 60
+      keepLoginSeconds: 70
       loginPort: 8081
       rootPercent: 95
       guideUrl: http://t.cn/EcsaJnC
+    pdd:
+      coreSize: 0
+      keepLoginSeconds: 60
   browser:
     windowRectangle: 0,0,1024,800
     errorCountToExchange: 4
@@ -110,6 +114,9 @@ app:
       loginPort: 8081
       rootPercent: 95
       guideUrl: http://t.cn/EcsaJnC
+    pdd:
+      coreSize: 0
+      keepLoginSeconds: 60
   browser:
     windowRectangle: 800,1000,800,600
     errorCountToExchange: 3

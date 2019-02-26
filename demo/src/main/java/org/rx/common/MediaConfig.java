@@ -31,10 +31,20 @@ public class MediaConfig {
         private String guideUrl;
     }
 
+    @Data
+    @Component
+    @ConfigurationProperties(prefix = "app.media.pdd")
+    public class PddConfig {
+        private int coreSize;
+        private int keepLoginSeconds;
+    }
+
     @Resource
     private TaobaoConfig taobao;
     @Resource
     private JdConfig jd;
+    @Resource
+    private PddConfig pdd;
 
     private String enableMedias;
     private int syncWeeklyOrderSeconds;

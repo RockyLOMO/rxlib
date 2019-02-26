@@ -312,12 +312,6 @@ public class JdMedia implements Media {
             caller.navigateUrl(keepLoginUrl[0], BodySelector);
             caller.waitComplete(2, i -> caller.getCurrentUrl().equals(loginUrl), false);
             while (caller.getCurrentUrl().equals(loginUrl)) {
-//                caller.executeScript("var doc = $(\"#indexIframe\")[0].contentDocument;\n" +
-//                        "        $(\"#loginname\", doc).val(\"17091916400\");\n" +
-//                        "        $(\"#nloginpwd\", doc).val(window.atob(\"amluamluJlI0ZXZlcg==\"));\n" +
-//                        "        $(\"#paipaiLoginSubmit\", doc).click();");
-//                caller.waitComplete(8, i -> !caller.getCurrentUrl().equals(loginUrl), false);
-//
                 try {
                     String key = helper.produceKey();
                     log.info("produce key {}", key);

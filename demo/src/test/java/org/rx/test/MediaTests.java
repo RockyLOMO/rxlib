@@ -15,6 +15,7 @@ import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.service.media.JdMedia;
 import org.rx.fl.service.media.Media;
+import org.rx.fl.service.media.PddMedia;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.util.JsonMapper;
 
@@ -26,6 +27,15 @@ import static org.rx.common.Contract.toJsonString;
 
 @Slf4j
 public class MediaTests {
+    @SneakyThrows
+    @Test
+    public void pddMedia() {
+        Media media = new PddMedia(getConfig());
+        media.login();
+
+        System.in.read();
+    }
+
     @Test
     public void jdOrders() {
         List<OrderInfo> list = new ArrayList<>();

@@ -16,7 +16,6 @@ import org.rx.fl.repository.model.Order;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.impl.AliPayCmd;
-import org.rx.fl.service.command.impl.CommissionCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.user.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,11 +50,11 @@ public class NotifyService {
         String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
         if (adminId != null) {
             openId.$ = userService.getOpenId(adminId, BotType.Wx);
-            TaskFactory.schedule(() -> {
+            TaskFactory.schedule(() -> App.catchCall(() -> {
                 MessageInfo heartbeat = new MessageInfo(openId.$);
-                heartbeat.setContent(String.format("Heartbeat %s", DateTime.now().toString()));
+                heartbeat.setContent(String.format("Heartbeat %s", DateTime.now().toDateTimeString()));
                 botService.pushMessages(heartbeat);
-            }, userConfig.getHeartbeatMinutes() * 60 * 1000);
+            }), userConfig.getHeartbeatMinutes() * 60 * 1000);
         }
 
         if (userConfig.getAliPayCode() != null && openId.$ != null) {
@@ -66,7 +65,7 @@ public class NotifyService {
             }, 10 * 1000);
         }
 
-        TaskFactory.schedule(() -> {
+        TaskFactory.schedule(() -> App.catchCall(() -> {
             if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
                 return;
             }
@@ -85,7 +84,7 @@ public class NotifyService {
                     }
                     break;
             }
-        }, 58 * 60 * 1000);
+        }), 58 * 60 * 1000);
     }
 
     @SneakyThrows
@@ -134,11 +133,11 @@ public class NotifyService {
                             "未收货金额: %.2f元\n" +
                             "%s" +
                             "亲 确认收货成功后，回复 提现 两个字，给您补贴红包\n" +
-                            CommissionCmd.partnerMessage,
+                            "%s",
                     paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                     toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
                     toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText),
-                    CommissionCmd.getCode(user.getUserId())));
+                    userService.getRelationMessage(user.getUserId())));
         }
         for (Order settleOrder : notifyInfo.settleOrders) {
             UserInfo user = userService.queryUser(settleOrder.getUserId());

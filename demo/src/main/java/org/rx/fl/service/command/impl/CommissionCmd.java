@@ -1,7 +1,6 @@
 package org.rx.fl.service.command.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.App;
 import org.rx.common.SystemException;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.OpenIdInfo;
@@ -15,8 +14,6 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
-import java.util.UUID;
-
 import static org.rx.common.Contract.require;
 
 @Order(2)
@@ -24,40 +21,31 @@ import static org.rx.common.Contract.require;
 @Scope("prototype")
 @Slf4j
 public class CommissionCmd implements Command {
-    public static final String partnerMessage = "\n将 小范省钱 名片推荐给好友，永久享受20%%返利提成！\n" +
-            "好友添加 小范省钱 后发送下方↓↓文字即可绑定成伙伴哦～";
-
-    public static String getCode(String userId) {
-        return App.toShorterUUID(UUID.fromString(userId));
-    }
-
     @Resource
     private UserService userService;
     @Resource
     private NotifyService notifyService;
-    private UUID code;
+    private String parentUserId;
 
     @Override
     public boolean peek(String message) {
         require(message);
         message = message.trim();
+        if (message.length() > 22) {
+            return false;
+        }
 
-        if (message.length() != 22) {
-            return false;
-        }
-        try {
-            code = App.fromShorterUUID(message);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        OpenIdInfo openId = new OpenIdInfo();
+        openId.setBotType(BotType.Wx);
+        openId.setOpenId(message);
+        parentUserId = userService.getUserId(openId, false);
+        return parentUserId != null;
     }
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
         require(userId, message);
 
-        String parentUserId = code.toString();
         try {
             userService.bindRelation(userId, parentUserId);
             OpenIdInfo openId = userService.getOpenId(userId, BotType.Wx);

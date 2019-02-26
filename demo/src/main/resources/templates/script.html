@@ -79,6 +79,9 @@
         return JSON.stringify(result);
     }
 
+    window.btoa("fanli-x&4ever")
+
+    //
     function jd_login() {
         var doc = $("#indexIframe")[0].contentDocument;
         $("#loginname", doc).val("17091916400");
@@ -151,6 +154,16 @@
             json.orders.push(order);
         }
         return JSON.stringify(json);
+    }
+
+    function pdd_login() {
+        $(".btn-link").click();
+        var me = $;
+        setTimeout(function () {
+            me("#mobile").value = "17091916400";
+            me("input[type=password]").value = window.atob("ZmFubGkteCY0ZXZlcg==");
+            me(".item-div .login-btn").click();
+        }, 1000);
     }
 </script>
 </body>

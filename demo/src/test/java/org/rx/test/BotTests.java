@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import okhttp3.HttpUrl;
 import org.junit.Test;
+import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
@@ -15,6 +16,7 @@ import org.rx.util.ManualResetEvent;
 
 import java.awt.*;
 import java.util.List;
+import java.util.UUID;
 
 //@RunWith(SpringRunner.class)
 //@SpringBootTest
@@ -22,6 +24,8 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
+        System.out.println(App.toShorterUUID(UUID.fromString("5483c10a-98d4-63cf-b427-31e26251ed8d")));
+        System.out.println(App.fromShorterUUID("EkCHKMVpEdpnDSqdam384H"));
 //        AwtBot bot = AwtBot.getBot();
 //        int y = (int) bot.getScreenRectangle().getHeight();
 //        bot.clickAndAltF4(220, y - 20);
@@ -30,12 +34,12 @@ public class BotTests {
 //        bot.mouseLeftClick(220, y - 64);
 //        bot.clickByImage(ImageUtil.getImageFromResource(WxBot.class, "/static/jdKey2.png"));
 
-        String url = "https://szsupport.weixin.qq.com/cgi-bin/mmsupport-bin/readtemplate?t=w_redirect_taobao&url=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fspm%3Da230r.1.14.164.436b3078xt4nB5%26id%3D14312037600%26ns%3D1%26abbucket%3D1%23detail&lang=zh_CN";
-        HttpUrl httpUrl = HttpUrl.get(url);
-        for (String name : httpUrl.queryParameterNames()) {
-            System.out.println("name:" + name);
-            System.out.println("value:" + httpUrl.queryParameter(name));
-        }
+//        String url = "https://szsupport.weixin.qq.com/cgi-bin/mmsupport-bin/readtemplate?t=w_redirect_taobao&url=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fspm%3Da230r.1.14.164.436b3078xt4nB5%26id%3D14312037600%26ns%3D1%26abbucket%3D1%23detail&lang=zh_CN";
+//        HttpUrl httpUrl = HttpUrl.get(url);
+//        for (String name : httpUrl.queryParameterNames()) {
+//            System.out.println("name:" + name);
+//            System.out.println("value:" + httpUrl.queryParameter(name));
+//        }
         System.in.read();
     }
 
