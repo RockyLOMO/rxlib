@@ -33,7 +33,8 @@ public class UserDashboardCmd implements Command {
 
         UserInfo user = userService.queryUser(userId);
         return HandleResult.ok(String.format("一一一一个 人 信 息一一一一\n" +
-                        "      微信号: %s\n" +
+                        "微信号: %s\n" +
+                        "\n" +
                         "总提现金额: %.2f元\n" +
                         "可提现金额: %.2f元\n" +
                         "    冻结金额: %.2f元\n" +

@@ -86,10 +86,10 @@ public class AwtClipboard implements ClipboardOwner {
     @SneakyThrows
     public void waitSetComplete() {
         log.info("waitSetComplete wait @ {}", DateTime.now().toString());
+        Thread.sleep(10);
         waiter.waitOne(500);
-        log.info("waitSetComplete ok @ {}", DateTime.now().toString());
-        Thread.sleep(20);
         waiter.reset();
+        log.info("waitSetComplete ok @ {}", DateTime.now().toString());
     }
 
     private void listen() {
@@ -104,12 +104,8 @@ public class AwtClipboard implements ClipboardOwner {
     @Override
     public void lostOwnership(Clipboard clipboard, Transferable contents) {
         log.info("lostOwnership and set waiter");
-        try {
-            Thread.sleep(3);
-            listen();
-        } catch (Exception e) {
-            log.warn("lostOwnership", e);
-        }
+        Thread.sleep(3);
+        listen();
         waiter.set();
     }
 }
