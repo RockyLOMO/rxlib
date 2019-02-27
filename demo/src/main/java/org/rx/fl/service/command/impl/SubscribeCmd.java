@@ -17,8 +17,6 @@ public class SubscribeCmd implements Command {
     private MediaConfig mediaConfig;
     @Resource
     private UserService userService;
-    @Resource
-    private HelpCmd helpCmd;
 
     @Override
     public boolean peek(String message) {
@@ -27,8 +25,8 @@ public class SubscribeCmd implements Command {
 
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
-        if (userService.isNoob(userId)) {
-//            return helpCmd.handleMessage(userId, message);
+        if (!userService.isNoob(userId)) {
+            //转账之类消息忽略
             return HandleResult.ok("");
         }
 

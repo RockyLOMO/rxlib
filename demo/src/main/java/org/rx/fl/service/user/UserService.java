@@ -9,12 +9,17 @@ import org.rx.beans.Tuple;
 import org.rx.common.*;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.OpenIdInfo;
+import org.rx.fl.dto.media.FindAdvResult;
+import org.rx.fl.dto.media.GoodsInfo;
 import org.rx.fl.dto.media.MediaType;
 import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
+import org.rx.fl.service.command.Command;
+import org.rx.fl.service.command.impl.AliPayCmd;
+import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -30,6 +35,7 @@ import static org.rx.common.Contract.values;
 import static org.rx.fl.repository.UserMapper.rootId;
 import static org.rx.fl.service.command.Command.splitText;
 import static org.rx.fl.util.DbUtil.toMoney;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
 @Slf4j
@@ -61,12 +67,17 @@ public class UserService {
     private NotifyService notifyService;
     @Resource
     private UserNodeService nodeService;
+    private UserConfig userConfig;
     private final NQuery<UserDegreeConfig> percentConfigs;
+    @Resource
+    private AliPayCmd aliPayCmd;
     //#endregion
 
-    //region Percent
+    //region Init
     @Autowired
     public UserService(UserConfig userConfig) {
+        this.userConfig = userConfig;
+
         percentConfigs = NQuery.of((userConfig).getRelations()).select(p -> {
             String[] pair = App.split(p, ",", 2);
             int percent = Integer.valueOf(pair[1]);
@@ -78,8 +89,19 @@ public class UserService {
             config.setPercent(percent);
             return config;
         });
-    }
 
+        TaskFactory.scheduleDaily(() -> App.catchCall(() -> {
+            if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
+                return;
+            }
+            for (String groupId : userConfig.getGroupAliPay()) {
+                notifyService.addGroup(groupId, aliPayCmd.getSourceMessage());
+            }
+        }), userConfig.getGroupAliPayTime());
+    }
+    //endregion
+
+    //region Percent
     public long compute(String userId, MediaType mediaType, long rebateAmount) {
         require(userId, mediaType);
 
@@ -175,6 +197,7 @@ public class UserService {
     }
     //endregion
 
+    //region Db
     public UserInfo queryUser(String userId) {
         require(userId);
         User user = dbUtil.selectById(userMapper, userId);
@@ -494,6 +517,7 @@ public class UserService {
             return Tuple.of(user, balanceLog.getId());
         }, null);
     }
+    //endregion
 
     //region Manual
     //人工处理提现
@@ -546,6 +570,99 @@ public class UserService {
             throw new InvalidOperationException("User not found");
         }
         return user;
+    }
+    //endregion
+
+    //region Notify
+    public void pushMessage(FindAdvResult advResult) {
+        require(advResult);
+
+        GoodsInfo goods = advResult.getGoods();
+        for (String groupId : userConfig.getGroupGoods()) {
+            Double rebateAmount = DbUtil.convertToMoney(goods.getRebateAmount()),
+                    couponAmount = DbUtil.convertToMoney(goods.getCouponAmount()),
+                    payAmount = DbUtil.convertToMoney(goods.getPrice()) - rebateAmount - couponAmount;
+            notifyService.addGroup(groupId, String.format("一一一一今 日 特 惠一一一一\n" +
+                            "【%s】%s\n" +
+                            "%s" +
+                            "约反      ￥%.2f\n" +
+                            "优惠券  ￥%.2f\n" +
+                            "付费价  ￥%.2f\n" +
+                            "复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
+                    advResult.getMediaType().toDescription(), goods.getName(), splitText,
+                    rebateAmount, couponAmount, payAmount, advResult.getShareCode()));
+        }
+    }
+
+    public void pushMessage(NotifyOrdersInfo notifyInfo) {
+        require(notifyInfo);
+
+        for (Order paidOrder : notifyInfo.paidOrders) {
+            UserInfo user = queryUser(paidOrder.getUserId());
+            notifyService.add(user.getUserId(), Arrays.asList(String.format("一一一一支 付 成 功一一一一\n" +
+                            "%s\n" +
+                            "订单编号:\n" +
+                            "%s\n" +
+                            "付费金额: %.2f元\n" +
+                            "红包补贴: %.2f元\n" +
+                            "\n" +
+                            "可提现金额: %.2f元\n" +
+                            "未收货金额: %.2f元\n" +
+                            "%s" +
+                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包",
+                    paidOrder.getGoodsName(), paidOrder.getOrderNo(),
+                    toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText),
+                    getRelationMessage(user.getUserId())));
+        }
+        for (Order settleOrder : notifyInfo.settleOrders) {
+            UserInfo user = queryUser(settleOrder.getUserId());
+            Long amount = DbUtil.getRebateAmount(settleOrder.getRebateAmount(), settleOrder.getSettleAmount());
+            if (DbUtil.isEmpty(amount)) {
+                continue;
+            }
+            notifyService.add(user.getUserId(), String.format("一一一一收 货 成 功一一一一\n" +
+                            "%s\n" +
+                            "订单编号:\n" +
+                            "%s\n" +
+                            "付费金额: %.2f元\n" +
+                            "红包补贴: %.2f元\n" +
+                            "\n" +
+                            "可提现金额: %.2f元\n" +
+                            "未收货金额: %.2f元\n" +
+                            "总成功订单: %s单\n" +
+                            "%s" +
+                            "回复 提现 两个字，给您补贴红包\n" +
+                            "补贴红包已转入可提现金额",
+                    settleOrder.getGoodsName(), settleOrder.getOrderNo(),
+                    toMoney(settleOrder.getPayAmount()), toMoney(amount),
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
+        }
+        for (Order order : notifyInfo.restoreSettleOrder) {
+            UserInfo user = queryUser(order.getUserId());
+            notifyService.add(user.getUserId(), String.format("一一一一退 货 成 功一一一一\n" +
+                            "%s\n" +
+                            "订单编号:\n" +
+                            "%s\n" +
+                            "付费金额: %.2f元\n" +
+                            "红包补贴: %.2f元\n" +
+                            "\n" +
+                            "可提现金额: %.2f元\n" +
+                            "未收货金额: %.2f元\n" +
+                            "总成功订单: %s单\n" +
+                            "%s" +
+                            "补贴红包已从可提现金额扣除", order.getGoodsName(), order.getOrderNo(),
+                    toMoney(order.getPayAmount()), toMoney(order.getSettleAmount()),
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
+        }
+        for (Commission commission : notifyInfo.paidCommissionOrders) {
+            notifyService.add(commission.getUserId(), String.format("一一一一伙 伴 支 付一一一一\n" +
+                    "亲，您的伙伴已下单，伙伴确认收货后可收到红包补贴约%.2f元", toMoney(commission.getAmount())));
+        }
+        for (Commission commission : notifyInfo.settleCommissionOrders) {
+            notifyService.add(commission.getUserId(), String.format("一一一一伙 伴 收 货一一一一\n" +
+                    "亲，您的伙伴已收货，红包补贴%.2f元已转入可提现金额", toMoney(commission.getAmount())));
+        }
     }
     //endregion
 }

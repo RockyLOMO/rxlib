@@ -28,6 +28,7 @@ import static org.rx.fl.repository.UserMapper.rootId;
  * 由数据库自动生成，你也可以添加其它属性。
  * <p>
  * 分类树有一个根节点，其ID为0，且不可修改ID、移动和删除。
+ * https://segmentfault.com/a/1190000014284076
  */
 @Service
 @Slf4j

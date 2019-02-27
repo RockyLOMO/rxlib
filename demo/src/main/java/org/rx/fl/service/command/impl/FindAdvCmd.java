@@ -3,7 +3,6 @@ package org.rx.fl.service.command.impl;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
-import org.rx.common.App;
 import org.rx.common.MediaConfig;
 import org.rx.fl.dto.media.AdvFoundStatus;
 import org.rx.fl.dto.media.FindAdvResult;
@@ -13,6 +12,7 @@ import org.rx.fl.service.order.OrderService;
 import org.rx.fl.service.user.UserService;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
+import org.rx.fl.util.DbUtil;
 import org.rx.fl.util.HttpCaller;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -22,7 +22,6 @@ import javax.annotation.Resource;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toCent;
@@ -71,16 +70,9 @@ public class FindAdvCmd implements Command {
         }
 
         TaskFactory.run(() -> userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId()));
-        Function<String, Double> convert = p -> {
-            if (Strings.isNullOrEmpty(p)) {
-                return 0d;
-            }
-            return App.changeType(p.replace("￥", "")
-                    .replace("¥", "").replace("元", ""), double.class);
-        };
         GoodsInfo goods = advResult.getGoods();
 
-        Double rebateAmount = convert.apply(goods.getRebateAmount());
+        Double rebateAmount = DbUtil.convertToMoney(goods.getRebateAmount());
         org.rx.fl.repository.model.Order computeOrder = new org.rx.fl.repository.model.Order();
         computeOrder.setUserId(userId);
         computeOrder.setMediaType(advResult.getMediaType().getValue());
@@ -88,10 +80,8 @@ public class FindAdvCmd implements Command {
         orderService.computeRebate(computeOrder);
         rebateAmount = toMoney(computeOrder.getRebateAmount());
 
-        Double couponAmount = convert.apply(goods.getCouponAmount()),
-                payAmount = convert.apply(goods.getPrice())
-                        - rebateAmount
-                        - couponAmount;
+        Double couponAmount = DbUtil.convertToMoney(goods.getCouponAmount()),
+                payAmount = DbUtil.convertToMoney(goods.getPrice()) - rebateAmount - couponAmount;
         StringBuilder reply = new StringBuilder(String.format("一一一一系 统 消 息一一一一\n" +
                         "【%s】%s\n" +
                         "%s" +

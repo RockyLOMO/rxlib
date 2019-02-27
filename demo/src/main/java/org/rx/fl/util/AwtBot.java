@@ -73,11 +73,12 @@ public class AwtBot {
 
     @SneakyThrows
     private AwtBot() {
+        this.autoDelay = 10;
         bot = new Robot();
+        bot.setAutoDelay(this.autoDelay / 2);
         clickLocker = new ReentrantLock(true);
         pressLocker = new ReentrantLock(true);
         clipboard = new AwtClipboard();
-        this.autoDelay = 10;
     }
 
     public void delay(int delay) {
@@ -229,6 +230,13 @@ public class AwtBot {
         return MouseInfo.getPointerInfo().getLocation();
     }
 
+    public void mouseRelease() {
+        clickInvoke(() -> {
+            bot.mouseRelease(InputEvent.BUTTON1_MASK);
+            bot.delay(autoDelay);
+        });
+    }
+
     public void mouseMove(Point point) {
         require(point);
 
@@ -269,6 +277,7 @@ public class AwtBot {
             bot.mousePress(InputEvent.BUTTON1_MASK);
             bot.mouseRelease(InputEvent.BUTTON1_MASK);
             bot.delay(autoDelay / 2);
+            bot.waitForIdle();
             bot.mousePress(InputEvent.BUTTON1_MASK);
             bot.mouseRelease(InputEvent.BUTTON1_MASK);
             bot.delay(autoDelay);
@@ -291,10 +300,10 @@ public class AwtBot {
     }
 
     public void mouseWheel(int wheelAmt) {
-        clickInvoke(() -> {
-            bot.mouseWheel(wheelAmt);
-            bot.delay(autoDelay);
-        });
+//        clickInvoke(() -> {
+        bot.mouseWheel(wheelAmt);
+        bot.delay(autoDelay);
+//        });
     }
 
     private void clickInvoke(Action action) {

@@ -1,8 +1,10 @@
 package org.rx.fl.service;
 
 import com.google.common.base.Strings;
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ArrayUtils;
 import org.rx.beans.DateTime;
 import org.rx.common.*;
 import org.rx.fl.dto.media.*;
@@ -11,6 +13,7 @@ import org.rx.fl.service.media.Media;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.service.order.OrderService;
+import org.rx.fl.service.user.UserService;
 import org.rx.util.ManualResetEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -22,14 +25,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.toJsonString;
+import static org.rx.common.Contract.*;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Service
 @Slf4j
 public class MediaService {
+    //region queue
     @Data
     private static class HoldItem {
         private final ConcurrentLinkedQueue<Media> queue = new ConcurrentLinkedQueue<>();
@@ -92,11 +96,12 @@ public class MediaService {
         holdItem.waiter.set();
         log.info("release media and waitHandle");
     }
+    //endregion
 
     @Resource
     private OrderService orderService;
     @Resource
-    private NotifyService notifyService;
+    private UserService userService;
     @Resource
     private MediaCache cache;
     private MediaConfig config;
@@ -106,7 +111,7 @@ public class MediaService {
     }
 
     @Autowired
-    public MediaService(MediaConfig config) {
+    public MediaService(MediaConfig config, UserConfig userConfig) {
         this.config = config;
         BiConsumer<MediaType, Integer> consumer = (p1, p2) -> {
             for (int i = 0; i < p2; i++) {
@@ -129,6 +134,7 @@ public class MediaService {
 
         TaskFactory.schedule(() -> syncOrder(8), config.getSyncWeeklyOrderSeconds() * 1000);
         TaskFactory.schedule(() -> syncOrder(-31), config.getSyncMonthlyOrderSeconds() * 1000);
+        TaskFactory.scheduleDaily(() -> recommendGoods(userConfig), userConfig.getGroupGoodsTime());
     }
 
     private void syncOrder(int daysAgo) {
@@ -143,22 +149,39 @@ public class MediaService {
                 }
                 NotifyOrdersInfo notify = new NotifyOrdersInfo();
                 orderService.saveOrders(orders, notify);
-                notifyService.add(notify);
+                userService.pushMessage(notify);
             } catch (Exception e) {
                 log.error("syncOrder", e);
             }
         }
     }
 
-    private <T> T invoke(MediaType type, Function<Media, T> function) {
-        require(type, function);
-
-        Media media = create(type, true);
-        try {
-            return function.apply(media);
-        } finally {
-            release(media);
+    private void recommendGoods(UserConfig userConfig) {
+        String[] goodsNames = userConfig.getGroupGoodsName();
+        if (ArrayUtils.isEmpty(goodsNames)) {
+            return;
         }
+
+        int offset = ThreadLocalRandom.current().nextInt(0, goodsNames.length - 1);
+        String goods = goodsNames[offset];
+        for (MediaType media : getMedias()) {
+            try {
+                FindAdvResult commissionAdv = getHighCommissionAdv(media, goods);
+                if (commissionAdv == null) {
+                    continue;
+                }
+                userService.pushMessage(commissionAdv);
+                break;
+            } catch (Exception e) {
+                log.error("recommendGoods", e);
+            }
+        }
+    }
+
+    public FindAdvResult getHighCommissionAdv(MediaType type, String goodsName) {
+        require(type, goodsName);
+
+        return invoke(type, p -> p.getHighCommissionAdv(goodsName));
     }
 
     public List<OrderInfo> findOrders(MediaType type, DateTime start, DateTime end) {
@@ -170,13 +193,7 @@ public class MediaService {
     public String findLink(String content) {
         require(content);
 
-        for (MediaType type : getMedias()) {
-            String link = invoke(type, p -> p.findLink(content));
-            if (!Strings.isNullOrEmpty(link)) {
-                return link;
-            }
-        }
-        return "";
+        return isNull(invokeAll(p -> p.findLink(content), p -> !Strings.isNullOrEmpty(p)), "");
     }
 
     public FindAdvResult findAdv(String content) {
@@ -184,58 +201,78 @@ public class MediaService {
 
         FindAdvResult result = null;
         for (int i = 0; i < 2; i++) {
-            for (MediaType type : getMedias()) {
-                result = invoke(type, media -> {
-                    FindAdvResult adv = new FindAdvResult();
-                    adv.setMediaType(media.getType());
-                    adv.setLink(media.findLink(content));
+            result = invokeAll(media -> {
+                FindAdvResult adv = new FindAdvResult();
+                adv.setMediaType(media.getType());
+                adv.setLink(media.findLink(content));
 
-                    if (Strings.isNullOrEmpty(adv.getLink())) {
-                        adv.setFoundStatus(AdvFoundStatus.NoLink);
-                        return adv;
-                    }
-
-                    //注意同一个商品分享来源连接会不一致
-                    GoodsInfo goodsInfo = cache.get(adv.getLink());
-//                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
-                    if (goodsInfo == null) {
-                        cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
-                    }
-                    adv.setGoods(goodsInfo);
-                    if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
-                        adv.setFoundStatus(AdvFoundStatus.NoGoods);
-                        return adv;
-                    }
-
-                    media.login();
-                    String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
-                    FindAdvResult item = cache.get(key);
-                    if (item == null) {
-                        item = new FindAdvResult();
-                        item.setShareCode(App.retry(2, p -> media.findAdv(adv.getGoods()), null));
-                        if (!Strings.isNullOrEmpty(item.getShareCode())) {
-                            item.setGoods(adv.getGoods());
-                            cache.add(key, item, config.getAdvCacheMinutes());
-                        }
-                    }
-                    adv.setGoods(item.getGoods());
-                    adv.setShareCode(item.getShareCode());
-                    if (Strings.isNullOrEmpty(adv.getShareCode())) {
-                        adv.setFoundStatus(AdvFoundStatus.NoAdv);
-                        return adv;
-                    }
-
-                    adv.setFoundStatus(AdvFoundStatus.Ok);
+                if (Strings.isNullOrEmpty(adv.getLink())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoLink);
                     return adv;
-                });
-                if (result.getFoundStatus() == AdvFoundStatus.Ok) {
-                    break;
                 }
-            }
+
+                //注意同一个商品分享来源连接会不一致
+                GoodsInfo goodsInfo = cache.get(adv.getLink());
+//                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
+                if (goodsInfo == null) {
+                    cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
+                }
+                adv.setGoods(goodsInfo);
+                if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoGoods);
+                    return adv;
+                }
+
+                media.login();
+                String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
+                FindAdvResult item = cache.get(key);
+                if (item == null) {
+                    item = new FindAdvResult();
+                    item.setShareCode(App.retry(2, p -> media.findAdv(adv.getGoods()), null));
+                    if (!Strings.isNullOrEmpty(item.getShareCode())) {
+                        item.setGoods(adv.getGoods());
+                        cache.add(key, item, config.getAdvCacheMinutes());
+                    }
+                }
+                adv.setGoods(item.getGoods());
+                adv.setShareCode(item.getShareCode());
+                if (Strings.isNullOrEmpty(adv.getShareCode())) {
+                    adv.setFoundStatus(AdvFoundStatus.NoAdv);
+                    return adv;
+                }
+
+                adv.setFoundStatus(AdvFoundStatus.Ok);
+                return adv;
+            }, p -> p.getFoundStatus() == AdvFoundStatus.Ok);
             if (result != null && result.getFoundStatus() == AdvFoundStatus.Ok) {
                 break;
             }
         }
         return result;
+    }
+
+    private <T> T invokeAll(Function<Media, T> eachFunc, Predicate<T> check) {
+        require(eachFunc, check);
+
+        for (MediaType type : getMedias()) {
+            try {
+                T t = invoke(type, eachFunc);
+                if (check.test(t)) {
+                    return t;
+                }
+            } catch (Exception e) {
+                log.error("invokeAll", e);
+            }
+        }
+        return null;
+    }
+
+    private <T> T invoke(MediaType type, Function<Media, T> func) {
+        Media media = create(type, true);
+        try {
+            return func.apply(media);
+        } finally {
+            release(media);
+        }
     }
 }

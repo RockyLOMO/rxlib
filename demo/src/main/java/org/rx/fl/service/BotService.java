@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.common.BotConfig;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
+import org.rx.common.UserConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.service.bot.WxBot;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
@@ -35,7 +37,7 @@ public class BotService {
     private UserService userService;
 
     @Autowired
-    public BotService(WxBot wxBot, BotConfig config) {
+    public BotService(WxBot wxBot, BotConfig config, UserConfig userConfig) {
         Function<MessageInfo, List<String>> event = messageInfo -> handleMessage(messageInfo);
 
         this.wxBot = wxBot;
@@ -47,6 +49,7 @@ public class BotService {
                     mConfig.getMaxCheckMessageCount(), mConfig.getMaxCaptureMessageCount(), mConfig.getMaxScrollMessageCount(),
                     mConfig.getCaptureScrollSeconds());
             wxMobileBot.onReceiveMessage(event);
+            wxMobileBot.setWhiteOpenIds(NQuery.of(userConfig.getGroupAliPay()).union(Arrays.asList(userConfig.getGroupGoods())).toSet());
             wxMobileBot.start();
         } catch (InvalidOperationException e) {
             log.warn("BotService", e);

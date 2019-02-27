@@ -36,7 +36,7 @@ public class Tester {
     @SneakyThrows
     @Test
     public void setTimeout() {
-        AsyncTask.TaskFactory.setTimeout(() -> {
+        AsyncTask.TaskFactory.scheduleOnce(() -> {
             System.out.println("hi!");
         }, 1000);
         System.in.read();

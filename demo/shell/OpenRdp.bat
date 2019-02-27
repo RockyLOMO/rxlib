@@ -1,1 +1,1 @@
-mstsc /admin /v:r2.x.org /w:1600 /h:1200
+mstsc /admin /v:rd.rx.org:4389 /w:1600 /h:1200

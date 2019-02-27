@@ -1,5 +1,6 @@
 package org.rx.fl.util;
 
+import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.datasource.pooled.PooledDataSource;
@@ -65,6 +66,14 @@ public class DbUtil {
 
     public static long toCent(double money) {
         return ((Double) (money * 100)).longValue();
+    }
+
+    public static Double convertToMoney(String moneyString) {
+        if (Strings.isNullOrEmpty(moneyString)) {
+            return 0d;
+        }
+        return App.changeType(moneyString.replace("￥", "")
+                .replace("¥", "").replace("元", ""), double.class);
     }
 
     public static long longValue(Long num) {

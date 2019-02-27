@@ -4,11 +4,15 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.Lazy;
 import org.rx.common.Logger;
+import org.rx.common.NQuery;
 import org.rx.util.function.Func;
 
+import java.util.Date;
+import java.util.List;
 import java.util.concurrent.*;
 
 import static org.rx.beans.$.$;
@@ -101,7 +105,30 @@ public final class AsyncTask {
         return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable(taskName, task, null), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
 
-    public Future setTimeout(Runnable task, long delay) {
+    public List<Future> scheduleDaily(Runnable task, String... timeArray) {
+        require(timeArray);
+
+        return NQuery.of(timeArray).select(p -> scheduleDaily(task, p)).toList();
+    }
+
+    /**
+     * 每天按指定时间执行
+     *
+     * @param task
+     * @param time "HH:mm:ss"
+     * @return
+     */
+    public Future scheduleDaily(Runnable task, String time) {
+        require(task, time);
+
+        long oneDay = 24 * 60 * 60 * 1000;
+        long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
+        initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
+
+        return schedule(task, initDelay, oneDay, "scheduleDaily");
+    }
+
+    public Future scheduleOnce(Runnable task, long delay) {
         require(task);
 
         $<Future> future = $();

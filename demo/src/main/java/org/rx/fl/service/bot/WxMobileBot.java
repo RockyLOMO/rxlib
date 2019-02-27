@@ -1,6 +1,8 @@
 package org.rx.fl.service.bot;
 
 import com.google.common.base.Strings;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -40,7 +42,6 @@ public class WxMobileBot implements Bot {
 //        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
     }
 
-    public static final NQuery<String> whiteOpenIds = NQuery.of("红包官方分享群", "A小范省钱分享群");
     private static final int delay1 = 50, delay2 = 100;
     private static final NQuery<String> skipOpenIds = NQuery.of("weixin", "filehelper");
 
@@ -52,6 +53,9 @@ public class WxMobileBot implements Bot {
     private final ReentrantLock locker;
     private volatile byte captureFlag;
     private volatile Future captureFuture;
+    @Getter
+    @Setter
+    private Set<String> whiteOpenIds;
 
     @Override
     public BotType getType() {
@@ -228,6 +232,10 @@ public class WxMobileBot implements Bot {
                                 if (CollectionUtils.isEmpty(toMsgs)) {
                                     return;
                                 }
+                                toMsgs = NQuery.of(toMsgs).where(p -> !Strings.isNullOrEmpty(p)).toList();
+                                if (toMsgs.isEmpty()) {
+                                    return;
+                                }
                                 sendMessage(messageInfo, toMsgs);
                             });
                         }
@@ -315,13 +323,14 @@ public class WxMobileBot implements Bot {
         locker.lock();
         try {
             String openId = isNull(message.getNickname(), message.getOpenId());
-            boolean isWhite = whiteOpenIds.contains(message.getOpenId());
+            boolean isWhite = whiteOpenIds != null && whiteOpenIds.contains(message.getOpenId());
             int checkCount = 0;
             MessageInfo check = new MessageInfo();
             do {
                 if (checkCount > 0) {
                     Thread.sleep(1800);
                 }
+//                bot.mouseRelease();
                 bot.mouseLeftClick(getUsersPoint());
                 bot.delay(delay1);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
