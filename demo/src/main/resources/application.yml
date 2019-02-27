@@ -22,7 +22,7 @@ app:
 spring:
   profiles: prd
   datasource:
-    url: jdbc:mysql://r.x.org:3306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://rd.rx.org:4306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: rx_rebate_dev_user
     password: e)ud(yB_g8uO
 app:
@@ -80,14 +80,14 @@ app:
     groupAliPay:
       - A小范省钱分享群
     groupAliPayTime:
-      - 08:00:00
-      - 10:50:00
-      - 12:10:00
-      - 18:00:00
+      - "08:00:00"
+      - "10:50:00"
+      - "12:10:00"
+      - "18:00:00"
     groupGoods:
       - A小范省钱分享群
     groupGoodsTime:
-      - 08:00:00
+      - "08:00:00"
     groupGoodsName:
       - 垃圾袋
       - 洗衣液
@@ -97,7 +97,7 @@ app:
 spring:
   profiles: prd
   datasource:
-    url: jdbc:mysql://r.x.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://rd.rx.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: rx_rebate_prd_user
     password: pL1ae4Q%L8TK$sD%
 app:
@@ -157,14 +157,14 @@ app:
       - 红包官方分享群
       - 苏州美家
     groupAliPayTime:
-      - 08:00:00
-      - 10:50:00
-      - 12:10:00
-      - 18:00:00
+      - "08:00:00"
+      - "10:50:00"
+      - "12:10:00"
+      - "18:00:00"
     groupGoods:
       - A小范省钱分享群
     groupGoodsTime:
-      - 08:00:00
+      - "08:00:00"
     groupGoodsName:
       - 垃圾袋
       - 洗衣液

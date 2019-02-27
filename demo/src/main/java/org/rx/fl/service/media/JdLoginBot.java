@@ -123,7 +123,7 @@ public final class JdLoginBot extends Disposable {
             return loginKey;
         } finally {
             loginKey = null;
-            TaskFactory.setTimeout(() -> {
+            TaskFactory.scheduleOnce(() -> {
                 log.info("step3 try close it");
 //                bot.saveScreen();
                 int y = (int) bot.getScreenRectangle().getHeight();
