@@ -9,6 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.poifs.filesystem.NotOLE2FileException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.rx.beans.DateTime;
@@ -127,6 +128,8 @@ public class TbMedia implements Media {
                 }
                 orders.add(order);
             }
+        } catch (NotOLE2FileException e) {
+            log.warn("readExcel", e.getMessage());
         } catch (Exception e) {
             log.error("readExcel", e);
             keepLogin(true);
