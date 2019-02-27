@@ -187,7 +187,7 @@ public class UserService {
     }
 
     public String getRelationMessage(String userId) {
-        return String.format("\n将 小范省钱 名片推荐给好友，永久享受额外20%%返利提成！\n" +
+        return String.format("将 小范省钱 名片推荐给好友，永久享受额外20%%返利提成！\n" +
                 "好友添加 小范省钱 后发送您的微信号 %s 即可绑定成为伙伴哦～", getRelationCode(userId));
     }
 
