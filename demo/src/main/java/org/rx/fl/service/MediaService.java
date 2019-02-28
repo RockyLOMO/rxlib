@@ -218,10 +218,10 @@ public class MediaService {
                 if (goodsInfo == null) {
                     cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
                 }
+                adv.setGoods(goodsInfo);
                 if (getPromotionId != null) {
                     goodsInfo.setPromotionId(getPromotionId.apply(adv));
                 }
-                adv.setGoods(goodsInfo);
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {
                     adv.setFoundStatus(AdvFoundStatus.NoGoods);
                     return adv;

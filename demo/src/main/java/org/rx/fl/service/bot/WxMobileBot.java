@@ -351,9 +351,9 @@ public class WxMobileBot implements Bot {
                 fillOpenIdByTab(check, false);
                 checkCount++;
             }
-            while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
-            if (!isWhite && !message.getOpenId().equals(check.getOpenId())) {
-                log.info("message openId {} not equals {}", message.getOpenId(), check.getOpenId());
+            while (checkCount < maxCheckMessageCount && !openId.equals(check.getOpenId()));
+            if (!isWhite && !openId.equals(check.getOpenId())) {
+                log.info("message openId {} not equals {}", openId, check.getOpenId());
                 return;
             }
 
