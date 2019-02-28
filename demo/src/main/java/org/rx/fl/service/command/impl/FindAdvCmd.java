@@ -26,7 +26,6 @@ import java.util.Map;
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toCent;
 import static org.rx.fl.util.DbUtil.toMoney;
-import static org.rx.util.AsyncTask.TaskFactory;
 
 @Order(1)
 @Component
@@ -61,7 +60,7 @@ public class FindAdvCmd implements Command {
             String json = caller.post(String.format("http://%s/media/findAdv", config.getRemoteEndpoint()), data);
             advResult = JSONObject.parseObject(json, FindAdvResult.class);
         } else {
-            advResult = mediaService.findAdv(message);
+            advResult = mediaService.findAdv(message, p -> userService.addUserGoods(userId, p.getMediaType(), p.getGoods().getId()));
         }
         if (advResult == null || advResult.getFoundStatus() != AdvFoundStatus.Ok) {
             return HandleResult.ok("一一一一系 统 消 息一一一一\n" +
@@ -69,9 +68,7 @@ public class FindAdvCmd implements Command {
                     "亲，这家没有优惠和返利哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
         }
 
-        TaskFactory.run(() -> userService.addUserGoods(userId, advResult.getMediaType(), advResult.getGoods().getId()));
         GoodsInfo goods = advResult.getGoods();
-
         Double rebateAmount = DbUtil.convertToMoney(goods.getRebateAmount());
         org.rx.fl.repository.model.Order computeOrder = new org.rx.fl.repository.model.Order();
         computeOrder.setUserId(userId);

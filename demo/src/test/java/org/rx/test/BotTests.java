@@ -24,8 +24,55 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
-        System.out.println(App.toShorterUUID(UUID.fromString("5483c10a-98d4-63cf-b427-31e26251ed8d")));
-        System.out.println(App.fromShorterUUID("EkCHKMVpEdpnDSqdam384H"));
+        String s = "170\n" +
+                "170\n" +
+                "160\n" +
+                "170\n" +
+                "190\n" +
+                "180\n" +
+                "160\n" +
+                "150\n" +
+                "170\n" +
+                "160\n" +
+                "180\n" +
+                "160\n" +
+                "170\n" +
+                "180\n" +
+                "180\n" +
+                "170\n" +
+                "160\n" +
+                "160\n" +
+                "170\n" +
+                "170\n" +
+                "160\n" +
+                "170\n" +
+                "180\n" +
+                "170\n" +
+                "350\n" +
+                "180\n" +
+                "170\n" +
+                "170\n" +
+                "150\n" +
+                "170\n" +
+                "160\n" +
+                "180\n" +
+                "170\n" +
+                "180\n" +
+                "180\n" +
+                "170\n" +
+                "180\n" +
+                "160\n" +
+                "170\n" +
+                "170\n" +
+                "180\n" +
+                "300\n" +
+                "10\n";
+        for (String s1 : s.split("\n")) {
+            System.out.println(Integer.valueOf(s1) + 10);
+        }
+
+//        System.out.println(App.toShorterUUID(UUID.fromString("5483c10a-98d4-63cf-b427-31e26251ed8d")));
+//        System.out.println(App.fromShorterUUID("EkCHKMVpEdpnDSqdam384H"));
 //        AwtBot bot = AwtBot.getBot();
 //        int y = (int) bot.getScreenRectangle().getHeight();
 //        bot.clickAndAltF4(220, y - 20);

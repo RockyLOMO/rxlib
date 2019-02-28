@@ -20,7 +20,7 @@ public class MediaController {
 
     @RequestMapping("/findAdv")
     public FindAdvResult findAdv(String content) {
-        return mediaService.findAdv(content);
+        return mediaService.findAdv(content, null);
     }
 
     @RequestMapping("/findOrders")

@@ -19,6 +19,7 @@ public class OrderInfo implements Serializable {
     private String unitPrice;
     private int quantity;
     private String sellerName;
+    private String promotionId;
     private String payAmount;
     @NotNull
     private String rebateAmount;

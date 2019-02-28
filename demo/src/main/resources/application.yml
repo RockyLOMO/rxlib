@@ -35,7 +35,7 @@ app:
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
-    syncMonthlyOrderSeconds: 28800
+    syncMonthlyOrderTime: "02:30:00"
     commandTimeout: 20
     goodsCacheMinutes: 600
     advCacheMinutes: 720
@@ -110,7 +110,7 @@ app:
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
-    syncMonthlyOrderSeconds: 28800
+    syncMonthlyOrderTime: "02:30:00"
     commandTimeout: 30
     goodsCacheMinutes: 600
     advCacheMinutes: 720
@@ -164,6 +164,8 @@ app:
       - A小范省钱分享群
     groupGoodsTime:
       - "08:00:00"
+      - "12:00:00"
     groupGoodsName:
       - 垃圾袋
       - 洗衣液
+      - 牛奶

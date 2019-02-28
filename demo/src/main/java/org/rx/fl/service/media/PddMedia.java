@@ -1,6 +1,7 @@
 package org.rx.fl.service.media;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.Point;
@@ -29,6 +30,8 @@ public class PddMedia implements Media {
 
     @Getter
     private volatile boolean isLogin;
+    @Setter
+    private volatile int maxPromotionCount;
     private WebBrowser caller;
 
     @Override

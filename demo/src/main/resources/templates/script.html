@@ -59,6 +59,19 @@
         return JSON.stringify(result);
     }
 
+    function tb_promotion() {
+        var promotionId = "%s", offset = 0;
+        var result = "";
+        for (var i = 0; i < 2; i++) {
+            $('.dropdown:eq(5) a:eq(' + offset + ')').click();
+            if ($('.dropdown:eq(5) .dropdown-toggle-label').text().trim() == promotionId) {
+                result = promotionId;
+                break;
+            }
+        }
+        return result;
+    }
+
     function tb_find2() {
         var index = -1, name = "id".replace(/[*+?^$.\[\]{}()|\\\/]/g, "\\$&"), $a = $('.color-m:eq(' + index + ')');
         var result = {
@@ -79,14 +92,23 @@
         return JSON.stringify(result);
     }
 
-    window.btoa("fanli-x&4ever")
-
-    //
+    //window.btoa("fanli-x&4ever")
     function jd_login() {
         var doc = $("#indexIframe")[0].contentDocument;
         $("#loginname", doc).val("17091916400");
-        $("#nloginpwd", doc).val(window.atob("amluamluJlI0ZXZlcg=="));
+        $("#nloginpwd", doc).val(window.atob(""));
         $("#paipaiLoginSubmit", doc).click();
+    }
+
+    function jd_find() {
+        var index = 0, offset = 0;
+        var btnIndex = index * 2;
+
+        $('.el-select-dropdown__item:eq(1)').click();
+        offset += 2;
+        $('.el-select-dropdown__item:eq(' + offset + ')').click();
+        $('.operation:eq(2) button:eq(1)').click();
+        return [$('.three:eq(' + index + ') span:first').text(), $('.one:eq(' + index + ') b').text()].toString();
     }
 
     function jd_orders2() {
@@ -151,6 +173,7 @@
             order.settleAmount = item.actualFeeOrder;
             order.createTime = item.orderTimeStr;
             order.validCodeStr = item.validCodeStr;
+            order.promotionId = item.spIdStr;
             json.orders.push(order);
         }
         return JSON.stringify(json);

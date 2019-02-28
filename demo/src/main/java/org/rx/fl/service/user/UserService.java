@@ -312,7 +312,7 @@ public class UserService {
     }
 
     @Transactional
-    public void addUserGoods(String userId, MediaType mediaType, String goodsId) {
+    public String addUserGoods(String userId, MediaType mediaType, String goodsId) {
         require(userId, mediaType, goodsId);
 
         UserGoods updateRecord = new UserGoods();
@@ -324,20 +324,48 @@ public class UserService {
                 .andGoodsIdEqualTo(goodsId);
         userGoodsMapper.updateByExampleSelective(updateRecord, updateQuery);
 
+        DateTime time = getUserGoodsTime();
+        UserGoodsExample offsetQuery = new UserGoodsExample();
+        offsetQuery.createCriteria()
+                .andIsDeletedEqualTo(DbUtil.IsDeleted_False)
+                .andUserIdEqualTo(userId)
+                .andMediaTypeEqualTo(mediaType.getValue())
+                .andGoodsIdEqualTo(goodsId)
+                .andCreateTimeGreaterThanOrEqualTo(time);
+        long count = userGoodsMapper.countByExample(offsetQuery);
+        if (count == 0) {
+            offsetQuery = new UserGoodsExample();
+            offsetQuery.createCriteria()
+                    .andIsDeletedEqualTo(DbUtil.IsDeleted_False)
+                    .andMediaTypeEqualTo(mediaType.getValue())
+                    .andGoodsIdEqualTo(goodsId)
+                    .andCreateTimeGreaterThanOrEqualTo(time);
+            count = userGoodsMapper.countByExample(offsetQuery);
+        }
+        String promotionId = String.valueOf(count);
+
         UserGoods userGoods = new UserGoods();
         userGoods.setUserId(userId);
         userGoods.setMediaType(mediaType.getValue());
         userGoods.setGoodsId(goodsId);
+        userGoods.setPromotionId(promotionId);
         dbUtil.save(userGoods);
+        return promotionId;
     }
 
-    public String findUserByGoods(MediaType mediaType, String goodsId) {
+    private DateTime getUserGoodsTime() {
+        return DateTime.now().getDateComponent().addDays(-2);
+    }
+
+    public String findUserByGoods(MediaType mediaType, String goodsId, String promotionId) {
         require(mediaType, goodsId);
 
+        DateTime time = getUserGoodsTime();
         UserGoods q = new UserGoods();
         q.setMediaType(mediaType.getValue());
         q.setGoodsId(goodsId);
-        q.setCreateTime(DateTime.now().addDays(-1));
+        q.setCreateTime(time);
+        q.setPromotionId(promotionId);
         List<String> userIds = userGoodsMapper.selectUserIdByGoods(q);
         if (userIds.size() != 1) {
             return "";

@@ -133,7 +133,7 @@ public class MediaService {
         }
 
         TaskFactory.schedule(() -> syncOrder(8), config.getSyncWeeklyOrderSeconds() * 1000);
-        TaskFactory.schedule(() -> syncOrder(-31), config.getSyncMonthlyOrderSeconds() * 1000);
+        TaskFactory.scheduleDaily(() -> syncOrder(-31), config.getSyncMonthlyOrderTime());
         TaskFactory.scheduleDaily(() -> recommendGoods(userConfig), userConfig.getGroupGoodsTime());
     }
 
@@ -197,7 +197,7 @@ public class MediaService {
         return isNull(invokeAll(p -> p.findLink(content), p -> !Strings.isNullOrEmpty(p)), "");
     }
 
-    public FindAdvResult findAdv(String content) {
+    public FindAdvResult findAdv(String content, Function<FindAdvResult, String> getPromotionId) {
         require(content);
 
         FindAdvResult result = null;
@@ -217,6 +217,9 @@ public class MediaService {
 //                log.info("load goods from cache {}", JSON.toJSONString(goodsInfo));
                 if (goodsInfo == null) {
                     cache.add(adv.getLink(), goodsInfo = media.findGoods(adv.getLink()), config.getGoodsCacheMinutes());
+                }
+                if (getPromotionId != null) {
+                    goodsInfo.setPromotionId(getPromotionId.apply(adv));
                 }
                 adv.setGoods(goodsInfo);
                 if (adv.getGoods() == null || Strings.isNullOrEmpty(adv.getGoods().getId())) {

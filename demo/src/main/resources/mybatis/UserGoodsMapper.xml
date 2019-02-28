@@ -6,6 +6,7 @@
         <result column="user_id" jdbcType="CHAR" property="userId"/>
         <result column="media_type" jdbcType="INTEGER" property="mediaType"/>
         <result column="goods_id" jdbcType="VARCHAR" property="goodsId"/>
+        <result column="promotion_id" jdbcType="VARCHAR" property="promotionId"/>
         <result column="create_time" jdbcType="TIMESTAMP" property="createTime"/>
         <result column="modify_time" jdbcType="TIMESTAMP" property="modifyTime"/>
         <result column="is_deleted" jdbcType="CHAR" property="isDeleted"/>
@@ -71,8 +72,8 @@
         </where>
     </sql>
     <sql id="Base_Column_List">
-        id, user_id, media_type, goods_id, create_time, modify_time, is_deleted
-    </sql>
+    id, user_id, media_type, goods_id, promotion_id, create_time, modify_time, is_deleted
+  </sql>
     <select id="selectByExample" parameterType="org.rx.fl.repository.model.UserGoodsExample" resultMap="BaseResultMap">
         select
         <if test="distinct">
@@ -105,9 +106,9 @@
         where id = #{id,jdbcType=CHAR}
     </select>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.String">
-        delete from t_user_goods
-        where id = #{id,jdbcType=CHAR}
-    </delete>
+    delete from t_user_goods
+    where id = #{id,jdbcType=CHAR}
+  </delete>
     <delete id="deleteByExample" parameterType="org.rx.fl.repository.model.UserGoodsExample">
         delete from t_user_goods
         <if test="_parameter != null">
@@ -116,14 +117,13 @@
     </delete>
     <insert id="insert" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.UserGoods"
             useGeneratedKeys="true">
-        insert into t_user_goods (id, user_id, media_type, goods_id,
-        create_time, modify_time, is_deleted
-        )
-        values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER},
-        #{goodsId,jdbcType=VARCHAR},
-        #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, #{isDeleted,jdbcType=CHAR}
-        )
-    </insert>
+    insert into t_user_goods (id, user_id, media_type, goods_id,
+      promotion_id, create_time, modify_time, 
+      is_deleted)
+    values (#{id,jdbcType=CHAR}, #{userId,jdbcType=CHAR}, #{mediaType,jdbcType=INTEGER}, #{goodsId,jdbcType=VARCHAR},
+      #{promotionId,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{modifyTime,jdbcType=TIMESTAMP}, 
+      #{isDeleted,jdbcType=CHAR})
+  </insert>
     <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="org.rx.fl.repository.model.UserGoods"
             useGeneratedKeys="true">
         insert into t_user_goods
@@ -139,6 +139,9 @@
             </if>
             <if test="goodsId != null">
                 goods_id,
+            </if>
+            <if test="promotionId != null">
+                promotion_id,
             </if>
             <if test="createTime != null">
                 create_time,
@@ -162,6 +165,9 @@
             </if>
             <if test="goodsId != null">
                 #{goodsId,jdbcType=VARCHAR},
+            </if>
+            <if test="promotionId != null">
+                #{promotionId,jdbcType=VARCHAR},
             </if>
             <if test="createTime != null">
                 #{createTime,jdbcType=TIMESTAMP},
@@ -195,6 +201,9 @@
             <if test="record.goodsId != null">
                 goods_id = #{record.goodsId,jdbcType=VARCHAR},
             </if>
+            <if test="record.promotionId != null">
+                promotion_id = #{record.promotionId,jdbcType=VARCHAR},
+            </if>
             <if test="record.createTime != null">
                 create_time = #{record.createTime,jdbcType=TIMESTAMP},
             </if>
@@ -215,6 +224,7 @@
         user_id = #{record.userId,jdbcType=CHAR},
         media_type = #{record.mediaType,jdbcType=INTEGER},
         goods_id = #{record.goodsId,jdbcType=VARCHAR},
+        promotion_id = #{record.promotionId,jdbcType=VARCHAR},
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
         modify_time = #{record.modifyTime,jdbcType=TIMESTAMP},
         is_deleted = #{record.isDeleted,jdbcType=CHAR}
@@ -234,6 +244,9 @@
             <if test="goodsId != null">
                 goods_id = #{goodsId,jdbcType=VARCHAR},
             </if>
+            <if test="promotionId != null">
+                promotion_id = #{promotionId,jdbcType=VARCHAR},
+            </if>
             <if test="createTime != null">
                 create_time = #{createTime,jdbcType=TIMESTAMP},
             </if>
@@ -247,19 +260,25 @@
         where id = #{id,jdbcType=CHAR}
     </update>
     <update id="updateByPrimaryKey" parameterType="org.rx.fl.repository.model.UserGoods">
-        update t_user_goods
-        set user_id = #{userId,jdbcType=CHAR},
-        media_type = #{mediaType,jdbcType=INTEGER},
-        goods_id = #{goodsId,jdbcType=VARCHAR},
-        create_time = #{createTime,jdbcType=TIMESTAMP},
-        modify_time = #{modifyTime,jdbcType=TIMESTAMP},
-        is_deleted = #{isDeleted,jdbcType=CHAR}
-        where id = #{id,jdbcType=CHAR}
-    </update>
+    update t_user_goods
+    set user_id = #{userId,jdbcType=CHAR},
+      media_type = #{mediaType,jdbcType=INTEGER},
+      goods_id = #{goodsId,jdbcType=VARCHAR},
+      promotion_id = #{promotionId,jdbcType=VARCHAR},
+      create_time = #{createTime,jdbcType=TIMESTAMP},
+      modify_time = #{modifyTime,jdbcType=TIMESTAMP},
+      is_deleted = #{isDeleted,jdbcType=CHAR}
+    where id = #{id,jdbcType=CHAR}
+  </update>
+
     <select id="selectUserIdByGoods" parameterType="org.rx.fl.repository.model.UserGoods" resultType="java.lang.String">
         select user_id from t_user_goods
-        where is_deleted = 'N' and media_type = #{mediaType,jdbcType=INTEGER}
-        and goods_id = #{goodsId,jdbcType=CHAR} and create_time &gt;= #{createTime,jdbcType=TIMESTAMP}
+        where is_deleted = 'N' and media_type = #{mediaType}
+        and goods_id = #{goodsId}
+        <if test="promotionId != null">
+            and promotion_id = #{promotionId}
+        </if>
+        and create_time &gt;= #{createTime}
         group by user_id, media_type, goods_id
         limit 2;
     </select>

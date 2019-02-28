@@ -48,7 +48,7 @@ public class MediaConfig {
 
     private String enableMedias;
     private int syncWeeklyOrderSeconds;
-    private int syncMonthlyOrderSeconds;
+    private String syncMonthlyOrderTime;
     private int commandTimeout;
     private int goodsCacheMinutes;
     private int advCacheMinutes;

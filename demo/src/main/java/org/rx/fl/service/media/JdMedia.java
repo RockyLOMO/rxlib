@@ -116,6 +116,7 @@ public class JdMedia implements Media {
                         "            order.settleAmount = item.actualFeeOrder;\n" +
                         "            order.createTime = item.orderTimeStr;\n" +
                         "            order.validCodeStr = item.validCodeStr;\n" +
+                        "            order.promotionId = item.spIdStr;\n" +
                         "            json.orders.push(order);\n" +
                         "        }\n" +
                         "        return JSON.stringify(json);", jData));
@@ -174,22 +175,38 @@ public class JdMedia implements Media {
                     }
 
                     //rect需要focus才呈现
-                    caller.setWindowRectangle(WebBrowser.WindowRectangle);
-                    String btn1Selector = String.format(".card-button:eq(%s)", i * 2 + 1);
+                    caller.focus();
+                    String btn1Selector = String.format(".card-button:eq(%s)", i * 2);
                     String text = caller.executeScript(String.format("$('%s').click();" +
                             "return [$('.three:eq(%s) span:first').text(),$('.one:eq(%s) b').text()].toString();", btn1Selector, i, i));
                     log.info("findAdv step2 ok");
-                    String[] strings = text.split(",");
+                    String[] strings = App.split(text, ",", 2);
                     goodsInfo.setPrice(strings[0].trim());
                     String rebateStr = strings[1];
                     int j = rebateStr.indexOf("%");
                     goodsInfo.setRebateRatio(rebateStr.substring(0, j++).trim());
                     goodsInfo.setRebateAmount(rebateStr.substring(j).trim());
 
+                    final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
+                    String btn2Selector = "#socialPromotion";
+                    caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+                    String btn3Selector = ".el-select-dropdown__item:eq(1)";
+                    caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn3Selector), btn2Selector, reClickEachSeconds, false);
+                    if (!Strings.isNullOrEmpty(goodsInfo.getPromotionId())) {
+                        int offset = computePromotion(goodsInfo.getPromotionId());
+                        offset += 2;
+                        String btn3_1Selector = String.format(".el-select-dropdown__item:eq(%s)", offset);
+                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn3_1Selector), btn3Selector, reClickEachSeconds, false);
+                        if (!goodsInfo.getPromotionId().equals(caller.elementText(btn3_1Selector).trim())) {
+                            throw new InvalidOperationException("promotionId set error");
+                        }
+                    }
+                    String btn4Selector = ".promotion button:last";
+
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;
                     $<Tuple<Boolean, String>> $code = $();
-                    caller.waitClickComplete(7, p -> {
+                    caller.waitClickComplete(waitTimeout, p -> {
                         String selector = ".el-input__inner";
                         List<String> vals = caller.elementsVal(selector).toList();
                         if (vals.isEmpty()) {
@@ -200,7 +217,7 @@ public class JdMedia implements Media {
                         String xCode = vals.get(hasCoupon ? 7 : 6);
                         $code.$ = Tuple.of(hasCoupon, xCode);
                         return !Strings.isNullOrEmpty(xCode) && xCode.startsWith("http");
-                    }, btn1Selector, 3, true);
+                    }, btn4Selector, reClickEachSeconds, false);
                     String code = $code.$.right;
                     if ($code.$.left) {
                         future = TaskFactory.run(() -> {

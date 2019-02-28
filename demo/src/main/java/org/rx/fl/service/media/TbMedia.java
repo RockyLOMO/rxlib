@@ -26,7 +26,6 @@ import java.io.FileInputStream;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.toJsonString;
@@ -99,7 +98,7 @@ public class TbMedia implements Media {
                 return Collections.emptyList();
             }
 
-            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#效果预估,settleAmount#预估收入,status#订单状态,createTime#创建时间";
+            final String mapStr = "orderNo#订单编号,goodsId#商品ID,goodsName#商品信息,unitPrice#商品单价,quantity#商品数,sellerName#所属店铺,payAmount#付款金额,rebateAmount#效果预估,settleAmount#预估收入,status#订单状态,createTime#创建时间,promotionId#来源媒体名称";
             Object[] cols = list.get(0);
             NQuery<Tuple<String, Integer>> tuples = NQuery.of(mapStr.split(","))
                     .select(p -> {
@@ -197,6 +196,22 @@ public class TbMedia implements Media {
                         final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
                         String btn2Selector = "button[mx-click=submit]";
                         caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+                        if (!Strings.isNullOrEmpty(goodsInfo.getPromotionId())) {
+                            int offset = computePromotion(goodsInfo.getPromotionId());
+                            String callbackPromotionId = caller.executeScript(String.format("var promotionId = '%s', offset = %s;\n" +
+                                    "        var result = '';\n" +
+                                    "        for (var i = 0; i < 2; i++) {\n" +
+                                    "            $('.dropdown:eq(5) a:eq(' + offset + ')').click();\n" +
+                                    "            if ($('.dropdown:eq(5) .dropdown-toggle-label').text().trim() == promotionId) {\n" +
+                                    "                result = promotionId;\n" +
+                                    "                break;\n" +
+                                    "            }\n" +
+                                    "        }\n" +
+                                    "        return result;", goodsInfo.getPromotionId(), offset));
+                            if (!goodsInfo.getPromotionId().equals(callbackPromotionId)) {
+                                throw new InvalidOperationException("promotionId set error");
+                            }
+                        }
 
                         String codeSelector = "#clipboard-target,#clipboard-target-2";
                         caller.waitClickComplete(waitTimeout, p -> caller.hasElement(codeSelector), btn2Selector, reClickEachSeconds, false);
@@ -284,71 +299,68 @@ public class TbMedia implements Media {
                             "        $('.box-btn-left:eq(' + index + ')').click();\n" +
                             "        return JSON.stringify(result);", i));
                 } while (Strings.isNullOrEmpty(text) && ++retryCount < 2);
-                if (!Strings.isNullOrEmpty(text)) {
-                    GoodsInfo goodsInfo = new GoodsInfo();
-                    result.setGoods(goodsInfo);
-                    log.info("step3-1 ok");
-                    JSONObject json = JSONObject.parseObject(text);
-                    int index = json.getIntValue("index");
-                    String btn1Selector = String.format(".box-btn-left:eq(%s)", index);
-                    JSONArray moneys = json.getJSONArray("moneys");
-                    goodsInfo.setId(json.getString("id"));
-                    goodsInfo.setName(json.getString("name"));
-                    goodsInfo.setPrice(moneys.getString(0).trim());
-                    goodsInfo.setRebateRatio(moneys.getString(1).trim());
-                    goodsInfo.setRebateAmount(moneys.getString(2).trim());
+                if (Strings.isNullOrEmpty(text)) {
+                    log.info("Goods {} not found", goodsName);
+                    result.setFoundStatus(AdvFoundStatus.NoAdv);
+                    return;
+                }
 
-                    try {
-                        final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
-                        String btn2Selector = "button[mx-click=submit]";
-                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+                GoodsInfo goodsInfo = new GoodsInfo();
+                result.setGoods(goodsInfo);
+                log.info("step3-1 ok");
+                JSONObject json = JSONObject.parseObject(text);
+                int index = json.getIntValue("index");
+                String btn1Selector = String.format(".box-btn-left:eq(%s)", index);
+                JSONArray moneys = json.getJSONArray("moneys");
+                goodsInfo.setId(json.getString("id"));
+                goodsInfo.setName(json.getString("name"));
+                goodsInfo.setPrice(moneys.getString(0).trim());
+                goodsInfo.setRebateRatio(moneys.getString(1).trim());
+                goodsInfo.setRebateAmount(moneys.getString(2).trim());
 
-                        String codeSelector = "#clipboard-target,#clipboard-target-2";
-                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(codeSelector), btn2Selector, reClickEachSeconds, false);
-                        log.info("step3-2 ok");
+                final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
+                String btn2Selector = "button[mx-click=submit]";
+                caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
 
-                        goodsInfo.setCouponAmount("0");
-                        Future<String> future = null;
-                        String couponUrl = caller.elementVal("#clipboard-target-2");
-                        if (!Strings.isNullOrEmpty(couponUrl)) {
-                            if (!couponUrl.startsWith("http")) {
-                                log.info("step3-2-2 couponUrl fail and retry");
-                                couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
-                            }
-                            if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
-                                log.info("step3-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
-                            } else {
-                                String $couponUrl = couponUrl;
-                                future = TaskFactory.run(() -> {
-                                    log.info("step3-2-2 couponUrl {}", $couponUrl);
-                                    return findCouponAmount($couponUrl);
-                                });
-                            }
-                        }
+                String codeSelector = "#clipboard-target,#clipboard-target-2";
+                caller.waitClickComplete(waitTimeout, p -> caller.hasElement(codeSelector), btn2Selector, reClickEachSeconds, false);
+                log.info("step3-2 ok");
 
-                        caller.waitElementLocated("#magix_vf_code");
-                        caller.executeScript("$('.tab-nav li:eq(3)').click();");
-                        log.info("step3-3 ok");
-
-                        String code = caller.elementVal(codeSelector);
-
-                        if (future != null) {
-                            try {
-                                goodsInfo.setCouponAmount(future.get());
-                            } catch (Exception e) {
-                                log.info("get coupon amount result fail -> {}", e.getMessage());
-                            }
-                        }
-                        log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
-                        result.setFoundStatus(AdvFoundStatus.Ok);
-                        result.setShareCode(code);
-                    } catch (Exception e) {
-                        log.error("findAdv", e);
-                        keepLogin(false);
+                goodsInfo.setCouponAmount("0");
+                Future<String> future = null;
+                String couponUrl = caller.elementVal("#clipboard-target-2");
+                if (!Strings.isNullOrEmpty(couponUrl)) {
+                    if (!couponUrl.startsWith("http")) {
+                        log.info("step3-2-2 couponUrl fail and retry");
+                        couponUrl = caller.executeScript("return $('#clipboard-target-2').val();");
+                    }
+                    if (Strings.isNullOrEmpty(couponUrl) || !couponUrl.startsWith("http")) {
+                        log.info("step3-2-2 couponUrl is null -> {}", toJsonString(goodsInfo));
+                    } else {
+                        String $couponUrl = couponUrl;
+                        future = TaskFactory.run(() -> {
+                            log.info("step3-2-2 couponUrl {}", $couponUrl);
+                            return findCouponAmount($couponUrl);
+                        });
                     }
                 }
-                log.info("Goods {} not found", goodsName);
-                result.setFoundStatus(AdvFoundStatus.NoAdv);
+
+                caller.waitElementLocated("#magix_vf_code");
+                caller.executeScript("$('.tab-nav li:eq(3)').click();");
+                log.info("step3-3 ok");
+
+                String code = caller.elementVal(codeSelector);
+
+                if (future != null) {
+                    try {
+                        goodsInfo.setCouponAmount(future.get());
+                    } catch (Exception e) {
+                        log.info("get coupon amount result fail -> {}", e.getMessage());
+                    }
+                }
+                log.info("Goods {} -> {}", toJsonString(goodsInfo), code);
+                result.setFoundStatus(AdvFoundStatus.Ok);
+                result.setShareCode(code);
             });
         }
         return result;
@@ -425,7 +437,7 @@ public class TbMedia implements Media {
             if (url.contains("//szsupport.weixin.qq.com/")) {
                 httpUrl = HttpUrl.get(url = httpUrl.queryParameter("url"));
             }
-            if (NQuery.of("tmall.com", "taobao.com", "yukhj.com", "tb.cn", "dfkhgj.com").contains(httpUrl.topPrivateDomain())) {
+            if (NQuery.of("tmall.com", "taobao.com", "tb.cn", "yukhj.com", "dfkhgj.com").contains(httpUrl.topPrivateDomain())) {
                 return url;
             }
         } catch (Exception e) {

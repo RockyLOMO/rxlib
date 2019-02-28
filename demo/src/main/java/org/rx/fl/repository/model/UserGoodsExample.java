@@ -405,6 +405,76 @@ public class UserGoodsExample {
             return (Criteria) this;
         }
 
+        public Criteria andPromotionIdIsNull() {
+            addCriterion("promotion_id is null");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdIsNotNull() {
+            addCriterion("promotion_id is not null");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdEqualTo(String value) {
+            addCriterion("promotion_id =", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdNotEqualTo(String value) {
+            addCriterion("promotion_id <>", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdGreaterThan(String value) {
+            addCriterion("promotion_id >", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdGreaterThanOrEqualTo(String value) {
+            addCriterion("promotion_id >=", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdLessThan(String value) {
+            addCriterion("promotion_id <", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdLessThanOrEqualTo(String value) {
+            addCriterion("promotion_id <=", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdLike(String value) {
+            addCriterion("promotion_id like", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdNotLike(String value) {
+            addCriterion("promotion_id not like", value, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdIn(List<String> values) {
+            addCriterion("promotion_id in", values, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdNotIn(List<String> values) {
+            addCriterion("promotion_id not in", values, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdBetween(String value1, String value2) {
+            addCriterion("promotion_id between", value1, value2, "promotionId");
+            return (Criteria) this;
+        }
+
+        public Criteria andPromotionIdNotBetween(String value1, String value2) {
+            addCriterion("promotion_id not between", value1, value2, "promotionId");
+            return (Criteria) this;
+        }
+
         public Criteria andCreateTimeIsNull() {
             addCriterion("create_time is null");
             return (Criteria) this;

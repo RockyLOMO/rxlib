@@ -15,6 +15,7 @@ public class GoodsInfo implements Serializable {
     private String sellerId;
     private String sellerName;
     private String price;
+    private String promotionId;
     private String rebateRatio;
     private String rebateAmount;
     private String couponAmount;

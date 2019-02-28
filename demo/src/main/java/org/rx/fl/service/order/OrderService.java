@@ -102,7 +102,7 @@ public class OrderService {
                 order.setPayAmount(toCent(media.getPayAmount()));
                 order.setRebateAmount(toCent(media.getRebateAmount()));
 
-                String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId());
+                String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId(), media.getPromotionId());
                 if (!Strings.isNullOrEmpty(userId)) {
                     order.setUserId(userId);
                 }
