@@ -30,14 +30,13 @@ public class NotifyService {
     @Autowired
     public NotifyService(UserService userService, UserConfig userConfig) {
         queue = new ConcurrentLinkedQueue<>();
-        TaskFactory.schedule(this::push, 2 * 1000);
+        TaskFactory.schedule(() -> App.catchCall(this::push), 2 * 1000);
 
         this.userService = userService;
         String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
         if (adminId != null) {
-            TaskFactory.schedule(() -> App.catchCall(() ->
-                    add(adminId, String.format("Heartbeat %s", DateTime.now().toDateTimeString()))
-            ), userConfig.getHeartbeatMinutes() * 60 * 1000);
+            TaskFactory.schedule(() ->
+                    add(adminId, String.format("Heartbeat %s", DateTime.now().toDateTimeString())), userConfig.getHeartbeatMinutes() * 60 * 1000);
 
             OpenIdInfo openId = userService.getOpenId(adminId, BotType.Wx);
             if (userConfig.getAliPayCode() != null) {

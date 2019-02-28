@@ -167,7 +167,8 @@ public class MediaService {
         for (MediaType media : getMedias()) {
             try {
                 FindAdvResult commissionAdv = getHighCommissionAdv(media, goods);
-                if (commissionAdv == null) {
+                if (commissionAdv == null || commissionAdv.getFoundStatus() != AdvFoundStatus.Ok) {
+                    log.warn("recommendGoods {} empty result", goods);
                     continue;
                 }
                 userService.pushMessage(commissionAdv);

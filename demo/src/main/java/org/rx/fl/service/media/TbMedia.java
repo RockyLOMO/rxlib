@@ -374,7 +374,7 @@ public class TbMedia implements Media {
                     String name = hybridElement.getText().trim();
                     goodsInfo.setName(name);
                     goodsInfo.setSellerName(caller.elementText(".c-shop-logo-name").trim());
-                } else if (currentUrl.contains(".taobao.com/trip")) {//飞猪h5
+                } else if (currentUrl.contains(".taobao.com/trip") || currentUrl.contains(".dfkhgj.com/trip")) {//飞猪h5
                     goodsInfo.setName(caller.elementText(".mod-title").trim());
                     goodsInfo.setSellerName(caller.elementText(".name").trim());
                 } else if (currentUrl.contains(".taobao.com/")) {

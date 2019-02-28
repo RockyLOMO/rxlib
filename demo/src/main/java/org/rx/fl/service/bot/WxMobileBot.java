@@ -330,7 +330,7 @@ public class WxMobileBot implements Bot {
                 if (checkCount > 0) {
                     Thread.sleep(1800);
                 }
-                bot.mouseRelease();
+//                bot.mouseRelease();
                 bot.mouseLeftClick(getUsersPoint());
                 bot.delay(delay1);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
@@ -372,8 +372,8 @@ public class WxMobileBot implements Bot {
                 log.info("step2 send msg {} to user {}", msg, openId);
             }
 
-            bot.mouseLeftClick(getUsersPoint());
-            bot.delay(delay1);
+//            bot.mouseLeftClick(getUsersPoint());
+//            bot.delay(delay1);
             bot.mouseLeftClick(getStandbyPoint());
             bot.delay(delay1);
         } finally {

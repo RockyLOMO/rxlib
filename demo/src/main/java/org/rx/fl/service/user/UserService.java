@@ -92,6 +92,7 @@ public class UserService {
 
         TaskFactory.scheduleDaily(() -> App.catchCall(() -> {
             if (Strings.isNullOrEmpty(aliPayCmd.getSourceMessage())) {
+                log.warn("AliPayCmd: empty source");
                 return;
             }
             for (String groupId : userConfig.getGroupAliPay()) {
@@ -192,8 +193,14 @@ public class UserService {
     }
 
     public String getRelationCode(String userId) {
-        OpenIdInfo openId = getOpenId(userId, BotType.Wx);
-        return openId.getOpenId();
+        //try兼容公众号
+        try {
+            OpenIdInfo openId = getOpenId(userId, BotType.Wx);
+            return openId.getOpenId();
+        } catch (Exception e) {
+            log.warn("getRelationCode", e);
+            return "";
+        }
     }
     //endregion
 
