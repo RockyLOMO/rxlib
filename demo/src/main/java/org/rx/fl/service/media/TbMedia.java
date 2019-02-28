@@ -196,20 +196,14 @@ public class TbMedia implements Media {
                         final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
                         String btn2Selector = "button[mx-click=submit]";
                         caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+                        log.info("wait {} ok", btn2Selector);
                         if (!Strings.isNullOrEmpty(goodsInfo.getPromotionId())) {
                             int offset = computePromotion(goodsInfo.getPromotionId());
-                            String callbackPromotionId = caller.executeScript(String.format("var promotionId = '%s', offset = %s;\n" +
-                                    "        var result = '';\n" +
-                                    "        for (var i = 0; i < 2; i++) {\n" +
-                                    "            $('.dropdown:eq(5) a:eq(' + offset + ')').click();\n" +
-                                    "            if ($('.dropdown:eq(5) .dropdown-toggle-label').text().trim() == promotionId) {\n" +
-                                    "                result = promotionId;\n" +
-                                    "                break;\n" +
-                                    "            }\n" +
-                                    "        }\n" +
-                                    "        return result;", goodsInfo.getPromotionId(), offset));
-                            if (!goodsInfo.getPromotionId().equals(callbackPromotionId)) {
-                                throw new InvalidOperationException("promotionId set error");
+                            String btn2_1Selector = String.format(".dropdown:eq(5) a:eq(%s)", offset);
+                            String targetId = caller.executeScript(String.format("$('%s').click();\n" +
+                                    "        return $('.dropdown:eq(5) .dropdown-toggle-label').text().trim();", btn2_1Selector));
+                            if (!goodsInfo.getPromotionId().equals(targetId)) {
+                                throw new InvalidOperationException(String.format("Set promotionId %s error, element is %s", goodsInfo.getPromotionId(), targetId));
                             }
                         }
 

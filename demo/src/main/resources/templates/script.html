@@ -7,8 +7,36 @@
 <body>
 <script src="https://code.jquery.com/jquery-2.2.4.js"></script>
 <script>
-    function waitClickComplete(timeoutSeconds, checkComplete, btnSelector, reClickEachSeconds, skipFirstClick) {
+    window.waitClickComplete = function (timeoutSeconds, checkComplete, btnSelector, reClickEachSeconds, skipFirstClick) {
+        window._completeValue = "0";
+        var waitMillis = 400, reClickCount = Math.round(reClickEachSeconds * 1000 / waitMillis);
+        var count = 0, loopCount = Math.round(timeoutSeconds * 1000 / waitMillis);
+        var loopFunc = function (count) {
+            if (!(count == 0 && skipFirstClick) && count % reClickCount == 0) {
+                $(btnSelector).click();
+                console.log("Element {} click..", btnSelector);
+            }
+            console.log("Wait element {} click callback..", btnSelector);
+            return checkComplete(count);
+        };
+        if (loopFunc(count)) {
+            return;
+        }
+        setTimeout(function () {
+            if (count++ < loopCount && !loopFunc(count)) {
+                setTimeout(arguments.callee, waitMillis);
+            }
+            window._completeValue = "1";
+        }, waitMillis);
+    };
 
+    function jd_wait() {
+        var btn = $('%s'), ok = btn.length == 1;
+        if (ok) {
+            btn.click();
+            $('%s').attr('id', '_advBtn');
+        }
+        return ok;
     }
 
     function f() {
@@ -64,16 +92,8 @@
     }
 
     function tb_promotion() {
-        var promotionId = "%s", offset = 0;
-        var result = "";
-        for (var i = 0; i < 2; i++) {
-            $('.dropdown:eq(5) a:eq(' + offset + ')').click();
-            if ($('.dropdown:eq(5) .dropdown-toggle-label').text().trim() == promotionId) {
-                result = promotionId;
-                break;
-            }
-        }
-        return result;
+        $('%s').click();
+        return $('.dropdown:eq(5) .dropdown-toggle-label').text().trim();
     }
 
     function tb_find2() {

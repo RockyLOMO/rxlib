@@ -24,7 +24,7 @@ public interface Media {
         int promotionCount = Integer.valueOf(promotionId);
         int offset = maxPromotionCount - (promotionCount + 1);
         if (offset < 0) {
-            throw new InvalidOperationException("promotionId not enough");
+            throw new InvalidOperationException("PromotionId not enough");
         }
         return offset;
     }

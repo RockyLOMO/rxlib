@@ -315,42 +315,33 @@ public class UserService {
     public String addUserGoods(String userId, MediaType mediaType, String goodsId) {
         require(userId, mediaType, goodsId);
 
+        DateTime time = getUserGoodsTime();
         UserGoods updateRecord = new UserGoods();
         updateRecord.setIsDeleted(DbUtil.IsDeleted_True);
         UserGoodsExample updateQuery = new UserGoodsExample();
         updateQuery.createCriteria()
                 .andUserIdEqualTo(userId)
                 .andMediaTypeEqualTo(mediaType.getValue())
-                .andGoodsIdEqualTo(goodsId);
-        userGoodsMapper.updateByExampleSelective(updateRecord, updateQuery);
-
-        DateTime time = getUserGoodsTime();
-        UserGoodsExample offsetQuery = new UserGoodsExample();
-        offsetQuery.createCriteria()
-                .andIsDeletedEqualTo(DbUtil.IsDeleted_False)
-                .andUserIdEqualTo(userId)
-                .andMediaTypeEqualTo(mediaType.getValue())
                 .andGoodsIdEqualTo(goodsId)
                 .andCreateTimeGreaterThanOrEqualTo(time);
-        long count = userGoodsMapper.countByExample(offsetQuery);
-        if (count == 0) {
-            offsetQuery = new UserGoodsExample();
-            offsetQuery.createCriteria()
-                    .andIsDeletedEqualTo(DbUtil.IsDeleted_False)
-                    .andMediaTypeEqualTo(mediaType.getValue())
-                    .andGoodsIdEqualTo(goodsId)
-                    .andCreateTimeGreaterThanOrEqualTo(time);
-            count = userGoodsMapper.countByExample(offsetQuery);
-        }
-        String promotionId = String.valueOf(count);
+        userGoodsMapper.updateByExampleSelective(updateRecord, updateQuery);
 
         UserGoods userGoods = new UserGoods();
         userGoods.setUserId(userId);
         userGoods.setMediaType(mediaType.getValue());
         userGoods.setGoodsId(goodsId);
+
+        UserGoodsExample offsetQuery = new UserGoodsExample();
+        offsetQuery.createCriteria()
+                .andIsDeletedEqualTo(DbUtil.IsDeleted_False)
+                .andMediaTypeEqualTo(mediaType.getValue())
+                .andGoodsIdEqualTo(goodsId)
+                .andCreateTimeGreaterThanOrEqualTo(time);
+        String promotionId = String.valueOf(userGoodsMapper.countByExample(offsetQuery));
         userGoods.setPromotionId(promotionId);
+
         dbUtil.save(userGoods);
-        return promotionId;
+        return userGoods.getPromotionId();
     }
 
     private DateTime getUserGoodsTime() {

@@ -190,18 +190,30 @@ public class JdMedia implements Media {
                     final int reClickEachSeconds = 2, waitTimeout = reClickEachSeconds * 3 + 1;
                     String btn2Selector = "#socialPromotion";
                     caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn2Selector), btn1Selector, reClickEachSeconds, true);
+                    log.info("wait {} ok", btn2Selector);
+
                     String btn3Selector = ".el-select-dropdown__item:eq(1)";
-                    caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn3Selector), btn2Selector, reClickEachSeconds, false);
+                    caller.waitClickCompleteByScript(waitTimeout, String.format("return $('%s').length == 1;", btn3Selector), btn2Selector, reClickEachSeconds, false);
+                    log.info("wait {} ok", btn3Selector);
+
                     if (!Strings.isNullOrEmpty(goodsInfo.getPromotionId())) {
                         int offset = computePromotion(goodsInfo.getPromotionId());
                         offset += 2;
                         String btn3_1Selector = String.format(".el-select-dropdown__item:eq(%s)", offset);
-                        caller.waitClickComplete(waitTimeout, p -> caller.hasElement(btn3_1Selector), btn3Selector, reClickEachSeconds, false);
-                        if (!goodsInfo.getPromotionId().equals(caller.elementText(btn3_1Selector).trim())) {
-                            throw new InvalidOperationException("promotionId set error");
+                        caller.waitClickCompleteByScript(waitTimeout, String.format("var btn = $('%s'), ok = btn.length == 1;\n" +
+                                "        if (ok) {\n" +
+                                "            btn.click();\n" +
+                                "            $('.promotion button:last').attr('id', '_advBtn');\n" +
+                                "        }\n" +
+                                "        return ok;", btn3_1Selector), btn3Selector, reClickEachSeconds, false);
+                        log.info("wait {} ok", btn3_1Selector);
+//                        String targetId = caller.elementText(btn3_1Selector).trim();
+                        String targetId = caller.executeScript(String.format("return $('%s').text().trim();", btn3_1Selector));
+                        if (!goodsInfo.getPromotionId().equals(targetId)) {
+                            throw new InvalidOperationException(String.format("Set promotionId %s error, element is %s", goodsInfo.getPromotionId(), targetId));
                         }
                     }
-                    String btn4Selector = ".promotion button:last";
+                    String btn4Selector = "#_advBtn";
 
                     goodsInfo.setCouponAmount("0");
                     Future<String> future = null;

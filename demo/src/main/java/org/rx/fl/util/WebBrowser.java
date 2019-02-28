@@ -55,6 +55,28 @@ public final class WebBrowser extends Disposable {
     }
 
     public static final String BodySelector = "body";
+    private static final String waitClickCompleteScript = "window.waitClickComplete = function (timeoutSeconds, checkComplete, btnSelector, reClickEachSeconds, skipFirstClick) {\n" +
+            "        window._completeValue = \"0\";\n" +
+            "        var waitMillis = 400, reClickCount = Math.round(reClickEachSeconds * 1000 / waitMillis);\n" +
+            "        var count = 0, loopCount = Math.round(timeoutSeconds * 1000 / waitMillis);\n" +
+            "        var loopFunc = function (count) {\n" +
+            "            if (!(count == 0 && skipFirstClick) && count % reClickCount == 0) {\n" +
+            "                $(btnSelector).click();\n" +
+            "                console.log(\"Element {} click..\", btnSelector);\n" +
+            "            }\n" +
+            "            console.log(\"Wait element {} click callback..\", btnSelector);\n" +
+            "            return checkComplete(count);\n" +
+            "        };\n" +
+            "        if (loopFunc(count)) {\n" +
+            "            return;\n" +
+            "        }\n" +
+            "        setTimeout(function () {\n" +
+            "            if (count++ < loopCount && !loopFunc(count)) {\n" +
+            "                setTimeout(arguments.callee, waitMillis);\n" +
+            "            }\n" +
+            "            window._completeValue = \"1\";\n" +
+            "        }, waitMillis);\n" +
+            "    };\n";
     public static final BrowserConfig BrowserConfig;
     public static final Rectangle WindowRectangle;
     private static volatile int chromeCounter;
@@ -492,6 +514,25 @@ public final class WebBrowser extends Disposable {
     }
 
     @SneakyThrows
+    public void waitClickCompleteByScript(int timeoutSeconds, String checkCompleteFunc, String btnSelector, int reClickEachSeconds, boolean skipFirstClick) {
+        require(checkCompleteFunc, btnSelector);
+        require(reClickEachSeconds, reClickEachSeconds > 0);
+
+        executeScript(waitClickCompleteScript +
+                String.format("window.waitClickComplete(%s, function () { %s }, '%s', %s, %s);", timeoutSeconds, checkCompleteFunc, btnSelector, reClickEachSeconds, skipFirstClick));
+
+        int count = 0, loopCount = Math.round(timeoutSeconds * 1000f / waitMillis);
+        do {
+            String callback = executeScript("return window._completeValue;");
+            if ("1".equals(callback)) {
+                return;
+            }
+            Thread.sleep(waitMillis);
+        }
+        while (count++ < loopCount);
+    }
+
+    @SneakyThrows
     public void waitClickComplete(int timeoutSeconds, Predicate<Integer> checkComplete, String btnSelector, int reClickEachSeconds, boolean skipFirstClick) {
         require(checkComplete, btnSelector);
         require(reClickEachSeconds, reClickEachSeconds > 0);
@@ -622,10 +663,11 @@ public final class WebBrowser extends Disposable {
         } else {
             element = findElement(By.cssSelector(selector), false);
         }
-        if (element == null) {
-            throw new InvalidOperationException("Element {} missing..");
-        }
+
         try {
+            if (element == null) {
+                throw new WebDriverException(String.format("Element %s missing..", selector));
+            }
             element.click();
         } catch (WebDriverException e) {
             if (botClick != null) {
