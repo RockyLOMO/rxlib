@@ -22,6 +22,7 @@ import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.util.DbUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,8 +48,6 @@ public class UserService {
     @Resource
     private MediaConfig mediaConfig;
     @Resource
-    private UserMapper userMapper;
-    @Resource
     private BalanceLogMapper balanceLogMapper;
     @Resource
     private WithdrawLogMapper withdrawLogMapper;
@@ -61,17 +60,20 @@ public class UserService {
     //    @Resource
 //    private OrderService orderService;
     @Resource
+    private UserMapper userMapper;
+    @Resource
+    private UserNodeService nodeService;
+    @Resource
     private UserGoodsMapper userGoodsMapper;
+    @Resource
+    @Lazy
+    private NotifyService notifyService;
     @Resource
     private DbUtil dbUtil;
     @Resource
-    private NotifyService notifyService;
-    @Resource
-    private UserNodeService nodeService;
+    private AliPayCmd aliPayCmd;
     private UserConfig userConfig;
     private final NQuery<UserDegreeConfig> percentConfigs;
-    @Resource
-    private AliPayCmd aliPayCmd;
     //#endregion
 
     //region Init
