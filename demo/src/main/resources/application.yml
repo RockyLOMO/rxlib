@@ -169,6 +169,7 @@ app:
     groupGoodsTime:
       - "08:00:00"
       - "12:00:00"
+      - "14:00:00"
     groupGoodsName:
       - 垃圾袋
       - 洗衣液

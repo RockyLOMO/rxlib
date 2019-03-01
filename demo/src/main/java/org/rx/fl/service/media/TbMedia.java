@@ -261,6 +261,7 @@ public class TbMedia implements Media {
         login();
         String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s&toPage=1&dpyhq=1&queryType=0&sortType=9", HttpCaller.encodeUrl(goodsName.trim()), System.currentTimeMillis());
         FindAdvResult result = new FindAdvResult();
+        result.setMediaType(this.getType());
         result.setFoundStatus(AdvFoundStatus.NoGoods);
         try (LogWriter log = new LogWriter(TbMedia.log)) {
             log.setPrefix(this.getType().name() + " getHighCommissionAdv ");
