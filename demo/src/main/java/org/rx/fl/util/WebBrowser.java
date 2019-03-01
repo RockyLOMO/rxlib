@@ -68,11 +68,13 @@ public final class WebBrowser extends Disposable {
             "            return checkComplete(count);\n" +
             "        };\n" +
             "        if (loopFunc(count)) {\n" +
+            "            window._completeValue = \"1\";\n" +
             "            return;\n" +
             "        }\n" +
             "        setTimeout(function () {\n" +
             "            if (count++ < loopCount && !loopFunc(count)) {\n" +
             "                setTimeout(arguments.callee, waitMillis);\n" +
+            "                return;\n" +
             "            }\n" +
             "            window._completeValue = \"1\";\n" +
             "        }, waitMillis);\n" +

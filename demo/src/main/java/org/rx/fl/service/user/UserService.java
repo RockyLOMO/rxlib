@@ -34,6 +34,7 @@ import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
 import static org.rx.fl.repository.UserMapper.rootId;
 import static org.rx.fl.service.command.Command.splitText;
+import static org.rx.fl.util.DbUtil.toCent;
 import static org.rx.fl.util.DbUtil.toMoney;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -107,13 +108,15 @@ public class UserService {
         require(userId, mediaType);
 
         int rootPercent = percentValue;
-        switch (mediaType) {
-            case Jd:
-                rootPercent = mediaConfig.getJd().getRootPercent();
-                break;
-            case Taobao:
-                rootPercent = mediaConfig.getTaobao().getRootPercent();
-                break;
+        if (rebateAmount >= toCent(mediaConfig.getProtectAmount())) {
+            switch (mediaType) {
+                case Jd:
+                    rootPercent = mediaConfig.getJd().getRootPercent();
+                    break;
+                case Taobao:
+                    rootPercent = mediaConfig.getTaobao().getRootPercent();
+                    break;
+            }
         }
         checkPercent(rootPercent);
 

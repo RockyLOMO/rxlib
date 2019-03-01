@@ -5,7 +5,7 @@
     <title>Title</title>
 </head>
 <body>
-<script src="https://code.jquery.com/jquery-2.2.4.js"></script>
+<script type="text/javascript" src="https://code.jquery.com/jquery-2.2.4.js"></script>
 <script>
     window.waitClickComplete = function (timeoutSeconds, checkComplete, btnSelector, reClickEachSeconds, skipFirstClick) {
         window._completeValue = "0";
@@ -20,11 +20,13 @@
             return checkComplete(count);
         };
         if (loopFunc(count)) {
+            window._completeValue = "1";
             return;
         }
         setTimeout(function () {
             if (count++ < loopCount && !loopFunc(count)) {
                 setTimeout(arguments.callee, waitMillis);
+                return;
             }
             window._completeValue = "1";
         }, waitMillis);

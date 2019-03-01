@@ -36,7 +36,7 @@ public class NotifyService {
         String adminId = NQuery.of(userConfig.getAdminIds()).firstOrDefault();
         if (adminId != null) {
             TaskFactory.schedule(() ->
-                    add(adminId, String.format("Heartbeat %s", DateTime.now().toDateTimeString())), userConfig.getHeartbeatMinutes() * 60 * 1000);
+                    add(adminId, String.format("H %s", DateTime.now().toDateTimeString())), userConfig.getHeartbeatMinutes() * 60 * 1000);
 
             OpenIdInfo openId = userService.getOpenId(adminId, BotType.Wx);
             if (userConfig.getAliPayCode() != null) {

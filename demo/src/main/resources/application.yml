@@ -39,6 +39,7 @@ app:
     commandTimeout: 20
     goodsCacheMinutes: 600
     advCacheMinutes: 720
+    protectAmount: 1
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
     taobao:
@@ -46,6 +47,7 @@ app:
       keepLoginSeconds: 90
       rootPercent: 95
       guideUrl: http://t.cn/EVYaBsn
+      fzGuideUrl: http://t.cn/Efs0iCn
     jd:
       coreSize: 0
       keepLoginSeconds: 70
@@ -114,13 +116,15 @@ app:
     commandTimeout: 30
     goodsCacheMinutes: 600
     advCacheMinutes: 720
+    protectAmount: 1
     remoteMode: false
     remoteEndpoint: 127.0.0.1:80
     taobao:
       coreSize: 1
       keepLoginSeconds: 90
-      rootPercent: 100
+      rootPercent: 98
       guideUrl: http://t.cn/EVYaBsn
+      fzGuideUrl: http://t.cn/Efs0iCn
     jd:
       coreSize: 1
       keepLoginSeconds: 60

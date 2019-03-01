@@ -18,6 +18,7 @@ public class MediaConfig {
         private int keepLoginSeconds;
         private int rootPercent;
         private String guideUrl;
+        private String fzGuideUrl;
     }
 
     @Data
@@ -52,6 +53,7 @@ public class MediaConfig {
     private int commandTimeout;
     private int goodsCacheMinutes;
     private int advCacheMinutes;
+    private double protectAmount;
     private boolean remoteMode;
     private String remoteEndpoint;
 }
