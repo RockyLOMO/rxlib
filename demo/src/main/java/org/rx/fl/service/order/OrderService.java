@@ -101,22 +101,26 @@ public class OrderService {
                 order.setSellerName(media.getSellerName());
                 order.setPayAmount(toCent(media.getPayAmount()));
                 order.setRebateAmount(toCent(media.getRebateAmount()));
-
-                String userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId(), media.getPromotionId());
-                if (!Strings.isNullOrEmpty(userId)) {
-                    order.setUserId(userId);
-                }
             }
             order.setSettleAmount(toCent(media.getSettleAmount()));
-
             order.setStatus(media.getStatus().getValue());
+
+            boolean notifyPaid = false;
+            String userId;
+            if (Strings.isNullOrEmpty(order.getUserId())) {
+                userId = userService.findUserByGoods(media.getMediaType(), media.getGoodsId(), media.getPromotionId());
+                if (!Strings.isNullOrEmpty(userId)) {
+                    order.setUserId(userId);
+                    notifyPaid = true;
+                }
+            }
             if (!Strings.isNullOrEmpty(order.getUserId())) {
                 computeRebate(order);
                 Commission commission = computeCommission(order);
                 Long amount = DbUtil.getRebateAmount(order.getRebateAmount(), order.getSettleAmount());
                 switch (media.getStatus()) {
                     case Paid:
-                        if (insert) {
+                        if (notifyPaid) {
                             notify.paidOrders.add(order);
                             if (commission != null) {
                                 notify.paidCommissionOrders.add(commission);

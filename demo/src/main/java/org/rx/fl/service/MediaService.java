@@ -228,7 +228,7 @@ public class MediaService {
                 }
 
                 media.login();
-                String key = adv.getMediaType().getValue() + "" + adv.getGoods().getId();
+                String key = String.format("%s%s.%s", adv.getMediaType().getValue(), adv.getGoods().getId(), adv.getGoods().getPromotionId());
                 FindAdvResult item = cache.get(key);
                 if (item == null) {
                     item = new FindAdvResult();

@@ -7,7 +7,7 @@ order by t.create_time desc;
 #查找用户商品
 select * from  t_user_goods t
 inner join t_user t1 on t.user_id = t1.id
-where 1=1
+where 1=1 and t.is_deleted = 'N'
 #and t1.wx_open_id = 'RockyLOMO'
 order by t.create_time desc;
 
@@ -64,8 +64,6 @@ and t.is_deleted = 'N'
 and t.status = 1
 order by t.create_time desc
 limit 10;
-
-select ifnull(null,'a') id from t_balance_log;
 
 # delete from t_order;
 # update t_user_goods set is_deleted = 'N';
