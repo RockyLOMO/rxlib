@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.rx.common.Contract.require;
 import static org.rx.fl.util.DbUtil.toMoney;
 
@@ -32,9 +35,9 @@ public class UserDashboardCmd implements Command {
         require(userId, message);
 
         UserInfo user = userService.queryUser(userId);
-        return HandleResult.ok(String.format("一一一一个 人 信 息一一一一\n" +
-                        "微信号: %s\n" +
-                        "\n" +
+        List<String> contents = new ArrayList<>();
+        String[] relationMessage = userService.getRelationMessage(user.getUserId());
+        contents.add(String.format("一一一一个 人 信 息一一一一\n" +
                         "总提现金额: %.2f元\n" +
                         "可提现金额: %.2f元\n" +
                         "    冻结金额: %.2f元\n" +
@@ -43,10 +46,13 @@ public class UserDashboardCmd implements Command {
                         "\n" +
                         "签到次数: %s次\n" +
                         "签到奖励: %.2f元\n" +
-                        "    提现中: %.2f元\n",
-                userService.getRelationCode(user.getUserId()),
+                        "    提现中: %.2f元\n" +
+                        "%s" +
+                        "%s",
                 toMoney(-user.getTotalWithdrawAmount()), toMoney(user.getBalance()),
                 toMoney(user.getFreezeAmount()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(),
-                user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getWithdrawingAmount())));
+                user.getCheckInCount(), toMoney(user.getCheckInAmount()), toMoney(user.getWithdrawingAmount()), splitText, relationMessage[0]));
+        contents.add(relationMessage[1]);
+        return HandleResult.ok(contents, null);
     }
 }

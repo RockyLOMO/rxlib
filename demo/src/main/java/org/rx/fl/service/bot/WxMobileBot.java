@@ -75,6 +75,7 @@ public class WxMobileBot implements Bot {
                 bot.mouseLeftClick(270, y - 62);
                 bot.delay(800);
                 bot.mouseLeftClick(270, y - 20);
+                bot.delay(400);
                 point = bot.findScreenPoint(KeyImages.KeyNew);
 
                 if (point == null) {
@@ -339,11 +340,11 @@ public class WxMobileBot implements Bot {
             MessageInfo check = new MessageInfo();
             do {
                 if (checkCount > 0) {
-                    Thread.sleep(1800);
+                    Thread.sleep(2000);
                 }
                 bot.mouseRelease();
                 bot.mouseLeftClick(getUsersPoint());
-                bot.delay(delay1);
+                bot.delay(delay2);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
                 bot.delay(delay2);
                 log.info("step1 focus input ok");
@@ -377,7 +378,19 @@ public class WxMobileBot implements Bot {
             for (String msg : contents) {
                 bot.pressCtrlA();
                 bot.pressDelete();
-                bot.setTextAndParse(msg);
+
+                if (msg.startsWith(ImageContent)) {
+                    try {
+                        String file = msg.substring(ImageContent.length());
+                        Image image = ImageUtil.loadImage(file);
+                        bot.setImageAndParse(image);
+                    } catch (Exception e) {
+                        log.error("sendMessage", e);
+                    }
+                } else {
+                    bot.setTextAndParse(msg);
+                }
+
                 bot.pressEnter();
                 bot.delay(200);
                 log.info("step2 send msg {} to user {}", msg, openId);

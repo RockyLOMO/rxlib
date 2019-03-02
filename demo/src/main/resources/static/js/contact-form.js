@@ -1,9 +1,8 @@
 (function ($) {
-
     "use strict";
 
     $("#contact").validate();
-    
+
     /* CONTACT FORM */
     $("#contact").submit(function (e) {
         e.preventDefault();
@@ -19,26 +18,24 @@
             return pattern.test(emailAddress);
         };
 
-      
-
         if (validEmail(email) && (message.length > 1) && (name.length > 1)) {
             $.ajax({
                 type: "POST",
-                url: "mail.php",
-                data: dataString,
+                url: "/user/feedback",
+                data: {
+                    content: dataString
+                },
                 success: function () {
                     $('.successContent').fadeIn(1000);
                     $('.errorContent').fadeOut(500);
                 }
             });
-        }
-        else {
+        } else {
             $('.errorContent').fadeIn(1000);
             $('.successContent').fadeOut(500);
         }
         return false;
     });
-  
 })(jQuery);
 
 

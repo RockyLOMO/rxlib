@@ -4,8 +4,11 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
+import com.google.zxing.EncodeHintType;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import net.glxn.qrgen.core.image.ImageType;
+import net.glxn.qrgen.javase.QRCode;
 import org.junit.Test;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
@@ -19,6 +22,7 @@ import org.rx.fl.service.media.PddMedia;
 import org.rx.fl.service.media.TbMedia;
 import org.rx.util.JsonMapper;
 
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -30,10 +34,15 @@ public class MediaTests {
     @SneakyThrows
     @Test
     public void pddMedia() {
-        Media media = new PddMedia(getConfig());
-        media.login();
+//        Media media = new PddMedia(getConfig());
+//        media.login();
+        int w = 300;
+        String f = "C:\\Users\\Rocky-PC\\Pictures\\1.png";
+        FileOutputStream stream = new FileOutputStream(f);
+        QRCode.from("http://f-li.cn").withSize(w, w).to(ImageType.PNG).writeTo(stream);
+        stream.close();
 
-        System.in.read();
+//        System.in.read();
     }
 
     @Test

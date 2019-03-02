@@ -32,10 +32,16 @@ public class HelpCmd implements Command {
                         "[5]----------查看历史订单\n" +
                         "[6]----------关联上支付宝\n" +
                         "[7]----------人工处理问题\n" +
-                        "亲，请输入[ ]内的数字序号。\n\n" +
+                        "亲，请输入[ ]内的数字序号。\n" +
+                        "\n" +
                         "淘宝返利教程：\n%s\n" +
                         "飞猪返利教程：\n%s\n" +
-                        "京东返利教程：\n%s",
+                        "京东返利教程：\n%s\n" +
+                        "\n" +
+                        "将小范省钱名片分享给好友，好友添加后会自动绑定到亲的名下，亲可永久享受额外20%%红包提成！\n" +
+                        "好友首单购物成功\n" +
+                        "\n" +
+                        "★您将获得【1元】红包，自动转入可提现余额",
                 mediaConfig.getTaobao().getGuideUrl(), mediaConfig.getTaobao().getFzGuideUrl(),
                 mediaConfig.getJd().getGuideUrl()));
     }

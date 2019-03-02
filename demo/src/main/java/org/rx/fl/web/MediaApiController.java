@@ -1,9 +1,14 @@
 package org.rx.fl.web;
 
+import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.dto.bot.MessageInfo;
+import org.rx.fl.dto.media.FindAdvResult;
+import org.rx.fl.dto.media.MediaType;
+import org.rx.fl.dto.media.OrderInfo;
 import org.rx.fl.service.BotService;
+import org.rx.fl.service.MediaService;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.util.validator.EnableValid;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,20 +17,28 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import javax.validation.constraints.NotNull;
 import java.util.List;
 
 @EnableValid
 @RestController
-@RequestMapping(method = {RequestMethod.POST, RequestMethod.GET})
-public class BotController {
+@RequestMapping(value = "media", method = {RequestMethod.POST})
+public class MediaApiController {
     @Resource
-    private HttpServletRequest request;
-    @Resource
-    private HttpServletResponse response;
+    private MediaService mediaService;
     @Resource
     private BotService botService;
+
+    @RequestMapping("/findAdv")
+    public FindAdvResult findAdv(@NotNull String content) {
+        return mediaService.findAdv(content, null);
+    }
+
+    @RequestMapping("/findOrders")
+    public List<OrderInfo> findOrders(@NotNull MediaType type, int daysAgo) {
+        DateTime now = DateTime.now();
+        return mediaService.findOrders(type, now.addDays(-daysAgo), now);
+    }
 
     @RequestMapping("/handleMessage")
     public List<String> handleMessage(@RequestBody MessageInfo message) {
@@ -38,8 +51,8 @@ public class BotController {
         return messages;
     }
 
-    @RequestMapping("/wxMobileBotAction")
-    public void wxMobileBotAction(Integer action) {
+    @RequestMapping("/wxBotAction")
+    public void wxBotAction(Integer action) {
         if (action == null) {
             action = 2;
         }
@@ -56,10 +69,5 @@ public class BotController {
                 bot.start();
                 break;
         }
-    }
-
-    @RequestMapping("/wx")
-    public void wx() {
-        botService.getWxBot().handleCallback(request, response);
     }
 }

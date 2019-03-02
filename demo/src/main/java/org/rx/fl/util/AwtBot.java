@@ -211,6 +211,15 @@ public class AwtBot {
         });
     }
 
+    public void setImageAndParse(Image image) {
+        clipboard.lock(() -> {
+            clipboard.setContent(image);
+            pressCtrlV();
+            bot.delay(autoDelay);
+            return null;
+        });
+    }
+
     public void clickAndAltF4(int x, int y) {
         clickInvoke(() -> pressInvoke(() -> {
             mouseLeftClick(x, y);

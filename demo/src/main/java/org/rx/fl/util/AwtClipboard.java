@@ -51,7 +51,6 @@ public class AwtClipboard implements ClipboardOwner {
         });
     }
 
-    @SneakyThrows
     public void setContent(String text) {
         lock(() -> {
             clipboard.setContents(new StringSelection(text), this);
@@ -59,29 +58,30 @@ public class AwtClipboard implements ClipboardOwner {
         });
     }
 
-//    public void setContent(Image image) {
-//        synchronized (clipboard) {
-//            clipboard.setContents(new Transferable() {
-//                @Override
-//                public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-//                    if (!isDataFlavorSupported(flavor)) {
-//                        throw new UnsupportedFlavorException(flavor);
-//                    }
-//                    return image;
-//                }
-//
-//                @Override
-//                public DataFlavor[] getTransferDataFlavors() {
-//                    return new DataFlavor[]{DataFlavor.imageFlavor};
-//                }
-//
-//                @Override
-//                public boolean isDataFlavorSupported(DataFlavor flavor) {
-//                    return DataFlavor.imageFlavor.equals(flavor);
-//                }
-//            }, null);
-//        }
-//    }
+    public void setContent(Image image) {
+        lock(() -> {
+            clipboard.setContents(new Transferable() {
+                @Override
+                public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+                    if (!isDataFlavorSupported(flavor)) {
+                        throw new UnsupportedFlavorException(flavor);
+                    }
+                    return image;
+                }
+
+                @Override
+                public DataFlavor[] getTransferDataFlavors() {
+                    return new DataFlavor[]{DataFlavor.imageFlavor};
+                }
+
+                @Override
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                    return DataFlavor.imageFlavor.equals(flavor);
+                }
+            }, this);
+            return null;
+        });
+    }
 
     @SneakyThrows
     public void waitSetComplete() {
@@ -94,11 +94,11 @@ public class AwtClipboard implements ClipboardOwner {
 
     private void listen() {
 //        lock(() -> {
-            try {
-                clipboard.setContents(clipboard.getContents(null), this);
-            } catch (Exception e) {
-                log.warn("listen", e);
-            }
+        try {
+            clipboard.setContents(clipboard.getContents(null), this);
+        } catch (Exception e) {
+            log.warn("listen", e);
+        }
 //            return null;
 //        });
     }

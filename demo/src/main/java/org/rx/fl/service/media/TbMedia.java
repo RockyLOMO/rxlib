@@ -259,7 +259,8 @@ public class TbMedia implements Media {
     @Override
     public FindAdvResult getHighCommissionAdv(String goodsName) {
         login();
-        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s&toPage=1&dpyhq=1&queryType=0&sortType=9", HttpCaller.encodeUrl(goodsName.trim()), System.currentTimeMillis());
+
+        String url = String.format("https://pub.alimama.com/promo/search/index.htm?q=%s&_t=%s&toPage=1&dpyhq=1&freeShipment=1&hPayRate30=1", HttpCaller.encodeUrl(goodsName.trim()), System.currentTimeMillis());
         FindAdvResult result = new FindAdvResult();
         result.setMediaType(this.getType());
         result.setFoundStatus(AdvFoundStatus.NoGoods);
@@ -275,7 +276,7 @@ public class TbMedia implements Media {
                     if (retryCount > 0) {
                         delay(1000);
                     }
-                    int i = ThreadLocalRandom.current().nextInt(0, 4);
+                    int i = ThreadLocalRandom.current().nextInt(0, 2);
                     text = caller.executeScript(String.format("var index = %s, name = \"id\".replace(/[*+?^$.\\[\\]{}()|\\\\\\/]/g, \"\\\\$&\"), $a = $('.color-m:eq(' + index + ')');\n" +
                             "        var result = {\n" +
                             "            index: index,\n" +

@@ -89,7 +89,7 @@ public class ControllerLog {
 
     private String toJsonString(Object val) {
         try {
-            return JSON.toJSONString(val);
+            return Contract.toJsonString(val);
         } catch (Exception ex) {
             JSONObject err = new JSONObject();
             err.put("errMsg", ex.getMessage());

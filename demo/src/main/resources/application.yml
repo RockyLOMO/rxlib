@@ -19,9 +19,9 @@ app.sms.smsSign: 隽斋
 ---
 
 spring:
-  profiles: prd
+  profiles: dev
   datasource:
-    url: jdbc:mysql://rd.rx.org:4306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://127.0.0.1:4306/rx_rebate_dev?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: rx_rebate_dev_user
     password: e)ud(yB_g8uO
 app:
@@ -72,12 +72,13 @@ app:
       initSize: 0
   user:
     adminIds:
-      - 678196b6-fbf8-6fa4-bb76-3a0b34fe4746
+      - c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567
     relations:
       - 1-1,90
       - 2-?,80
     heartbeatMinutes: 20
-    aliPayCode: 打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！
+    dataFilePath: /usr/chrome
+    aliPayCode: #打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！
     groupAliPay:
       - A小范省钱分享群
     groupAliPayTime:
@@ -98,7 +99,7 @@ app:
 spring:
   profiles: prd
   datasource:
-    url: jdbc:mysql://rd.rx.org:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://127.0.0.1:3306/rx_rebate_prd?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: rx_rebate_prd_user
     password: pL1ae4Q%L8TK$sD%
 app:
@@ -153,12 +154,13 @@ app:
     relations:
       - 1-1,100
       - 2-?,80
-    heartbeatMinutes: 30
+    heartbeatMinutes: 20
+    dataFilePath: D:\app_rebate
     aliPayCode: 打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！
     groupAliPay:
       - A小范省钱分享群
       - 红包官方分享群
-#      - 苏州美家
+    #      - 苏州美家
     groupAliPayTime:
       - "08:00:00"
       - "10:50:00"
@@ -169,7 +171,7 @@ app:
     groupGoodsTime:
       - "08:00:00"
       - "12:00:00"
-      - "14:00:00"
+      - "18:00:00"
     groupGoodsName:
       - 垃圾袋
       - 洗衣液

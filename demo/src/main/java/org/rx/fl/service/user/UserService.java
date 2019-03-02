@@ -1,7 +1,10 @@
 package org.rx.fl.service.user;
 
 import com.google.common.base.Strings;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import net.glxn.qrgen.core.image.ImageType;
+import net.glxn.qrgen.javase.QRCode;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.DataRange;
 import org.rx.beans.DateTime;
@@ -17,6 +20,7 @@ import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.NotifyService;
+import org.rx.fl.service.bot.Bot;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
@@ -27,7 +31,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
@@ -192,20 +199,19 @@ public class UserService {
         return parentNode;
     }
 
-    public String getRelationMessage(String userId) {
-        return String.format("将 小范省钱 名片推荐给好友，永久享受额外20%%返利红包提成！\n" +
-                "好友添加 小范省钱 后发送您的微信号 %s 即可绑定成为伙伴哦～", getRelationCode(userId));
-    }
-
-    public String getRelationCode(String userId) {
-        //try兼容公众号
-        try {
-            OpenIdInfo openId = getOpenId(userId, BotType.Wx);
-            return openId.getOpenId();
-        } catch (Exception e) {
-            log.warn("getRelationCode", e);
-            return "";
+    @SneakyThrows
+    public String[] getRelationMessage(String userId) {
+        String dir = String.format("%s\\qrcode", userConfig.getDataFilePath());
+        App.createDirectory(dir);
+        String fileName = String.format("%s\\%s.png", dir, userId);
+        if (!new File(fileName).exists()) {
+            try (FileOutputStream stream = new FileOutputStream(fileName)) {
+                String relationCode = String.format("http://f-li.cn/invite.html?id=%s", App.toShorterUUID(UUID.fromString(userId)));
+                int w = 300;
+                QRCode.from(relationCode).to(ImageType.PNG).withSize(w, w).writeTo(stream);
+            }
         }
+        return new String[]{"好友扫描下方↓二维码，永久享受额外20%红包提成～", String.format("%s%s", Bot.ImageContent, fileName)};
     }
     //endregion
 
@@ -572,11 +578,14 @@ public class UserService {
         } else {
             withdrawLog.setRemark(remark);
             String account = Strings.isNullOrEmpty(user.getAlipayAccount()) ? String.format("微信 %s", user.getWxOpenId()) : String.format("%s %s", user.getAlipayName(), user.getAlipayAccount());
-            contents = Collections.singletonList(String.format("一一一一提 现 成 功一一一一\n" +
+            contents = new ArrayList<>();
+            String[] relationMessage = getRelationMessage(user.getId());
+            contents.add(String.format("一一一一提 现 成 功一一一一\n" +
                     "提现金额: %.2f元\n" +
                     "转入账户: %s\n" +
                     "%s" +
-                    "%s", toMoney(withdrawLog.getAmount()), account, splitText, getRelationMessage(user.getId())));
+                    "%s", toMoney(withdrawLog.getAmount()), account, splitText, relationMessage[0]));
+            contents.add(relationMessage[1]);
         }
         withdrawLog.setStatus(status.getValue());
         dbUtil.save(withdrawLog);
@@ -614,13 +623,13 @@ public class UserService {
                     couponAmount = DbUtil.convertToMoney(goods.getCouponAmount()),
                     payAmount = DbUtil.convertToMoney(goods.getPrice()) - rebateAmount - couponAmount;
             notifyService.addGroup(groupId, String.format("一一一一今 日 特 惠一一一一\n" +
-                            "【%s】%s\n" +
+                            "【今日领券减%s】%s\n" +
                             "%s" +
                             "约反      ￥%.2f\n" +
                             "优惠券  ￥%.2f\n" +
                             "付费价  ￥%.2f\n" +
                             "复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",
-                    advResult.getMediaType().toDescription(), goods.getName(), splitText,
+                    couponAmount, goods.getName(), splitText,
                     rebateAmount, couponAmount, payAmount, advResult.getShareCode()));
         }
     }
@@ -630,7 +639,9 @@ public class UserService {
 
         for (Order paidOrder : notifyInfo.paidOrders) {
             UserInfo user = queryUser(paidOrder.getUserId());
-            notifyService.add(user.getUserId(), Arrays.asList(String.format("一一一一支 付 成 功一一一一\n" +
+            List<String> contents = new ArrayList<>();
+            String[] relationMessage = getRelationMessage(user.getUserId());
+            contents.add(String.format("一一一一支 付 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
                             "%s\n" +
@@ -640,11 +651,13 @@ public class UserService {
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "%s" +
-                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包",
+                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包\n" +
+                            "%s",
                     paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                     toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
-                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText),
-                    getRelationMessage(user.getUserId())));
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), Command.splitText, relationMessage[0]));
+            contents.add(relationMessage[1]);
+            notifyService.add(user.getUserId(), contents);
         }
         for (Order settleOrder : notifyInfo.settleOrders) {
             UserInfo user = queryUser(settleOrder.getUserId());

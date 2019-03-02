@@ -3,6 +3,7 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.Test;
+import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.media.JdLoginBot;
@@ -11,6 +12,7 @@ import org.rx.fl.util.ImageUtil;
 
 import java.awt.*;
 import java.util.List;
+import java.util.UUID;
 
 //@RunWith(SpringRunner.class)
 //@SpringBootTest
@@ -18,53 +20,8 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
-        String s = "170\n" +
-                "170\n" +
-                "160\n" +
-                "170\n" +
-                "190\n" +
-                "180\n" +
-                "160\n" +
-                "150\n" +
-                "170\n" +
-                "160\n" +
-                "180\n" +
-                "160\n" +
-                "170\n" +
-                "180\n" +
-                "180\n" +
-                "170\n" +
-                "160\n" +
-                "160\n" +
-                "170\n" +
-                "170\n" +
-                "160\n" +
-                "170\n" +
-                "180\n" +
-                "170\n" +
-                "350\n" +
-                "180\n" +
-                "170\n" +
-                "170\n" +
-                "150\n" +
-                "170\n" +
-                "160\n" +
-                "180\n" +
-                "170\n" +
-                "180\n" +
-                "180\n" +
-                "170\n" +
-                "180\n" +
-                "160\n" +
-                "170\n" +
-                "170\n" +
-                "180\n" +
-                "300\n" +
-                "10\n";
-        for (String s1 : s.split("\n")) {
-            System.out.println(Integer.valueOf(s1) + 10);
-        }
-
+        //mHspqTfyNqPw89gBJiXdYd
+        System.out.println(App.toShorterUUID(UUID.fromString("c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567")));
 //        System.out.println(App.toShorterUUID(UUID.fromString("5483c10a-98d4-63cf-b427-31e26251ed8d")));
 //        System.out.println(App.fromShorterUUID("EkCHKMVpEdpnDSqdam384H"));
 //        AwtBot bot = AwtBot.getBot();
