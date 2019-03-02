@@ -1,7 +1,6 @@
 package org.rx.fl.web;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.HttpCaller;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -16,8 +15,8 @@ public class HomeController {
     @Resource
     private HttpServletRequest request;
 
-    @RequestMapping("/index.html")
-    public String index(String cookie, Model model) {
+    @RequestMapping("/rx.html")
+    public String rx(String cookie, Model model) {
         model.addAttribute("name", "王湵范");
         String rawCookie = request.getHeader("Cookie");
         model.addAttribute("cookie", rawCookie);
@@ -26,18 +25,6 @@ public class HomeController {
             HttpCaller.saveRawCookies(reqUrl, rawCookie);
             log.info("{} save cookie: {}", reqUrl, rawCookie);
         }
-        return "index";
-    }
-
-    @RequestMapping("/uc/nplogin")
-    public String jdLogin(String test, Model model) throws Exception {
-        if ("1".equals(test)) {
-            JdLoginBot login = new JdLoginBot(8081);
-            Thread.sleep(2000);
-            log.info("jdLogin test result {}", login.produceKey());
-        }
-        log.info("jdLogin fake response ok..");
-        model.addAttribute("script", "window.close();");
-        return "index";
+        return "rx";
     }
 }

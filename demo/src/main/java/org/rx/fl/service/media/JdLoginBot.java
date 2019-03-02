@@ -29,7 +29,7 @@ public final class JdLoginBot extends Disposable {
 
     static {
         Class owner = JdLoginBot.class;
-        jdKey = ImageUtil.getImageFromResource(owner, "/static/jdKey.png");
+        jdKey = ImageUtil.getImageFromResource(owner, "/bot/jdKey.png");
     }
 
     private String loginKey;

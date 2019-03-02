@@ -64,8 +64,7 @@ public class FindAdvCmd implements Command {
         }
         if (advResult == null || advResult.getFoundStatus() != AdvFoundStatus.Ok) {
             return HandleResult.ok("一一一一系 统 消 息一一一一\n" +
-                    "返利失败！\n" +
-                    "亲，这家没有优惠和返利哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
+                    "亲，这家没有优惠和红包补贴哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
         }
 
         GoodsInfo goods = advResult.getGoods();
@@ -90,7 +89,7 @@ public class FindAdvCmd implements Command {
         switch (advResult.getMediaType()) {
             case Jd:
                 reply.append(String.format("抢购链接: %s", advResult.getShareCode()));
-                ps.append("付款时可以使用优惠券、京豆和礼品卡抵扣哦～\n");
+                ps.append("付款时可以使用京券、东券、京豆和礼品卡抵扣哦～\n");
                 break;
             case Taobao:
                 reply.append(String.format("复制框内整段文字，打开「手淘」即可「领取优惠券」并购买%s",

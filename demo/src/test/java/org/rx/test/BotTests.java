@@ -2,21 +2,15 @@ package org.rx.test;
 
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
-import okhttp3.HttpUrl;
 import org.junit.Test;
-import org.rx.common.App;
 import org.rx.common.NQuery;
-import org.rx.fl.service.bot.WxBot;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.AwtBot;
-import org.rx.fl.util.AwtClipboard;
 import org.rx.fl.util.ImageUtil;
-import org.rx.util.ManualResetEvent;
 
 import java.awt.*;
 import java.util.List;
-import java.util.UUID;
 
 //@RunWith(SpringRunner.class)
 //@SpringBootTest
@@ -129,9 +123,9 @@ public class BotTests {
 
         Class owner = AwtBot.class;
         AwtBot bot = AwtBot.getBot();
-        List<Point> points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread0.png"));
+        List<Point> points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/bot/wxUnread0.png"));
         System.out.println(points);
-        points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/static/wxUnread1.png"));
+        points = bot.findScreenPoints(ImageUtil.getImageFromResource(owner, "/bot/wxUnread1.png"));
 //        points = bot.findScreenPoints(ImageUtil.loadImage("D:\\1.png"));
         System.out.println(points);
 

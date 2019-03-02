@@ -193,7 +193,7 @@ public class UserService {
     }
 
     public String getRelationMessage(String userId) {
-        return String.format("将 小范省钱 名片推荐给好友，永久享受额外20%%返利提成！\n" +
+        return String.format("将 小范省钱 名片推荐给好友，永久享受额外20%%返利红包提成！\n" +
                 "好友添加 小范省钱 后发送您的微信号 %s 即可绑定成为伙伴哦～", getRelationCode(userId));
     }
 
@@ -652,6 +652,7 @@ public class UserService {
             if (DbUtil.isEmpty(amount)) {
                 continue;
             }
+            long total = user.getTotalWithdrawAmount() + user.getBalance();
             notifyService.add(user.getUserId(), String.format("一一一一收 货 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
@@ -661,13 +662,13 @@ public class UserService {
                             "\n" +
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
-                            "总成功订单: %s单\n" +
+                            "    累计省钱: %.2f元\n" +
                             "%s" +
                             "回复 提现 两个字，给您补贴红包\n" +
                             "补贴红包已转入可提现金额",
                     settleOrder.getGoodsName(), settleOrder.getOrderNo(),
                     toMoney(settleOrder.getPayAmount()), toMoney(amount),
-                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
+                    toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), toMoney(total), Command.splitText));
         }
         for (Order order : notifyInfo.restoreSettleOrder) {
             UserInfo user = queryUser(order.getUserId());

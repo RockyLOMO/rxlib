@@ -33,13 +33,12 @@ import static org.rx.util.AsyncTask.TaskFactory;
 @Slf4j
 public class WxMobileBot implements Bot {
     public interface KeyImages {
-        BufferedImage KeyNew = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxKey.png");
-        BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread0.png");
-        BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxUnread1.png");
-        BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg.png");
-        BufferedImage Msg2 = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxMsg2.png");
-        BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxBrowser.png");
-//        BufferedImage Group = ImageUtil.getImageFromResource(WxMobileBot.class, "/static/wxGroup.png");
+        BufferedImage KeyNew = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxKey.png");
+        BufferedImage Unread0 = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxUnread0.png");
+        BufferedImage Unread1 = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxUnread1.png");
+        BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxMsg.png");
+        BufferedImage Msg2 = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxMsg2.png");
+        BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxBrowser.png");
     }
 
     private static final int delay1 = 50, delay2 = 100;
@@ -70,8 +69,18 @@ public class WxMobileBot implements Bot {
         if (windowPoint == null) {
             Point point = bot.findScreenPoint(KeyImages.KeyNew);
             if (point == null) {
-                bot.saveScreen(KeyImages.KeyNew, "WxMobile");
-                throw new InvalidOperationException("WxMobile window not found");
+                int y = (int) bot.getScreenRectangle().getHeight();
+                bot.mouseRightClick(270, y - 20);
+                bot.delay(1000);
+                bot.mouseLeftClick(270, y - 62);
+                bot.delay(800);
+                bot.mouseLeftClick(270, y - 20);
+                point = bot.findScreenPoint(KeyImages.KeyNew);
+
+                if (point == null) {
+                    bot.saveScreen(KeyImages.KeyNew, "WxMobile");
+                    throw new InvalidOperationException("WxMobile window not found");
+                }
             }
             int x = point.x - 21, y = point.y - 469;
             // 18 25 -> 2 2
@@ -149,6 +158,8 @@ public class WxMobileBot implements Bot {
                         captureFlag = 0;
                         checkCount = 0;
                         log.info("step1 captureUser at {}", screenPoint);
+
+                        bot.mouseRelease();
                         bot.mouseLeftClick(screenPoint.x, screenPoint.y + 20);
                         bot.delay(delay1);
 
@@ -331,7 +342,6 @@ public class WxMobileBot implements Bot {
                     Thread.sleep(1800);
                 }
                 bot.mouseRelease();
-
                 bot.mouseLeftClick(getUsersPoint());
                 bot.delay(delay1);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
@@ -375,8 +385,6 @@ public class WxMobileBot implements Bot {
 
             bot.mouseLeftClick(getStandbyPoint());
             bot.delay(delay1);
-
-            bot.mouseRelease();
         } finally {
             locker.unlock();
         }

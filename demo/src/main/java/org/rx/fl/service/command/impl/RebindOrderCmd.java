@@ -51,7 +51,7 @@ public class RebindOrderCmd implements Command {
                                     "订单号:\n" +
                                     "%s\n" +
                                     "付费金额: %.2f元\n" +
-                                    "返利金额: %.2f元\n" +
+                                    "红包补贴: %.2f元\n" +
                                     "\n" +
                                     "已成功绑定到您的账户\n" +
                                     "可提现金额: %.2f元\n" +

@@ -100,7 +100,7 @@ public class QueryOrderCmd implements Command {
             for (OrderResult goods : orderResults) {
                 out.append(String.format("一一一一一一一一\n" +
                                 "商品: %s\n" +
-                                "返利金额: %.2f元  状态: %s\n", goods.getGoodsName(),
+                                "红包补贴: %.2f元  状态: %s\n", goods.getGoodsName(),
                         toMoney(goods.getRebateAmount()),
                         goods.getStatus().toDescription()));
             }

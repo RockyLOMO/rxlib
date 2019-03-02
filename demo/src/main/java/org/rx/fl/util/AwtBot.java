@@ -75,7 +75,7 @@ public class AwtBot {
     private AwtBot() {
         this.autoDelay = 10;
         bot = new Robot();
-        bot.setAutoDelay(this.autoDelay / 2);
+//        bot.setAutoDelay(this.autoDelay / 2);
         clickLocker = new ReentrantLock(true);
         pressLocker = new ReentrantLock(true);
         clipboard = new AwtClipboard();

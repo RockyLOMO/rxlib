@@ -68,7 +68,7 @@ app:
       initSize: 0
     ie:
       driver: /usr/chrome/IEDriverServer.exe
-      cookieUrl: http://x.%s/index.html?cookie=1
+      cookieUrl: http://x.%s/rx.html?cookie=1
       initSize: 0
   user:
     adminIds:
@@ -145,7 +145,7 @@ app:
       initSize: 3
     ie:
       driver: C:\_rx\chrome\IEDriverServer.exe
-      cookieUrl: http://x.%s/index.html?cookie=1
+      cookieUrl: http://x.%s/rx.html?cookie=1
       initSize: 1
   user:
     adminIds:
