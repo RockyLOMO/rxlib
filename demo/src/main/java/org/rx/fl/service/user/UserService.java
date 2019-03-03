@@ -276,7 +276,6 @@ public class UserService {
             }
             user = new User();
             user.setId(userId);
-            user.setNickname(openId.getNickname());
             switch (openId.getBotType()) {
                 case WxService:
                     user.setWxSvcOpenId(openId.getOpenId());
@@ -286,6 +285,10 @@ public class UserService {
                     break;
             }
             dbUtil.save(user, true);
+        }
+        if (Strings.isNullOrEmpty(user.getNickname()) && !Strings.isNullOrEmpty(openId.getNickname())) {
+            user.setNickname(openId.getNickname());
+            dbUtil.save(user);
         }
         return user.getId();
     }

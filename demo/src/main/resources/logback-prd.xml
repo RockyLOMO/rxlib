@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="false" debug="false">
-    <property name="log.dir" value="/_rx/app_rebate"/>
-    <logger name="org.rx.fl.repository" level="debug"/>
+    <property name="log.dir" value="/app_rebate"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder charset="UTF-8">
@@ -43,6 +42,23 @@
             <pattern>%d %-5p [%t] %c %m%n</pattern>
         </encoder>
     </appender>
+    <appender name="dbAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${log.dir}/logs/${HOSTNAME}_db.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log.dir}/logs/${HOSTNAME}_db.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>500MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+        <encoder charset="UTF-8">
+            <pattern>%d %-5p [%t] %c - %m%n</pattern>
+        </encoder>
+    </appender>
+
     <logger name="infoLogger" additivity="false">
         <level value="DEBUG"/>
         <appender-ref ref="infoAppender"/>
@@ -50,6 +66,9 @@
     <logger name="errorLogger" additivity="false">
         <level value="WARN"/>
         <appender-ref ref="errorAppender"/>
+    </logger>
+    <logger name="org.rx.fl.repository" level="debug" additivity="false">
+        <appender-ref ref="dbAppender"/>
     </logger>
 
     <root level="INFO">

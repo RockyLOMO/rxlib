@@ -50,7 +50,7 @@ order by t2.create_time desc;
 select t1.wx_open_id,t.* from t_withdraw_log t
 inner join t_user t1 on t.user_id = t1.id
 where 1=1
-#and t.status = 1
+and t.status = 1
 order by t.create_time asc;
 
 #提现流水  ！可用余额为负数，频繁退款！

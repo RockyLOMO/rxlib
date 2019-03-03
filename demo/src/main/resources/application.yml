@@ -131,7 +131,7 @@ app:
       keepLoginSeconds: 60
       loginPort: 8081
       rootPercent: 95
-      guideUrl: http://t.cn/EcsaJnC
+      guideUrl: http://t.cn/EItLAdX
     pdd:
       coreSize: 0
       keepLoginSeconds: 60
@@ -139,13 +139,13 @@ app:
     windowRectangle: 800,1000,800,600
     errorCountToExchange: 3
     chrome:
-      driver: C:\_rx\chrome\chromedriver.exe
-      dataPath: C:\_rx\chrome\data
-      downloadPath: C:\_rx\chrome\download
+      driver: /app_rebate/chrome/chromedriver.exe
+      dataPath: /app_rebate/chrome/data
+      downloadPath: /app_rebate/chrome/download
       isBackground: false
       initSize: 3
     ie:
-      driver: C:\_rx\chrome\IEDriverServer.exe
+      driver: /app_rebate/chrome/IEDriverServer.exe
       cookieUrl: http://x.%s/rx.html?cookie=1
       initSize: 1
   user:
@@ -155,7 +155,7 @@ app:
       - 1-1,100
       - 2-?,80
     heartbeatMinutes: 20
-    dataFilePath: D:\app_rebate
+    dataFilePath: /app_rebate/data
     aliPayCode: 打开支付宝首页搜“546289253”领红包，领到大红包的小伙伴赶紧使用哦！
     groupAliPay:
       - A小范省钱分享群
@@ -176,3 +176,4 @@ app:
       - 垃圾袋
       - 洗衣液
       - 牛奶
+      - 猫爪杯

@@ -16,6 +16,7 @@ import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
+import org.rx.util.function.Action;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -69,13 +70,7 @@ public class WxMobileBot implements Bot {
         if (windowPoint == null) {
             Point point = bot.findScreenPoint(KeyImages.KeyNew);
             if (point == null) {
-                int y = (int) bot.getScreenRectangle().getHeight();
-                bot.mouseRightClick(270, y - 20);
-                bot.delay(1000);
-                bot.mouseLeftClick(270, y - 62);
-                bot.delay(800);
-                bot.mouseLeftClick(270, y - 20);
-                bot.delay(400);
+                resetWindow();
                 point = bot.findScreenPoint(KeyImages.KeyNew);
 
                 if (point == null) {
@@ -90,6 +85,7 @@ public class WxMobileBot implements Bot {
         return windowPoint;
     }
 
+    //region init
     public WxMobileBot(int capturePeriod, int maxCheckMessageCount, int maxCaptureMessageCount, int maxScrollMessageCount, int captureScrollSeconds) {
         bot = AwtBot.getBot();
         lastTime = DateTime.now();
@@ -102,6 +98,21 @@ public class WxMobileBot implements Bot {
         captureScrollCount = captureScrollSeconds * 1000 / capturePeriod + 1;
         locker = new ReentrantLock(true);
         captureFlag = 0;
+    }
+
+    private Point getAbsolutePoint(int relativeX, int relativeY) {
+        Point windowPoint = getWindowPoint();
+        return new Point(windowPoint.x + relativeX, windowPoint.y + relativeY);
+    }
+
+    private void resetWindow() {
+        int y = (int) bot.getScreenRectangle().getHeight();
+        bot.mouseRightClick(270, y - 20);
+        bot.delay(1000);
+        bot.mouseLeftClick(270, y - 62);
+        bot.delay(800);
+        bot.mouseLeftClick(270, y - 20);
+        bot.delay(400);
     }
 
     public void start() {
@@ -121,6 +132,7 @@ public class WxMobileBot implements Bot {
         captureFuture.cancel(false);
         captureFuture = null;
     }
+    //endregion
 
     //region debug
     public Rectangle getUserRectangle() {
@@ -145,6 +157,11 @@ public class WxMobileBot implements Bot {
         return getAbsolutePoint(93, 414);
     }
     //endregion
+
+    @Override
+    public void onReceiveMessage(Function<MessageInfo, List<String>> event) {
+        this.event = event;
+    }
 
     private void captureUsers() {
         locker.lock();
@@ -189,7 +206,7 @@ public class WxMobileBot implements Bot {
                                     int x = p.x - 22, y = p.y + 12;
                                     bot.mouseLeftClick(x, y);
 
-                                    fillOpenId(messageInfo, new Point(x, y), false);
+                                    fillOpenId(messageInfo, new Point(x, y));
                                     if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
                                         doLoop = false;
                                         break;
@@ -232,7 +249,7 @@ public class WxMobileBot implements Bot {
                         }
                         if (msgList.isEmpty()) {
                             if (Strings.isNullOrEmpty(messageInfo.getOpenId())) {
-                                fillOpenIdByTab(messageInfo, true);
+                                fillOpenIdByTab(messageInfo);
                             }
                             messageInfo.setContent(Bot.SubscribeContent);
                         } else {
@@ -273,16 +290,16 @@ public class WxMobileBot implements Bot {
         }
     }
 
-    private void fillOpenIdByTab(MessageInfo message, boolean captureNickname) {
+    private void fillOpenIdByTab(MessageInfo message) {
         bot.mouseLeftClick(getAbsolutePoint(350, 38));
         bot.delay(500); //多100
         Point p = getAbsolutePoint(808, 52);
         bot.mouseLeftClick(p);
-        fillOpenId(message, p, captureNickname);
+        fillOpenId(message, p);
     }
 
     //自带delay
-    private void fillOpenId(MessageInfo message, Point point, boolean captureNickname) {
+    private void fillOpenId(MessageInfo message, Point point) {
         bot.setClipboardText("");
         bot.delay(delay2);
         bot.mouseDoubleLeftClick(point.x + 94, point.y + 72);
@@ -293,27 +310,17 @@ public class WxMobileBot implements Bot {
             return;
         }
         message.setOpenId(openId);
-        if (message.getOpenId().startsWith("wxid_") || captureNickname) {
-            bot.mouseDoubleLeftClick(point.x + 42, point.y + 45);
-            String nickname = bot.copyAndGetText();
-            log.info("step2-1 capture nickname {}", nickname);
-            if (Strings.isNullOrEmpty(nickname)) {
-                log.warn("Can not found nickname");
-                return;
-            }
-            message.setNickname(nickname);
+        bot.mouseDoubleLeftClick(point.x + 42, point.y + 45);
+        String nickname = bot.copyAndGetText();
+        log.info("step2-1 capture nickname {}", nickname);
+        if (Strings.isNullOrEmpty(nickname)) {
+            log.warn("Can not found nickname");
+            return;
+        }
+        message.setNickname(nickname);
+        if (message.getOpenId().startsWith("wxid_")) {
             bot.mouseLeftClick(point.x + 106, point.y + 146);
         }
-    }
-
-    private Point getAbsolutePoint(int relativeX, int relativeY) {
-        Point windowPoint = getWindowPoint();
-        return new Point(windowPoint.x + relativeX, windowPoint.y + relativeY);
-    }
-
-    @Override
-    public void onReceiveMessage(Function<MessageInfo, List<String>> event) {
-        this.event = event;
     }
 
     @Override
@@ -334,15 +341,17 @@ public class WxMobileBot implements Bot {
 
         locker.lock();
         try {
-            String openId = isNull(message.getNickname(), message.getOpenId());
+            bot.mouseRelease();
+            String openId = message.getOpenId().startsWith("wxid_") ? message.getNickname() : message.getOpenId();
             boolean isWhite = whiteOpenIds != null && whiteOpenIds.contains(message.getOpenId());
             int checkCount = 0;
             MessageInfo check = new MessageInfo();
             do {
                 if (checkCount > 0) {
-                    Thread.sleep(2000);
+                    resetWindow();
+//                    Thread.sleep(1000);
                 }
-                bot.mouseRelease();
+
                 bot.mouseLeftClick(getUsersPoint());
                 bot.delay(delay2);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
@@ -360,12 +369,12 @@ public class WxMobileBot implements Bot {
                 if (isWhite) {
                     break;
                 }
-                fillOpenIdByTab(check, false);
+                fillOpenIdByTab(check);
                 checkCount++;
             }
-            while (checkCount < maxCheckMessageCount && !openId.equals(check.getOpenId()));
-            if (!isWhite && !openId.equals(check.getOpenId())) {
-                log.info("message openId {} not equals {}", openId, check.getOpenId());
+            while (checkCount < maxCheckMessageCount && !message.getOpenId().equals(check.getOpenId()));
+            if (!isWhite && !message.getOpenId().equals(check.getOpenId())) {
+                log.info("message openId {} not equals {}", message.getOpenId(), check.getOpenId());
                 return;
             }
 
