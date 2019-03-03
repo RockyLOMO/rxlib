@@ -10,8 +10,8 @@ app.errorCodeFiles:
   - errorCode.yml
 app.mybatis.mapperScan: org.rx.fl.repository
 app.commandList: CommissionCmd,FindAdvCmd,RebindOrderCmd,UserDashboardCmd,BindPaymentCmd,WithdrawCmd,DailyCheckInCmd,QueryOrderCmd,FeedbackCmd,AliPayCmd,SubscribeCmd
-#app.bot.debugPath: /_rx/bot/
-app.repository.dbFile: /_rx/lr.db
+#app.bot.debugPath: /app_rebate/bot/
+app.repository.dbFile: /app_rebate/lr.db
 app.sms.appId: 1400123840
 app.sms.appKey: 0decfdc628b7d885a790524133f22339
 app.sms.smsSign: 隽斋
@@ -112,7 +112,7 @@ app:
       captureScrollSeconds: 24
   media:
     enableMedias: Taobao,Jd
-    syncWeeklyOrderSeconds: 80
+    syncWeeklyOrderSeconds: 90
     syncMonthlyOrderTime: "02:30:00"
     commandTimeout: 30
     goodsCacheMinutes: 600

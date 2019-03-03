@@ -85,11 +85,12 @@ public class AwtClipboard implements ClipboardOwner {
 
     @SneakyThrows
     public void waitSetComplete() {
+        int minDelay = 25;
         log.info("waitSetComplete wait @ {}", DateTime.now().toString());
-        waiter.waitOne(500);
+        Thread.sleep(minDelay);
+        waiter.waitOne(500 - minDelay);
         waiter.reset();
         log.info("waitSetComplete ok @ {}", DateTime.now().toString());
-        Thread.sleep(30);
     }
 
     private void listen() {

@@ -10,6 +10,7 @@ import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -65,10 +66,6 @@ public class AwtBot {
 
     public void setClipboardText(String text) {
         clipboard.setContent(text);
-    }
-
-    public void waitClipboardSet() {
-        clipboard.waitSetComplete();
     }
 
     @SneakyThrows
@@ -190,6 +187,30 @@ public class AwtBot {
     }
 
     //region combo
+    public String waitClipboardSet(Func<Boolean> action, int timeout) {
+        final int waitMillis = 20;
+        int count = (int) Math.round((double) timeout / waitMillis);
+        return clipboard.lock(() -> {
+            String text = "";
+            clipboard.setContent(text);
+            if (!action.invoke()) {
+                return text;
+            }
+            clipboard.waitSetComplete();
+            for (int i = 0; i < count; i++) {
+                text = clipboard.getString();
+                if (!Strings.isNullOrEmpty(text)) {
+                    break;
+                }
+                bot.delay(waitMillis);
+            }
+            if (Strings.isNullOrEmpty(text)) {
+                throw new InvalidOperationException("waitClipboardSet timeout");
+            }
+            return text;
+        });
+    }
+
     public String copyAndGetText() {
         return clipboard.lock(() -> {
             pressCtrlC();
@@ -204,7 +225,7 @@ public class AwtBot {
 
     public void setTextAndParse(String text) {
         clipboard.lock(() -> {
-            setClipboardText(text);
+            clipboard.setContent(text);
             pressCtrlV();
             bot.delay(autoDelay);
             return null;

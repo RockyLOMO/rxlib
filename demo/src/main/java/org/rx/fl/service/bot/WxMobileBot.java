@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.App;
@@ -16,7 +17,6 @@ import org.rx.fl.dto.bot.MessageInfo;
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.util.AwtBot;
 import org.rx.fl.util.ImageUtil;
-import org.rx.util.function.Action;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -27,7 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
-import static org.rx.common.Contract.isNull;
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
@@ -220,13 +220,13 @@ public class WxMobileBot implements Bot {
                                 bot.mouseDoubleLeftClick(x, y);
 
                                 bot.delay(delay2);
-                                Point pBrowser = getAbsolutePoint(348, 402);
-                                Point pCopy = bot.clickByImage(KeyImages.Browser, new Rectangle(pBrowser, new Dimension(355, 95)), false);
-                                log.info("step2-2 capture url {}", pCopy);
-                                if (pCopy != null) {
-                                    bot.mouseLeftClick(pCopy.x + KeyImages.Browser.getWidth() / 2, pCopy.y + KeyImages.Browser.getHeight() / 2);
-                                    bot.waitClipboardSet();
-                                    msg = bot.getClipboardText();
+                                $<Point> pCopy$ = $();
+                                msg = bot.waitClipboardSet(() -> {
+                                    pCopy$.$ = bot.clickByImage(KeyImages.Browser, new Rectangle(getAbsolutePoint(348, 402), new Dimension(355, 95)), false);
+                                    return pCopy$.$ != null;
+                                }, 1000);
+                                if (!Strings.isNullOrEmpty(msg)) {
+                                    log.info("step2-2 capture url {}", pCopy$.$);
                                 } else {
                                     msg = bot.copyAndGetText();
                                 }

@@ -668,7 +668,7 @@ public class UserService {
             if (DbUtil.isEmpty(amount)) {
                 continue;
             }
-            long total = user.getTotalWithdrawAmount() + user.getBalance();
+            long total = -user.getTotalWithdrawAmount() + user.getBalance();
             notifyService.add(user.getUserId(), String.format("一一一一收 货 成 功一一一一\n" +
                             "%s\n" +
                             "订单编号:\n" +
