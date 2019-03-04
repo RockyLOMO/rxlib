@@ -168,6 +168,14 @@
         </div>
     </div>
     <!-- End Page Wraper -->
+    <div id="page0"></div>
+    <div id="page1"></div>
+
+    <div id="page2"></div>
+    <div id="page3"></div>
+
+    <div id="page4"></div>
+    <div id="page5"></div>
     <!-- Js -->
     <script src="/js/jquery-3.3.1.min.js"></script>
     <script src="/js/plugins/jquery.easing.1.3.js"></script>
@@ -180,6 +188,7 @@
     <script src="/js/plugins/jquery.singlePageNav.min.js"></script>
     <script src="/js/plugins/jquery.validate.min.js"></script>
     <script src="/js/theme.js"></script>
+    <script src="/js/jquery.cookie-1.4.1.min.js"></script>
 <script>
     $(function () {
         $("#contact").validate();
@@ -206,6 +215,31 @@
                 }
             });
         });
+    });
+
+    $(function () {
+        var key = "rx";
+        var val = localStorage.getItem(key);
+        $("#page0").text("localStorage0: " + val);
+        val = parseInt(val || 0) + 1;
+        localStorage.setItem(key, val);
+        $("#page1").text("localStorage1: " + val);
+
+        val = $.cookie(key);
+        $("#page2").text("cookies0: " + val);
+        val = parseInt(val || 0) + 1;
+        $.cookie(key, val, {expires: 7, path: '/', domain: '.qq.com'});
+        $("#page3").text("cookies1: " + val);
+
+        $("#page4").text(!!indexedDB);
+        // //处理浏览器兼容性
+        // window.indexedDB = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.msIndexedDB;
+        // var db= indexedDB.open("f-li");
+        // var val = localStorage.getItem(key);
+        // $("#page4").text("val0: " + val);
+        // val = parseInt(val || 0) + 1;
+        // localStorage.setItem(key, val);
+        // $("#page5").text("val1: " + val);
     });
 </script>
 </body>
