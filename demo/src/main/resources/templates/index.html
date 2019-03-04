@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html xmlns:th="http://www.thymeleaf.org">
 
 <head>
     <meta charset="utf-8" />
@@ -8,14 +8,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <!--[if IE]><meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'><![endif]-->
     <!-- Favicone Icon -->
-    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico" />
-    <link rel="icon" type="image/png" href="img/favicon.ico" />
-    <link rel="apple-touch-icon" href="img/favicon.ico" />
+    <link rel="shortcut icon" type="image/x-icon" href="/img/favicon.ico" />
+    <link rel="icon" type="image/png" href="/img/favicon.ico" />
+    <link rel="apple-touch-icon" href="/img/favicon.ico" />
     <!-- Css -->
-    <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css" />
-    <link href="css/font-awesome.css" rel="stylesheet" type="text/css" />
-    <link href="css/plugins/owl.carousel.css" rel="stylesheet" type="text/css" />
-    <link href="css/style.css" rel="stylesheet" type="text/css" />
+    <link href="/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
+    <link href="/css/font-awesome.css" rel="stylesheet" type="text/css" />
+    <link href="/css/plugins/owl.carousel.css" rel="stylesheet" type="text/css" />
+    <link href="/css/style.css" rel="stylesheet" type="text/css" />
 </head>
 <body>
     <!-- Site preloader -->
@@ -32,7 +32,7 @@
                     <!-- Logo -->
                     <div class="logo">
                         <a href="index.html">
-                            <img src="img/logo.png" alt="logo" style="width: 24px;margin: -8px 0 0 0;" />
+                            <img src="/img/logo.png" alt="logo" style="width: 24px;margin: -8px 0 0 0;" />
                             <span style="color: #FDCA4A; font-size: 22px;font-weight: bold;">小范省钱</span>
                         </a>
                     </div>
@@ -114,10 +114,10 @@
                                 <!--</div>-->
                             <!--</div>-->
                             <div class="row" style="margin: 36px 0 0 0;font-weight: bold; line-height: 28px">
-                                <img src="img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们
+                                <img src="/img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们
                             </div>
                             <div class="row">
-                                <img src="img/qrcode.jpg"/>
+                                <img src="/img/qrcode.jpg"/>
                             </div>
                         </div>
                     </div>
@@ -133,10 +133,10 @@
                     <div class="row">
                         <div class="col-md-4">
                             <div class="services p-60">
-                                <img src="img/pt0.png" alt="">
+                                <img src="/img/pt0.png" alt="">
                                 <h3 class="sub-title mtb-15">京东</h3>
                                 <div class="s-overlay">
-                                    <img src="img/pt0.png" alt="">
+                                    <img src="/img/pt0.png" alt="">
                                     <h3 class="sub-title mtb-15">京东</h3>
                                     <p>支持京东自营和第三方商家，可以使用京券、东券、京豆和礼品卡抵扣.</p>
                                 </div>
@@ -144,10 +144,10 @@
                         </div>
                         <div class="col-md-4">
                             <div class="services p-60">
-                                <img src="img/pt1.png" alt=""> <img src="img/pt2.png" alt="">
+                                <img src="/img/pt1.png" alt=""> <img src="/img/pt2.png" alt="">
                                 <h3 class="sub-title mtb-15">淘宝 天猫</h3>
                                 <div class="s-overlay">
-                                    <img src="img/pt1.png" alt=""> <img src="img/pt2.png" alt="">
+                                    <img src="/img/pt1.png" alt=""> <img src="/img/pt2.png" alt="">
                                     <h3 class="sub-title mtb-15">淘宝 天猫</h3>
                                     <p>可以使用优惠券、淘金币和红包抵扣.</p>
                                 </div>
@@ -155,10 +155,10 @@
                         </div>
                         <div class="col-md-4">
                             <div class="services p-60">
-                                <img src="img/pt3.png" alt="">
+                                <img src="/img/pt3.png" alt="">
                                 <h3 class="sub-title mtb-15">飞猪</h3>
                                 <div class="s-overlay">
-                                    <img src="img/pt3.png" alt="">
+                                    <img src="/img/pt3.png" alt="">
                                     <h3 class="sub-title mtb-15">飞猪</h3>
                                     <p>可以使用优惠券、淘金币和红包抵扣.</p>
                                 </div>
@@ -394,20 +394,20 @@
                 <div class="container">
                     <div class="row">
                         <div class="col-md-4 col-sm-6 col-xs-12 content-box mb-sm-30">
-                            <div class="blog-img mb-15"><img src="img/haibao.jpg" alt=""></div>
-                            <h4 class="features-title"><a href="http://t.cn/EItLAdX" target="_blank">京东购物原来可以节省一笔钱！</a></h4>
+                            <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
+                            <h4 class="features-title"><a th:href="${jdGuideUrl}" target="_blank">京东购物原来可以节省一笔钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
                             <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，京东怎样购物才能省钱！</p>
                         </div>
                         <div class="col-md-4 col-sm-6 col-xs-12 content-box mb-sm-30">
-                            <div class="blog-img mb-15"><img src="img/haibao.jpg" alt=""></div>
-                            <h4 class="features-title"><a href="http://t.cn/EVYaBsn" target="_blank">小范告诉您，淘宝这样购物能省钱！</a></h4>
+                            <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
+                            <h4 class="features-title"><a th:href="${tbGuideUrl}" target="_blank">小范告诉您，淘宝这样购物能省钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
                             <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，淘宝怎样购物才能省钱！</p>
                         </div>
                         <div class="col-md-4 col-sm-6 col-xs-12 content-box mb-sm-30">
-                            <div class="blog-img mb-15"><img src="img/haibao.jpg" alt=""></div>
-                            <h4 class="features-title"><a href="http://t.cn/Efs0iCn" target="_blank">小范告诉您，飞猪这样预订能省钱！</a></h4>
+                            <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
+                            <h4 class="features-title"><a th:href="${fzGuideUrl}" target="_blank">小范告诉您，飞猪这样预订能省钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
                             <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，飞猪怎样预订才能省钱！</p>
                         </div>
@@ -523,8 +523,8 @@
                             </div>
                             <div class="col-md-6">
                                 <ul class="social">
-                                    <li><img src="img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们</li>
-                                    <li><img src="img/qrcode.jpg" width="120" height="120"/></li>
+                                    <li><img src="/img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们</li>
+                                    <li><img src="/img/qrcode.jpg" width="120" height="120"/></li>
                                 </ul>
 
                                 <!-- Social -->
@@ -570,18 +570,18 @@
     <!-- End Page Wraper -->
 
     <!-- Js -->
-    <script src="js/jquery-3.3.1.min.js"></script>
-    <script src="js/plugins/jquery.easing.1.3.js"></script>
-    <script src="js/plugins/bootstrap.min.js"></script>
-    <script src="js/plugins/isotope.pkgd.min.js"></script>
-    <script src="js/plugins/jquery.appear.js"></script>
-    <script src="js/plugins/jquery.countTo.js"></script>
-    <script src="js/plugins/owl.carousel.min.js"></script>
-    <script src="js/plugins/circle-progress.js"></script>
-    <script src="js/plugins/jquery.singlePageNav.min.js"></script>
-    <script src="js/plugins/jquery.validate.min.js"></script>
-    <script src="js/contact-form.js"></script>
-    <script src="js/theme.js"></script>
+    <script src="/js/jquery-3.3.1.min.js"></script>
+    <script src="/js/plugins/jquery.easing.1.3.js"></script>
+    <script src="/js/plugins/bootstrap.min.js"></script>
+    <script src="/js/plugins/isotope.pkgd.min.js"></script>
+    <script src="/js/plugins/jquery.appear.js"></script>
+    <script src="/js/plugins/jquery.countTo.js"></script>
+    <script src="/js/plugins/owl.carousel.min.js"></script>
+    <script src="/js/plugins/circle-progress.js"></script>
+    <script src="/js/plugins/jquery.singlePageNav.min.js"></script>
+    <script src="/js/plugins/jquery.validate.min.js"></script>
+    <script src="/js/contact-form.js"></script>
+    <script src="/js/theme.js"></script>
 </body>
 
 </html>

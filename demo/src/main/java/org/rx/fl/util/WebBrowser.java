@@ -418,7 +418,7 @@ public final class WebBrowser extends Disposable {
             } else {
                 throw e;
             }
-        } catch (WebDriverException e) {
+        } catch (Exception e) {
             log.warn("navigateUrl {} {}", url, e);
             if (++errorCount >= BrowserConfig.getErrorCountToExchange()) {
                 exchangeNew(url);

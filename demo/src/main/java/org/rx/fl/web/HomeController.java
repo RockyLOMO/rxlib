@@ -3,6 +3,7 @@ package org.rx.fl.web;
 import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
+import org.rx.common.MediaConfig;
 import org.rx.fl.dto.bot.BotType;
 import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.service.BotService;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.UUID;
 
 @Controller
 @Slf4j
@@ -29,6 +31,16 @@ public class HomeController {
     private BotService botService;
     @Resource
     private UserService userService;
+    @Resource
+    private MediaConfig mediaConfig;
+
+    @RequestMapping("/index.html")
+    public String index(Model model) {
+        model.addAttribute("jdGuideUrl", mediaConfig.getJd().getGuideUrl());
+        model.addAttribute("tbGuideUrl", mediaConfig.getTaobao().getGuideUrl());
+        model.addAttribute("fzGuideUrl", mediaConfig.getTaobao().getFzGuideUrl());
+        return "index";
+    }
 
     @RequestMapping("/invite.html")
     public String invite(String id, Model model) {
@@ -40,6 +52,7 @@ public class HomeController {
             openId.setNickname("");
         }
         model.addAttribute("fromUserName", String.format("%s %s", openId.getNickname(), openId.getOpenId()));
+        model.addAttribute("code", App.toShorterUUID(UUID.randomUUID()));
         return "invite";
     }
 
