@@ -1,5 +1,6 @@
 package org.rx.fl.service.command.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.MediaConfig;
 import org.rx.fl.service.DbCache;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 @Order(20)
 @Component
+@Slf4j
 public class SubscribeCmd implements Command {
     @Resource
     private MediaConfig mediaConfig;
@@ -31,6 +33,7 @@ public class SubscribeCmd implements Command {
     @Override
     public HandleResult<String> handleMessage(String userId, String message) {
         if (!userService.isNoob(userId)) {
+            log.info("not noob and skip");
             //转账之类消息忽略
             return HandleResult.ok("");
         }

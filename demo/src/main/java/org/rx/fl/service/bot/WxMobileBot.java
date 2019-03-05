@@ -158,8 +158,8 @@ public class WxMobileBot implements Bot {
     }
 
     private Rectangle getNewUser2Rectangle() {
-        Point point = getAbsolutePoint(270, 290);
-        return new Rectangle(point, new Dimension(174, 70));
+        Point point = getAbsolutePoint(177, 252);
+        return new Rectangle(point, new Dimension(360, 112));
     }
 
     public List<Point> findScreenPoints(BufferedImage image) {
@@ -279,25 +279,25 @@ public class WxMobileBot implements Bot {
             } while (checkCount < maxCheckMessageCount);
 
             if (captureFlag > 0 && captureFlag % 2 == 0) {
-                int maxCheckNewUserCount = 2;
-                Point pNew = getAbsolutePoint(118, 95);
-                BufferedImage img = KeyImages.NewUser;
-                for (int i = 0; i < maxCheckNewUserCount; i++) {
-                    int offset = 64 * i;
-                    bot.mouseLeftClick(pNew.x, pNew.y + offset);
-                    bot.delay(delay2);
-                    Point screenPoint = bot.findScreenPoint(img, getNewUserMessageRectangle());
-                    if (screenPoint == null) {
-                        continue;
-                    }
-                    bot.mouseLeftClick(screenPoint.x + img.getWidth(), screenPoint.y + img.getHeight() / 2);
-                    for (int j = 0; j < 4; j++) {
-                        Point point = bot.findScreenPoint(KeyImages.NewUser2, getNewUser2Rectangle());
-                        if (point != null) {
-                            bot.mouseLeftClick(getAbsolutePoint(356, 326));
-                            break;
+                bot.mouseLeftClick(getAbsolutePoint(118, 95));
+                bot.delay(delay2);
+                BufferedImage img = KeyImages.NewUser, img2 = KeyImages.NewUser2;
+                Point pNew = bot.findScreenPoint(img, getNewUserMessageRectangle());
+                if (pNew != null) {
+                    bot.mouseLeftClick(pNew.x + img.getWidth(), pNew.y + img.getHeight() / 2);
+                    log.info("newUser step1 ok");
+                    for (int i = 0; i < 6; i++) {
+                        Point point = bot.findScreenPoint(img2, getNewUser2Rectangle());
+                        if (point == null) {
+                            log.info("newUser step2-1 wait..");
+                            bot.delay(400);
+                            continue;
                         }
-                        bot.delay(500);
+                        log.info("newUser step2-1 {} ok", point);
+                        int x = point.x + img2.getWidth(), y = point.y + img2.getHeight() / 2;
+                        bot.mouseLeftClick(x, y);
+                        log.info("newUser step2-2 {},{} ok", x, y);
+                        break;
                     }
                     bot.delay(delay1);
                     MessageInfo messageInfo = new MessageInfo();
@@ -306,6 +306,9 @@ public class WxMobileBot implements Bot {
                     messageInfo.setContent(Bot.SubscribeContent);
                     asyncReply(messageInfo);
                 }
+                bot.mouseLeftClick(getStandbyPoint());
+                bot.mouseWheel(-1);
+                bot.delay(delay1);
             }
 
             if (captureFlag < captureScrollCount) {

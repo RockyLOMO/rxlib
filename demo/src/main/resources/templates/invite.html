@@ -185,35 +185,33 @@
             val = storage.getItem(key);
         }
         if (!val) {
-            $('.successContent').hide();
-            $('.errorContent').fadeIn(1000);
+            location.href = "/index.html";
             return;
         }
-
         var inviteId = storage.getParameter("inviteId");
-        if (!inviteId) {
-            return;
-        }
         if (val == inviteId) {
             location.href = "/invite.html?id=" + val;
             return;
         }
-        $("#inviteTab").LoadingOverlay("show");
-        $.post("/user/inviteConfirm", {
-            id: val,
-            inviteId: inviteId
-        }, function (result) {
-            $("#inviteTab").LoadingOverlay("hide");
-            if (!result || result.code != 1) {
-                $('.successContent').hide();
-                $('.errorContent').fadeIn(1000);
-                return;
-            }
-            $(".fromUserName").text(result.value);
-            $("#inviteTab").css("visibility", "visible");
-            $('.errorContent').hide();
-            $('.successContent').fadeIn(1000);
-        });
+
+        if (inviteId) {
+            $("#inviteTab").LoadingOverlay("show");
+            $.post("/user/inviteConfirm", {
+                id: val,
+                inviteId: inviteId
+            }, function (result) {
+                $("#inviteTab").LoadingOverlay("hide");
+                if (!result || result.code != 1) {
+                    $('.successContent').hide();
+                    $('.errorContent').fadeIn(1000);
+                    return;
+                }
+                $(".fromUserName").text(result.value);
+                $("#inviteTab").css("visibility", "visible");
+                $('.errorContent').hide();
+                $('.successContent').fadeIn(1000);
+            });
+        }
     });
 
     //indexedDb

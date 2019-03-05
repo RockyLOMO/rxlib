@@ -24,6 +24,12 @@ public class BotTests {
     @SneakyThrows
     @Test
     public void normal() {
+        ImageUtil.saveImage(AwtBot.getBot().captureScreen(), "C:\\Users\\Rocky-PC\\Documents\\1.png");
+            Point point = AwtBot.getBot().findScreenPoint(WxMobileBot.KeyImages.NewUser2);
+            if (point != null) {
+                System.out.println(point);
+            }
+
         //mHspqTfyNqPw89gBJiXdYd
         System.out.println(App.toShorterUUID(UUID.fromString("c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567")));
 
@@ -33,8 +39,8 @@ public class BotTests {
 //        int y = (int) bot.getScreenRectangle().getHeight();
 //        bot.clickAndAltF4(220, y - 20);
 //        bot.mouseRightClick(220, y - 20);
-//        bot.delay(1000);
-//        bot.mouseLeftClick(220, y - 64);
+//        bot.delay(1000);    116
+//        bot.mouseLeftClick(220, y - 64);61 63 650 400
 //        bot.clickByImage(ImageUtil.getImageFromResource(WxBot.class, "/static/jdKey2.png"));
 
 //        String url = "https://szsupport.weixin.qq.com/cgi-bin/mmsupport-bin/readtemplate?t=w_redirect_taobao&url=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fspm%3Da230r.1.14.164.436b3078xt4nB5%26id%3D14312037600%26ns%3D1%26abbucket%3D1%23detail&lang=zh_CN";
