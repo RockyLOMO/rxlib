@@ -284,6 +284,8 @@ public class WxMobileBot implements Bot {
                     continue;
                 }
                 bot.mouseLeftClick(screenPoint.x + img.getWidth(), screenPoint.y + img.getHeight() / 2);
+                bot.delay(delay2);
+                bot.mouseLeftClick(getAbsolutePoint(356, 326));
                 bot.delay(delay1);
                 MessageInfo messageInfo = new MessageInfo();
                 messageInfo.setBotType(this.getType());
