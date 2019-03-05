@@ -2,6 +2,7 @@ package org.rx.fl.service.command.impl;
 
 import org.rx.common.App;
 import org.rx.common.MediaConfig;
+import org.rx.fl.service.DbCache;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.HandleResult;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,8 @@ import static org.rx.common.Contract.require;
 public class HelpCmd implements Command {
     @Resource
     private MediaConfig mediaConfig;
+    @Resource
+    private DbCache dbCache;
 
     @Override
     public boolean peek(String message) {
@@ -38,12 +41,13 @@ public class HelpCmd implements Command {
                         "[6]----------关联上支付宝\n" +
                         "[7]----------人工处理问题\n" +
                         "亲，请输入[ ]内的数字序号。\n" +
+                        "\n" +
                         "点击 %s 绑定伙伴，首单购物成功\n" +
-                        "★您将获得【1元】红包，自动转入可提现余额" +
+                        "★您将获得【1元】红包，自动转入可提现余额\n" +
                         "\n" +
                         "淘宝返利教程：\n%s\n" +
                         "飞猪返利教程：\n%s\n" +
-                        "京东返利教程：\n%s\n", url,
+                        "京东返利教程：\n%s\n", dbCache.getShortUrl(url),
                 mediaConfig.getTaobao().getGuideUrl(), mediaConfig.getTaobao().getFzGuideUrl(),
                 mediaConfig.getJd().getGuideUrl()));
     }

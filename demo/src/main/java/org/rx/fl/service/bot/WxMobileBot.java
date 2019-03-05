@@ -40,6 +40,7 @@ public class WxMobileBot implements Bot {
         BufferedImage Msg = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxMsg.png");
         BufferedImage Msg2 = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxMsg2.png");
         BufferedImage Browser = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxBrowser.png");
+        BufferedImage NewUser = ImageUtil.getImageFromResource(WxMobileBot.class, "/bot/wxNewUser.png");
     }
 
     private static final int delay1 = 50, delay2 = 100;
@@ -148,6 +149,11 @@ public class WxMobileBot implements Bot {
     public Rectangle getMessageRectangle() {
         Point point = getAbsolutePoint(311, 63);
         return new Rectangle(point, new Dimension(400, 294));
+    }
+
+    public Rectangle getNewUserMessageRectangle() {
+        Point point = getAbsolutePoint(311, 63);
+        return new Rectangle(point, new Dimension(400, 58));
     }
 
     public List<Point> findScreenPoints(BufferedImage image) {
@@ -260,23 +266,31 @@ public class WxMobileBot implements Bot {
                         } else {
                             messageInfo.setContent(NQuery.of(msgList).first());
                         }
-                        if (event != null) {
-                            TaskFactory.run(() -> {
-                                List<String> toMsgs = event.apply(messageInfo);
-                                if (CollectionUtils.isEmpty(toMsgs)) {
-                                    return;
-                                }
-                                toMsgs = NQuery.of(toMsgs).where(p -> !Strings.isNullOrEmpty(p)).toList();
-                                if (toMsgs.isEmpty()) {
-                                    return;
-                                }
-                                sendMessage(messageInfo, toMsgs);
-                            });
-                        }
+                        asyncReply(messageInfo);
                     }
                 }
                 checkCount++;
             } while (checkCount < maxCheckMessageCount);
+
+            int maxCheckNewUserCount = 2;
+            Point pNew = getAbsolutePoint(118, 95);
+            BufferedImage img = KeyImages.NewUser;
+            for (int i = 0; i < maxCheckNewUserCount; i++) {
+                int offset = 64 * i;
+                bot.mouseLeftClick(pNew.x, pNew.y + offset);
+                bot.delay(delay2);
+                Point screenPoint = bot.findScreenPoint(img, getNewUserMessageRectangle());
+                if (screenPoint == null) {
+                    continue;
+                }
+                bot.mouseLeftClick(screenPoint.x + img.getWidth(), screenPoint.y + img.getHeight() / 2);
+                bot.delay(delay1);
+                MessageInfo messageInfo = new MessageInfo();
+                messageInfo.setBotType(this.getType());
+                fillOpenIdByTab(messageInfo);
+                messageInfo.setContent(Bot.SubscribeContent);
+                asyncReply(messageInfo);
+            }
 
             if (captureFlag < captureScrollCount) {
                 if (captureFlag == 0) {
@@ -326,6 +340,23 @@ public class WxMobileBot implements Bot {
         if (message.getOpenId().startsWith("wxid_")) {
             bot.mouseLeftClick(point.x + 106, point.y + 146);
         }
+    }
+
+    private void asyncReply(MessageInfo messageInfo) {
+        if (event == null) {
+            return;
+        }
+        TaskFactory.run(() -> {
+            List<String> toMsgs = event.apply(messageInfo);
+            if (CollectionUtils.isEmpty(toMsgs)) {
+                return;
+            }
+            toMsgs = NQuery.of(toMsgs).where(p -> !Strings.isNullOrEmpty(p)).toList();
+            if (toMsgs.isEmpty()) {
+                return;
+            }
+            sendMessage(messageInfo, toMsgs);
+        });
     }
 
     @Override

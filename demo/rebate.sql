@@ -17,7 +17,7 @@ inner join t_user_goods t1 on t.goods_id = t1.goods_id
 inner join t_user t2 on t1.user_id = t2.id
 where 1=1
 and t1.is_deleted = 'N'
-and t2.wx_open_id = 'RockyLOMO'
+and t2.wx_open_id = 'bzh810129'
 order by t.create_time desc;
 
 select user_id from t_user_goods

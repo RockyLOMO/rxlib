@@ -8,12 +8,16 @@ import org.rx.common.NQuery;
 import org.rx.fl.service.bot.WxMobileBot;
 import org.rx.fl.service.media.JdLoginBot;
 import org.rx.fl.util.AwtBot;
+import org.rx.fl.util.HttpCaller;
 import org.rx.fl.util.ImageUtil;
+import weixin.popular.api.ShorturlAPI;
 import weixin.popular.api.TokenAPI;
 import weixin.popular.bean.token.Token;
 
 import java.awt.*;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class BotTests {
@@ -84,9 +88,22 @@ public class BotTests {
 
     @Test
     public void wxService() {
-        String AppID = "wxb0d765c458047d1d";
-        String AppSecret = "06f554fea2bd6f3f234480dbdc6ca6ed";
-        Token token = TokenAPI.token(AppID, AppSecret);
-        String accessToken = token.getAccess_token();
+        String long_url = "http://f-li.cn?id=wxb0d765c458047d1d";
+        String apiUrl = String.format("http://dwz.wailian.work/api.php?from=w&url=%s=&site=sina", App.convertToBase64String(long_url.getBytes()));
+        HttpCaller caller = new HttpCaller();
+        Map<String, String> map = new HashMap<>();
+        map.put("Cookie", "PHPSESSID=63btgsg62gursl7vtu17o96kj6; __51cke__=; td_cookie=3631118679; Hm_lvt_fd97a926d52ef868e2d6a33de0a25470=1550555992,1551777578; Hm_lpvt_fd97a926d52ef868e2d6a33de0a25470=1551777578; __tins__19242943=%7B%22sid%22%3A%201551777577820%2C%20%22vd%22%3A%201%2C%20%22expires%22%3A%201551779377820%7D; __51laig__=3");
+        caller.setHeaders(map);
+        String responseText = caller.get(apiUrl);
+        System.out.println(responseText);
+        String shortUrl = JSON.parseObject(responseText).getJSONObject("data").getString("short_url");
+        System.out.println(shortUrl);
+//        String AppID = "wxb0d765c458047d1d";
+//        String AppSecret = "06f554fea2bd6f3f234480dbdc6ca6ed";
+//        Token token = TokenAPI.token(AppID, AppSecret);
+//        System.out.println(JSON.toJSONString(token));
+//        String accessToken = token.getAccess_token();
+//        String url = ShorturlAPI.shorturl(accessToken, "http://f-li.cn?id=wxb0d765c458047d1d").getShort_url();
+//        System.out.println(url);
     }
 }
