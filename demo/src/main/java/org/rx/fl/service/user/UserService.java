@@ -19,6 +19,7 @@ import org.rx.fl.dto.media.OrderStatus;
 import org.rx.fl.dto.repo.*;
 import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
+import org.rx.fl.service.DbCache;
 import org.rx.fl.service.NotifyService;
 import org.rx.fl.service.bot.Bot;
 import org.rx.fl.service.command.Command;
@@ -75,6 +76,8 @@ public class UserService {
     @Resource
     @Lazy
     private NotifyService notifyService;
+    @Resource
+    private DbCache dbCache;
     @Resource
     private DbUtil dbUtil;
     @Resource
@@ -138,8 +141,8 @@ public class UserService {
     @ErrorCode("alreadyBind")
     @ErrorCode(cause = IllegalArgumentException.class)
     @Transactional
-    public void bindRelation(String userId, String code) {
-        require(userId, code);
+    public void bindRelation(String userId, String parentUserId) {
+        require(userId, parentUserId);
 
         Consumer<UserNode> action = p -> {
             Integer percent = getPercent(p);
@@ -149,19 +152,20 @@ public class UserService {
             }
         };
         try {
-            UserNode parent = nodeService.getNode(code), child = nodeService.getNode(userId);
+            UserNode parent = nodeService.getNode(parentUserId), child = nodeService.getNode(userId);
             if (!parent.isExist()) {
                 nodeService.create(parent);
                 action.accept(parent);
             }
-            if (child.isExist()) {
-                UserNode parentRelation = getParentRelation(child.getId());
-                if (parentRelation != null && parentRelation.getId().equals(parent.getId())) {
-                    return;
-                }
+            UserNode parentRelation = getParentRelation(child.getId());
+            if (parentRelation != null && !parentRelation.getId().equals(parent.getId())) {
                 throw new SystemException(values(), "alreadyBind");
             }
-            nodeService.create(child, parent.getId());
+            if (!child.isExist()) {
+                nodeService.create(child, parent.getId());
+            } else {
+                nodeService.moveTreeTo(child, parent.getId());
+            }
             action.accept(child);
         } catch (IllegalArgumentException e) {
             throw new SystemException(values(), e);
@@ -207,7 +211,7 @@ public class UserService {
         if (!new File(fileName).exists()) {
             try (FileOutputStream stream = new FileOutputStream(fileName)) {
                 String relationCode = String.format("http://f-li.cn/invite.html?id=%s", App.toShorterUUID(UUID.fromString(userId)));
-                int w = 300;
+                int w = 350;
                 QRCode.from(relationCode).to(ImageType.PNG).withSize(w, w).writeTo(stream);
             }
         }

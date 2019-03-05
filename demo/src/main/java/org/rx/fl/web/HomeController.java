@@ -4,8 +4,6 @@ import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.MediaConfig;
-import org.rx.fl.dto.bot.BotType;
-import org.rx.fl.dto.bot.OpenIdInfo;
 import org.rx.fl.service.BotService;
 import org.rx.fl.service.user.UserService;
 import org.rx.fl.util.HttpCaller;
@@ -17,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.UUID;
 
 @Controller
 @Slf4j
@@ -43,16 +40,17 @@ public class HomeController {
     }
 
     @RequestMapping("/invite.html")
-    public String invite(String id, Model model) {
-        if (Strings.isNullOrEmpty(id)) {
+    public String invite(String id, String inviteId, Model model) {
+        if (Strings.isNullOrEmpty(id) && Strings.isNullOrEmpty(inviteId)) {
             return "/error";
         }
-        OpenIdInfo openId = userService.getOpenId(App.fromShorterUUID(id).toString(), BotType.Wx);
-        if (Strings.isNullOrEmpty(openId.getNickname())) {
-            openId.setNickname("");
+
+        if (!Strings.isNullOrEmpty(id)) {
+            model.addAttribute("fromUserName", UserApiController.getRenderUserName(userService, App.fromShorterUUID(id).toString()));
+            model.addAttribute("code", id);
+        } else if (!Strings.isNullOrEmpty(inviteId)) {
+            model.addAttribute("toUserName", UserApiController.getRenderUserName(userService, App.fromShorterUUID(inviteId).toString()));
         }
-        model.addAttribute("fromUserName", String.format("%s %s", openId.getNickname(), openId.getOpenId()));
-        model.addAttribute("code", App.toShorterUUID(UUID.randomUUID()));
         return "invite";
     }
 

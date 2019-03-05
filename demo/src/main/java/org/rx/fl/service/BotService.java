@@ -49,6 +49,7 @@ public class BotService {
                     mConfig.getMaxCheckMessageCount(), mConfig.getMaxCaptureMessageCount(), mConfig.getMaxScrollMessageCount(),
                     mConfig.getCaptureScrollSeconds());
             wxMobileBot.onReceiveMessage(event);
+            wxMobileBot.setAutoResetWindow(config.getWxMobile().isAutoResetWindow());
             wxMobileBot.setWhiteOpenIds(NQuery.of(userConfig.getGroupAliPay()).union(Arrays.asList(userConfig.getGroupGoods())).toSet());
             wxMobileBot.start();
         } catch (InvalidOperationException e) {

@@ -17,6 +17,9 @@
     <link href="/css/font-awesome.css" rel="stylesheet" type="text/css"/>
     <link href="/css/plugins/owl.carousel.css" rel="stylesheet" type="text/css"/>
     <link href="/css/style.css" rel="stylesheet" type="text/css"/>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.3.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.cookie@1.4.1/jquery.cookie.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"></script>
 </head>
 <body>
 <!-- Site preloader -->
@@ -81,53 +84,39 @@
             <div class="container text-center">
                 <div class="row">
                     <!-- contact information-->
-                    <div class="col-md-6">
+                    <div class="col-md-12" th:style="'display:' + (${code} != null ? 'block' : 'none')">
                         <div class="address-info icon-text mb-20">
                             <span th:text="${fromUserName}"></span>
                             <p>邀请您一起省钱购物，关注小范省钱。</p>
                             <p>小范省钱支持京东、淘宝、天猫、飞猪和拼多多购物拿优惠券和返利红包。</p>
+                            <p style="margin: 9px 0 6px 0;">
+                                <img src="/img/wxlogo.png" width="28" height="28"/> 长按识别二维码关注小范省钱，
+                                与<span th:text="${fromUserName}"></span>绑定成伙伴，永久享受额外20%返利提成！
+                            </p>
+                            <p><img src="/img/qrcode.jpg"/></p>
                         </div>
-                        <div class="row" style="margin: 36px 0 0 0;font-weight: bold; line-height: 28px">
-                            <img src="/img/wxlogo.png" width="28" height="28"/> 长按识别二维码关注小范省钱，与<span
-                                th:text="${fromUserName}"></span>绑定成伙伴，永久享受额外20%返利提成！
+                    </div>
+                    <div id="inviteTab" class="col-md-12 text-center" style="visibility: hidden">
+                        <h5 class="successContent">
+                            <i class="fa fa-check left" style="color: #5cb45d;"></i>接受邀请成功！
+                        </h5>
+                        <h5 class="errorContent" style="color: #e1534f;">
+                            <i class="fa fa-exclamation-circle left"></i>接受邀请失败！请重新识别邀请二维码！
+                        </h5>
+                        <div class="address-info icon-text mb-20">
+                            <p>
+                                您<span th:text="${toUserName}"></span>
+                                与<span class="fromUserName"></span>成功绑定成伙伴，永久享受额外20%返利提成！
+                            </p>
                         </div>
-                        <div class="row">
-                            <img src="/img/qrcode.jpg"/>
-                        </div>
-
                     </div>
                     <!-- end of contact information-->
-                    <!-- contact Form-->
-                    <!--<div class="col-md-6">-->
-                    <!--<form id="contact" class="contact-form" novalidate="novalidate">-->
-                    <!--<div class="col-md-12 text-center">-->
-                    <!--<h5 class="successContent">-->
-                    <!--<i class="fa fa-check left" style="color: #5cb45d;"></i>接受邀请成功！-->
-                    <!--</h5>-->
-                    <!--<h5 class="errorContent" style="color: #e1534f;">-->
-                    <!--<i class="fa fa-exclamation-circle left"></i>接受邀请失败！-->
-                    <!--</h5>-->
-                    <!--</div>-->
-                    <!--<div class="row">-->
-                    <!--<div class="col-md-12">-->
-                    <!--<div class="cntform-field">-->
-                    <!--<input class="input-md form-full" id="wx-name" type="text" name="wx-name" placeholder="您的微信号" required="">-->
-                    <!--</div>-->
-                    <!--</div>-->
-                    <!--<div class="col-md-12 text-center">-->
-                    <!--<button class="btn-contact-submit btn btn-md btn-color" type="submit" id="form-submit" name="submit">提交</button>-->
-                    <!--</div>-->
-                    <!--</div>-->
-                    <!--</form>-->
-                    <!--</div>-->
-                    <!-- end of contact form-->
                 </div>
             </div>
         </section>
         <!-- End Contact Info Section-->
         <!--Footer Section-->
         <footer id="footer" class="footer dark-bg">
-
             <div class="container">
                 <div class="footer-top ptb-50">
                     <div class="row">
@@ -175,16 +164,8 @@
 </div>
 <!-- End Page Wraper -->
 
-<div id="page0"></div>
-<div id="page1"></div>
-
-<div id="page2"></div>
-<div id="page3"></div>
-
-<div id="page4"></div>
-<div id="page5"></div>
+<input type="hidden" id="code" th:value="${code}"/>
 <!-- Js -->
-<script src="/js/jquery-3.3.1.min.js"></script>
 <script src="/js/plugins/jquery.easing.1.3.js"></script>
 <script src="/js/plugins/bootstrap.min.js"></script>
 <script src="/js/plugins/isotope.pkgd.min.js"></script>
@@ -195,59 +176,59 @@
 <script src="/js/plugins/jquery.singlePageNav.min.js"></script>
 <script src="/js/plugins/jquery.validate.min.js"></script>
 <script src="/js/theme.js"></script>
-<script src="/js/jquery.cookie-1.4.1.min.js"></script>
 <script>
     $(function () {
-        $("#contact").validate();
+        var key = "fl", val = $("#code").val();
+        if (val) {
+            storage.setItem(key, val);
+        } else {
+            val = storage.getItem(key);
+        }
+        if (!val) {
+            $('.successContent').hide();
+            $('.errorContent').fadeIn(1000);
+            return;
+        }
 
-        /* CONTACT FORM */
-        $("#contact").submit(function (e) {
-            e.preventDefault();
-            var name = $("#wx-name").val();
-            if (!name) {
+        var inviteId = storage.getParameter("inviteId");
+        if (!inviteId) {
+            return;
+        }
+        $("#inviteTab").LoadingOverlay("show");
+        $.post("/user/inviteConfirm", {
+            id: val,
+            inviteId: inviteId
+        }, function (result) {
+            $("#inviteTab").LoadingOverlay("hide");
+            if (!result || result.code != 1) {
+                $('.successContent').hide();
                 $('.errorContent').fadeIn(1000);
-                $('.successContent').fadeOut(500);
-                return false;
+                return;
             }
-            $.ajax({
-                type: "POST",
-                url: "/user/inviteConfirm",
-                data: {
-                    id: "",
-                    content: name
-                },
-                success: function () {
-                    $('.successContent').fadeIn(1000);
-                    $('.errorContent').fadeOut(500);
-                }
-            });
+            $(".fromUserName").text(result.value);
+            $("#inviteTab").css("visibility", "visible");
+            $('.errorContent').hide();
+            $('.successContent').fadeIn(1000);
         });
     });
 
-    $(function () {
-        var key = "rx";
-        var val = localStorage.getItem(key);
-        $("#page0").text("localStorage0: " + val);
-        val = parseInt(val || 0) + 1;
-        localStorage.setItem(key, val);
-        $("#page1").text("localStorage1: " + val);
-
-        val = $.cookie(key);
-        $("#page2").text("cookies0: " + val);
-        val = parseInt(val || 0) + 1;
-        $.cookie(key, val, {expires: 7, path: '/'});
-        $("#page3").text("cookies1: " + val);
-
-        $("#page4").text(!!indexedDB);
-        // //处理浏览器兼容性
-        // window.indexedDB = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.msIndexedDB;
-        // var db= indexedDB.open("f-li");
-        // var val = localStorage.getItem(key);
-        // $("#page4").text("val0: " + val);
-        // val = parseInt(val || 0) + 1;
-        // localStorage.setItem(key, val);
-        // $("#page5").text("val1: " + val);
-    });
+    storage = {
+        getItem: function (k) {
+            return localStorage.getItem(k) || $.cookie(k);
+        },
+        setItem: function (k, v) {
+            localStorage.setItem(k, v);
+            $.cookie(k, v, {expires: 365, path: '/'});
+        },
+        getParameter: function (name, url) {
+            if (!url) url = window.location.href;
+            name = name.replace(/[\[\]]/g, "\\$&");
+            var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"), results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, " "));
+        }
+    };
 </script>
 </body>
 </html>

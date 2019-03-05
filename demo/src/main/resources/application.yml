@@ -32,6 +32,7 @@ app:
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
       captureScrollSeconds: 10
+      autoResetWindow: false
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 80
@@ -110,6 +111,7 @@ app:
       maxCaptureMessageCount: 1
       maxScrollMessageCount: 1
       captureScrollSeconds: 24
+      autoResetWindow: true
   media:
     enableMedias: Taobao,Jd
     syncWeeklyOrderSeconds: 90

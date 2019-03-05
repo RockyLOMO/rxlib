@@ -103,7 +103,7 @@ public class MediaService {
     @Resource
     private UserService userService;
     @Resource
-    private MediaCache cache;
+    private DbCache cache;
     private MediaConfig config;
 
     public List<MediaType> getMedias() {

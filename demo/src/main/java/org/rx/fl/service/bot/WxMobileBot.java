@@ -55,6 +55,9 @@ public class WxMobileBot implements Bot {
     private volatile Future captureFuture;
     @Getter
     @Setter
+    private boolean autoResetWindow;
+    @Getter
+    @Setter
     private Set<String> whiteOpenIds;
 
     @Override
@@ -70,8 +73,10 @@ public class WxMobileBot implements Bot {
         if (windowPoint == null) {
             Point point = bot.findScreenPoint(KeyImages.KeyNew);
             if (point == null) {
-                resetWindow();
-                point = bot.findScreenPoint(KeyImages.KeyNew);
+                if (autoResetWindow) {
+                    resetWindow();
+                    point = bot.findScreenPoint(KeyImages.KeyNew);
+                }
 
                 if (point == null) {
                     bot.saveScreen(KeyImages.KeyNew, "WxMobile");

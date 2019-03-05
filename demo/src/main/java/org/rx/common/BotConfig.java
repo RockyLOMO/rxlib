@@ -19,6 +19,7 @@ public class BotConfig {
         private int maxCaptureMessageCount;
         private int maxScrollMessageCount;
         private int captureScrollSeconds;
+        private boolean autoResetWindow;
     }
 
     @Resource

@@ -22,6 +22,7 @@ public class BotTests {
     public void normal() {
         //mHspqTfyNqPw89gBJiXdYd
         System.out.println(App.toShorterUUID(UUID.fromString("c7bc68c9-d6f0-da3b-e3a7-7db62fd0d567")));
+
 //        System.out.println(App.toShorterUUID(UUID.fromString("5483c10a-98d4-63cf-b427-31e26251ed8d")));
 //        System.out.println(App.fromShorterUUID("EkCHKMVpEdpnDSqdam384H"));
 //        AwtBot bot = AwtBot.getBot();

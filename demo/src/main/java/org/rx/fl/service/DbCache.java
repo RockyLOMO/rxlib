@@ -17,11 +17,11 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Component
 @Slf4j
-public class MediaCache {
+public class DbCache {
     @Resource
     private CacheItemMapper cacheItemMapper;
 
-    public MediaCache() {
+    public DbCache() {
         TaskFactory.schedule(() -> {
             try {
                 CacheItemExample q = new CacheItemExample();
