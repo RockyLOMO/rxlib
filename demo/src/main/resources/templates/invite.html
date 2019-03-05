@@ -194,6 +194,10 @@
         if (!inviteId) {
             return;
         }
+        if (val == inviteId) {
+            location.href = "/invite.html?id=" + val;
+            return;
+        }
         $("#inviteTab").LoadingOverlay("show");
         $.post("/user/inviteConfirm", {
             id: val,
