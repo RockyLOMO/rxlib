@@ -16,7 +16,7 @@ public class WebErrorController implements ErrorController {
 
     @RequestMapping("/error")
     public String handleError(HttpServletRequest request, Model model) {
-        model.addAttribute("title", "404-小范儿内部购");
+        model.addAttribute("title", "404-小范省钱");
         model.addAttribute("intro", userConfig.getIntro());
         Integer statusCode = (Integer) request.getAttribute("javax.servlet.error.status_code");
         if (statusCode == 404) {

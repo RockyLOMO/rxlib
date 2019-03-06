@@ -3,7 +3,6 @@ package org.rx.fl.service.bot;
 import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.beans.$;
@@ -61,6 +60,7 @@ public class WxMobileBot implements Bot {
     @Getter
     @Setter
     private Set<String> whiteOpenIds;
+    private BufferedImage lastMonitor;
 
     @Override
     public BotType getType() {
@@ -105,6 +105,7 @@ public class WxMobileBot implements Bot {
         captureScrollCount = captureScrollSeconds * 1000 / capturePeriod + 1;
         locker = new ReentrantLock(true);
         captureFlag = 0;
+        lastMonitor = bot.captureScreen(getMonitorNewUserRectangle());
     }
 
     private Point getAbsolutePoint(int relativeX, int relativeY) {
@@ -152,6 +153,11 @@ public class WxMobileBot implements Bot {
         return new Rectangle(point, new Dimension(400, 294));
     }
 
+    private Rectangle getMonitorNewUserRectangle() {
+        Point point = getAbsolutePoint(61, 63);
+        return new Rectangle(point, new Dimension(250, 64));
+    }
+
     private Rectangle getNewUserMessageRectangle() {
         Point point = getAbsolutePoint(311, 63);
         return new Rectangle(point, new Dimension(400, 58));
@@ -166,7 +172,7 @@ public class WxMobileBot implements Bot {
         return bot.findScreenPoints(image);
     }
 
-    private Point getUsersPoint() {
+    private Point getChatPoint() {
         return getAbsolutePoint(30, 92);
     }
 
@@ -278,7 +284,9 @@ public class WxMobileBot implements Bot {
                 checkCount++;
             } while (checkCount < maxCheckMessageCount);
 
-            if (captureFlag > 0 && captureFlag % 2 == 0) {
+            BufferedImage currentMonitor = bot.captureScreen(getMonitorNewUserRectangle());
+            if (!ImageUtil.partEquals(lastMonitor, 0, 0, currentMonitor)) {
+                log.info("monitor newUser incoming");
                 bot.mouseLeftClick(getAbsolutePoint(118, 95));
                 bot.delay(delay2);
                 BufferedImage img = KeyImages.NewUser, img2 = KeyImages.NewUser2;
@@ -309,7 +317,40 @@ public class WxMobileBot implements Bot {
                 bot.mouseLeftClick(getStandbyPoint());
                 bot.mouseWheel(-1);
                 bot.delay(delay1);
+                lastMonitor = currentMonitor;
             }
+//            if (captureFlag > 0 && captureFlag % 2 == 0) {
+//                bot.mouseLeftClick(getAbsolutePoint(118, 95));
+//                bot.delay(delay2);
+//                BufferedImage img = KeyImages.NewUser, img2 = KeyImages.NewUser2;
+//                Point pNew = bot.findScreenPoint(img, getNewUserMessageRectangle());
+//                if (pNew != null) {
+//                    bot.mouseLeftClick(pNew.x + img.getWidth(), pNew.y + img.getHeight() / 2);
+//                    log.info("newUser step1 ok");
+//                    for (int i = 0; i < 6; i++) {
+//                        Point point = bot.findScreenPoint(img2, getNewUser2Rectangle());
+//                        if (point == null) {
+//                            log.info("newUser step2-1 wait..");
+//                            bot.delay(400);
+//                            continue;
+//                        }
+//                        log.info("newUser step2-1 {} ok", point);
+//                        int x = point.x + img2.getWidth(), y = point.y + img2.getHeight() / 2;
+//                        bot.mouseLeftClick(x, y);
+//                        log.info("newUser step2-2 {},{} ok", x, y);
+//                        break;
+//                    }
+//                    bot.delay(delay1);
+//                    MessageInfo messageInfo = new MessageInfo();
+//                    messageInfo.setBotType(this.getType());
+//                    fillOpenIdByTab(messageInfo);
+//                    messageInfo.setContent(Bot.SubscribeContent);
+//                    asyncReply(messageInfo);
+//                }
+//                bot.mouseLeftClick(getStandbyPoint());
+//                bot.mouseWheel(-1);
+//                bot.delay(delay1);
+//            }
 
             if (captureFlag < captureScrollCount) {
                 if (captureFlag == 0) {
@@ -387,7 +428,6 @@ public class WxMobileBot implements Bot {
         }
     }
 
-    @SneakyThrows
     private void sendMessage(OpenIdInfo message, List<String> contents) {
         require(message);
         if (skipOpenIds.contains(message.getOpenId())) {
@@ -404,10 +444,9 @@ public class WxMobileBot implements Bot {
             do {
                 if (checkCount > 0) {
                     resetWindow();
-//                    Thread.sleep(1000);
                 }
 
-                bot.mouseLeftClick(getUsersPoint());
+                bot.mouseLeftClick(getChatPoint());
                 bot.delay(delay2);
                 bot.mouseLeftClick(getAbsolutePoint(110, 38));
                 bot.delay(delay2);
@@ -445,7 +484,7 @@ public class WxMobileBot implements Bot {
 
                 if (msg.startsWith(ImageUtil.Base64ImagePrefix)) {
                     try {
-                        Image image = ImageUtil.loadImage(msg);
+                        Image image = ImageUtil.loadImageBase64(msg);
                         bot.setImageAndParse(image);
                     } catch (Exception e) {
                         log.error("sendMessage", e);

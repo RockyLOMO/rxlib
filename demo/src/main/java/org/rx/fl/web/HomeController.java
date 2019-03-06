@@ -36,7 +36,7 @@ public class HomeController {
 
     @RequestMapping("/index.html")
     public String index(Model model) {
-        model.addAttribute("title", "首页-小范儿内部购");
+        model.addAttribute("title", "首页-小范省钱");
         model.addAttribute("intro", userConfig.getIntro());
 
         model.addAttribute("jdGuideUrl", mediaConfig.getJd().getGuideUrl());
@@ -47,7 +47,7 @@ public class HomeController {
 
     @RequestMapping("/invite.html")
     public String invite(String id, String inviteId, Model model) {
-        model.addAttribute("title", "邀请好友-小范儿内部购");
+        model.addAttribute("title", "邀请好友-小范省钱");
         model.addAttribute("intro", userConfig.getIntro());
         if (Strings.isNullOrEmpty(id) && Strings.isNullOrEmpty(inviteId)) {
             return "/error";
