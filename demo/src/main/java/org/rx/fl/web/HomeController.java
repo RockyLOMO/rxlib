@@ -4,6 +4,7 @@ import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.MediaConfig;
+import org.rx.common.UserConfig;
 import org.rx.fl.service.BotService;
 import org.rx.fl.service.user.UserService;
 import org.rx.fl.util.HttpCaller;
@@ -29,10 +30,15 @@ public class HomeController {
     @Resource
     private UserService userService;
     @Resource
+    private UserConfig userConfig;
+    @Resource
     private MediaConfig mediaConfig;
 
     @RequestMapping("/index.html")
     public String index(Model model) {
+        model.addAttribute("title", "首页-小范儿内部购");
+        model.addAttribute("intro", userConfig.getIntro());
+
         model.addAttribute("jdGuideUrl", mediaConfig.getJd().getGuideUrl());
         model.addAttribute("tbGuideUrl", mediaConfig.getTaobao().getGuideUrl());
         model.addAttribute("fzGuideUrl", mediaConfig.getTaobao().getFzGuideUrl());
@@ -41,6 +47,8 @@ public class HomeController {
 
     @RequestMapping("/invite.html")
     public String invite(String id, String inviteId, Model model) {
+        model.addAttribute("title", "邀请好友-小范儿内部购");
+        model.addAttribute("intro", userConfig.getIntro());
         if (Strings.isNullOrEmpty(id) && Strings.isNullOrEmpty(inviteId)) {
             return "/error";
         }

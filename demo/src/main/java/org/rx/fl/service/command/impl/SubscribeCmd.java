@@ -45,9 +45,9 @@ public class SubscribeCmd implements Command {
                         "点击 %s 绑定伙伴，首单购物成功\n" +
                         "★您将获得【1元】红包，自动转入可提现余额\n" +
                         "\n" +
-                        "淘宝返利教程：\n%s\n" +
-                        "飞猪返利教程：\n%s\n" +
-                        "京东返利教程：\n%s", dbCache.getShortUrl(url),
+                        "淘宝返现教程：\n%s\n" +
+                        "飞猪返现教程：\n%s\n" +
+                        "京东返现教程：\n%s", dbCache.getShortUrl(url),
                 mediaConfig.getTaobao().getGuideUrl(), mediaConfig.getTaobao().getFzGuideUrl(),
                 mediaConfig.getJd().getGuideUrl()));
     }

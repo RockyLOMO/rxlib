@@ -443,10 +443,9 @@ public class WxMobileBot implements Bot {
                 bot.pressCtrlA();
                 bot.pressDelete();
 
-                if (msg.startsWith(ImageContent)) {
+                if (msg.startsWith(ImageUtil.Base64ImagePrefix)) {
                     try {
-                        String file = msg.substring(ImageContent.length());
-                        Image image = ImageUtil.loadImage(file);
+                        Image image = ImageUtil.loadImage(msg);
                         bot.setImageAndParse(image);
                     } catch (Exception e) {
                         log.error("sendMessage", e);

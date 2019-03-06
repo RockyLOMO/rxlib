@@ -1,23 +1,6 @@
 ﻿<!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
-
-<head>
-    <meta charset="utf-8" />
-    <title>首页-小范省钱</title>
-    <meta name="description" content="首页-小范省钱-小范省钱支持京东、淘宝、天猫、飞猪和拼多多购物拿优惠券和返利红包. 将小范省钱微信名片推荐给好友，永久享受额外20%返利红包提成！" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-    <!--[if IE]><meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'><![endif]-->
-    <!-- Favicone Icon -->
-    <link rel="shortcut icon" type="image/x-icon" href="/img/favicon.ico" />
-    <link rel="icon" type="image/png" href="/img/favicon.ico" />
-    <link rel="apple-touch-icon" href="/img/favicon.ico" />
-    <!-- Css -->
-    <link href="/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
-    <link href="/css/font-awesome.css" rel="stylesheet" type="text/css" />
-    <link href="/css/plugins/owl.carousel.css" rel="stylesheet" type="text/css" />
-    <link href="/css/style.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.3.1/dist/jquery.min.js"></script>
-</head>
+<head th:include="common :: header"></head>
 <body>
     <!-- Site preloader -->
     <section id="preloader">
@@ -34,7 +17,7 @@
                     <div class="logo">
                         <a href="index.html">
                             <img src="/img/logo.png" alt="logo" style="width: 24px;margin: -8px 0 0 0;" />
-                            <span style="color: #FDCA4A; font-size: 22px;font-weight: bold;">小范省钱</span>
+                            <span style="color: #FDCA4A; font-size: 22px;font-weight: bold;">小范儿内部购</span>
                         </a>
                     </div>
                     <!-- End Logo -->
@@ -47,7 +30,7 @@
                     <div class="nav-menu singlepage-nav">
                         <ul class="nav-menu-inner">
                             <li><a href="#main-slider-section">首页</a></li>
-                            <li><a href="#service-section">返利网站</a></li>
+                            <li><a href="#service-section">返现网站</a></li>
                             <li><a href="#testimonials-section">用户评价</a></li>
                             <li><a href="#blog-section">小范资讯</a></li>
                             <li><a href="#contct-info">联系我们</a></li>
@@ -64,8 +47,8 @@
                 <div class="mainslider-content ptb-70">
                     <div class="mainslider-content-inner">
                         <h2 class="mainslider-title mb-15 pt-85">您好！我是</h2>
-                        <h1 class="mainslider-subtitle mb-10">小范省钱</h1>
-                        <p class="mainslider-text">一个购物返红包机器人</p>
+                        <h1 class="mainslider-subtitle mb-10">小范儿内部购</h1>
+                        <p class="mainslider-text">一个购物省钱返现金利器</p>
                         <div class="slider-btn mt-35">
                             <a class="btn btn-lg btn-color mlr-10" href="#about-me-section">关注我们</a>
                             <!--<a class="external-link btn btn-lg btn-white mlr-10" href="invite.html" target="_blank">关注我们</a>-->
@@ -74,6 +57,7 @@
                 </div>
             </section>
             <!-- End Intro Section-->
+
             <!-- about-me section-->
             <section id="about-me-section" class="about-me section-padding parallex-bg clearfix" data-background-img="img/full/about_bg.jpg" data-bg-position="center">
                 <div class="container">
@@ -81,13 +65,10 @@
                         <div class="col-md-6">
                             <h2 class="mb-15">关注我们</h2>
                             <ul class="experiance mb-15">
-                                <li>返利机器人</li>
-                                <li>返利红包</li>
+                                <li>内部优惠购</li>
+                                <li>返现拿现金</li>
                             </ul>
-                            <p class="mb-20">
-                                小范省钱支持京东、淘宝、天猫、飞猪和拼多多购物拿优惠券和返利红包. <br/>
-                                将小范省钱微信名片推荐给好友，永久享受额外20%返利提成！
-                            </p>
+                            <p class="mb-20" th:text="${intro}"></p>
                             <!--<div class="row">-->
                                 <!--<div class="col-md-6 col-sm-6 col-lg-3">-->
                                     <!--<div class="work-skill design">-->
@@ -125,10 +106,11 @@
                 </div>
             </section>
             <!-- end of about-me section-->
+
             <!-- service-section-->
             <section id="service-section" class="service section-padding parallex-bg clearfix overlay-dark" data-background-img="img/full/service_bg.jpg" data-bg-position="center">
                 <div class="container text-center">
-                    <h1 class="main-title pb-60">支持网站</h1>
+                    <h1 class="main-title pb-60">返现网站</h1>
                 </div>
                 <div class="container">
                     <div class="row">
@@ -169,6 +151,7 @@
                 </div>
             </section>
             <!--end-service-section-->
+
             <!-- achivements-->
             <!--<section id="achivements-section" class="achivements section-padding clearfix yellow-bg">-->
                 <!--<div class="container text-center">-->
@@ -344,6 +327,7 @@
                 <!--</div>-->
             <!--</section>-->
             <!-- end portfolio-section-->
+
             <!-- testimonials section-->
             <section id="testimonials-section" class="overlay-yellow parallex-bg testimonials section-padding" data-background-img="img/full/testimonial_bg.jpg" data-bg-position="center">
                 <div class="container text-center">
@@ -387,6 +371,7 @@
                 </div>
             </section>
             <!-- end of testimonials section-->
+
             <!-- start of blog section-->
             <section id="blog-section" class="blogs section-padding">
                 <div class="container text-center">
@@ -398,24 +383,25 @@
                             <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
                             <h4 class="features-title"><a th:href="${jdGuideUrl}" target="_blank">京东购物原来可以节省一笔钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
-                            <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，京东怎样购物才能省钱！</p>
+                            <p>小范儿内部购，京东、淘宝、天猫、飞猪和拼多多的商品以内部价拿优惠券购买，还能返现拿现金。返现提现当天到帐无手续费！京东购物原来可以节省一笔钱！</p>
                         </div>
                         <div class="col-md-4 col-sm-6 col-xs-12 content-box mb-sm-30">
                             <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
                             <h4 class="features-title"><a th:href="${tbGuideUrl}" target="_blank">小范告诉您，淘宝这样购物能省钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
-                            <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，淘宝怎样购物才能省钱！</p>
+                            <p>小范儿内部购，京东、淘宝、天猫、飞猪和拼多多的商品以内部价拿优惠券购买，还能返现拿现金。返现提现当天到帐无手续费！小范会告诉您，淘宝怎样购物才能省钱！</p>
                         </div>
                         <div class="col-md-4 col-sm-6 col-xs-12 content-box mb-sm-30">
                             <div class="blog-img mb-15"><img src="/img/haibao.jpg" alt=""></div>
                             <h4 class="features-title"><a th:href="${fzGuideUrl}" target="_blank">小范告诉您，飞猪这样预订能省钱！</a></h4>
                             <div class="post-meta ptb-10"><span>By <a>小范</a>,</span> <span>2018-12-25</span></div>
-                            <p>扫描下方二维码或搜索微信号 fanli-x，添加 小范省钱 返利机器人哦~. 小范会告诉您，飞猪怎样预订才能省钱！</p>
+                            <p>小范儿内部购，京东、淘宝、天猫、飞猪和拼多多的商品以内部价拿优惠券购买，还能返现拿现金。返现提现当天到帐无手续费！小范会告诉您，飞猪怎样预订才能省钱！</p>
                         </div>
                     </div>
                 </div>
             </section>
             <!-- end of blog section-->
+
             <!--Contact Info Section-->
             <section id="contct-info" class="section-padding parallex-bg contact-section overlay-dark" data-background-img="img/full/contact_bg.jpg" data-bg-position="right bottom">
                 <div class="container text-center">
@@ -504,62 +490,7 @@
             <!-- End Contact Info Section-->
 
             <!--Footer Section-->
-            <footer id="footer" class="footer dark-bg">
-
-                <div class="container">
-                    <div class="footer-top ptb-50">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <!-- author-description -->
-                                <div class="my-profile">
-                                    <div class="my-profile-title">
-                                        <p>&nbsp;</p>
-                                        <p class="footer-author">小范省钱</p>
-                                    </div>
-                                    <div class="my-profile-description">
-                                        一个购物返红包机器人
-                                    </div>
-                                </div>
-                                <!-- Copyright -->
-                            </div>
-                            <div class="col-md-6">
-                                <ul class="social">
-                                    <li><img src="/img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们</li>
-                                    <li><img src="/img/qrcode.jpg" width="120" height="120"/></li>
-                                </ul>
-
-                                <!-- Social -->
-                                <!--<ul class="social">-->
-                                    <!--<li>-->
-                                        <!--<a href="#" target="_blank"><i class="fa fa-facebook"></i></a>-->
-                                    <!--</li>-->
-                                    <!--<li>-->
-                                        <!--<a href="#" target="_blank"><i class="fa fa-twitter"></i></a>-->
-                                    <!--</li>-->
-                                    <!--<li>-->
-                                        <!--<a href="#" target="_blank"><i class="fa fa-linkedin"></i></a>-->
-                                    <!--</li>-->
-                                    <!--<li>-->
-                                        <!--<a href="#" target="_blank"><i class="fa fa-google-plus"></i></a>-->
-                                    <!--</li>-->
-                                <!--</ul>-->
-                                <!-- End Social -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- footer-top-->
-                <div class="footer-bottom ptb-50">
-                    <div class="container">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <p class="copyright">Copyright &copy; 2018.小范 All rights reserved.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!--footer bottom-->
-            </footer>
+            <footer id="footer" class="footer dark-bg" th:include="common :: footer"></footer>
             <!-- End Footer Section-->
             <!-- Scroll Top -->
             <a href="#" class="scroll-top">
@@ -571,17 +502,7 @@
     <!-- End Page Wraper -->
 
     <!-- Js -->
-    <script src="/js/plugins/jquery.easing.1.3.js"></script>
-    <script src="/js/plugins/bootstrap.min.js"></script>
-    <script src="/js/plugins/isotope.pkgd.min.js"></script>
-    <script src="/js/plugins/jquery.appear.js"></script>
-    <script src="/js/plugins/jquery.countTo.js"></script>
-    <script src="/js/plugins/owl.carousel.min.js"></script>
-    <script src="/js/plugins/circle-progress.js"></script>
-    <script src="/js/plugins/jquery.singlePageNav.min.js"></script>
-    <script src="/js/plugins/jquery.validate.min.js"></script>
     <script src="/js/contact-form.js"></script>
     <script src="/js/theme.js"></script>
 </body>
-
 </html>

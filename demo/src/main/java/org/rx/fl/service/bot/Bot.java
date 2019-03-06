@@ -8,7 +8,6 @@ import java.util.function.Function;
 
 public interface Bot {
     String SubscribeContent = "@Subscribe";
-    String ImageContent = "@Image";
 
     BotType getType();
 

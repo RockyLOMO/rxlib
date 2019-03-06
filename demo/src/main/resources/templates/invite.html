@@ -1,26 +1,6 @@
 ﻿<!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
-
-<head>
-    <meta charset="utf-8"/>
-    <title>邀请好友-小范省钱</title>
-    <meta name="description" content="首页-小范省钱-小范省钱支持京东、淘宝、天猫、飞猪和拼多多购物拿优惠券和返利红包. 将小范省钱微信名片推荐给好友，永久享受额外20%返利红包提成！"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-    <!--[if IE]>
-    <meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'><![endif]-->
-    <!-- Favicone Icon -->
-    <link rel="shortcut icon" type="image/x-icon" href="/img/favicon.ico"/>
-    <link rel="icon" type="image/png" href="/img/favicon.ico"/>
-    <link rel="apple-touch-icon" href="/img/favicon.ico"/>
-    <!-- Css -->
-    <link href="/css/bootstrap.min.css" rel="stylesheet" type="text/css"/>
-    <link href="/css/font-awesome.css" rel="stylesheet" type="text/css"/>
-    <link href="/css/plugins/owl.carousel.css" rel="stylesheet" type="text/css"/>
-    <link href="/css/style.css" rel="stylesheet" type="text/css"/>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.3.1/dist/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery.cookie@1.4.1/jquery.cookie.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"></script>
-</head>
+<head th:include="common :: header"></head>
 <body>
 <!-- Site preloader -->
 <section id="preloader">
@@ -37,7 +17,7 @@
                 <div class="logo">
                     <a href="/index.html">
                         <img src="/img/logo.png" alt="logo" style="width: 24px;margin: -8px 0 0 0;"/>
-                        <span style="color: #FDCA4A; font-size: 22px;font-weight: bold;">小范省钱</span>
+                        <span style="color: #FDCA4A; font-size: 22px;font-weight: bold;">小范儿内部购</span>
                     </a>
                 </div>
                 <!-- End Logo -->
@@ -50,7 +30,7 @@
                 <div class="nav-menu singlepage-nav">
                     <ul class="nav-menu-inner">
                         <li><a class="external-link" href="/index.html">首页</a></li>
-                        <li><a class="external-link" href="/index.html#service-section">返利网站</a></li>
+                        <li><a class="external-link" href="/index.html#service-section">返现网站</a></li>
                         <li><a class="external-link" href="/index.html#testimonials-section">用户评价</a></li>
                         <li><a class="external-link" href="/index.html#blog-section">小范资讯</a></li>
                         <li><a class="external-link" href="/index.html#contct-info">联系我们</a></li>
@@ -87,11 +67,11 @@
                     <div class="col-md-12" th:style="'display:' + (${code} != null ? 'block' : 'none')">
                         <div class="address-info icon-text mb-20">
                             <span th:text="${fromUserName}"></span>
-                            <p>邀请您一起省钱购物，关注小范省钱。</p>
-                            <p>小范省钱支持京东、淘宝、天猫、飞猪和拼多多购物拿优惠券和返利红包。</p>
+                            <p>邀请您一起省钱购物，关注小范儿内部购。</p>
+                            <p th:text="${intro}"></p>
                             <p style="margin: 9px 0 6px 0;">
-                                <img src="/img/wxlogo.png" width="28" height="28"/> 长按识别二维码关注小范省钱，
-                                与<span th:text="${fromUserName}"></span>绑定成伙伴，永久享受额外20%返利提成！
+                                <img src="/img/wxlogo.png" width="28" height="28"/> 长按识别二维码接受邀请，
+                                与<span th:text="${fromUserName}"></span>绑定为伙伴，永久享受额外20%返现提成！
                             </p>
                             <p><img src="/img/qrcode.jpg"/></p>
                         </div>
@@ -106,7 +86,7 @@
                         <div class="address-info icon-text mb-20">
                             <p>
                                 您<span th:text="${toUserName}"></span>
-                                与<span class="fromUserName"></span>成功绑定成伙伴，永久享受额外20%返利提成！
+                                与<span class="fromUserName"></span>成功绑定为伙伴，永久享受额外20%返现提成！
                             </p>
                         </div>
                     </div>
@@ -115,46 +95,11 @@
             </div>
         </section>
         <!-- End Contact Info Section-->
+
         <!--Footer Section-->
-        <footer id="footer" class="footer dark-bg">
-            <div class="container">
-                <div class="footer-top ptb-50">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <!-- author-description -->
-                            <div class="my-profile">
-                                <div class="my-profile-title">
-                                    <p>&nbsp;</p>
-                                    <p class="footer-author">小范省钱</p>
-                                </div>
-                                <div class="my-profile-description">
-                                    一个购物返红包机器人
-                                </div>
-                            </div>
-                            <!-- Copyright -->
-                        </div>
-                        <div class="col-md-6">
-                            <ul class="social">
-                                <li><img src="/img/wxlogo.png" width="28" height="28"/> 扫描二维码关注我们</li>
-                                <li><img src="/img/qrcode.jpg" width="120" height="120"/></li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- footer-top-->
-            <div class="footer-bottom ptb-50">
-                <div class="container">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <p class="copyright">Copyright &copy; 2018.小范 All rights reserved.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!--footer bottom-->
-        </footer>
+        <footer id="footer" class="footer dark-bg" th:include="common :: footer"></footer>
         <!-- End Footer Section-->
+
         <!-- Scroll Top -->
         <a class="scroll-top">
             <i class="fa fa-angle-double-up"></i>
@@ -166,15 +111,8 @@
 
 <input type="hidden" id="code" th:value="${code}"/>
 <!-- Js -->
-<script src="/js/plugins/jquery.easing.1.3.js"></script>
-<script src="/js/plugins/bootstrap.min.js"></script>
-<script src="/js/plugins/isotope.pkgd.min.js"></script>
-<script src="/js/plugins/jquery.appear.js"></script>
-<script src="/js/plugins/jquery.countTo.js"></script>
-<script src="/js/plugins/owl.carousel.min.js"></script>
-<script src="/js/plugins/circle-progress.js"></script>
-<script src="/js/plugins/jquery.singlePageNav.min.js"></script>
-<script src="/js/plugins/jquery.validate.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery.cookie@1.4.1/jquery.cookie.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"></script>
 <script src="/js/theme.js"></script>
 <script>
     $(function () {

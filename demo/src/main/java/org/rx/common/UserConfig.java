@@ -12,6 +12,7 @@ public class UserConfig {
     private int heartbeatMinutes;
     private String[] relations;
     private String dataFilePath;
+    private String intro;
     private String aliPayCode;
     private String[] groupAliPay, groupAliPayTime;
     private String[] groupGoods, groupGoodsTime, groupGoodsName;

@@ -64,7 +64,7 @@ public class FindAdvCmd implements Command {
         }
         if (advResult == null || advResult.getFoundStatus() != AdvFoundStatus.Ok) {
             return HandleResult.ok("一一一一系 统 消 息一一一一\n" +
-                    "亲，这家没有优惠和红包补贴哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
+                    "亲，这家没有优惠券和返现哦，您也可以多看看其他家店铺，看看有没有优惠力度大一点的卖家哦，毕竟货比三家嘛～");
         }
 
         GoodsInfo goods = advResult.getGoods();

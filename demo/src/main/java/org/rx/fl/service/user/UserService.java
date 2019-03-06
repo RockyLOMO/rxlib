@@ -3,8 +3,6 @@ package org.rx.fl.service.user;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import net.glxn.qrgen.core.image.ImageType;
-import net.glxn.qrgen.javase.QRCode;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.DataRange;
 import org.rx.beans.DateTime;
@@ -21,19 +19,20 @@ import org.rx.fl.repository.*;
 import org.rx.fl.repository.model.*;
 import org.rx.fl.service.DbCache;
 import org.rx.fl.service.NotifyService;
-import org.rx.fl.service.bot.Bot;
 import org.rx.fl.service.command.Command;
 import org.rx.fl.service.command.impl.AliPayCmd;
 import org.rx.fl.service.order.NotifyOrdersInfo;
 import org.rx.fl.util.DbUtil;
+import org.rx.fl.util.ImageUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -207,15 +206,14 @@ public class UserService {
     public String[] getRelationMessage(String userId) {
         String dir = String.format("%s\\qrcode", userConfig.getDataFilePath());
         App.createDirectory(dir);
-        String fileName = String.format("%s\\%s.png", dir, userId);
-        if (!new File(fileName).exists()) {
-            try (FileOutputStream stream = new FileOutputStream(fileName)) {
-                String relationCode = String.format("http://f-li.cn/invite.html?id=%s", App.toShorterUUID(UUID.fromString(userId)));
-                int w = 350;
-                QRCode.from(relationCode).to(ImageType.PNG).withSize(w, w).writeTo(stream);
-            }
+        File filePath = new File(String.format("%s\\%s.png", dir, userId));
+        if (!filePath.exists()) {
+            String relationCode = String.format("http://f-li.cn/invite.html?id=%s", App.toShorterUUID(UUID.fromString(userId)));
+            BufferedImage qrCodeImage = ImageUtil.createQRCodeImage(300, relationCode);
+            ImageUtil.saveImage(qrCodeImage, filePath.getPath());
         }
-        return new String[]{"好友扫描下方↓二维码，永久享受额外20%红包提成～", String.format("%s%s", Bot.ImageContent, fileName)};
+        byte[] imageBytes = Files.readAllBytes(filePath.toPath());
+        return new String[]{"好友扫描下方↓二维码，永久享受额外20%返现提成～", ImageUtil.createQRCodeImageBase64(imageBytes)};
     }
     //endregion
 
@@ -653,12 +651,12 @@ public class UserService {
                             "订单编号:\n" +
                             "%s\n" +
                             "付费金额: %.2f元\n" +
-                            "红包补贴: %.2f元\n" +
+                            "返现补贴: %.2f元\n" +
                             "\n" +
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "%s" +
-                            "亲 确认收货成功后，回复 提现 两个字，给您补贴红包\n" +
+                            "亲 确认收货成功后，回复 提现 两个字，给您返现补贴\n" +
                             "%s",
                     paidOrder.getGoodsName(), paidOrder.getOrderNo(),
                     toMoney(paidOrder.getPayAmount()), toMoney(paidOrder.getRebateAmount()),
@@ -678,14 +676,14 @@ public class UserService {
                             "订单编号:\n" +
                             "%s\n" +
                             "付费金额: %.2f元\n" +
-                            "红包补贴: %.2f元\n" +
+                            "返现补贴: %.2f元\n" +
                             "\n" +
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "    累计省钱: %.2f元\n" +
                             "%s" +
-                            "回复 提现 两个字，给您补贴红包\n" +
-                            "补贴红包已转入可提现金额",
+                            "回复 提现 两个字，给您返现补贴\n" +
+                            "返现补贴已转入可提现金额",
                     settleOrder.getGoodsName(), settleOrder.getOrderNo(),
                     toMoney(settleOrder.getPayAmount()), toMoney(amount),
                     toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), toMoney(total), Command.splitText));
@@ -697,23 +695,23 @@ public class UserService {
                             "订单编号:\n" +
                             "%s\n" +
                             "付费金额: %.2f元\n" +
-                            "红包补贴: %.2f元\n" +
+                            "返现补贴: %.2f元\n" +
                             "\n" +
                             "可提现金额: %.2f元\n" +
                             "未收货金额: %.2f元\n" +
                             "总成功订单: %s单\n" +
                             "%s" +
-                            "补贴红包已从可提现金额扣除", order.getGoodsName(), order.getOrderNo(),
+                            "返现补贴已从可提现金额扣除", order.getGoodsName(), order.getOrderNo(),
                     toMoney(order.getPayAmount()), toMoney(order.getSettleAmount()),
                     toMoney(user.getBalance()), toMoney(user.getUnconfirmedOrderAmount()), user.getConfirmedOrderCount(), Command.splitText));
         }
         for (Commission commission : notifyInfo.paidCommissionOrders) {
             notifyService.add(commission.getUserId(), String.format("一一一一伙 伴 支 付一一一一\n" +
-                    "亲，您的伙伴已下单，伙伴确认收货后可收到红包补贴约%.2f元", toMoney(commission.getAmount())));
+                    "亲，您的伙伴已下单，伙伴确认收货后可收到返现补贴约%.2f元", toMoney(commission.getAmount())));
         }
         for (Commission commission : notifyInfo.settleCommissionOrders) {
             notifyService.add(commission.getUserId(), String.format("一一一一伙 伴 收 货一一一一\n" +
-                    "亲，您的伙伴已收货，红包补贴%.2f元已转入可提现金额", toMoney(commission.getAmount())));
+                    "亲，您的伙伴已收货，返现补贴%.2f元已转入可提现金额", toMoney(commission.getAmount())));
         }
     }
     //endregion

@@ -1,13 +1,15 @@
 package org.rx.fl.util;
 
 import lombok.SneakyThrows;
+import net.glxn.qrgen.core.image.ImageType;
+import net.glxn.qrgen.javase.QRCode;
+import org.rx.common.App;
 import org.rx.common.InvalidOperationException;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.InputStream;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,6 +17,28 @@ import static org.rx.common.Contract.require;
 
 public class ImageUtil {
     public static final String ImageFormat = "png";
+    public static final String Base64ImagePrefix = "data:image/png;base64, ";
+
+    @SneakyThrows
+    public static BufferedImage createQRCodeImage(int imageSize, String param) {
+        return ImageIO.read(new ByteArrayInputStream(createQRCodeImageBytes(imageSize, param)));
+    }
+
+    public static String createQRCodeImageBase64(int imageSize, String param) {
+        return createQRCodeImageBase64(createQRCodeImageBytes(imageSize, param));
+    }
+
+    public static String createQRCodeImageBase64(byte[] bytes) {
+        return Base64ImagePrefix + App.convertToBase64String(bytes);
+    }
+
+    @SneakyThrows
+    public static byte[] createQRCodeImageBytes(int imageSize, String param) {
+        try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
+            QRCode.from(param).to(ImageType.PNG).withSize(imageSize, imageSize).writeTo(stream);
+            return stream.toByteArray();
+        }
+    }
 
     @SneakyThrows
     public static BufferedImage getImageFromResource(Class owner, String resourceName) {
@@ -32,6 +56,20 @@ public class ImageUtil {
         require(filePath);
 
         return ImageIO.read(new File(filePath));
+    }
+
+    public static BufferedImage loadImageBase64(String base64Image) {
+        require(base64Image);
+        require(base64Image, base64Image.startsWith(Base64ImagePrefix));
+
+        return loadImage(App.convertFromBase64String(base64Image.substring(Base64ImagePrefix.length())));
+    }
+
+    @SneakyThrows
+    public static BufferedImage loadImage(byte[] bytes) {
+        require(bytes);
+
+        return ImageIO.read(new ByteArrayInputStream(bytes));
     }
 
     @SneakyThrows
