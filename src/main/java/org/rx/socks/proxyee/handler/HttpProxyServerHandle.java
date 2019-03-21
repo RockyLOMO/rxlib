@@ -40,18 +40,19 @@ import java.util.LinkedList;
 import java.util.List;
 
 public class HttpProxyServerHandle extends ChannelInboundHandlerAdapter {
-    private ChannelFuture                 cf;
-    private String                        host;
-    private int                           port;
-    private boolean                       isSsl  = false;
-    private int                           status = 0;
-    private HttpProxyServerConfig         serverConfig;
-    private ProxyConfig                   proxyConfig;
+
+    private ChannelFuture cf;
+    private String host;
+    private int port;
+    private boolean isSsl = false;
+    private int status = 0;
+    private HttpProxyServerConfig serverConfig;
+    private ProxyConfig proxyConfig;
     private HttpProxyInterceptInitializer interceptInitializer;
-    private HttpProxyInterceptPipeline    interceptPipeline;
-    private HttpProxyExceptionHandle      exceptionHandle;
-    private List                          requestList;
-    private boolean                       isConnect;
+    private HttpProxyInterceptPipeline interceptPipeline;
+    private HttpProxyExceptionHandle exceptionHandle;
+    private List requestList;
+    private boolean isConnect;
 
     public HttpProxyServerConfig getServerConfig() {
         return serverConfig;
@@ -65,7 +66,8 @@ public class HttpProxyServerHandle extends ChannelInboundHandlerAdapter {
         return exceptionHandle;
     }
 
-    public HttpProxyServerHandle(HttpProxyServerConfig serverConfig, HttpProxyInterceptInitializer interceptInitializer,
+    public HttpProxyServerHandle(HttpProxyServerConfig serverConfig,
+                                 HttpProxyInterceptInitializer interceptInitializer,
                                  ProxyConfig proxyConfig, HttpProxyExceptionHandle exceptionHandle) {
         this.serverConfig = serverConfig;
         this.proxyConfig = proxyConfig;
@@ -89,15 +91,18 @@ public class HttpProxyServerHandle extends ChannelInboundHandlerAdapter {
                 this.port = requestProto.getPort();
                 if ("CONNECT".equalsIgnoreCase(request.method().name())) {//建立代理握手
                     status = 2;
-                    HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpProxyServer.SUCCESS);
+                    HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+                            HttpProxyServer.SUCCESS);
                     ctx.writeAndFlush(response);
                     ctx.channel().pipeline().remove("httpCodec");
+                    //fix issue #42
+                    ReferenceCountUtil.release(msg);
                     return;
                 }
             }
             interceptPipeline = buildPipeline();
             interceptPipeline.setRequestProto(new RequestProto(host, port, isSsl));
-            //fix issues #27
+            //fix issue #27
             if (request.uri().indexOf("/") != 0) {
                 URL url = new URL(request.uri());
                 request.setUri(url.getFile());
@@ -147,21 +152,22 @@ public class HttpProxyServerHandle extends ChannelInboundHandlerAdapter {
         exceptionHandle.beforeCatch(ctx.channel(), cause);
     }
 
-    private void handleProxyData(Channel channel, Object msg, boolean isHttp) throws Exception {
+    private void handleProxyData(Channel channel, Object msg, boolean isHttp)
+            throws Exception {
         if (cf == null) {
-            if (isHttp && !(msg instanceof HttpRequest)) { //connection异常 还有HttpContent进来，不转发
+            if (isHttp && !(msg instanceof HttpRequest)) {  //connection异常 还有HttpContent进来，不转发
                 return;
             }
             ProxyHandler proxyHandler = ProxyHandleFactory.build(proxyConfig);
-            /*
-             * 添加SSL client hello的Server Name Indication extension(SNI扩展) 有些服务器对于client
-             * hello不带SNI扩展时会直接返回Received fatal alert: handshake_failure(握手错误)
-             * 例如：https://cdn.mdn.mozilla.net/static/img/favicon32.7f3da72dcea1.png
-             */
+      /*
+        添加SSL client hello的Server Name Indication extension(SNI扩展)
+        有些服务器对于client hello不带SNI扩展时会直接返回Received fatal alert: handshake_failure(握手错误)
+        例如：https://cdn.mdn.mozilla.net/static/img/favicon32.7f3da72dcea1.png
+       */
             RequestProto requestProto = new RequestProto(host, port, isSsl);
-            ChannelInitializer channelInitializer = isHttp
-                    ? new HttpProxyInitializer(channel, requestProto, proxyHandler)
-                    : new TunnelProxyInitializer(channel, proxyHandler);
+            ChannelInitializer channelInitializer =
+                    isHttp ? new HttpProxyInitializer(channel, requestProto, proxyHandler)
+                            : new TunnelProxyInitializer(channel, proxyHandler);
             Bootstrap bootstrap = new Bootstrap();
             bootstrap.group(serverConfig.getProxyLoopGroup()) // 注册线程池
                     .channel(NioSocketChannel.class) // 使用NioSocketChannel来作为连接用的channel类
@@ -199,40 +205,38 @@ public class HttpProxyServerHandle extends ChannelInboundHandlerAdapter {
     }
 
     private HttpProxyInterceptPipeline buildPipeline() {
-        HttpProxyInterceptPipeline interceptPipeline = new HttpProxyInterceptPipeline(new HttpProxyIntercept() {
-            @Override
-            public void beforeRequest(Channel clientChannel, HttpRequest httpRequest,
-                                      HttpProxyInterceptPipeline pipeline)
-                    throws Exception {
-                handleProxyData(clientChannel, httpRequest, true);
-            }
+        HttpProxyInterceptPipeline interceptPipeline = new HttpProxyInterceptPipeline(
+                new HttpProxyIntercept() {
+                    @Override
+                    public void beforeRequest(Channel clientChannel, HttpRequest httpRequest,
+                                              HttpProxyInterceptPipeline pipeline) throws Exception {
+                        handleProxyData(clientChannel, httpRequest, true);
+                    }
 
-            @Override
-            public void beforeRequest(Channel clientChannel, HttpContent httpContent,
-                                      HttpProxyInterceptPipeline pipeline)
-                    throws Exception {
-                handleProxyData(clientChannel, httpContent, true);
-            }
+                    @Override
+                    public void beforeRequest(Channel clientChannel, HttpContent httpContent,
+                                              HttpProxyInterceptPipeline pipeline) throws Exception {
+                        handleProxyData(clientChannel, httpContent, true);
+                    }
 
-            @Override
-            public void afterResponse(Channel clientChannel, Channel proxyChannel, HttpResponse httpResponse,
-                                      HttpProxyInterceptPipeline pipeline)
-                    throws Exception {
-                clientChannel.writeAndFlush(httpResponse);
-                if (HttpHeaderValues.WEBSOCKET.toString().equals(httpResponse.headers().get(HttpHeaderNames.UPGRADE))) {
-                    //websocket转发原始报文
-                    proxyChannel.pipeline().remove("httpCodec");
-                    clientChannel.pipeline().remove("httpCodec");
-                }
-            }
+                    @Override
+                    public void afterResponse(Channel clientChannel, Channel proxyChannel,
+                                              HttpResponse httpResponse, HttpProxyInterceptPipeline pipeline) throws Exception {
+                        clientChannel.writeAndFlush(httpResponse);
+                        if (HttpHeaderValues.WEBSOCKET.toString()
+                                .equals(httpResponse.headers().get(HttpHeaderNames.UPGRADE))) {
+                            //websocket转发原始报文
+                            proxyChannel.pipeline().remove("httpCodec");
+                            clientChannel.pipeline().remove("httpCodec");
+                        }
+                    }
 
-            @Override
-            public void afterResponse(Channel clientChannel, Channel proxyChannel, HttpContent httpContent,
-                                      HttpProxyInterceptPipeline pipeline)
-                    throws Exception {
-                clientChannel.writeAndFlush(httpContent);
-            }
-        });
+                    @Override
+                    public void afterResponse(Channel clientChannel, Channel proxyChannel,
+                                              HttpContent httpContent, HttpProxyInterceptPipeline pipeline) throws Exception {
+                        clientChannel.writeAndFlush(httpContent);
+                    }
+                });
         interceptInitializer.init(interceptPipeline);
         return interceptPipeline;
     }

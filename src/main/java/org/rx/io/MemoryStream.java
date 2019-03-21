@@ -8,6 +8,7 @@ import org.rx.common.SystemException;
 import org.rx.cache.BytesSegment;
 
 import java.io.*;
+import java.util.Arrays;
 
 import static org.rx.common.Contract.require;
 import static org.rx.common.Contract.values;
@@ -143,7 +144,7 @@ public class MemoryStream extends IOStream {
         }
     }
 
-    private boolean     publiclyVisible;
+    private boolean publiclyVisible;
     private BytesWriter writer;
     private BytesReader reader;
 
@@ -292,9 +293,9 @@ public class MemoryStream extends IOStream {
         return true;
     }
 
-    public byte[] toArray() {
+    public synchronized byte[] toArray() {
         checkNotClosed();
 
-        return writer.toByteArray();
+        return Arrays.copyOf(writer.getBuffer(), writer.length);
     }
 }
