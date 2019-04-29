@@ -1,13 +1,15 @@
 package org.rx.beans;
 
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import static org.rx.common.Contract.require;
 
 @Data
+@NoArgsConstructor
 public class DataRange<T extends Comparable<T>> {
-    public final T start;
-    public final T end;
+    public T start;
+    public T end;
 
     public DataRange(T start, T end) {
         require(start, end);
