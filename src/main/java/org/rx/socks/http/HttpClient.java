@@ -1,5 +1,7 @@
 package org.rx.socks.http;
 
+import com.google.common.base.Strings;
+import lombok.SneakyThrows;
 import org.rx.common.App;
 import org.rx.common.Contract;
 import org.rx.common.SystemException;
@@ -19,12 +21,13 @@ import static org.rx.common.Contract.isNull;
  */
 public class HttpClient {
     //region StaticMembers
-    public static String urlEncode(String val) {
-        try {
-            return URLEncoder.encode(val, Contract.Utf8);
-        } catch (UnsupportedEncodingException ex) {
-            throw SystemException.wrap(ex);
+    @SneakyThrows
+    public static String urlEncode(String str) {
+        if (Strings.isNullOrEmpty(str)) {
+            return "";
         }
+
+        return URLEncoder.encode(str, Contract.Utf8).replace("+", "%20");
     }
 
     public static Map<String, String> parseQueryString(String queryString) {
@@ -68,12 +71,12 @@ public class HttpClient {
     }
     //endregion
 
-    public static final String  GetMethod    = "GET", PostMethod = "POST";
+    public static final String GetMethod = "GET", PostMethod = "POST";
     private static final String FormMimeType = "application/x-www-form-urlencoded", JsonMimeType = "application/json";
-    private static final String UserAgent    = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
-    private String              contentType;
-    private int                 timeout;
-    private String              proxyHost;
+    private static final String UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
+    private String contentType;
+    private int timeout;
+    private String proxyHost;
 
     public String getContentType() {
         return contentType;
