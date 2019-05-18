@@ -132,7 +132,7 @@ public class HttpClient {
         return map;
     }
 
-    public static String buildQueryString(String baseUrl, Map<String, String> params) {
+    public static String buildQueryString(String baseUrl, Map<String, Object> params) {
         if (params == null) {
             return baseUrl;
         }
@@ -143,9 +143,9 @@ public class HttpClient {
         String c = baseUrl.indexOf("?") == -1 ? "?" : "&";
         StringBuilder url = new StringBuilder(baseUrl);
         for (String key : params.keySet()) {
-            String val = params.get(key);
+            Object val = params.get(key);
             url.append(url.length() == baseUrl.length() ? c : "&").append(encodeUrl(key)).append("=")
-                    .append(val == null ? "" : encodeUrl(val));
+                    .append(val == null ? "" : encodeUrl(val.toString()));
         }
         return url.toString();
     }
@@ -224,7 +224,7 @@ public class HttpClient {
         return handleFile(invoke(url, HttpClient.GetMethod, null, null), filePath);
     }
 
-    public String post(String url, Map<String, String> formData) {
+    public String post(String url, Map<String, Object> formData) {
         require(url, formData);
 
         String dataString = HttpClient.buildQueryString("", formData);
@@ -240,7 +240,7 @@ public class HttpClient {
         return handleString(invoke(url, HttpClient.PostMethod, JsonType, toJsonString(json)));
     }
 
-    public MemoryStream postStream(String url, Map<String, String> formData) {
+    public MemoryStream postStream(String url, Map<String, Object> formData) {
         require(url, formData);
 
         String dataString = HttpClient.buildQueryString("", formData);
@@ -250,7 +250,7 @@ public class HttpClient {
         return handleStream(invoke(url, HttpClient.PostMethod, FormType, dataString));
     }
 
-    public File postFile(String url, Map<String, String> formData, String filePath) {
+    public File postFile(String url, Map<String, Object> formData, String filePath) {
         require(url, formData, filePath);
 
         String dataString = HttpClient.buildQueryString("", formData);
