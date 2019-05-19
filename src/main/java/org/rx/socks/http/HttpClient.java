@@ -110,26 +110,26 @@ public class HttpClient {
         return URLEncoder.encode(str, Contract.Utf8).replace("+", "%20");
     }
 
+    @SneakyThrows
     public static Map<String, String> parseQueryString(String queryString) {
-        Map<String, String> map = new LinkedHashMap<>();
+        Map<String, String> params = new LinkedHashMap<>();
         if (queryString == null) {
-            return map;
+            return params;
+        }
+        if (queryString.startsWith("?")) {
+            queryString = queryString.substring(1);
         }
 
         String[] pairs = queryString.split("&");
-        try {
-            for (String pair : pairs) {
-                int idx = pair.indexOf("=");
-                String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
-                String value = idx > 0 && pair.length() > idx + 1
-                        ? URLDecoder.decode(pair.substring(idx + 1), Contract.Utf8)
-                        : null;
-                map.put(key, value);
-            }
-        } catch (UnsupportedEncodingException ex) {
-            throw SystemException.wrap(ex);
+        for (String pair : pairs) {
+            int idx = pair.indexOf("=");
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
+            String value = idx > 0 && pair.length() > idx + 1
+                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.Utf8)
+                    : null;
+            params.put(key, value);
         }
-        return map;
+        return params;
     }
 
     public static String buildQueryString(String baseUrl, Map<String, Object> params) {
@@ -140,12 +140,15 @@ public class HttpClient {
             baseUrl = "";
         }
 
-        String c = baseUrl.indexOf("?") == -1 ? "?" : "&";
+        String c = baseUrl.lastIndexOf("?") == -1 ? "?" : "&";
         StringBuilder url = new StringBuilder(baseUrl);
         for (String key : params.keySet()) {
             Object val = params.get(key);
-            url.append(url.length() == baseUrl.length() ? c : "&").append(encodeUrl(key)).append("=")
-                    .append(val == null ? "" : encodeUrl(val.toString()));
+            if (val == null) {
+                continue;
+            }
+            url.append(url.length() == baseUrl.length() ? c : "&")
+                    .append(encodeUrl(key)).append("=").append(encodeUrl(val.toString()));
         }
         return url.toString();
     }
