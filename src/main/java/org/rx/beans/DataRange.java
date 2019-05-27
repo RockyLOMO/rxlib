@@ -3,11 +3,13 @@ package org.rx.beans;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
+
 import static org.rx.common.Contract.require;
 
 @Data
 @NoArgsConstructor
-public class DataRange<T extends Comparable<T>> {
+public class DataRange<T extends Comparable<T>> implements Serializable {
     public T start;
     public T end;
 
