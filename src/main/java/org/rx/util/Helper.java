@@ -15,6 +15,7 @@ import javax.xml.bind.Unmarshaller;
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.function.Function;
 
 import static org.rx.common.Contract.require;
 
@@ -46,15 +47,22 @@ public class Helper {
 
     @SneakyThrows
     public static Map<String, List<Object[]>> readExcel(InputStream in, boolean skipColumn) {
+        return readExcel(in, skipColumn, false);
+    }
+
+    @SneakyThrows
+    public static Map<String, List<Object[]>> readExcel(InputStream in, boolean skipColumn, boolean keepNullRow) {
         Map<String, List<Object[]>> data = new LinkedHashMap<>();
         try (HSSFWorkbook workbook = new HSSFWorkbook(in)) {
             for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
                 List<Object[]> rows = new ArrayList<>();
                 HSSFSheet sheet = workbook.getSheetAt(sheetIndex);
-                for (int rowIndex = skipColumn ? 1 : sheet.getFirstRowNum(); rowIndex <= sheet
-                        .getLastRowNum(); rowIndex++) {
+                for (int rowIndex = skipColumn ? 1 : sheet.getFirstRowNum(); rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                     HSSFRow row = sheet.getRow(rowIndex);
                     if (row == null) {
+                        if (keepNullRow) {
+                            rows.add(null);
+                        }
                         continue;
                     }
                     List<Object> cells = new ArrayList<>();
@@ -90,8 +98,12 @@ public class Helper {
         return data;
     }
 
-    @SneakyThrows
     public static void writeExcel(OutputStream out, Map<String, List<Object[]>> data) {
+        writeExcel(out, data, null);
+    }
+
+    @SneakyThrows
+    public static void writeExcel(OutputStream out, Map<String, List<Object[]>> data, Function<HSSFRow, HSSFRow> onRow) {
         try (HSSFWorkbook workbook = new HSSFWorkbook()) {
             for (Map.Entry<String, List<Object[]>> entry : data.entrySet()) {
                 HSSFSheet sheet = workbook.getSheet(entry.getKey());
@@ -121,6 +133,12 @@ public class Helper {
                             value = String.valueOf(val);
                         }
                         cell.setCellValue(value);
+                    }
+                    if (onRow != null) {
+                        if (row.getRowStyle() == null) {
+                            row.setRowStyle(workbook.createCellStyle());
+                        }
+                        onRow.apply(row);
                     }
                 }
             }
