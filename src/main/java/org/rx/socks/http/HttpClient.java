@@ -111,6 +111,15 @@ public class HttpClient {
     }
 
     @SneakyThrows
+    public static String decodeUrl(String str) {
+        if (Strings.isNullOrEmpty(str)) {
+            return "";
+        }
+
+        return URLDecoder.decode(str, Contract.Utf8).replace("%20", "+");
+    }
+
+    @SneakyThrows
     public static Map<String, String> parseQueryString(String queryString) {
         Map<String, String> params = new LinkedHashMap<>();
         if (queryString == null) {
