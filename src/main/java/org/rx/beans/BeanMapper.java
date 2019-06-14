@@ -10,11 +10,13 @@ import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+
 import org.rx.common.NQuery;
 import org.rx.cache.WeakCache;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static org.rx.common.Contract.isNull;
@@ -25,18 +27,17 @@ import static org.rx.common.Contract.require;
  */
 public class BeanMapper {
     public class Flags {
-        public static final int SkipNull      = 1;
-        public static final int TrimString    = 1 << 1;
-        public static final int ValidateBean  = 1 << 2;
+        public static final int SkipNull = 1;
+        public static final int TrimString = 1 << 1;
+        public static final int ValidateBean = 1 << 2;
         public static final int NonCheckMatch = 1 << 3;
     }
 
     private static class MapConfig {
-        public final BeanCopier         copier;
-        public volatile boolean         isCheck;
-        public NQuery<String>           ignoreMethods;
-        public Function<String, String> methodMatcher;
-        public BiConsumer               postProcessor;
+        public final BeanCopier copier;
+        public volatile boolean isCheck;
+        public Function<String, String> propertyMatcher;
+        public BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher;
 
         public MapConfig(BeanCopier copier) {
             this.copier = copier;
@@ -53,9 +54,10 @@ public class BeanMapper {
         }
     }
 
-    private static final String                      Get         = "get", GetBool = "is", Set = "set";
+    public static final String ignoreProperty = "#ignore";
+    private static final String Get = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
-    private static final Lazy<BeanMapper>            instance    = new Lazy<>(BeanMapper.class);
+    private static final Lazy<BeanMapper> instance = new Lazy<>(BeanMapper.class);
 
     public static String genCode(Class entity) {
         require(entity);
@@ -123,24 +125,11 @@ public class BeanMapper {
         return mapConfig;
     }
 
-    public BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher, String... ignoreMethods) {
+    public BeanMapper setConfig(Class from, Class to, Function<String, String> propertyMatcher, BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher) {
         MapConfig config = getConfig(from, to);
         synchronized (config) {
-            config.methodMatcher = methodMatcher;
-            config.ignoreMethods = NQuery.of(ignoreMethods)
-                    .select(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).distinct();
-        }
-        return this;
-    }
-
-    public BeanMapper setConfig(Class from, Class to, Function<String, String> methodMatcher, BiConsumer postProcessor,
-                                String... ignoreMethods) {
-        MapConfig config = getConfig(from, to);
-        synchronized (config) {
-            config.methodMatcher = methodMatcher;
-            config.postProcessor = postProcessor;
-            config.ignoreMethods = NQuery.of(ignoreMethods)
-                    .select(p -> p.startsWith(Set) ? p : Set + App.toTitleCase(p)).distinct();
+            config.propertyMatcher = propertyMatcher;
+            config.propertyValueMatcher = propertyValueMatcher;
         }
         return this;
     }
@@ -172,32 +161,37 @@ public class BeanMapper {
                 nonCheckMatch = checkFlag(flags, Flags.NonCheckMatch);
         final CacheItem tmc = getMethods(to);
         TreeSet<String> targetMethods = new TreeSet<>();
-        config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
-            String setterName = methodName.toString();
-            targetMethods.add(setterName);
-            if (checkSkip(sourceValue, setterName, skipNull, config)) {
-                Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
-                return invoke(gm, target);
-            }
-            if (trimString && sourceValue instanceof String) {
-                sourceValue = ((String) sourceValue).trim();
-            }
-            return App.changeType(sourceValue, targetMethodType);
-        });
-        TreeSet<String> copiedNames = targetMethods;
-        if (config.ignoreMethods != null) {
-            copiedNames.addAll(config.ignoreMethods.asCollection());
+        if (config.propertyMatcher == null) {
+            config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
+                String setterName = methodName.toString();
+                targetMethods.add(setterName);
+                if (checkSkip(sourceValue, setterName, skipNull, config)) {
+                    Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
+                    return invoke(gm, target);
+                }
+                if (trimString && sourceValue instanceof String) {
+                    sourceValue = ((String) sourceValue).trim();
+                }
+                if (config.propertyValueMatcher != null) {
+                    Method tm = tmc.setters.where(p -> exEquals(p.getName(), setterName)).first();
+                    sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
+                }
+                return App.changeType(sourceValue, targetMethodType);
+            });
         }
+        TreeSet<String> copiedNames = targetMethods;
         Set<String> allNames = tmc.setters.select(Method::getName).toSet(),
                 missedNames = NQuery.of(allNames).except(copiedNames).toSet();
-        if (config.methodMatcher != null) {
+        if (config.propertyMatcher != null) {
             final CacheItem fmc = getMethods(from);
             //避免missedNames.remove引发异常
             for (String missedName : new ArrayList<>(missedNames)) {
                 Method fm;
-                String fromName = isNull(
-                        config.methodMatcher.apply(missedName.substring(3, 4).toLowerCase() + missedName.substring(4)),
-                        "");
+                String fromName = isNull(config.propertyMatcher.apply(getFieldName(missedName)), "");
+                if (ignoreProperty.equals(fromName)) {
+                    missedNames.remove(missedName);
+                    continue;
+                }
                 if (fromName.length() == 0
                         || (fm = fmc.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
                     Method tm;
@@ -218,11 +212,11 @@ public class BeanMapper {
                     sourceValue = ((String) sourceValue).trim();
                 }
                 Method tm = tmc.setters.where(p -> p.getName().equals(missedName)).first();
+                if (config.propertyValueMatcher != null) {
+                    sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
+                }
                 invoke(tm, target, sourceValue);
             }
-        }
-        if (config.postProcessor != null) {
-            config.postProcessor.accept(source, target);
         }
         if (!nonCheckMatch && !config.isCheck) {
             synchronized (config) {
@@ -269,11 +263,14 @@ public class BeanMapper {
     }
 
     private boolean checkSkip(Object sourceValue, String setterName, boolean skipNull, MapConfig config) {
-        return (skipNull && sourceValue == null)
-                || (config.ignoreMethods != null && config.ignoreMethods.contains(setterName));
+        return skipNull && sourceValue == null;
     }
 
     private boolean checkFlag(int flags, int value) {
         return (flags & value) == value;
+    }
+
+    private String getFieldName(String methodName) {
+        return methodName.substring(3, 4).toLowerCase() + methodName.substring(4);
     }
 }

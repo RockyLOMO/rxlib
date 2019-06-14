@@ -8,6 +8,8 @@ import org.rx.beans.BeanMapper;
 import org.rx.io.BinaryStream;
 import org.rx.io.MemoryStream;
 
+import java.math.BigDecimal;
+
 public class UtilTester {
     @Test
     public void testBinaryStream() {
@@ -66,13 +68,24 @@ public class UtilTester {
     @Test
     public void testMapper() {
         BeanMapper mapper = new BeanMapper();
-        mapper.setConfig(SourceBean.class, TargetBean.class, p -> {
-            switch (p) {
+        mapper.setConfig(SourceBean.class, TargetBean.class, targetProperty -> {
+            switch (targetProperty) {
                 case "info":
                     return "name";
+                case "luckyNum":
+                    return BeanMapper.ignoreProperty;
             }
-            return null;
-        }, "luckyNum");
+//            return null;
+            return targetProperty;
+        }, (targetProperty, sourceTuple) -> {
+            switch (targetProperty) {
+                case "age":
+                    return sourceTuple.left.toString();
+                case "money":
+                    return new BigDecimal((Long) sourceTuple.left);
+            }
+            return sourceTuple.left;
+        });
 
         SourceBean f = new SourceBean();
         f.setName("HW ");
