@@ -166,7 +166,7 @@ public class App {
         try {
             action.invoke();
         } catch (Exception ex) {
-            log.warn("CatchCall {}", ex.getMessage());
+            log.warn("CatchCall", ex);
         }
     }
 
@@ -176,7 +176,7 @@ public class App {
         try {
             return action.invoke();
         } catch (Exception ex) {
-            log.warn("CatchCall {}", ex.getMessage());
+            log.warn("CatchCall", ex);
         }
         return null;
     }
