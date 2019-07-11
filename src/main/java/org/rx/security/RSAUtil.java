@@ -14,10 +14,10 @@ import java.util.UUID;
 
 import static org.rx.common.Contract.require;
 
-public class RSAUtil {
-    private static final String SIGN_ALGORITHMS  = "MD5withRSA";
+public final class RSAUtil {
+    private static final String SIGN_ALGORITHMS = "MD5withRSA";
     private static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";
-    private static final String RSA_ALGORITHM    = "RSA/ECB/PKCS1Padding";
+    private static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
 
     public static String sign(TreeMap<String, Object> map, String privateKey) {
         require(map, privateKey);
@@ -39,9 +39,9 @@ public class RSAUtil {
     /**
      * 使用{@code RSA}方式对字符串进行签名
      *
-     * @param content 需要加签名的数据
+     * @param content    需要加签名的数据
      * @param privateKey {@code RSA}的私钥
-     * @param isSHA1 数据的编码方式
+     * @param isSHA1     数据的编码方式
      * @return 返回签名信息
      */
     @SneakyThrows
@@ -78,10 +78,10 @@ public class RSAUtil {
     /**
      * 使用{@code RSA}方式对签名信息进行验证
      *
-     * @param content 需要加签名的数据
-     * @param sign 签名信息
+     * @param content   需要加签名的数据
+     * @param sign      签名信息
      * @param publicKey {@code RSA}的公钥
-     * @param isSHA1 数据的编码方式
+     * @param isSHA1    数据的编码方式
      * @return 是否验证通过。{@code True}表示通过
      */
     @SneakyThrows
@@ -147,6 +147,19 @@ public class RSAUtil {
         return new String(cipher.doFinal(b));
     }
 
+    @SneakyThrows
+    public static String[] generateKeyPair() {
+        KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
+        keygen.initialize(1024, new SecureRandom());
+        KeyPair keys = keygen.genKeyPair();
+        PublicKey pubkey = keys.getPublic();
+        PrivateKey prikey = keys.getPrivate();
+
+        String pubKeyStr = App.convertToBase64String(pubkey.getEncoded());
+        String priKeyStr = App.convertToBase64String(prikey.getEncoded());
+        return new String[]{pubKeyStr, priKeyStr};
+    }
+
     /**
      * RSA生成签名与验证签名示例
      *
@@ -169,18 +182,5 @@ public class RSAUtil {
         signMsg = encrypt(content, publicKey);
         System.out.println("encrypt: " + signMsg);
         System.out.println("decrypt: " + decrypt(signMsg, privateKey));
-    }
-
-    @SneakyThrows
-    private static String[] generateKeyPair() {
-        KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
-        keygen.initialize(1024, new SecureRandom());
-        KeyPair keys = keygen.genKeyPair();
-        PublicKey pubkey = keys.getPublic();
-        PrivateKey prikey = keys.getPrivate();
-
-        String pubKeyStr = App.convertToBase64String(pubkey.getEncoded());
-        String priKeyStr = App.convertToBase64String(prikey.getEncoded());
-        return new String[] { pubKeyStr, priKeyStr };
     }
 }
