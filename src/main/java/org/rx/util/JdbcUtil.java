@@ -8,28 +8,32 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 
+import javax.sql.DataSource;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import static org.rx.common.Contract.require;
+
 @Slf4j
 public class JdbcUtil implements AutoCloseable {
     protected static final String MySql = "com.mysql.jdbc.Driver";
     @Getter
-    private String                host;
+    private String host;
     @Getter
-    private int                   port;
-    private String                database;
-    @Getter
-    @Setter
-    private int                   connectTimeout;
+    private int port;
+    private String database;
     @Getter
     @Setter
-    private int                   readWriteTimeout;
-    protected String              user;
-    protected String              password;
-    private List<AutoCloseable>   holds;
+    private int connectTimeout;
+    @Getter
+    @Setter
+    private int readWriteTimeout;
+    protected String user;
+    protected String password;
+    private DataSource dataSource;
+    private List<AutoCloseable> holds;
 
     public synchronized List<AutoCloseable> getHolds() {
         if (holds == null) {
@@ -46,8 +50,17 @@ public class JdbcUtil implements AutoCloseable {
         this.password = password;
     }
 
+    public JdbcUtil(DataSource dataSource) {
+        require(dataSource);
+
+        this.dataSource = dataSource;
+    }
+
     @SneakyThrows
     protected Connection createConnection() {
+        if (dataSource != null) {
+            return dataSource.getConnection();
+        }
         Class.forName(MySql);
         String connStr = getConnectionString();
         try {

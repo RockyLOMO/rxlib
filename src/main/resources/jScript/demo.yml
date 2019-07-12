@@ -1,3 +1,0 @@
-org.rx.util.DemoBean:
-  demoKey: >
-  $.id=$val.id;
