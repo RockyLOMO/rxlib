@@ -14,7 +14,7 @@ import java.util.Collections;
 import java.util.List;
 
 @Slf4j
-public class JDBCUtil implements AutoCloseable {
+public class JdbcUtil implements AutoCloseable {
     protected static final String MySql = "com.mysql.jdbc.Driver";
     @Getter
     private String                host;
@@ -38,7 +38,7 @@ public class JDBCUtil implements AutoCloseable {
         return holds;
     }
 
-    public JDBCUtil(String host, int port, String databaseName, String user, String password) {
+    public JdbcUtil(String host, int port, String databaseName, String user, String password) {
         this.host = host;
         this.port = port;
         this.database = databaseName;

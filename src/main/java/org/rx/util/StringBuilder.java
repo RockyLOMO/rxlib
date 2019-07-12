@@ -6,7 +6,7 @@ import static org.rx.common.Contract.isNull;
 
 public final class StringBuilder {
     private java.lang.StringBuilder buffer;
-    private String                  prefix;
+    private String prefix;
 
     public java.lang.StringBuilder getBuffer() {
         return buffer;
@@ -39,7 +39,19 @@ public final class StringBuilder {
     }
 
     public int indexOf(String target) {
-        return buffer.indexOf(target);
+        return indexOf(target, 0);
+    }
+
+    public int indexOf(String target, int fromIndex) {
+        return buffer.indexOf(target, fromIndex);
+    }
+
+    public int lastIndexOf(String target) {
+        return lastIndexOf(target, 0);
+    }
+
+    public int lastIndexOf(String target, int fromIndex) {
+        return buffer.lastIndexOf(target, getLength());
     }
 
     public StringBuilder replace(String target, String replacement) {
@@ -49,6 +61,14 @@ public final class StringBuilder {
             index += replacement.length(); // Move to the end of the replacement
         }
         return this;
+    }
+
+    public String substring(int start) {
+        return substring(start, getLength());
+    }
+
+    public String substring(int start, int end) {
+        return buffer.substring(start, end);
     }
 
     public StringBuilder insert(int offset, String format, Object... args) {
