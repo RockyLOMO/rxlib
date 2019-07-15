@@ -47,11 +47,11 @@ public final class StringBuilder {
     }
 
     public int lastIndexOf(String target) {
-        return lastIndexOf(target, 0);
+        return lastIndexOf(target, getLength());
     }
 
     public int lastIndexOf(String target, int fromIndex) {
-        return buffer.lastIndexOf(target, getLength());
+        return buffer.lastIndexOf(target, fromIndex);
     }
 
     public StringBuilder replace(String target, String replacement) {
