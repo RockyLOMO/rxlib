@@ -3,6 +3,9 @@ package org.rx.socks.http;
 import com.google.common.base.Strings;
 import lombok.SneakyThrows;
 import okhttp3.*;
+import okhttp3.Authenticator;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.rx.common.Contract;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
@@ -14,6 +17,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.*;
 import java.security.SecureRandom;
@@ -204,6 +208,7 @@ public class HttpClient {
         };
         SSLContext sslContext = SSLContext.getInstance("SSL");
         sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+        Authenticator authenticator = proxy instanceof ProxyWithAuth ? ((ProxyWithAuth) proxy).getAuthenticator() : Authenticator.NONE;
         return new OkHttpClient.Builder().connectionPool(pool).cookieJar(CookieContainer)
                 .retryOnConnectionFailure(false)
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
@@ -211,6 +216,8 @@ public class HttpClient {
                 .readTimeout(millis, TimeUnit.MILLISECONDS)
                 .writeTimeout(millis, TimeUnit.MILLISECONDS)
                 .proxy(proxy)
+                .proxyAuthenticator(authenticator)
+//                .authenticator(authenticator)
                 .build();
     }
 
