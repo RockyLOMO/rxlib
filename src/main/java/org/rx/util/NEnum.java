@@ -8,9 +8,9 @@ import java.util.*;
 
 import static org.rx.common.Contract.*;
 
-public interface NEnum<T extends Enum<T> & NEnum> {
-    final class FlagsEnum<T extends Enum<T> & NEnum> {
-        public static <T extends Enum<T> & NEnum> FlagsEnum<T> valueOf(Class<T> type, int flags) {
+public interface NEnum<T extends Enum<T> & NEnum<T>> {
+    final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
+        public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, int flags) {
             require(type);
 
             FlagsEnum<T> flagsEnum = null;
@@ -27,17 +27,17 @@ public interface NEnum<T extends Enum<T> & NEnum> {
             return flagsEnum;
         }
 
-        public static <T extends Enum<T> & NEnum> FlagsEnum<T> valueOf(Class<T> type, EnumSet<T> enumSet) {
+        public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, EnumSet<T> enumSet) {
             require(type, enumSet);
 
             int flags = 0;
             for (T t : enumSet) {
                 flags |= t.getValue();
             }
-            return valueOf(type, flags);
+            return FlagsEnum.valueOf(type, flags);
         }
 
-        public static <T extends Enum<T> & NEnum> FlagsEnum<T> valueOf(Class<T> type, String names) {
+        public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, String names) {
             require(type, names);
 
             Collection<T> list = NQuery.of(App.split(names, ", "))
@@ -50,13 +50,23 @@ public interface NEnum<T extends Enum<T> & NEnum> {
         @Getter
         private int flags;
 
+        @Override
+        public int getValue() {
+            return getFlags();
+        }
+
+        @Override
+        public String toDescription() {
+            return toDescriptions();
+        }
+
         private FlagsEnum(NEnum<T> nEnum) {
             type = (Class<T>) nEnum.getClass();
             flags = nEnum.getValue();
         }
 
         @SuppressWarnings(Contract.AllWarnings)
-        public FlagsEnum add(T... nEnum) {
+        public FlagsEnum<T> add(T... nEnum) {
             require(nEnum);
 
             for (T t : nEnum) {
@@ -65,7 +75,7 @@ public interface NEnum<T extends Enum<T> & NEnum> {
             return this;
         }
 
-        public FlagsEnum add(FlagsEnum<T> flagEnum) {
+        public FlagsEnum<T> add(FlagsEnum<T> flagEnum) {
             require(flagEnum);
 
             flags |= flagEnum.getFlags();
@@ -73,7 +83,7 @@ public interface NEnum<T extends Enum<T> & NEnum> {
         }
 
         @SuppressWarnings(Contract.AllWarnings)
-        public FlagsEnum remove(T... nEnum) {
+        public FlagsEnum<T> remove(T... nEnum) {
             require(nEnum);
 
             for (T t : nEnum) {
@@ -82,7 +92,7 @@ public interface NEnum<T extends Enum<T> & NEnum> {
             return this;
         }
 
-        public FlagsEnum remove(FlagsEnum<T> flagEnum) {
+        public FlagsEnum<T> remove(FlagsEnum<T> flagEnum) {
             require(flagEnum);
 
             flags &= ~flagEnum.getFlags();
@@ -148,9 +158,10 @@ public interface NEnum<T extends Enum<T> & NEnum> {
         return flagsEnum;
     }
 
+    @SuppressWarnings(Contract.AllWarnings)
     @SneakyThrows
     default String toDescription() {
         Class type = this.getClass();
-        return Contract.toDescription(type.getField(((Enum<T>) this).name()));
+        return Contract.toDescription(type.getField(((T) this).name()));
     }
 }

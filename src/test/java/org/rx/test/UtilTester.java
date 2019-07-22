@@ -93,7 +93,7 @@ public class UtilTester {
         f.setMoney(200L);
         TargetBean t = new TargetBean();
         t.setKids(10L);
-        mapper.map(f, t, BeanMapper.Flags.TrimString | BeanMapper.Flags.SkipNull);
+        mapper.map(f, t, BeanMapper.Flags.TrimString.add(BeanMapper.Flags.SkipNull));
         System.out.println(t);
         assert t.getName().equals(f.getName().trim());
         assert t.getInfo().equals(f.getName().trim());

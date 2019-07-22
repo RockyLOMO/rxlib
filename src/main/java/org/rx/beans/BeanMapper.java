@@ -1,10 +1,12 @@
 package org.rx.beans;
 
+import lombok.Getter;
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.common.App;
 
 import org.rx.common.Contract;
 import org.rx.common.Lazy;
+import org.rx.util.NEnum;
 import org.rx.util.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
@@ -26,11 +28,19 @@ import static org.rx.common.Contract.require;
  * map from multi sources https://yq.aliyun.com/articles/14958
  */
 public class BeanMapper {
-    public class Flags {
-        public static final int SkipNull = 1;
-        public static final int TrimString = 1 << 1;
-        public static final int ValidateBean = 1 << 2;
-        public static final int NonCheckMatch = 1 << 3;
+    public enum Flags implements NEnum<Flags> {
+        None(0),
+        SkipNull(1),
+        TrimString(1 << 1),
+        ValidateBean(1 << 2),
+        NonCheckMatch(1 << 3);
+
+        @Getter
+        private int value;
+
+        Flags(int val) {
+            this.value = val;
+        }
     }
 
     private static class MapConfig {
@@ -149,10 +159,10 @@ public class BeanMapper {
     public <T> T map(Object source, Class<T> targetType) {
         require(targetType);
 
-        return map(source, App.newInstance(targetType), 0);
+        return map(source, App.newInstance(targetType), Flags.None);
     }
 
-    public <T> T map(Object source, T target, int flags) {
+    public <T> T map(Object source, T target, NEnum<Flags> flags) {
         require(source, target);
 
         Class from = source.getClass(), to = target.getClass();
@@ -266,8 +276,8 @@ public class BeanMapper {
         return skipNull && sourceValue == null;
     }
 
-    private boolean checkFlag(int flags, int value) {
-        return (flags & value) == value;
+    private boolean checkFlag(NEnum<Flags> flags, Flags value) {
+        return flags.add().has(value);
     }
 
     private String getFieldName(String methodName) {

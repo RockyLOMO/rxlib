@@ -1,9 +1,11 @@
 package org.rx.socks.http;
 
 import com.google.common.base.Strings;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import lombok.SneakyThrows;
 import okhttp3.*;
 import okhttp3.Authenticator;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rx.common.Contract;
@@ -177,21 +179,25 @@ public class HttpClient {
     }
 
     public HttpClient() {
-        this(30 * 1000, null);
+        this(30 * 1000, null, null);
     }
 
     /**
      * @param millis
      * @param proxy  new Proxy(Proxy.Type.HTTP, Sockets.parseAddress("127.0.0.1:8888"))
      */
-    public HttpClient(int millis, Proxy proxy) {
-        headers = new Headers.Builder()
-                .set("User-Agent", IE_UserAgent).build();
-        client = createClient(millis, proxy);
+    public HttpClient(int millis, String rawCookie, Proxy proxy) {
+        Headers.Builder builder = new Headers.Builder().set("user-agent", IE_UserAgent);
+        boolean cookieJar = StringUtils.isEmpty(rawCookie);
+        if (!cookieJar) {
+            builder = builder.set("cookie", rawCookie);
+        }
+        headers = builder.build();
+        client = createClient(millis, cookieJar, proxy);
     }
 
     @SneakyThrows
-    private OkHttpClient createClient(int millis, Proxy proxy) {
+    private OkHttpClient createClient(int millis, boolean cookieJar, Proxy proxy) {
         X509TrustManager trustManager = new X509TrustManager() {
             @Override
             public void checkClientTrusted(X509Certificate[] chain, String authType) {
@@ -209,16 +215,18 @@ public class HttpClient {
         SSLContext sslContext = SSLContext.getInstance("SSL");
         sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
         Authenticator authenticator = proxy instanceof ProxyWithAuth ? ((ProxyWithAuth) proxy).getAuthenticator() : Authenticator.NONE;
-        return new OkHttpClient.Builder().connectionPool(pool).cookieJar(CookieContainer)
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(pool)
                 .retryOnConnectionFailure(false)
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
                 .connectTimeout(millis, TimeUnit.MILLISECONDS)
                 .readTimeout(millis, TimeUnit.MILLISECONDS)
                 .writeTimeout(millis, TimeUnit.MILLISECONDS)
                 .proxy(proxy)
-                .proxyAuthenticator(authenticator)
-//                .authenticator(authenticator)
-                .build();
+                .proxyAuthenticator(authenticator);
+        if (cookieJar) {
+            builder = builder.cookieJar(CookieContainer);
+        }
+        return builder.build();
     }
 
     private Request.Builder createRequest(String url) {
