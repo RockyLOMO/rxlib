@@ -92,15 +92,13 @@ public class JdbcUtil implements AutoCloseable {
         }
     }
 
-    public ResultSet executeQuery(String sql) {
-        return executeQuery(sql, false);
-    }
-
     @SneakyThrows
-    public ResultSet executeQuery(String sql, boolean memoryResultSet) {
+    public ResultSet executeQuery(String sql) {
         Connection conn = createConnection();
-        PreparedStatement statement = conn.prepareStatement(sql,
-                memoryResultSet ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY);
+//        PreparedStatement statement = conn.prepareStatement(sql,
+//                memoryResultSet ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY,
+//                ResultSet.CONCUR_READ_ONLY);
+        PreparedStatement statement = conn.prepareStatement(sql);
         getHolds().add(statement);
         getHolds().add(conn);
         return statement.executeQuery();

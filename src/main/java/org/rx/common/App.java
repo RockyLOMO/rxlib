@@ -56,7 +56,6 @@ public class App {
     //region Fields
     public static final int MaxSize = Integer.MAX_VALUE - 8;
     public static final int TimeoutInfinite = -1;
-    private static final String base64Regex = "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$";
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
 
@@ -656,12 +655,12 @@ public class App {
         }
     }
 
-    public static boolean isBase64String(String base64) {
-        if (isNullOrEmpty(base64)) {
+    public static boolean isBase64String(String base64String) {
+        if (isNullOrEmpty(base64String)) {
             return false;
         }
 
-        return Pattern.compile(base64Regex).matcher(base64).find();
+        return org.apache.commons.codec.binary.Base64.isBase64(base64String);
     }
 
     @SneakyThrows
