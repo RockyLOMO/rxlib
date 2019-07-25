@@ -9,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rx.common.Contract;
+import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
 import org.rx.common.SystemException;
 import org.rx.io.MemoryStream;
@@ -171,11 +172,27 @@ public class HttpClient {
 
     private Headers headers;
     private OkHttpClient client;
+    private Response response;
 
     public void setHeaders(Map<String, String> headers) {
         require(headers);
 
         this.headers = this.headers.newBuilder().addAll(Headers.of(headers)).build();
+    }
+
+    private Response getResponse() {
+        if (response == null) {
+            throw new InvalidOperationException("No response");
+        }
+        return response;
+    }
+
+    public String responseUrl() {
+        return getResponse().request().url().toString();
+    }
+
+    public Map<String, List<String>> responseHeaders() {
+        return getResponse().headers().toMultimap();
     }
 
     public HttpClient() {
@@ -306,7 +323,7 @@ public class HttpClient {
                 request = request.get();
                 break;
         }
-        Response response = client.newCall(request.build()).execute();
+        response = client.newCall(request.build()).execute();
         return response.body();
     }
 
