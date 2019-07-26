@@ -36,7 +36,7 @@ import static org.rx.common.Contract.*;
 import static org.rx.common.Contract.require;
 
 public class HttpClient {
-    public static final String GetMethod = "GET", PostMethod = "POST";
+    public static final String GetMethod = "GET", PostMethod = "POST", HeadMethod = "HEAD";
     public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
     public static final String Chrome_UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
     public static final CookieContainer CookieContainer;
@@ -248,6 +248,12 @@ public class HttpClient {
 
     private Request.Builder createRequest(String url) {
         return new Request.Builder().url(url).headers(headers);
+    }
+
+    public Map<String, List<String>> head(String url) {
+        handleString(invoke(url, HttpClient.HeadMethod, null, null));
+
+        return responseHeaders();
     }
 
     public String get(String url) {
