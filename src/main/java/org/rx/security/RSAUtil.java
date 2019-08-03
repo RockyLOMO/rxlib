@@ -19,6 +19,19 @@ public final class RSAUtil {
     private static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";
     private static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
 
+    @SneakyThrows
+    public static String[] generateKeyPair() {
+        KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
+        keygen.initialize(1024, new SecureRandom());
+        KeyPair keys = keygen.genKeyPair();
+        PublicKey pubkey = keys.getPublic();
+        PrivateKey prikey = keys.getPrivate();
+
+        String pubKeyStr = App.convertToBase64String(pubkey.getEncoded());
+        String priKeyStr = App.convertToBase64String(prikey.getEncoded());
+        return new String[]{pubKeyStr, priKeyStr};
+    }
+
     public static String sign(TreeMap<String, Object> map, String privateKey) {
         require(map, privateKey);
 
@@ -114,7 +127,9 @@ public final class RSAUtil {
     }
 
     /**
-     * 加密方法 source： 源数据
+     * 加密方法
+     *
+     * @param source 源数据
      */
     @SneakyThrows
     public static String encrypt(String source, String publicKey) {
@@ -122,16 +137,16 @@ public final class RSAUtil {
 
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
-        /** 得到Cipher对象来实现对源数据的RSA加密 */
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, key);
         byte[] b = cipher.doFinal(source.getBytes());
-        /** 执行加密操作 */
         return App.convertToBase64String(b);
     }
 
     /**
-     * 解密算法 cryptograph:密文
+     * 解密算法
+     *
+     * @param cryptograph 密文
      */
     @SneakyThrows
     public static String decrypt(String cryptograph, String privateKey) {
@@ -139,32 +154,12 @@ public final class RSAUtil {
 
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
-        /** 得到Cipher对象对已用公钥加密的数据进行RSA解密 */
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, key);
         byte[] b = App.convertFromBase64String(cryptograph);
-        /** 执行解密操作 */
         return new String(cipher.doFinal(b));
     }
 
-    @SneakyThrows
-    public static String[] generateKeyPair() {
-        KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
-        keygen.initialize(1024, new SecureRandom());
-        KeyPair keys = keygen.genKeyPair();
-        PublicKey pubkey = keys.getPublic();
-        PrivateKey prikey = keys.getPrivate();
-
-        String pubKeyStr = App.convertToBase64String(pubkey.getEncoded());
-        String priKeyStr = App.convertToBase64String(prikey.getEncoded());
-        return new String[]{pubKeyStr, priKeyStr};
-    }
-
-    /**
-     * RSA生成签名与验证签名示例
-     *
-     * @param args
-     */
     public static void main(String[] args) {
         UUID id = UUID.randomUUID();
         String[] kp = RSAUtil.generateKeyPair();

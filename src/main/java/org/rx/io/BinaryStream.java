@@ -9,10 +9,10 @@ import java.io.*;
 import static org.rx.common.Contract.require;
 
 public class BinaryStream extends IOStream {
-    private boolean          leaveOpen;
-    private IOStream         baseStream;
-    private DataInputStream  reader;
-    private BufferedReader   reader2;
+    private boolean leaveOpen;
+    private IOStream baseStream;
+    private DataInputStream reader;
+    private BufferedReader reader2;
     private DataOutputStream writer;
 
     public IOStream getBaseStream() {

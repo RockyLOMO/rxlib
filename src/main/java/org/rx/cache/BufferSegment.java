@@ -5,9 +5,9 @@ import java.util.function.Consumer;
 import static org.rx.common.Contract.require;
 
 public class BufferSegment {
-    private final byte[]     buffer;
-    private final int        bufferSize;
-    private volatile int     offset;
+    private final byte[] buffer;
+    private final int bufferSize;
+    private volatile int offset;
     private volatile boolean autoReleased;
 
     public boolean isAutoReleased() {

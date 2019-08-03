@@ -10,8 +10,7 @@ import java.security.MessageDigest;
 import static org.rx.common.Contract.require;
 
 public class MD5Util {
-    private static final char[] hexDigits = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e',
-            'f' };
+    private static final char[] hexDigits = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
     @SneakyThrows
     public static byte[] md5(File file) {
@@ -70,20 +69,5 @@ public class MD5Util {
             str[k++] = hexDigits[byte0 & 0xf]; // 取字节中低 4 位的数字转换
         }
         return new String(str); // 换后的结果转换为字符串
-    }
-
-    /**
-     * Converts a hex string into a byte array.
-     *
-     * @param s - string to be converted
-     * @return byte array converted from s
-     */
-    private static byte[] toByteArray(String s) {
-        byte[] buf = new byte[s.length() / 2];
-        int j = 0;
-        for (int i = 0; i < buf.length; i++) {
-            buf[i] = (byte) ((Character.digit(s.charAt(j++), 16) << 4) | Character.digit(s.charAt(j++), 16));
-        }
-        return buf;
     }
 }

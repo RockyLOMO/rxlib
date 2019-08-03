@@ -32,7 +32,7 @@ public final class SpringContextUtil implements InitializingBean, ApplicationCon
 
     /**
      * 类名(首字母小写)
-     * 
+     *
      * @param name
      * @param <T>
      * @return

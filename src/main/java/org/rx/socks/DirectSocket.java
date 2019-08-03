@@ -25,11 +25,11 @@ public class DirectSocket extends Traceable implements AutoCloseable {
     }
 
     private static class ClientItem {
-        private final DirectSocket  owner;
+        private final DirectSocket owner;
         private final BufferSegment segment;
-        public final NetworkStream  stream;
-        public final AutoCloseable  toSock;
-        public final NetworkStream  toStream;
+        public final NetworkStream stream;
+        public final AutoCloseable toSock;
+        public final NetworkStream toStream;
 
         public ClientItem(Socket client, DirectSocket owner) {
             this.owner = owner;
@@ -89,31 +89,31 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         }
     }
 
-    public static final SocketSupplier HttpSupplier             = pack -> {
-                                                                    String line = Bytes.readLine(pack.getBuffer());
-                                                                    if (line == null) {
-                                                                        return null;
-                                                                    }
-                                                                    InetSocketAddress authority;
-                                                                    try {
-                                                                        authority = Sockets.parseAddress(
-                                                                                new URL(line.split(" ")[1])
-                                                                                        .getAuthority());
-                                                                    } catch (MalformedURLException ex) {
-                                                                        throw SystemException.wrap(ex);
-                                                                    }
-                                                                    SocketPool.PooledSocket pooledSocket = App.retry(2,
-                                                                            p -> SocketPool.Pool.borrowSocket(p),
-                                                                            authority);
-                                                                    return Tuple.of(pooledSocket, pooledSocket.socket);
-                                                                };
-    private static final int           DefaultBacklog           = 128;
-    private static final int           DefaultConnectRetryCount = 4;
-    private final ServerSocket         server;
-    private final List<ClientItem>     clients;
-    private volatile int               connectRetryCount;
-    private InetSocketAddress          directAddress;
-    private SocketSupplier             directSupplier;
+    public static final SocketSupplier HttpSupplier = pack -> {
+        String line = Bytes.readLine(pack.getBuffer());
+        if (line == null) {
+            return null;
+        }
+        InetSocketAddress authority;
+        try {
+            authority = Sockets.parseAddress(
+                    new URL(line.split(" ")[1])
+                            .getAuthority());
+        } catch (MalformedURLException ex) {
+            throw SystemException.wrap(ex);
+        }
+        SocketPool.PooledSocket pooledSocket = App.retry(2,
+                p -> SocketPool.Pool.borrowSocket(p),
+                authority);
+        return Tuple.of(pooledSocket, pooledSocket.socket);
+    };
+    private static final int DefaultBacklog = 128;
+    private static final int DefaultConnectRetryCount = 4;
+    private final ServerSocket server;
+    private final List<ClientItem> clients;
+    private volatile int connectRetryCount;
+    private InetSocketAddress directAddress;
+    private SocketSupplier directSupplier;
 
     @Override
     public boolean isClosed() {

@@ -6,7 +6,6 @@ import org.rx.common.App;
 
 import org.rx.common.Contract;
 import org.rx.common.Lazy;
-import org.rx.util.NEnum;
 import org.rx.util.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 

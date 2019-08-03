@@ -59,7 +59,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         }
     }
 
-    protected InputStream  reader;
+    protected InputStream reader;
     protected OutputStream writer;
 
     public InputStream getReader() {
@@ -92,7 +92,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         throw new SystemException(values());
     }
 
-    @ErrorCode(messageKeys = { "$type" })
+    @ErrorCode(messageKeys = {"$type"})
     public int getLength() {
         throw new SystemException(values(this.getClass().getSimpleName()));
     }

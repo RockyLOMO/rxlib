@@ -16,11 +16,11 @@ public final class NetworkStream extends IOStream {
         boolean test(BytesSegment buffer, int count);
     }
 
-    public static final int    SocketEOF   = 0;
-    public static final int    StreamEOF   = -1;
-    public static final int    CannotWrite = -2;
-    private final boolean      ownsSocket;
-    private final Socket       socket;
+    public static final int SocketEOF = 0;
+    public static final int StreamEOF = -1;
+    public static final int CannotWrite = -2;
+    private final boolean ownsSocket;
+    private final Socket socket;
     private final BytesSegment segment;
 
     public boolean isConnected() {

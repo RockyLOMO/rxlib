@@ -61,7 +61,7 @@ public final class NQuery<T> implements Iterable<T> {
 
     //region Member
     private Collection current;
-    private boolean    isParallel;
+    private boolean isParallel;
 
     public Stream<T> stream() {
         return isParallel ? current.parallelStream() : current.stream();
@@ -133,10 +133,10 @@ public final class NQuery<T> implements Iterable<T> {
 
     @FunctionalInterface
     private interface EachFunc<T> {
-        int None   = 0;
+        int None = 0;
         int Accept = 1;
-        int Break  = 1 << 1;
-        int All    = Accept | Break;
+        int Break = 1 << 1;
+        int All = Accept | Break;
 
         int each(T t, int index);
     }
@@ -419,7 +419,7 @@ public final class NQuery<T> implements Iterable<T> {
         return where(predicate).lastOrDefault();
     }
 
-    @ErrorCode(messageKeys = { "$count" })
+    @ErrorCode(messageKeys = {"$count"})
     public T single() {
         int count = count();
         if (count != 1) {
@@ -432,7 +432,7 @@ public final class NQuery<T> implements Iterable<T> {
         return where(predicate).single();
     }
 
-    @ErrorCode(messageKeys = { "$count" })
+    @ErrorCode(messageKeys = {"$count"})
     public T singleOrDefault() {
         int count = count();
         if (count > 1) {

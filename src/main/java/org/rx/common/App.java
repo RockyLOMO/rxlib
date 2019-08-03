@@ -3,6 +3,7 @@ package org.rx.common;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.eventbus.EventBus;
 import com.google.common.reflect.ClassPath;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -56,13 +58,16 @@ public class App {
     //region Fields
     public static final int MaxSize = Integer.MAX_VALUE - 8;
     public static final int TimeoutInfinite = -1;
+    public static final EventBus Event = new EventBus();
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
+    private static final Map<UUID, Function> typeConverter;
 
     static {
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
+        typeConverter = new ConcurrentHashMap<>();
     }
     //endregion
 
@@ -579,6 +584,12 @@ public class App {
         }
     }
 
+    public static <TF, TT> void registerConvert(Class<TF> from, Class<TT> to, Function<TF, TT> converter) {
+        require(from, to, converter);
+
+        typeConverter.put(hash(from.getName() + to.getName()), converter);
+    }
+
     @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
     @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
     @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
@@ -605,8 +616,12 @@ public class App {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        if (!(supportTypes.any(p -> p.equals(fromType)))) {
+        Function converter = null;
+        if (!(supportTypes.any(p -> p.equals(fromType))) && (converter = typeConverter.get(hash(fromType.getName() + toType.getName()))) == null) {
             throw new SystemException(values(fromType, toType), "notSupported");
+        }
+        if (converter != null) {
+            return (T) converter.apply(value);
         }
 
         String val = value.toString();

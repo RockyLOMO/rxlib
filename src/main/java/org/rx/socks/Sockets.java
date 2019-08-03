@@ -2,6 +2,7 @@ package org.rx.socks;
 
 import java.io.IOException;
 import java.net.*;
+
 import org.rx.common.SystemException;
 import org.rx.cache.WeakCache;
 import org.springframework.util.CollectionUtils;
@@ -55,7 +56,7 @@ public final class Sockets {
 
     /**
      * @param socket
-     * @param flags Send=1, Receive=2
+     * @param flags  Send=1, Receive=2
      */
     public static void shutdown(Socket socket, int flags) {
         require(socket);

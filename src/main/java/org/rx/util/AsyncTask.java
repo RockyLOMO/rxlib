@@ -11,7 +11,6 @@ import org.rx.common.Logger;
 import org.rx.common.NQuery;
 import org.rx.util.function.Func;
 
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
 

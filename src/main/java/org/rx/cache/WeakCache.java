@@ -7,6 +7,7 @@ import java.lang.ref.WeakReference;
 import org.rx.common.App;
 import org.rx.common.Lazy;
 import org.rx.common.Logger;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
@@ -31,7 +32,7 @@ public class WeakCache<TK, TV> {
     }
 
     private ConcurrentMap<TK, Reference> container;
-    private boolean                      softRef;
+    private boolean softRef;
 
     public boolean isSoftRef() {
         return softRef;

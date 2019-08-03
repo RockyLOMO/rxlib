@@ -5,7 +5,7 @@ import java.util.function.Supplier;
 import static org.rx.common.Contract.require;
 
 public final class Lazy<T> {
-    private T                 value;
+    private T value;
     private final Supplier<T> supplier;
 
     public boolean isValueCreated() {

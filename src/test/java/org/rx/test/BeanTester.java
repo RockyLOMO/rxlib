@@ -6,7 +6,7 @@ import org.rx.annotation.Description;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.test.bean.ErrorBean;
-import org.rx.util.NEnum;
+import org.rx.beans.NEnum;
 
 import java.lang.reflect.Constructor;
 

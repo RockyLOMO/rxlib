@@ -27,7 +27,7 @@ public abstract class Disposable implements AutoCloseable {
 
     protected abstract void freeObjects();
 
-    @ErrorCode(messageKeys = { "$type" })
+    @ErrorCode(messageKeys = {"$type"})
     protected void checkNotClosed() {
         if (closed) {
             throw new SystemException(values(this.getClass().getSimpleName()));

@@ -21,8 +21,8 @@ import static org.rx.common.Contract.require;
 public final class PingClient {
     public class Result {
         private final List<Long> results;
-        private Lazy<Double>     avg;
-        private Lazy<Long>       min, max;
+        private Lazy<Double> avg;
+        private Lazy<Long> min, max;
 
         public List<Long> getResults() {
             return results;
