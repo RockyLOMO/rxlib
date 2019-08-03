@@ -39,7 +39,13 @@ public final class NQuery<T> implements Iterable<T> {
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
     public static <T> NQuery<T> of(T... set) {
-        return of(Arrays.asList(set));
+        require(set);
+
+        List<T> list = new ArrayList<>(set.length);
+        for (T t : set) {
+            list.add(t);
+        }
+        return of(list);
     }
 
     public static <T> NQuery<T> of(Stream<T> stream) {

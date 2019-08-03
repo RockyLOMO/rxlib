@@ -5,12 +5,30 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.Description;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
+import org.rx.common.App;
 import org.rx.test.bean.ErrorBean;
 import org.rx.beans.NEnum;
 
 import java.lang.reflect.Constructor;
 
 public class BeanTester {
+    @Test
+    public void testConvert() {
+        System.out.println(TestEnum.class.isAssignableFrom(NEnum.class));
+        System.out.println(NEnum.class.isAssignableFrom(TestEnum.class));
+        System.out.println(TestEnum.class.isAssignableFrom(TestEnum.class));
+        App.registerConverter(Integer.class, TestEnum.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
+        App.registerConverter(TestEnum.class, Integer.class, (p1, p2) -> p1.getValue());
+
+        int val = App.changeType(TestEnum.One, Integer.class);
+        assert val == 1;
+
+        TestEnum testEnum = App.changeType(1, TestEnum.class);
+        assert testEnum == TestEnum.One;
+        int integer = App.changeType("1", Integer.class);
+        assert integer == 1;
+    }
+
     @Test
     public void testDate() {
         DateTime now = DateTime.now();
@@ -68,7 +86,7 @@ public class BeanTester {
     }
 
     @Test
-    public void testEnum(){
-        System.out.println(   TestEnum.Two.toDescription());
+    public void testEnum() {
+        System.out.println(TestEnum.Two.toDescription());
     }
 }

@@ -5,6 +5,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.eventbus.EventBus;
 import com.google.common.reflect.ClassPath;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -37,8 +38,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -53,6 +54,13 @@ public class App {
         ThreadStatic,
         ServletRequest
     }
+
+    @RequiredArgsConstructor
+    private static class ConvertItem {
+        public final Class baseFromType;
+        public final Class toType;
+        public final BiFunction<Object, Class, Object> converter;
+    }
     //endregion
 
     //region Fields
@@ -61,13 +69,13 @@ public class App {
     public static final EventBus Event = new EventBus();
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
-    private static final Map<UUID, Function> typeConverter;
+    private static final List<ConvertItem> typeConverter;
 
     static {
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
-        typeConverter = new ConcurrentHashMap<>();
+        typeConverter = Collections.synchronizedList(new ArrayList<>(2));
     }
     //endregion
 
@@ -584,10 +592,27 @@ public class App {
         }
     }
 
-    public static <TF, TT> void registerConvert(Class<TF> from, Class<TT> to, Function<TF, TT> converter) {
-        require(from, to, converter);
+    /**
+     * @param baseFromType
+     * @param toType
+     * @param converter    BiFunction<TFromValue, TToType, TToValue>
+     */
+    public synchronized static <TFromValue> void registerConverter(Class<TFromValue> baseFromType, Class toType, BiFunction<TFromValue, Class, Object> converter) {
+        require(baseFromType, toType, converter);
 
-        typeConverter.put(hash(from.getName() + to.getName()), converter);
+        typeConverter.add(0, new ConvertItem(baseFromType, toType, (BiFunction) converter));
+        if (!supportTypes.contains(baseFromType)) {
+            supportTypes.asCollection().add(baseFromType);
+        }
+    }
+
+    private static BiFunction<Object, Class, Object> getConverter(Object fromValue, Class toType) {
+        for (ConvertItem convertItem : NQuery.of(typeConverter).toList()) {
+            if (convertItem.baseFromType.isInstance(fromValue) && convertItem.toType.isAssignableFrom(toType)) {
+                return convertItem.converter;
+            }
+        }
+        return null;
     }
 
     @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
@@ -616,12 +641,12 @@ public class App {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        Function converter = null;
-        if (!(supportTypes.any(p -> p.equals(fromType))) && (converter = typeConverter.get(hash(fromType.getName() + toType.getName()))) == null) {
+        if (!(supportTypes.any(p -> p.equals(fromType)))) {
             throw new SystemException(values(fromType, toType), "notSupported");
         }
+        BiFunction<Object, Class, Object> converter = getConverter(value, toType);
         if (converter != null) {
-            return (T) converter.apply(value);
+            return (T) converter.apply(value, toType);
         }
 
         String val = value.toString();
