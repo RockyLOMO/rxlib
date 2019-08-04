@@ -4,6 +4,7 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
     <bean id="springContextUtil" class="org.rx.util.SpringContextUtil"/>
+    <bean id="validateAspect" class="org.rx.util.validator.ValidateUtil"/>
     <aop:config proxy-target-class="true">
         <aop:aspect id="va" ref="validateAspect">
             <!--<aop:pointcut id="vaPointcut"-->
@@ -14,5 +15,4 @@
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>
-    <bean id="validateAspect" class="org.rx.util.validator.ValidateUtil"/>
 </beans>
