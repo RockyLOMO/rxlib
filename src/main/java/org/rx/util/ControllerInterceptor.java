@@ -15,8 +15,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -33,8 +31,9 @@ public class ControllerInterceptor {
     }
 
     private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
+    protected String NotSignInMsg = "Not sign in";
 
-    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+    public Object onAround(ProceedingJoinPoint joinPoint) throws Throwable {
         // 1 先过滤出有RequestMapping的方法
         final Signature signature = joinPoint.getSignature();
         if (!(signature instanceof MethodSignature) || skipMethods.any(p -> p.equals(signature.getName()))) {
@@ -71,13 +70,13 @@ public class ControllerInterceptor {
         }
 
         logContent.appendLine(String.format("Url：\t%s", url));
-        logContent.append(String.format("Request:\t%s", toString(joinPoint.getArgs(), method)));
+        logContent.append(String.format("Request:\t%s", onToString(joinPoint.getArgs(), method)));
         Object returnValue = null;
         try {
             Stopwatch watcher = Stopwatch.createStarted();
             if (joinPoint.getTarget() instanceof IRequireSignIn) {
                 if (!((IRequireSignIn) joinPoint.getTarget()).isSignIn(method.getName(), joinPoint.getArgs())) {
-                    throw new InvalidOperationException("未登录");
+                    throw new InvalidOperationException(NotSignInMsg);
                 }
             }
             returnValue = joinPoint.proceed();
@@ -93,7 +92,7 @@ public class ControllerInterceptor {
         return returnValue;
     }
 
-    protected String toString(Object[] args, Method method) {
+    protected String onToString(Object[] args, Method method) {
         return toJsonString(NQuery.of(args).select(p -> {
             if (p instanceof MultipartFile) {
                 return "[FileStream]";
@@ -129,7 +128,7 @@ public class ControllerInterceptor {
     public ResponseEntity handleException(Exception e, HttpServletRequest request) {
         String msg = DefaultMessage, debugMsg = null;
         Exception logEx = e;
-        if (e instanceof ConstraintException || NQuery.of(handleInfoLogExceptions()).any(p -> p.isInstance(e))) {
+        if (e instanceof ConstraintException || handleInfoLogExceptions().distinct().any(p -> p.isInstance(e))) {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logEx = null;
@@ -144,8 +143,8 @@ public class ControllerInterceptor {
         return ResponseEntity.ok(handleExceptionResponse(msg, debugMsg));
     }
 
-    protected Set<Class> handleInfoLogExceptions() {
-        return Collections.emptySet();
+    protected NQuery<Class> handleInfoLogExceptions() {
+        return NQuery.of();
     }
 
     protected Object handleExceptionResponse(String msg, String debugMsg) {
