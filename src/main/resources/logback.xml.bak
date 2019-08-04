@@ -38,11 +38,11 @@
         <appender-ref ref="infoAppender"/>
         <appender-ref ref="errorAppender"/>
     </logger>
-    <logger name="infoLogger">
+    <logger name="org.rx">
         <level value="DEBUG"/>
         <appender-ref ref="infoAppender"/>
     </logger>
-    <logger name="errorLogger">
+    <logger name="org.rx">
         <level value="WARN"/>
         <appender-ref ref="errorAppender"/>
     </logger>

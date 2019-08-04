@@ -1,17 +1,14 @@
 package org.rx.socks.http;
 
 import com.google.common.base.Strings;
-import io.netty.handler.codec.http.HttpHeaderNames;
+import com.google.common.net.HttpHeaders;
 import lombok.SneakyThrows;
 import okhttp3.*;
 import okhttp3.Authenticator;
 import org.apache.commons.lang3.StringUtils;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.rx.common.Contract;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
-import org.rx.common.SystemException;
 import org.rx.io.MemoryStream;
 import org.rx.io.IOStream;
 
@@ -20,15 +17,10 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.*;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -38,7 +30,6 @@ import static org.rx.common.Contract.require;
 public class HttpClient {
     public static final String GetMethod = "GET", PostMethod = "POST", HeadMethod = "HEAD";
     public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
-    public static final String Chrome_UserAgent = "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36";
     public static final CookieContainer CookieContainer;
     private static final ConnectionPool pool;
     private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"),
@@ -174,6 +165,10 @@ public class HttpClient {
     private OkHttpClient client;
     private Response response;
 
+    public void setHeader(String name, String value) {
+        setHeaders(Collections.singletonMap(name, value));
+    }
+
     public void setHeaders(Map<String, String> headers) {
         require(headers);
 
@@ -204,7 +199,7 @@ public class HttpClient {
      * @param proxy  new Proxy(Proxy.Type.HTTP, Sockets.parseAddress("127.0.0.1:8888"))
      */
     public HttpClient(int millis, String rawCookie, Proxy proxy) {
-        Headers.Builder builder = new Headers.Builder().set("user-agent", IE_UserAgent);
+        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_UserAgent);
         boolean cookieJar = StringUtils.isEmpty(rawCookie);
         if (!cookieJar) {
             builder = builder.set("cookie", rawCookie);

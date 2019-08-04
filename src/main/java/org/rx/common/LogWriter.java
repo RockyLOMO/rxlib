@@ -3,25 +3,27 @@ package org.rx.common;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.StringWriter;
 
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public class LogWriter extends StringWriter {
-    private org.slf4j.Logger log;
+    private org.slf4j.Logger logRef;
     @Getter
     @Setter
     private String prefix;
 
     public LogWriter() {
-        this(Logger.log1);
+        this(log);
     }
 
     public LogWriter(org.slf4j.Logger log) {
         require(log);
 
-        this.log = log;
+        this.logRef = log;
     }
 
     @Override
@@ -64,7 +66,7 @@ public class LogWriter extends StringWriter {
     }
 
     public LogWriter error(String msg, Throwable e) {
-        log.error(msg, e);
+        logRef.error(msg, e);
         return this;
     }
 
@@ -72,7 +74,7 @@ public class LogWriter extends StringWriter {
     public void flush() {
         super.flush();
         StringBuffer buffer = super.getBuffer();
-        log.info(buffer.toString());
+        logRef.info(buffer.toString());
         buffer.setLength(0);
     }
 

@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.eventbus.EventBus;
+import com.google.common.net.HttpHeaders;
 import com.google.common.reflect.ClassPath;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -72,6 +73,7 @@ public class App {
     private static final List<ConvertItem> typeConverter;
 
     static {
+        System.setProperty("bootstrapPath", getBootstrapPath());
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
@@ -762,23 +764,23 @@ public class App {
             return "0.0.0.0";
         }
 
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        String ip = request.getHeader(HttpHeaders.X_FORWARDED_FOR);
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("Proxy-Client-IP");
         }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("WL-Proxy-Client-IP");
         }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("HTTP_CLIENT_IP");
         }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("HTTP_X_FORWARDED_FOR");
         }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("x-real-ip");
         }
-        if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
         String[] ips = ip.split(",");
@@ -801,7 +803,7 @@ public class App {
         response.setCharacterEncoding(Contract.Utf8);
         response.setContentType("application/octet-stream");
         response.setContentLength((int) file.length());
-        response.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
         try (FileInputStream in = new FileInputStream(file)) {
             OutputStream out = response.getOutputStream();
             byte[] buffer = new byte[4096];

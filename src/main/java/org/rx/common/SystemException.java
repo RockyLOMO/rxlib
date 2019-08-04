@@ -42,7 +42,7 @@ public class SystemException extends NestedRuntimeException {
                         codes.putAll(App.loadYaml(String.valueOf(file)));
                     }
                 } catch (Exception e) {
-                    Logger.debug("getSettings: %s", e);
+                    log.debug("getSettings", e);
                 }
             }
             return codes;
@@ -148,7 +148,7 @@ public class SystemException extends NestedRuntimeException {
                     continue;
                 }
 
-                Logger.debug("SystemException: Found @ErrorCode at %s", method.toString());
+                log.debug("SystemException: Found @ErrorCode at {}", method.toString());
                 source = caller.left;
                 targetSite = method;
                 break;
@@ -163,14 +163,14 @@ public class SystemException extends NestedRuntimeException {
         }
 
         if (friendlyMessage == null) {
-            Logger.debug("SystemException: Not found @ErrorCode");
+            log.debug("SystemException: Not found @ErrorCode");
         }
     }
 
     @SneakyThrows
     public <T extends Enum<T>> SystemException setErrorCode(T enumErrorCode, Object... messageValues) {
         if ((this.errorCode = enumErrorCode) == null) {
-            Logger.debug("SystemException.setErrorCode: Parameter errorCode is null");
+            log.debug("SystemException.setErrorCode: Parameter errorCode is null");
             return this;
         }
 
@@ -192,7 +192,7 @@ public class SystemException extends NestedRuntimeException {
     private ErrorCode findCode(AccessibleObject member, String errorName, Throwable cause) {
         NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
         if (!errorCodes.any()) {
-            Logger.debug("SystemException: Not found @ErrorCode in %s", member.toString());
+            log.debug("SystemException: Not found @ErrorCode in %s", member.toString());
             return null;
         }
         if (errorName != null) {
@@ -227,7 +227,7 @@ public class SystemException extends NestedRuntimeException {
         }
         String msg = as(methodSettings.get(messageName), String.class);
         if (msg == null) {
-            Logger.debug("SystemException: Not found messageName %s", messageName);
+            log.debug("SystemException: Not found messageName {}", messageName);
             return;
         }
 
@@ -241,7 +241,7 @@ public class SystemException extends NestedRuntimeException {
             default:
                 String[] messageKeys = errorCode.messageKeys();
                 if (messageKeys.length != messageValues.length) {
-                    Logger.debug("SystemException: MessageKeys length %s not equals messageValues length %s",
+                    log.debug("SystemException: MessageKeys length {} not equals messageValues length {}",
                             messageKeys.length, messageValues.length);
                     return;
                 }

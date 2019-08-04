@@ -1,5 +1,6 @@
 package org.rx.socks;
 
+import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.common.*;
 import org.rx.beans.Tuple;
@@ -18,6 +19,7 @@ import static org.rx.beans.$.$;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public class DirectSocket extends Traceable implements AutoCloseable {
     @FunctionalInterface
     public interface SocketSupplier {
@@ -57,7 +59,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                             return;
                         }
                     }
-                    Logger.info("DirectSocket ClientState directSupplier read: %s\ncontent: %s", read,
+                    log.info("DirectSocket ClientState directSupplier read: {}\ncontent: {}", read,
                             Bytes.toString(firstPack.toArray(), 0, firstPack.getLength()));
                 }
             } catch (IOException ex) {
@@ -170,7 +172,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                     clients.add(client);
                     onReceive(client, taskName);
                 } catch (IOException ex) {
-                    Logger.error(ex, taskName);
+                    log.error(taskName, ex);
                 }
             }
             close();
@@ -186,7 +188,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             clients.clear();
             server.close();
         } catch (IOException ex) {
-            Logger.error(ex, "DirectSocket close");
+            log.error("DirectSocket close", ex);
         }
         getTracer().info("stop..");
     }
@@ -207,7 +209,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 if (ex.tryGet(out, java.net.SocketException.class)) {
                     if (out.$.getMessage().contains("Socket closed")) {
                         //ignore
-                        Logger.debug("DirectTo ignore socket closed");
+                        log.debug("DirectTo ignore socket closed");
                         return;
                     }
                 }
@@ -232,7 +234,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
                 if (ex.tryGet(out, java.net.SocketException.class)) {
                     if (out.$.getMessage().contains("Socket closed")) {
                         //ignore
-                        Logger.debug("DirectTo ignore socket closed");
+                        log.debug("DirectTo ignore socket closed");
                         return;
                     }
                 }

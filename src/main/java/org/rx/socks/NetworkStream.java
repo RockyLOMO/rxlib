@@ -1,6 +1,6 @@
 package org.rx.socks;
 
-import org.rx.common.Logger;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.cache.BytesSegment;
 import org.rx.io.IOStream;
 
@@ -10,6 +10,7 @@ import java.net.Socket;
 import static org.rx.common.Contract.require;
 import static org.rx.socks.Sockets.shutdown;
 
+@Slf4j
 public final class NetworkStream extends IOStream {
     @FunctionalInterface
     public interface DirectPredicate {
@@ -64,7 +65,7 @@ public final class NetworkStream extends IOStream {
     @Override
     protected void freeObjects() {
         try {
-            Logger.info("NetworkStream freeObjects ownsSocket=%s socket[%s][closed=%s]", ownsSocket,
+            log.info("NetworkStream freeObjects ownsSocket={} socket[{}][closed={}]", ownsSocket,
                     Sockets.getId(socket, false), socket.isClosed());
             if (ownsSocket) {
                 //super.freeObjects(); Ignore this!!
@@ -91,14 +92,14 @@ public final class NetworkStream extends IOStream {
         while (canRead() && (recv = read(segment.array, segment.offset, segment.count)) >= -1) {
             if (recv <= 0) {
                 if (ownsSocket) {
-                    Logger.debug("DirectTo read %s flag and shutdown send", recv);
+                    log.debug("DirectTo read {} flag and shutdown send", recv);
                     shutdown(socket, 1);
                 }
                 break;
             }
 
             if (!to.canWrite()) {
-                Logger.debug("DirectTo read %s bytes and can't write", recv);
+                log.debug("DirectTo read {} bytes and can't write", recv);
                 recv = CannotWrite;
                 break;
             }

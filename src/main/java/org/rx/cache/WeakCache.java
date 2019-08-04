@@ -4,9 +4,9 @@ import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 
+import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.Lazy;
-import org.rx.common.Logger;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -18,6 +18,7 @@ import static org.rx.common.Contract.require;
 /**
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
+@Slf4j
 public class WeakCache<TK, TV> {
     private static final Lazy<WeakCache<String, Object>> instance = new Lazy<>(WeakCache::new);
 
@@ -85,7 +86,7 @@ public class WeakCache<TK, TV> {
             try {
                 ac.close();
             } catch (Exception ex) {
-                Logger.error(ex, "Auto close error");
+                log.error("Auto close error", ex);
             }
         }
         ref.clear();

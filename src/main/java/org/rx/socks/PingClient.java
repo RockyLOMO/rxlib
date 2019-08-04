@@ -1,11 +1,11 @@
 package org.rx.socks;
 
 import com.google.common.base.Stopwatch;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.common.App;
 import org.rx.common.NQuery;
 import org.rx.cache.WeakCache;
 import org.rx.common.Lazy;
-import org.rx.common.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -18,6 +18,7 @@ import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.isNull;
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public final class PingClient {
     public class Result {
         private final List<Long> results;
@@ -98,7 +99,7 @@ public final class PingClient {
                 watcher.start();
                 sock.connect(sockAddr);
             } catch (IOException ex) {
-                Logger.info("Ping error %s", ex.getMessage());
+                log.info("Ping error {}", ex.getMessage());
                 return null;
             } finally {
                 watcher.stop();

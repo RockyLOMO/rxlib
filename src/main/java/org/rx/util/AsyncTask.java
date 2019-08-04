@@ -7,7 +7,6 @@ import org.rx.beans.$;
 import org.rx.beans.DateTime;
 import org.rx.common.App;
 import org.rx.common.Lazy;
-import org.rx.common.Logger;
 import org.rx.common.NQuery;
 import org.rx.util.function.Func;
 
@@ -65,10 +64,10 @@ public final class AsyncTask {
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
         threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-                .setUncaughtExceptionHandler((thread, ex) -> Logger.error(ex, thread.getName()))
+                .setUncaughtExceptionHandler((thread, ex) -> log.error("AsyncTask {}", thread.getName(), ex))
                 .setNameFormat("AsyncTask-%d").build();
         executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue, threadFactory, (p1, p2) -> {
-            Logger.info("AsyncTask rejected task: %s", p1.toString());
+            log.info("AsyncTask rejected task: {}", p1.toString());
             p1.run();
         });
         scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(ThreadCount, threadFactory));

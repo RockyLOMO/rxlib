@@ -1,5 +1,6 @@
 package org.rx.socks;
 
+import lombok.extern.slf4j.Slf4j;
 import org.rx.common.LogWriter;
 import org.rx.common.NQuery;
 import org.rx.beans.DateTime;
@@ -7,8 +8,6 @@ import org.rx.beans.DateTime;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-
-import org.rx.common.Logger;
 
 import java.util.Map;
 import java.util.Timer;
@@ -18,6 +17,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public final class SocketPool extends Traceable implements AutoCloseable {
     public static final class PooledSocket implements AutoCloseable {
         private final SocketPool owner;
@@ -234,7 +234,7 @@ public final class SocketPool extends Traceable implements AutoCloseable {
                         Sockets.getId(socket, true));
                 Sockets.close(socket);
             } catch (Exception ex) {
-                Logger.error(ex, "SocketPool clear");
+                log.error("SocketPool clear", ex);
             }
         }
         pool.clear();
