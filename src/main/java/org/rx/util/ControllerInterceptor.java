@@ -31,7 +31,7 @@ public class ControllerInterceptor {
     }
 
     private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
-    protected String NotSignInMsg = "Not sign in";
+    protected String notSignInMsg = "Not sign in";
 
     public Object onAround(ProceedingJoinPoint joinPoint) throws Throwable {
         // 1 先过滤出有RequestMapping的方法
@@ -76,7 +76,7 @@ public class ControllerInterceptor {
             Stopwatch watcher = Stopwatch.createStarted();
             if (joinPoint.getTarget() instanceof IRequireSignIn) {
                 if (!((IRequireSignIn) joinPoint.getTarget()).isSignIn(method.getName(), joinPoint.getArgs())) {
-                    throw new InvalidOperationException(NotSignInMsg);
+                    throw new InvalidOperationException(notSignInMsg);
                 }
             }
             returnValue = joinPoint.proceed();

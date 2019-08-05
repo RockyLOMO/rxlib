@@ -3,7 +3,6 @@ package org.rx.common;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.EventBus;
 import com.google.common.net.HttpHeaders;
 import com.google.common.reflect.ClassPath;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +66,6 @@ public class App {
     //region Fields
     public static final int MaxSize = Integer.MAX_VALUE - 8;
     public static final int TimeoutInfinite = -1;
-    public static final EventBus Event = new EventBus();
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
     private static final List<ConvertItem> typeConverter;
