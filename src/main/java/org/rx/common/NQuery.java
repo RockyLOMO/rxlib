@@ -39,7 +39,7 @@ public final class NQuery<T> implements Iterable<T> {
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
     public static <T> NQuery<T> of(T... set) {
-        require(set);
+        require((Object) set);
 
         List<T> list = new ArrayList<>(set.length);
         for (T t : set) {

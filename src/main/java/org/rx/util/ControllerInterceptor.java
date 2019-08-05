@@ -93,6 +93,9 @@ public class ControllerInterceptor {
     }
 
     protected String onToString(Object[] args, Method method) {
+        if (ArrayUtils.isEmpty(args)) {
+            return "NULL";
+        }
         return toJsonString(NQuery.of(args).select(p -> {
             if (p instanceof MultipartFile) {
                 return "[FileStream]";
