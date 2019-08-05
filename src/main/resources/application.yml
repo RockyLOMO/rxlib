@@ -3,5 +3,8 @@ app:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
     - org.springframework.ui.Model
-#  errorCodeFiles:
-#    - errorCode.yml
+  #  errorCodeFiles:
+  #    - errorCode.yml
+  sessionPack:
+    appName: rx
+    version: 0.1

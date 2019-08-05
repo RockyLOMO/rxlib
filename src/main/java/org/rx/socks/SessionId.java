@@ -16,4 +16,9 @@ public class SessionId implements Serializable {
     public final SessionId sessionId() {
         return new SessionId(appName, version);
     }
+
+    public final void sessionId(SessionId sessionId) {
+        appName = sessionId.appName;
+        version = sessionId.version;
+    }
 }
