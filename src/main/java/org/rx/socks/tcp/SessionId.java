@@ -1,4 +1,4 @@
-package org.rx.socks;
+package org.rx.socks.tcp;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -1,4 +1,4 @@
-package org.rx.socks;
+package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelId;
 import lombok.AllArgsConstructor;

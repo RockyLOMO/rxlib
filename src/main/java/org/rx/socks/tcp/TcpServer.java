@@ -1,4 +1,4 @@
-package org.rx.socks;
+package org.rx.socks.tcp;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -27,14 +27,13 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.require;
+import static org.rx.common.Contract.*;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     @RequiredArgsConstructor
-    public class ClientSession {
+    public static class ClientSession {
         @Getter
         private final SessionChannelId id;
         @Getter
@@ -68,21 +67,22 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
             //Unpooled
             super.channelRead(ctx, msg);
             log.info("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-            if (!(msg instanceof SessionPack)) {
-                ctx.writeAndFlush(SessionPack.error("Error pack"));
-                TaskFactory.scheduleOnce(ctx::close, 4 * 1000);
-                return;
-            }
-            if (SessionPack.class.equals(msg.getClass())) {
-                SessionPack sessionPack = (SessionPack) msg;
+            if (SessionId.class.equals(msg.getClass())) {
                 SessionChannelId sessionChannelId = new SessionChannelId(ctx.channel().id());
-                sessionChannelId.sessionId(sessionPack);
+                sessionChannelId.sessionId((SessionId) msg);
                 T client = createClient(sessionChannelId, ctx);
                 addClient(client);
                 EventArgs.raiseEvent(onConnected, _this(), new NEventArgs<>(client));
                 return;
             }
-            EventArgs.raiseEvent(onReceive, _this(), new PackEventArgs<>( findClient(ctx), (SocksPack) msg));
+
+            SessionPack pack;
+            if ((pack = as(msg, SessionPack.class)) == null) {
+                ctx.writeAndFlush(SessionPack.error("Error pack"));
+                TaskFactory.scheduleOnce(ctx::close, 4 * 1000);
+                return;
+            }
+            EventArgs.raiseEvent(onReceive, _this(), new PackEventArgs<>(findClient(ctx), pack));
         }
 
         @Override
@@ -96,21 +96,25 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
             super.channelInactive(ctx);
             log.info("channelInactive {}", ctx.channel().remoteAddress());
 
-            ShardingClientEntity client = findClient(ctx);
-            EventArgs.raiseEvent(onDisconnected, _this(), new NEventArgs<>(client));
-            removeClient(ctx);
+            T client = findClient(ctx);
+            try {
+                EventArgs.raiseEvent(onDisconnected, _this(), new NEventArgs<>(client));
+            } finally {
+                removeClient(ctx);
+            }
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             super.exceptionCaught(ctx, cause);
-            log.error("exceptionCaught {}", ctx.channel().remoteAddress(), cause);
+            log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
             ctx.close();
         }
     }
 
-    public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected;
+    public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
+    @Getter
     private int port;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -125,24 +129,20 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
         return this;
     }
 
-    protected Class getClientSessionType() {
-        return clientSessionType == null ? TcpServer.ClientSession.class : clientSessionType;
-    }
-
-    protected void setClientSessionType(Class type) {
-        require(type, TcpServer.ClientSession.class.isAssignableFrom(type));
-
-        clientSessionType = type;
+    public TcpServer(int port, boolean ssl) {
+        this(port, ssl, null);
     }
 
     @SneakyThrows
-    public TcpServer(int port, boolean ssl) {
+    public TcpServer(int port, boolean ssl, Class clientSessionType) {
         clients = new ConcurrentHashMap<>();
         this.port = port;
         if (ssl) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
+
+        this.clientSessionType = clientSessionType == null ? TcpServer.ClientSession.class : clientSessionType;
     }
 
     @Override
@@ -189,7 +189,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     }
 
     protected T createClient(SessionChannelId sessionChannelId, ChannelHandlerContext ctx) {
-        T client = (T) App.newInstance(getClientSessionType(), sessionChannelId, ctx);
+        T client = (T) App.newInstance(clientSessionType, sessionChannelId, ctx);
         client.setConnectedTime(DateTime.now());
         return client;
     }
@@ -198,25 +198,27 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
         clients.computeIfAbsent(client.getId().sessionId(), k -> Collections.synchronizedSet(new HashSet<>())).add(client);
     }
 
-    private ShardingClientEntity findClient(ChannelHandlerContext ctx) {
+    protected T findClient(ChannelHandlerContext ctx) {
         return NQuery.of(clients.values()).selectMany(p -> p).where(p -> p.getChannel() == ctx).single();
     }
 
-    private void removeClient(ChannelHandlerContext ctx) {
+    protected void removeClient(ChannelHandlerContext ctx) {
         NQuery.of(clients.values()).firstOrDefault(p -> p.removeIf(x -> x.getChannel() == ctx));
     }
 
-    public <T extends SocksPack> void send(ChannelIdEntity channelId, T pack) {
+    public <TPack extends SessionPack> void send(SessionChannelId sessionChannelId, TPack pack) {
         checkNotClosed();
-        require(channelId, pack);
-        Set<ShardingClientEntity> set = clients.get(channelId.getSocksId());
+        require(sessionChannelId, pack);
+
+        Set<T> set = clients.get(sessionChannelId.sessionId());
         if (set == null) {
             return;
         }
-        ShardingClientEntity c = NQuery.of(set).where(p -> eq(p.getId(), channelId)).firstOrDefault();
-        if (c == null) {
+        T client = NQuery.of(set).where(p -> eq(p.getId(), sessionChannelId)).firstOrDefault();
+        if (client == null) {
             return;
         }
-        c.getChannel().writeAndFlush(pack);
+        EventArgs.raiseEvent(onSend, this, new PackEventArgs<>(client, pack));
+        client.getChannel().writeAndFlush(pack);
     }
 }
