@@ -3,15 +3,59 @@ package org.rx.test;
 import lombok.Getter;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Description;
+import org.rx.beans.BeanMapper;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.common.App;
 import org.rx.test.bean.ErrorBean;
 import org.rx.beans.NEnum;
+import org.rx.test.bean.SourceBean;
+import org.rx.test.bean.TargetBean;
 
 import java.lang.reflect.Constructor;
+import java.math.BigDecimal;
 
 public class BeanTester {
+    @Test
+    public void testMapperCode() {
+        System.out.println(BeanMapper.genCode(SourceBean.class));
+    }
+
+    @Test
+    public void testMapper() {
+        BeanMapper mapper = new BeanMapper();
+        mapper.setConfig(SourceBean.class, TargetBean.class, targetProperty -> {
+            switch (targetProperty) {
+                case "info":
+                    return "name";
+                case "luckyNum":
+                    return BeanMapper.ignoreProperty;
+            }
+//            return null;
+            return targetProperty;
+        }, (targetProperty, sourceTuple) -> {
+            switch (targetProperty) {
+                case "age":
+                    return sourceTuple.left.toString();
+                case "money":
+                    return new BigDecimal((Long) sourceTuple.left);
+            }
+            return sourceTuple.left;
+        });
+
+        SourceBean f = new SourceBean();
+        f.setName("HW ");
+        f.setAge(100);
+        f.setMoney(200L);
+        TargetBean t = new TargetBean();
+        t.setKids(10L);
+        mapper.map(f, t, BeanMapper.Flags.TrimString.add(BeanMapper.Flags.SkipNull));
+        System.out.println(t);
+        assert t.getName().equals(f.getName().trim());
+        assert t.getInfo().equals(f.getName().trim());
+        assert t.getLuckyNum() == 0;
+    }
+
     @Test
     public void testConvert() {
         System.out.println(TestEnum.class.isAssignableFrom(NEnum.class));

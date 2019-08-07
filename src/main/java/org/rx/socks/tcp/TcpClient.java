@@ -14,19 +14,21 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.rx.common.Disposable;
-import org.rx.common.EventArgs;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.NEventArgs;
+import org.rx.beans.$;
+import org.rx.common.*;
 import org.rx.socks.Sockets;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 
+import static org.rx.beans.$.$;
 import static org.rx.common.Contract.require;
+import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class TcpClient extends Disposable {
@@ -55,8 +57,7 @@ public class TcpClient extends Disposable {
             log.info("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
             SessionPack socksPack = (SessionPack) msg;
             if (!StringUtils.isEmpty(socksPack.getErrorMessage())) {
-                log.error("ErrorMessage from server: {}", socksPack.getErrorMessage());
-                close();
+                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", socksPack.getErrorMessage())));
                 return;
             }
             EventArgs.raiseEvent(onReceive, _this(), new PackEventArgs<>(ctx, socksPack));
@@ -81,14 +82,21 @@ public class TcpClient extends Disposable {
             channel = null;
 
             EventArgs.raiseEvent(onDisconnected, _this(), new NEventArgs<>(ctx));
+            if (autoReconnect) {
+                reconnect();
+            }
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             super.exceptionCaught(ctx, cause);
             log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
-            ErrorEventArgs args = new ErrorEventArgs(cause.toString());
-            EventArgs.raiseEvent(onError, _this(), args);
+            ErrorEventArgs<ChannelHandlerContext> args = new ErrorEventArgs<>(ctx, cause);
+            try {
+                EventArgs.raiseEvent(onError, _this(), args);
+            } catch (Exception e) {
+                log.error("clientCaught", e);
+            }
             if (!args.isCancel()) {
                 ctx.close();
             }
@@ -97,7 +105,7 @@ public class TcpClient extends Disposable {
 
     public volatile BiConsumer<TcpClient, NEventArgs<ChannelHandlerContext>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpClient, PackEventArgs<ChannelHandlerContext>> onSend, onReceive;
-    public volatile BiConsumer<TcpClient, ErrorEventArgs> onError;
+    public volatile BiConsumer<TcpClient, ErrorEventArgs<ChannelHandlerContext>> onError;
     private InetSocketAddress serverAddress;
     private EventLoopGroup workerGroup;
     @Getter
@@ -105,16 +113,27 @@ public class TcpClient extends Disposable {
     private SslContext sslCtx;
     private ChannelHandlerContext channel;
     @Getter
+    @Setter
+    private int connectTimeout;
+    @Getter
+    @Setter
+    private volatile boolean autoReconnect;
+    @Getter
     private SessionId sessionId;
 
     private TcpClient _this() {
         return this;
     }
 
+    public TcpClient(String endPoint, boolean ssl) {
+        this(endPoint, ssl, SessionPack.defaultId);
+    }
+
     @SneakyThrows
     public TcpClient(String endPoint, boolean ssl, SessionId sessionId) {
         require();
 
+        connectTimeout = 30 * 1000;
         serverAddress = Sockets.parseAddress(endPoint);
         if (ssl) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
@@ -124,6 +143,7 @@ public class TcpClient extends Disposable {
 
     @Override
     protected void freeObjects() {
+        autoReconnect = false; //import
         if (workerGroup != null) {
             workerGroup.shutdownGracefully();
             workerGroup = null;
@@ -131,8 +151,12 @@ public class TcpClient extends Disposable {
         isConnected = false;
     }
 
+    public void connect() {
+        connect(false);
+    }
+
     @SneakyThrows
-    public void connect(int timeout) {
+    public void connect(boolean wait) {
         if (isConnected) {
             throw new InvalidOperationException("Client has connected");
         }
@@ -144,11 +168,24 @@ public class TcpClient extends Disposable {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeout)
                 .channel(NioSocketChannel.class)
                 .handler(new ClientInitializer());
 
-        b.connect(serverAddress).sync();
+        ChannelFuture sync = b.connect(serverAddress).sync();
+        if (wait) {
+            sync.await().sync();
+        }
+    }
+
+    private void reconnect() {
+        $<Future> $f = $();
+        $f.$ = TaskFactory.schedule(() -> {
+            App.catchCall(() -> connect());
+            if (isConnected()) {
+                $f.$.cancel(false);
+            }
+        }, 2 * 1000);
     }
 
     public <T extends SessionPack> void send(T pack) {

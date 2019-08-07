@@ -6,10 +6,11 @@ import org.rx.common.NEventArgs;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ErrorEventArgs extends NEventArgs<String> {
-    private boolean cancel;
+public class ErrorEventArgs<T> extends NEventArgs<Throwable> {
+    private T client;
 
-    public ErrorEventArgs(String causeString) {
-        super(causeString);
+    public ErrorEventArgs(T client, Throwable value) {
+        super(value);
+        this.client = client;
     }
 }

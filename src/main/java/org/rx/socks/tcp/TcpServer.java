@@ -36,8 +36,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     public static class ClientSession {
         @Getter
         private final SessionChannelId id;
-        @Getter
-        private final transient ChannelHandlerContext channel;
+        protected final transient ChannelHandlerContext channel;
         @Getter
         @Setter
         private Date connectedTime;
@@ -89,6 +88,11 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             super.channelActive(ctx);
             log.info("channelActive {}", ctx.channel().remoteAddress());
+
+            if (clients.size() > maxClients) {
+                log.warn("Not enough space");
+                ctx.close();
+            }
         }
 
         @Override
@@ -108,12 +112,21 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             super.exceptionCaught(ctx, cause);
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
-            ctx.close();
+            ErrorEventArgs<T> args = new ErrorEventArgs<>(findClient(ctx), cause);
+            try {
+                EventArgs.raiseEvent(onError, _this(), args);
+            } catch (Exception e) {
+                log.error("serverCaught", e);
+            }
+            if (!args.isCancel()) {
+                ctx.close();
+            }
         }
     }
 
     public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
+    public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
     @Getter
     private int port;
     private EventLoopGroup bossGroup;
@@ -123,6 +136,9 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     private volatile boolean isStarted;
     @Getter
     private final Map<SessionId, Set<T>> clients;
+    @Getter
+    @Setter
+    private int maxClients;
     private Class clientSessionType;
 
     private TcpServer<T> _this() {
@@ -142,6 +158,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
 
+        this.maxClients = 1000000;
         this.clientSessionType = clientSessionType == null ? TcpServer.ClientSession.class : clientSessionType;
     }
 
@@ -199,11 +216,11 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     }
 
     protected T findClient(ChannelHandlerContext ctx) {
-        return NQuery.of(clients.values()).selectMany(p -> p).where(p -> p.getChannel() == ctx).single();
+        return NQuery.of(clients.values()).selectMany(p -> p).where(p -> p.channel == ctx).single();
     }
 
     protected void removeClient(ChannelHandlerContext ctx) {
-        NQuery.of(clients.values()).firstOrDefault(p -> p.removeIf(x -> x.getChannel() == ctx));
+        NQuery.of(clients.values()).firstOrDefault(p -> p.removeIf(x -> x.channel == ctx));
     }
 
     public <TPack extends SessionPack> void send(SessionChannelId sessionChannelId, TPack pack) {
@@ -212,13 +229,13 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
 
         Set<T> set = clients.get(sessionChannelId.sessionId());
         if (set == null) {
-            return;
+            throw new InvalidOperationException(String.format("Client %s not found", sessionChannelId.getAppName()));
         }
         T client = NQuery.of(set).where(p -> eq(p.getId(), sessionChannelId)).firstOrDefault();
         if (client == null) {
-            return;
+            throw new InvalidOperationException(String.format("Client %s-%s not found", sessionChannelId.getAppName(), sessionChannelId.getChannelId()));
         }
         EventArgs.raiseEvent(onSend, this, new PackEventArgs<>(client, pack));
-        client.getChannel().writeAndFlush(pack);
+        client.channel.writeAndFlush(pack);
     }
 }
