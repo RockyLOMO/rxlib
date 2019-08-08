@@ -70,8 +70,14 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
                 SessionChannelId sessionChannelId = new SessionChannelId(ctx.channel().id());
                 sessionChannelId.sessionId((SessionId) msg);
                 T client = createClient(sessionChannelId, ctx);
-                addClient(client);
-                EventArgs.raiseEvent(onConnected, _this(), new NEventArgs<>(client));
+                NEventArgs<T> args = new NEventArgs<>(client);
+                EventArgs.raiseEvent(onConnected, _this(), args);
+                if (args.isCancel()) {
+                    log.warn("Close client");
+                    ctx.close();
+                } else {
+                    addClient(client);
+                }
                 return;
             }
 

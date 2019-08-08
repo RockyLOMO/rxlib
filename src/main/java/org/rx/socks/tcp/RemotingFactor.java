@@ -1,5 +1,6 @@
 package org.rx.socks.tcp;
 
+import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
@@ -8,21 +9,18 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
+import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
 
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.common.Contract.require;
 
-/**
- * Created by IntelliJ IDEA.
- * User: za-wangxiaoming
- * Date: 2019/8/6
- */
 @Slf4j
-public class RemotingFactor {
+public final class RemotingFactor {
     @Data
     @EqualsAndHashCode(callSuper = true)
     private static class CallPack extends SessionPack {
@@ -32,25 +30,36 @@ public class RemotingFactor {
     }
 
     private static class ClientHandler implements MethodInterceptor {
+        private static final TcpClientPool pool = new TcpClientPool();
+
         private TcpClient client;
-        private ManualResetEvent waitHandle;
+        private final ManualResetEvent waitHandle;
         private CallPack resultPack;
 
-        public ClientHandler(String endPoint) {
-            client = new TcpClient(endPoint, true);
-            client.onError = (s, e) -> {
+        public ClientHandler(InetSocketAddress serverAddress) {
+            waitHandle = new ManualResetEvent();
+//            client = new TcpClient(endPoint, true);
+//            client.setAutoReconnect(true);
+//            client.connect(true);
+//            client.onError = (s, e) -> {
+//                e.setCancel(true);
+//                log.error("!Error & Set!", e.getValue());
+//                waitHandle.set();
+//            };
+//            client.onReceive = (s, e) -> {
+//                resultPack = (CallPack) e.getValue();
+//                waitHandle.set();
+//            };
+            client = pool.borrow(serverAddress); //已连接
+            client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
                 e.setCancel(true);
                 log.error("!Error & Set!", e.getValue());
                 waitHandle.set();
-            };
-            client.onReceive = (s, e) -> {
+            });
+            client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
                 resultPack = (CallPack) e.getValue();
                 waitHandle.set();
-            };
-            client.setAutoReconnect(true);
-            client.connect(true);
-
-            waitHandle = new ManualResetEvent();
+            });
         }
 
         @Override
@@ -73,7 +82,7 @@ public class RemotingFactor {
         require(contract);
         require(contract, contract.isInterface());
 
-        return (T) Enhancer.create(contract, new ClientHandler(endPoint));
+        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endPoint)));
     }
 
     public static void listen(Object contractInstance, int port) {

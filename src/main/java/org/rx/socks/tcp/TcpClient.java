@@ -21,6 +21,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.rx.beans.$;
 import org.rx.common.*;
 import org.rx.socks.Sockets;
+import org.rx.util.ManualResetEvent;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
@@ -31,7 +32,7 @@ import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
-public class TcpClient extends Disposable {
+public class TcpClient extends Disposable implements EventArgs.Attachable {
     private class ClientInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void initChannel(SocketChannel ch) {
@@ -67,8 +68,9 @@ public class TcpClient extends Disposable {
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             super.channelActive(ctx);
             log.info("clientActive {}", ctx.channel().remoteAddress());
-            isConnected = true;
             channel = ctx;
+            isConnected = true;
+            waiter.set();
 
             ctx.writeAndFlush(sessionId);
             EventArgs.raiseEvent(onConnected, _this(), new NEventArgs<>(ctx));
@@ -106,15 +108,17 @@ public class TcpClient extends Disposable {
     public volatile BiConsumer<TcpClient, NEventArgs<ChannelHandlerContext>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpClient, PackEventArgs<ChannelHandlerContext>> onSend, onReceive;
     public volatile BiConsumer<TcpClient, ErrorEventArgs<ChannelHandlerContext>> onError;
-    private InetSocketAddress serverAddress;
     private EventLoopGroup workerGroup;
-    @Getter
-    private volatile boolean isConnected;
     private SslContext sslCtx;
     private ChannelHandlerContext channel;
     @Getter
+    private InetSocketAddress serverAddress;
+    @Getter
+    private volatile boolean isConnected;
+    private ManualResetEvent waiter;
+    @Getter
     @Setter
-    private int connectTimeout;
+    private long connectTimeout;
     @Getter
     @Setter
     private volatile boolean autoReconnect;
@@ -126,19 +130,30 @@ public class TcpClient extends Disposable {
     }
 
     public TcpClient(String endPoint, boolean ssl) {
-        this(endPoint, ssl, SessionPack.defaultId);
+        this(Sockets.parseAddress(endPoint), ssl, null);
+    }
+
+    public TcpClient(InetSocketAddress endPoint, boolean ssl, SessionId sessionId) {
+        init(endPoint, ssl, sessionId);
+    }
+
+    protected TcpClient() {
     }
 
     @SneakyThrows
-    public TcpClient(String endPoint, boolean ssl, SessionId sessionId) {
-        require();
+    protected void init(InetSocketAddress endPoint, boolean ssl, SessionId sessionId) {
+        require(endPoint);
+        if (sessionId == null) {
+            sessionId = SessionPack.defaultId;
+        }
 
-        connectTimeout = 30 * 1000;
-        serverAddress = Sockets.parseAddress(endPoint);
+        serverAddress = endPoint;
         if (ssl) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
         this.sessionId = sessionId;
+        connectTimeout = 30 * 1000;
+        waiter = new ManualResetEvent();
     }
 
     @Override
@@ -168,13 +183,14 @@ public class TcpClient extends Disposable {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeout)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
                 .channel(NioSocketChannel.class)
                 .handler(new ClientInitializer());
 
         ChannelFuture sync = b.connect(serverAddress).sync();
         if (wait) {
-            sync.await().sync();
+            waiter.waitOne(connectTimeout);
+            waiter.reset();
         }
     }
 

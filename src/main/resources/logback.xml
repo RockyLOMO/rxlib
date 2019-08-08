@@ -33,19 +33,19 @@
         </encoder>
     </appender>
 
-    <logger name="org.springframework" additivity="false">
-        <level value="INFO"/>
-        <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
-    <logger name="org.rx">
-        <level value="DEBUG"/>
-        <appender-ref ref="infoAppender"/>
-    </logger>
-    <logger name="org.rx">
-        <level value="WARN"/>
-        <appender-ref ref="errorAppender"/>
-    </logger>
+<!--    <logger name="org.springframework" additivity="false">-->
+<!--        <level value="INFO"/>-->
+<!--        <appender-ref ref="infoAppender"/>-->
+<!--        <appender-ref ref="errorAppender"/>-->
+<!--    </logger>-->
+<!--    <logger name="org.rx">-->
+<!--        <level value="DEBUG"/>-->
+<!--        <appender-ref ref="infoAppender"/>-->
+<!--    </logger>-->
+<!--    <logger name="org.rx">-->
+<!--        <level value="WARN"/>-->
+<!--        <appender-ref ref="errorAppender"/>-->
+<!--    </logger>-->
 
     <root>
         <level value="DEBUG"/>

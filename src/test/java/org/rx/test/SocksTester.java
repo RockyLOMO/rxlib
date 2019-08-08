@@ -2,6 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
+import org.rx.common.App;
 import org.rx.common.Contract;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;

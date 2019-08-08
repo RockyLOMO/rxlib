@@ -6,3 +6,4 @@ target/
 # ignore files
 *.iml
 config.json
+bootstrapPath_IS_UNDEFINED
