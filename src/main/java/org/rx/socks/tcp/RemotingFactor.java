@@ -6,10 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.apache.commons.lang3.StringUtils;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.NQuery;
-import org.rx.common.SystemException;
 import org.rx.util.ManualResetEvent;
 
 import java.lang.reflect.Method;
@@ -30,7 +28,7 @@ public class RemotingFactor {
     private static class CallPack extends SessionPack {
         private String methodName;
         private Object[] parameters;
-        private Object result;
+        private Object returnValue;
     }
 
     private static class ClientHandler implements MethodInterceptor {
@@ -64,7 +62,7 @@ public class RemotingFactor {
 
             waitHandle.waitOne(client.getConnectTimeout());
             waitHandle.reset();
-            return resultPack.getResult();
+            return resultPack.returnValue;
         }
     }
 
@@ -96,7 +94,7 @@ public class RemotingFactor {
                     throw new InvalidOperationException(String.format("Class %s Method %s not found", contract, pack.methodName));
                 }
                 try {
-                    pack.result = method.invoke(contractInstance, pack.parameters);
+                    pack.returnValue = method.invoke(contractInstance, pack.parameters);
                 } catch (Exception ex) {
                     log.error("listen", ex);
                     pack.setErrorMessage(String.format("%s %s", ex.getClass(), ex.getMessage()));
