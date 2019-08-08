@@ -8,6 +8,7 @@ import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.common.InvalidOperationException;
+import org.rx.common.Lazy;
 import org.rx.common.NQuery;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
@@ -30,36 +31,39 @@ public final class RemotingFactor {
     }
 
     private static class ClientHandler implements MethodInterceptor {
-        private static final TcpClientPool pool = new TcpClientPool();
+        private static final Lazy<TcpClientPool> pool = new Lazy<>(TcpClientPool.class);
 
         private TcpClient client;
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;
 
-        public ClientHandler(InetSocketAddress serverAddress) {
+        public ClientHandler(InetSocketAddress serverAddress, boolean enablePool) {
             waitHandle = new ManualResetEvent();
-//            client = new TcpClient(endPoint, true);
-//            client.setAutoReconnect(true);
-//            client.connect(true);
-//            client.onError = (s, e) -> {
-//                e.setCancel(true);
-//                log.error("!Error & Set!", e.getValue());
-//                waitHandle.set();
-//            };
-//            client.onReceive = (s, e) -> {
-//                resultPack = (CallPack) e.getValue();
-//                waitHandle.set();
-//            };
-            client = pool.borrow(serverAddress); //已连接
-            client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
+            if (enablePool) {
+                client = pool.getValue().borrow(serverAddress); //已连接
+                client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
+                    e.setCancel(true);
+                    log.error("!Error & Set!", e.getValue());
+                    waitHandle.set();
+                });
+                client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
+                    resultPack = (CallPack) e.getValue();
+                    waitHandle.set();
+                });
+                return;
+            }
+            client = new TcpClient(serverAddress, true, null);
+            client.setAutoReconnect(true);
+            client.connect(true);
+            client.onError = (s, e) -> {
                 e.setCancel(true);
                 log.error("!Error & Set!", e.getValue());
                 waitHandle.set();
-            });
-            client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
+            };
+            client.onReceive = (s, e) -> {
                 resultPack = (CallPack) e.getValue();
                 waitHandle.set();
-            });
+            };
         }
 
         @Override
@@ -79,10 +83,14 @@ public final class RemotingFactor {
     private static final Map<Object, TcpServer<TcpServer.ClientSession>> host = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endPoint) {
+        return create(contract, endPoint, false);
+    }
+
+    public static <T> T create(Class<T> contract, String endPoint, boolean enablePool) {
         require(contract);
         require(contract, contract.isInterface());
 
-        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endPoint)));
+        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endPoint), enablePool));
     }
 
     public static void listen(Object contractInstance, int port) {
