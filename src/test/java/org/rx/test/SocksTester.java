@@ -25,7 +25,7 @@ public class SocksTester {
     public void testRpc() {
         RemotingFactor.listen(new UserCodeInstance(), 3307);
 
-        UserCode userCode = RemotingFactor.create(UserCode.class, "127.0.0.1:3307");
+        UserCode userCode = RemotingFactor.create(UserCode.class, "127.0.0.1:3307", true);
         assert userCode.add(1, 1) == 2;
 
         userCode.testError();

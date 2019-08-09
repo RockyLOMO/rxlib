@@ -33,37 +33,16 @@ public final class RemotingFactor {
     private static class ClientHandler implements MethodInterceptor {
         private static final Lazy<TcpClientPool> pool = new Lazy<>(TcpClientPool.class);
 
-        private TcpClient client;
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;
+        private InetSocketAddress serverAddress;
+        private boolean enablePool;
+        private TcpClient client;
 
         public ClientHandler(InetSocketAddress serverAddress, boolean enablePool) {
+            this.serverAddress = serverAddress;
+            this.enablePool = enablePool;
             waitHandle = new ManualResetEvent();
-            if (enablePool) {
-                client = pool.getValue().borrow(serverAddress); //已连接
-                client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
-                    e.setCancel(true);
-                    log.error("!Error & Set!", e.getValue());
-                    waitHandle.set();
-                });
-                client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
-                    resultPack = (CallPack) e.getValue();
-                    waitHandle.set();
-                });
-                return;
-            }
-            client = new TcpClient(serverAddress, true, null);
-            client.setAutoReconnect(true);
-            client.connect(true);
-            client.onError = (s, e) -> {
-                e.setCancel(true);
-                log.error("!Error & Set!", e.getValue());
-                waitHandle.set();
-            };
-            client.onReceive = (s, e) -> {
-                resultPack = (CallPack) e.getValue();
-                waitHandle.set();
-            };
         }
 
         @Override
@@ -71,9 +50,41 @@ public final class RemotingFactor {
             CallPack pack = SessionPack.create(CallPack.class);
             pack.methodName = method.getName();
             pack.parameters = objects;
-            client.send(pack);
 
-            waitHandle.waitOne(client.getConnectTimeout());
+            if (enablePool) {
+                try (TcpClient client = pool.getValue().borrow(serverAddress)) {  //已连接
+                    client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
+                        e.setCancel(true);
+                        log.error("!Error & Set!", e.getValue());
+                        waitHandle.set();
+                    });
+                    client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
+                        resultPack = (CallPack) e.getValue();
+                        waitHandle.set();
+                    });
+
+                    client.send(pack);
+                    waitHandle.waitOne(client.getConnectTimeout());
+                }
+            } else {
+                if (client == null) {
+                    client = new TcpClient(serverAddress, true, null);
+                    client.setAutoReconnect(true);
+                    client.connect(true);
+                    client.onError = (s, e) -> {
+                        e.setCancel(true);
+                        log.error("!Error & Set!", e.getValue());
+                        waitHandle.set();
+                    };
+                    client.onReceive = (s, e) -> {
+                        resultPack = (CallPack) e.getValue();
+                        waitHandle.set();
+                    };
+                }
+                client.send(pack);
+                waitHandle.waitOne(client.getConnectTimeout());
+            }
+
             waitHandle.reset();
             return resultPack.returnValue;
         }
