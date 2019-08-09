@@ -32,7 +32,7 @@ import static org.rx.common.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
-public class TcpClient extends Disposable implements EventArgs.Attachable {
+public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private class ClientInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void initChannel(SocketChannel ch) {
@@ -61,7 +61,7 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
                 exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", socksPack.getErrorMessage())));
                 return;
             }
-            EventArgs.raiseEvent(onReceive, _this(), new PackEventArgs<>(ctx, socksPack));
+            raiseEvent(onReceive, new PackEventArgs<>(ctx, socksPack));
         }
 
         @Override
@@ -73,7 +73,7 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
             waiter.set();
 
             ctx.writeAndFlush(sessionId);
-            EventArgs.raiseEvent(onConnected, _this(), new NEventArgs<>(ctx));
+            raiseEvent(onConnected, new NEventArgs<>(ctx));
         }
 
         @Override
@@ -83,7 +83,7 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
             isConnected = false;
             channel = null;
 
-            EventArgs.raiseEvent(onDisconnected, _this(), new NEventArgs<>(ctx));
+            raiseEvent(onDisconnected, new NEventArgs<>(ctx));
             if (autoReconnect) {
                 reconnect();
             }
@@ -95,7 +95,7 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
             log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
             ErrorEventArgs<ChannelHandlerContext> args = new ErrorEventArgs<>(ctx, cause);
             try {
-                EventArgs.raiseEvent(onError, _this(), args);
+                raiseEvent(onError, args);
             } catch (Exception e) {
                 log.error("clientCaught", e);
             }
@@ -125,29 +125,25 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
     @Getter
     private SessionId sessionId;
 
-    private TcpClient _this() {
-        return this;
+    public TcpClient(String endpoint, boolean ssl) {
+        this(Sockets.parseAddress(endpoint), ssl, null);
     }
 
-    public TcpClient(String endPoint, boolean ssl) {
-        this(Sockets.parseAddress(endPoint), ssl, null);
-    }
-
-    public TcpClient(InetSocketAddress endPoint, boolean ssl, SessionId sessionId) {
-        init(endPoint, ssl, sessionId);
+    public TcpClient(InetSocketAddress endpoint, boolean ssl, SessionId sessionId) {
+        init(endpoint, ssl, sessionId);
     }
 
     protected TcpClient() {
     }
 
     @SneakyThrows
-    protected void init(InetSocketAddress endPoint, boolean ssl, SessionId sessionId) {
-        require(endPoint);
+    protected void init(InetSocketAddress endpoint, boolean ssl, SessionId sessionId) {
+        require(endpoint);
         if (sessionId == null) {
             sessionId = SessionPack.defaultId;
         }
 
-        serverAddress = endPoint;
+        serverAddress = endpoint;
         if (ssl) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
@@ -207,7 +203,7 @@ public class TcpClient extends Disposable implements EventArgs.Attachable {
     public <T extends SessionPack> void send(T pack) {
         require(pack, isConnected);
 
-        EventArgs.raiseEvent(onSend, this, new PackEventArgs<>(channel, pack));
+        raiseEvent(onSend, new PackEventArgs<>(channel, pack));
         channel.writeAndFlush(pack);
     }
 }

@@ -11,7 +11,7 @@ import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
 import org.rx.common.Disposable;
-import org.rx.common.EventArgs;
+import org.rx.common.EventTarget;
 import org.rx.common.NEventArgs;
 
 import java.lang.reflect.Method;
@@ -19,7 +19,7 @@ import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 
 @Slf4j
-public final class TcpClientPool extends Disposable {
+public final class TcpClientPool extends Disposable implements EventTarget<TcpClientPool> {
     private class ProxyHandle implements MethodInterceptor {
         private TcpClient client;
 
@@ -33,7 +33,7 @@ public final class TcpClientPool extends Disposable {
                 pool.returnObject(client.getServerAddress(), client);
                 return null;
             }
-            return method.invoke(client, objects);
+            return methodProxy.invokeSuper(client, objects);
         }
     }
 
@@ -42,7 +42,7 @@ public final class TcpClientPool extends Disposable {
         public TcpClient create(InetSocketAddress inetSocketAddress) {
             TcpClient client = new TcpClient(inetSocketAddress, true, null);
             client.setConnectTimeout(pool.getMaxWaitMillis());
-            EventArgs.raiseEvent(onCreate, _this(), new NEventArgs<>(client));
+            raiseEvent(onCreate, new NEventArgs<>(client));
             client.connect(true);
             log.info("Create TcpClient {}", client.isConnected());
             return client;
@@ -62,16 +62,23 @@ public final class TcpClientPool extends Disposable {
         public void destroyObject(InetSocketAddress key, PooledObject<TcpClient> p) throws Exception {
             super.destroyObject(key, p);
             p.getObject().close();
-            EventArgs.raiseEvent(onDestroy, _this(), new NEventArgs<>(p.getObject()));
+            raiseEvent(onDestroy, new NEventArgs<>(p.getObject()));
+        }
+
+        @Override
+        public void passivateObject(InetSocketAddress key, PooledObject<TcpClient> p) throws Exception {
+            super.passivateObject(key, p);
+            TcpClient client = p.getObject();
+            client.onError = null;
+            client.onSend = null;
+            client.onReceive = null;
+            client.onConnected = null;
+            client.onDisconnected = null;
         }
     }
 
     public volatile BiConsumer<TcpClientPool, NEventArgs<TcpClient>> onCreate, onDestroy;
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
-
-    private TcpClientPool _this() {
-        return this;
-    }
 
     public TcpClientPool() {
         this(30 * 1000, 0, 8);

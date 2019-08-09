@@ -3,25 +3,36 @@ package org.rx.socks.tcp;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.rx.beans.Tuple;
+import org.rx.common.EventTarget;
 import org.rx.common.InvalidOperationException;
 import org.rx.common.Lazy;
 import org.rx.common.NQuery;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 import static org.rx.common.Contract.require;
 
 @Slf4j
 public final class RemotingFactor {
+    @Data
+    @EqualsAndHashCode(callSuper = true)
+    static class RemoteEventFlag extends SessionPack {
+        private String eventName;
+    }
+
     @Data
     @EqualsAndHashCode(callSuper = true)
     private static class CallPack extends SessionPack {
@@ -47,18 +58,37 @@ public final class RemotingFactor {
 
         @Override
         public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
-            CallPack pack = SessionPack.create(CallPack.class);
-            pack.methodName = method.getName();
-            pack.parameters = objects;
+            String methodName = method.getName();
+
+            SessionPack pack = null;
+            switch (methodName) {
+                case "attachEvent":
+                    if (objects.length == 2) {
+                        String eventName = (String) objects[0];
+                        BiConsumer event = (BiConsumer) objects[1];
+                        RemoteEventListener.instance.attach(o, eventName, event);
+                        RemoteEventFlag eventFlag = SessionPack.create(RemoteEventFlag.class);
+                        eventFlag.setEventName(eventName);
+                        pack = eventFlag;
+                    }
+                    break;
+                case "raiseEvent":
+                    throw new InvalidOperationException("Remoting not support raiseEvent method");
+            }
+            if (pack == null) {
+                CallPack callPack = SessionPack.create(CallPack.class);
+                callPack.methodName = methodName;
+                callPack.parameters = objects;
+            }
 
             if (enablePool) {
                 try (TcpClient client = pool.getValue().borrow(serverAddress)) {  //已连接
-                    client.<TcpClient, ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
+                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
                         e.setCancel(true);
                         log.error("!Error & Set!", e.getValue());
                         waitHandle.set();
                     });
-                    client.<TcpClient, PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
+                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
                         resultPack = (CallPack) e.getValue();
                         waitHandle.set();
                     });
@@ -77,6 +107,15 @@ public final class RemotingFactor {
                         waitHandle.set();
                     };
                     client.onReceive = (s, e) -> {
+                        if (e.getValue() instanceof RemoteEventFlag) {
+                            EventTarget target = (EventTarget) getCglibProxyTargetObject(o);
+                            Tuple<String, BiConsumer> attachEntry = RemoteEventListener.instance.getAttachEntry(target);
+                            if (attachEntry != null) {
+                                target.raiseEvent(attachEntry.left, attachEntry.right);
+                            }
+                            return;
+                        }
+
                         resultPack = (CallPack) e.getValue();
                         waitHandle.set();
                     };
@@ -88,23 +127,38 @@ public final class RemotingFactor {
             waitHandle.reset();
             return resultPack.returnValue;
         }
+
+        @SneakyThrows
+        private static Object getCglibProxyTargetObject(Object proxy) {
+            Field field = proxy.getClass().getDeclaredField("CGLIB$CALLBACK_0");
+            field.setAccessible(true);
+            Object dynamicAdvisedInterceptor = field.get(proxy);
+
+//        Field advised = dynamicAdvisedInterceptor.getClass().getDeclaredField("advised");
+//        advised.setAccessible(true);
+//        Object target = ((AdvisedSupport) advised.get(dynamicAdvisedInterceptor)).getTargetSource().getTarget();
+            return dynamicAdvisedInterceptor;
+        }
     }
 
     private static final Object[] emptyParameter = new Object[0];
     private static final Map<Object, TcpServer<TcpServer.ClientSession>> host = new ConcurrentHashMap<>();
 
-    public static <T> T create(Class<T> contract, String endPoint) {
-        return create(contract, endPoint, false);
+    public static <T> T create(Class<T> contract, String endpoint) {
+        return create(contract, endpoint, false);
     }
 
-    public static <T> T create(Class<T> contract, String endPoint, boolean enablePool) {
+    public static <T> T create(Class<T> contract, String endpoint, boolean enablePool) {
         require(contract);
-        require(contract, contract.isInterface());
+//        require(contract, contract.isInterface());
 
-        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endPoint), enablePool));
+        if (EventTarget.class.isAssignableFrom(contract)) {
+            enablePool = false;
+        }
+        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endpoint), enablePool));
     }
 
-    public static void listen(Object contractInstance, int port) {
+    public static <T> void listen(T contractInstance, int port) {
         require(contractInstance);
 
         Class contract = contractInstance.getClass();
@@ -116,6 +170,14 @@ public final class RemotingFactor {
                 s.send(e.getClient().getId(), pack);
             };
             server.onReceive = (s, e) -> {
+                SessionChannelId clientId = e.getClient().getId();
+                if (e.getValue() instanceof RemoteEventFlag) {
+                    RemoteEventFlag eventFlag = (RemoteEventFlag) e.getValue();
+                    RemoteEventListener.instance.raise(contractInstance, server, clientId, eventFlag);
+                    s.send(clientId, new CallPack());
+                    return;
+                }
+
                 CallPack pack = (CallPack) e.getValue();
                 Method method = NQuery.of(contract.getMethods()).where(p -> p.getName().equals(pack.methodName) && p.getParameterCount() == pack.parameters.length).firstOrDefault();
                 if (method == null) {
@@ -128,7 +190,7 @@ public final class RemotingFactor {
                     pack.setErrorMessage(String.format("%s %s", ex.getClass(), ex.getMessage()));
                 }
                 pack.parameters = emptyParameter;
-                s.send(e.getClient().getId(), pack);
+                s.send(clientId, pack);
             };
             server.start();
             return server;

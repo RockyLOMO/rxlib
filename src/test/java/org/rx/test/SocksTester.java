@@ -2,21 +2,13 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.common.App;
-import org.rx.common.Contract;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;
-import org.rx.test.bean.SourceBean;
-import org.rx.test.bean.TargetBean;
-import org.rx.beans.BeanMapper;
-import org.rx.io.BinaryStream;
-import org.rx.io.MemoryStream;
 import org.rx.test.bean.UserCode;
 import org.rx.test.bean.UserCodeInstance;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.math.BigDecimal;
 import java.net.Socket;
 
 public class SocksTester {

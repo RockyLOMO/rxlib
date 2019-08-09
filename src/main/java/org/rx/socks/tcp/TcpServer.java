@@ -31,7 +31,7 @@ import static org.rx.common.Contract.*;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
-public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
+public class TcpServer<T extends TcpServer.ClientSession> extends Disposable implements EventTarget<TcpServer<T>> {
     @RequiredArgsConstructor
     public static class ClientSession {
         @Getter
@@ -71,7 +71,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
                 sessionChannelId.sessionId((SessionId) msg);
                 T client = createClient(sessionChannelId, ctx);
                 NEventArgs<T> args = new NEventArgs<>(client);
-                EventArgs.raiseEvent(onConnected, _this(), args);
+                raiseEvent(onConnected, args);
                 if (args.isCancel()) {
                     log.warn("Close client");
                     ctx.close();
@@ -87,7 +87,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
                 TaskFactory.scheduleOnce(ctx::close, 4 * 1000);
                 return;
             }
-            EventArgs.raiseEvent(onReceive, _this(), new PackEventArgs<>(findClient(ctx), pack));
+            raiseEvent(onReceive, new PackEventArgs<>(findClient(ctx), pack));
         }
 
         @Override
@@ -108,7 +108,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
 
             T client = findClient(ctx);
             try {
-                EventArgs.raiseEvent(onDisconnected, _this(), new NEventArgs<>(client));
+                raiseEvent(onDisconnected, new NEventArgs<>(client));
             } finally {
                 removeClient(ctx);
             }
@@ -120,7 +120,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
             ErrorEventArgs<T> args = new ErrorEventArgs<>(findClient(ctx), cause);
             try {
-                EventArgs.raiseEvent(onError, _this(), args);
+                raiseEvent(onError, args);
             } catch (Exception e) {
                 log.error("serverCaught", e);
             }
@@ -146,10 +146,6 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
     @Setter
     private int maxClients;
     private Class clientSessionType;
-
-    private TcpServer<T> _this() {
-        return this;
-    }
 
     public TcpServer(int port, boolean ssl) {
         this(port, ssl, null);
@@ -241,7 +237,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable {
         if (client == null) {
             throw new InvalidOperationException(String.format("Client %s-%s not found", sessionChannelId.getAppName(), sessionChannelId.getChannelId()));
         }
-        EventArgs.raiseEvent(onSend, this, new PackEventArgs<>(client, pack));
+        raiseEvent(onSend, new PackEventArgs<>(client, pack));
         client.channel.writeAndFlush(pack);
     }
 }
