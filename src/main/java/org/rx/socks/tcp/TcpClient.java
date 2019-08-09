@@ -33,6 +33,14 @@ import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j
 public class TcpClient extends Disposable implements EventTarget<TcpClient> {
+    public interface EventNames {
+        String Error = "onError";
+        String Connected = "onConnected";
+        String Disconnected = "onDisconnected";
+        String Send = "onSend";
+        String Receive = "onReceive";
+    }
+
     private class ClientInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void initChannel(SocketChannel ch) {
@@ -84,9 +92,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             channel = null;
 
             raiseEvent(onDisconnected, new NEventArgs<>(ctx));
-            if (autoReconnect) {
-                reconnect();
-            }
+            reconnect();
         }
 
         @Override
@@ -191,17 +197,21 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     }
 
     private void reconnect() {
+        if (!autoReconnect) {
+            return;
+        }
+
         $<Future> $f = $();
         $f.$ = TaskFactory.schedule(() -> {
             App.catchCall(() -> connect());
-            if (isConnected()) {
+            if (!autoReconnect || isConnected()) {
                 $f.$.cancel(false);
             }
         }, 2 * 1000);
     }
 
     public <T extends SessionPack> void send(T pack) {
-        require(pack, isConnected);
+        require(pack, (Object) isConnected);
 
         raiseEvent(onSend, new PackEventArgs<>(channel, pack));
         channel.writeAndFlush(pack);

@@ -1,8 +1,6 @@
 package org.rx.common;
 
 import lombok.SneakyThrows;
-import org.rx.socks.tcp.RemoteEventListener;
-import org.rx.socks.tcp.TcpServer;
 
 import java.lang.reflect.Field;
 import java.util.function.BiConsumer;
@@ -10,40 +8,43 @@ import java.util.function.BiConsumer;
 import static org.rx.common.Contract.require;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> {
+    default boolean dynamicAttach() {
+        return false;
+    }
+
     @SneakyThrows
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
-        require(eventName, event);
+        require(eventName);
 
-        Field field = this.getClass().getField(eventName);
-        if (field == null) {
-            throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+        try {
+            Field field = this.getClass().getField(eventName);
+            field.set(this, event);
+        } catch (NoSuchFieldException e) {
+            if (!dynamicAttach()) {
+                throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+            }
+            EventListener.instance.attach(this, eventName, event);
         }
-        field.set(this, event);
     }
 
     @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(String eventName, TArgs args) {
         require(eventName);
 
-        Field field = this.getClass().getField(eventName);
-        if (field == null) {
-            throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+        try {
+            Field field = this.getClass().getField(eventName);
+            BiConsumer<TSender, TArgs> event = (BiConsumer<TSender, TArgs>) field.get(this);
+            raiseEvent(event, args);
+        } catch (NoSuchFieldException e) {
+            if (!dynamicAttach()) {
+                throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+            }
+            EventListener.instance.raise(this, eventName, args);
         }
-        BiConsumer<TSender, TArgs> event = (BiConsumer<TSender, TArgs>) field.get(this);
-        raiseEvent(event, args);
     }
 
     default <TArgs extends EventArgs> void raiseEvent(BiConsumer<TSender, TArgs> event, TArgs args) {
-        require(event, args);
-
-        RemoteEventListener.RaiseEntry raiseEntry = RemoteEventListener.instance.getRaiseEntry(this);
-        if (raiseEntry != null) {
-            TcpServer server = raiseEntry.getServer();
-            if (server.isStarted()) {
-                server.send(raiseEntry.getClientId(), raiseEntry.getEventFlag());
-            }
-            return;
-        }
+        require(args);
 
         if (event == null) {
             return;

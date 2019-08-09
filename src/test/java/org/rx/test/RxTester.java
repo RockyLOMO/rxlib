@@ -97,7 +97,7 @@ public class RxTester {
         assert ex.tryGet(out, IllegalArgumentException.class);
 
         String uid = "userId";
-        ex.setErrorCode(UserCode.xCode.argument, uid);
+        ex.setErrorCode(UserManager.xCode.argument, uid);
         assert eq(ex.getFriendlyMessage(), "Enum Error Code value=\"" + uid + "\"");
 
         try {

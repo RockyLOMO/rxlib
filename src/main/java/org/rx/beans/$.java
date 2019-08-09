@@ -1,6 +1,8 @@
 package org.rx.beans;
 
-public final class $<T> {
+import java.io.Serializable;
+
+public final class $<T> implements Serializable {
     public static <T> $<T> $() {
         return new $<>();
     }

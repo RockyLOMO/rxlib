@@ -3,34 +3,32 @@ package org.rx.socks.tcp;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.beans.Tuple;
-import org.rx.common.EventTarget;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.Lazy;
-import org.rx.common.NQuery;
+import org.rx.common.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
+import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.require;
 
 @Slf4j
 public final class RemotingFactor {
     @Data
     @EqualsAndHashCode(callSuper = true)
-    static class RemoteEventFlag extends SessionPack {
+    static class RemoteEventPack extends SessionPack {
         private String eventName;
+
+        private boolean remoteOk;
+        private EventArgs remoteArgs;
     }
 
     @Data
@@ -42,22 +40,26 @@ public final class RemotingFactor {
     }
 
     private static class ClientHandler implements MethodInterceptor {
-        private static final Lazy<TcpClientPool> pool = new Lazy<>(TcpClientPool.class);
+        private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
+        private static final TcpClientPool pool = new TcpClientPool();
 
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;
         private InetSocketAddress serverAddress;
-        private boolean enablePool;
+        private boolean enableDual;
         private TcpClient client;
 
-        public ClientHandler(InetSocketAddress serverAddress, boolean enablePool) {
+        public ClientHandler(InetSocketAddress serverAddress, boolean enableDual) {
             this.serverAddress = serverAddress;
-            this.enablePool = enablePool;
+            this.enableDual = enableDual;
             waitHandle = new ManualResetEvent();
         }
 
         @Override
         public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+            if (objectMethods.contains(method)) {
+                return methodProxy.invokeSuper(o, objects);
+            }
             String methodName = method.getName();
 
             SessionPack pack = null;
@@ -65,30 +67,65 @@ public final class RemotingFactor {
                 case "attachEvent":
                     if (objects.length == 2) {
                         String eventName = (String) objects[0];
-                        BiConsumer event = (BiConsumer) objects[1];
-                        RemoteEventListener.instance.attach(o, eventName, event);
-                        RemoteEventFlag eventFlag = SessionPack.create(RemoteEventFlag.class);
-                        eventFlag.setEventName(eventName);
-                        pack = eventFlag;
+//                        BiConsumer event = (BiConsumer) objects[1];
+                        methodProxy.invokeSuper(o, objects);
+                        RemoteEventPack eventPack = SessionPack.create(RemoteEventPack.class);
+                        eventPack.setEventName(eventName);
+                        pack = eventPack;
                     }
                     break;
                 case "raiseEvent":
-                    throw new InvalidOperationException("Remoting not support raiseEvent method");
+                case "dynamicAttach":
+//                    if (objects.length == 2) {
+                        return methodProxy.invokeSuper(o, objects);
+//                    }
+//                    break;
             }
             if (pack == null) {
                 CallPack callPack = SessionPack.create(CallPack.class);
                 callPack.methodName = methodName;
                 callPack.parameters = objects;
+                pack = callPack;
             }
 
-            if (enablePool) {
-                try (TcpClient client = pool.getValue().borrow(serverAddress)) {  //已连接
-                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent("onError", (s, e) -> {
+            if (enableDual) {
+                if (client == null) {
+                    client = pool.borrow(serverAddress);
+                    client.setAutoReconnect(true);
+                }
+                client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                    e.setCancel(true);
+                    log.error("!Error & Set!", e.getValue());
+                    waitHandle.set();
+                });
+                client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                    RemoteEventPack remoteEventPack;
+                    if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                        if (remoteEventPack.remoteArgs != null) {
+                            EventTarget eventTarget = (EventTarget) o;
+                            eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                        }
+
+                        if (resultPack == null) {
+                            resultPack = new CallPack();
+                        }
+                        resultPack.returnValue = null;
+                    } else {
+                        resultPack = (CallPack) e.getValue();
+                    }
+                    waitHandle.set();
+                });
+
+                client.send(pack);
+                waitHandle.waitOne(client.getConnectTimeout());
+            } else {
+                try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
+                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                         e.setCancel(true);
                         log.error("!Error & Set!", e.getValue());
                         waitHandle.set();
                     });
-                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent("onReceive", (s, e) -> {
+                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
                         resultPack = (CallPack) e.getValue();
                         waitHandle.set();
                     });
@@ -96,49 +133,23 @@ public final class RemotingFactor {
                     client.send(pack);
                     waitHandle.waitOne(client.getConnectTimeout());
                 }
-            } else {
-                if (client == null) {
-                    client = new TcpClient(serverAddress, true, null);
-                    client.setAutoReconnect(true);
-                    client.connect(true);
-                    client.onError = (s, e) -> {
-                        e.setCancel(true);
-                        log.error("!Error & Set!", e.getValue());
-                        waitHandle.set();
-                    };
-                    client.onReceive = (s, e) -> {
-                        if (e.getValue() instanceof RemoteEventFlag) {
-                            EventTarget target = (EventTarget) getCglibProxyTargetObject(o);
-                            Tuple<String, BiConsumer> attachEntry = RemoteEventListener.instance.getAttachEntry(target);
-                            if (attachEntry != null) {
-                                target.raiseEvent(attachEntry.left, attachEntry.right);
-                            }
-                            return;
-                        }
-
-                        resultPack = (CallPack) e.getValue();
-                        waitHandle.set();
-                    };
-                }
-                client.send(pack);
-                waitHandle.waitOne(client.getConnectTimeout());
             }
 
             waitHandle.reset();
             return resultPack.returnValue;
         }
 
-        @SneakyThrows
-        private static Object getCglibProxyTargetObject(Object proxy) {
-            Field field = proxy.getClass().getDeclaredField("CGLIB$CALLBACK_0");
-            field.setAccessible(true);
-            Object dynamicAdvisedInterceptor = field.get(proxy);
-
-//        Field advised = dynamicAdvisedInterceptor.getClass().getDeclaredField("advised");
-//        advised.setAccessible(true);
-//        Object target = ((AdvisedSupport) advised.get(dynamicAdvisedInterceptor)).getTargetSource().getTarget();
-            return dynamicAdvisedInterceptor;
-        }
+//        @SneakyThrows
+//        private static Object getCglibProxyTargetObject(Object proxy) {
+//            Field field = proxy.getClass().getDeclaredField("CGLIB$CALLBACK_0");
+//            field.setAccessible(true);
+//            Object dynamicAdvisedInterceptor = field.get(proxy);
+//
+////        Field advised = dynamicAdvisedInterceptor.getClass().getDeclaredField("advised");
+////        advised.setAccessible(true);
+////        Object target = ((AdvisedSupport) advised.get(dynamicAdvisedInterceptor)).getTargetSource().getTarget();
+//            return dynamicAdvisedInterceptor;
+//        }
     }
 
     private static final Object[] emptyParameter = new Object[0];
@@ -148,14 +159,14 @@ public final class RemotingFactor {
         return create(contract, endpoint, false);
     }
 
-    public static <T> T create(Class<T> contract, String endpoint, boolean enablePool) {
+    public static <T> T create(Class<T> contract, String endpoint, boolean enableDual) {
         require(contract);
 //        require(contract, contract.isInterface());
 
         if (EventTarget.class.isAssignableFrom(contract)) {
-            enablePool = false;
+            enableDual = true;
         }
-        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endpoint), enablePool));
+        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endpoint), enableDual));
     }
 
     public static <T> void listen(T contractInstance, int port) {
@@ -171,10 +182,17 @@ public final class RemotingFactor {
             };
             server.onReceive = (s, e) -> {
                 SessionChannelId clientId = e.getClient().getId();
-                if (e.getValue() instanceof RemoteEventFlag) {
-                    RemoteEventFlag eventFlag = (RemoteEventFlag) e.getValue();
-                    RemoteEventListener.instance.raise(contractInstance, server, clientId, eventFlag);
-                    s.send(clientId, new CallPack());
+                RemoteEventPack eventPack;
+                if ((eventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                    eventPack.remoteOk = true;
+                    EventTarget eventTarget = (EventTarget) contractInstance;
+                    eventTarget.attachEvent(eventPack.eventName, (sender, args) -> {
+                        RemoteEventPack pack = SessionPack.create(RemoteEventPack.class);
+                        pack.eventName = eventPack.eventName;
+                        pack.remoteArgs = (EventArgs) args;
+                        s.send(clientId, pack);
+                    });
+                    s.send(clientId, eventPack);
                     return;
                 }
 

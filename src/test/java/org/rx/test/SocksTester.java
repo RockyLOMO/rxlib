@@ -2,10 +2,11 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
+import org.rx.common.EventArgs;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;
-import org.rx.test.bean.UserCode;
-import org.rx.test.bean.UserCodeInstance;
+import org.rx.test.bean.UserManager;
+import org.rx.test.bean.UserManagerImpl;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -15,13 +16,29 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void testRpc() {
-        RemotingFactor.listen(new UserCodeInstance(), 3307);
+        UserManagerImpl server = new UserManagerImpl();
+        RemotingFactor.listen(server, 3307);
 
-        UserCode userCode = RemotingFactor.create(UserCode.class, "127.0.0.1:3307", true);
-        assert userCode.add(1, 1) == 2;
+//        UserManager userMgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307", false);
+//        assert userMgr.computeInt(1, 1) == 2;
+//        userMgr.testError();
+//        assert userMgr.computeInt(17, 1) == 18;
 
-        userCode.testError();
-        System.out.println("[rx]:" + userCode.add(20, 1));
+        UserManagerImpl userMgrImpl = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307", true);
+        assert userMgrImpl.computeInt(1, 1) == 2;
+        userMgrImpl.testError();
+        assert userMgrImpl.computeInt(17, 1) == 18;
+
+        userMgrImpl.attachEvent("onAdd", (s, e) -> {
+            System.out.println(String.format("remote event [%s] called..", e == EventArgs.empty));
+        });
+        server.raiseEvent(server.onAdd, EventArgs.empty);
+        userMgrImpl.raiseEvent(userMgrImpl.onAdd, EventArgs.empty);
+
+        userMgrImpl.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        Thread.sleep(1000);
+        server.raiseEvent("onTest", EventArgs.empty);
+
         System.in.read();
     }
 

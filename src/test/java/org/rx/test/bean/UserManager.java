@@ -1,15 +1,18 @@
 package org.rx.test.bean;
 
 import org.rx.annotation.ErrorCode;
+import org.rx.common.EventTarget;
 
-public interface UserCode {
+public interface UserManager extends EventTarget<UserManager> {
     enum xCode {
         @ErrorCode(messageKeys = {"$arg"})
         argument,
         returnValue;
     }
 
-    int add(int a, int b);
+    void addUser();
+
+    int computeInt(int x, int y);
 
     void testError();
 }

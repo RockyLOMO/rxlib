@@ -33,7 +33,8 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
                 pool.returnObject(client.getServerAddress(), client);
                 return null;
             }
-            return methodProxy.invokeSuper(client, objects);
+//            return methodProxy.invokeSuper(o, objects); //有问题
+            return methodProxy.invoke(client, objects);
         }
     }
 
@@ -69,6 +70,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         public void passivateObject(InetSocketAddress key, PooledObject<TcpClient> p) throws Exception {
             super.passivateObject(key, p);
             TcpClient client = p.getObject();
+            client.setAutoReconnect(false);
             client.onError = null;
             client.onSend = null;
             client.onReceive = null;
