@@ -50,8 +50,8 @@ public class SocksTester {
         Thread.sleep(1000);
 //        server.raiseEvent(server.onAdd, new UserManagerImpl.MgrEventArgs());
 //        mgr.raiseEvent(mgr.onAdd, new UserManagerImpl.MgrEventArgs());
-        server.addUser();
-//        mgr.addUser();
+//        server.addUser();
+        mgr.addUser();
 
         mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
