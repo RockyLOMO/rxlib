@@ -45,11 +45,13 @@ public final class RemotingFactor {
 
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;
+        private Class targetType;
         private InetSocketAddress serverAddress;
         private boolean enableDual;
         private TcpClient client;
 
-        public ClientHandler(InetSocketAddress serverAddress, boolean enableDual) {
+        public ClientHandler(Class targetType, InetSocketAddress serverAddress, boolean enableDual) {
+            this.targetType = targetType;
             this.serverAddress = serverAddress;
             this.enableDual = enableDual;
             waitHandle = new ManualResetEvent();
@@ -67,8 +69,16 @@ public final class RemotingFactor {
                 case "attachEvent":
                     if (objects.length == 2) {
                         String eventName = (String) objects[0];
-//                        BiConsumer event = (BiConsumer) objects[1];
-                        methodProxy.invokeSuper(o, objects);
+                        BiConsumer event = (BiConsumer) objects[1];
+                        if (targetType.isInterface()) {
+                            EventListener.instance.attach(o, eventName, event);
+                        } else {
+                            methodProxy.invokeSuper(o, objects);
+                        }
+//                        methodProxy.invoke(o, objects);
+//                        method.invoke(o,objects);
+//                        EventTarget eventTarget = (EventTarget) o;
+//                        eventTarget.attachEvent(eventName, event);
                         RemoteEventPack eventPack = SessionPack.create(RemoteEventPack.class);
                         eventPack.setEventName(eventName);
                         pack = eventPack;
@@ -77,7 +87,7 @@ public final class RemotingFactor {
                 case "raiseEvent":
                 case "dynamicAttach":
 //                    if (objects.length == 2) {
-                        return methodProxy.invokeSuper(o, objects);
+                    return methodProxy.invokeSuper(o, objects);
 //                    }
 //                    break;
             }
@@ -102,8 +112,12 @@ public final class RemotingFactor {
                     RemoteEventPack remoteEventPack;
                     if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                         if (remoteEventPack.remoteArgs != null) {
-                            EventTarget eventTarget = (EventTarget) o;
-                            eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                            if (targetType.isInterface()) {
+                                EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                            } else {
+                                EventTarget eventTarget = (EventTarget) o;
+                                eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                            }
                         }
 
                         if (resultPack == null) {
@@ -161,12 +175,11 @@ public final class RemotingFactor {
 
     public static <T> T create(Class<T> contract, String endpoint, boolean enableDual) {
         require(contract);
-//        require(contract, contract.isInterface());
 
         if (EventTarget.class.isAssignableFrom(contract)) {
             enableDual = true;
         }
-        return (T) Enhancer.create(contract, new ClientHandler(Sockets.parseAddress(endpoint), enableDual));
+        return (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), enableDual));
     }
 
     public static <T> void listen(T contractInstance, int port) {

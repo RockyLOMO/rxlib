@@ -8,6 +8,7 @@ import com.google.common.reflect.ClassPath;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.ShortUUID;
@@ -16,6 +17,7 @@ import org.rx.cache.MemoryCache;
 import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
+import org.rx.socks.http.HttpClient;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 import org.rx.io.MemoryStream;
@@ -25,6 +27,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
@@ -811,6 +814,52 @@ public class App {
             }
             out.flush();
         }
+    }
+
+    public static String getCookie(String name) {
+        require(name);
+
+        HttpServletRequest servletRequest = App.getCurrentRequest();
+        if (servletRequest == null) {
+            throw new InvalidOperationException("上下环境无ServletRequest");
+        }
+        try {
+            if (ArrayUtils.isEmpty(servletRequest.getCookies())) {
+                return null;
+            }
+            return NQuery.of(servletRequest.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
+        } catch (Exception e) {
+            log.warn("getCookie", e);
+            return null;
+        }
+    }
+
+    public static void setCookie(HttpServletResponse response, String name, String value) {
+        setCookie(response, name, value);
+    }
+
+    public static void setCookie(HttpServletResponse response, String name, String value, Date expire) {
+        require(response, name);
+
+        Cookie cookie = new Cookie(name, HttpClient.encodeUrl(value));
+        cookie.setPath("/");
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
+        if (expire != null) {
+            cookie.setMaxAge((int) new DateTime(expire).subtract(DateTime.now()).getTotalSeconds());
+        }
+        response.addCookie(cookie);
+    }
+
+    public static void deleteCookie(HttpServletResponse response, String name) {
+        require(response, name);
+
+        Cookie cookie = new Cookie(name, null);
+        cookie.setPath("/");
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
+        cookie.setMaxAge(-1);
+        response.addCookie(cookie);
     }
     //endregion
 }

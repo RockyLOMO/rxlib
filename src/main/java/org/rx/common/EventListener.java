@@ -7,7 +7,7 @@ import java.util.function.BiConsumer;
 
 import static org.rx.common.Contract.require;
 
-class EventListener {
+public class EventListener {
     public static final EventListener instance = new EventListener();
     private final Map<Object, Set<Tuple<String, BiConsumer>>> host;
 

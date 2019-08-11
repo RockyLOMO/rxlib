@@ -15,6 +15,22 @@ import java.net.Socket;
 public class SocksTester {
     @SneakyThrows
     @Test
+    public void testApiRpc() {
+        UserManagerImpl server = new UserManagerImpl();
+        RemotingFactor.listen(server, 3307);
+
+        UserManager userMgrImpl = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
+        assert userMgrImpl.computeInt(1, 1) == 2;
+        userMgrImpl.testError();
+        assert userMgrImpl.computeInt(17, 1) == 18;
+
+        userMgrImpl.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        Thread.sleep(1000);
+        server.raiseEvent("onTest", EventArgs.empty);
+    }
+
+    @SneakyThrows
+    @Test
     public void testRpc() {
         UserManagerImpl server = new UserManagerImpl();
         RemotingFactor.listen(server, 3307);
@@ -32,6 +48,7 @@ public class SocksTester {
         userMgrImpl.attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", e == EventArgs.empty));
         });
+        Thread.sleep(1000);
         server.raiseEvent(server.onAdd, EventArgs.empty);
         userMgrImpl.raiseEvent(userMgrImpl.onAdd, EventArgs.empty);
 
@@ -39,7 +56,7 @@ public class SocksTester {
         Thread.sleep(1000);
         server.raiseEvent("onTest", EventArgs.empty);
 
-        System.in.read();
+//        System.in.read();
     }
 
     @Test

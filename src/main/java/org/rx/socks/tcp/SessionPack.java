@@ -19,8 +19,10 @@ public class SessionPack extends SessionId {
         require(defaultId);
 
         T pack = App.newInstance(type);
+//        if (defaultId != null) {
         pack.setAppName(defaultId.getAppName());
         pack.setVersion(defaultId.getVersion());
+//        }
         return pack;
     }
 

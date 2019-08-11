@@ -10,6 +10,11 @@ public interface UserManager extends EventTarget<UserManager> {
         returnValue;
     }
 
+    @Override
+    default boolean dynamicAttach() {
+        return true;
+    }
+
     void addUser();
 
     int computeInt(int x, int y);
