@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.rx.beans.BeanMapper;
+import org.rx.beans.Tuple;
 import org.rx.common.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
@@ -14,7 +16,9 @@ import org.rx.util.ManualResetEvent;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 
 import static org.rx.common.Contract.as;
@@ -24,11 +28,13 @@ import static org.rx.common.Contract.require;
 public final class RemotingFactor {
     @Data
     @EqualsAndHashCode(callSuper = true)
-    static class RemoteEventPack extends SessionPack {
+    private static class RemoteEventPack extends SessionPack {
         private String eventName;
 
-        private boolean remoteOk;
+        private UUID id;
         private EventArgs remoteArgs;
+
+        private int flag;
     }
 
     @Data
@@ -82,14 +88,12 @@ public final class RemotingFactor {
                         RemoteEventPack eventPack = SessionPack.create(RemoteEventPack.class);
                         eventPack.setEventName(eventName);
                         pack = eventPack;
+                        log.info("client attach {} step1", eventName);
                     }
                     break;
                 case "raiseEvent":
                 case "dynamicAttach":
-//                    if (objects.length == 2) {
                     return methodProxy.invokeSuper(o, objects);
-//                    }
-//                    break;
             }
             if (pack == null) {
                 CallPack callPack = SessionPack.create(CallPack.class);
@@ -111,19 +115,25 @@ public final class RemotingFactor {
                 client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
                     RemoteEventPack remoteEventPack;
                     if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                        if (remoteEventPack.remoteArgs != null) {
-                            if (targetType.isInterface()) {
-                                EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                            } else {
-                                EventTarget eventTarget = (EventTarget) o;
-                                eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                            }
+                        switch (remoteEventPack.flag) {
+                            case 0:
+                                if (resultPack == null) {
+                                    resultPack = new CallPack();
+                                }
+                                resultPack.returnValue = null;
+                                log.info("client attach {} step2 ok", remoteEventPack.eventName);
+                                break;
+                            case 1:
+                                if (targetType.isInterface()) {
+                                    EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                } else {
+                                    EventTarget eventTarget = (EventTarget) o;
+                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                }
+                                client.send(remoteEventPack);
+                                log.info("client raise {} ok", remoteEventPack.eventName);
+                                return;
                         }
-
-                        if (resultPack == null) {
-                            resultPack = new CallPack();
-                        }
-                        resultPack.returnValue = null;
                     } else {
                         resultPack = (CallPack) e.getValue();
                     }
@@ -131,6 +141,7 @@ public final class RemotingFactor {
                 });
 
                 client.send(pack);
+                log.info("client send {} step1", pack.getClass());
                 waitHandle.waitOne(client.getConnectTimeout());
             } else {
                 try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
@@ -150,6 +161,7 @@ public final class RemotingFactor {
             }
 
             waitHandle.reset();
+            log.info("client send {} step2 ok", pack.getClass());
             return resultPack.returnValue;
         }
 
@@ -166,8 +178,10 @@ public final class RemotingFactor {
 //        }
     }
 
+    private static final long defaultTimeout = 30 * 1000;
     private static final Object[] emptyParameter = new Object[0];
     private static final Map<Object, TcpServer<TcpServer.ClientSession>> host = new ConcurrentHashMap<>();
+    private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
         return create(contract, endpoint, false);
@@ -197,15 +211,45 @@ public final class RemotingFactor {
                 SessionChannelId clientId = e.getClient().getId();
                 RemoteEventPack eventPack;
                 if ((eventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                    eventPack.remoteOk = true;
-                    EventTarget eventTarget = (EventTarget) contractInstance;
-                    eventTarget.attachEvent(eventPack.eventName, (sender, args) -> {
-                        RemoteEventPack pack = SessionPack.create(RemoteEventPack.class);
-                        pack.eventName = eventPack.eventName;
-                        pack.remoteArgs = (EventArgs) args;
-                        s.send(clientId, pack);
-                    });
-                    s.send(clientId, eventPack);
+                    switch (eventPack.flag) {
+                        case 0:
+                            EventTarget eventTarget = (EventTarget) contractInstance;
+                            eventTarget.attachEvent(eventPack.eventName, (sender, args) -> {
+                                RemoteEventPack pack = SessionPack.create(RemoteEventPack.class);
+                                pack.eventName = eventPack.eventName;
+                                pack.id = UUID.randomUUID();
+                                pack.remoteArgs = (EventArgs) args;
+                                pack.flag = 1;
+                                s.send(clientId, pack);
+                                log.info("server raise {} step1", pack.eventName);
+
+                                Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
+                                eventHost.put(pack.id, tuple);
+                                try {
+                                    tuple.left.waitOne(defaultTimeout);
+                                    log.info("server raise {} step2", pack.eventName);
+                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
+                                } catch (TimeoutException ex) {
+                                    log.warn("remoteEvent", ex);
+                                } finally {
+                                    log.info("server raise {} done", pack.eventName);
+                                    eventHost.remove(pack.id);
+                                }
+                            });
+                            s.send(clientId, eventPack);
+                            log.info("server attach {} ok", eventPack.eventName);
+                            break;
+                        case 1:
+                            Tuple<ManualResetEvent, EventArgs> tuple = eventHost.get(eventPack.id);
+                            if (tuple != null) {
+                                log.info("server raise {} step3", eventPack.eventName);
+                                tuple.right = eventPack.remoteArgs;
+                                tuple.left.set();
+                            } else {
+                                log.info("server raise {} step3 fail", eventPack.eventName);
+                            }
+                            break;
+                    }
                     return;
                 }
 

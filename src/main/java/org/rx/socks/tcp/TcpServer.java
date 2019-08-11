@@ -87,7 +87,8 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
                 TaskFactory.scheduleOnce(ctx::close, 4 * 1000);
                 return;
             }
-            raiseEvent(onReceive, new PackEventArgs<>(findClient(ctx), pack));
+            //异步避免阻塞
+            TaskFactory.run(() -> raiseEvent(onReceive, new PackEventArgs<>(findClient(ctx), pack)));
         }
 
         @Override

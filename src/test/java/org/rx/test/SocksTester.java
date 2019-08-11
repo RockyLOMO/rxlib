@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.common.EventArgs;
@@ -11,6 +12,7 @@ import org.rx.test.bean.UserManagerImpl;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
+import java.util.Arrays;
 
 public class SocksTester {
     @SneakyThrows
@@ -19,12 +21,12 @@ public class SocksTester {
         UserManagerImpl server = new UserManagerImpl();
         RemotingFactor.listen(server, 3307);
 
-        UserManager userMgrImpl = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
-        assert userMgrImpl.computeInt(1, 1) == 2;
-        userMgrImpl.testError();
-        assert userMgrImpl.computeInt(17, 1) == 18;
+        UserManager mgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
+        assert mgr.computeInt(1, 1) == 2;
+        mgr.testError();
+        assert mgr.computeInt(17, 1) == 18;
 
-        userMgrImpl.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
         server.raiseEvent("onTest", EventArgs.empty);
     }
@@ -35,28 +37,24 @@ public class SocksTester {
         UserManagerImpl server = new UserManagerImpl();
         RemotingFactor.listen(server, 3307);
 
-//        UserManager userMgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307", false);
-//        assert userMgr.computeInt(1, 1) == 2;
-//        userMgr.testError();
-//        assert userMgr.computeInt(17, 1) == 18;
+        UserManagerImpl mgr = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307", true);
+//        assert mgr.computeInt(1, 1) == 2;
+//        mgr.testError();
+//        assert mgr.computeInt(17, 1) == 18;
 
-        UserManagerImpl userMgrImpl = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307", true);
-        assert userMgrImpl.computeInt(1, 1) == 2;
-        userMgrImpl.testError();
-        assert userMgrImpl.computeInt(17, 1) == 18;
-
-        userMgrImpl.attachEvent("onAdd", (s, e) -> {
-            System.out.println(String.format("remote event [%s] called..", e == EventArgs.empty));
+        mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
+            System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));
+            e.setResultList(Arrays.asList("a", "b", "c"));
         });
         Thread.sleep(1000);
-        server.raiseEvent(server.onAdd, EventArgs.empty);
-        userMgrImpl.raiseEvent(userMgrImpl.onAdd, EventArgs.empty);
+//        server.raiseEvent(server.onAdd, new UserManagerImpl.MgrEventArgs());
+//        mgr.raiseEvent(mgr.onAdd, new UserManagerImpl.MgrEventArgs());
+//        server.addUser();
+        mgr.addUser();
 
-        userMgrImpl.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
         server.raiseEvent("onTest", EventArgs.empty);
-
-//        System.in.read();
     }
 
     @Test

@@ -1,12 +1,22 @@
 package org.rx.test.bean;
 
+import com.alibaba.fastjson.JSON;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import org.rx.common.EventArgs;
 import org.rx.common.InvalidOperationException;
 
+import java.util.List;
 import java.util.function.BiConsumer;
 
 public class UserManagerImpl implements UserManager {
-    public volatile BiConsumer<UserManager, EventArgs> onAdd;
+    @Data
+    @EqualsAndHashCode(callSuper = true)
+    public static class MgrEventArgs extends EventArgs {
+        private List<String> resultList;
+    }
+
+    public volatile BiConsumer<UserManager, MgrEventArgs> onAdd;
 
     @Override
     public boolean dynamicAttach() {
@@ -15,7 +25,9 @@ public class UserManagerImpl implements UserManager {
 
     @Override
     public void addUser() {
-        raiseEvent(onAdd, EventArgs.empty);
+        MgrEventArgs e = new MgrEventArgs();
+        raiseEvent(onAdd, e);
+        System.out.println("MgrEventArgs: " + JSON.toJSONString(e.getResultList()));
         System.out.println("call addUser..");
     }
 
