@@ -45,16 +45,22 @@ public class SocksTester {
         mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));
             e.setResultList(Arrays.asList("a", "b", "c"));
+            sleep();
         });
         Thread.sleep(1000);
 //        server.raiseEvent(server.onAdd, new UserManagerImpl.MgrEventArgs());
 //        mgr.raiseEvent(mgr.onAdd, new UserManagerImpl.MgrEventArgs());
-//        server.addUser();
-        mgr.addUser();
+        server.addUser();
+//        mgr.addUser();
 
         mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
         server.raiseEvent("onTest", EventArgs.empty);
+    }
+
+    @SneakyThrows
+    private void sleep() {
+        Thread.sleep(1000);
     }
 
     @Test
