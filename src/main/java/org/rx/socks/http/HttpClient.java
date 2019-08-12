@@ -1,10 +1,14 @@
 package org.rx.socks.http;
 
+import com.alibaba.fastjson.JSON;
 import com.google.common.base.Strings;
 import com.google.common.net.HttpHeaders;
+import kotlin.Pair;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import okhttp3.Authenticator;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.common.Contract;
 import org.rx.common.InvalidOperationException;
@@ -15,8 +19,13 @@ import org.rx.io.IOStream;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import javax.servlet.ServletInputStream;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.*;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -27,6 +36,7 @@ import java.util.regex.Pattern;
 import static org.rx.common.Contract.*;
 import static org.rx.common.Contract.require;
 
+@Slf4j
 public class HttpClient {
     public static final String GetMethod = "GET", PostMethod = "POST", HeadMethod = "HEAD";
     public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
@@ -352,5 +362,41 @@ public class HttpClient {
     @SneakyThrows
     private String handleString(ResponseBody body) {
         return body == null ? "" : body.string();
+    }
+
+    @SneakyThrows
+    public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+        Map<String, String> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, p -> servletRequest.getHeader(p));
+        headers.remove("host");
+        setHeaders(headers);
+
+        String query = servletRequest.getQueryString();
+        if (!StringUtils.isEmpty(query)) {
+            forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
+        }
+        log.debug("forwardUrl {}", forwardUrl);
+        log.debug("headers {}", JSON.toJSONString(headers));
+        Request.Builder request = createRequest(forwardUrl);
+        RequestBody requestBody = null;
+        if (!servletRequest.getMethod().equalsIgnoreCase(GetMethod)) {
+            ServletInputStream inStream = servletRequest.getInputStream();
+            if (inStream != null) {
+                requestBody = RequestBody.create(IOUtils.toByteArray(inStream));
+            }
+        }
+        Response response = client.newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
+        servletResponse.setStatus(response.code());
+        for (Pair<? extends String, ? extends String> header : response.headers()) {
+            servletResponse.setHeader(header.getFirst(), header.getSecond());
+        }
+
+        ResponseBody responseBody = response.body();
+        if (responseBody != null) {
+            servletResponse.setContentType(responseBody.contentType().toString());
+            servletResponse.setContentLength((int) responseBody.contentLength());
+            InputStream in = responseBody.byteStream();
+            ServletOutputStream out = servletResponse.getOutputStream();
+            IOUtils.copy(in, out);
+        }
     }
 }
