@@ -12,6 +12,7 @@ import org.rx.beans.Tuple;
 import org.rx.common.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
+import org.rx.util.function.Action;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
@@ -112,7 +113,7 @@ public final class RemotingFactor {
                     log.error("!Error & Set!", e.getValue());
                     waitHandle.set();
                 });
-                client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                Action action = () -> client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
                     RemoteEventPack remoteEventPack;
                     if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                         switch (remoteEventPack.flag) {
@@ -139,6 +140,11 @@ public final class RemotingFactor {
                     }
                     waitHandle.set();
                 });
+                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                    log.info("client reconnected");
+                    action.invoke();
+                });
+                action.invoke();
 
                 client.send(pack);
                 log.info("client send {} step1", pack.getClass());

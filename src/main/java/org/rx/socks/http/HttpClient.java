@@ -374,14 +374,17 @@ public class HttpClient {
         if (!StringUtils.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
-        log.debug("forwardUrl {}", forwardUrl);
-        log.debug("headers {}", JSON.toJSONString(headers));
+        log.info("Forward request: {}\nheaders {}", forwardUrl, JSON.toJSONString(headers));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
         if (!servletRequest.getMethod().equalsIgnoreCase(GetMethod)) {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
-                requestBody = RequestBody.create(IOUtils.toByteArray(inStream));
+                if (servletRequest.getContentType() != null) {
+                    requestBody = RequestBody.create(IOUtils.toByteArray(inStream), MediaType.parse(servletRequest.getContentType()));
+                } else {
+                    requestBody = RequestBody.create(IOUtils.toByteArray(inStream));
+                }
             }
         }
         Response response = client.newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
@@ -391,8 +394,11 @@ public class HttpClient {
         }
 
         ResponseBody responseBody = response.body();
+        log.info("Forward response: hasBody={}", requestBody != null);
         if (responseBody != null) {
-            servletResponse.setContentType(responseBody.contentType().toString());
+            if (responseBody.contentType() != null) {
+                servletResponse.setContentType(responseBody.contentType().toString());
+            }
             servletResponse.setContentLength((int) responseBody.contentLength());
             InputStream in = responseBody.byteStream();
             ServletOutputStream out = servletResponse.getOutputStream();
