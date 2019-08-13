@@ -381,7 +381,7 @@ public class HttpClient {
         if (!servletRequest.getMethod().equalsIgnoreCase(GetMethod)) {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
-                requestBody = RequestBody.create(MediaType.parse(servletRequest.getContentType()), IOUtils.toByteArray(inStream));
+                requestBody = RequestBody.create(IOUtils.toByteArray(inStream));
             }
         }
         Response response = client.newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
