@@ -17,6 +17,7 @@ import org.rx.util.function.Action;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -226,7 +227,14 @@ public final class RemotingFactor {
                                 pack.id = UUID.randomUUID();
                                 pack.remoteArgs = (EventArgs) args;
                                 pack.flag = 1;
-                                s.send(clientId, pack);
+                                Set<TcpServer.ClientSession> clients = s.getClients().get(clientId.sessionId());
+                                if (clients == null) {
+                                    log.warn("Clients sessionId not found");
+                                    return;
+                                }
+                                for (TcpServer.ClientSession client : clients) {
+                                    s.send(client.getId(), pack);
+                                }
                                 log.info("server raise {} step1", pack.eventName);
 
                                 Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
