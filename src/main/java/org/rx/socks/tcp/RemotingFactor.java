@@ -108,6 +108,7 @@ public final class RemotingFactor {
                 if (client == null) {
                     client = pool.borrow(serverAddress);
                     client.setAutoReconnect(true);
+                    onDualInit.accept(o);
                 }
                 client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                     e.setCancel(true);
