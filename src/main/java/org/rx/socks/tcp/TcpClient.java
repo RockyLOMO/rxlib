@@ -64,12 +64,24 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             super.channelRead(ctx, msg);
             log.info("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-            SessionPack socksPack = (SessionPack) msg;
-            if (!StringUtils.isEmpty(socksPack.getErrorMessage())) {
-                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", socksPack.getErrorMessage())));
+            if (SessionId.class.equals(msg.getClass())) {
+                NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+                raiseEvent(onConnected, args);
+                if (args.isCancel()) {
+                    ctx.close();
+                } else {
+                    isConnected = true;
+                    waiter.set();
+                }
                 return;
             }
-            raiseEvent(onReceive, new PackEventArgs<>(ctx, socksPack));
+
+            SessionPack pack = (SessionPack) msg;
+            if (!StringUtils.isEmpty(pack.getErrorMessage())) {
+                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", pack.getErrorMessage())));
+                return;
+            }
+            raiseEvent(onReceive, new PackEventArgs<>(ctx, pack));
         }
 
         @Override
@@ -77,11 +89,8 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             super.channelActive(ctx);
             log.info("clientActive {}", ctx.channel().remoteAddress());
             channel = ctx;
-            isConnected = true;
-            waiter.set();
 
             ctx.writeAndFlush(sessionId);
-            raiseEvent(onConnected, new NEventArgs<>(ctx));
         }
 
         @Override
@@ -91,7 +100,11 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             isConnected = false;
             channel = null;
 
-            raiseEvent(onDisconnected, new NEventArgs<>(ctx));
+            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+            raiseEvent(onDisconnected, args);
+            if (args.isCancel()) {
+                return;
+            }
             reconnect();
         }
 
@@ -105,9 +118,10 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             } catch (Exception e) {
                 log.error("clientCaught", e);
             }
-            if (!args.isCancel()) {
-                ctx.close();
+            if (args.isCancel()) {
+                return;
             }
+            ctx.close();
         }
     }
 
@@ -214,7 +228,11 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     public <T extends SessionPack> void send(T pack) {
         require(pack, (Object) isConnected);
 
-        raiseEvent(onSend, new PackEventArgs<>(channel, pack));
+        PackEventArgs<ChannelHandlerContext> args = new PackEventArgs<>(channel, pack);
+        raiseEvent(onSend, args);
+        if (args.isCancel()) {
+            return;
+        }
         channel.writeAndFlush(pack);
     }
 }

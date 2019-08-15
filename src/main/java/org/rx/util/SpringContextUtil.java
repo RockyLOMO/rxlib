@@ -22,6 +22,9 @@ public final class SpringContextUtil implements InitializingBean, ApplicationCon
     }
 
     public void setApplicationContext(ApplicationContext applicationContext) {
+//        if (applicationContext == null) {
+//            return;
+//        }
         SpringContextUtil.applicationContext = applicationContext;
     }
 

@@ -83,6 +83,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
                     ctx.close();
                 } else {
                     addClient(client);
+                    ctx.writeAndFlush(msg);
                 }
                 return;
             }
@@ -126,17 +127,18 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
             super.exceptionCaught(ctx, cause);
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
             ErrorEventArgs<T> args = new ErrorEventArgs<>(findClient(ctx), cause);
-            if (cause instanceof ReadTimeoutException || cause instanceof WriteTimeoutException) {
-                args.setCancel(true);
-            }
+//            if (cause instanceof ReadTimeoutException || cause instanceof WriteTimeoutException) {
+//                args.setCancel(true);
+//            }
             try {
                 raiseEvent(onError, args);
             } catch (Exception e) {
                 log.error("serverCaught", e);
             }
-            if (!args.isCancel()) {
-                ctx.close();
+            if (args.isCancel()) {
+                return;
             }
+            ctx.close();
         }
     }
 
@@ -255,7 +257,11 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         if (client == null) {
             throw new InvalidOperationException(String.format("Client %s-%s not found", sessionChannelId.getAppName(), sessionChannelId.getChannelId()));
         }
-        raiseEvent(onSend, new PackEventArgs<>(client, pack));
+        PackEventArgs<T> args = new PackEventArgs<>(client, pack);
+        raiseEvent(onSend, args);
+        if (args.isCancel()) {
+            return;
+        }
         client.channel.writeAndFlush(pack);
     }
 }

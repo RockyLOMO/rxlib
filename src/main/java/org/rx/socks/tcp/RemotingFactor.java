@@ -109,6 +109,7 @@ public final class RemotingFactor {
                 if (client == null) {
                     client = pool.borrow(serverAddress);
                     client.setAutoReconnect(true);
+//                    log.info("onDualInit..");
 //                    onDualInit.accept(o); //无效
                 }
                 client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
@@ -125,21 +126,23 @@ public final class RemotingFactor {
                     if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                         switch (remoteEventPack.flag) {
                             case 0:
-                                if (resultPack == null) {
-                                    resultPack = new CallPack();
+                                if (resultPack != null) {
+                                    resultPack.returnValue = null;
                                 }
-                                resultPack.returnValue = null;
                                 log.info("client attach {} step2 ok", remoteEventPack.eventName);
                                 break;
                             case 1:
-                                if (targetType.isInterface()) {
-                                    EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                } else {
-                                    EventTarget eventTarget = (EventTarget) o;
-                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                try {
+                                    if (targetType.isInterface()) {
+                                        EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                    } else {
+                                        EventTarget eventTarget = (EventTarget) o;
+                                        eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                    }
+                                } finally {
+                                    client.send(remoteEventPack);  //import
+                                    log.info("client raise {} ok", remoteEventPack.eventName);
                                 }
-                                client.send(remoteEventPack);
-                                log.info("client raise {} ok", remoteEventPack.eventName);
                                 return;
                         }
                     } else {
@@ -202,7 +205,7 @@ public final class RemotingFactor {
 
             waitHandle.reset();
             log.info("client send {} step2 ok", pack.getClass());
-            return resultPack.returnValue;
+            return resultPack != null ? resultPack.returnValue : null;
         }
 
 //        @SneakyThrows
@@ -229,12 +232,13 @@ public final class RemotingFactor {
     public static <T> T create(Class<T> contract, String endpoint, Consumer<T> onDualInit) {
         require(contract);
 
-        if (EventTarget.class.isAssignableFrom(contract)) {
+        if (EventTarget.class.isAssignableFrom(contract) && onDualInit == null) {
             onDualInit = p -> {
             };
         }
         T p = (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), onDualInit));
         if (onDualInit != null) {
+            log.info("onDualInit..");
             onDualInit.accept(p);
         }
         return p;
