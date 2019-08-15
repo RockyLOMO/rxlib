@@ -44,10 +44,10 @@ public class SocksTester {
         UserManagerImpl server = new UserManagerImpl();
         RemotingFactor.listen(server, 3307);
 
-        UserManagerImpl mgr = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307", true);
-//        assert mgr.computeInt(1, 1) == 2;
-//        mgr.testError();
-//        assert mgr.computeInt(17, 1) == 18;
+        UserManagerImpl mgr = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307");
+        assert mgr.computeInt(1, 1) == 2;
+        mgr.testError();
+        assert mgr.computeInt(17, 1) == 18;
 
         mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));

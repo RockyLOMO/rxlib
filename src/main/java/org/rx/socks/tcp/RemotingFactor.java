@@ -12,7 +12,6 @@ import org.rx.beans.Tuple;
 import org.rx.common.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
-import org.rx.util.function.Action;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
@@ -22,6 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import static org.rx.common.Contract.as;
 import static org.rx.common.Contract.require;
@@ -55,13 +55,13 @@ public final class RemotingFactor {
         private CallPack resultPack;
         private Class targetType;
         private InetSocketAddress serverAddress;
-        private boolean enableDual;
+        private Consumer onDualInit;
         private TcpClient client;
 
-        public ClientHandler(Class targetType, InetSocketAddress serverAddress, boolean enableDual) {
+        public ClientHandler(Class targetType, InetSocketAddress serverAddress, Consumer onDualInit) {
             this.targetType = targetType;
             this.serverAddress = serverAddress;
-            this.enableDual = enableDual;
+            this.onDualInit = onDualInit;
             waitHandle = new ManualResetEvent();
         }
 
@@ -104,7 +104,7 @@ public final class RemotingFactor {
                 pack = callPack;
             }
 
-            if (enableDual) {
+            if (onDualInit != null) {
                 if (client == null) {
                     client = pool.borrow(serverAddress);
                     client.setAutoReconnect(true);
@@ -114,7 +114,11 @@ public final class RemotingFactor {
                     log.error("!Error & Set!", e.getValue());
                     waitHandle.set();
                 });
-                Action action = () -> client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                    log.info("client reconnected");
+                    onDualInit.accept(o);
+                });
+                client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
                     RemoteEventPack remoteEventPack;
                     if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                         switch (remoteEventPack.flag) {
@@ -141,11 +145,38 @@ public final class RemotingFactor {
                     }
                     waitHandle.set();
                 });
-                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                    log.info("client reconnected");
-                    action.invoke();
-                });
-                action.invoke();
+//                Action action = () -> client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+//                    RemoteEventPack remoteEventPack;
+//                    if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+//                        switch (remoteEventPack.flag) {
+//                            case 0:
+//                                if (resultPack == null) {
+//                                    resultPack = new CallPack();
+//                                }
+//                                resultPack.returnValue = null;
+//                                log.info("client attach {} step2 ok", remoteEventPack.eventName);
+//                                break;
+//                            case 1:
+//                                if (targetType.isInterface()) {
+//                                    EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+//                                } else {
+//                                    EventTarget eventTarget = (EventTarget) o;
+//                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+//                                }
+//                                client.send(remoteEventPack);
+//                                log.info("client raise {} ok", remoteEventPack.eventName);
+//                                return;
+//                        }
+//                    } else {
+//                        resultPack = (CallPack) e.getValue();
+//                    }
+//                    waitHandle.set();
+//                });
+//                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+//                    log.info("client reconnected");
+//                    action.invoke();
+//                });
+//                action.invoke();
 
                 client.send(pack);
                 log.info("client send {} step1", pack.getClass());
@@ -185,30 +216,37 @@ public final class RemotingFactor {
 //        }
     }
 
-    private static final long defaultTimeout = 30 * 1000;
     private static final Object[] emptyParameter = new Object[0];
     private static final Map<Object, TcpServer<TcpServer.ClientSession>> host = new ConcurrentHashMap<>();
     private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, endpoint, false);
+        return create(contract, endpoint, null);
     }
 
-    public static <T> T create(Class<T> contract, String endpoint, boolean enableDual) {
+    public static <T> T create(Class<T> contract, String endpoint, Consumer<T> onDualInit) {
         require(contract);
 
         if (EventTarget.class.isAssignableFrom(contract)) {
-            enableDual = true;
+            onDualInit = p -> {
+            };
         }
-        return (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), enableDual));
+        return (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), onDualInit));
     }
 
     public static <T> void listen(T contractInstance, int port) {
+        listen(contractInstance, port, null);
+    }
+
+    public static <T> void listen(T contractInstance, int port, Long connectTimeout) {
         require(contractInstance);
 
         Class contract = contractInstance.getClass();
         host.computeIfAbsent(contractInstance, k -> {
             TcpServer<TcpServer.ClientSession> server = new TcpServer<>(port, true);
+            if (connectTimeout != null) {
+                server.setConnectTimeout(connectTimeout);
+            }
             server.onError = (s, e) -> {
                 e.setCancel(true);
                 SessionPack pack = SessionPack.error(String.format("Remoting call error: %s", e.getValue().getMessage()));
@@ -240,7 +278,7 @@ public final class RemotingFactor {
                                 Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
                                 eventHost.put(pack.id, tuple);
                                 try {
-                                    tuple.left.waitOne(defaultTimeout);
+                                    tuple.left.waitOne(server.getConnectTimeout());
                                     log.info("server raise {} step2", pack.eventName);
                                     BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
                                 } catch (TimeoutException ex) {

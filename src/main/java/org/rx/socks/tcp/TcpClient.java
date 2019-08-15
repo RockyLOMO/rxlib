@@ -154,7 +154,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
         this.sessionId = sessionId;
-        connectTimeout = 30 * 1000;
+        connectTimeout = TcpServer.defaultTimeout;
         waiter = new ManualResetEvent();
     }
 
@@ -184,12 +184,13 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         workerGroup = new NioEventLoopGroup();
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
+                .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
                 .channel(NioSocketChannel.class)
                 .handler(new ClientInitializer());
 
-        ChannelFuture sync = b.connect(serverAddress).sync();
+        b.connect(serverAddress).sync();
         if (wait) {
             waiter.waitOne(connectTimeout);
             waiter.reset();

@@ -15,6 +15,10 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutException;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -25,6 +29,7 @@ import org.rx.common.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 import static org.rx.common.Contract.*;
@@ -46,7 +51,6 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         @Override
         public void initChannel(SocketChannel ch) {
             ChannelPipeline pipeline = ch.pipeline();
-
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(ch.alloc()));
             }
@@ -54,7 +58,9 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
             pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
 
-            ch.pipeline().addLast(new ObjectEncoder(),
+//            pipeline.addLast(new ReadTimeoutHandler(readTimeout, TimeUnit.MILLISECONDS));
+//            pipeline.addLast(new WriteTimeoutHandler(writeTimeout, TimeUnit.MILLISECONDS));
+            pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(this.getClass().getClassLoader())),
                     new ServerHandler());
         }
@@ -120,6 +126,9 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
             super.exceptionCaught(ctx, cause);
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
             ErrorEventArgs<T> args = new ErrorEventArgs<>(findClient(ctx), cause);
+            if (cause instanceof ReadTimeoutException || cause instanceof WriteTimeoutException) {
+                args.setCancel(true);
+            }
             try {
                 raiseEvent(onError, args);
             } catch (Exception e) {
@@ -131,6 +140,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         }
     }
 
+    public static final long defaultTimeout = 30 * 1000;
     public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
@@ -147,6 +157,10 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
     @Setter
     private int maxClients;
     private Class clientSessionType;
+    @Getter
+    @Setter
+    private long connectTimeout;
+//    private long readTimeout, writeTimeout;
 
     public TcpServer(int port, boolean ssl) {
         this(port, ssl, null);
@@ -163,6 +177,8 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
 
         this.maxClients = 1000000;
         this.clientSessionType = clientSessionType == null ? TcpServer.ClientSession.class : clientSessionType;
+        this.connectTimeout = defaultTimeout;
+//        this.writeTimeout = this.readTimeout = defaultTimeout * 2;
     }
 
     @Override
@@ -192,13 +208,14 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         workerGroup = new NioEventLoopGroup();
         ServerBootstrap b = new ServerBootstrap();
         b.group(bossGroup, workerGroup)
+                .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.SO_BACKLOG, 128)
-                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
+                .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .channel(NioServerSocketChannel.class)
                 .handler(new LoggingHandler(LogLevel.INFO))
                 .childHandler(new ServerInitializer());
-
         ChannelFuture f = b.bind(port).sync();
         isStarted = true;
         log.info("Listened on port {}..", port);

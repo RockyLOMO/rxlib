@@ -83,7 +83,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
 
     public TcpClientPool() {
-        this(30 * 1000, 0, 8);
+        this(TcpServer.defaultTimeout, 0, 8);
     }
 
     public TcpClientPool(long timeout, int minSize, int maxSize) {
