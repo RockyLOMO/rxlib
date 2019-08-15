@@ -244,7 +244,7 @@ public final class RemotingFactor {
                                     log.info("server raise {} step2", pack.eventName);
                                     BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
                                 } catch (TimeoutException ex) {
-                                    log.warn("remoteEvent", ex);
+                                    log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
                                     log.info("server raise {} done", pack.eventName);
                                     eventHost.remove(pack.id);
