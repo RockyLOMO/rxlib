@@ -3,6 +3,7 @@ package org.rx.socks.tcp;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
@@ -108,7 +109,7 @@ public final class RemotingFactor {
                 if (client == null) {
                     client = pool.borrow(serverAddress);
                     client.setAutoReconnect(true);
-                    onDualInit.accept(o);
+//                    onDualInit.accept(o); //无效
                 }
                 client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                     e.setCancel(true);
@@ -232,7 +233,11 @@ public final class RemotingFactor {
             onDualInit = p -> {
             };
         }
-        return (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), onDualInit));
+        T p = (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), onDualInit));
+        if (onDualInit != null) {
+            onDualInit.accept(p);
+        }
+        return p;
     }
 
     public static <T> void listen(T contractInstance, int port) {
