@@ -150,38 +150,6 @@ public final class RemotingFactor {
                     }
                     waitHandle.set();
                 });
-//                Action action = () -> client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-//                    RemoteEventPack remoteEventPack;
-//                    if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-//                        switch (remoteEventPack.flag) {
-//                            case 0:
-//                                if (resultPack == null) {
-//                                    resultPack = new CallPack();
-//                                }
-//                                resultPack.returnValue = null;
-//                                log.info("client attach {} step2 ok", remoteEventPack.eventName);
-//                                break;
-//                            case 1:
-//                                if (targetType.isInterface()) {
-//                                    EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-//                                } else {
-//                                    EventTarget eventTarget = (EventTarget) o;
-//                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
-//                                }
-//                                client.send(remoteEventPack);
-//                                log.info("client raise {} ok", remoteEventPack.eventName);
-//                                return;
-//                        }
-//                    } else {
-//                        resultPack = (CallPack) e.getValue();
-//                    }
-//                    waitHandle.set();
-//                });
-//                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-//                    log.info("client reconnected");
-//                    action.invoke();
-//                });
-//                action.invoke();
 
                 client.send(pack);
                 log.info("client send {} step1", pack.getClass());
