@@ -294,8 +294,8 @@ public final class RemotingFactor {
                                 } catch (TimeoutException ex) {
                                     log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
-                                    log.info("server raise {} done", pack.eventName);
                                     eventHost.remove(pack.id);
+                                    log.info("server raise {} done", pack.eventName);
                                 }
                             });
                             s.send(clientId, eventPack);

@@ -1,15 +1,14 @@
 package org.rx.common;
 
-import org.rx.beans.Tuple;
-
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 import static org.rx.common.Contract.require;
 
 public class EventListener {
     public static final EventListener instance = new EventListener();
-    private final Map<Object, Set<Tuple<String, BiConsumer>>> host;
+    private final Map<Object, Map<String, BiConsumer>> host;
 
     private EventListener() {
         host = Collections.synchronizedMap(new WeakHashMap<>());
@@ -18,25 +17,24 @@ public class EventListener {
     public void attach(Object target, String eventName, BiConsumer event) {
         require(target, eventName);
 
-        host.computeIfAbsent(target, k -> {
-            Set<Tuple<String, BiConsumer>> set = Collections.synchronizedSet(new HashSet<>());
-            set.add(Tuple.of(eventName, event));
-            return set;
-        });
+        Map<String, BiConsumer> eventMap = host.computeIfAbsent(target, k -> new ConcurrentHashMap<>());
+        if (event == null) {
+            eventMap.remove(eventName);
+            return;
+        }
+        eventMap.put(eventName, event);
     }
 
     public void raise(Object target, String eventName, EventArgs args) {
         require(target, eventName, args);
 
-        Set<Tuple<String, BiConsumer>> set = host.get(target);
-        if (set == null) {
+        Map<String, BiConsumer> eventMap = host.get(target);
+        if (eventMap == null) {
             return;
         }
-        for (Tuple<String, BiConsumer> tuple : set) {
-            if (!tuple.left.equals(eventName) || tuple.right == null) {
-                continue;
-            }
-            tuple.right.accept(target, args);
+        BiConsumer event = eventMap.get(eventName);
+        if (event != null) {
+            event.accept(target, args);
         }
     }
 }

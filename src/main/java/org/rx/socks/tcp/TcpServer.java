@@ -242,7 +242,15 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
     }
 
     protected void removeClient(ChannelHandlerContext ctx) {
-        NQuery.of(clients.values()).firstOrDefault(p -> p.removeIf(x -> x.channel == ctx));
+        for (Map.Entry<SessionId, Set<T>> entry : clients.entrySet()) {
+            if (!entry.getValue().removeIf(x -> x.channel == ctx)) {
+                continue;
+            }
+            if (entry.getValue().isEmpty()) {
+                clients.remove(entry.getKey());
+            }
+            break;
+        }
     }
 
     public <TPack extends SessionPack> void send(SessionChannelId sessionChannelId, TPack pack) {
