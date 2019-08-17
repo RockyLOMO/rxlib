@@ -425,9 +425,9 @@ public class App {
         };
         Map<String, Object> settings = loadYaml(yamlFile);
         Object val;
-        if ((val = settings.get(key)) != null) {
-            return func.apply(val);
-        }
+//        if ((val = settings.get(key)) != null) {
+//            return func.apply(val);
+//        }
 
         StringBuilder kBuf = new StringBuilder();
         String d = ".";
@@ -459,30 +459,36 @@ public class App {
         require(yamlFile);
 
         File file = new File(yamlFile);
-        Map<String, Object> result = null;
+        Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml(new SafeConstructor());
-        for (Object data : yaml
-                .loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yamlFile))) {
-            Map<String, Object> map = (Map<String, Object>) data;
-            if (result == null) {
-                result = map;
-                continue;
-            }
-            if (map != null) {
-                result.putAll(map);
-            }
-        }
-        if (result == null) {
-            result = new HashMap<>();
+        for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yamlFile))) {
+            Map<String, Object> one = (Map<String, Object>) data;
+            fillDeep(one, result);
         }
         return result;
     }
 
-    public static <T> T loadYaml(InputStream yamlStream, Class<T> type) {
-        require(yamlStream, type);
+    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
+        for (Map.Entry<String, Object> entry : one.entrySet()) {
+            Map<String, Object> nextOne;
+            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
+                all.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
+            if (nextAll == null) {
+                all.put(entry.getKey(), nextOne);
+                continue;
+            }
+            fillDeep(nextOne, nextAll);
+        }
+    }
+
+    public static <T> T loadYaml(InputStream yamlStream, Class<T> beanType) {
+        require(yamlStream, beanType);
 
         Yaml yaml = new Yaml();
-        return yaml.loadAs(yamlStream, type);
+        return yaml.loadAs(yamlStream, beanType);
     }
 
     public static <T> String dumpYaml(T bean) {
