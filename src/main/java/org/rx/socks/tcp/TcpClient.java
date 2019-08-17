@@ -63,7 +63,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             super.channelRead(ctx, msg);
-            log.info("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+            log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
             if (SessionId.class.equals(msg.getClass())) {
                 NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
                 raiseEvent(onConnected, args);
@@ -87,7 +87,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             super.channelActive(ctx);
-            log.info("clientActive {}", ctx.channel().remoteAddress());
+            log.debug("clientActive {}", ctx.channel().remoteAddress());
             channel = ctx;
 
             ctx.writeAndFlush(sessionId);
@@ -96,7 +96,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             super.channelInactive(ctx);
-            log.info("clientInactive {}", ctx.channel().remoteAddress());
+            log.debug("clientInactive {}", ctx.channel().remoteAddress());
             isConnected = false;
             channel = null;
 

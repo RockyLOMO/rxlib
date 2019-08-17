@@ -45,7 +45,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
             client.setConnectTimeout(pool.getMaxWaitMillis());
             raiseEvent(onCreate, new NEventArgs<>(client));
             client.connect(true);
-            log.info("Create TcpClient {}", client.isConnected());
+            log.debug("Create TcpClient {}", client.isConnected());
             return client;
         }
 

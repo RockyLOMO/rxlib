@@ -71,7 +71,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             //Unpooled
             super.channelRead(ctx, msg);
-            log.info("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+            log.debug("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
             if (SessionId.class.equals(msg.getClass())) {
                 SessionChannelId sessionChannelId = new SessionChannelId(ctx.channel().id());
                 sessionChannelId.sessionId((SessionId) msg);
@@ -101,7 +101,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             super.channelActive(ctx);
-            log.info("channelActive {}", ctx.channel().remoteAddress());
+            log.debug("channelActive {}", ctx.channel().remoteAddress());
 
             if (clients.size() > maxClients) {
                 log.warn("Not enough space");
@@ -112,7 +112,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             super.channelInactive(ctx);
-            log.info("channelInactive {}", ctx.channel().remoteAddress());
+            log.debug("channelInactive {}", ctx.channel().remoteAddress());
 
             T client = findClient(ctx);
             try {
@@ -220,7 +220,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
                 .childHandler(new ServerInitializer());
         ChannelFuture f = b.bind(port).sync();
         isStarted = true;
-        log.info("Listened on port {}..", port);
+        log.debug("Listened on port {}..", port);
 
         if (waitClose) {
             f.channel().closeFuture().sync();
