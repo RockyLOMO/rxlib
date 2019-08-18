@@ -139,6 +139,8 @@ public final class RemotingFactor {
                                         EventTarget eventTarget = (EventTarget) o;
                                         eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
                                     }
+                                } catch (Exception ex) {
+                                    log.error("client raise {} error", remoteEventPack.eventName, ex);
                                 } finally {
                                     client.send(remoteEventPack);  //import
                                     log.info("client raise {} ok", remoteEventPack.eventName);
