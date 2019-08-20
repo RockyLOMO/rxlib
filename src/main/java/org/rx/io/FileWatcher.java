@@ -124,6 +124,12 @@ public class FileWatcher extends Disposable {
         tuple.left.accept(changeKind, absolutePath);
     }
 
+    protected void raiseCallback(ChangeKind kind, Path changedPath) {
+        for (Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
+            tuple.left.accept(kind, changedPath);
+        }
+    }
+
     public synchronized void stop() {
         if (future == null) {
             return;

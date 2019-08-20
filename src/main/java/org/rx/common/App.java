@@ -73,6 +73,10 @@ public class App {
     private static final NQuery<Class<?>> supportTypes;
     private static final List<ConvertItem> typeConverter;
 
+    public static Map threadMap() {
+        return threadStatic.get();
+    }
+
     static {
         System.setProperty("bootstrapPath", getBootstrapPath());
         threadStatic = ThreadLocal.withInitial(HashMap::new);
@@ -295,8 +299,7 @@ public class App {
         Object v;
         switch (containerKind) {
             case ThreadStatic:
-                Map threadMap = threadStatic.get();
-                v = threadMap.computeIfAbsent(k, supplier);
+                v = threadMap().computeIfAbsent(k, supplier);
                 break;
             case ServletRequest:
                 HttpServletRequest request = getCurrentRequest();
@@ -469,6 +472,9 @@ public class App {
     }
 
     private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
+        if (one == null) {
+            return;
+        }
         for (Map.Entry<String, Object> entry : one.entrySet()) {
             Map<String, Object> nextOne;
             if ((nextOne = as(entry.getValue(), Map.class)) == null) {
