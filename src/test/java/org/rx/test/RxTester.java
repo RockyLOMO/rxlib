@@ -116,6 +116,9 @@ public class RxTester {
         Map<String, Object> map = App.loadYaml("application.yml");
         System.out.println(map);
 
+        Object o = App.readSetting("app.static.version");
+        System.out.println(o);
+
         Object v = App.readSetting("not");
         assert v == null;
 

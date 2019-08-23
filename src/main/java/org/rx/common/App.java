@@ -428,9 +428,9 @@ public class App {
         };
         Map<String, Object> settings = loadYaml(yamlFile);
         Object val;
-//        if ((val = settings.get(key)) != null) {
-//            return func.apply(val);
-//        }
+        if ((val = settings.get(key)) != null) {
+            return func.apply(val);
+        }
 
         StringBuilder kBuf = new StringBuilder();
         String d = ".";

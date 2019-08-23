@@ -1,3 +1,4 @@
+#app.static.version: "0"
 app:
   jsonSkipTypes:
     - javax.servlet.ServletRequest
@@ -8,3 +9,6 @@ app:
   sessionPack:
     appName: rx
     version: 0.1
+#  static.version: "1"
+#  static:
+#    version: "2"
