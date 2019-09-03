@@ -75,12 +75,12 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public static <T> NQuery<T> of(T one) {
-        return of(org.rx.core.Arrays.toList(one));
+        return of(Arrays.toList(one));
     }
 
     @SafeVarargs
     public static <T> NQuery<T> of(T... set) {
-        return of(org.rx.core.Arrays.toList(set));
+        return of(Arrays.toList(set));
     }
 
     public static <T> NQuery<T> of(Iterator<T> iterator) {

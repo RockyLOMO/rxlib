@@ -153,7 +153,7 @@ public class BeanMapper {
     public <T> T map(Object source, Class<T> targetType) {
         require(targetType);
 
-        return map(source, App.newInstance(targetType), Flags.None);
+        return map(source, Reflects.newInstance(targetType), Flags.None);
     }
 
     public <T> T map(Object source, T target, NEnum<Flags> flags) {

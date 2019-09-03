@@ -25,7 +25,6 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -407,7 +406,7 @@ public class App extends SystemUtils {
     }
     //endregion
 
-    //region reflect
+    //region Class
     public static ClassLoader getClassLoader() {
         return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
     }
@@ -433,40 +432,6 @@ public class App extends SystemUtils {
             }
             throw SystemException.wrap(e);
         }
-    }
-
-    public static <T> T newInstance(Class<T> type) {
-        return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
-    }
-
-    public static <T> T newInstance(Class<T> type, Object... args) {
-        require(type);
-        if (args == null) {
-            args = Arrays.EMPTY_OBJECT_ARRAY;
-        }
-
-        try {
-            for (Constructor<?> constructor : type.getConstructors()) {
-                Class[] paramTypes = constructor.getParameterTypes();
-                if (paramTypes.length != args.length) {
-                    continue;
-                }
-                boolean ok = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!paramTypes[i].isInstance(args[i])) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) {
-                    continue;
-                }
-                return (T) constructor.newInstance(args);
-            }
-        } catch (ReflectiveOperationException ex) {
-            throw SystemException.wrap(ex);
-        }
-        throw new SystemException("Parameters error");
     }
 
     public static <T> T convert(Object val, Class<T> toType) {

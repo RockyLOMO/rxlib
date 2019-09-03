@@ -44,7 +44,7 @@ public final class DateTime extends Date {
             }
         }
         $<ParseException> out = $();
-        Exception nested = lastEx.tryGet(out, ParseException.class) ? out.$ : lastEx;
+        Exception nested = lastEx.tryGet(out, ParseException.class) ? out.v : lastEx;
         throw new SystemException(values(String.join(",", Formats), dateString), nested);
     }
 

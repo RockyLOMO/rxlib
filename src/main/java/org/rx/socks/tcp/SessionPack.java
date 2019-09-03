@@ -3,6 +3,7 @@ package org.rx.socks.tcp;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.rx.core.App;
+import org.rx.core.Reflects;
 
 import static org.rx.core.Contract.require;
 
@@ -18,7 +19,7 @@ public class SessionPack extends SessionId {
     public static <T extends SessionPack> T create(Class<T> type) {
         require(defaultId);
 
-        T pack = App.newInstance(type);
+        T pack = Reflects.newInstance(type);
 //        if (defaultId != null) {
         pack.setAppName(defaultId.getAppName());
         pack.setVersion(defaultId.getVersion());

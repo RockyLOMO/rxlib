@@ -8,7 +8,6 @@ import org.rx.beans.$;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.*;
-import java.util.Arrays;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -46,7 +45,7 @@ public final class Contract {
      */
     @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
-        if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
+        if (args == null || NQuery.of(args).any(p -> p == null)) {
             throw new SystemException(values(toJsonString(args)), "args");
         }
     }
@@ -102,7 +101,7 @@ public final class Contract {
     public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func, T state) {
         require(out, func);
 
-        return (out.$ = func.apply(state)) != null;
+        return (out.v = func.apply(state)) != null;
     }
 
     public static String toDescription(AccessibleObject accessibleObject) {

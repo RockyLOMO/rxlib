@@ -1,7 +1,6 @@
 package org.rx.socks.http;
 
 import com.alibaba.fastjson.JSON;
-import com.google.common.base.Strings;
 import com.google.common.net.HttpHeaders;
 import kotlin.Pair;
 import lombok.SneakyThrows;
@@ -9,10 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import okhttp3.Authenticator;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.rx.core.Contract;
 import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
+import org.rx.core.Strings;
 import org.rx.io.MemoryStream;
 import org.rx.io.IOStream;
 
@@ -210,7 +209,7 @@ public class HttpClient {
      */
     public HttpClient(int millis, String rawCookie, Proxy proxy) {
         Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_UserAgent);
-        boolean cookieJar = StringUtils.isEmpty(rawCookie);
+        boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
             builder = builder.set("cookie", rawCookie);
         }
@@ -371,7 +370,7 @@ public class HttpClient {
         setHeaders(headers);
 
         String query = servletRequest.getQueryString();
-        if (!StringUtils.isEmpty(query)) {
+        if (!Strings.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
         log.info("Forward request: {}\nheaders {}", forwardUrl, JSON.toJSONString(headers));

@@ -24,7 +24,7 @@ public final class Lazy<T> {
     }
 
     public Lazy(Class<T> type) {
-        this(() -> App.newInstance(type));
+        this(() -> Reflects.newInstance(type));
     }
 
     public Lazy(Supplier<T> supplier) {

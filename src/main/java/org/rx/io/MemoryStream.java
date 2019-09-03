@@ -289,7 +289,7 @@ public class MemoryStream extends IOStream {
         if (out == null || !publiclyVisible) {
             return false;
         }
-        out.$ = new BytesSegment(writer.getBuffer(), getPosition(), getLength());
+        out.v = new BytesSegment(writer.getBuffer(), getPosition(), getLength());
         return true;
     }
 

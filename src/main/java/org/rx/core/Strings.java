@@ -41,7 +41,7 @@ public class Strings extends StringUtils {
                 }
                 break;
         }
-        String x = com.google.common.base.Strings.repeat("*", len - left - right);
+        String x = Strings.repeat("*", len - left - right);
         return val.substring(0, left) + x + val.substring(left + x.length());
     }
 

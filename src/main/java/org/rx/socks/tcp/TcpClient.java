@@ -17,11 +17,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.rx.beans.$;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
-import org.rx.util.ManualResetEvent;
+import org.rx.core.ManualResetEvent;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
@@ -77,7 +76,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             }
 
             SessionPack pack = (SessionPack) msg;
-            if (!StringUtils.isEmpty(pack.getErrorMessage())) {
+            if (!Strings.isEmpty(pack.getErrorMessage())) {
                 exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", pack.getErrorMessage())));
                 return;
             }
@@ -217,10 +216,10 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
 
         $<Future> $f = $();
-        $f.$ = TaskFactory.schedule(() -> {
+        $f.v = TaskFactory.schedule(() -> {
             App.catchCall(() -> connect());
             if (!autoReconnect || isConnected()) {
-                $f.$.cancel(false);
+                $f.v.cancel(false);
             }
         }, 2 * 1000);
     }

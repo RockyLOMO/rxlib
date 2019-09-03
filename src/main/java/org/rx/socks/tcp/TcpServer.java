@@ -224,7 +224,7 @@ public class TcpServer<T extends TcpServer.ClientSession> extends Disposable imp
     }
 
     protected T createClient(SessionChannelId sessionChannelId, ChannelHandlerContext ctx) {
-        T client = (T) App.newInstance(clientSessionType, sessionChannelId, ctx);
+        T client = (T) Reflects.newInstance(clientSessionType, sessionChannelId, ctx);
         client.setConnectedTime(DateTime.now());
         return client;
     }

@@ -1,14 +1,22 @@
 package org.rx.beans;
 
+import lombok.EqualsAndHashCode;
+
 import java.io.Serializable;
 
+@EqualsAndHashCode
 public final class $<T> implements Serializable {
     public static <T> $<T> $() {
-        return new $<>();
+        return $(null);
     }
 
-    public T $;
+    public static <T> $<T> $(T val) {
+        return new $<>(val);
+    }
 
-    private $() {
+    public T v;
+
+    private $(T val) {
+        v = val;
     }
 }

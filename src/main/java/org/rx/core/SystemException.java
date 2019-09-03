@@ -263,7 +263,7 @@ public class SystemException extends NestedRuntimeException {
             return false;
         }
         if (exType.isInstance(this)) {
-            out.$ = (T) this;
+            out.v = (T) this;
             return true;
         }
         Throwable cause = this.getCause();
@@ -276,7 +276,7 @@ public class SystemException extends NestedRuntimeException {
 
         while (cause != null) {
             if (exType.isInstance(cause)) {
-                out.$ = (T) cause;
+                out.v = (T) cause;
                 return true;
             }
             if (cause.getCause() == cause) {

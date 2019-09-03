@@ -3,6 +3,7 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
+import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;
@@ -12,7 +13,6 @@ import org.rx.test.bean.UserManagerImpl;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
-import java.util.Arrays;
 
 public class SocksTester {
     @SneakyThrows
@@ -50,7 +50,7 @@ public class SocksTester {
 
         mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));
-            e.setResultList(Arrays.asList("a", "b", "c"));
+            e.setResultList(Arrays.toList("a", "b", "c"));
             sleep();
         });
         Thread.sleep(1000);

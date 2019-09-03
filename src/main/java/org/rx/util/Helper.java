@@ -8,12 +8,12 @@ import net.lingala.zip4j.exception.ZipException;
 import net.lingala.zip4j.model.ZipParameters;
 import net.lingala.zip4j.util.Zip4jConstants;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.rx.core.Contract;
+import org.rx.core.Strings;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
@@ -66,7 +66,7 @@ public class Helper {
         ZipParameters zipParameters = new ZipParameters();
         zipParameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
         zipParameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
-        if (!StringUtils.isEmpty(password)) {
+        if (!Strings.isEmpty(password)) {
             zipParameters.setEncryptFiles(true);
             zipParameters.setEncryptionMethod(Zip4jConstants.ENC_METHOD_AES);
             zipParameters.setAesKeyStrength(Zip4jConstants.AES_STRENGTH_256);

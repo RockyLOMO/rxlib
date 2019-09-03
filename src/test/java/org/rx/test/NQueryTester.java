@@ -1,11 +1,11 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
+import org.rx.core.Arrays;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -64,7 +64,7 @@ public class NQueryTester {
         showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
 
         showResult("cast<IPerson>", NQuery.of(personSet).<IPerson> cast());
-        NQuery oq = NQuery.of(personSet).cast().union(Arrays.asList(1, 2, 3));
+        NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
         showResult("ofType(Integer.class)", oq.ofType(Integer.class));
 
         showResult("firstOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).firstOrDefault());

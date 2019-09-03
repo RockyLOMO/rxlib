@@ -1,12 +1,12 @@
 package org.rx.util;
 
-import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
+import org.rx.core.Strings;
 
 import javax.sql.DataSource;
 import java.sql.*;

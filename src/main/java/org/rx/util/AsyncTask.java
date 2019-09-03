@@ -130,14 +130,14 @@ public final class AsyncTask {
         require(task);
 
         $<Future> future = $();
-        future.$ = scheduler.getValue().scheduleWithFixedDelay(() -> {
+        future.v = scheduler.getValue().scheduleWithFixedDelay(() -> {
             task.run();
             try {
-                future.$.cancel(true);
+                future.v.cancel(true);
             } catch (Exception e) {
                 log.warn("setTimeout", e);
             }
         }, delay, delay, TimeUnit.MILLISECONDS);
-        return future.$;
+        return future.v;
     }
 }

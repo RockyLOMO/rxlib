@@ -207,7 +207,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             } catch (SystemException ex) {
                 $<java.net.SocketException> out = $();
                 if (ex.tryGet(out, java.net.SocketException.class)) {
-                    if (out.$.getMessage().contains("Socket closed")) {
+                    if (out.v.getMessage().contains("Socket closed")) {
                         //ignore
                         log.debug("DirectTo ignore socket closed");
                         return;
@@ -232,7 +232,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
             } catch (SystemException ex) {
                 $<java.net.SocketException> out = $();
                 if (ex.tryGet(out, java.net.SocketException.class)) {
-                    if (out.$.getMessage().contains("Socket closed")) {
+                    if (out.v.getMessage().contains("Socket closed")) {
                         //ignore
                         log.debug("DirectTo ignore socket closed");
                         return;

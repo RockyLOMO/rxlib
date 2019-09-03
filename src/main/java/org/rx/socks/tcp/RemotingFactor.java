@@ -11,7 +11,7 @@ import org.rx.beans.BeanMapper;
 import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
-import org.rx.util.ManualResetEvent;
+import org.rx.core.ManualResetEvent;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
