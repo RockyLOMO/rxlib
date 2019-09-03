@@ -2,9 +2,9 @@ package org.rx.core;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.FieldUtils;
 
-import java.lang.reflect.AccessibleObject;
-import java.lang.reflect.Constructor;
+import java.lang.reflect.*;
 
 import static org.rx.core.Contract.require;
 
@@ -13,6 +13,33 @@ import static org.rx.core.Contract.require;
  */
 @Slf4j
 public class Reflects {
+    @SneakyThrows
+    public static void fillProperties(Object instance, Object propBean) {
+        require(instance, propBean);
+
+        NQuery<Method> methods = NQuery.of(instance.getClass().getMethods());
+        for (Field field : getFields(propBean.getClass())) {
+            Object val = field.get(propBean);
+            if (val == null) {
+                continue;
+            }
+            String methodName = String.format("set%s", Strings.toTitleCase(field.getName()));
+            Method method = methods.where(p -> p.getName().equals(methodName)).firstOrDefault();
+            if (method == null) {
+                continue;
+            }
+            try {
+                method.invoke(instance, checkArgs(method.getParameterTypes(), val));
+            } catch (Exception e) {
+                log.warn("fillProperties", e);
+            }
+        }
+    }
+
+    private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
+        return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
+    }
+
     public static <T> T newInstance(Class<T> type) {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
@@ -43,6 +70,14 @@ public class Reflects {
             return (T) constructor.newInstance(args);
         }
         throw new SystemException("Parameters error");
+    }
+
+    public static NQuery<Field> getFields(Class type) {
+        NQuery<Field> fields = NQuery.of(FieldUtils.getAllFieldsList(type));
+        for (Field field : fields) {
+            setAccess(field);
+        }
+        return fields;
     }
 
     private static void setAccess(AccessibleObject member) {

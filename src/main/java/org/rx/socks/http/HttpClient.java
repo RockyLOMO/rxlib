@@ -33,7 +33,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static org.rx.core.Contract.*;
-import static org.rx.core.Contract.require;
 
 @Slf4j
 public class HttpClient {

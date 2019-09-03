@@ -537,6 +537,10 @@ public final class NQuery<T> implements Iterable<T> {
         return String.join(delimiter, select(selector));
     }
 
+    public Object[] toArray() {
+        return current.toArray();
+    }
+
     public T[] toArray(Class<T> type) {
         List<T> result = toList();
         T[] array = (T[]) Array.newInstance(type, result.size());
