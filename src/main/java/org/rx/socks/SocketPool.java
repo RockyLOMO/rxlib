@@ -1,8 +1,8 @@
 package org.rx.socks;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.LogWriter;
-import org.rx.common.NQuery;
+import org.rx.core.LogWriter;
+import org.rx.core.NQuery;
 import org.rx.beans.DateTime;
 
 import java.io.IOException;
@@ -15,7 +15,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class SocketPool extends Traceable implements AutoCloseable {

@@ -2,7 +2,7 @@ package org.rx.socks.tcp;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.rx.common.NEventArgs;
+import org.rx.core.NEventArgs;
 
 @Data
 @EqualsAndHashCode(callSuper = true)

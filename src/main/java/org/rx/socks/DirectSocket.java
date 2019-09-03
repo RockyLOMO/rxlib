@@ -2,10 +2,10 @@ package org.rx.socks;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
-import org.rx.common.*;
 import org.rx.beans.Tuple;
 import org.rx.cache.BufferSegment;
 import org.rx.cache.BytesSegment;
+import org.rx.core.*;
 import org.rx.util.AsyncTask;
 import org.rx.io.MemoryStream;
 
@@ -16,8 +16,8 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.rx.beans.$.$;
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.isNull;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public class DirectSocket extends Traceable implements AutoCloseable {

@@ -1,9 +1,9 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
-import org.rx.common.App;
-import org.rx.common.Contract;
-import org.rx.common.NQuery;
+import org.rx.core.Contract;
+import org.rx.core.NQuery;
+import org.rx.core.Strings;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.common.Contract.toJsonString;
+import static org.rx.core.Contract.toJsonString;
 
 public class NQueryTester {
     @Test
@@ -22,7 +22,7 @@ public class NQueryTester {
             p.index = i;
             p.index2 = i % 2 == 0 ? 2 : i;
             p.index3 = i % 2 == 0 ? 3 : 4;
-            p.name = App.randomValue(5);
+            p.name = Strings.randomValue(5);
             p.age = ThreadLocalRandom.current().nextInt(100);
             personSet.add(p);
         }

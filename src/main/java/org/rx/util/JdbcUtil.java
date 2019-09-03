@@ -5,8 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.NQuery;
+import org.rx.core.InvalidOperationException;
+import org.rx.core.NQuery;
 
 import javax.sql.DataSource;
 import java.sql.*;
@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public class JdbcUtil implements AutoCloseable {

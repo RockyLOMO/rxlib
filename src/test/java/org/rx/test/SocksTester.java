@@ -3,10 +3,9 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.common.EventArgs;
+import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;
-import org.rx.socks.tcp.TcpServer;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 

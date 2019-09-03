@@ -1,8 +1,6 @@
-package org.rx.util;
+package org.rx.core;
 
-import org.rx.common.Contract;
-
-import static org.rx.common.Contract.isNull;
+import static org.rx.core.Contract.isNull;
 
 public final class StringBuilder {
     private java.lang.StringBuilder buffer;
@@ -26,16 +24,16 @@ public final class StringBuilder {
     }
 
     public void setPrefix(String prefix) {
-        this.prefix = isNull(prefix, Contract.EmptyString);
+        this.prefix = isNull(prefix, Strings.empty);
     }
 
     public StringBuilder() {
-        this(Contract.EmptyString);
+        this(Strings.empty);
     }
 
     public StringBuilder(String str) {
         buffer = new java.lang.StringBuilder(str);
-        prefix = Contract.EmptyString;
+        prefix = Strings.empty;
     }
 
     public int indexOf(String target) {

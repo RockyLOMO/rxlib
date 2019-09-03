@@ -1,7 +1,7 @@
 package org.rx.test.bean;
 
 import org.rx.annotation.ErrorCode;
-import org.rx.common.EventTarget;
+import org.rx.core.EventTarget;
 
 public interface UserManager extends EventTarget<UserManager> {
     enum xCode {

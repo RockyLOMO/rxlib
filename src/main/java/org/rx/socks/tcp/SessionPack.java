@@ -2,9 +2,9 @@ package org.rx.socks.tcp;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.rx.common.App;
+import org.rx.core.App;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Data
 @EqualsAndHashCode(callSuper = true)

@@ -3,15 +3,15 @@ package org.rx.io;
 import lombok.SneakyThrows;
 import org.rx.beans.$;
 import org.rx.annotation.ErrorCode;
-import org.rx.common.App;
-import org.rx.common.SystemException;
+import org.rx.core.App;
+import org.rx.core.SystemException;
 import org.rx.cache.BytesSegment;
 
 import java.io.*;
 import java.util.Arrays;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.values;
+import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.values;
 
 public class MemoryStream extends IOStream {
     private static final class BytesWriter extends ByteArrayOutputStream {

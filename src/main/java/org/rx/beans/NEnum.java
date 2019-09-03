@@ -2,11 +2,14 @@ package org.rx.beans;
 
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.rx.common.*;
+import org.rx.core.App;
+import org.rx.core.Contract;
+import org.rx.core.NQuery;
+import org.rx.core.Strings;
 
 import java.util.*;
 
-import static org.rx.common.Contract.*;
+import static org.rx.core.Contract.*;
 
 public interface NEnum<T extends Enum<T> & NEnum<T>> {
     final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
@@ -40,7 +43,7 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> {
         public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, String names) {
             require(type, names);
 
-            Collection<T> list = NQuery.of(App.split(names, ", "))
+            Collection<T> list = NQuery.of(Strings.split(names, ", "))
                     .join(Arrays.asList(type.getEnumConstants()), (p1, p2) -> p1.equals(p2.name()), (p1, p2) -> p2)
                     .asCollection();
             return valueOf(type, EnumSet.copyOf(list));

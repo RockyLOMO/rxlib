@@ -3,15 +3,15 @@ package org.rx.socks;
 import java.io.IOException;
 import java.net.*;
 
-import org.rx.common.SystemException;
-import org.rx.cache.WeakCache;
+import org.rx.core.SystemException;
+import org.rx.core.WeakCache;
 import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;
@@ -27,7 +27,7 @@ public final class Sockets {
 
     public InetAddress[] getAddresses(String host) {
         String prefix = "Sockets-";
-        return (InetAddress[]) WeakCache.getOrStore(prefix + host, p -> {
+        return (InetAddress[]) WeakCache.instance.getOrAdd(prefix + host, p -> {
             try {
                 return InetAddress.getAllByName(p.substring(prefix.length()));
             } catch (UnknownHostException ex) {

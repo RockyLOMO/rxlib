@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 import okhttp3.Cookie;
-import org.rx.common.NQuery;
+import org.rx.core.NQuery;
 
 public class MemoryCookiePersistor implements CookiePersistor {
     private static String createCookieKey(Cookie cookie) {

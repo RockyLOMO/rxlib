@@ -1,4 +1,4 @@
-package org.rx.common;
+package org.rx.core;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -8,6 +8,7 @@ import org.rx.beans.$;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.*;
+import java.util.Arrays;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -18,19 +19,15 @@ public final class Contract {
     }
 
     public static final int DefaultBufferSize;
-    public static final String EmptyString, Utf8, AllWarnings = "all";
-    public static final Object[] EmptyArray;
+    public static final String Utf8, AllWarnings = "all";
     private static NQuery<Class> SkipTypes = NQuery.of();
 
     static {
         DefaultBufferSize = 1024;
-        EmptyString = "";
         Utf8 = "UTF-8";
-        EmptyArray = new Object[0];
-
         Object val = App.readSetting(SettingNames.JsonSkipTypes);
         if (val != null) {
-            SkipTypes = SkipTypes.union(NQuery.of(App.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
+            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
 
@@ -41,6 +38,12 @@ public final class Contract {
         }
     }
 
+    /**
+     * require((Object) T[]);
+     * require(arg, (Object) boolean);
+     *
+     * @param args
+     */
     @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
         if (args == null || Arrays.stream(args).anyMatch(p -> p == null)) {
@@ -125,7 +128,7 @@ public final class Contract {
         Map<Object, Object> jObj = null;
         try {
             if (type.isArray() || arg instanceof Iterable) {
-                jArr = App.asList(arg);
+                jArr = NQuery.asList(arg);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
                     if (SkipTypes.any(p2 -> p2.isInstance(p))) {

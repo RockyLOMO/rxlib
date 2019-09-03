@@ -2,26 +2,21 @@ package org.rx.beans;
 
 import lombok.Getter;
 import net.sf.cglib.beans.BeanCopier;
-import org.rx.common.App;
+import org.rx.core.*;
 
-import org.rx.common.Contract;
-import org.rx.common.Lazy;
-import org.rx.util.StringBuilder;
+import org.rx.core.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-
-import org.rx.common.NQuery;
-import org.rx.cache.WeakCache;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.isNull;
+import static org.rx.core.Contract.require;
 
 /**
  * map from multi sources https://yq.aliyun.com/articles/14958
@@ -257,7 +252,7 @@ public class BeanMapper {
         } else if (content.startsWith(GetBool)) {
             content = content.substring(GetBool.length());
         } else {
-            content = App.toTitleCase(content);
+            content = Strings.toTitleCase(content);
         }
         return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length()).equals(content);
     }

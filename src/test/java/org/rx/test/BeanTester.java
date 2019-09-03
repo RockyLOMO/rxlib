@@ -6,7 +6,7 @@ import org.rx.annotation.Description;
 import org.rx.beans.BeanMapper;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
-import org.rx.common.App;
+import org.rx.core.App;
 import org.rx.test.bean.ErrorBean;
 import org.rx.beans.NEnum;
 import org.rx.test.bean.SourceBean;

@@ -10,9 +10,9 @@ import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
-import org.rx.common.Disposable;
-import org.rx.common.EventTarget;
-import org.rx.common.NEventArgs;
+import org.rx.core.Disposable;
+import org.rx.core.EventTarget;
+import org.rx.core.NEventArgs;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;

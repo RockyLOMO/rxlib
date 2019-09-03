@@ -5,8 +5,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.NEnum;
 import org.rx.beans.Tuple;
-import org.rx.common.App;
-import org.rx.common.Disposable;
+import org.rx.core.App;
+import org.rx.core.Disposable;
 
 import java.nio.file.*;
 import java.util.ArrayList;
@@ -16,7 +16,7 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j

@@ -1,10 +1,11 @@
-package org.rx.common;
+package org.rx.core;
 
 import java.util.*;
+import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public class EventListener {
     public static final EventListener instance = new EventListener();

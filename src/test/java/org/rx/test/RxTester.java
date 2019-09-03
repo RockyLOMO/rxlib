@@ -4,9 +4,9 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
-import org.rx.common.App;
-import org.rx.common.Contract;
-import org.rx.common.SystemException;
+import org.rx.core.App;
+import org.rx.core.Contract;
+import org.rx.core.SystemException;
 import org.rx.io.BinaryStream;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
@@ -19,8 +19,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.rx.beans.$.$;
-import static org.rx.common.Contract.eq;
-import static org.rx.common.Contract.values;
+import static org.rx.core.Contract.eq;
+import static org.rx.core.Contract.values;
 
 public class RxTester {
     @Test

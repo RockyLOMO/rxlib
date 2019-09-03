@@ -1,8 +1,8 @@
-package org.rx.common;
+package org.rx.core;
 
 import java.util.function.Supplier;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public final class Lazy<T> {
     private T value;

@@ -1,11 +1,11 @@
-package org.rx.common;
+package org.rx.core;
 
 import lombok.SneakyThrows;
 
 import java.lang.reflect.Field;
 import java.util.function.BiConsumer;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> {
     default boolean dynamicAttach() {

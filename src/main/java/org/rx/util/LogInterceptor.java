@@ -4,7 +4,8 @@ import com.alibaba.fastjson.JSONObject;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.rx.beans.Tuple;
-import org.rx.common.Contract;
+import org.rx.core.Contract;
+import org.rx.core.StringBuilder;
 
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;

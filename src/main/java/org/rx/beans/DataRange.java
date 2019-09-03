@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Data
 @NoArgsConstructor

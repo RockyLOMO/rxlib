@@ -14,7 +14,7 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 
 import org.rx.util.LogInterceptor;
-import org.rx.util.StringBuilder;
+import org.rx.core.StringBuilder;
 import org.rx.util.function.ThrowableFunc;
 
 import java.util.Set;

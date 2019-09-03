@@ -1,4 +1,4 @@
-package org.rx.common;
+package org.rx.core;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -6,8 +6,6 @@ import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
 import org.rx.beans.BiTuple;
 import org.rx.beans.Tuple;
-import org.rx.cache.WeakCache;
-import org.rx.util.StringBuilder;
 import org.springframework.core.NestedRuntimeException;
 
 import java.lang.reflect.AccessibleObject;
@@ -17,8 +15,8 @@ import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.common.Contract.*;
-import static org.rx.common.Contract.toJsonString;
+import static org.rx.core.Contract.*;
+import static org.rx.core.Contract.toJsonString;
 
 /**
  * ex.fillInStackTrace()
@@ -38,7 +36,7 @@ public class SystemException extends NestedRuntimeException {
             Object val = App.readSetting(Contract.SettingNames.ErrorCodeFiles);
             if (val != null) {
                 try {
-                    for (Object file : App.asList(val)) {
+                    for (Object file : NQuery.asList(val)) {
                         codes.putAll(App.loadYaml(String.valueOf(file)));
                     }
                 } catch (Exception e) {
@@ -118,7 +116,7 @@ public class SystemException extends NestedRuntimeException {
     public SystemException(String errorName, Throwable cause, Object[] messageValues) {
         super(cause != null ? cause.getMessage() : null, cause);
         if (messageValues == null) {
-            messageValues = Contract.EmptyArray;
+            messageValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
         StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
@@ -128,7 +126,7 @@ public class SystemException extends NestedRuntimeException {
             if (methodSettings == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(WeakCache.getOrStore(stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(WeakCache.instance.getOrAdd(stack.getClassName(), p -> {
                 Class type = App.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);
@@ -143,7 +141,6 @@ public class SystemException extends NestedRuntimeException {
                 if (!method.getName().equals(stack.getMethodName())) {
                     continue;
                 }
-                //Logger.debug("SystemException: Try find @ErrorCode at %s", method.toString());
                 if ((errorCode = findCode(method, errorName, cause)) == null) {
                     continue;
                 }
@@ -219,7 +216,7 @@ public class SystemException extends NestedRuntimeException {
 
     private void setFriendlyMessage(Map<String, Object> methodSettings, String messageName, ErrorCode errorCode,
                                     Object[] messageValues) {
-        if (!App.isNullOrEmpty(errorCode.value())) {
+        if (!Strings.isNullOrEmpty(errorCode.value())) {
             messageName += "[" + errorCode.value() + "]";
         }
         if (!Exception.class.equals(errorCode.cause())) {

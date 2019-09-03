@@ -6,10 +6,10 @@
 //import net.sf.cglib.proxy.MethodInterceptor;
 //import net.sf.cglib.proxy.MethodProxy;
 //import org.apache.commons.lang3.ArrayUtils;
-//import org.rx.common.Contract;
+//import org.rx.core.Contract;
 //import org.rx.beans.Tuple;
 //
-//import org.rx.common.App;
+//import org.rx.core.App;
 //import org.springframework.core.ParameterNameDiscoverer;
 //import org.springframework.core.PrioritizedParameterNameDiscoverer;
 //
@@ -22,7 +22,7 @@
 //import java.util.Map;
 //import java.util.function.Function;
 //
-//import static org.rx.common.Contract.isNull;
+//import static org.rx.core.Contract.isNull;
 //
 //public class RestClient {
 //    private static class DynamicProxy implements InvocationHandler, MethodInterceptor {

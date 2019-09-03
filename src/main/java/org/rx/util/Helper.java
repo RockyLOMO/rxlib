@@ -13,7 +13,7 @@ import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.rx.common.Contract;
+import org.rx.core.Contract;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
@@ -23,7 +23,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Function;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public class Helper {

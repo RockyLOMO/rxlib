@@ -1,27 +1,21 @@
-package org.rx.common;
+package org.rx.core;
 
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HttpHeaders;
-import com.google.common.reflect.ClassPath;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.ShortUUID;
 import org.rx.beans.Tuple;
-import org.rx.cache.MemoryCache;
-import org.rx.cache.WeakCache;
 import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 import org.rx.io.MemoryStream;
-import org.rx.util.StringBuilder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -31,7 +25,6 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
-import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
@@ -41,19 +34,19 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
-import static org.rx.common.Contract.*;
+import static org.rx.core.Contract.*;
 
 @Slf4j
-public class App {
+public class App extends SystemUtils {
     //region Nested
     public enum CacheContainerKind {
-        ObjectCache,
         WeakCache,
+        SoftCache,
         ThreadStatic,
         ServletRequest
     }
@@ -87,13 +80,22 @@ public class App {
     //endregion
 
     //region Basic
-    public static boolean windowsOS() {
-        return isNull(System.getProperty("os.name"), "").toLowerCase().contains("windows");
+    public static String getBootstrapPath() {
+        String p = App.class.getClassLoader().getResource("").getFile();
+        if (IS_OS_WINDOWS) {
+            if (p.startsWith("file:/")) {
+                p = p.substring(6);
+            } else {
+                p = p.substring(1);
+            }
+        }
+        System.out.println("bootstrapPath:" + p);
+        return p;
     }
 
     public static List<String> execShell(String workspace, String... shellStrings) {
         List<String> resultList = new ArrayList<>();
-        java.lang.StringBuilder msg = new java.lang.StringBuilder();
+        StringBuilder msg = new StringBuilder();
         File dir = null;
         if (workspace != null) {
             msg.append(String.format("execShell workspace=%s\n", workspace));
@@ -101,10 +103,10 @@ public class App {
         }
         for (String shellString : shellStrings) {
             msg.append(String.format("pre-execShell %s", shellString));
-            java.lang.StringBuilder result = new java.lang.StringBuilder();
+            StringBuilder result = new StringBuilder();
             try {
                 Process process;
-                if (windowsOS()) {
+                if (IS_OS_WINDOWS) {
                     process = Runtime.getRuntime().exec(shellString, null, dir);
                 } else {
                     process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", shellString}, null, dir);
@@ -121,7 +123,7 @@ public class App {
                 result.append("ERROR: " + e.getMessage()).append("\n");
             }
             msg.append(String.format("\npost-execShell %s\n\n", result));
-            if (result.length() == 0) {
+            if (result.getLength() == 0) {
                 result.append("NULL");
             }
             resultList.add(result.toString());
@@ -130,31 +132,12 @@ public class App {
         return resultList;
     }
 
-    public static String getBootstrapPath() {
-        String p = App.class.getClassLoader().getResource("").getFile();
-        System.out.println("bootstrapPath:" + p);
-        if (windowsOS()) {
-            if (p.startsWith("file:/")) {
-                p = p.substring(6);
-            } else {
-                p = p.substring(1);
-            }
-        }
-        return p;
-    }
-
-    public static HttpServletRequest getCurrentRequest() {
-        ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        return ra == null ? null : ra.getRequest();
-    }
-
     public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state) {
         return retry(retryCount, func, state, TimeoutInfinite, false);
     }
 
     @SneakyThrows
-    public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state, long sleepMillis,
-                                   boolean sleepFirst) {
+    public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state, long sleepMillis, boolean sleepFirst) {
         require(retryCount, retryCount > 0);
         require(func);
 
@@ -200,94 +183,6 @@ public class App {
         return null;
     }
 
-    public static ClassLoader getClassLoader() {
-        return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
-    }
-
-    public static <T> Class<T> loadClass(String className, boolean initialize) {
-        return loadClass(className, initialize, true);
-    }
-
-    public static Class loadClass(String className, boolean initialize, boolean throwOnEmpty) {
-        try {
-            return Class.forName(className, initialize, getClassLoader());
-        } catch (ClassNotFoundException e) {
-            if (!throwOnEmpty) {
-                return null;
-            }
-            throw SystemException.wrap(e);
-        }
-    }
-
-    public static <T> T newInstance(Class<T> type) {
-        Object[] args = null;
-        return newInstance(type, args);
-    }
-
-    public static <T> T newInstance(Class<T> type, Object... args) {
-        require(type);
-        if (args == null) {
-            args = Contract.EmptyArray;
-        }
-
-        try {
-            for (Constructor<?> constructor : type.getConstructors()) {
-                Class[] paramTypes = constructor.getParameterTypes();
-                if (paramTypes.length != args.length) {
-                    continue;
-                }
-                boolean ok = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!paramTypes[i].isInstance(args[i])) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) {
-                    continue;
-                }
-                constructor.setAccessible(true);
-                return (T) constructor.newInstance(args);
-            }
-        } catch (ReflectiveOperationException ex) {
-            throw SystemException.wrap(ex);
-        }
-        throw new SystemException("Parameters error");
-    }
-
-    @SneakyThrows
-    public static List<Class> getClassesFromPackage(String packageDirName, ClassLoader classloader) {
-        require(packageDirName, classloader);
-
-        ImmutableSet<ClassPath.ClassInfo> classes = ClassPath.from(classloader).getTopLevelClasses(packageDirName);
-        return NQuery.of(classes).select(p -> (Class) p.load()).toList();
-    }
-
-    @ErrorCode(value = "argError", messageKeys = {"$type"})
-    public static <T> List<T> asList(Object arrayOrIterable) {
-        require(arrayOrIterable);
-
-        Class type = arrayOrIterable.getClass();
-        if (type.isArray()) {
-            int length = Array.getLength(arrayOrIterable);
-            List<T> list = new ArrayList<>(length);
-            for (int i = 0; i < length; i++) {
-                Object item = Array.get(arrayOrIterable, i);
-                list.add((T) item);
-            }
-            return list;
-        }
-
-        Iterable iterable;
-        if ((iterable = as(arrayOrIterable, Iterable.class)) != null) {
-            List<T> list = new ArrayList<>();
-            iterable.forEach(p -> list.add((T) p));
-            return list;
-        }
-
-        throw new SystemException(values(type.getSimpleName()), "argError");
-    }
-
     public static <T> T getOrStore(String key, Function<String, T> supplier) {
         return getOrStore(key, supplier, CacheContainerKind.WeakCache);
     }
@@ -311,11 +206,11 @@ public class App {
                     request.setAttribute(k, v = supplier.apply(k));
                 }
                 break;
-            case ObjectCache:
-                v = MemoryCache.getOrStore(key, (Function<String, Object>) supplier);
+            case SoftCache:
+                v = WeakCache.instance.getOrAdd(key, (Function<String, Object>) supplier, true);
                 break;
             default:
-                v = WeakCache.getOrStore(key, (Function<String, Object>) supplier);
+                v = WeakCache.instance.getOrAdd(key, (Function<String, Object>) supplier, false);
                 break;
         }
         return (T) v;
@@ -398,11 +293,6 @@ public class App {
         return UUID.fromString(new ShortUUID.Builder().decode(shorterUUID));
     }
 
-    public static String randomValue(int maxValue) {
-        Integer int2 = maxValue;
-        return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
-    }
-
     public static <T> T readSetting(String key) {
         return readSetting(key, null);
     }
@@ -434,7 +324,7 @@ public class App {
 
         StringBuilder kBuf = new StringBuilder();
         String d = ".";
-        String[] splits = split(key, d);
+        String[] splits = Strings.split(key, d);
         int c = splits.length - 1;
         for (int i = 0; i <= c; i++) {
             if (kBuf.getLength() > 0) {
@@ -490,18 +380,18 @@ public class App {
         }
     }
 
-    public static <T> T loadYaml(InputStream yamlStream, Class<T> beanType) {
-        require(yamlStream, beanType);
+    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
+        require(yamlContent, beanType);
 
         Yaml yaml = new Yaml();
-        return yaml.loadAs(yamlStream, beanType);
+        return yaml.loadAs(yamlContent, beanType);
     }
 
     public static <T> String dumpYaml(T bean) {
         require(bean);
 
         Yaml yaml = new Yaml();
-        return yaml.dumpAsMap(bean);
+        return yaml.dump(bean);
     }
 
     public static void createDirectory(String dirPath) {
@@ -517,78 +407,68 @@ public class App {
     }
     //endregion
 
-    //region Check
-    public static boolean isNullOrEmpty(String input) {
-        return input == null || input.length() == 0 || "null".equals(input);
+    //region reflect
+    public static ClassLoader getClassLoader() {
+        return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
     }
 
-    public static boolean isNullOrWhiteSpace(String input) {
-        return isNullOrEmpty(input) || input.trim().length() == 0;
+    public static <T> Class<T> loadClass(String className, boolean initialize) {
+        return loadClass(className, initialize, true);
     }
 
-    public static boolean equals(String s1, String s2, boolean ignoreCase) {
-        if (s1 == null) {
-            if (s2 == null) {
-                return true;
+    /**
+     * ClassPath.from(classloader).getTopLevelClasses(packageDirName)
+     *
+     * @param className
+     * @param initialize
+     * @param throwOnEmpty
+     * @return
+     */
+    public static Class loadClass(String className, boolean initialize, boolean throwOnEmpty) {
+        try {
+            return Class.forName(className, initialize, getClassLoader());
+        } catch (ClassNotFoundException e) {
+            if (!throwOnEmpty) {
+                return null;
             }
-            return false;
+            throw SystemException.wrap(e);
         }
-        return ignoreCase ? s1.equals(s2) : s1.equalsIgnoreCase(s2);
     }
 
-    public static String[] split(String str, String delimiter) {
-        return split(str, delimiter, null);
+    public static <T> T newInstance(Class<T> type) {
+        return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
-    @ErrorCode(value = "lengthError", messageKeys = {"$len"})
-    public static String[] split(String str, String delimiter, Integer length) {
-        String[] result;
-        if (isNullOrEmpty(str)) {
-            result = new String[0];
-        } else {
-            result = str.split(Pattern.quote(delimiter));
-        }
-        if (length != null && length != result.length) {
-            throw new SystemException(values(length), "lengthError");
-        }
-        return result;
-    }
-
-    public static String toTitleCase(String s) {
-        return StringUtils.capitalize(s);
-    }
-
-    public static String filterPrivacy(String val) {
-        if (isNullOrEmpty(val)) {
-            return "";
+    public static <T> T newInstance(Class<T> type, Object... args) {
+        require(type);
+        if (args == null) {
+            args = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
-        val = val.trim();
-        int len = val.length(), left, right;
-        switch (len) {
-            case 11:
-                left = 3;
-                right = 4;
-                break;
-            case 18:
-                left = 4;
-                right = 6;
-                break;
-            default:
-                if (len < 3) {
-                    left = 1;
-                    right = 0;
-                } else {
-                    left = right = len / 3;
+        try {
+            for (Constructor<?> constructor : type.getConstructors()) {
+                Class[] paramTypes = constructor.getParameterTypes();
+                if (paramTypes.length != args.length) {
+                    continue;
                 }
-                break;
+                boolean ok = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!paramTypes[i].isInstance(args[i])) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+                return (T) constructor.newInstance(args);
+            }
+        } catch (ReflectiveOperationException ex) {
+            throw SystemException.wrap(ex);
         }
-        String x = Strings.repeat("*", len - left - right);
-        return val.substring(0, left) + x + val.substring(left + x.length());
+        throw new SystemException("Parameters error");
     }
-    //endregion
 
-    //region Converter
     public static <T> T convert(Object val, Class<T> toType) {
         return tryConvert(val, toType).right;
     }
@@ -711,7 +591,7 @@ public class App {
     }
 
     public static boolean isBase64String(String base64String) {
-        if (isNullOrEmpty(base64String)) {
+        if (Strings.isNullOrEmpty(base64String)) {
             return false;
         }
 
@@ -772,28 +652,33 @@ public class App {
     //endregion
 
     //region Servlet
+    public static HttpServletRequest getCurrentRequest() {
+        ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        return ra == null ? null : ra.getRequest();
+    }
+
     public static String getRequestIp(HttpServletRequest request) {
         if (request == null) {
             return "0.0.0.0";
         }
 
         String ip = request.getHeader(HttpHeaders.X_FORWARDED_FOR);
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("Proxy-Client-IP");
         }
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("WL-Proxy-Client-IP");
         }
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("HTTP_CLIENT_IP");
         }
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("HTTP_X_FORWARDED_FOR");
         }
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("x-real-ip");
         }
-        if (isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
         String[] ips = ip.split(",");
@@ -831,7 +716,7 @@ public class App {
     public static String getCookie(String name) {
         require(name);
 
-        HttpServletRequest servletRequest = App.getCurrentRequest();
+        HttpServletRequest servletRequest = getCurrentRequest();
         if (servletRequest == null) {
             throw new InvalidOperationException("上下环境无ServletRequest");
         }

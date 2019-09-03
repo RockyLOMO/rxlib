@@ -1,7 +1,7 @@
 package org.rx.util;
 
 import lombok.SneakyThrows;
-import org.rx.common.App;
+import org.rx.core.App;
 
 import java.util.concurrent.TimeoutException;
 

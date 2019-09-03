@@ -2,10 +2,10 @@ package org.rx.socks;
 
 import com.google.common.base.Stopwatch;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.common.App;
-import org.rx.common.NQuery;
-import org.rx.cache.WeakCache;
-import org.rx.common.Lazy;
+import org.rx.core.App;
+import org.rx.core.NQuery;
+import org.rx.core.WeakCache;
+import org.rx.core.Lazy;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.isNull;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.as;
+import static org.rx.core.Contract.isNull;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class PingClient {
@@ -62,7 +62,7 @@ public final class PingClient {
 
         Consumer<Boolean> consumer = null;
         if (cacheResult) {
-            WeakCache<String, Object> cache = WeakCache.getInstance();
+            WeakCache<String, Object> cache = WeakCache.instance;
             String k = String.format("_PingClient%s", endpoint);
             Boolean result = as(cache.get(k), Boolean.class);
             if (result != null) {

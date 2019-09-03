@@ -2,7 +2,7 @@ package org.rx.cache;
 
 import java.util.function.Consumer;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public class BufferSegment {
     private final byte[] buffer;

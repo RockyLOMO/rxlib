@@ -7,7 +7,8 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.common.*;
+import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.util.validator.ConstraintException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,7 +19,7 @@ import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-import static org.rx.common.SystemException.DefaultMessage;
+import static org.rx.core.SystemException.DefaultMessage;
 
 @Slf4j
 //@Aspect
@@ -44,7 +45,7 @@ public class ControllerInterceptor {
         MethodSignature methodSignature = (MethodSignature) signature;
         Method method = methodSignature.getMethod();
 
-        org.rx.util.StringBuilder logContent = new org.rx.util.StringBuilder().appendLine();
+        StringBuilder logContent = new StringBuilder().appendLine();
 
         // 2.2 获取接口的类及方法名
         logContent.appendLine(String.format("Class:\t%s.%s", method.getDeclaringClass().getName(), method.getName()));

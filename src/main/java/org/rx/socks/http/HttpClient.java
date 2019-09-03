@@ -10,9 +10,9 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.rx.common.Contract;
-import org.rx.common.InvalidOperationException;
-import org.rx.common.NQuery;
+import org.rx.core.Contract;
+import org.rx.core.InvalidOperationException;
+import org.rx.core.NQuery;
 import org.rx.io.MemoryStream;
 import org.rx.io.IOStream;
 
@@ -33,8 +33,8 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.common.Contract.*;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.*;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public class HttpClient {

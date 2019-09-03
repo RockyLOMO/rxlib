@@ -1,17 +1,17 @@
 package org.rx.io;
 
 import lombok.SneakyThrows;
-import org.rx.common.App;
-import org.rx.common.Disposable;
+import org.rx.core.App;
+import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
-import org.rx.common.SystemException;
-import org.rx.common.Contract;
-import org.rx.util.StringBuilder;
+import org.rx.core.SystemException;
+import org.rx.core.Contract;
+import org.rx.core.StringBuilder;
 
 import java.io.*;
 
-import static org.rx.common.Contract.require;
-import static org.rx.common.Contract.values;
+import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.values;
 
 public class IOStream extends Disposable implements Closeable, Flushable {
     public static String readString(InputStream stream) {

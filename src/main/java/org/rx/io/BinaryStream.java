@@ -1,12 +1,12 @@
 package org.rx.io;
 
 import lombok.SneakyThrows;
-import org.rx.common.App;
+import org.rx.core.App;
 import org.rx.socks.Bytes;
 
 import java.io.*;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public class BinaryStream extends IOStream {
     private boolean leaveOpen;

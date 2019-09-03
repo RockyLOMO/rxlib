@@ -19,7 +19,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.beans.$;
-import org.rx.common.*;
+import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
 
@@ -28,7 +28,7 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 
 import static org.rx.beans.$.$;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 import static org.rx.util.AsyncTask.TaskFactory;
 
 @Slf4j

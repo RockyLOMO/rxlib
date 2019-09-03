@@ -1,10 +1,10 @@
 package org.rx.security;
 
 import lombok.SneakyThrows;
-import org.rx.common.App;
-import org.rx.common.Contract;
+import org.rx.core.App;
+import org.rx.core.Contract;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;

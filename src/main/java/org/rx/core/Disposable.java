@@ -1,8 +1,8 @@
-package org.rx.common;
+package org.rx.core;
 
 import org.rx.annotation.ErrorCode;
 
-import static org.rx.common.Contract.values;
+import static org.rx.core.Contract.values;
 
 public abstract class Disposable implements AutoCloseable {
     private boolean closed;

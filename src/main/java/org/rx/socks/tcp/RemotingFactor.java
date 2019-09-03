@@ -9,7 +9,7 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.beans.BeanMapper;
 import org.rx.beans.Tuple;
-import org.rx.common.*;
+import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.util.ManualResetEvent;
 
@@ -23,8 +23,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import static org.rx.common.Contract.as;
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.as;
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class RemotingFactor {

@@ -3,8 +3,8 @@ package org.rx.test.bean;
 import com.alibaba.fastjson.JSON;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.rx.common.EventArgs;
-import org.rx.common.InvalidOperationException;
+import org.rx.core.EventArgs;
+import org.rx.core.InvalidOperationException;
 
 import java.util.List;
 import java.util.function.BiConsumer;

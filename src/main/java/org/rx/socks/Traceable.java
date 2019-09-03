@@ -1,9 +1,9 @@
 package org.rx.socks;
 
-import org.rx.common.Disposable;
-import org.rx.common.LogWriter;
+import org.rx.core.Disposable;
+import org.rx.core.LogWriter;
 
-import static org.rx.common.Contract.isNull;
+import static org.rx.core.Contract.isNull;
 
 public abstract class Traceable extends Disposable {
     private LogWriter tracer;

@@ -1,4 +1,4 @@
-package org.rx.common;
+package org.rx.core;
 
 import com.google.common.eventbus.EventBus;
 import lombok.Getter;

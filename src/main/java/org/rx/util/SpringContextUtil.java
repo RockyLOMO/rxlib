@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 @Component
 public final class SpringContextUtil implements InitializingBean, ApplicationContextAware {

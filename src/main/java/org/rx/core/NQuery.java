@@ -1,11 +1,14 @@
-package org.rx.common;
+package org.rx.core;
 
 import com.google.common.collect.Streams;
+import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.Tuple;
 
 import java.lang.reflect.Array;
 import java.util.*;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
@@ -13,7 +16,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import static org.rx.common.Contract.*;
+import static org.rx.core.Contract.*;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
@@ -21,6 +24,7 @@ import static org.rx.common.Contract.*;
  * @param <T>
  */
 public final class NQuery<T> implements Iterable<T> {
+    //region nestedTypes
     @FunctionalInterface
     public interface IndexSelector<T, TR> {
         TR apply(T t, int index);
@@ -34,18 +38,53 @@ public final class NQuery<T> implements Iterable<T> {
             return (t, i) -> !test(t, i);
         }
     }
+    //endregion
 
-    //region of
+    //region staticMembers
     private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
 
-    public static <T> NQuery<T> of(T... set) {
-        require((Object) set);
+    @ErrorCode(value = "argError", messageKeys = {"$type"})
+    public static <T> List<T> asList(Object arrayOrIterable) {
+        require(arrayOrIterable);
 
-        List<T> list = new ArrayList<>(set.length);
-        for (T t : set) {
-            list.add(t);
+        Class type = arrayOrIterable.getClass();
+        if (type.isArray()) {
+            int length = Array.getLength(arrayOrIterable);
+            List<T> list = new ArrayList<>(length);
+            for (int i = 0; i < length; i++) {
+                Object item = Array.get(arrayOrIterable, i);
+                list.add((T) item);
+            }
+            return list;
         }
-        return of(list);
+
+        Iterable<T> iterable;
+        if ((iterable = as(arrayOrIterable, Iterable.class)) != null) {
+            return toList(iterable);
+        }
+
+        throw new SystemException(values(type.getSimpleName()), "argError");
+    }
+
+    public static <T> List<T> toList(Iterable<T> iterable) {
+        return IterableUtils.toList(iterable);
+    }
+
+    public static <T> List<T> toList(Iterator<T> iterator) {
+        return IteratorUtils.toList(iterator);
+    }
+
+    public static <T> NQuery<T> of(T one) {
+        return of(org.rx.core.Arrays.toList(one));
+    }
+
+    @SafeVarargs
+    public static <T> NQuery<T> of(T... set) {
+        return of(org.rx.core.Arrays.toList(set));
+    }
+
+    public static <T> NQuery<T> of(Iterator<T> iterator) {
+        return of(toList(iterator));
     }
 
     public static <T> NQuery<T> of(Stream<T> stream) {
@@ -85,12 +124,12 @@ public final class NQuery<T> implements Iterable<T> {
 
     private <TR> List<TR> newList() {
         int count = count();
-        return isParallel ? Collections.synchronizedList(new ArrayList<>(count)) : new ArrayList<>(count);
+        return isParallel ? java.util.Collections.synchronizedList(new ArrayList<>(count)) : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {
         int count = count();
-        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
+        return isParallel ? java.util.Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
@@ -197,21 +236,17 @@ public final class NQuery<T> implements Iterable<T> {
         return me(result);
     }
 
-    public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector,
-                                    BiFunction<T, TI, TR> resultSelector) {
-        return me(stream().flatMap(
-                p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
+    public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return me(stream().flatMap(p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
-    public <TI, TR> NQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector,
-                                    BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         List<TI> inner = newList();
         stream().forEach(t -> inner.add(innerSelector.apply(t)));
         return join(inner, keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector,
-                                        BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         List<TI> inner = newList();
         stream().forEach(t -> newStream(innerSelector.apply(t)).forEach(inner::add));
         return join(inner, keySelector, resultSelector);
@@ -234,7 +269,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public NQuery<T> concat(Iterable<T> set) {
-        return concat(App.asList(set));
+        return concat(toList(set));
     }
 
     public NQuery<T> concat(Collection<T> set) {
@@ -246,7 +281,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public NQuery<T> except(Iterable<T> set) {
-        return except(App.asList(set));
+        return except(toList(set));
     }
 
     public NQuery<T> except(Collection<T> set) {
@@ -254,7 +289,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public NQuery<T> intersect(Iterable<T> set) {
-        return intersect(App.asList(set));
+        return intersect(toList(set));
     }
 
     public NQuery<T> intersect(Collection<T> set) {
@@ -262,7 +297,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public NQuery<T> union(Iterable<T> set) {
-        return union(App.asList(set));
+        return union(toList(set));
     }
 
     public NQuery<T> union(Collection<T> set) {
@@ -330,8 +365,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(result);
     }
 
-    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector,
-                                       Function<Tuple<Object[], NQuery<T>>, TR> resultSelector) {
+    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector, Function<Tuple<Object[], NQuery<T>>, TR> resultSelector) {
         Map<String, Tuple<Object[], List<T>>> map = newMap();
         stream().forEach(t -> {
             Object[] ks = keySelector.apply(t);
@@ -497,6 +531,10 @@ public final class NQuery<T> implements Iterable<T> {
 
     public Collection<T> asCollection() {
         return current;
+    }
+
+    public String toJoinString(String delimiter, Function<T, String> selector) {
+        return String.join(delimiter, select(selector));
     }
 
     public T[] toArray(Class<T> type) {

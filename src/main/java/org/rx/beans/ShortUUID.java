@@ -4,7 +4,7 @@ import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.UUID;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public final class ShortUUID {
     public static class Builder {

@@ -1,8 +1,8 @@
 package org.rx.security;
 
 import lombok.SneakyThrows;
-import org.rx.common.App;
-import org.rx.common.Contract;
+import org.rx.core.App;
+import org.rx.core.Contract;
 
 import javax.crypto.Cipher;
 import java.security.*;
@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 
 public final class RSAUtil {
     private static final String SIGN_ALGORITHMS = "MD5withRSA";

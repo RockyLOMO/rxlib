@@ -7,7 +7,7 @@ import org.rx.io.IOStream;
 import java.io.IOException;
 import java.net.Socket;
 
-import static org.rx.common.Contract.require;
+import static org.rx.core.Contract.require;
 import static org.rx.socks.Sockets.shutdown;
 
 @Slf4j
