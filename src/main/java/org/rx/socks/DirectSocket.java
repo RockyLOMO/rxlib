@@ -3,10 +3,10 @@ package org.rx.socks;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.beans.Tuple;
-import org.rx.cache.BufferSegment;
-import org.rx.cache.BytesSegment;
+import org.rx.util.BufferSegment;
+import org.rx.util.BytesSegment;
 import org.rx.core.*;
-import org.rx.util.AsyncTask;
+import org.rx.core.AsyncTask;
 import org.rx.io.MemoryStream;
 
 import java.io.IOException;

@@ -1,13 +1,10 @@
-package org.rx.util;
+package org.rx.core;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.beans.DateTime;
-import org.rx.core.App;
-import org.rx.core.Lazy;
-import org.rx.core.NQuery;
 import org.rx.util.function.Func;
 
 import java.util.List;

@@ -1,7 +1,7 @@
 package org.rx.socks;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.cache.BytesSegment;
+import org.rx.util.BytesSegment;
 import org.rx.io.IOStream;
 
 import java.io.IOException;

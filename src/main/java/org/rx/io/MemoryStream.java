@@ -5,7 +5,7 @@ import org.rx.beans.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.App;
 import org.rx.core.SystemException;
-import org.rx.cache.BytesSegment;
+import org.rx.util.BytesSegment;
 
 import java.io.*;
 import java.util.Arrays;

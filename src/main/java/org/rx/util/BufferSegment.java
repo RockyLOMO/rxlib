@@ -1,4 +1,4 @@
-package org.rx.cache;
+package org.rx.util;
 
 import java.util.function.Consumer;
 
