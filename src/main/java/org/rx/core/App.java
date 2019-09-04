@@ -351,20 +351,25 @@ public class App extends SystemUtils {
         return null;
     }
 
-    @SneakyThrows
     public static Map<String, Object> loadYaml(String... yamlFile) {
         require((Object) yamlFile);
 
-        Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml(new SafeConstructor());
-        for (String yf : yamlFile) {
-            File file = new File(yf);
-            for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
-                Map<String, Object> one = (Map<String, Object>) data;
-                fillDeep(one, result);
+        return getOrStore(String.format("loadYaml-%s", toJsonString(yamlFile)), k -> {
+            try {
+                Map<String, Object> result = new HashMap<>();
+                Yaml yaml = new Yaml(new SafeConstructor());
+                for (String yf : yamlFile) {
+                    File file = new File(yf);
+                    for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
+                        Map<String, Object> one = (Map<String, Object>) data;
+                        fillDeep(one, result);
+                    }
+                }
+                return result;
+            } catch (Exception e) {
+                throw SystemException.wrap(e);
             }
-        }
-        return result;
+        });
     }
 
     private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {

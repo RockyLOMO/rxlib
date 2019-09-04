@@ -48,6 +48,7 @@ public class WeakCache<TK, TV> {
             return;
         }
         container.put(key, isSoftRef ? new SoftReference<>(val) : new WeakReference<>(val));
+        log.debug("add key {} softRef={}", key, softRef);
     }
 
     public void remove(TK key) {
