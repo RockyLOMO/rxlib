@@ -24,7 +24,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[Contract.DefaultBufferSize];
+            byte[] buffer = new byte[Contract.config.getDefaultBufferSize()];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -51,7 +51,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
-        byte[] buffer = new byte[Contract.DefaultBufferSize * 2];
+        byte[] buffer = new byte[Contract.config.getDefaultBufferSize() * 2];
         int read;
         while ((read = from.read(buffer, 0, buffer.length)) > 0) {
             to.write(buffer, 0, read);

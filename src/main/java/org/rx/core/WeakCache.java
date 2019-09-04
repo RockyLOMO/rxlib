@@ -1,14 +1,12 @@
 package org.rx.core;
 
 import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.beans.Tuple;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -18,20 +16,23 @@ import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
 
 /**
+ * ReferenceQueue 不准
  * http://blog.csdn.net/nicolasyan/article/details/50840852
  */
 @Slf4j
 public class WeakCache<TK, TV> {
     public static final WeakCache<String, Object> instance = new WeakCache<>();
 
-    private ReferenceQueue<Tuple<TK, TV>> queue;
-    private ConcurrentMap<TK, Reference<Tuple<TK, TV>>> container;
+    private ConcurrentMap<TK, Reference<TV>> container;
     @Getter
     @Setter
     private boolean softRef;
 
+    public int size() {
+        return container.size();
+    }
+
     public WeakCache() {
-        queue = new ReferenceQueue<>();
         container = new ConcurrentHashMap<>();
     }
 
@@ -46,8 +47,7 @@ public class WeakCache<TK, TV> {
         if (v != null && v.equals(val)) {
             return;
         }
-        Tuple<TK, TV> kv = Tuple.of(key, val);
-        container.put(key, isSoftRef ? new SoftReference<>(kv, queue) : new WeakReference<>(kv, queue));
+        container.put(key, isSoftRef ? new SoftReference<>(val) : new WeakReference<>(val));
     }
 
     public void remove(TK key) {
@@ -57,17 +57,17 @@ public class WeakCache<TK, TV> {
     public void remove(TK key, boolean destroy) {
         require(key);
 
-        Reference<Tuple<TK, TV>> ref = container.remove(key);
+        Reference<TV> ref = container.remove(key);
         if (ref == null) {
             return;
         }
-        Tuple<TK, TV> kv = ref.get();
-        if (kv == null) {
+        TV val = ref.get();
+        if (val == null) {
             return;
         }
 
         AutoCloseable ac;
-        if (destroy && (ac = as(kv.right, AutoCloseable.class)) != null) {
+        if (destroy && (ac = as(val, AutoCloseable.class)) != null) {
             try {
                 ac.close();
             } catch (Exception ex) {
@@ -80,25 +80,18 @@ public class WeakCache<TK, TV> {
     public TV get(TK key) {
         require(key);
 
-        Reference<Tuple<TK, TV>> ref;
-        while ((ref = (Reference<Tuple<TK, TV>>) queue.poll()) != null) {
-            Tuple<TK, TV> kv = ref.get();
-            if (kv == null) {
-                log.warn("queue ref is null");
-                continue;
-            }
-            container.remove(kv.left);
-        }
-
-        ref = container.get(key);
+        Reference<TV> ref = container.get(key);
         if (ref == null) {
+            log.debug("get key {} is null", key);
             return null;
         }
-        Tuple<TK, TV> kv = ref.get();
-        if (kv == null) {
+        TV val = ref.get();
+        if (val == null) {
+            log.debug("get key {} is gc", key);
+            remove(key);
             return null;
         }
-        return kv.right;
+        return val;
     }
 
     public TV getOrAdd(TK key, Function<TK, TV> supplier) {

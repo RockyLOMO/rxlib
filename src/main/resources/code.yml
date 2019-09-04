@@ -3,48 +3,38 @@ default: Network error, please retry later.
 org:
   rx:
     core:
+      Contract:
+        require[arg]: Parameter is null
+        require[args]: Parameters $args have null value
+        require[test]: Parameter $arg test failed
+      Disposable:
+        checkNotClosed: Cannot access a closed $type
       Strings:
         split[lengthError]: Result array not fit $len length
+      NQuery:
+        single: Require 1 element, current set has $count elements
+        singleOrDefault: Require less than 1 element, current set has $count elements
+      App:
+        readSetting[keyError]: Not found key $key with type $type
+        readSetting[partialKeyError]: Not found partial key $key with type $type
+        changeType[notSupported]: Not supported convert $fType to $tType
+        changeType[enumError]: Not found $name in $names of $eType enum
+        changeType<NoSuchMethodException>: Not found ValueOf method of $type
+        changeType<ReflectiveOperationException>: Convert $val from $fType to $tType error
+        checkType: Try find $type primitive type failed
+    beans.DateTime:
+      valueOf<ParseException>: Only supported $formats date formats, current date string is $date
+    io:
+      IOStream:
+        getPosition: The stream does not support seeking
+        setPosition: The stream does not support seeking
+        getLength: A class derived from $type does not support seeking
+      MemoryStream:
+        getBuffer: The MemoryStream instance was not created with a publicly visible buffer
 
-org.rx.common.Contract:
-  require[arg]: Parameter is null
-  require[args]: Parameters $args have null value
-  require[test]: Parameter $arg test failed
-
-org.rx.common.Disposable:
-  checkNotClosed: Cannot access a closed $type
-
-org.rx.common.NQuery:
-  single: Require 1 element, current set has $count elements
-  singleOrDefault: Require less than 1 element, current set has $count elements
-
-org.rx.common.App:
-  readSetting[keyError]: Not found key $key in $file.yml
-  readSetting[partialKeyError]: Not found partial key $key in $file.yml
-  asList[argError]: Parameter $type isn't an Array or Iterable
-  changeType[notSupported]: Not supported convert $fType to $tType
-  changeType[enumError]: Not found $name in $names of $eType enum
-  changeType<NoSuchMethodException>: Not found ValueOf method of $type
-  changeType<ReflectiveOperationException>: Convert $val from $fType to $tType error
-  checkType: Try find $type primitive type failed
-
-org.rx.beans.DateTime:
-  valueOf<ParseException>: Only supported $formats date formats, current date string is $date
-
-org.rx.io.IOStream:
-  getPosition: The stream does not support seeking
-  setPosition: The stream does not support seeking
-  getLength: A class derived from $type does not support seeking
-
-org.rx.io.MemoryStream:
-  getBuffer: The MemoryStream instance was not created with a publicly visible buffer
-
-org.rx.util.JsonMapper:
-  getScript[keyError]: Config key $key not found
-
-
-org.rx.test.Tester:
-  testCode: Method Error Code value=$x
-  testCode<IllegalArgumentException>: This is IllegalArgumentException! $x
-org.rx.test.bean.UserCode$xCode:
-  argument: Enum Error Code value=$arg
+    test:
+      CoreTester:
+        testCode: Default Error Code value=$x
+        testCode<IllegalArgumentException>: Exception Error Code value=$x
+      bean.UserManager$xCode:
+        argument: Enum Error Code value=$arg

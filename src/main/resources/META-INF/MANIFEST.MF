@@ -1,3 +1,3 @@
 Manifest-Version: 1.0
-Class-Path: bcprov-jdk15on-1.52.jar
+Class-Path: bcprov-jdk15on-1.59.jar
 Main-Class: org.rx.socks.shadowsocks.Main

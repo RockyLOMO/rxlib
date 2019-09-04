@@ -12,11 +12,9 @@ import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.text.MessageFormat;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 import static org.rx.core.Contract.*;
-import static org.rx.core.Contract.toJsonString;
 
 /**
  * ex.fillInStackTrace()
@@ -29,21 +27,22 @@ public class SystemException extends NestedRuntimeException {
 
     private static Map<String, Object> getSettings() {
         return App.getOrStore("SystemException", k -> {
-            Map<String, Object> codes = App.loadYaml(CodeFile);
-            if (codes.isEmpty()) {
-                log.warn("load code.yml fail");
+            List<String> files = new ArrayList<>();
+            files.add(CodeFile);
+            if (config.getErrorCodeFiles() != null) {
+                files.addAll(Arrays.toList(config.getErrorCodeFiles()));
             }
-            Object val = App.readSetting(Contract.SettingNames.ErrorCodeFiles);
-            if (val != null) {
-                try {
-                    for (Object file : NQuery.asList(val)) {
-                        codes.putAll(App.loadYaml(String.valueOf(file)));
-                    }
-                } catch (Exception e) {
-                    log.debug("getSettings", e);
+
+            try {
+                Map<String, Object> codes = App.loadYaml(NQuery.of(files).toArray(String.class));
+                if (codes.isEmpty()) {
+                    log.warn("load code.yml fail");
                 }
+                return codes;
+            } catch (Exception e) {
+                log.debug("getSettings", e);
+                return Collections.emptyMap();
             }
-            return codes;
         });
     }
 
@@ -122,7 +121,7 @@ public class SystemException extends NestedRuntimeException {
         StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
         for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
             StackTraceElement stack = stackTrace[i];
-            Map<String, Object> methodSettings = as(getSettings().get(stack.getClassName()), Map.class);
+            Map<String, Object> methodSettings = as(App.readSetting(stack.getClassName(), null, getSettings()), Map.class);
             if (methodSettings == null) {
                 continue;
             }
@@ -172,7 +171,7 @@ public class SystemException extends NestedRuntimeException {
         }
 
         Class type = enumErrorCode.getClass();
-        Map<String, Object> methodSettings = as(getSettings().get(type.getName()), Map.class);
+        Map<String, Object> methodSettings = as(App.readSetting(type.getName(), null, getSettings()), Map.class);
         if (methodSettings == null) {
             return this;
         }

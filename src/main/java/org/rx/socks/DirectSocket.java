@@ -35,7 +35,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
 
         public ClientItem(Socket client, DirectSocket owner) {
             this.owner = owner;
-            segment = new BufferSegment(Contract.DefaultBufferSize, 2);
+            segment = new BufferSegment(Contract.config.getDefaultBufferSize(), 2);
             try {
                 stream = new NetworkStream(client, segment.alloc());
                 if (owner.directAddress != null) {

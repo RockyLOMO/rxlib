@@ -2,6 +2,7 @@ package org.rx.core;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import lombok.Data;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
@@ -12,21 +13,21 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class Contract {
-    public interface SettingNames {
-        String JsonSkipTypes = "app.jsonSkipTypes";
-        String ErrorCodeFiles = "app.errorCodeFiles";
+    @Data
+    public static class Config {
+        private int defaultBufferSize;
+        private String[] jsonSkipTypes;
+        private String[] errorCodeFiles;
     }
 
-    public static final int DefaultBufferSize;
-    public static final String Utf8, AllWarnings = "all";
+    public static final String AllWarnings = "all", Utf8 = "UTF-8";
+    public static final Config config;
     private static NQuery<Class> SkipTypes = NQuery.of();
 
     static {
-        DefaultBufferSize = 1024;
-        Utf8 = "UTF-8";
-        Object val = App.readSetting(SettingNames.JsonSkipTypes);
-        if (val != null) {
-            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(val)).select(p -> App.loadClass(String.valueOf(p), false)));
+        config = isNull(App.readSetting("app", Config.class), new Config());
+        if (config.jsonSkipTypes != null) {
+            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(config.jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
 

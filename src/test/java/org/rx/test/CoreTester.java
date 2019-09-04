@@ -1,21 +1,23 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
+import org.rx.annotation.ErrorCode;
+import org.rx.beans.$;
+import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.Contract;
-import org.rx.core.NQuery;
-import org.rx.core.Strings;
+import org.rx.test.bean.*;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.rx.beans.$.$;
+import static org.rx.core.Contract.*;
 import static org.rx.core.Contract.toJsonString;
 
-public class NQueryTester {
+public class CoreTester {
+    //region NQuery
     @Test
-    public void run() {
+    public void runNQuery() {
         Set<Person> personSet = new HashSet<>();
         for (int i = 0; i < 5; i++) {
             Person p = new Person();
@@ -38,7 +40,7 @@ public class NQueryTester {
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> new Object[] { p.index2, p.index3 }, p -> {
+                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, p -> {
                     System.out.println("groupKey: " + toJsonString(p.left));
                     List<Person> list = p.right.toList();
                     System.out.println("items: " + toJsonString(list));
@@ -48,22 +50,22 @@ public class NQueryTester {
         showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
         showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
         showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByMany(p -> new Object[] { p.index2, p.index }));
+                NQuery.of(personSet).orderByMany(p -> new Object[]{p.index2, p.index}));
         showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByDescendingMany(p -> new Object[] { p.index2, p.index }));
+                NQuery.of(personSet).orderByDescendingMany(p -> new Object[]{p.index2, p.index}));
 
         showResult("select(p -> p.index).reverse()",
                 NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
 
-        showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer> max(p -> p.index));
-        showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer> min(p -> p.index));
+        showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer>max(p -> p.index));
+        showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer>min(p -> p.index));
 
         showResult("take(0).average(p -> p.index)", NQuery.of(personSet).take(0).average(p -> p.index));
         showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
         showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
         showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
 
-        showResult("cast<IPerson>", NQuery.of(personSet).<IPerson> cast());
+        showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
         NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
         showResult("ofType(Integer.class)", oq.ofType(Integer.class));
 
@@ -98,10 +100,77 @@ public class NQueryTester {
     }
 
     public static class Person implements IPerson {
-        public int    index;
-        public int    index2;
-        public int    index3;
+        public int index;
+        public int index2;
+        public int index3;
         public String name;
-        public int    age;
+        public int age;
+    }
+    //endregion
+
+    @Test
+    public void weakCache() {
+        WeakCache<String, Object> cache = WeakCache.instance;
+        String k = "a";
+        cache.add(k, new Object());
+        assert cache.get(k) != null;
+        System.out.println(cache.size());
+
+        System.gc();
+
+        assert cache.get(k) == null;
+        System.out.println(cache.size());
+    }
+
+    @Test
+    @ErrorCode(messageKeys = {"$x"})
+    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = {"$x"})
+    public void exceptionCode() {
+        String val = "rx";
+        SystemException ex = new SystemException(values(val));
+        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
+
+        ex = new SystemException(values(val), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String uid = "userId";
+        ex.setErrorCode(UserManager.xCode.argument, uid);
+        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
+
+        String date = "2017-08-24 02:02:02";
+        assert App.changeType(date, Date.class) instanceof Date;
+        try {
+            date = "x";
+            App.changeType(date, Date.class);
+        } catch (SystemException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void readSetting() {
+        Map<String, Object> map = App.loadYaml("application.yml");
+        System.out.println(map);
+        Object v = App.readSetting("app.test.version");
+        assert v.equals(0);
+        v = App.readSetting("not");
+        assert v == null;
+
+        v = App.readSetting("org.rx.test.CoreTester", null, App.loadYaml(SystemException.CodeFile));
+        assert v instanceof Map;
+
+        v = App.readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, App.loadYaml(SystemException.CodeFile));
+        assert eq(v, "Exception Error Code value=$x");
+    }
+
+    @Test
+    public void shorterUUID() {
+        UUID id = UUID.randomUUID();
+        String sid = App.toShorterUUID(id);
+        UUID id2 = App.fromShorterUUID(sid);
+        System.out.println(sid);
+        assert id.equals(id2);
     }
 }

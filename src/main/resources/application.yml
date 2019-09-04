@@ -1,5 +1,5 @@
-#app.static.version: "0"
 app:
+  defaultBufferSize: 1024
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
@@ -9,6 +9,8 @@ app:
   sessionPack:
     appName: rx
     version: 0.1
-#  static.version: "1"
-#  static:
-#    version: "2"
+
+  test.version: 1
+  test:
+    version: 2
+app.test.version: 0

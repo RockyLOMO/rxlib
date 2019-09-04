@@ -297,13 +297,17 @@ public class App extends SystemUtils {
     }
 
     public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, "application.yml");
+        return readSetting(key, type, loadYaml("application.yml"));
     }
 
-    @ErrorCode(value = "keyError", messageKeys = {"$key", "$file"})
-    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$file"})
-    public static <T> T readSetting(String key, Class<T> type, String yamlFile) {
-        require(key, yamlFile);
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
+        return readSetting(key, type, settings, false);
+    }
+
+    @ErrorCode(value = "keyError", messageKeys = {"$key", "$type"})
+    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$type"})
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
+        require(key, settings);
 
         Function<Object, T> func = p -> {
             if (type == null) {
@@ -315,7 +319,6 @@ public class App extends SystemUtils {
             }
             return changeType(p, type);
         };
-        Map<String, Object> settings = loadYaml(yamlFile);
         Object val;
         if ((val = settings.get(key)) != null) {
             return func.apply(val);
@@ -337,25 +340,29 @@ public class App extends SystemUtils {
                 return func.apply(val);
             }
             if ((settings = as(val, Map.class)) == null) {
-                throw new SystemException(values(k, yamlFile), "partialKeyError");
+                throw new SystemException(values(k, type), "partialKeyError");
             }
             kBuf.setLength(0);
         }
 
+        if (throwOnEmpty) {
+            throw new SystemException(values(key, type), "keyError");
+        }
         return null;
-        //        throw new SystemException(values(key, yamlFile), "keyError");
     }
 
     @SneakyThrows
-    public static Map<String, Object> loadYaml(String yamlFile) {
-        require(yamlFile);
+    public static Map<String, Object> loadYaml(String... yamlFile) {
+        require((Object) yamlFile);
 
-        File file = new File(yamlFile);
         Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml(new SafeConstructor());
-        for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yamlFile))) {
-            Map<String, Object> one = (Map<String, Object>) data;
-            fillDeep(one, result);
+        for (String yf : yamlFile) {
+            File file = new File(yf);
+            for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
+                Map<String, Object> one = (Map<String, Object>) data;
+                fillDeep(one, result);
+            }
         }
         return result;
     }
