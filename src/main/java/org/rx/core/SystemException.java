@@ -29,7 +29,7 @@ public class SystemException extends NestedRuntimeException {
         return App.getOrStore("SystemException", k -> {
             List<String> files = new ArrayList<>();
             files.add(CodeFile);
-            if (config.getErrorCodeFiles() != null) {
+            if (!Arrays.isEmpty(config.getErrorCodeFiles())) {
                 files.addAll(Arrays.toList(config.getErrorCodeFiles()));
             }
 

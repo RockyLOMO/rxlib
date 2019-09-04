@@ -15,9 +15,9 @@ import java.util.function.Supplier;
 public final class Contract {
     @Data
     public static class Config {
-        private int defaultBufferSize;
-        private String[] jsonSkipTypes;
-        private String[] errorCodeFiles;
+        private int defaultBufferSize = 1024;
+        private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
+        private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
     }
 
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
@@ -26,7 +26,7 @@ public final class Contract {
 
     static {
         config = isNull(App.readSetting("app", Config.class), new Config());
-        if (config.jsonSkipTypes != null) {
+        if (!Arrays.isEmpty(config.jsonSkipTypes)) {
             SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(config.jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
