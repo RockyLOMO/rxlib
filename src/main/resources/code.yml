@@ -15,6 +15,7 @@ org:
         single: Require 1 element, current set has $count elements
         singleOrDefault: Require less than 1 element, current set has $count elements
       App:
+        getResource: Not found resource $name with type $type
         readSetting[keyError]: Not found key $key with type $type
         readSetting[partialKeyError]: Not found partial key $key with type $type
         changeType[notSupported]: Not supported convert $fType to $tType

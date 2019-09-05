@@ -26,6 +26,9 @@ public final class Contract {
 
     static {
         config = isNull(App.readSetting("app", Config.class), new Config());
+        if (config.defaultBufferSize <= 0) {
+            config.defaultBufferSize = 512;
+        }
         if (!Arrays.isEmpty(config.jsonSkipTypes)) {
             SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(config.jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
         }

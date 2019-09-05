@@ -419,6 +419,20 @@ public class App extends SystemUtils {
     //endregion
 
     //region Class
+    @ErrorCode(messageKeys = {"$name", "$type"})
+    public static InputStream getResource(Class owner, String name) {
+        InputStream resource = owner.getResourceAsStream(name);
+        if (resource == null) {
+            throw new SystemException(values(owner, name));
+        }
+        return resource;
+    }
+
+    /**
+     * ClassLoader.getSystemClassLoader()
+     *
+     * @return
+     */
     public static ClassLoader getClassLoader() {
         return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
     }
