@@ -1,20 +1,13 @@
 package org.rx.test;
 
 import org.junit.jupiter.api.Test;
-import org.rx.core.Arrays;
 import org.rx.core.Contract;
-import org.rx.core.NQuery;
-import org.rx.core.Strings;
 import org.rx.io.BinaryStream;
+import org.rx.io.Files;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.SourceBean;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
-
-import static org.rx.core.Contract.toJsonString;
+import java.nio.file.Path;
 
 public class IOTester {
     @Test
@@ -64,5 +57,35 @@ public class IOTester {
 
         stream.setPosition(0);
         System.out.println(stream.read());
+    }
+
+    @Test
+    public void listFiles() {
+        for (Path p : Files.listFiles(Files.path("/"), false)) {
+            System.out.println(p);
+        }
+        System.out.println("---");
+        for (Path p : Files.listFiles(Files.path("/"), true)) {
+            System.out.println(p);
+        }
+//        System.out.println("---");
+//        for (File file : Files.listDirectories(Files.comboPath("D:\\"), false)) {
+//            System.out.println(file.getPath() + "," + file.getParent());
+//        }
+    }
+
+    @Test
+    public void listDirectories() {
+        Path path = Files.path("/a/1.txt");
+        System.out.println(path.getRoot());
+        System.out.println(path.getFileName());
+        System.out.println("---");
+        for (Path p : Files.listDirectories(Files.path("/"), false)) {
+            System.out.println(p);
+        }
+        System.out.println("---");
+        for (Path p : Files.listDirectories(Files.path("/"), true)) {
+            System.out.println(p);
+        }
     }
 }

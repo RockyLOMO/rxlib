@@ -44,7 +44,7 @@ public class FileWatcher extends Disposable {
         this.directoryPath = directoryPath;
         callback = Collections.synchronizedList(new ArrayList<>());
 
-        App.createDirectory(directoryPath);
+        Files.createDirectory(Files.path(directoryPath));
         service = FileSystems.getDefault().newWatchService();
         Paths.get(directoryPath).register(service, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE);
     }

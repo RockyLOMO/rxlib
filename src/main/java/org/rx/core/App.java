@@ -29,9 +29,6 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
@@ -403,18 +400,6 @@ public class App extends SystemUtils {
 
         Yaml yaml = new Yaml();
         return yaml.dump(bean);
-    }
-
-    public static void createDirectory(String dirPath) {
-        File dir = new File(dirPath);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-    }
-
-    @SneakyThrows
-    public static DirectoryStream<Path> fileStream(Path dir) {
-        return Files.newDirectoryStream(dir, Files::isRegularFile);
     }
     //endregion
 
