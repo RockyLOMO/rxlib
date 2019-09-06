@@ -9,8 +9,11 @@ import org.rx.core.NQuery;
 import org.rx.core.Strings;
 
 import java.io.File;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 import static org.rx.core.Contract.require;
 
@@ -21,6 +24,21 @@ public class Files {
 
     public static Path path(Path root, String... paths) {
         return Paths.get(root.toString(), paths);
+    }
+
+    @SneakyThrows
+    public static byte[] readAllBytes(Path filePath) {
+        return java.nio.file.Files.readAllBytes(filePath);
+    }
+
+    @SneakyThrows
+    public static List<String> readAllLines(Path filePath) {
+        return readAllLines(filePath, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static List<String> readAllLines(Path filePath, Charset charset) {
+        return java.nio.file.Files.readAllLines(filePath, charset);
     }
 
     @SneakyThrows
@@ -54,5 +72,10 @@ public class Files {
         File f = directory.toFile();
         IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
         return NQuery.of(FileUtils.listFiles(f, ff, df)).select(p -> p.toPath());
+    }
+
+    @SneakyThrows
+    public static boolean delete(Path dirOrFile) {
+        return java.nio.file.Files.deleteIfExists(dirOrFile);
     }
 }
