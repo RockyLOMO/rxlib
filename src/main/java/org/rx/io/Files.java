@@ -19,6 +19,10 @@ public class Files {
         return Paths.get(root, paths);
     }
 
+    public static Path path(Path root, String... paths) {
+        return Paths.get(root.toString(), paths);
+    }
+
     @SneakyThrows
     public static void createDirectory(Path directory) {
         require(directory);
