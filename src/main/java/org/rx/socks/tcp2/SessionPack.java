@@ -1,4 +1,4 @@
-package org.rx.socks.tcp;
+package org.rx.socks.tcp2;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;

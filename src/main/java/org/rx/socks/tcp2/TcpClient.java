@@ -1,4 +1,4 @@
-package org.rx.socks.tcp;
+package org.rx.socks.tcp2;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -167,7 +167,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
         this.sessionId = sessionId;
-        connectTimeout = TcpServer.defaultTimeout;
+        connectTimeout = Contract.config.getDefaultSocksTimeout();
         waiter = new ManualResetEvent();
     }
 

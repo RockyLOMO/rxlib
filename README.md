@@ -7,14 +7,14 @@ A set of utilities for Java.
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.7</version>
+    <version>2.9</version>
 </dependency>
 ```
 
 ### shadowsocks (Only tested AES encryption)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
     * Requirements
-        Bouncy Castle v1.5.2 [Release](https://www.bouncycastle.org/)
+        Bouncy Castle v1.5.9 [Release](https://www.bouncycastle.org/)
     * Using Non-blocking server
         Config config = new Config("SS_SERVER_IP", "SS_SERVER_PORT", "LOCAL_IP", "LOCAL_PORT", "CIPHER_NAME", "PASSWORD");
         NioLocalServer server = new NioLocalServer(config);

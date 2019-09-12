@@ -16,6 +16,7 @@ public final class Contract {
     @Data
     public static class Config {
         private int defaultBufferSize = 1024;
+        private long defaultSocksTimeout = 30000;
         private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
         private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
     }

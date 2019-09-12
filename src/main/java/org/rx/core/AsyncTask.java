@@ -2,6 +2,7 @@ package org.rx.core;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.beans.DateTime;
@@ -49,25 +50,23 @@ public final class AsyncTask {
         }
     }
 
-    public static final AsyncTask TaskFactory = new AsyncTask(0, App.MaxSize, 4, new SynchronousQueue<>());
     public static final int ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
-    private final ThreadFactory threadFactory;
+    public static final AsyncTask TaskFactory = new AsyncTask(1, App.MaxSize, 4, new SynchronousQueue<>());
+    @Getter
     private final ThreadPoolExecutor executor;
     private final Lazy<ScheduledExecutorService> scheduler;
 
-    private AsyncTask() {
-        this(ThreadCount, ThreadCount, 4, new LinkedBlockingQueue<>());
-    }
+//    private AsyncTask() {
+//        this(ThreadCount, ThreadCount, 4, new LinkedBlockingQueue<>());
+//    }
 
     private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
-        threadFactory = new ThreadFactoryBuilder().setDaemon(true)
+        ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
                 .setUncaughtExceptionHandler((thread, ex) -> log.error("AsyncTask {}", thread.getName(), ex))
                 .setNameFormat("AsyncTask-%d").build();
-        executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue, threadFactory, (p1, p2) -> {
-            log.info("AsyncTask rejected task: {}", p1.toString());
-            p1.run();
-        });
-        scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(ThreadCount, threadFactory));
+        RejectedExecutionHandler rejected = new ThreadPoolExecutor.CallerRunsPolicy();
+        executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue, threadFactory, rejected);
+        scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(1, threadFactory, rejected));
     }
 
     public <T> Future<T> run(Func<T> task) {

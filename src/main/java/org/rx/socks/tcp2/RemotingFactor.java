@@ -1,4 +1,4 @@
-package org.rx.socks.tcp;
+package org.rx.socks.tcp2;
 
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
@@ -191,7 +191,7 @@ public final class RemotingFactor {
     }
 
     private static final Object[] emptyParameter = new Object[0];
-    private static final Map<Object, TcpServer<TcpServer.ClientSession>> host = new ConcurrentHashMap<>();
+    private static final Map<Object, CustomTcpServer<CustomTcpServer.ClientSession>> host = new ConcurrentHashMap<>();
     private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
@@ -222,7 +222,7 @@ public final class RemotingFactor {
 
         Class contract = contractInstance.getClass();
         host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<TcpServer.ClientSession> server = new TcpServer<>(port, true);
+            CustomTcpServer<CustomTcpServer.ClientSession> server = new CustomTcpServer<>(port, true);
             if (connectTimeout != null) {
                 server.setConnectTimeout(connectTimeout);
             }
@@ -244,12 +244,12 @@ public final class RemotingFactor {
                                 pack.id = UUID.randomUUID();
                                 pack.remoteArgs = (EventArgs) args;
                                 pack.flag = 1;
-                                Set<TcpServer.ClientSession> clients = s.getClients().get(clientId.sessionId());
+                                Set<CustomTcpServer.ClientSession> clients = s.getClients().get(clientId.sessionId());
                                 if (clients == null) {
                                     log.warn("Clients sessionId not found");
                                     return;
                                 }
-                                for (TcpServer.ClientSession client : clients) {
+                                for (CustomTcpServer.ClientSession client : clients) {
                                     s.send(client.getId(), pack);
                                 }
                                 log.info("server raise {} step1", pack.eventName);

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
-import org.rx.socks.tcp.RemotingFactor;
+import org.rx.socks.tcp2.RemotingFactor;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -23,7 +23,7 @@ public class SocksTester {
 
         UserManager mgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
         assert mgr.computeInt(1, 1) == 2;
-//        for (TcpServer<TcpServer.ClientSession> value : RemotingFactor.host.values()) {
+//        for (CustomTcpServer<CustomTcpServer.ClientSession> value : RemotingFactor.host.values()) {
 //            value.close();
 //        }
 //        RemotingFactor.host.clear();

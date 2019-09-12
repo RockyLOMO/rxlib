@@ -1,4 +1,4 @@
-package org.rx.socks.tcp;
+package org.rx.socks.tcp2;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +10,7 @@ import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
+import org.rx.core.Contract;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.core.NEventArgs;
@@ -83,7 +84,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
 
     public TcpClientPool() {
-        this(TcpServer.defaultTimeout, 0, 8);
+        this(Contract.config.getDefaultSocksTimeout(), 0, 8);
     }
 
     public TcpClientPool(long timeout, int minSize, int maxSize) {
