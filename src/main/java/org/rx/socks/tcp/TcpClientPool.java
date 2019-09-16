@@ -1,4 +1,4 @@
-package org.rx.socks.tcp2;
+package org.rx.socks.tcp;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +18,9 @@ import org.rx.core.NEventArgs;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
+
+import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class TcpClientPool extends Disposable implements EventTarget<TcpClientPool> {
@@ -31,7 +34,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         @Override
         public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
             if (method.getName().equals("close")) {
-                pool.returnObject(client.getServerAddress(), client);
+                pool.returnObject(client.getServerEndpoint(), client);
                 return null;
             }
 //            return methodProxy.invokeSuper(o, objects); //有问题
@@ -42,7 +45,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private class TcpClientFactory extends BaseKeyedPooledObjectFactory<InetSocketAddress, TcpClient> {
         @Override
         public TcpClient create(InetSocketAddress inetSocketAddress) {
-            TcpClient client = new TcpClient(inetSocketAddress, true, null);
+            TcpClient client = createFunc.apply(inetSocketAddress);
             client.setConnectTimeout(pool.getMaxWaitMillis());
             raiseEvent(onCreate, new NEventArgs<>(client));
             client.connect(true);
@@ -82,12 +85,16 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
 
     public volatile BiConsumer<TcpClientPool, NEventArgs<TcpClient>> onCreate, onDestroy;
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
+    private Function<InetSocketAddress, TcpClient> createFunc;
 
-    public TcpClientPool() {
-        this(Contract.config.getDefaultSocksTimeout(), 0, 8);
+    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int maxSize) {
+        this(createFunc, Contract.config.getDefaultSocksTimeout(), 0, maxSize);
     }
 
-    public TcpClientPool(long timeout, int minSize, int maxSize) {
+    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, long timeout, int minSize, int maxSize) {
+        require(createFunc);
+
+        this.createFunc = createFunc;
         GenericKeyedObjectPoolConfig<TcpClient> config = new GenericKeyedObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);

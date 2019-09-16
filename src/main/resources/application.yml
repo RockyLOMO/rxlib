@@ -7,7 +7,7 @@ app:
     - org.springframework.ui.Model
   #  errorCodeFiles:
   #    - errorCode.yml
-  sessionPack:
+  sessionId:
     appName: rx
     version: 0.1
 

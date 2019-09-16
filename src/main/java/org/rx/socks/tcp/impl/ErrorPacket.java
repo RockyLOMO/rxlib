@@ -1,6 +1,7 @@
-package org.rx.socks.tcp;
+package org.rx.socks.tcp.impl;
 
 import lombok.Data;
+import org.rx.socks.tcp.SessionPacket;
 
 @Data
 public class ErrorPacket implements SessionPacket {

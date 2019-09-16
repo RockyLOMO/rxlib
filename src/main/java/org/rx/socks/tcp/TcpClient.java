@@ -1,4 +1,4 @@
-package org.rx.socks.tcp2;
+package org.rx.socks.tcp;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -19,8 +19,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.core.*;
-import org.rx.socks.Sockets;
 import org.rx.core.ManualResetEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
@@ -44,67 +45,50 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void initChannel(SocketChannel ch) {
             ChannelPipeline pipeline = ch.pipeline();
-
             if (sslCtx != null) {
-                pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverAddress.getHostString(), serverAddress.getPort()));
+                pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverEndpoint.getHostString(), serverEndpoint.getPort()));
             }
-            // Enable stream compression (you can remove these two if unnecessary)
-            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            if (enableCompress) {
+                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
 
-            pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(this.getClass().getClassLoader())),
-                    new ClientHandler());
+            if (Arrays.isEmpty(channelHandlers)) {
+                log.warn("Empty channel handlers");
+                return;
+            }
+            pipeline.addLast(channelHandlers);
+            channelHandlers = null;
         }
     }
 
-    private class ClientHandler extends ChannelInboundHandlerAdapter {
+    public static class BaseClientHandler extends ChannelInboundHandlerAdapter {
+        protected static final Logger log = LoggerFactory.getLogger(TcpClient.class);
+        protected final TcpClient client;
+
+        public BaseClientHandler(TcpClient client) {
+            require(client);
+            this.client = client;
+        }
+
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             super.channelRead(ctx, msg);
             log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-            if (SessionId.class.equals(msg.getClass())) {
-                NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
-                raiseEvent(onConnected, args);
-                if (args.isCancel()) {
-                    ctx.close();
-                } else {
-                    isConnected = true;
-                    waiter.set();
-                }
-                return;
-            }
-
-            SessionPack pack = (SessionPack) msg;
-            if (!Strings.isEmpty(pack.getErrorMessage())) {
-                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", pack.getErrorMessage())));
-                return;
-            }
-            raiseEvent(onReceive, new PackEventArgs<>(ctx, pack));
         }
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             super.channelActive(ctx);
             log.debug("clientActive {}", ctx.channel().remoteAddress());
-            channel = ctx;
-
-            ctx.writeAndFlush(sessionId);
+            client.channel = ctx;
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             super.channelInactive(ctx);
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
-            isConnected = false;
-            channel = null;
-
-            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
-            raiseEvent(onDisconnected, args);
-            if (args.isCancel()) {
-                return;
-            }
-            reconnect();
+            client.channel = null;
         }
 
         @Override
@@ -113,7 +97,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
             ErrorEventArgs<ChannelHandlerContext> args = new ErrorEventArgs<>(ctx, cause);
             try {
-                raiseEvent(onError, args);
+                client.raiseEvent(client.onError, args);
             } catch (Exception e) {
                 log.error("clientCaught", e);
             }
@@ -124,51 +108,60 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
     }
 
+    public static TcpClient newPacketClient(InetSocketAddress serverEndpoint, SessionId sessionId) {
+        TcpClient client = new TcpClient(serverEndpoint, true, true, sessionId);
+        client.setChannelHandlers(new ObjectEncoder(),
+                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader())),
+                new PacketClientHandler(client));
+        return client;
+    }
+
     public volatile BiConsumer<TcpClient, NEventArgs<ChannelHandlerContext>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpClient, PackEventArgs<ChannelHandlerContext>> onSend, onReceive;
     public volatile BiConsumer<TcpClient, ErrorEventArgs<ChannelHandlerContext>> onError;
+    @Getter
+    private InetSocketAddress serverEndpoint;
     private EventLoopGroup workerGroup;
     private SslContext sslCtx;
+    private boolean enableCompress;
+    private ChannelHandler[] channelHandlers;
     private ChannelHandlerContext channel;
     @Getter
-    private InetSocketAddress serverAddress;
+    protected SessionId sessionId;
     @Getter
-    private volatile boolean isConnected;
-    private ManualResetEvent waiter;
+    protected volatile boolean isConnected;
+    protected ManualResetEvent connectWaiter;
     @Getter
     @Setter
     private long connectTimeout;
     @Getter
     @Setter
     private volatile boolean autoReconnect;
-    @Getter
-    private SessionId sessionId;
 
-    public TcpClient(String endpoint, boolean ssl) {
-        this(Sockets.parseAddress(endpoint), ssl, null);
-    }
-
-    public TcpClient(InetSocketAddress endpoint, boolean ssl, SessionId sessionId) {
-        init(endpoint, ssl, sessionId);
+    public TcpClient(InetSocketAddress serverEndpoint, boolean ssl, boolean enableCompress, SessionId sessionId) {
+        init(serverEndpoint, ssl, enableCompress, sessionId);
     }
 
     protected TcpClient() {
     }
 
     @SneakyThrows
-    protected void init(InetSocketAddress endpoint, boolean ssl, SessionId sessionId) {
-        require(endpoint);
-        if (sessionId == null) {
-            sessionId = SessionPack.defaultId;
-        }
+    protected void init(InetSocketAddress serverEndpoint, boolean ssl, boolean enableCompress, SessionId sessionId) {
+        require(serverEndpoint, sessionId);
 
-        serverAddress = endpoint;
+        this.serverEndpoint = serverEndpoint;
         if (ssl) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
+        this.enableCompress = enableCompress;
         this.sessionId = sessionId;
         connectTimeout = Contract.config.getDefaultSocksTimeout();
-        waiter = new ManualResetEvent();
+        connectWaiter = new ManualResetEvent();
+    }
+
+    public TcpClient setChannelHandlers(ChannelHandler... channelHandlers) {
+        this.channelHandlers = channelHandlers;
+        return this;
     }
 
     @Override
@@ -203,14 +196,14 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 .channel(NioSocketChannel.class)
                 .handler(new ClientInitializer());
 
-        b.connect(serverAddress).sync();
+        b.connect(serverEndpoint).sync();
         if (wait) {
-            waiter.waitOne(connectTimeout);
-            waiter.reset();
+            connectWaiter.waitOne(connectTimeout);
+            connectWaiter.reset();
         }
     }
 
-    private void reconnect() {
+    protected void reconnect() {
         if (!autoReconnect) {
             return;
         }
@@ -224,7 +217,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }, 2 * 1000);
     }
 
-    public <T extends SessionPack> void send(T pack) {
+    public <T extends SessionPacket> void send(T pack) {
         require(pack, (Object) isConnected);
 
         PackEventArgs<ChannelHandlerContext> args = new PackEventArgs<>(channel, pack);

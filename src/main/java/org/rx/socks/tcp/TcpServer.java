@@ -20,6 +20,8 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -28,24 +30,11 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.AsyncTask.TaskFactory;
 import static org.rx.core.Contract.*;
 
 @Slf4j
 public class TcpServer<T extends SessionClient> extends Disposable implements EventTarget<TcpServer<T>> {
-    private class PacketServerInitializer extends ChannelInitializer<SocketChannel> {
-        private SslContext sslCtx;
-        private boolean enableCompress;
-
-        @SneakyThrows
-        public PacketServerInitializer(boolean ssl, boolean enableCompress) {
-            if (ssl) {
-                SelfSignedCertificate ssc = new SelfSignedCertificate();
-                sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-            }
-            this.enableCompress = enableCompress;
-        }
-
+    private class ServerInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void initChannel(SocketChannel ch) {
             ChannelPipeline pipeline = ch.pipeline();
@@ -53,47 +42,32 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
                 pipeline.addLast(sslCtx.newHandler(ch.alloc()));
             }
             if (enableCompress) {
-                // Enable stream compression (you can remove these two if unnecessary)
                 pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
 
-            pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(this.getClass().getClassLoader())),
-                    new PacketServerHandler());
+            if (Arrays.isEmpty(channelHandlers)) {
+                log.warn("Empty channel handlers");
+                return;
+            }
+            pipeline.addLast(channelHandlers);
+            channelHandlers = null;  //loop ref
         }
     }
 
-    private class PacketServerHandler extends ChannelInboundHandlerAdapter {
+    public abstract static class BaseServerHandler<T extends SessionClient> extends ChannelInboundHandlerAdapter {
+        protected static final Logger log = LoggerFactory.getLogger(BaseServerHandler.class);
+        protected final TcpServer<T> server;
+
+        public BaseServerHandler(TcpServer<T> server) {
+            require(server);
+            this.server = server;
+        }
+
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-            //Unpooled
             super.channelRead(ctx, msg);
             log.debug("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-
-            if (msg instanceof HandshakePacket) {
-                SessionId sessionId = ((HandshakePacket) msg).getSessionId();
-                T client = createClient(ctx);
-                NEventArgs<T> args = new NEventArgs<>(client);
-                raiseEvent(onConnected, args);
-                if (args.isCancel()) {
-                    log.warn("Close client");
-                    ctx.close();
-                } else {
-                    addClient(sessionId, client);
-                    ctx.writeAndFlush(msg);
-                }
-                return;
-            }
-
-            SessionPacket pack;
-            if ((pack = as(msg, SessionPacket.class)) == null) {
-                ctx.writeAndFlush(ErrorPacket.error("Error pack"));
-                TaskFactory.scheduleOnce(ctx::close, 4 * 1000);
-                return;
-            }
-            //异步避免阻塞
-            TaskFactory.run(() -> raiseEvent(onReceive, new PackEventArgs<>(findClient(ctx.channel().id()), pack)));
         }
 
         @Override
@@ -101,7 +75,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             super.channelActive(ctx);
             log.debug("channelActive {}", ctx.channel().remoteAddress());
 
-            if (clients.size() > maxClients) {
+            if (server.getClients().size() > server.getMaxClients()) {
                 log.warn("Not enough space");
                 ctx.close();
             }
@@ -112,11 +86,11 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             super.channelInactive(ctx);
             log.debug("channelInactive {}", ctx.channel().remoteAddress());
 
-            T client = findClient(ctx.channel().id());
+            T client = server.findClient(ctx.channel().id());
             try {
-                raiseEvent(onDisconnected, new NEventArgs<>(client));
+                server.raiseEvent(server.onDisconnected, new NEventArgs<>(client));
             } finally {
-                removeClient(client);
+                server.removeClient(client);
             }
         }
 
@@ -124,9 +98,10 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             super.exceptionCaught(ctx, cause);
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
-            ErrorEventArgs<T> args = new ErrorEventArgs<>(findClient(ctx.channel().id()), cause);
+
+            ErrorEventArgs<T> args = new ErrorEventArgs<>(server.findClient(ctx.channel().id()), cause);
             try {
-                raiseEvent(onError, args);
+                server.raiseEvent(server.onError, args);
             } catch (Exception e) {
                 log.error("serverCaught", e);
             }
@@ -138,8 +113,10 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     }
 
     public static <T extends SessionClient> TcpServer<T> newPacketServer(int port, Class sessionClientType) {
-        TcpServer<T> server = new TcpServer<>(port, sessionClientType, null);
-        server.setPacketServerInitializer();
+        TcpServer<T> server = new TcpServer<>(port, true, true, sessionClientType);
+        server.setChannelHandlers(new ObjectEncoder(),
+                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpServer.class.getClassLoader())),
+                new PacketServerHandler<>(server));
         return server;
     }
 
@@ -150,7 +127,9 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     private int port;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
-    private ChannelInitializer<SocketChannel> initializer;
+    private SslContext sslCtx;
+    private boolean enableCompress;
+    private ChannelHandler[] channelHandlers;
     @Getter
     private volatile boolean isStarted;
     @Getter
@@ -163,20 +142,19 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     @Setter
     private long connectTimeout;
 
-    public TcpServer(int port, Class sessionClientType, ChannelInitializer<SocketChannel> initializer) {
-        require(initializer);
-
+    @SneakyThrows
+    public TcpServer(int port, boolean ssl, boolean enableCompress, Class sessionClientType) {
         clients = new ConcurrentHashMap<>();
         this.port = port;
+        if (ssl) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        }
+        this.enableCompress = enableCompress;
         this.sessionClientType = sessionClientType == null ? SessionClient.class : sessionClientType;
-        this.initializer = initializer;
 
         this.maxClients = 1000000;
         this.connectTimeout = config.getDefaultSocksTimeout();
-    }
-
-    private void setPacketServerInitializer() {
-        this.initializer = new PacketServerInitializer(true, true);
     }
 
     @Override
@@ -215,8 +193,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .channel(NioServerSocketChannel.class)
                 .handler(new LoggingHandler(LogLevel.INFO))
-                .childHandler(initializer);
-        setServerOptions(b);
+                .childHandler(new ServerInitializer());
         ChannelFuture f = b.bind(port).sync();
         isStarted = true;
         log.debug("Listened on port {}..", port);
@@ -226,7 +203,9 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         }
     }
 
-    protected void setServerOptions(ServerBootstrap b) {
+    public TcpServer<T> setChannelHandlers(ChannelHandler... channelHandlers) {
+        this.channelHandlers = channelHandlers;
+        return this;
     }
 
     protected T createClient(ChannelHandlerContext ctx) {

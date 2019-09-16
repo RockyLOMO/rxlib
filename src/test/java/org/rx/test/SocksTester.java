@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
-import org.rx.socks.tcp2.RemotingFactor;
+import org.rx.socks.tcp.RemotingFactor;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -23,18 +23,18 @@ public class SocksTester {
 
         UserManager mgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
         assert mgr.computeInt(1, 1) == 2;
-//        for (CustomTcpServer<CustomTcpServer.ClientSession> value : RemotingFactor.host.values()) {
+//        for (TcpServer<SessionClient> value : RemotingFactor.host.values()) {
 //            value.close();
 //        }
 //        RemotingFactor.host.clear();
         RemotingFactor.listen(server, 3307);
         Thread.sleep(5000);
-//        mgr.testError();
+        mgr.testError();
         assert mgr.computeInt(17, 1) == 18;
 
-//        mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
-//        Thread.sleep(1000);
-//        server.raiseEvent("onTest", EventArgs.empty);
+        mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        Thread.sleep(1000);
+        server.raiseEvent("onTest", EventArgs.empty);
     }
 
     @SneakyThrows
