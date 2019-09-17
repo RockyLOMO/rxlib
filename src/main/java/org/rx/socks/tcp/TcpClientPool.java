@@ -10,10 +10,7 @@ import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
-import org.rx.core.Contract;
-import org.rx.core.Disposable;
-import org.rx.core.EventTarget;
-import org.rx.core.NEventArgs;
+import org.rx.core.*;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
@@ -87,8 +84,8 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
     private Function<InetSocketAddress, TcpClient> createFunc;
 
-    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int maxSize) {
-        this(createFunc, Contract.config.getDefaultSocksTimeout(), 0, maxSize);
+    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc) {
+        this(createFunc, Contract.config.getDefaultSocksTimeout(), 1, App.MaxSize);
     }
 
     public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, long timeout, int minSize, int maxSize) {

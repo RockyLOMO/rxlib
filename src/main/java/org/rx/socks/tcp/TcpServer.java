@@ -141,12 +141,15 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     @Getter
     @Setter
     private long connectTimeout;
+    @Getter
+    @Setter
+    private boolean autoRead;
 
     @SneakyThrows
-    public TcpServer(int port, boolean ssl, boolean enableCompress, Class sessionClientType) {
+    public TcpServer(int port, boolean enableSsl, boolean enableCompress, Class sessionClientType) {
         clients = new ConcurrentHashMap<>();
         this.port = port;
-        if (ssl) {
+        if (enableSsl) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
@@ -155,6 +158,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
         this.maxClients = 1000000;
         this.connectTimeout = config.getDefaultSocksTimeout();
+        this.autoRead = true;
     }
 
     @Override
@@ -191,6 +195,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childOption(ChannelOption.AUTO_READ, autoRead)
                 .channel(NioServerSocketChannel.class)
                 .handler(new LoggingHandler(LogLevel.INFO))
                 .childHandler(new ServerInitializer());

@@ -89,6 +89,10 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             super.channelInactive(ctx);
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
             client.channel = null;
+
+            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+            client.raiseEvent(client.onDisconnected, args);
+            client.reconnect();
         }
 
         @Override
@@ -125,18 +129,25 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private SslContext sslCtx;
     private boolean enableCompress;
     private ChannelHandler[] channelHandlers;
-    private ChannelHandlerContext channel;
+    protected ChannelHandlerContext channel;
     @Getter
-    protected SessionId sessionId;
+    private SessionId sessionId;
     @Getter
-    protected volatile boolean isConnected;
-    protected ManualResetEvent connectWaiter;
+    private volatile boolean isConnected;
+    private ManualResetEvent connectWaiter;
     @Getter
     @Setter
     private long connectTimeout;
     @Getter
     @Setter
+    private boolean autoRead;
+    @Getter
+    @Setter
     private volatile boolean autoReconnect;
+
+    public TcpClient(InetSocketAddress serverEndpoint) {
+        this(serverEndpoint, false, false, SessionId.empty);
+    }
 
     public TcpClient(InetSocketAddress serverEndpoint, boolean ssl, boolean enableCompress, SessionId sessionId) {
         init(serverEndpoint, ssl, enableCompress, sessionId);
@@ -157,6 +168,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         this.sessionId = sessionId;
         connectTimeout = Contract.config.getDefaultSocksTimeout();
         connectWaiter = new ManualResetEvent();
+        autoRead = true;
     }
 
     public TcpClient setChannelHandlers(ChannelHandler... channelHandlers) {
@@ -192,14 +204,21 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         b.group(workerGroup)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.AUTO_READ, autoRead)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
                 .channel(NioSocketChannel.class)
                 .handler(new ClientInitializer());
 
-        b.connect(serverEndpoint).sync();
+        b.connect(serverEndpoint);
         if (wait) {
             connectWaiter.waitOne(connectTimeout);
             connectWaiter.reset();
+        }
+    }
+
+    protected void connectStatus(boolean ok) {
+        if (isConnected = ok) {
+            connectWaiter.set();
         }
     }
 

@@ -55,7 +55,7 @@ public final class RemotingFactor {
 
     private static class ClientHandler implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
-        private static final TcpClientPool pool = new TcpClientPool(p -> TcpClient.newPacketClient(p, AppSessionId.defaultId), 32);
+        private static final TcpClientPool pool = new TcpClientPool(p -> TcpClient.newPacketClient(p, AppSessionId.defaultId));
 
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;

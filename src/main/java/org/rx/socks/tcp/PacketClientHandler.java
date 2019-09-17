@@ -31,8 +31,7 @@ public class PacketClientHandler extends TcpClient.BaseClientHandler {
             if (args.isCancel()) {
                 ctx.close();
             } else {
-                client.isConnected = true;
-                client.connectWaiter.set();
+                client.connectStatus(true);
             }
             return;
         }
@@ -44,17 +43,13 @@ public class PacketClientHandler extends TcpClient.BaseClientHandler {
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
         HandshakePacket handshake = new HandshakePacket();
-        handshake.setSessionId(client.sessionId);
+        handshake.setSessionId(client.getSessionId());
         ctx.writeAndFlush(handshake);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
-        client.isConnected = false;
-
-        NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
-        client.raiseEvent(client.onDisconnected, args);
-        client.reconnect();
+        client.connectStatus(false);
     }
 }
