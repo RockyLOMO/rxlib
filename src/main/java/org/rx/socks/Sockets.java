@@ -3,6 +3,9 @@ package org.rx.socks;
 import java.io.IOException;
 import java.net.*;
 
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import org.rx.core.SystemException;
 import org.rx.core.WeakCache;
 import org.springframework.util.CollectionUtils;
@@ -23,6 +26,30 @@ public final class Sockets {
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }
+    }
+
+    public static InetSocketAddress getAnyEndpoint(int port) {
+        return new InetSocketAddress(AnyAddress, port);
+    }
+
+    public static InetSocketAddress parseAddress(String endpoint) {
+        require(endpoint);
+        String[] arr = endpoint.split(":");
+        require(arr, arr.length == 2);
+
+        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    /**
+     * Closes the specified channel after all queued write requests are flushed.
+     */
+    public static void closeOnFlushed(Channel ch) {
+        require(ch);
+
+        if (!ch.isActive()) {
+            return;
+        }
+        ch.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public InetAddress[] getAddresses(String host) {
@@ -81,14 +108,6 @@ public final class Sockets {
         InetSocketAddress addr = (InetSocketAddress) (isRemote ? sock.getRemoteSocketAddress()
                 : sock.getLocalSocketAddress());
         return addr.getHostString() + ":" + addr.getPort();
-    }
-
-    public static InetSocketAddress parseAddress(String endpoint) {
-        require(endpoint);
-        String[] arr = endpoint.split(":");
-        require(arr, arr.length == 2);
-
-        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
 
     public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {

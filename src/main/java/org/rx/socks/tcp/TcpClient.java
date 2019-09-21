@@ -20,14 +20,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.core.*;
 import org.rx.core.ManualResetEvent;
+import org.rx.socks.Sockets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.WeakReference;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 
 import static org.rx.beans.$.$;
+import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
 import static org.rx.core.AsyncTask.TaskFactory;
 
@@ -41,54 +44,55 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         String Receive = "onReceive";
     }
 
-    private class ClientInitializer extends ChannelInitializer<SocketChannel> {
-        @Override
-        public void initChannel(SocketChannel ch) {
-            ChannelPipeline pipeline = ch.pipeline();
-            if (sslCtx != null) {
-                pipeline.addLast(sslCtx.newHandler(ch.alloc(), serverEndpoint.getHostString(), serverEndpoint.getPort()));
-            }
-            if (enableCompress) {
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-            }
-
-            if (Arrays.isEmpty(channelHandlers)) {
-                log.warn("Empty channel handlers");
-                return;
-            }
-            pipeline.addLast(channelHandlers);
-            channelHandlers = null;
-        }
-    }
-
     public static class BaseClientHandler extends ChannelInboundHandlerAdapter {
         protected static final Logger log = LoggerFactory.getLogger(TcpClient.class);
-        protected final TcpClient client;
+        private WeakReference<TcpClient> weakRef;
+
+        protected TcpClient getClient() {
+            TcpClient client = weakRef.get();
+            require(client);
+            return client;
+        }
 
         public BaseClientHandler(TcpClient client) {
             require(client);
-            this.client = client;
+            this.weakRef = new WeakReference<>(client);
         }
 
         @Override
-        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-            super.channelRead(ctx, msg);
-            log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-        }
-
-        @Override
-        public void channelActive(ChannelHandlerContext ctx) throws Exception {
-            super.channelActive(ctx);
+        public void channelActive(ChannelHandlerContext ctx) {
             log.debug("clientActive {}", ctx.channel().remoteAddress());
+            TcpClient client = getClient();
             client.channel = ctx;
+            client.isConnected = true;
+            client.connectWaiter.set();
+
+            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+            client.raiseEvent(client.onConnected, args);
+            if (args.isCancel()) {
+                Sockets.closeOnFlushed(ctx.channel());
+            }
         }
 
         @Override
-        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            super.channelInactive(ctx);
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+
+            TcpClient client = getClient();
+            SessionPacket pack;
+            if ((pack = as(msg, SessionPacket.class)) == null) {
+                log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
+                return;
+            }
+            client.raiseEvent(client.onReceive, new PackEventArgs<>(ctx, pack));
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
+            TcpClient client = getClient();
             client.channel = null;
+            client.isConnected = false;
 
             NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
             client.raiseEvent(client.onDisconnected, args);
@@ -96,9 +100,9 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
 
         @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            super.exceptionCaught(ctx, cause);
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
+            TcpClient client = getClient();
             ErrorEventArgs<ChannelHandlerContext> args = new ErrorEventArgs<>(ctx, cause);
             try {
                 client.raiseEvent(client.onError, args);
@@ -108,15 +112,14 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             if (args.isCancel()) {
                 return;
             }
-            ctx.close();
+            Sockets.closeOnFlushed(ctx.channel());
         }
     }
 
     public static TcpClient newPacketClient(InetSocketAddress serverEndpoint, SessionId sessionId) {
-        TcpClient client = new TcpClient(serverEndpoint, true, true, sessionId);
-        client.setChannelHandlers(new ObjectEncoder(),
-                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader())),
-                new PacketClientHandler(client));
+        TcpClient client = new TcpClient(TcpConfig.packetConfig(serverEndpoint, new ObjectEncoder(),
+                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader()))), sessionId);
+        client.getConfig().getHandlers().add(new PacketClientHandler(client));
         return client;
     }
 
@@ -124,12 +127,11 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     public volatile BiConsumer<TcpClient, PackEventArgs<ChannelHandlerContext>> onSend, onReceive;
     public volatile BiConsumer<TcpClient, ErrorEventArgs<ChannelHandlerContext>> onError;
     @Getter
-    private InetSocketAddress serverEndpoint;
+    private TcpConfig config;
     private EventLoopGroup workerGroup;
+    private Bootstrap bootstrap;
     private SslContext sslCtx;
-    private boolean enableCompress;
-    private ChannelHandler[] channelHandlers;
-    protected ChannelHandlerContext channel;
+    private ChannelHandlerContext channel;
     @Getter
     private SessionId sessionId;
     @Getter
@@ -137,43 +139,25 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private ManualResetEvent connectWaiter;
     @Getter
     @Setter
-    private long connectTimeout;
-    @Getter
-    @Setter
-    private boolean autoRead;
-    @Getter
-    @Setter
     private volatile boolean autoReconnect;
 
-    public TcpClient(InetSocketAddress serverEndpoint) {
-        this(serverEndpoint, false, false, SessionId.empty);
-    }
-
-    public TcpClient(InetSocketAddress serverEndpoint, boolean ssl, boolean enableCompress, SessionId sessionId) {
-        init(serverEndpoint, ssl, enableCompress, sessionId);
+    public TcpClient(TcpConfig config, SessionId sessionId) {
+        init(config, sessionId);
     }
 
     protected TcpClient() {
     }
 
     @SneakyThrows
-    protected void init(InetSocketAddress serverEndpoint, boolean ssl, boolean enableCompress, SessionId sessionId) {
-        require(serverEndpoint, sessionId);
+    protected void init(TcpConfig config, SessionId sessionId) {
+        require(config, sessionId);
 
-        this.serverEndpoint = serverEndpoint;
-        if (ssl) {
+        this.config = config;
+        if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        this.enableCompress = enableCompress;
         this.sessionId = sessionId;
-        connectTimeout = Contract.config.getDefaultSocksTimeout();
         connectWaiter = new ManualResetEvent();
-        autoRead = true;
-    }
-
-    public TcpClient setChannelHandlers(ChannelHandler... channelHandlers) {
-        this.channelHandlers = channelHandlers;
-        return this;
     }
 
     @Override
@@ -195,23 +179,40 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         if (isConnected) {
             throw new InvalidOperationException("Client has connected");
         }
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-        }
 
-        workerGroup = new NioEventLoopGroup();
-        Bootstrap b = new Bootstrap();
-        b.group(workerGroup)
+        if (workerGroup == null) {
+            workerGroup = new NioEventLoopGroup();
+        }
+        bootstrap = new Bootstrap()
+                .group(workerGroup)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.AUTO_READ, autoRead)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
+                .option(ChannelOption.AUTO_READ, config.isAutoRead())
                 .channel(NioSocketChannel.class)
-                .handler(new ClientInitializer());
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel channel) throws Exception {
+                        ChannelPipeline pipeline = channel.pipeline();
+                        if (sslCtx != null) {
+                            pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));
+                        }
+                        if (config.isEnableCompress()) {
+                            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+                        }
 
-        b.connect(serverEndpoint);
+                        NQuery<ChannelHandler> handlers = NQuery.of(config.getHandlers());
+                        if (!handlers.any()) {
+                            log.warn("Empty channel handlers");
+                            return;
+                        }
+                        pipeline.addLast(handlers.toArray(ChannelHandler.class));
+                    }
+                });
+        bootstrap.connect(config.getEndpoint());
         if (wait) {
-            connectWaiter.waitOne(connectTimeout);
+            connectWaiter.waitOne(config.getConnectTimeout());
             connectWaiter.reset();
         }
     }
@@ -223,14 +224,24 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     }
 
     protected void reconnect() {
-        if (!autoReconnect) {
+        if (!autoReconnect || isConnected) {
             return;
         }
 
         $<Future> $f = $();
         $f.v = TaskFactory.schedule(() -> {
-            App.catchCall(() -> connect());
-            if (!autoReconnect || isConnected()) {
+            if (isConnected) {
+                log.debug("Client reconnected");
+                return;
+            }
+            try {
+                bootstrap.connect(config.getEndpoint());
+                connectWaiter.waitOne(config.getConnectTimeout());
+                connectWaiter.reset();
+            } catch (Exception e) {
+                log.error("Client reconnected", e);
+            }
+            if (!autoReconnect || isConnected) {
                 $f.v.cancel(false);
             }
         }, 2 * 1000);

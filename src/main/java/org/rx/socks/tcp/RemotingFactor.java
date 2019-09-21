@@ -160,7 +160,7 @@ public final class RemotingFactor {
 
                 client.send(pack);
                 log.info("client send {} step1", pack.getClass());
-                waitHandle.waitOne(client.getConnectTimeout());
+                waitHandle.waitOne(client.getConfig().getConnectTimeout());
             } else {
                 try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
                     client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
@@ -174,7 +174,7 @@ public final class RemotingFactor {
                     });
 
                     client.send(pack);
-                    waitHandle.waitOne(client.getConnectTimeout());
+                    waitHandle.waitOne(client.getConfig().getConnectTimeout());
                 }
             }
 
@@ -222,14 +222,14 @@ public final class RemotingFactor {
         listen(contractInstance, port, null);
     }
 
-    public static <T> void listen(T contractInstance, int port, Long connectTimeout) {
+    public static <T> void listen(T contractInstance, int port, Integer connectTimeout) {
         require(contractInstance);
 
         Class contract = contractInstance.getClass();
         host.computeIfAbsent(contractInstance, k -> {
             TcpServer<SessionClient> server = TcpServer.newPacketServer(port, null);
             if (connectTimeout != null) {
-                server.setConnectTimeout(connectTimeout);
+                server.getConfig().setConnectTimeout(connectTimeout);
             }
             server.onError = (s, e) -> {
                 e.setCancel(true);
@@ -262,7 +262,7 @@ public final class RemotingFactor {
                                 Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
                                 eventHost.put(pack.id, tuple);
                                 try {
-                                    tuple.left.waitOne(server.getConnectTimeout());
+                                    tuple.left.waitOne(server.getConfig().getConnectTimeout());
                                     log.info("server raise {} step2", pack.eventName);
                                     BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
                                 } catch (TimeoutException ex) {

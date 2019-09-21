@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
-import org.rx.socks.tcp.ProxyFrontendHandler;
+//import org.rx.socks.tcp.ProxyFrontendHandler;
 import org.rx.socks.tcp.RemotingFactor;
 import org.rx.socks.tcp.TcpServer;
 import org.rx.test.bean.UserManager;
@@ -17,13 +17,13 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 
 public class SocksTester {
-    @SneakyThrows
-    @Test
-    public void testProxy() {
-        TcpServer server = new TcpServer(3306, false, false, null);
-        server.setChannelHandlers(new ProxyFrontendHandler(server, p -> Sockets.parseAddress("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306")));
-        server.start(true);
-    }
+//    @SneakyThrows
+//    @Test
+//    public void testProxy() {
+//        TcpServer server = new TcpServer(3306, false, false, null);
+//        server.setChannelHandlers(new ProxyFrontendHandler(server, p -> Sockets.parseAddress("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306")));
+//        server.start(true);
+//    }
 
     @SneakyThrows
     @Test

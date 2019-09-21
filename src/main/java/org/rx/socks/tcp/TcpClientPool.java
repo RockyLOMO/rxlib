@@ -31,7 +31,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         @Override
         public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
             if (method.getName().equals("close")) {
-                pool.returnObject(client.getServerEndpoint(), client);
+                pool.returnObject(client.getConfig().getEndpoint(), client);
                 return null;
             }
 //            return methodProxy.invokeSuper(o, objects); //有问题
@@ -43,7 +43,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         @Override
         public TcpClient create(InetSocketAddress inetSocketAddress) {
             TcpClient client = createFunc.apply(inetSocketAddress);
-            client.setConnectTimeout(pool.getMaxWaitMillis());
+            client.getConfig().setConnectTimeout((int) pool.getMaxWaitMillis());
             raiseEvent(onCreate, new NEventArgs<>(client));
             client.connect(true);
             log.debug("Create TcpClient {}", client.isConnected());
