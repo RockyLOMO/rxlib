@@ -117,9 +117,12 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     }
 
     public static TcpClient newPacketClient(InetSocketAddress serverEndpoint, SessionId sessionId) {
-        TcpClient client = new TcpClient(TcpConfig.packetConfig(serverEndpoint, new ObjectEncoder(),
-                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader()))), sessionId);
-        client.getConfig().getHandlers().add(new PacketClientHandler(client));
+        TcpClient client = new TcpClient(TcpConfig.packetConfig(serverEndpoint), sessionId);
+        client.getConfig().setHandlersSupplier(() -> new ChannelHandler[]{
+                new ObjectEncoder(),
+                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader())),
+                new PacketClientHandler(client)
+        });
         return client;
     }
 
@@ -202,12 +205,12 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                             pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
                         }
 
-                        NQuery<ChannelHandler> handlers = NQuery.of(config.getHandlers());
-                        if (!handlers.any()) {
+                        ChannelHandler[] handlers = config.getHandlersSupplier().get();
+                        if (Arrays.isEmpty(handlers)) {
                             log.warn("Empty channel handlers");
                             return;
                         }
-                        pipeline.addLast(handlers.toArray(ChannelHandler.class));
+                        pipeline.addLast(handlers);
                     }
                 });
         bootstrap.connect(config.getEndpoint());

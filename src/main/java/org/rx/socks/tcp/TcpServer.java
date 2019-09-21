@@ -121,9 +121,12 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     }
 
     public static <T extends SessionClient> TcpServer<T> newPacketServer(int port, Class sessionClientType) {
-        TcpServer<T> server = new TcpServer<>(TcpConfig.packetConfig(Sockets.getAnyEndpoint(port), new ObjectEncoder(),
-                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpServer.class.getClassLoader()))), sessionClientType);
-        server.getConfig().getHandlers().add(new PacketServerHandler<>(server));
+        TcpServer<T> server = new TcpServer<>(TcpConfig.packetConfig(Sockets.getAnyEndpoint(port)), sessionClientType);
+        server.getConfig().setHandlersSupplier(() -> new ChannelHandler[]{
+                new ObjectEncoder(),
+                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpServer.class.getClassLoader())),
+                new PacketServerHandler<>(server)
+        });
         return server;
     }
 
@@ -206,12 +209,12 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
                             pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
                         }
 
-                        NQuery<ChannelHandler> handlers = NQuery.of(config.getHandlers());
-                        if (!handlers.any()) {
+                        ChannelHandler[] handlers = config.getHandlersSupplier().get();
+                        if (Arrays.isEmpty(handlers)) {
                             log.warn("Empty channel handlers");
                             return;
                         }
-                        pipeline.addLast(handlers.toArray(ChannelHandler.class));
+                        pipeline.addLast(handlers);
                     }
                 });
         ChannelFuture f = b.bind(config.getEndpoint()).sync();

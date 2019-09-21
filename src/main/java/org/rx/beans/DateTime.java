@@ -86,7 +86,7 @@ public final class DateTime extends Date {
     @SuppressWarnings(Contract.AllWarnings)
     @Override
     public int getMonth() {
-        return getCalendar().get(Calendar.MONTH);
+        return getCalendar().get(Calendar.MONTH) + 1;
     }
 
     @SuppressWarnings(Contract.AllWarnings)
