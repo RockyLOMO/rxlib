@@ -31,4 +31,8 @@ public class Arrays extends ArrayUtils {
         }
         return list;
     }
+
+    public static boolean equals(byte[] a, byte[] b) {
+        return java.util.Arrays.equals(a, b);
+    }
 }
