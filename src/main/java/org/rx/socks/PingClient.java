@@ -1,6 +1,8 @@
 package org.rx.socks;
 
 import com.google.common.base.Stopwatch;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
 import org.rx.core.NQuery;
@@ -80,6 +82,9 @@ public final class PingClient {
         return ok;
     }
 
+    @Getter
+    @Setter
+    private int connectTimeout = 10000;
     private Stopwatch watcher;
 
     public PingClient() {
@@ -87,17 +92,17 @@ public final class PingClient {
     }
 
     public Result ping(String endpoint) {
-        return ping(Sockets.parseAddress(endpoint), 4);
+        return ping(Sockets.parseEndpoint(endpoint), 4);
     }
 
-    public Result ping(InetSocketAddress sockAddr, int times) {
-        require(sockAddr);
+    public Result ping(InetSocketAddress endpoint, int times) {
+        require(endpoint);
 
         return new Result(NQuery.of(new int[times]).select(p -> {
             Socket sock = new Socket();
             try {
                 watcher.start();
-                sock.connect(sockAddr);
+                sock.connect(endpoint, connectTimeout);
             } catch (IOException ex) {
                 log.info("Ping error {}", ex.getMessage());
                 return null;

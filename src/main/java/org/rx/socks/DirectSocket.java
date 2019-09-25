@@ -98,7 +98,7 @@ public class DirectSocket extends Traceable implements AutoCloseable {
         }
         InetSocketAddress authority;
         try {
-            authority = Sockets.parseAddress(
+            authority = Sockets.parseEndpoint(
                     new URL(line.split(" ")[1])
                             .getAuthority());
         } catch (MalformedURLException ex) {

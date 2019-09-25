@@ -204,7 +204,7 @@ public class HttpClient {
 
     /**
      * @param millis
-     * @param proxy  new Proxy(Proxy.Type.HTTP, Sockets.parseAddress("127.0.0.1:8888"))
+     * @param proxy  new Proxy(Proxy.Type.HTTP, Sockets.parseEndpoint("127.0.0.1:8888"))
      */
     public HttpClient(int millis, String rawCookie, Proxy proxy) {
         Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_UserAgent);

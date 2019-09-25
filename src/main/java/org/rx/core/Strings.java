@@ -50,19 +50,19 @@ public class Strings extends StringUtils {
     }
 
     public static String[] split(String str, String delimiter) {
-        return split(str, delimiter, null);
+        return split(str, delimiter, -1);
     }
 
     @ErrorCode(value = "lengthError", messageKeys = {"$len"})
-    public static String[] split(String str, String delimiter, Integer length) {
+    public static String[] split(String str, String delimiter, int fixedLength) {
         String[] result;
         if (isNullOrEmpty(str)) {
             result = new String[0];
         } else {
             result = str.split(Pattern.quote(delimiter));
         }
-        if (length != null && length != result.length) {
-            throw new SystemException(values(length), "lengthError");
+        if (fixedLength > -1 && fixedLength != result.length) {
+            throw new SystemException(values(fixedLength), "lengthError");
         }
         return result;
     }

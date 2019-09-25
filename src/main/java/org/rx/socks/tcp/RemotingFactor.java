@@ -210,7 +210,7 @@ public final class RemotingFactor {
             onDualInit = p -> {
             };
         }
-        T p = (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseAddress(endpoint), onDualInit));
+        T p = (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseEndpoint(endpoint), onDualInit));
         if (onDualInit != null) {
             log.info("onDualInit..");
             onDualInit.accept(p);

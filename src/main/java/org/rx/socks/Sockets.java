@@ -3,9 +3,21 @@ package org.rx.socks;
 import java.io.IOException;
 import java.net.*;
 
+import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ServerChannel;
+import io.netty.channel.epoll.Epoll;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
+import io.netty.channel.epoll.EpollSocketChannel;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.internal.PlatformDependent;
+import org.rx.core.Strings;
 import org.rx.core.SystemException;
 import org.rx.core.WeakCache;
 import org.springframework.util.CollectionUtils;
@@ -18,6 +30,7 @@ import static org.rx.core.Contract.require;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;
+    public static final boolean EpollAvailable = !PlatformDependent.isWindows() && Epoll.isAvailable();
 
     static {
         LocalAddress = InetAddress.getLoopbackAddress();
@@ -26,30 +39,6 @@ public final class Sockets {
         } catch (Exception ex) {
             throw SystemException.wrap(ex);
         }
-    }
-
-    public static InetSocketAddress getAnyEndpoint(int port) {
-        return new InetSocketAddress(AnyAddress, port);
-    }
-
-    public static InetSocketAddress parseAddress(String endpoint) {
-        require(endpoint);
-        String[] arr = endpoint.split(":");
-        require(arr, arr.length == 2);
-
-        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
-    }
-
-    /**
-     * Closes the specified channel after all queued write requests are flushed.
-     */
-    public static void closeOnFlushed(Channel ch) {
-        require(ch);
-
-        if (!ch.isActive()) {
-            return;
-        }
-        ch.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public InetAddress[] getAddresses(String host) {
@@ -61,6 +50,44 @@ public final class Sockets {
                 throw SystemException.wrap(ex);
             }
         });
+    }
+
+    public static InetSocketAddress getAnyEndpoint(int port) {
+        return new InetSocketAddress(AnyAddress, port);
+    }
+
+    public static InetSocketAddress parseEndpoint(String endpoint) {
+        require(endpoint);
+
+        String[] arr = Strings.split(endpoint, ":", 2);
+        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    public static EventLoopGroup createEventLoopGroup(int threadAmount) {
+        return EpollAvailable ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
+    }
+
+    public static Class<? extends ServerChannel> getServerChannelClass() {
+        return EpollAvailable ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+    }
+
+    public static Class<? extends Channel> getChannelClass() {
+        return EpollAvailable ? EpollSocketChannel.class : NioSocketChannel.class;
+    }
+
+    public static Bootstrap createBootstrap(Channel channel) {
+        require(channel);
+
+        return new Bootstrap().group(channel.eventLoop().getClass().getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup()).channel(channel.getClass());
+    }
+
+    public static void closeOnFlushed(Channel channel) {
+        require(channel);
+
+        if (!channel.isActive()) {
+            return;
+        }
+        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public static void close(Socket socket) {
@@ -124,7 +151,7 @@ public final class Sockets {
     }
 
     public static void setHttpProxy(String proxyAddr, List<String> nonProxyHosts, String userName, String password) {
-        InetSocketAddress ipe = parseAddress(proxyAddr);
+        InetSocketAddress ipe = parseEndpoint(proxyAddr);
         Properties prop = System.getProperties();
         prop.setProperty("http.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));

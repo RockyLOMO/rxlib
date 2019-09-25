@@ -8,7 +8,6 @@ import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
 //import org.rx.socks.tcp.ProxyFrontendHandler;
 import org.rx.socks.tcp.RemotingFactor;
-import org.rx.socks.tcp.TcpServer;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -21,7 +20,7 @@ public class SocksTester {
 //    @Test
 //    public void testProxy() {
 //        TcpServer server = new TcpServer(3306, false, false, null);
-//        server.setChannelHandlers(new ProxyFrontendHandler(server, p -> Sockets.parseAddress("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306")));
+//        server.setChannelHandlers(new ProxyFrontendHandler(server, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306")));
 //        server.start(true);
 //    }
 
@@ -82,7 +81,7 @@ public class SocksTester {
     @Test
     public void testSock() throws Exception {
         Socket sock = new Socket();
-        sock.connect(Sockets.parseAddress("cn.bing.com:80"));
+        sock.connect(Sockets.parseEndpoint("cn.bing.com:80"));
         OutputStreamWriter writer = new OutputStreamWriter(sock.getOutputStream());
         InputStreamReader reader = new InputStreamReader(sock.getInputStream());
 
