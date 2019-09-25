@@ -21,7 +21,8 @@ import static org.rx.core.Contract.require;
  */
 @Slf4j
 public class WeakCache<TK, TV> {
-    public static final WeakCache<String, Object> instance = new WeakCache<>();
+    @Getter
+    private static final WeakCache<String, Object> instance = new WeakCache<>();
 
     private ConcurrentMap<TK, Reference<TV>> container;
     @Getter

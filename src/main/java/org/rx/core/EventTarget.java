@@ -23,7 +23,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!dynamicAttach()) {
                 throw new InvalidOperationException(String.format("Event %s not defined", eventName));
             }
-            EventListener.instance.attach(this, eventName, event);
+            EventListener.getInstance().attach(this, eventName, event);
         }
     }
 
@@ -39,7 +39,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!dynamicAttach()) {
                 throw new InvalidOperationException(String.format("Event %s not defined", eventName));
             }
-            EventListener.instance.raise(this, eventName, args);
+            EventListener.getInstance().raise(this, eventName, args);
         }
     }
 

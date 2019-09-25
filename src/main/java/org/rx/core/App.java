@@ -203,10 +203,10 @@ public class App extends SystemUtils {
                 }
                 break;
             case SoftCache:
-                v = WeakCache.instance.getOrAdd(key, (Function<String, Object>) supplier, true);
+                v = WeakCache.getInstance().getOrAdd(key, (Function<String, Object>) supplier, true);
                 break;
             default:
-                v = WeakCache.instance.getOrAdd(key, (Function<String, Object>) supplier, false);
+                v = WeakCache.getInstance().getOrAdd(key, (Function<String, Object>) supplier, false);
                 break;
         }
         return (T) v;

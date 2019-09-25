@@ -64,7 +64,7 @@ public final class PingClient {
 
         Consumer<Boolean> consumer = null;
         if (cacheResult) {
-            WeakCache<String, Object> cache = WeakCache.instance;
+            WeakCache<String, Object> cache = WeakCache.getInstance();
             String k = String.format("_PingClient%s", endpoint);
             Boolean result = as(cache.get(k), Boolean.class);
             if (result != null) {

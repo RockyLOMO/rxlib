@@ -85,7 +85,7 @@ public final class RemotingFactor {
                         String eventName = (String) objects[0];
                         BiConsumer event = (BiConsumer) objects[1];
                         if (targetType.isInterface()) {
-                            EventListener.instance.attach(o, eventName, event);
+                            EventListener.getInstance().attach(o, eventName, event);
                         } else {
                             methodProxy.invokeSuper(o, objects);
                         }
@@ -139,7 +139,7 @@ public final class RemotingFactor {
                             case 1:
                                 try {
                                     if (targetType.isInterface()) {
-                                        EventListener.instance.raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                        EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
                                     } else {
                                         EventTarget eventTarget = (EventTarget) o;
                                         eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);

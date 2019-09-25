@@ -61,7 +61,8 @@ public class BeanMapper {
     public static final String ignoreProperty = "#ignore";
     private static final String Get = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
-    private static final Lazy<BeanMapper> instance = new Lazy<>(BeanMapper.class);
+    @Getter
+    private static final BeanMapper instance = new BeanMapper();
 
     public static String genCode(Class entity) {
         require(entity);
@@ -78,10 +79,6 @@ public class BeanMapper {
             }
         }
         return code.toString();
-    }
-
-    public static BeanMapper getInstance() {
-        return instance.getValue();
     }
 
     @SuppressWarnings(Contract.AllWarnings)

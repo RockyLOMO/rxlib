@@ -43,7 +43,7 @@ public final class Sockets {
 
     public InetAddress[] getAddresses(String host) {
         String prefix = "Sockets-";
-        return (InetAddress[]) WeakCache.instance.getOrAdd(prefix + host, p -> {
+        return (InetAddress[]) WeakCache.getInstance().getOrAdd(prefix + host, p -> {
             try {
                 return InetAddress.getAllByName(p.substring(prefix.length()));
             } catch (UnknownHostException ex) {
