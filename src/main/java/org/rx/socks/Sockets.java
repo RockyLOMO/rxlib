@@ -16,7 +16,6 @@ import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.internal.PlatformDependent;
 import org.rx.core.Strings;
 import org.rx.core.SystemException;
 import org.rx.core.WeakCache;
@@ -30,7 +29,6 @@ import static org.rx.core.Contract.require;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;
-    public static final boolean EpollAvailable = !PlatformDependent.isWindows() && Epoll.isAvailable();
 
     static {
         LocalAddress = InetAddress.getLoopbackAddress();
@@ -63,22 +61,40 @@ public final class Sockets {
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
 
-    public static EventLoopGroup createEventLoopGroup(int threadAmount) {
-        return EpollAvailable ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
+    public static EventLoopGroup bossEventLoop() {
+        return eventLoopGroup(1);
+    }
+
+    public static EventLoopGroup workEventLoop() {
+        return eventLoopGroup(0);
+    }
+
+    public static EventLoopGroup eventLoopGroup(int threadAmount) {
+        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);  //NioEventLoopGroup(0, TaskFactory.getExecutor());
+    }
+
+    public static Bootstrap bootstrap() {
+        return bootstrap(getChannelClass());
+    }
+
+    public static Bootstrap bootstrap(Class<? extends Channel> channelClass) {
+        require(channelClass);
+
+        return new Bootstrap().group(channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup()).channel(channelClass);
+    }
+
+    public static Bootstrap bootstrap(Channel channel) {
+        require(channel);
+
+        return new Bootstrap().group(channel.eventLoop()).channel(channel.getClass());
     }
 
     public static Class<? extends ServerChannel> getServerChannelClass() {
-        return EpollAvailable ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     }
 
     public static Class<? extends Channel> getChannelClass() {
-        return EpollAvailable ? EpollSocketChannel.class : NioSocketChannel.class;
-    }
-
-    public static Bootstrap createBootstrap(Channel channel) {
-        require(channel);
-
-        return new Bootstrap().group(channel.eventLoop().getClass().getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup()).channel(channel.getClass());
+        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
     public static void closeOnFlushed(Channel channel) {

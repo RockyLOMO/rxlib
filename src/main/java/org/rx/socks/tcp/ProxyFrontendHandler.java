@@ -58,24 +58,12 @@
 //        }
 //    }
 //
-//    /**
-//     * Closes the specified channel after all queued write requests are flushed.
-//     */
-//    public static void closeOnFlushed(Channel ch) {
-//        require(ch);
-//
-//        log.debug("closeOnFlushed");
-////        if (ch.isActive()) {
-////            ch.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
-////        }
-//    }
-//
 //    private Function<InetSocketAddress, InetSocketAddress> proxyRule;
 //    private TcpClient outbound;
 //
 //    public ProxyFrontendHandler(TcpServer<T> server, Function<InetSocketAddress, InetSocketAddress> proxyRule) {
 //        super(server);
-//        server.setAutoRead(false);
+//        server.getConfig().setAutoRead(false);
 //        require(proxyRule);
 //        this.proxyRule = proxyRule;
 //    }

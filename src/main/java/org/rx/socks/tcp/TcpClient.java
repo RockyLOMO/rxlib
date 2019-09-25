@@ -2,14 +2,6 @@ package org.rx.socks.tcp;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.compression.ZlibCodecFactory;
-import io.netty.handler.codec.compression.ZlibWrapper;
-import io.netty.handler.codec.serialization.ClassResolvers;
-import io.netty.handler.codec.serialization.ObjectDecoder;
-import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -25,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.ref.WeakReference;
-import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 
@@ -116,30 +107,19 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
     }
 
-    public static TcpClient newPacketClient(InetSocketAddress serverEndpoint, SessionId sessionId) {
-        TcpClient client = new TcpClient(TcpConfig.packetConfig(serverEndpoint), sessionId);
-        client.getConfig().setHandlersSupplier(() -> new ChannelHandler[]{
-                new ObjectEncoder(),
-                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpClient.class.getClassLoader())),
-                new PacketClientHandler(client)
-        });
-        return client;
-    }
-
     public volatile BiConsumer<TcpClient, NEventArgs<ChannelHandlerContext>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpClient, PackEventArgs<ChannelHandlerContext>> onSend, onReceive;
     public volatile BiConsumer<TcpClient, ErrorEventArgs<ChannelHandlerContext>> onError;
     @Getter
     private TcpConfig config;
-    private EventLoopGroup workerGroup;
+    @Getter
+    private SessionId sessionId;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
     private ChannelHandlerContext channel;
-    @Getter
-    private SessionId sessionId;
+    private ManualResetEvent connectWaiter = new ManualResetEvent();
     @Getter
     private volatile boolean isConnected;
-    private ManualResetEvent connectWaiter;
     @Getter
     @Setter
     private volatile boolean autoReconnect;
@@ -156,9 +136,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         require(config, sessionId);
 
         this.config = config;
-        if (config.isEnableSsl()) {
-            sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        }
         this.sessionId = sessionId;
         connectWaiter = new ManualResetEvent();
     }
@@ -166,10 +143,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Override
     protected void freeObjects() {
         autoReconnect = false; //import
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-            workerGroup = null;
-        }
+        bootstrap.config().group().shutdownGracefully();
         isConnected = false;
     }
 
@@ -183,36 +157,15 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             throw new InvalidOperationException("Client has connected");
         }
 
-        if (workerGroup == null) {
-            workerGroup = new NioEventLoopGroup();
+        if (config.isEnableSsl()) {
+            sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = new Bootstrap()
-                .group(workerGroup)
+        bootstrap = Sockets.bootstrap()
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .option(ChannelOption.AUTO_READ, config.isAutoRead())
-                .channel(NioSocketChannel.class)
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel channel) throws Exception {
-                        ChannelPipeline pipeline = channel.pipeline();
-                        if (sslCtx != null) {
-                            pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));
-                        }
-                        if (config.isEnableCompress()) {
-                            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-                        }
-
-                        ChannelHandler[] handlers = config.getHandlersSupplier().get();
-                        if (Arrays.isEmpty(handlers)) {
-                            log.warn("Empty channel handlers");
-                            return;
-                        }
-                        pipeline.addLast(handlers);
-                    }
-                });
+                .handler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort())));
         bootstrap.connect(config.getEndpoint());
         if (wait) {
             connectWaiter.waitOne(config.getConnectTimeout());

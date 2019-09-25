@@ -2,6 +2,7 @@ package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
 import org.rx.socks.Sockets;
+import org.rx.socks.tcp.*;
 import org.rx.socks.tcp.impl.ErrorPacket;
 import org.rx.socks.tcp.impl.HandshakePacket;
 
