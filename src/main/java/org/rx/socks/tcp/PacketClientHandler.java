@@ -6,8 +6,6 @@ import org.rx.socks.tcp.impl.ErrorPacket;
 import org.rx.socks.tcp.impl.HandshakePacket;
 
 public class PacketClientHandler extends TcpClient.BaseClientHandler {
-    private HandshakePacket handshake;
-
     public PacketClientHandler(TcpClient client) {
         super(client);
     }
@@ -28,7 +26,7 @@ public class PacketClientHandler extends TcpClient.BaseClientHandler {
             return;
         }
         if (msg instanceof HandshakePacket) {
-            handshake = (HandshakePacket) msg;
+            HandshakePacket handshake = (HandshakePacket) msg;
             return;
         }
 

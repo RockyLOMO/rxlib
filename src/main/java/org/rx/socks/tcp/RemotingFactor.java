@@ -55,7 +55,7 @@ public final class RemotingFactor {
 
     private static class ClientHandler implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
-        private static final TcpClientPool pool = new TcpClientPool(p -> TcpClient.newPacketClient(p, AppSessionId.defaultId));
+        private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.packetClient(p, AppSessionId.defaultId));
 
         private final ManualResetEvent waitHandle;
         private CallPack resultPack;
@@ -227,7 +227,7 @@ public final class RemotingFactor {
 
         Class contract = contractInstance.getClass();
         host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<SessionClient> server = TcpServer.newPacketServer(port, null);
+            TcpServer<SessionClient> server = TcpConfig.packetServer(port, null);
             if (connectTimeout != null) {
                 server.getConfig().setConnectTimeout(connectTimeout);
             }

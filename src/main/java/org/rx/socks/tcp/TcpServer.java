@@ -2,20 +2,13 @@ package org.rx.socks.tcp;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.compression.ZlibCodecFactory;
-import io.netty.handler.codec.compression.ZlibWrapper;
-import io.netty.handler.codec.serialization.ClassResolvers;
-import io.netty.handler.codec.serialization.ObjectDecoder;
-import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +28,7 @@ import java.util.function.BiConsumer;
 import static org.rx.core.Contract.*;
 
 @Slf4j
+@RequiredArgsConstructor
 public class TcpServer<T extends SessionClient> extends Disposable implements EventTarget<TcpServer<T>> {
     public abstract static class BaseServerHandler<T extends SessionClient> extends ChannelInboundHandlerAdapter {
         protected static final Logger log = LoggerFactory.getLogger(BaseServerHandler.class);
@@ -120,45 +114,22 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         }
     }
 
-    public static <T extends SessionClient> TcpServer<T> newPacketServer(int port, Class sessionClientType) {
-        TcpServer<T> server = new TcpServer<>(TcpConfig.packetConfig(Sockets.getAnyEndpoint(port)), sessionClientType);
-        server.getConfig().setHandlersSupplier(() -> new ChannelHandler[]{
-                new ObjectEncoder(),
-                new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpServer.class.getClassLoader())),
-                new PacketServerHandler<>(server)
-        });
-        return server;
-    }
-
     public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
     @Getter
-    private TcpConfig config;
+    private final TcpConfig config;
+    private final Class sessionClientType;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private SslContext sslCtx;
     @Getter
+    private Map<SessionId, Set<T>> clients = new ConcurrentHashMap<>();
+    @Getter
     private volatile boolean isStarted;
     @Getter
-    private final Map<SessionId, Set<T>> clients;
-    private Class sessionClientType;
-    @Getter
     @Setter
-    private int capacity;
-
-    @SneakyThrows
-    public TcpServer(TcpConfig config, Class sessionClientType) {
-        clients = new ConcurrentHashMap<>();
-        this.config = config;
-        if (config.isEnableSsl()) {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
-            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-        }
-        this.sessionClientType = sessionClientType == null ? SessionClient.class : sessionClientType;
-
-        this.capacity = 1000000;
-    }
+    private int capacity = 1000000;
 
     @Override
     protected void freeObjects() {
@@ -183,40 +154,23 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             throw new InvalidOperationException("Server has started");
         }
 
-        bossGroup = new NioEventLoopGroup();
-        workerGroup = new NioEventLoopGroup();
-//        bossGroup = new NioEventLoopGroup(1, TaskFactory.getExecutor());
-//        workerGroup = new NioEventLoopGroup(0, TaskFactory.getExecutor());
+        if (config.isEnableSsl()) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        }
+        bossGroup = Sockets.bossEventLoop();
+        workerGroup = Sockets.workEventLoop();
         ServerBootstrap b = new ServerBootstrap()
                 .group(bossGroup, workerGroup)
+                .channel(Sockets.getServerChannelClass())
                 .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.SO_BACKLOG, 128)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.AUTO_READ, config.isAutoRead())
-                .channel(NioServerSocketChannel.class)
                 .handler(new LoggingHandler(LogLevel.INFO))
-                .childHandler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel channel) throws Exception {
-                        ChannelPipeline pipeline = channel.pipeline();
-                        if (sslCtx != null) {
-                            pipeline.addLast(sslCtx.newHandler(channel.alloc()));
-                        }
-                        if (config.isEnableCompress()) {
-                            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                            pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-                        }
-
-                        ChannelHandler[] handlers = config.getHandlersSupplier().get();
-                        if (Arrays.isEmpty(handlers)) {
-                            log.warn("Empty channel handlers");
-                            return;
-                        }
-                        pipeline.addLast(handlers);
-                    }
-                });
+                .childHandler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc())));
         ChannelFuture f = b.bind(config.getEndpoint()).sync();
         isStarted = true;
         log.debug("Listened on port {}..", config.getEndpoint());
@@ -227,7 +181,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     }
 
     protected T createClient(ChannelHandlerContext ctx) {
-        return (T) Reflects.newInstance(sessionClientType, ctx);
+        return (T) Reflects.newInstance(isNull(sessionClientType, SessionClient.class), ctx);
     }
 
     protected void addClient(SessionId sessionId, T client) {

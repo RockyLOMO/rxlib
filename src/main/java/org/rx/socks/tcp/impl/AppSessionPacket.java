@@ -22,12 +22,4 @@ public class AppSessionPacket extends AppSessionId implements SessionPacket {
     public AppSessionId sessionId() {
         return new AppSessionId(getAppName(), getVersion());
     }
-
-//    public static AppSessionPacket error(String errorMessage) {
-//        AppSessionPacket pack = create(AppSessionPacket.class);
-//        pack.setErrorMessage(errorMessage);
-//        return pack;
-//    }
-//
-//    private String errorMessage;
 }
