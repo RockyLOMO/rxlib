@@ -1,10 +1,7 @@
 package org.rx.core;
 
 import com.google.common.base.Throwables;
-import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.SneakyThrows;
+import lombok.*;
 import org.rx.beans.DateTime;
 
 import java.util.ArrayList;
@@ -12,13 +9,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.rx.core.Contract.require;
 
 public class FluentWait {
     @Data
+    @RequiredArgsConstructor
     public static class UntilState {
-        private DateTime endTime;
+        private final DateTime endTime;
         private int checkCount;
     }
 
@@ -61,18 +60,24 @@ public class FluentWait {
         return this;
     }
 
-    @SneakyThrows
     public <T> T until(Function<UntilState, T> supplier) {
+        return until(supplier, App.TimeoutInfinite, null);
+    }
+
+    @SneakyThrows
+    public <T> T until(Function<UntilState, T> supplier, long retryMills, Predicate<UntilState> retryFunc) {
         require(supplier);
+        require(retryMills, retryMills >= App.TimeoutInfinite);
 
         Throwable lastException;
-        UntilState state = new UntilState();
-        state.endTime = DateTime.now().addSeconds(timeoutSeconds);
+        T lastResult = null;
+        UntilState state = new UntilState(DateTime.now().addSeconds(timeoutSeconds));
+        int retryCount = retryMills == App.TimeoutInfinite ? App.TimeoutInfinite : (int) Math.floor((double) retryMills / interval);
         do {
             try {
-                T val = supplier.apply(state);
-                if (val != null && (Boolean.class != val.getClass() || Boolean.TRUE.equals(val))) {
-                    return val;
+                lastResult = supplier.apply(state);
+                if (lastResult != null && (Boolean.class != lastResult.getClass() || Boolean.TRUE.equals(lastResult))) {
+                    return lastResult;
                 }
                 lastException = null;
             } catch (Throwable e) {
@@ -82,10 +87,16 @@ public class FluentWait {
             }
 
             sleep();
+
+            if (retryMills > App.TimeoutInfinite && state.checkCount % retryCount == 0) {
+                if (retryFunc != null && !retryFunc.test(state)) {
+                    break;
+                }
+            }
         }
         while (state.endTime.before(DateTime.now()));
         if (!throwOnFail) {
-            return null;
+            return lastResult;
         }
 
         String timeoutMessage = String.format("Expected condition failed: %s (tried for %d second(s) with %d milliseconds interval%s)",
