@@ -21,21 +21,50 @@ public class FluentWait {
         private int checkCount;
     }
 
+    private static final long defaultTimeout = 500L;
+
+    public static UntilState NULL() {
+        return new UntilState(DateTime.now());
+    }
+
+    public static FluentWait newInstance(long timeoutMillis) {
+        return newInstance(timeoutMillis, defaultTimeout);
+    }
+
+    public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {
+        return new FluentWait().timeout(timeoutMillis).interval(intervalMillis);
+    }
+
     @Getter
-    @Setter
-    private int timeoutSeconds;
+    private long timeout = defaultTimeout;
     @Getter
-    private long interval = 500L;
+    private long interval = defaultTimeout;
     private String message;
     private List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
     private boolean throwOnFail = true;
+    private long retryMills = App.TimeoutInfinite;
+    private boolean retryFirstCall;
 
-    public FluentWait(int timeoutSeconds) {
-        this.timeoutSeconds = timeoutSeconds;
+    private FluentWait() {
     }
 
-    public FluentWait interval(long interval) {
-        this.interval = interval;
+    public FluentWait timeout(long timeoutMillis) {
+        this.timeout = timeoutMillis;
+        return this;
+    }
+
+    public FluentWait interval(long intervalMillis) {
+        this.interval = intervalMillis;
+        return this;
+    }
+
+    public FluentWait retryMills(long retryMills) {
+        this.retryMills = retryMills;
+        return this;
+    }
+
+    public FluentWait retryFirstCall(boolean retryFirstCall) {
+        this.retryFirstCall = retryFirstCall;
         return this;
     }
 
@@ -61,17 +90,17 @@ public class FluentWait {
     }
 
     public <T> T until(Function<UntilState, T> supplier) {
-        return until(supplier, App.TimeoutInfinite, null, false);
+        return until(supplier, null);
     }
 
     @SneakyThrows
-    public <T> T until(Function<UntilState, T> supplier, long retryMills, Predicate<UntilState> retryFunc, boolean retryFirstCall) {
+    public <T> T until(Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) {
         require(supplier);
         require(retryMills, retryMills >= App.TimeoutInfinite);
 
         Throwable lastException;
         T lastResult = null;
-        UntilState state = new UntilState(DateTime.now().addSeconds(timeoutSeconds));
+        UntilState state = new UntilState(DateTime.now().addMilliseconds((int) timeout));
         if (retryFirstCall && retryFunc != null) {
             retryFunc.test(state);
         }
@@ -103,9 +132,9 @@ public class FluentWait {
             return lastResult;
         }
 
-        String timeoutMessage = String.format("Expected condition failed: %s (tried for %d second(s) with %d milliseconds interval%s)",
+        String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval%s)",
                 message == null ? "waiting for " + supplier : message,
-                timeoutSeconds, interval, lastException == null ? "" : " with ignoredException " + lastException);
+                timeout, interval, lastException == null ? "" : " with ignoredException " + lastException);
         throw new TimeoutException(timeoutMessage);
     }
 
