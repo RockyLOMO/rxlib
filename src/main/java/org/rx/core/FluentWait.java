@@ -61,17 +61,21 @@ public class FluentWait {
     }
 
     public <T> T until(Function<UntilState, T> supplier) {
-        return until(supplier, App.TimeoutInfinite, null);
+        return until(supplier, App.TimeoutInfinite, null, false);
     }
 
     @SneakyThrows
-    public <T> T until(Function<UntilState, T> supplier, long retryMills, Predicate<UntilState> retryFunc) {
+    public <T> T until(Function<UntilState, T> supplier, long retryMills, Predicate<UntilState> retryFunc, boolean retryFirstCall) {
         require(supplier);
         require(retryMills, retryMills >= App.TimeoutInfinite);
 
         Throwable lastException;
         T lastResult = null;
         UntilState state = new UntilState(DateTime.now().addSeconds(timeoutSeconds));
+        if (retryFirstCall && retryFunc != null) {
+            retryFunc.test(state);
+        }
+
         int retryCount = retryMills == App.TimeoutInfinite ? App.TimeoutInfinite : (int) Math.floor((double) retryMills / interval);
         do {
             try {
