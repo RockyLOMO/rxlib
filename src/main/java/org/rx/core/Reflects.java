@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.FieldUtils;
 
 import java.lang.reflect.*;
+import java.util.List;
 
 import static org.rx.core.Contract.require;
 
@@ -73,7 +74,7 @@ public class Reflects {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(FieldUtils.getAllFieldsList(type));
+        NQuery<Field> fields = NQuery.of((List<Field>) WeakCache.getInstance().getOrAdd("Reflects.getFields", k -> FieldUtils.getAllFieldsList(type)));
         for (Field field : fields) {
             setAccess(field);
         }
