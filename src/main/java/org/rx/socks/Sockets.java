@@ -26,6 +26,7 @@ import java.util.Properties;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.values;
 
 public final class Sockets {
     public static final InetAddress LocalAddress, AnyAddress;
@@ -40,10 +41,9 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        String prefix = "Sockets-";
-        return (InetAddress[]) WeakCache.getInstance().getOrAdd(prefix + host, p -> {
+        return (InetAddress[]) WeakCache.getOrStore("Sockets.getAddresses", values(host), p -> {
             try {
-                return InetAddress.getAllByName(p.substring(prefix.length()));
+                return InetAddress.getAllByName(host);
             } catch (UnknownHostException ex) {
                 throw SystemException.wrap(ex);
             }

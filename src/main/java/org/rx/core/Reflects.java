@@ -3,11 +3,13 @@ package org.rx.core;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.MethodUtils;
 
 import java.lang.reflect.*;
 import java.util.List;
 
 import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.values;
 
 /**
  * sun.reflect.Reflection.getCallerClass()
@@ -86,7 +88,7 @@ public class Reflects {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of((List<Field>) WeakCache.getInstance().getOrAdd("Reflects.getFields", k -> FieldUtils.getAllFieldsList(type)));
+        NQuery<Field> fields = NQuery.of((List<Field>) WeakCache.getOrStore("Reflects.getFields", values(type), k -> FieldUtils.getAllFieldsList(type)));
         for (Field field : fields) {
             setAccess(field);
         }

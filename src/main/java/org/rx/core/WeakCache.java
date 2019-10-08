@@ -24,6 +24,14 @@ public class WeakCache<TK, TV> {
     @Getter
     private static final WeakCache<String, Object> instance = new WeakCache<>();
 
+    public static Object getOrStore(String methodName, Object[] args, Function<String, Object> supplier) {
+        return getOrStore(App.cacheKey(methodName + App.serializeToBase64(args)), supplier);
+    }
+
+    public static Object getOrStore(String key, Function<String, Object> supplier) {
+        return instance.getOrAdd(key, supplier);
+    }
+
     private ConcurrentMap<TK, Reference<TV>> container;
     @Getter
     @Setter
