@@ -127,7 +127,7 @@ public class FluentWait {
                 }
             }
         }
-        while (state.endTime.before(DateTime.now()));
+        while (DateTime.now().before(state.endTime));
         if (!throwOnFail) {
             return lastResult;
         }

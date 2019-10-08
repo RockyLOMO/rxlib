@@ -109,6 +109,14 @@ public class CoreTester {
     //endregion
 
     @Test
+    public void fluentWait() {
+        FluentWait.newInstance(2000, 200).until(s -> {
+            System.out.println(System.currentTimeMillis());
+            return false;
+        });
+    }
+
+    @Test
     public void weakCache() {
         WeakCache<String, Object> cache = WeakCache.getInstance();
         String k = "a";
