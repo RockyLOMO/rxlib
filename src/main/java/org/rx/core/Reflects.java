@@ -73,6 +73,18 @@ public class Reflects {
         throw new SystemException("Parameters error");
     }
 
+    @SneakyThrows
+    public static Object getFieldValue(Class type, Object instance, String name) {
+        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        return field.get(instance);
+    }
+
+    @SneakyThrows
+    public static void setFieldValue(Class type, Object instance, String name, String value) {
+        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        field.set(instance, value);
+    }
+
     public static NQuery<Field> getFields(Class type) {
         NQuery<Field> fields = NQuery.of((List<Field>) WeakCache.getInstance().getOrAdd("Reflects.getFields", k -> FieldUtils.getAllFieldsList(type)));
         for (Field field : fields) {
