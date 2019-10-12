@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import com.alibaba.fastjson.JSONObject;
+import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.rx.beans.Tuple;
@@ -13,7 +14,8 @@ import static java.lang.Boolean.TRUE;
 public class LogInterceptor {
     private static final ThreadLocal threadStatic = ThreadLocal.withInitial(() -> FALSE);
 
-    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
+    @SneakyThrows
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
         Object p = joinPoint.getArgs();
         switch (joinPoint.getArgs().length) {
             case 0:

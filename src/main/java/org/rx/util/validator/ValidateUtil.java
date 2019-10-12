@@ -1,5 +1,6 @@
 package org.rx.util.validator;
 
+import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
@@ -15,9 +16,9 @@ import java.lang.reflect.Method;
 
 import org.rx.util.LogInterceptor;
 import org.rx.core.StringBuilder;
-import org.rx.util.function.ThrowableFunc;
 
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -61,9 +62,7 @@ public class ValidateUtil extends LogInterceptor {
         }
     }
 
-    public static Object validateMethod(Method member, Object instance, Object[] parameterValues,
-                                        boolean validateValues, ThrowableFunc returnValueFuc)
-            throws Throwable {
+    public static Object validateMethod(Method member, Object instance, Object[] parameterValues, boolean validateValues, Function returnValueFuc) {
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         ExecutableValidator executableValidator = validator.forExecutables();
         for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member,
@@ -81,7 +80,7 @@ public class ValidateUtil extends LogInterceptor {
         }
         Object retVal;
         for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member,
-                retVal = returnValueFuc.invoke(null))) {
+                retVal = returnValueFuc.apply(null))) {
             doThrow(violation);
         }
         return retVal;
@@ -95,8 +94,9 @@ public class ValidateUtil extends LogInterceptor {
      * @return
      * @throws Throwable
      */
+    @SneakyThrows
     @Override
-    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) throws Throwable {
+    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
         Class targetType = joinPoint.getTarget().getClass();
         Signature signature = joinPoint.getSignature();
         Executable member;

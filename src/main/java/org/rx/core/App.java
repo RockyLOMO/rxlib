@@ -13,9 +13,9 @@ import org.rx.beans.Tuple;
 import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
-import org.rx.util.function.Action;
-import org.rx.util.function.Func;
 import org.rx.io.MemoryStream;
+import org.rx.util.function.ThrowableAction;
+import org.rx.util.function.ThrowableFunc;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -133,6 +133,29 @@ public class App extends SystemUtils {
         Thread.sleep(millis);
     }
 
+    public static boolean catchCall(ThrowableAction action) {
+        require(action);
+
+        try {
+            action.invoke();
+            return true;
+        } catch (Throwable e) {
+            log.warn("catchCall", e);
+        }
+        return false;
+    }
+
+    public static <T> T catchCall(ThrowableFunc<T> action) {
+        require(action);
+
+        try {
+            return action.invoke();
+        } catch (Throwable e) {
+            log.warn("catchCall", e);
+        }
+        return null;
+    }
+
     public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state) {
         return retry(retryCount, func, state, TimeoutInfinite, false);
     }
@@ -160,27 +183,6 @@ public class App extends SystemUtils {
             i++;
         }
         throw lastEx;
-    }
-
-    public static void catchCall(Action action) {
-        require(action);
-
-        try {
-            action.invoke();
-        } catch (Exception ex) {
-            log.warn("CatchCall", ex);
-        }
-    }
-
-    public static <T> T catchCall(Func<T> action) {
-        require(action);
-
-        try {
-            return action.invoke();
-        } catch (Exception ex) {
-            log.warn("CatchCall", ex);
-        }
-        return null;
     }
 
     public static <T> T getOrStore(String key, Function<String, T> supplier) {
