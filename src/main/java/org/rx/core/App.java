@@ -157,28 +157,18 @@ public class App extends SystemUtils {
     }
 
     public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state) {
-        return retry(retryCount, func, state, TimeoutInfinite, false);
-    }
-
-    public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state, long sleepMillis, boolean sleepFirst) {
         require(retryCount, retryCount > 0);
         require(func);
 
         SystemException lastEx = null;
         int i = 1;
         while (i <= retryCount) {
-            if (sleepMillis > -1 && sleepFirst) {
-                sleep(sleepMillis);
-            }
             try {
                 return func.apply(state);
             } catch (Exception ex) {
                 if (i == retryCount) {
                     lastEx = SystemException.wrap(ex);
                 }
-            }
-            if (sleepMillis > -1 && !sleepFirst) {
-                sleep(sleepMillis);
             }
             i++;
         }

@@ -9,6 +9,7 @@ import org.rx.beans.$;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -60,6 +61,25 @@ public final class Contract {
         if (!testResult) {
             throw new SystemException(values(arg), "test");
         }
+    }
+
+    public static boolean tryClose(Object obj) {
+        return tryAs(obj, AutoCloseable.class, p -> App.catchCall(p::close));
+    }
+
+    public static <T> boolean tryAs(Object obj, Class<T> type) {
+        return tryAs(obj, type, null);
+    }
+
+    public static <T> boolean tryAs(Object obj, Class<T> type, Consumer<T> consumer) {
+        T t = as(obj, type);
+        if (t == null) {
+            return false;
+        }
+        if (consumer != null) {
+            consumer.accept(t);
+        }
+        return true;
     }
 
     public static <T> T as(Object obj, Class<T> type) {

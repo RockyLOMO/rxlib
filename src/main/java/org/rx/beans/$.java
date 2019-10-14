@@ -19,4 +19,9 @@ public final class $<T> implements Serializable {
     private $(T val) {
         v = val;
     }
+
+    @Override
+    public String toString() {
+        return v == null ? "" : v.toString();
+    }
 }
