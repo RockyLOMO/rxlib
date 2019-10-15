@@ -3,9 +3,12 @@ package org.rx.core;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.beans.DateTime;
+import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
 import java.util.List;
@@ -17,36 +20,25 @@ import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class AsyncTask {
-    private static class NamedRunnable implements Runnable, Callable {
+    @RequiredArgsConstructor
+    private static class NamedRunnable<T> implements Runnable, Callable<T> {
         private final String name;
-        private final Runnable runnable;
-        private final Func callable;
+        private final Func<T> callable;
 
-        public NamedRunnable(String name, Runnable runnable, Func callable) {
-            this.name = name;
-            this.runnable = runnable;
-            this.callable = callable;
-        }
-
+        @SneakyThrows
         @Override
-        public void run() {
-            if (runnable == null) {
-                return;
-            }
-            runnable.run();
-        }
-
-        @Override
-        public Object call() {
-            if (callable == null) {
-                return null;
-            }
+        public T call() {
             return callable.invoke();
         }
 
         @Override
+        public void run() {
+            call();
+        }
+
+        @Override
         public String toString() {
-            return String.format("AsyncTask[%s,%s]", name, isNull(runnable, callable).getClass().getSimpleName());
+            return String.format("AsyncTask[%s]", name);
         }
     }
 
@@ -76,30 +68,36 @@ public final class AsyncTask {
     public <T> Future<T> run(Func<T> task, String taskName) {
         require(task);
 
-        return executor.submit((Callable<T>) new NamedRunnable(taskName, null, task));
+        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.empty), task));
     }
 
-    public void run(Runnable task) {
+    public void run(Action task) {
         run(task, null);
     }
 
-    public void run(Runnable task, String taskName) {
+    public void run(Action task, String taskName) {
         require(task);
 
-        executor.execute(taskName != null ? new NamedRunnable(taskName, task, null) : task);
+        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.empty), () -> {
+            task.invoke();
+            return null;
+        }));
     }
 
-    public Future schedule(Runnable task, long delay) {
+    public Future schedule(Action task, long delay) {
         return schedule(task, delay, delay, null);
     }
 
-    public Future schedule(Runnable task, long initialDelay, long delay, String taskName) {
+    public Future schedule(Action task, long initialDelay, long delay, String taskName) {
         require(task);
 
-        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable(taskName, task, null), initialDelay, delay, TimeUnit.MILLISECONDS);
+        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.empty), () -> {
+            task.invoke();
+            return null;
+        }), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
 
-    public List<Future> scheduleDaily(Runnable task, String... timeArray) {
+    public List<Future> scheduleDaily(Action task, String... timeArray) {
         require(timeArray);
 
         return NQuery.of(timeArray).select(p -> scheduleDaily(task, p)).toList();
@@ -112,7 +110,7 @@ public final class AsyncTask {
      * @param time "HH:mm:ss"
      * @return
      */
-    public Future scheduleDaily(Runnable task, String time) {
+    public Future scheduleDaily(Action task, String time) {
         require(task, time);
 
         long oneDay = 24 * 60 * 60 * 1000;
@@ -122,16 +120,16 @@ public final class AsyncTask {
         return schedule(task, initDelay, oneDay, "scheduleDaily");
     }
 
-    public Future scheduleOnce(Runnable task, long delay) {
+    public Future scheduleOnce(Action task, long delay) {
         require(task);
 
         $<Future> future = $();
         future.v = scheduler.getValue().scheduleWithFixedDelay(() -> {
-            task.run();
             try {
+                task.invoke();
                 future.v.cancel(true);
-            } catch (Exception e) {
-                log.warn("setTimeout", e);
+            } catch (Throwable e) {
+                log.warn("scheduleOnce", e);
             }
         }, delay, delay, TimeUnit.MILLISECONDS);
         return future.v;

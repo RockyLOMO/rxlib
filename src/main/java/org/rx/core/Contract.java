@@ -3,13 +3,14 @@ package org.rx.core;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
+import lombok.SneakyThrows;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
+import org.rx.util.function.BiAction;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -64,20 +65,21 @@ public final class Contract {
     }
 
     public static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, p -> App.catchCall(p::close));
+        return tryAs(obj, AutoCloseable.class, AutoCloseable::close);
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {
         return tryAs(obj, type, null);
     }
 
-    public static <T> boolean tryAs(Object obj, Class<T> type, Consumer<T> consumer) {
+    @SneakyThrows
+    public static <T> boolean tryAs(Object obj, Class<T> type, BiAction<T> action) {
         T t = as(obj, type);
         if (t == null) {
             return false;
         }
-        if (consumer != null) {
-            consumer.accept(t);
+        if (action != null) {
+            action.invoke(t);
         }
         return true;
     }
