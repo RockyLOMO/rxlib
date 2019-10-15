@@ -233,6 +233,7 @@
         </profile>
     </profiles>
     <build>
+        <outputDirectory>D:\usr\output\rxlib\target\classes</outputDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
