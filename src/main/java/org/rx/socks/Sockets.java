@@ -61,6 +61,17 @@ public final class Sockets {
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
 
+    public static void writeAndFlush(Channel channel, Object... packs) {
+        require(channel);
+
+        channel.eventLoop().execute(() -> {
+            for (Object pack : packs) {
+                channel.write(pack);
+            }
+            channel.flush();
+        });
+    }
+
     public static EventLoopGroup bossEventLoop() {
         return eventLoopGroup(1);
     }
