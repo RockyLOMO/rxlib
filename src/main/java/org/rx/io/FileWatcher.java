@@ -79,7 +79,7 @@ public class FileWatcher extends Disposable {
         keepHandle = true;
         future = TaskFactory.run(() -> {
             while (keepHandle) {
-                try {
+                App.catchCall(() -> {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
                         for (Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
@@ -87,9 +87,7 @@ public class FileWatcher extends Disposable {
                         }
                     }
                     key.reset();
-                } catch (Exception e) {
-                    log.error("take", e);
-                }
+                });
             }
             return null;
         });

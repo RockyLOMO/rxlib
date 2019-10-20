@@ -33,16 +33,13 @@ public class SystemException extends NestedRuntimeException {
                 files.addAll(Arrays.toList(config.getErrorCodeFiles()));
             }
 
-            try {
+            return isNull(App.catchCall(() -> {
                 Map<String, Object> codes = App.loadYaml(NQuery.of(files).toArray(String.class));
                 if (codes.isEmpty()) {
                     log.warn("load code.yml fail");
                 }
                 return codes;
-            } catch (Exception e) {
-                log.debug("getSettings", e);
-                return Collections.emptyMap();
-            }
+            }), Collections.emptyMap());
         });
     }
 

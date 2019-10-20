@@ -6,11 +6,12 @@ import java.lang.ref.WeakReference;
 
 import lombok.Getter;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.util.function.BiFunc;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.Function;
 
 import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
@@ -24,11 +25,11 @@ public class WeakCache<TK, TV> {
     @Getter
     private static final WeakCache<String, Object> instance = new WeakCache<>();
 
-    public static Object getOrStore(String methodName, Object[] args, Function<String, Object> supplier) {
+    public static Object getOrStore(String methodName, Object[] args, BiFunc<String, Object> supplier) {
         return getOrStore(App.cacheKey(methodName + App.serializeToBase64(args)), supplier);
     }
 
-    public static Object getOrStore(String key, Function<String, Object> supplier) {
+    public static Object getOrStore(String key, BiFunc<String, Object> supplier) {
         return instance.getOrAdd(key, supplier);
     }
 
@@ -104,16 +105,17 @@ public class WeakCache<TK, TV> {
         return val;
     }
 
-    public TV getOrAdd(TK key, Function<TK, TV> supplier) {
+    public TV getOrAdd(TK key, BiFunc<TK, TV> supplier) {
         return getOrAdd(key, supplier, softRef);
     }
 
-    public TV getOrAdd(TK key, Function<TK, TV> supplier, boolean isSoftRef) {
+    @SneakyThrows
+    public TV getOrAdd(TK key, BiFunc<TK, TV> supplier, boolean isSoftRef) {
         require(supplier);
 
         TV v = get(key);
         if (v == null) {
-            add(key, v = supplier.apply(key), isSoftRef);
+            add(key, v = supplier.invoke(key), isSoftRef);
         }
         return v;
     }

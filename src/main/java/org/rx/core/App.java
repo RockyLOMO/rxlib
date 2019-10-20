@@ -15,6 +15,7 @@ import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
 import org.rx.io.MemoryStream;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -175,34 +176,35 @@ public class App extends SystemUtils {
         throw lastEx;
     }
 
-    public static <T> T getOrStore(String key, Function<String, T> supplier) {
+    public static <T> T getOrStore(String key, BiFunc<String, T> supplier) {
         return getOrStore(key, supplier, CacheContainerKind.WeakCache);
     }
 
-    public static <T> T getOrStore(String key, Function<String, T> supplier, CacheContainerKind containerKind) {
+    @SneakyThrows
+    public static <T> T getOrStore(String key, BiFunc<String, T> supplier, CacheContainerKind containerKind) {
         require(key, supplier, containerKind);
 
         String k = cacheKey(key);
         Object v;
         switch (containerKind) {
             case ThreadStatic:
-                v = threadMap().computeIfAbsent(k, supplier);
+                v = threadMap().computeIfAbsent(k, supplier.toFunction());
                 break;
             case ServletRequest:
                 HttpServletRequest request = getCurrentRequest();
                 if (request == null) {
-                    return supplier.apply(key);
+                    return supplier.invoke(key);
                 }
                 v = request.getAttribute(k);
                 if (v == null) {
-                    request.setAttribute(k, v = supplier.apply(k));
+                    request.setAttribute(k, v = supplier.invoke(k));
                 }
                 break;
             case SoftCache:
-                v = WeakCache.getInstance().getOrAdd(key, (Function<String, Object>) supplier, true);
+                v = WeakCache.getInstance().getOrAdd(key, (BiFunc<String, Object>) supplier, true);
                 break;
             default:
-                v = WeakCache.getInstance().getOrAdd(key, (Function<String, Object>) supplier, false);
+                v = WeakCache.getInstance().getOrAdd(key, (BiFunc<String, Object>) supplier, false);
                 break;
         }
         return (T) v;
@@ -348,20 +350,16 @@ public class App extends SystemUtils {
         require((Object) yamlFile);
 
         return getOrStore(String.format("loadYaml-%s", toJsonString(yamlFile)), k -> {
-            try {
-                Map<String, Object> result = new HashMap<>();
-                Yaml yaml = new Yaml(new SafeConstructor());
-                for (String yf : yamlFile) {
-                    File file = new File(yf);
-                    for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
-                        Map<String, Object> one = (Map<String, Object>) data;
-                        fillDeep(one, result);
-                    }
+            Map<String, Object> result = new HashMap<>();
+            Yaml yaml = new Yaml(new SafeConstructor());
+            for (String yf : yamlFile) {
+                File file = new File(yf);
+                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
+                    Map<String, Object> one = (Map<String, Object>) data;
+                    fillDeep(one, result);
                 }
-                return result;
-            } catch (Exception e) {
-                throw SystemException.wrap(e);
             }
+            return result;
         });
     }
 
@@ -692,15 +690,13 @@ public class App extends SystemUtils {
         if (servletRequest == null) {
             throw new InvalidOperationException("上下环境无ServletRequest");
         }
-        try {
+
+        return catchCall(() -> {
             if (ArrayUtils.isEmpty(servletRequest.getCookies())) {
                 return null;
             }
             return NQuery.of(servletRequest.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
-        } catch (Exception e) {
-            log.warn("getCookie", e);
-            return null;
-        }
+        });
     }
 
     public static void setCookie(HttpServletResponse response, String name, String value) {
