@@ -15,6 +15,7 @@ import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.SneakyThrows;
 import org.rx.core.Arrays;
 import org.rx.core.Strings;
 import org.rx.core.SystemException;
@@ -25,8 +26,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.values;
+import static org.rx.core.Contract.*;
 
 public final class Sockets {
     //region Address
@@ -42,7 +42,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore("Sockets.getAddresses", values(host), p -> InetAddress.getAllByName(host));
+        return (InetAddress[]) WeakCache.getOrStore(cacheKey("Sockets.getAddresses", host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
@@ -54,6 +54,33 @@ public final class Sockets {
 
         String[] arr = Strings.split(endpoint, ":", 2);
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    public static void closeOnFlushed(Socket socket) {
+        closeOnFlushed(socket, 1 | 2);
+    }
+
+    /**
+     * @param socket
+     * @param flags  Send=1, Receive=2
+     */
+    @SneakyThrows
+    public static void closeOnFlushed(Socket socket, int flags) {
+        require(socket);
+        if (socket.isClosed()) {
+            return;
+        }
+
+        if (socket.isConnected()) {
+            if ((flags & 1) == 1 && !socket.isOutputShutdown()) {
+                socket.shutdownOutput();
+            }
+            if ((flags & 2) == 2 && !socket.isInputShutdown()) {
+                socket.shutdownInput();
+            }
+        }
+        socket.setSoLinger(true, 2);
+        socket.close();
     }
     //#endregion
 

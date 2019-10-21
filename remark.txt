@@ -1,1 +1,7 @@
 搬瓦工 https://bandwagonhost.com/
+
+        <dependency>
+            <groupId>com.github.stuxuhai</groupId>
+            <artifactId>jpinyin</artifactId>
+            <version>1.1.8</version>
+        </dependency>

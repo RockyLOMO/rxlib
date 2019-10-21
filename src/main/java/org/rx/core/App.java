@@ -210,15 +210,6 @@ public class App extends SystemUtils {
         return (T) v;
     }
 
-    public static String cacheKey(String key) {
-        require(key);
-
-        if (key.length() <= 32) {
-            return key;
-        }
-        return MD5Util.md5Hex(key);
-    }
-
     public static UUID hash(String key) {
         require(key);
 
