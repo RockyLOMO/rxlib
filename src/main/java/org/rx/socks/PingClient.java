@@ -108,7 +108,7 @@ public final class PingClient {
                 return null;
             } finally {
                 watcher.stop();
-                App.catchCall(() -> Sockets.close(sock));
+                App.catchCall(() -> Sockets.closeOnFlushed(sock));
             }
             return watcher.elapsed(TimeUnit.MILLISECONDS);
         }).toList());
