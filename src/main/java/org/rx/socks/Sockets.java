@@ -16,6 +16,7 @@ import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import org.rx.core.Arrays;
 import org.rx.core.Strings;
 import org.rx.core.SystemException;
 import org.rx.core.WeakCache;
@@ -29,6 +30,7 @@ import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.values;
 
 public final class Sockets {
+    //#region Address
     public static final InetAddress LocalAddress, AnyAddress;
 
     static {
@@ -41,13 +43,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore("Sockets.getAddresses", values(host), p -> {
-            try {
-                return InetAddress.getAllByName(host);
-            } catch (UnknownHostException ex) {
-                throw SystemException.wrap(ex);
-            }
-        });
+        return (InetAddress[]) WeakCache.getOrStore("Sockets.getAddresses", values(host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
@@ -60,8 +56,13 @@ public final class Sockets {
         String[] arr = Strings.split(endpoint, ":", 2);
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
+    //#endregion
 
     public static void writeAndFlush(Channel channel, Object... packs) {
+        writeAndFlush(channel, Arrays.toList(packs));
+    }
+
+    public static void writeAndFlush(Channel channel, List<Object> packs) {
         require(channel);
 
         channel.eventLoop().execute(() -> {
@@ -70,6 +71,15 @@ public final class Sockets {
             }
             channel.flush();
         });
+    }
+
+    public static void closeOnFlushed(Channel channel) {
+        require(channel);
+
+        if (!channel.isActive()) {
+            return;
+        }
+        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public static EventLoopGroup bossEventLoop() {
@@ -108,62 +118,7 @@ public final class Sockets {
         return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
-    public static void closeOnFlushed(Channel channel) {
-        require(channel);
-
-        if (!channel.isActive()) {
-            return;
-        }
-        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
-    }
-
-    public static void close(Socket socket) {
-        close(socket, 1 | 2);
-    }
-
-    public static void close(Socket socket, int flags) {
-        require(socket);
-
-        if (!socket.isClosed()) {
-            shutdown(socket, flags);
-            try {
-                socket.setSoLinger(true, 2);
-                socket.close();
-            } catch (IOException ex) {
-                throw SystemException.wrap(ex);
-            }
-        }
-    }
-
-    /**
-     * @param socket
-     * @param flags  Send=1, Receive=2
-     */
-    public static void shutdown(Socket socket, int flags) {
-        require(socket);
-
-        if (!socket.isClosed() && socket.isConnected()) {
-            try {
-                if ((flags & 1) == 1 && !socket.isOutputShutdown()) {
-                    socket.shutdownOutput();
-                }
-                if ((flags & 2) == 2 && !socket.isInputShutdown()) {
-                    socket.shutdownInput();
-                }
-            } catch (IOException ex) {
-                throw SystemException.wrap(ex);
-            }
-        }
-    }
-
-    public static String getId(Socket sock, boolean isRemote) {
-        require(sock);
-
-        InetSocketAddress addr = (InetSocketAddress) (isRemote ? sock.getRemoteSocketAddress()
-                : sock.getLocalSocketAddress());
-        return addr.getHostString() + ":" + addr.getPort();
-    }
-
+    //region httpProxy
     public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {
         setHttpProxy(proxyAddr);
         try {
@@ -214,4 +169,5 @@ public final class Sockets {
             return new PasswordAuthentication(userName, password.toCharArray());
         }
     }
+    //endregion
 }

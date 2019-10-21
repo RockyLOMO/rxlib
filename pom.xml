@@ -233,6 +233,7 @@
         </profile>
     </profiles>
     <build>
+        <directory>${output}</directory>
         <outputDirectory>${output}\target\generated-sources</outputDirectory>
         <testOutputDirectory>${output}\target\generated-test-sources</testOutputDirectory>
         <plugins>
