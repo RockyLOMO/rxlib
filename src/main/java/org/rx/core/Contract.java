@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
+import org.rx.security.MD5Util;
 import org.rx.util.function.BiAction;
 
 import java.lang.reflect.AccessibleObject;
@@ -115,6 +116,16 @@ public final class Contract {
             }
         }
         return value;
+    }
+
+    public static String cacheKey(String methodName, Object... args) {
+        require(methodName);
+
+        String k = methodName + toJsonString(args);
+        if (k.length() <= 32) {
+            return k;
+        }
+        return MD5Util.md5Hex(k);
     }
 
     public static Object[] values(Object... args) {

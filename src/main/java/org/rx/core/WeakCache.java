@@ -13,8 +13,7 @@ import org.rx.util.function.BiFunc;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static org.rx.core.Contract.as;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 /**
  * ReferenceQueue 不准
@@ -25,12 +24,12 @@ public class WeakCache<TK, TV> {
     @Getter
     private static final WeakCache<String, Object> instance = new WeakCache<>();
 
-    public static Object getOrStore(String methodName, Object[] args, BiFunc<String, Object> supplier) {
-        return getOrStore(App.cacheKey(methodName + App.serializeToBase64(args)), supplier);
+    public static <T> T getOrStore(String key, BiFunc<String, Object> supplier) {
+        return getOrStore(key, supplier, false);
     }
 
-    public static Object getOrStore(String key, BiFunc<String, Object> supplier) {
-        return instance.getOrAdd(key, supplier);
+    public static <T> T getOrStore(String key, BiFunc<String, Object> supplier, boolean isSoftRef) {
+        return (T) instance.getOrAdd(key, supplier, isSoftRef);
     }
 
     private ConcurrentMap<TK, Reference<TV>> container;

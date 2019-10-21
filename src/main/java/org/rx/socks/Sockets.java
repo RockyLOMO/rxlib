@@ -26,8 +26,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.values;
+import static org.rx.core.Contract.*;
 
 public final class Sockets {
     //#region Address
@@ -43,7 +42,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore("Sockets.getAddresses", values(host), p -> InetAddress.getAllByName(host));
+        return (InetAddress[]) WeakCache.getOrStore(cacheKey("Sockets.getAddresses", host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
