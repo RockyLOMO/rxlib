@@ -1,6 +1,5 @@
 package org.rx.socks;
 
-import java.io.IOException;
 import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
@@ -30,7 +29,7 @@ import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.values;
 
 public final class Sockets {
-    //#region Address
+    //region Address
     public static final InetAddress LocalAddress, AnyAddress;
 
     static {

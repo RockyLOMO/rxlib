@@ -146,7 +146,7 @@ public class ValidateUtil extends LogInterceptor {
         throw ex;
     }
 
-    //#region Nested
+    //region Nested
     public interface RegularExp {
         /**
          * 验证email地址
