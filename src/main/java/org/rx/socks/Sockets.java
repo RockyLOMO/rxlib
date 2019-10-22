@@ -3,23 +3,18 @@ package org.rx.socks;
 import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.bootstrap.ServerBootstrapConfig;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.ServerChannel;
-import io.netty.channel.epoll.Epoll;
-import io.netty.channel.epoll.EpollEventLoopGroup;
-import io.netty.channel.epoll.EpollServerSocketChannel;
-import io.netty.channel.epoll.EpollSocketChannel;
+import io.netty.channel.*;
+import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import lombok.SneakyThrows;
-import org.rx.core.Arrays;
-import org.rx.core.Strings;
-import org.rx.core.SystemException;
-import org.rx.core.WeakCache;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import org.rx.core.*;
 import org.springframework.util.CollectionUtils;
 
 import java.util.List;
@@ -29,6 +24,132 @@ import java.util.function.Function;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
+    public static void writeAndFlush(Channel channel, Object... packs) {
+        writeAndFlush(channel, Arrays.toList(packs));
+    }
+
+    public static void writeAndFlush(Channel channel, List<Object> packs) {
+        require(channel);
+
+        channel.eventLoop().execute(() -> {
+            for (Object pack : packs) {
+                channel.write(pack);
+            }
+            channel.flush();
+        });
+    }
+
+    public static void closeOnFlushed(Channel channel) {
+        require(channel);
+
+        if (!channel.isActive()) {
+            return;
+        }
+        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    public static Bootstrap bootstrap() {
+        return bootstrap(channelClass(), null, null);
+    }
+
+    public static Bootstrap bootstrap(Class<? extends Channel> channelClass, Channel channel, MemoryMode mode) {
+        require(channelClass);
+
+        Bootstrap b = new Bootstrap()
+                .group(channel != null ? channel.eventLoop() : channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup())
+                .channel(channel != null ? channel.getClass() : channelClass);
+        if (EpollServerSocketChannel.class.isAssignableFrom(channelClass)) {
+            b.option(EpollChannelOption.CONNECT_TIMEOUT_MILLIS, config.getSocksTimeout())
+                    .option(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .option(EpollChannelOption.TCP_NODELAY, true)
+                    .option(EpollChannelOption.SO_KEEPALIVE, true);
+            if (mode != null) {
+                b.option(EpollChannelOption.SO_SNDBUF, mode.getSendBuf())
+                        .option(EpollChannelOption.SO_RCVBUF, mode.getReceiveBuf());
+            }
+        } else {
+            b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getSocksTimeout())
+                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .option(ChannelOption.TCP_NODELAY, true)
+                    .option(ChannelOption.SO_KEEPALIVE, true);
+            if (mode != null) {
+                b.option(ChannelOption.SO_SNDBUF, mode.getSendBuf())
+                        .option(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
+            }
+        }
+        return b;
+    }
+
+    public static void closeBootstrap(Bootstrap bootstrap) {
+        require(bootstrap);
+
+        bootstrap.config().group().shutdownGracefully();
+    }
+
+    public static ServerBootstrap serverBootstrap() {
+        return serverBootstrap(1, 0, null);
+    }
+
+    public static ServerBootstrap serverBootstrap(int bossThreadAmount, int workThreadAmount, MemoryMode mode) {
+        Class<? extends ServerChannel> channelClass = serverChannelClass();
+        ServerBootstrap b = new ServerBootstrap()
+                .group(eventLoopGroup(bossThreadAmount), eventLoopGroup(workThreadAmount))
+                .channel(channelClass);
+        if (EpollServerSocketChannel.class.isAssignableFrom(channelClass)) {
+            b.option(EpollChannelOption.CONNECT_TIMEOUT_MILLIS, config.getSocksTimeout())
+                    .option(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .childOption(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .childOption(EpollChannelOption.TCP_NODELAY, true)
+                    .childOption(EpollChannelOption.SO_KEEPALIVE, true);
+            if (mode != null) {
+                b.option(EpollChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
+                        .option(EpollChannelOption.SO_BACKLOG, mode.getBacklog())
+                        .childOption(EpollChannelOption.SO_SNDBUF, mode.getSendBuf())
+                        .childOption(EpollChannelOption.SO_RCVBUF, mode.getReceiveBuf());
+            }
+        } else {
+            b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getSocksTimeout())
+                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+//                    .option(ChannelOption.SO_REUSEADDR, true)
+                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .childOption(ChannelOption.TCP_NODELAY, true)
+                    .childOption(ChannelOption.SO_KEEPALIVE, true);
+            if (mode != null) {
+                b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
+                        .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
+                        .childOption(ChannelOption.SO_SNDBUF, mode.getSendBuf())
+                        .childOption(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
+            }
+        }
+        return b.handler(new LoggingHandler(LogLevel.INFO));
+    }
+
+    public static void closeBootstrap(ServerBootstrap bootstrap) {
+        require(bootstrap);
+
+        ServerBootstrapConfig config = bootstrap.config();
+        EventLoopGroup workerGroup = config.childGroup();
+        if (workerGroup != null) {
+            workerGroup.shutdownGracefully();
+        }
+        EventLoopGroup bossGroup = config.group();
+        if (bossGroup != null) {
+            bossGroup.shutdownGracefully();
+        }
+    }
+
+    public static EventLoopGroup eventLoopGroup(int threadAmount) {
+        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
+    }
+
+    public static Class<? extends ServerChannel> serverChannelClass() {
+        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+    }
+
+    public static Class<? extends Channel> channelClass() {
+        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
+    }
+
     //region Address
     public static final InetAddress LocalAddress, AnyAddress;
 
@@ -57,92 +178,25 @@ public final class Sockets {
     }
 
     public static void closeOnFlushed(Socket socket) {
-        closeOnFlushed(socket, 1 | 2);
-    }
-
-    /**
-     * @param socket
-     * @param flags  Send=1, Receive=2
-     */
-    @SneakyThrows
-    public static void closeOnFlushed(Socket socket, int flags) {
         require(socket);
         if (socket.isClosed()) {
             return;
         }
 
-        if (socket.isConnected()) {
-            if ((flags & 1) == 1 && !socket.isOutputShutdown()) {
-                socket.shutdownOutput();
+        App.catchCall(() -> {
+            if (socket.isConnected()) {
+                if (!socket.isOutputShutdown()) {
+                    socket.shutdownOutput();
+                }
+                if (!socket.isInputShutdown()) {
+                    socket.shutdownInput();
+                }
             }
-            if ((flags & 2) == 2 && !socket.isInputShutdown()) {
-                socket.shutdownInput();
-            }
-        }
-        socket.setSoLinger(true, 2);
-        socket.close();
-    }
-    //#endregion
-
-    public static void writeAndFlush(Channel channel, Object... packs) {
-        writeAndFlush(channel, Arrays.toList(packs));
-    }
-
-    public static void writeAndFlush(Channel channel, List<Object> packs) {
-        require(channel);
-
-        channel.eventLoop().execute(() -> {
-            for (Object pack : packs) {
-                channel.write(pack);
-            }
-            channel.flush();
+            socket.setSoLinger(true, 2);
+            socket.close();
         });
     }
-
-    public static void closeOnFlushed(Channel channel) {
-        require(channel);
-
-        if (!channel.isActive()) {
-            return;
-        }
-        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
-    }
-
-    public static EventLoopGroup bossEventLoop() {
-        return eventLoopGroup(1);
-    }
-
-    public static EventLoopGroup workEventLoop() {
-        return eventLoopGroup(0);
-    }
-
-    public static EventLoopGroup eventLoopGroup(int threadAmount) {
-        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);  //NioEventLoopGroup(0, TaskFactory.getExecutor());
-    }
-
-    public static Bootstrap bootstrap() {
-        return bootstrap(getChannelClass());
-    }
-
-    public static Bootstrap bootstrap(Class<? extends Channel> channelClass) {
-        require(channelClass);
-
-        return new Bootstrap().group(channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup()).channel(channelClass);
-    }
-
-    public static Bootstrap bootstrap(Channel channel) {
-        require(channel);
-
-        return new Bootstrap().group(channel.eventLoop()).channel(channel.getClass());
-    }
-
-    public static Class<? extends ServerChannel> getServerChannelClass() {
-        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
-    }
-
-    public static Class<? extends Channel> getChannelClass() {
-        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
-    }
+    //#endregion
 
     //region httpProxy
     public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {

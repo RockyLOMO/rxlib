@@ -1,6 +1,6 @@
 app:
-  defaultBufferSize: 1024
-  defaultSocksTimeout: 30000
+  bufferSize: 512
+  socksTimeout: 20000
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

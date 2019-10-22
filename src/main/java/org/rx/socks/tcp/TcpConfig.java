@@ -7,6 +7,7 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Contract;
+import org.rx.socks.MemoryMode;
 import org.rx.socks.Sockets;
 
 import java.net.InetSocketAddress;
@@ -43,8 +44,9 @@ public class TcpConfig {
     }
 
     private final InetSocketAddress endpoint;
-    private int connectTimeout = Contract.config.getDefaultSocksTimeout();
-    private boolean autoRead = true;
+    private int workThread;
+    private MemoryMode memoryMode;
+    private int connectTimeout = Contract.config.getSocksTimeout();
     private boolean enableSsl;
     private boolean enableCompress;
     //not shareable

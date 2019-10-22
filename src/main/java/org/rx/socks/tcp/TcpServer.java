@@ -2,8 +2,6 @@ package org.rx.socks.tcp;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
@@ -12,16 +10,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.lang.ref.WeakReference;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.net.InetSocketAddress;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
@@ -75,8 +73,8 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 //            super.channelRead(ctx, msg);
             log.debug("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
             TcpServer<T> server = getServer();
-            SessionPacket pack;
-            if ((pack = as(msg, SessionPacket.class)) == null) {
+            Serializable pack;
+            if ((pack = as(msg, Serializable.class)) == null) {
                 log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
@@ -119,12 +117,11 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
     @Getter
     private final TcpConfig config;
-    private final Class sessionClientType;
-    private EventLoopGroup bossGroup;
-    private EventLoopGroup workerGroup;
+    private final Class clientType;
+    private ServerBootstrap bootstrap;
     private SslContext sslCtx;
     @Getter
-    private Map<SessionId, Set<T>> clients = new ConcurrentHashMap<>();
+    private final Map<String, Set<T>> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
     @Getter
@@ -133,14 +130,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
     @Override
     protected void freeObjects() {
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-            workerGroup = null;
-        }
-        if (bossGroup != null) {
-            bossGroup.shutdownGracefully();
-            bossGroup = null;
-        }
+        Sockets.closeBootstrap(bootstrap);
         isStarted = false;
     }
 
@@ -158,20 +148,11 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bossGroup = Sockets.bossEventLoop();
-        workerGroup = Sockets.workEventLoop();
-        ServerBootstrap b = new ServerBootstrap()
-                .group(bossGroup, workerGroup)
-                .channel(Sockets.getServerChannelClass())
+        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode())
                 .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.SO_BACKLOG, 128)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childOption(ChannelOption.SO_KEEPALIVE, true)
-                .childOption(ChannelOption.AUTO_READ, config.isAutoRead())
-                .handler(new LoggingHandler(LogLevel.INFO))
                 .childHandler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc())));
-        ChannelFuture f = b.bind(config.getEndpoint()).sync();
+        ChannelFuture f = bootstrap.bind(config.getEndpoint());
         isStarted = true;
         log.debug("Listened on port {}..", config.getEndpoint());
 
@@ -181,38 +162,41 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     }
 
     protected T createClient(ChannelHandlerContext ctx) {
-        return (T) Reflects.newInstance(isNull(sessionClientType, SessionClient.class), ctx);
+        return (T) Reflects.newInstance(isNull(clientType, SessionClient.class), ctx);
     }
 
-    protected void addClient(SessionId sessionId, T client) {
-        clients.computeIfAbsent(sessionId, k -> Collections.synchronizedSet(new HashSet<>())).add(client);
+    protected synchronized void addClient(T client) {
+        clients.computeIfAbsent(client.getAppId(), k -> Collections.synchronizedSet(new LinkedHashSet<>())).add(client);
     }
 
-    protected T findClient(ChannelId channelId) {
-        T client = NQuery.of(clients.values()).selectMany(p -> p).where(p -> p.getId().equals(channelId)).singleOrDefault();
+    protected T findClient(String appId, ChannelId channelId) {
+        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
         if (client == null) {
-            throw new InvalidOperationException(String.format("Client %s not found", channelId));
+            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
         }
         return client;
     }
 
-    protected void removeClient(T client) {
-        for (Map.Entry<SessionId, Set<T>> entry : clients.entrySet()) {
-            if (!entry.getValue().removeIf(x -> x == client)) {
-                continue;
-            }
-            if (entry.getValue().isEmpty()) {
-                clients.remove(entry.getKey());
-            }
-            break;
+    protected synchronized void removeClient(T client) {
+        Set<T> set = getClients(client.getAppId());
+        if (set.removeIf(p -> p == client) && set.isEmpty()) {
+            clients.remove(client.getAppId());
         }
     }
 
-    public <TPack extends SessionPacket> void send(ChannelId sessionClientId, TPack pack) {
-        checkNotClosed();
-        require(sessionClientId, pack);
+    private Set<T> getClients(String appId) {
+        Set<T> set = clients.get(appId);
+        if (CollectionUtils.isEmpty(set)) {
+            throw new InvalidOperationException(String.format("AppId %s not found", appId));
+        }
+        return set;
+    }
 
-        T client = findClient(sessionClientId);
+    public void send(String appId, ChannelId channelId, Serializable pack) {
+        checkNotClosed();
+        require(appId, channelId, pack);
+
+        T client = findClient(appId, channelId);
         PackEventArgs<T> args = new PackEventArgs<>(client, pack);
         raiseEvent(onSend, args);
         if (args.isCancel()) {

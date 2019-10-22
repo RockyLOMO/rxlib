@@ -85,7 +85,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private Function<InetSocketAddress, TcpClient> createFunc;
 
     public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc) {
-        this(createFunc, Contract.config.getDefaultSocksTimeout(), 1, App.MaxSize);
+        this(createFunc, Contract.config.getSocksTimeout(), 1, App.MaxSize);
     }
 
     public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, long timeout, int minSize, int maxSize) {

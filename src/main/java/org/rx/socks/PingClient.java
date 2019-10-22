@@ -4,7 +4,6 @@ import com.google.common.base.Stopwatch;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.WeakCache;
 import org.rx.core.Lazy;
@@ -23,13 +22,10 @@ import static org.rx.core.Contract.require;
 @Slf4j
 public final class PingClient {
     public class Result {
+        @Getter
         private final List<Long> results;
         private Lazy<Double> avg;
         private Lazy<Long> min, max;
-
-        public List<Long> getResults() {
-            return results;
-        }
 
         public int getLossCount() {
             return (int) results.stream().filter(p -> p == null).count();
@@ -72,7 +68,7 @@ public final class PingClient {
             }
             consumer = p -> cache.add(k, p);
         }
-        Boolean ok = new PingClient().ping(endpoint).getLossCount() == 0;
+        boolean ok = new PingClient().ping(endpoint).getLossCount() == 0;
         if (consumer != null) {
             consumer.accept(ok);
         }
@@ -85,11 +81,7 @@ public final class PingClient {
     @Getter
     @Setter
     private int connectTimeout = 10000;
-    private Stopwatch watcher;
-
-    public PingClient() {
-        watcher = Stopwatch.createUnstarted();
-    }
+    private final Stopwatch watcher = Stopwatch.createUnstarted();
 
     public Result ping(String endpoint) {
         return ping(Sockets.parseEndpoint(endpoint), 4);
@@ -108,7 +100,7 @@ public final class PingClient {
                 return null;
             } finally {
                 watcher.stop();
-                App.catchCall(() -> Sockets.closeOnFlushed(sock));
+                Sockets.closeOnFlushed(sock);
             }
             return watcher.elapsed(TimeUnit.MILLISECONDS);
         }).toList());

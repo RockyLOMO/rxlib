@@ -143,7 +143,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Override
     protected void freeObjects() {
         autoReconnect = false; //import
-        bootstrap.config().group().shutdownGracefully();
+        Sockets.closeBootstrap(bootstrap);
         isConnected = false;
     }
 
@@ -161,10 +161,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
         bootstrap = Sockets.bootstrap()
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
-                .option(ChannelOption.AUTO_READ, config.isAutoRead())
                 .handler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort())));
         bootstrap.connect(config.getEndpoint());
         if (wait) {

@@ -18,8 +18,8 @@ import java.util.function.Supplier;
 public final class Contract {
     @Data
     public static class Config {
-        private int defaultBufferSize = 1024;
-        private int defaultSocksTimeout = 30000;
+        private int bufferSize = 512;
+        private int socksTimeout = 20000;
         private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
         private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
     }
@@ -30,8 +30,8 @@ public final class Contract {
 
     static {
         config = isNull(App.readSetting("app", Config.class), new Config());
-        if (config.defaultBufferSize <= 0) {
-            config.defaultBufferSize = 512;
+        if (config.bufferSize <= 0) {
+            config.bufferSize = 512;
         }
         if (!Arrays.isEmpty(config.jsonSkipTypes)) {
             SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(config.jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
