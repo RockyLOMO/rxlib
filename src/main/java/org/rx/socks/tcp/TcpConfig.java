@@ -16,8 +16,8 @@ import java.util.function.Supplier;
 @Data
 @RequiredArgsConstructor
 public class TcpConfig {
-    public static TcpClient packetClient(InetSocketAddress serverEndpoint, SessionId sessionId) {
-        TcpClient client = new TcpClient(packetConfig(serverEndpoint), sessionId);
+    public static TcpClient packetClient(InetSocketAddress serverEndpoint, String appId) {
+        TcpClient client = new TcpClient(packetConfig(serverEndpoint), appId);
         client.getConfig().setHandlersSupplier(() -> new ChannelHandler[]{
                 new ObjectEncoder(),
                 new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),

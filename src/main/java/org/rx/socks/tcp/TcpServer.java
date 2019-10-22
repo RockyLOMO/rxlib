@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
-import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -70,7 +69,6 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-//            super.channelRead(ctx, msg);
             log.debug("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
             TcpServer<T> server = getServer();
             Serializable pack;
@@ -96,7 +94,6 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-//            super.exceptionCaught(ctx, cause);
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
             TcpServer<T> server = getServer();
             ErrorEventArgs<T> args = new ErrorEventArgs<>(getClient(), cause);
@@ -165,16 +162,9 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         return (T) Reflects.newInstance(isNull(clientType, SessionClient.class), ctx);
     }
 
-    protected synchronized void addClient(T client) {
+    protected synchronized void addClient(String appId, T client) {
+        client.setAppId(appId);
         clients.computeIfAbsent(client.getAppId(), k -> Collections.synchronizedSet(new LinkedHashSet<>())).add(client);
-    }
-
-    protected T findClient(String appId, ChannelId channelId) {
-        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
-        if (client == null) {
-            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
-        }
-        return client;
     }
 
     protected synchronized void removeClient(T client) {
@@ -192,16 +182,23 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         return set;
     }
 
-    public void send(String appId, ChannelId channelId, Serializable pack) {
+    public void send(T client, Serializable pack) {
         checkNotClosed();
-        require(appId, channelId, pack);
+        require(client, pack);
 
-        T client = findClient(appId, channelId);
         PackEventArgs<T> args = new PackEventArgs<>(client, pack);
         raiseEvent(onSend, args);
         if (args.isCancel()) {
             return;
         }
         client.channel.writeAndFlush(pack);
+    }
+
+    public T findClient(String appId, ChannelId channelId) {
+        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
+        if (client == null) {
+            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
+        }
+        return client;
     }
 }

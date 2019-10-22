@@ -22,6 +22,7 @@ public final class Contract {
         private int socksTimeout = 20000;
         private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
         private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
+        private String appId = "rx";
     }
 
     public static final String AllWarnings = "all", Utf8 = "UTF-8";

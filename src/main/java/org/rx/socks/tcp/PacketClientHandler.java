@@ -2,8 +2,8 @@ package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
 import org.rx.core.InvalidOperationException;
-import org.rx.socks.tcp.impl.ErrorPacket;
-import org.rx.socks.tcp.impl.HandshakePacket;
+import org.rx.socks.tcp.packet.ErrorPacket;
+import org.rx.socks.tcp.packet.HandshakePacket;
 
 public class PacketClientHandler extends TcpClient.BaseClientHandler {
     public PacketClientHandler(TcpClient client) {
@@ -15,7 +15,7 @@ public class PacketClientHandler extends TcpClient.BaseClientHandler {
         super.channelActive(ctx);
 
         HandshakePacket handshake = new HandshakePacket();
-        handshake.setSessionId(getClient().getSessionId());
+        handshake.setAppId(getClient().getAppId());
         ctx.writeAndFlush(handshake);
     }
 

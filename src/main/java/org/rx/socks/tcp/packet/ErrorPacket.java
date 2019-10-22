@@ -1,10 +1,11 @@
-package org.rx.socks.tcp.impl;
+package org.rx.socks.tcp.packet;
 
 import lombok.Data;
-import org.rx.socks.tcp.SessionPacket;
+
+import java.io.Serializable;
 
 @Data
-public class ErrorPacket implements SessionPacket {
+public class ErrorPacket implements Serializable {
     public static ErrorPacket error(String errorMessage) {
         ErrorPacket pack = new ErrorPacket();
         pack.setErrorMessage(errorMessage);

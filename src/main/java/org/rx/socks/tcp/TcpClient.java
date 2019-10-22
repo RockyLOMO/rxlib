@@ -16,6 +16,7 @@ import org.rx.socks.Sockets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
@@ -70,8 +71,8 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
 
             TcpClient client = getClient();
-            SessionPacket pack;
-            if ((pack = as(msg, SessionPacket.class)) == null) {
+            Serializable pack;
+            if ((pack = as(msg, Serializable.class)) == null) {
                 log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
@@ -113,7 +114,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Getter
     private TcpConfig config;
     @Getter
-    private SessionId sessionId;
+    private String appId;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
     private ChannelHandlerContext channel;
@@ -124,19 +125,19 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Setter
     private volatile boolean autoReconnect;
 
-    public TcpClient(TcpConfig config, SessionId sessionId) {
-        init(config, sessionId);
+    public TcpClient(TcpConfig config, String appId) {
+        init(config, appId);
     }
 
     protected TcpClient() {
     }
 
     @SneakyThrows
-    protected void init(TcpConfig config, SessionId sessionId) {
-        require(config, sessionId);
+    protected void init(TcpConfig config, String appId) {
+        require(config, appId);
 
         this.config = config;
-        this.sessionId = sessionId;
+        this.appId = appId;
         connectWaiter = new ManualResetEvent();
     }
 
@@ -170,13 +171,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
     }
 
-    protected void connectStatus(boolean ok) {
-        if (isConnected = ok) {
-            connectWaiter.set();
-        }
-    }
-
-    protected void reconnect() {
+    private void reconnect() {
         if (!autoReconnect || isConnected) {
             return;
         }
@@ -200,7 +195,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }, 2 * 1000);
     }
 
-    public <T extends SessionPacket> void send(T pack) {
+    public void send(Serializable pack) {
         require(pack, (Object) isConnected);
 
         PackEventArgs<ChannelHandlerContext> args = new PackEventArgs<>(channel, pack);
