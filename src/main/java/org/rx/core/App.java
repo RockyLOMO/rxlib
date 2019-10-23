@@ -84,6 +84,7 @@ public class App extends SystemUtils {
         if (Config.bufferSize <= 0) {
             Config.bufferSize = 512;
         }
+        Contract.init();
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);

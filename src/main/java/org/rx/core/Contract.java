@@ -18,7 +18,8 @@ public final class Contract {
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
     private static NQuery<Class> SkipTypes = NQuery.of();
 
-    static {
+    //App循环引用
+    static void init() {
         String[] jsonSkipTypes = App.Config.getJsonSkipTypes();
         if (!Arrays.isEmpty(jsonSkipTypes)) {
             SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
@@ -155,7 +156,7 @@ public final class Contract {
                 jArr = NQuery.asList(arg);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
+                    if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
@@ -163,14 +164,14 @@ public final class Contract {
             } else if ((jObj = as(arg, Map.class)) != null) {
                 for (Map.Entry<Object, Object> kv : jObj.entrySet()) {
                     Object p = kv.getValue();
-                    if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
+                    if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jObj.put(kv.getKey(), skipResult.apply(p));
                     }
                 }
                 arg = jObj;
             } else {
                 Object p = arg;
-                if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
+                if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                     arg = skipResult.apply(p);
                 }
             }
