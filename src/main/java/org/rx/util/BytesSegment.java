@@ -1,25 +1,17 @@
 package org.rx.util;
 
+import lombok.Getter;
+
 import java.util.function.Consumer;
 
 import static org.rx.core.Contract.require;
 
 public final class BytesSegment implements AutoCloseable {
     public Consumer<BytesSegment> Closed;
+    @Getter
     public final byte[] array;
+    @Getter
     public final int offset, count;
-
-    public byte[] getArray() {
-        return array;
-    }
-
-    public int getOffset() {
-        return offset;
-    }
-
-    public int getCount() {
-        return count;
-    }
 
     public BytesSegment(byte[] array) {
         this(array, 0, array.length);

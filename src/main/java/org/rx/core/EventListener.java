@@ -1,6 +1,9 @@
 package org.rx.core;
 
+import com.google.common.eventbus.EventBus;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.util.*;
 import java.util.Collections;
@@ -9,14 +12,21 @@ import java.util.function.BiConsumer;
 
 import static org.rx.core.Contract.require;
 
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class EventListener {
     @Getter
     private static final EventListener instance = new EventListener();
-    private final Map<Object, Map<String, BiConsumer>> host;
+    private static Lazy<EventBus> busLazy = new Lazy<>(EventBus::new);
 
-    private EventListener() {
-        host = Collections.synchronizedMap(new WeakHashMap<>());
+    public static void register(Object object) {
+        busLazy.getValue().register(object);
     }
+
+    public static void post(Object event) {
+        busLazy.getValue().post(event);
+    }
+
+    private final Map<Object, Map<String, BiConsumer>> host = Collections.synchronizedMap(new WeakHashMap<>());
 
     public void attach(Object target, String eventName, BiConsumer event) {
         require(target, eventName);

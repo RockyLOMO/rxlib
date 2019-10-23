@@ -132,7 +132,7 @@ public class ControllerInterceptor {
     public ResponseEntity handleException(Exception e, HttpServletRequest request) {
         String msg = DefaultMessage, debugMsg = null;
         Exception logEx = e;
-        if (e instanceof ConstraintException || handleInfoLogExceptions().distinct().any(p -> p.isInstance(e))) {
+        if (e instanceof ConstraintException || handleInfoLogExceptions().distinct().any(p -> Reflects.isInstance(e, p))) {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logEx = null;

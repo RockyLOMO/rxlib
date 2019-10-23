@@ -7,9 +7,9 @@ import java.lang.annotation.*;
 @Documented
 @Inherited
 public @interface EnableValid {
-    static final int ParameterValues = 1;
-    static final int Method = 1 << 1;
-    static final int All = ParameterValues | Method;
+    int ParameterValues = 1;
+    int Method = 1 << 1;
+    int All = ParameterValues | Method;
 
     int value() default All;
 }

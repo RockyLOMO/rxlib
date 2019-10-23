@@ -1,5 +1,7 @@
 package org.rx.io;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.App;
 import org.rx.core.Disposable;
@@ -13,7 +15,9 @@ import java.io.*;
 import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.values;
 
-public class IOStream extends Disposable implements Closeable, Flushable {
+@AllArgsConstructor
+@Getter
+public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable {
     public static String readString(InputStream stream) {
         return readString(stream, Contract.Utf8);
     }
@@ -24,7 +28,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[Contract.config.getBufferSize()];
+            byte[] buffer = new byte[App.Config.getBufferSize()];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -51,7 +55,7 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
-        byte[] buffer = new byte[Contract.config.getBufferSize() * 2];
+        byte[] buffer = new byte[App.Config.getBufferSize() * 2];
         int read;
         while ((read = from.read(buffer, 0, buffer.length)) > 0) {
             to.write(buffer, 0, read);
@@ -59,16 +63,8 @@ public class IOStream extends Disposable implements Closeable, Flushable {
         }
     }
 
-    protected InputStream reader;
-    protected OutputStream writer;
-
-    public InputStream getReader() {
-        return reader;
-    }
-
-    public OutputStream getWriter() {
-        return writer;
-    }
+    protected TI reader;
+    protected TO writer;
 
     public boolean canRead() {
         return !isClosed() && available() > 0;
@@ -95,16 +91,6 @@ public class IOStream extends Disposable implements Closeable, Flushable {
     @ErrorCode(messageKeys = {"$type"})
     public int getLength() {
         throw new SystemException(values(this.getClass().getSimpleName()));
-    }
-
-    protected IOStream() {
-    }
-
-    public IOStream(InputStream input, OutputStream output) {
-        require(input, output);
-
-        this.reader = input;
-        this.writer = output;
     }
 
     @SneakyThrows

@@ -43,7 +43,7 @@ public final class AsyncTask {
     }
 
     public static final int ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
-    public static final AsyncTask TaskFactory = new AsyncTask(1, App.MaxSize, 4, new SynchronousQueue<>());
+    public static final AsyncTask TaskFactory = new AsyncTask(1, App.MaxInt, 4, new SynchronousQueue<>());
     @Getter
     private final ThreadPoolExecutor executor;
     private final Lazy<ScheduledExecutorService> scheduler;
@@ -68,7 +68,7 @@ public final class AsyncTask {
     public <T> Future<T> run(Func<T> task, String taskName) {
         require(task);
 
-        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.empty), task));
+        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.Empty), task));
     }
 
     public void run(Action task) {
@@ -78,7 +78,7 @@ public final class AsyncTask {
     public void run(Action task, String taskName) {
         require(task);
 
-        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.empty), () -> {
+        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.Empty), () -> {
             task.invoke();
             return null;
         }));
@@ -91,7 +91,7 @@ public final class AsyncTask {
     public Future schedule(Action task, long initialDelay, long delay, String taskName) {
         require(task);
 
-        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.empty), () -> {
+        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.Empty), () -> {
             task.invoke();
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);

@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.NEnum;
@@ -21,15 +22,12 @@ import static org.rx.core.AsyncTask.TaskFactory;
 
 @Slf4j
 public class FileWatcher extends Disposable {
+    @RequiredArgsConstructor
     public enum ChangeKind implements NEnum {
         Create(1), Modify(2), Delete(3);
 
         @Getter
-        private int value;
-
-        ChangeKind(int val) {
-            value = val;
-        }
+        private final int value;
     }
 
     @Getter

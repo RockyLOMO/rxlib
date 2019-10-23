@@ -5,6 +5,7 @@ import io.netty.channel.*;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
@@ -117,8 +118,9 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private String appId;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
+    @Getter(AccessLevel.PROTECTED)
     private ChannelHandlerContext channel;
-    private ManualResetEvent connectWaiter = new ManualResetEvent();
+    private ManualResetEvent connectWaiter;
     @Getter
     private volatile boolean isConnected;
     @Getter
@@ -161,7 +163,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = Sockets.bootstrap()
+        bootstrap = Sockets.bootstrap(Sockets.channelClass(), null, config.getMemoryMode(), null)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .handler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort())));
         bootstrap.connect(config.getEndpoint());
@@ -178,19 +180,22 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
         $<Future> $f = $();
         $f.v = TaskFactory.schedule(() -> {
-            if (isConnected) {
-                log.debug("Client reconnected");
-                return;
-            }
             try {
-                bootstrap.connect(config.getEndpoint());
-                connectWaiter.waitOne(config.getConnectTimeout());
-                connectWaiter.reset();
-            } catch (Exception e) {
-                log.error("Client reconnected", e);
-            }
-            if (!autoReconnect || isConnected) {
-                $f.v.cancel(false);
+                if (isConnected) {
+                    log.debug("Client reconnected");
+                    return;
+                }
+                try {
+                    bootstrap.connect(config.getEndpoint());
+                    connectWaiter.waitOne(config.getConnectTimeout());
+                    connectWaiter.reset();
+                } catch (Exception e) {
+                    log.error("Client reconnected", e);
+                }
+            } finally {
+                if (!autoReconnect || isConnected) {
+                    $f.v.cancel(false);
+                }
             }
         }, 2 * 1000);
     }

@@ -424,7 +424,7 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public <TR> NQuery<TR> ofType(Class<TR> type) {
-        return where(p -> type.isInstance(p)).select(p -> (TR) p);
+        return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
     public T first() {

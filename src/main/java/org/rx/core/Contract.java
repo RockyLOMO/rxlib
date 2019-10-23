@@ -2,7 +2,6 @@ package org.rx.core;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import lombok.Data;
 import lombok.SneakyThrows;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
@@ -16,26 +15,13 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class Contract {
-    @Data
-    public static class Config {
-        private int bufferSize = 512;
-        private int socksTimeout = 20000;
-        private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
-        private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
-        private String appId = "rx";
-    }
-
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
-    public static final Config config;
     private static NQuery<Class> SkipTypes = NQuery.of();
 
     static {
-        config = isNull(App.readSetting("app", Config.class), new Config());
-        if (config.bufferSize <= 0) {
-            config.bufferSize = 512;
-        }
-        if (!Arrays.isEmpty(config.jsonSkipTypes)) {
-            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(config.jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
+        String[] jsonSkipTypes = App.Config.getJsonSkipTypes();
+        if (!Arrays.isEmpty(jsonSkipTypes)) {
+            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
 
@@ -87,7 +73,7 @@ public final class Contract {
     }
 
     public static <T> T as(Object obj, Class<T> type) {
-        if (!type.isInstance(obj)) {
+        if (!Reflects.isInstance(obj, type)) {
             return null;
         }
         return (T) obj;
@@ -169,7 +155,7 @@ public final class Contract {
                 jArr = NQuery.asList(arg);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                    if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
@@ -177,14 +163,14 @@ public final class Contract {
             } else if ((jObj = as(arg, Map.class)) != null) {
                 for (Map.Entry<Object, Object> kv : jObj.entrySet()) {
                     Object p = kv.getValue();
-                    if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                    if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
                         jObj.put(kv.getKey(), skipResult.apply(p));
                     }
                 }
                 arg = jObj;
             } else {
                 Object p = arg;
-                if (SkipTypes.any(p2 -> p2.isInstance(p))) {
+                if (SkipTypes.any(p2 -> Reflects.isInstance(p,p2))) {
                     arg = skipResult.apply(p);
                 }
             }

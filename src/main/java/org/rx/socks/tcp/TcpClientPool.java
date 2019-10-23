@@ -17,6 +17,7 @@ import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
+import static org.rx.core.App.Config;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -85,7 +86,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private Function<InetSocketAddress, TcpClient> createFunc;
 
     public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc) {
-        this(createFunc, Contract.config.getSocksTimeout(), 1, App.MaxSize);
+        this(createFunc, Config.getSocksTimeout(), 1, App.MaxInt);
     }
 
     public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, long timeout, int minSize, int maxSize) {

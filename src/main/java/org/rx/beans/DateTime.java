@@ -22,8 +22,7 @@ import static org.rx.core.Contract.values;
 public final class DateTime extends Date {
     public static final TimeZone UtcZone = TimeZone.getTimeZone("UTC");
     public static final DateTime BaseDate = new DateTime(2000, 1, 1);
-    public static final NQuery<String> Formats = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS",
-            "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
+    public static final NQuery<String> Formats = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
 
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis());

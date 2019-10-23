@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
 import java.io.Serializable;
+import java.net.SocketAddress;
 
 @RequiredArgsConstructor
 public class SessionClient implements Serializable {
@@ -17,5 +18,9 @@ public class SessionClient implements Serializable {
 
     public ChannelId getId() {
         return channel.channel().id();
+    }
+
+    public SocketAddress remoteAddress() {
+        return channel.channel().remoteAddress();
     }
 }

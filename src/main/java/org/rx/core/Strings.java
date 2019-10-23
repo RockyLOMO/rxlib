@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.rx.core.Contract.values;
 
 public class Strings extends StringUtils {
-    public static final String empty = "";
+    public static final String Empty = "";
 
     public static String randomValue(int maxValue) {
         Integer int2 = maxValue;

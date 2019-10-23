@@ -1,23 +1,17 @@
 package org.rx.io;
 
+import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.App;
 import org.rx.socks.Bytes;
 
 import java.io.*;
 
-import static org.rx.core.Contract.require;
-
-public class BinaryStream extends IOStream {
+public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     private boolean leaveOpen;
+    @Getter
     private IOStream baseStream;
-    private DataInputStream reader;
     private BufferedReader reader2;
-    private DataOutputStream writer;
-
-    public IOStream getBaseStream() {
-        return baseStream;
-    }
 
     @Override
     public boolean canSeek() {
@@ -44,10 +38,8 @@ public class BinaryStream extends IOStream {
     }
 
     public BinaryStream(IOStream stream, boolean leaveOpen) {
-        require(stream);
+        super(new DataInputStream(stream.getReader()), new DataOutputStream(stream.getWriter()));
 
-        super.reader = reader = new DataInputStream(stream.getReader());
-        super.writer = writer = new DataOutputStream(stream.getWriter());
         baseStream = stream;
         this.leaveOpen = leaveOpen;
     }

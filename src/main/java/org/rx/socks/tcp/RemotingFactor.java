@@ -8,7 +8,6 @@ import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.beans.BeanMapper;
-import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.core.ManualResetEvent;
@@ -21,10 +20,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 @Slf4j
@@ -52,7 +51,7 @@ public final class RemotingFactor {
     @RequiredArgsConstructor
     private static class ClientHandler implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
-        private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.packetClient(p, config.getAppId()));
+        private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.packetClient(p, Config.getAppId()));
 
         private final Class targetType;
         private final InetSocketAddress serverAddress;
@@ -182,20 +181,20 @@ public final class RemotingFactor {
     }
 
     private static final Map<Object, TcpServer<SessionClient>> host = new ConcurrentHashMap<>();
-    private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+    private static final Map<UUID, EventArgs> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, endpoint, null);
+        return create(contract, Sockets.parseEndpoint(endpoint), null);
     }
 
-    public static <T> T create(Class<T> contract, String endpoint, Consumer<T> onDualInit) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, Consumer<T> onDualInit) {
         require(contract);
 
         if (EventTarget.class.isAssignableFrom(contract) && onDualInit == null) {
             onDualInit = p -> {
             };
         }
-        T p = (T) Enhancer.create(contract, new ClientHandler(contract, Sockets.parseEndpoint(endpoint), onDualInit));
+        T p = (T) Enhancer.create(contract, new ClientHandler(contract, endpoint, onDualInit));
         if (onDualInit != null) {
             log.info("onDualInit..");
             onDualInit.accept(p);
@@ -203,26 +202,18 @@ public final class RemotingFactor {
         return p;
     }
 
-    public static <T> void listen(T contractInstance, int port) {
-        listen(contractInstance, port, null);
-    }
-
-    public static <T> void listen(T contractInstance, int port, Integer connectTimeout) {
+    public static <T> TcpServer<SessionClient> listen(T contractInstance, int port) {
         require(contractInstance);
 
         Class contract = contractInstance.getClass();
-        host.computeIfAbsent(contractInstance, k -> {
+        return host.computeIfAbsent(contractInstance, k -> {
             TcpServer<SessionClient> server = TcpConfig.packetServer(port, null);
-            if (connectTimeout != null) {
-                server.getConfig().setConnectTimeout(connectTimeout);
-            }
             server.onError = (s, e) -> {
                 e.setCancel(true);
                 ErrorPacket pack = ErrorPacket.error(String.format("Remoting call error: %s", e.getValue().getMessage()));
                 s.send(e.getClient(), pack);
             };
             server.onReceive = (s, e) -> {
-//                ChannelId clientId = e.getClient().getId();
                 RemoteEventPack eventPack;
                 if ((eventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                     switch (eventPack.flag) {
@@ -243,14 +234,10 @@ public final class RemotingFactor {
                                 }
                                 log.info("server raise {} step1", pack.eventName);
 
-                                Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
-                                eventHost.put(pack.id, tuple);
+                                eventHost.put(pack.id, pack.remoteArgs);
                                 try {
-                                    tuple.left.waitOne(server.getConfig().getConnectTimeout() * 2);
                                     log.info("server raise {} step2", pack.eventName);
-                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
-                                } catch (TimeoutException ex) {
-                                    log.warn("remoteEvent {}", pack.eventName, ex);
+                                    BeanMapper.getInstance().map(pack.remoteArgs, args, BeanMapper.Flags.None);
                                 } finally {
                                     eventHost.remove(pack.id);
                                     log.info("server raise {} done", pack.eventName);
@@ -260,11 +247,10 @@ public final class RemotingFactor {
                             log.info("server attach {} ok", eventPack.eventName);
                             break;
                         case 1:
-                            Tuple<ManualResetEvent, EventArgs> tuple = eventHost.get(eventPack.id);
-                            if (tuple != null) {
+                            EventArgs args = eventHost.get(eventPack.id);
+                            if (args != null) {
                                 log.info("server raise {} step3", eventPack.eventName);
-                                tuple.right = eventPack.remoteArgs;
-                                tuple.left.set();
+                                args = eventPack.remoteArgs;
                             } else {
                                 log.info("server raise {} step3 fail", eventPack.eventName);
                             }
@@ -290,5 +276,15 @@ public final class RemotingFactor {
             server.start();
             return server;
         });
+    }
+
+    public static <T> void stopListen(T contractInstance) {
+        require(contractInstance);
+
+        TcpServer<SessionClient> server = host.remove(contractInstance);
+        if (server == null) {
+            return;
+        }
+        server.close();
     }
 }

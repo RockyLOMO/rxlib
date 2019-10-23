@@ -1,6 +1,7 @@
 package org.rx.beans;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import net.sf.cglib.beans.BeanCopier;
 import org.rx.core.*;
 
@@ -22,6 +23,7 @@ import static org.rx.core.Contract.require;
  * map from multi sources https://yq.aliyun.com/articles/14958
  */
 public class BeanMapper {
+    @RequiredArgsConstructor
     public enum Flags implements NEnum<Flags> {
         None(0),
         SkipNull(1),
@@ -30,35 +32,24 @@ public class BeanMapper {
         NonCheckMatch(1 << 3);
 
         @Getter
-        private int value;
-
-        Flags(int val) {
-            this.value = val;
-        }
+        private final int value;
     }
 
+    @RequiredArgsConstructor
     private static class MapConfig {
         public final BeanCopier copier;
         public volatile boolean isCheck;
         public Function<String, String> propertyMatcher;
         public BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher;
-
-        public MapConfig(BeanCopier copier) {
-            this.copier = copier;
-        }
     }
 
+    @RequiredArgsConstructor
     private static class CacheItem {
         public final NQuery<Method> setters;
         public final NQuery<Method> getters;
-
-        public CacheItem(NQuery<Method> setters, NQuery<Method> getters) {
-            this.setters = setters;
-            this.getters = getters;
-        }
     }
 
-    public static final String ignoreProperty = "#ignore";
+    public static final String IgnoreProperty = "#ignore";
     private static final String Get = "get", GetBool = "is", Set = "set";
     private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
     @Getter
@@ -189,7 +180,7 @@ public class BeanMapper {
             for (String missedName : new ArrayList<>(missedNames)) {
                 Method fm;
                 String fromName = isNull(config.propertyMatcher.apply(getFieldName(missedName)), "");
-                if (ignoreProperty.equals(fromName)) {
+                if (IgnoreProperty.equals(fromName)) {
                     missedNames.remove(missedName);
                     continue;
                 }

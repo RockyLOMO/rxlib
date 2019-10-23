@@ -24,16 +24,16 @@ public final class StringBuilder {
     }
 
     public void setPrefix(String prefix) {
-        this.prefix = isNull(prefix, Strings.empty);
+        this.prefix = isNull(prefix, Strings.Empty);
     }
 
     public StringBuilder() {
-        this(Strings.empty);
+        this(Strings.Empty);
     }
 
     public StringBuilder(String str) {
         buffer = new java.lang.StringBuilder(str);
-        prefix = Strings.empty;
+        prefix = Strings.Empty;
     }
 
     public int indexOf(String target) {

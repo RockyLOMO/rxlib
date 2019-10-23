@@ -2,6 +2,7 @@ package org.rx.core;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.net.HttpHeaders;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,15 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class App extends SystemUtils {
     //region Nested
+    @Data
+    public static class Config {
+        private int bufferSize = 512;
+        private int socksTimeout = 20000;
+        private String appId = "rx";
+        private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
+        private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
+    }
+
     public enum CacheContainerKind {
         WeakCache,
         SoftCache,
@@ -57,8 +67,9 @@ public class App extends SystemUtils {
     //endregion
 
     //region Fields
-    public static final int MaxSize = Integer.MAX_VALUE - 8;
+    public static final int MaxInt = Integer.MAX_VALUE - 8;
     public static final int TimeoutInfinite = -1;
+    public static final Config Config;
     private static final ThreadLocal<Map> threadStatic;
     private static final NQuery<Class<?>> supportTypes;
     private static final List<ConvertItem> typeConverter;
@@ -69,6 +80,10 @@ public class App extends SystemUtils {
 
     static {
         System.setProperty("bootstrapPath", getBootstrapPath());
+        Config = isNull(readSetting("app", Config.class), new Config());
+        if (Config.bufferSize <= 0) {
+            Config.bufferSize = 512;
+        }
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
@@ -464,7 +479,7 @@ public class App extends SystemUtils {
 
     private static BiFunction<Object, Class, Object> getConverter(Object fromValue, Class toType) {
         for (ConvertItem convertItem : NQuery.of(typeConverter).toList()) {
-            if (convertItem.baseFromType.isInstance(fromValue) && convertItem.toType.isAssignableFrom(toType)) {
+            if (Reflects.isInstance(fromValue, convertItem.baseFromType) && convertItem.toType.isAssignableFrom(toType)) {
                 return convertItem.converter;
             }
         }
@@ -489,7 +504,7 @@ public class App extends SystemUtils {
                 return null;
             }
         }
-        if (toType.isInstance(value)) {
+        if (Reflects.isInstance(value, toType)) {
             return (T) value;
         }
         Class<?> strType = supportTypes.first();

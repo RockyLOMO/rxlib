@@ -23,14 +23,14 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class SystemException extends NestedRuntimeException {
     public static final String CodeFile = "code.yml";
-    public static final String DefaultMessage;
+    public static final String DefaultMessage = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
 
     private static Map<String, Object> getSettings() {
         return App.getOrStore("SystemException", k -> {
             List<String> files = new ArrayList<>();
             files.add(CodeFile);
-            if (!Arrays.isEmpty(config.getErrorCodeFiles())) {
-                files.addAll(Arrays.toList(config.getErrorCodeFiles()));
+            if (!Arrays.isEmpty(App.Config.getErrorCodeFiles())) {
+                files.addAll(Arrays.toList(App.Config.getErrorCodeFiles()));
             }
 
             return isNull(App.catchCall(() -> {
@@ -41,10 +41,6 @@ public class SystemException extends NestedRuntimeException {
                 return codes;
             }), Collections.emptyMap());
         });
-    }
-
-    static {
-        DefaultMessage = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
     }
 
     public static SystemException wrap(Throwable cause) {

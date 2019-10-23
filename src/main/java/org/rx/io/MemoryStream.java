@@ -9,13 +9,14 @@ import org.rx.util.BytesSegment;
 
 import java.io.*;
 import java.util.Arrays;
+import java.util.function.Supplier;
 
 import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.values;
 
-public class MemoryStream extends IOStream {
-    private static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = App.MaxSize;
+public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> {
+    public static final class BytesWriter extends ByteArrayOutputStream {
+        private volatile int minPosition, length, maxLength = App.MaxInt;
 
         public int getPosition() {
             return count;
@@ -110,7 +111,7 @@ public class MemoryStream extends IOStream {
         }
     }
 
-    private static final class BytesReader extends ByteArrayInputStream {
+    public static final class BytesReader extends ByteArrayInputStream {
         public int getPosition() {
             return pos;
         }
@@ -145,11 +146,9 @@ public class MemoryStream extends IOStream {
     }
 
     private boolean publiclyVisible;
-    private BytesWriter writer;
-    private BytesReader reader;
 
     @Override
-    public InputStream getReader() {
+    public MemoryStream.BytesReader getReader() {
         checkRead();
         return super.getReader();
     }
@@ -194,12 +193,14 @@ public class MemoryStream extends IOStream {
         return writer.getBuffer();
     }
 
+    private Supplier<BytesReader> x;
+
     public MemoryStream() {
         this(32, false);
     }
 
     public MemoryStream(int capacity, boolean publiclyVisible) {
-        super.writer = writer = new BytesWriter(capacity);
+        super(null, new BytesWriter(capacity));
         initReader(publiclyVisible);
     }
 
@@ -208,12 +209,12 @@ public class MemoryStream extends IOStream {
     }
 
     public MemoryStream(byte[] buffer, int offset, int count, boolean nonResizable, boolean publiclyVisible) {
-        super.writer = writer = new BytesWriter(buffer, offset, count, nonResizable);
+        super(null, new BytesWriter(buffer, offset, count, nonResizable));
         initReader(publiclyVisible);
     }
 
     private void initReader(boolean publiclyVisible) {
-        super.reader = reader = new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength());
+        super.reader = new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength());
         this.publiclyVisible = publiclyVisible;
     }
 

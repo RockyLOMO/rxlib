@@ -3,11 +3,12 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
+import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
-//import org.rx.socks.tcp.ProxyFrontendHandler;
 import org.rx.socks.tcp.RemotingFactor;
+import org.rx.socks.tcp.TcpProxyServer;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -16,34 +17,45 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 
 public class SocksTester {
-//    @SneakyThrows
-//    @Test
-//    public void testProxy() {
-//        TcpServer server = new TcpServer(3306, false, false, null);
-//        server.setChannelHandlers(new ProxyFrontendHandler(server, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306")));
-//        server.start(true);
-//    }
+    @SneakyThrows
+    @Test
+    public void testProxy() {
+        TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
+        System.in.read();
+    }
 
     @SneakyThrows
     @Test
     public void testApiRpc() {
         UserManagerImpl server = new UserManagerImpl();
-        RemotingFactor.listen(server, 3307);
+        restartServer(server);
 
-        UserManager mgr = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
-        assert mgr.computeInt(1, 1) == 2;
-//        for (TcpServer<SessionClient> value : RemotingFactor.host.values()) {
-//            value.close();
-//        }
-//        RemotingFactor.host.clear();
-        RemotingFactor.listen(server, 3307);
-        Thread.sleep(5000);
-        mgr.testError();
-        assert mgr.computeInt(17, 1) == 18;
+        UserManager mgr1 = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
+        assert mgr1.computeInt(1, 1) == 2;
 
-        mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        restartServer(server);
+
+        mgr1.testError();
+        assert mgr1.computeInt(2, 2) == 4;
+
+        UserManager mgr2 = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
+        assert mgr2.computeInt(1, 1) == 2;
+        mgr2.testError();
+        assert mgr2.computeInt(2, 2) == 4;
+
+        String event = "onTest";
+        mgr1.attachEvent(event, (s, e) -> System.out.println("!!Mgr1 onTest!!"));
+        mgr2.attachEvent(event, (s, e) -> System.out.println("!!Mgr2 onTest!!"));
+
         Thread.sleep(1000);
-        server.raiseEvent("onTest", EventArgs.empty);
+        server.raiseEvent(event, EventArgs.Empty);
+    }
+
+    private void restartServer(UserManagerImpl server) {
+        RemotingFactor.stopListen(server);
+        RemotingFactor.listen(server, 3307);
+        System.out.println("restartServer..");
+        App.sleep(4000);
     }
 
     @SneakyThrows
@@ -70,7 +82,7 @@ public class SocksTester {
 
         mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
-        server.raiseEvent("onTest", EventArgs.empty);
+        server.raiseEvent("onTest", EventArgs.Empty);
     }
 
     @SneakyThrows

@@ -5,10 +5,7 @@ import io.netty.channel.*;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
@@ -73,7 +70,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             TcpServer<T> server = getServer();
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
-                log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
+                log.warn("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
             server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack));
@@ -81,7 +78,6 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
-//            super.channelInactive(ctx);
             log.debug("channelInactive {}", ctx.channel().remoteAddress());
             TcpServer<T> server = getServer();
             T client = getClient();
@@ -117,13 +113,13 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     private final Class clientType;
     private ServerBootstrap bootstrap;
     private SslContext sslCtx;
-    @Getter
+    @Getter(AccessLevel.PROTECTED)
     private final Map<String, Set<T>> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
     @Getter
     @Setter
-    private int capacity = 1000000;
+    private volatile int capacity = 1000000;
 
     @Override
     protected void freeObjects() {
@@ -145,7 +141,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode())
+        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode(), null)
                 .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .childHandler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc())));
@@ -164,7 +160,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
 
     protected synchronized void addClient(String appId, T client) {
         client.setAppId(appId);
-        clients.computeIfAbsent(client.getAppId(), k -> Collections.synchronizedSet(new LinkedHashSet<>())).add(client);
+        clients.computeIfAbsent(client.getAppId(), k -> Collections.synchronizedSet(new HashSet<>())).add(client);
     }
 
     protected synchronized void removeClient(T client) {
@@ -174,12 +170,20 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         }
     }
 
-    private Set<T> getClients(String appId) {
+    public Set<T> getClients(String appId) {
         Set<T> set = clients.get(appId);
         if (CollectionUtils.isEmpty(set)) {
             throw new InvalidOperationException(String.format("AppId %s not found", appId));
         }
         return set;
+    }
+
+    public T getClient(String appId, ChannelId channelId) {
+        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
+        if (client == null) {
+            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
+        }
+        return client;
     }
 
     public void send(T client, Serializable pack) {
@@ -192,13 +196,5 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
             return;
         }
         client.channel.writeAndFlush(pack);
-    }
-
-    public T findClient(String appId, ChannelId channelId) {
-        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
-        if (client == null) {
-            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
-        }
-        return client;
     }
 }

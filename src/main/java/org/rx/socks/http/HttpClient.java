@@ -40,8 +40,7 @@ public class HttpClient {
     public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
     public static final CookieContainer CookieContainer;
     private static final ConnectionPool pool;
-    private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"),
-            JsonType = MediaType.parse("application/json; charset=utf-8");
+    private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JsonType = MediaType.parse("application/json; charset=utf-8");
 
     static {
         System.setProperty("jsse.enableSNIExtension", "false");

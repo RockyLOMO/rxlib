@@ -3,6 +3,7 @@ package org.rx.core;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.TypeUtils;
 
 import java.lang.reflect.*;
 import java.util.List;
@@ -13,7 +14,7 @@ import static org.rx.core.Contract.*;
  * sun.reflect.Reflection.getCallerClass()
  */
 @Slf4j
-public class Reflects {
+public class Reflects extends TypeUtils {
     @SneakyThrows
     public static void fillProperties(Object instance, Object propBean) {
         require(instance, propBean);
@@ -59,7 +60,7 @@ public class Reflects {
             }
             boolean ok = true;
             for (int i = 0; i < paramTypes.length; i++) {
-                if (!paramTypes[i].isInstance(args[i])) {
+                if (!isInstance(args[i], paramTypes[i])) {
                     ok = false;
                     break;
                 }

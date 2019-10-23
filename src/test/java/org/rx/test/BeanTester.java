@@ -29,7 +29,7 @@ public class BeanTester {
                 case "info":
                     return "name";
                 case "luckyNum":
-                    return BeanMapper.ignoreProperty;
+                    return BeanMapper.IgnoreProperty;
             }
 //            return null;
             return targetProperty;
