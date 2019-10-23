@@ -8,6 +8,7 @@ import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.beans.BeanMapper;
+import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.core.ManualResetEvent;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -103,7 +105,7 @@ public final class RemotingFactor {
                 }
                 client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                     e.setCancel(true);
-                    log.error("!Error & Set!", e.getValue());
+                    log.error("Remoting Error", e.getValue());
                     waitHandle.set();
                 });
                 client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
@@ -149,7 +151,7 @@ public final class RemotingFactor {
                 try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
                     client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                         e.setCancel(true);
-                        log.error("!Error & Set!", e.getValue());
+                        log.error("Remoting Error", e.getValue());
                         waitHandle.set();
                     });
                     client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
@@ -181,7 +183,7 @@ public final class RemotingFactor {
     }
 
     private static final Map<Object, TcpServer<SessionClient>> host = new ConcurrentHashMap<>();
-    private static final Map<UUID, EventArgs> eventHost = new ConcurrentHashMap<>();
+    private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
         return create(contract, Sockets.parseEndpoint(endpoint), null);
@@ -234,10 +236,14 @@ public final class RemotingFactor {
                                 }
                                 log.info("server raise {} step1", pack.eventName);
 
-                                eventHost.put(pack.id, pack.remoteArgs);
+                                Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
+                                eventHost.put(pack.id, tuple);
                                 try {
+                                    tuple.left.waitOne(server.getConfig().getConnectTimeout() * 2);
                                     log.info("server raise {} step2", pack.eventName);
-                                    BeanMapper.getInstance().map(pack.remoteArgs, args, BeanMapper.Flags.None);
+                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
+                                } catch (TimeoutException ex) {
+                                    log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
                                     eventHost.remove(pack.id);
                                     log.info("server raise {} done", pack.eventName);
@@ -247,10 +253,11 @@ public final class RemotingFactor {
                             log.info("server attach {} ok", eventPack.eventName);
                             break;
                         case 1:
-                            EventArgs args = eventHost.get(eventPack.id);
-                            if (args != null) {
+                            Tuple<ManualResetEvent, EventArgs> tuple = eventHost.get(eventPack.id);
+                            if (tuple != null) {
                                 log.info("server raise {} step3", eventPack.eventName);
-                                args = eventPack.remoteArgs;
+                                tuple.right = eventPack.remoteArgs;
+                                tuple.left.set();
                             } else {
                                 log.info("server raise {} step3 fail", eventPack.eventName);
                             }
