@@ -9,6 +9,8 @@ import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.RemotingFactor;
 import org.rx.socks.tcp.TcpProxyServer;
+import org.rx.socks.tcp.TcpServer;
+import org.rx.test.bean.AuthEventArgs;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -24,9 +26,10 @@ public class SocksTester {
         System.in.read();
     }
 
-    @SneakyThrows
+    private TcpServer<RemotingFactor.RemotingClient> tcpServer;
+
     @Test
-    public void testApiRpc() {
+    public void apiRpc() {
         UserManagerImpl server = new UserManagerImpl();
         restartServer(server);
 
@@ -43,17 +46,40 @@ public class SocksTester {
         mgr2.testError();
         assert mgr2.computeInt(2, 2) == 4;
 
-        String event = "onTest";
-        mgr1.attachEvent(event, (s, e) -> System.out.println("!!Mgr1 onTest!!"));
-        mgr2.attachEvent(event, (s, e) -> System.out.println("!!Mgr2 onTest!!"));
+        String event = "onAuth";
+        mgr1.<AuthEventArgs>attachEvent(event, (s, e) -> {
+            System.out.println(String.format("!!Mgr1 %s[flag=%s]!!", event, e.getFlag()));
+            e.setFlag(1);
+        });
+        mgr2.<AuthEventArgs>attachEvent(event, (s, e) -> {
+            System.out.println(String.format("!!Mgr2 %s[flag=%s]!!", event, e.getFlag()));
+            e.setFlag(2);
+        });
 
-        Thread.sleep(1000);
-        server.raiseEvent(event, EventArgs.Empty);
+        AuthEventArgs args = new AuthEventArgs(0);
+        mgr1.raiseEvent(event, args);
+        assert args.getFlag() == 1;
+
+        mgr2.raiseEvent(event, args);
+        assert args.getFlag() == 2;
+
+        App.sleep(1000);
+        args.setFlag(4);
+        server.raiseEvent(event, args);
+        assert args.getFlag() == 2;
+
+        mgr2.close();
+        App.sleep(2000);
+        args.setFlag(4);
+        server.raiseEvent(event, args);
+        assert args.getFlag() == 1;
     }
 
     private void restartServer(UserManagerImpl server) {
-        RemotingFactor.stopListen(server);
-        RemotingFactor.listen(server, 3307);
+        if (tcpServer != null) {
+            tcpServer.close();
+        }
+        tcpServer = RemotingFactor.listen(server, 3307);
         System.out.println("restartServer..");
         App.sleep(4000);
     }

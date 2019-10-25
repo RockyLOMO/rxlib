@@ -68,7 +68,7 @@ public final class AsyncTask {
     public <T> Future<T> run(Func<T> task, String taskName) {
         require(task);
 
-        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.Empty), task));
+        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.EMPTY), task));
     }
 
     public void run(Action task) {
@@ -78,7 +78,7 @@ public final class AsyncTask {
     public void run(Action task, String taskName) {
         require(task);
 
-        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.Empty), () -> {
+        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.EMPTY), () -> {
             task.invoke();
             return null;
         }));
@@ -91,7 +91,7 @@ public final class AsyncTask {
     public Future schedule(Action task, long initialDelay, long delay, String taskName) {
         require(task);
 
-        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.Empty), () -> {
+        return scheduler.getValue().scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.EMPTY), () -> {
             task.invoke();
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);

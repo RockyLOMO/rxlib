@@ -2,13 +2,15 @@ package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Data;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.beans.BeanMapper;
-import org.rx.beans.Tuple;
+import org.rx.beans.BiTuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.core.ManualResetEvent;
@@ -18,7 +20,6 @@ import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -30,14 +31,28 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public final class RemotingFactor {
+    public static class RemotingClient extends SessionClient {
+        @Getter
+        @Setter
+        private boolean broadcast;
+
+        public RemotingClient(ChannelHandlerContext ctx) {
+            super(ctx);
+        }
+    }
+
     @RequiredArgsConstructor
     @Data
     private static class RemoteEventPack implements Serializable {
         private final String eventName;
-
+        private final RemoteEventFlag flag;
+        private boolean broadcast;
         private UUID id;
         private EventArgs remoteArgs;
-        private int flag;
+    }
+
+    private enum RemoteEventFlag {
+        Register, Unregister, Post, PostBack
     }
 
     @RequiredArgsConstructor
@@ -51,7 +66,7 @@ public final class RemotingFactor {
     }
 
     @RequiredArgsConstructor
-    private static class ClientHandler implements MethodInterceptor {
+    private static class ClientHandler extends Disposable implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
         private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.packetClient(p, Config.getAppId()));
 
@@ -63,37 +78,64 @@ public final class RemotingFactor {
         private TcpClient client;
 
         @Override
-        public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
-            if (objectMethods.contains(method)) {
-                return methodProxy.invokeSuper(o, objects);
+        protected void freeObjects() {
+            if (client != null) {
+                log.debug("client close");
+                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+                client.close();
+                client = null;
             }
-            String methodName = method.getName();
+        }
 
+        @Override
+        public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
+            if (objectMethods.contains(method)) {
+                return methodProxy.invokeSuper(o, args);
+            }
+            checkNotClosed();
+
+            String methodName = method.getName();
             Serializable pack = null;
             switch (methodName) {
+                case "close":
+                    if (args.length == 0) {
+                        close();
+                        return null;
+                    }
+                    break;
                 case "attachEvent":
-                    if (objects.length == 2) {
-                        String eventName = (String) objects[0];
-                        BiConsumer event = (BiConsumer) objects[1];
+                    if (args.length == 2) {
+                        String eventName = (String) args[0];
+                        BiConsumer event = (BiConsumer) args[1];
                         if (targetType.isInterface()) {
                             EventListener.getInstance().attach(o, eventName, event);
                         } else {
-                            methodProxy.invokeSuper(o, objects);
+                            methodProxy.invokeSuper(o, args);
                         }
 //                        methodProxy.invoke(o, objects);
 //                        method.invoke(o,objects);
 //                        EventTarget eventTarget = (EventTarget) o;
 //                        eventTarget.attachEvent(eventName, event);
-                        pack = new RemoteEventPack(eventName);
+                        pack = new RemoteEventPack(eventName, RemoteEventFlag.Post);
                         log.info("client attach {} step1", eventName);
                     }
                     break;
                 case "raiseEvent":
+                    if (args.length == 2) {
+                        String eventName = (String) args[0];
+                        EventArgs event = (EventArgs) args[1];
+                        if (targetType.isInterface()) {
+                            EventListener.getInstance().raise(o, eventName, event);
+                            return null;
+                        } else {
+                            return methodProxy.invokeSuper(o, args);
+                        }
+                    }
                 case "dynamicAttach":
-                    return methodProxy.invokeSuper(o, objects);
+                    return methodProxy.invokeSuper(o, args);
             }
             if (pack == null) {
-                pack = new CallPack(methodName, objects);
+                pack = new CallPack(methodName, args);
             }
 
             if (onDualInit != null) {
@@ -102,50 +144,53 @@ public final class RemotingFactor {
                     client.setAutoReconnect(true);
 //                    log.info("onDualInit..");
 //                    onDualInit.accept(o); //无效
-                }
-                client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
-                    e.setCancel(true);
-                    log.error("Remoting Error", e.getValue());
-                    waitHandle.set();
-                });
-                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                    log.info("client reconnected");
-                    onDualInit.accept(o);
-                });
-                client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                    RemoteEventPack remoteEventPack;
-                    if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                        switch (remoteEventPack.flag) {
-                            case 0:
-                                if (resultPack != null) {
-                                    resultPack.returnValue = null;
-                                }
-                                log.info("client attach {} step2 ok", remoteEventPack.eventName);
-                                break;
-                            case 1:
-                                try {
-                                    if (targetType.isInterface()) {
-                                        EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                    } else {
-                                        EventTarget eventTarget = (EventTarget) o;
-                                        eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                        e.setCancel(true);
+                        log.error("Remoting Error", e.getValue());
+                        waitHandle.set();
+                    });
+                    client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                        log.info("client reconnected");
+                        client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                        onDualInit.accept(o);
+                    });
+                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                        RemoteEventPack remoteEventPack;
+                        if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                            switch (remoteEventPack.flag) {
+                                case Post:
+                                    if (resultPack != null) {
+                                        resultPack.returnValue = null;
                                     }
-                                } catch (Exception ex) {
-                                    log.error("client raise {} error", remoteEventPack.eventName, ex);
-                                } finally {
-                                    client.send(remoteEventPack);  //import
-                                    log.info("client raise {} ok", remoteEventPack.eventName);
-                                }
-                                return;
+                                    log.info("client attach {} step2 ok", remoteEventPack.eventName);
+                                    break;
+                                case PostBack:
+                                    try {
+                                        if (targetType.isInterface()) {
+                                            EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                        } else {
+                                            EventTarget eventTarget = (EventTarget) o;
+                                            eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                        }
+                                    } catch (Exception ex) {
+                                        log.error("client raise {} error", remoteEventPack.eventName, ex);
+                                    } finally {
+                                        if (!remoteEventPack.broadcast) {
+                                            client.send(remoteEventPack);  //import
+                                        }
+                                        log.info("client raise {} ok", remoteEventPack.eventName);
+                                    }
+                                    return;
+                            }
+                        } else {
+                            resultPack = (CallPack) e.getValue();
                         }
-                    } else {
-                        resultPack = (CallPack) e.getValue();
-                    }
-                    waitHandle.set();
-                });
+                        waitHandle.set();
+                    });
+                    client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                }
 
                 client.send(pack);
-                log.info("client send {} step1", pack.getClass());
                 waitHandle.waitOne(client.getConfig().getConnectTimeout());
             } else {
                 try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
@@ -165,7 +210,7 @@ public final class RemotingFactor {
             }
 
             waitHandle.reset();
-            log.info("client send {} step2 ok", pack.getClass());
+            log.debug("client send {} ok", pack.getClass());
             return resultPack != null ? resultPack.returnValue : null;
         }
 
@@ -182,8 +227,8 @@ public final class RemotingFactor {
 //        }
     }
 
-    private static final Map<Object, TcpServer<SessionClient>> host = new ConcurrentHashMap<>();
-    private static final Map<UUID, Tuple<ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+    private static final Map<Object, TcpServer<RemotingClient>> host = new ConcurrentHashMap<>();
+    private static final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
         return create(contract, Sockets.parseEndpoint(endpoint), null);
@@ -204,12 +249,13 @@ public final class RemotingFactor {
         return p;
     }
 
-    public static <T> TcpServer<SessionClient> listen(T contractInstance, int port) {
+    public static <T> TcpServer<RemotingClient> listen(T contractInstance, int port) {
         require(contractInstance);
 
         Class contract = contractInstance.getClass();
         return host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<SessionClient> server = TcpConfig.packetServer(port, null);
+            TcpServer<RemotingClient> server = TcpConfig.packetServer(port, RemotingClient.class);
+            server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {
                 e.setCancel(true);
                 ErrorPacket pack = ErrorPacket.error(String.format("Remoting call error: %s", e.getValue().getMessage()));
@@ -219,45 +265,59 @@ public final class RemotingFactor {
                 RemoteEventPack eventPack;
                 if ((eventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
                     switch (eventPack.flag) {
-                        case 0:
+                        case Register:
+                            e.getClient().broadcast = true;
+                            break;
+                        case Unregister:
+                            e.getClient().broadcast = false;
+                            break;
+                        case Post:
                             EventTarget eventTarget = (EventTarget) contractInstance;
                             eventTarget.attachEvent(eventPack.eventName, (sender, args) -> {
-                                RemoteEventPack pack = new RemoteEventPack(eventPack.eventName);
-                                pack.id = UUID.randomUUID();
-                                pack.remoteArgs = (EventArgs) args;
-                                pack.flag = 1;
-                                Set<SessionClient> clients = s.getClients().get(e.getClient().getAppId());
-                                if (clients == null) {
+                                NQuery<RemotingClient> clients = NQuery.of(s.getClients().get(e.getClient().getAppId())).where(p -> p.broadcast);
+                                if (!clients.any()) {
                                     log.warn("Clients is empty");
                                     return;
                                 }
-                                for (SessionClient client : clients) {
-                                    s.send(client, pack);
-                                }
-                                log.info("server raise {} step1", pack.eventName);
-
-                                Tuple<ManualResetEvent, EventArgs> tuple = Tuple.of(new ManualResetEvent(), pack.remoteArgs);
+                                RemotingClient current = clients.contains(e.getClient()) ? e.getClient() : clients.first();
+                                RemoteEventPack pack = new RemoteEventPack(eventPack.eventName, RemoteEventFlag.PostBack);
+                                pack.id = UUID.randomUUID();
+                                pack.remoteArgs = (EventArgs) args;
+                                BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = BiTuple.of(current, new ManualResetEvent(), pack.remoteArgs);
                                 eventHost.put(pack.id, tuple);
+
+                                s.send(current, pack);
+                                log.info("server raise {} -> {} step1", current.getId(), pack.eventName);
                                 try {
-                                    tuple.left.waitOne(server.getConfig().getConnectTimeout() * 2);
-                                    log.info("server raise {} step2", pack.eventName);
-                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
+                                    tuple.middle.waitOne(server.getConfig().getConnectTimeout());
+                                    log.info("server raise {} -> {} step2", current.getId(), pack.eventName);
                                 } catch (TimeoutException ex) {
                                     log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
+                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
+                                    pack.broadcast = true;
+                                    pack.remoteArgs = tuple.right;
+                                    for (RemotingClient client : clients) {
+                                        if (client == current) {
+                                            continue;
+                                        }
+                                        s.send(client, pack);
+                                        log.info("server raise {} broadcast {} ok", client.getId(), pack.eventName);
+                                    }
+
                                     eventHost.remove(pack.id);
-                                    log.info("server raise {} done", pack.eventName);
+                                    log.info("server raise {} -> {} done", current.getId(), pack.eventName);
                                 }
                             });
                             s.send(e.getClient(), eventPack);
-                            log.info("server attach {} ok", eventPack.eventName);
+                            log.info("server attach {} {} ok", e.getClient().getId(), eventPack.eventName);
                             break;
-                        case 1:
-                            Tuple<ManualResetEvent, EventArgs> tuple = eventHost.get(eventPack.id);
+                        case PostBack:
+                            BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = eventHost.get(eventPack.id);
                             if (tuple != null) {
-                                log.info("server raise {} step3", eventPack.eventName);
+                                log.info("server raise {} -> {} step3", tuple.left.getId(), eventPack.eventName);
                                 tuple.right = eventPack.remoteArgs;
-                                tuple.left.set();
+                                tuple.middle.set();
                             } else {
                                 log.info("server raise {} step3 fail", eventPack.eventName);
                             }
@@ -269,7 +329,7 @@ public final class RemotingFactor {
                 CallPack pack = (CallPack) e.getValue();
                 Method method = NQuery.of(contract.getMethods()).where(p -> p.getName().equals(pack.methodName) && p.getParameterCount() == pack.parameters.length).firstOrDefault();
                 if (method == null) {
-                    throw new InvalidOperationException(String.format("Class %s Method %s not found", contract, pack.methodName));
+                    throw new InvalidOperationException("Class %s Method %s not found", contract, pack.methodName);
                 }
                 try {
                     pack.returnValue = method.invoke(contractInstance, pack.parameters);
@@ -283,15 +343,5 @@ public final class RemotingFactor {
             server.start();
             return server;
         });
-    }
-
-    public static <T> void stopListen(T contractInstance) {
-        require(contractInstance);
-
-        TcpServer<SessionClient> server = host.remove(contractInstance);
-        if (server == null) {
-            return;
-        }
-        server.close();
     }
 }

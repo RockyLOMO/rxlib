@@ -144,7 +144,7 @@ public class CoreTester {
         assert ex.tryGet(out, IllegalArgumentException.class);
 
         String uid = "userId";
-        ex.setErrorCode(UserManager.xCode.argument, uid);
+        ex.setErrorCode(UserManager.BizCode.argument, uid);
         assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
 
         String date = "2017-08-24 02:02:02";

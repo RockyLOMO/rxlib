@@ -9,8 +9,6 @@ import java.util.regex.Pattern;
 import static org.rx.core.Contract.values;
 
 public class Strings extends StringUtils {
-    public static final String Empty = "";
-
     public static String randomValue(int maxValue) {
         Integer int2 = maxValue;
         return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));

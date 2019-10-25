@@ -108,6 +108,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
+    public volatile BiConsumer<TcpServer<T>, EventArgs> onClosed;
     @Getter
     private final TcpConfig config;
     private final Class clientType;
@@ -125,6 +126,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     protected void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
         isStarted = false;
+        raiseEvent(onClosed, EventArgs.Empty);
     }
 
     public void start() {

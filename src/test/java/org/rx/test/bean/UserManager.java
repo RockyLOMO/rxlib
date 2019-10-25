@@ -3,8 +3,8 @@ package org.rx.test.bean;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.EventTarget;
 
-public interface UserManager extends EventTarget<UserManager> {
-    enum xCode {
+public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
+    enum BizCode {
         @ErrorCode(messageKeys = {"$arg"})
         argument,
         returnValue;
@@ -13,6 +13,9 @@ public interface UserManager extends EventTarget<UserManager> {
     @Override
     default boolean dynamicAttach() {
         return true;
+    }
+
+    default void close() {
     }
 
     void addUser();
