@@ -138,81 +138,77 @@ public final class RemotingFactor {
                 pack = new CallPack(methodName, args);
             }
 
-            try {
-                if (onDualInit != null) {
-                    if (client == null) {
-                        client = pool.borrow(serverAddress);
-                        client.setAutoReconnect(true);
+            if (onDualInit != null) {
+                if (client == null) {
+                    client = pool.borrow(serverAddress);
+                    client.setAutoReconnect(true);
 //                    log.info("onDualInit..");
 //                    onDualInit.accept(o); //无效
-                        client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
-                            e.setCancel(true);
-                            log.error("Remoting Error", e.getValue());
-                            waitHandle.set();
-                        });
-                        client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                            log.info("client reconnected");
-                            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-                            onDualInit.accept(o);
-                        });
-                        client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                            RemoteEventPack remoteEventPack;
-                            if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                                switch (remoteEventPack.flag) {
-                                    case Post:
-                                        if (resultPack != null) {
-                                            resultPack.returnValue = null;
-                                        }
-                                        log.info("client attach {} step2 ok", remoteEventPack.eventName);
-                                        break;
-                                    case PostBack:
-                                        try {
-                                            if (targetType.isInterface()) {
-                                                EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                            } else {
-                                                EventTarget eventTarget = (EventTarget) o;
-                                                eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                            }
-                                        } catch (Exception ex) {
-                                            log.error("client raise {} error", remoteEventPack.eventName, ex);
-                                        } finally {
-                                            if (!remoteEventPack.broadcast) {
-                                                client.send(remoteEventPack);  //import
-                                            }
-                                            log.info("client raise {} ok", remoteEventPack.eventName);
-                                        }
-                                        return;
-                                }
-                            } else {
-                                resultPack = (CallPack) e.getValue();
-                            }
-                            waitHandle.set();
-                        });
+                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                        e.setCancel(true);
+                        log.error("Remoting Error", e.getValue());
+                        waitHandle.set();
+                    });
+                    client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                        log.info("client reconnected");
                         client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-                    }
+                        onDualInit.accept(o);
+                    });
+                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                        RemoteEventPack remoteEventPack;
+                        if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                            switch (remoteEventPack.flag) {
+                                case Post:
+                                    if (resultPack != null) {
+                                        resultPack.returnValue = null;
+                                    }
+                                    log.info("client attach {} step2 ok", remoteEventPack.eventName);
+                                    break;
+                                case PostBack:
+                                    try {
+                                        if (targetType.isInterface()) {
+                                            EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                        } else {
+                                            EventTarget eventTarget = (EventTarget) o;
+                                            eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                        }
+                                    } catch (Exception ex) {
+                                        log.error("client raise {} error", remoteEventPack.eventName, ex);
+                                    } finally {
+                                        if (!remoteEventPack.broadcast) {
+                                            client.send(remoteEventPack);  //import
+                                        }
+                                        log.info("client raise {} ok", remoteEventPack.eventName);
+                                    }
+                                    return;
+                            }
+                        } else {
+                            resultPack = (CallPack) e.getValue();
+                        }
+                        waitHandle.set();
+                    });
+                    client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                }
+
+                client.send(pack);
+                waitHandle.waitOne(client.getConfig().getConnectTimeout());
+            } else {
+                try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
+                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                        e.setCancel(true);
+                        log.error("Remoting Error", e.getValue());
+                        waitHandle.set();
+                    });
+                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                        resultPack = (CallPack) e.getValue();
+                        waitHandle.set();
+                    });
 
                     client.send(pack);
                     waitHandle.waitOne(client.getConfig().getConnectTimeout());
-                } else {
-                    try (TcpClient client = pool.borrow(serverAddress)) {  //已连接
-                        client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
-                            e.setCancel(true);
-                            log.error("Remoting Error", e.getValue());
-                            waitHandle.set();
-                        });
-                        client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                            resultPack = (CallPack) e.getValue();
-                            waitHandle.set();
-                        });
-
-                        client.send(pack);
-                        waitHandle.waitOne(client.getConfig().getConnectTimeout());
-                    }
                 }
-                log.debug("client send {} ok", pack.getClass());
-            } catch (Exception e) {
-                log.warn("client send {} error", pack.getClass(), e);
             }
+            log.debug("client send {} ok", pack.getClass());
 
             waitHandle.reset();
             return resultPack != null ? resultPack.returnValue : null;
