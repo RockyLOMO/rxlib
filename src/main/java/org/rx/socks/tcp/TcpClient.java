@@ -25,7 +25,7 @@ import java.util.function.BiConsumer;
 import static org.rx.beans.$.$;
 import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
-import static org.rx.core.AsyncTask.TaskFactory;
+import static org.rx.core.ThreadExecutor.TaskFactory;
 
 @Slf4j
 public class TcpClient extends Disposable implements EventTarget<TcpClient> {

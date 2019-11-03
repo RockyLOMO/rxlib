@@ -7,7 +7,7 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 
-import static org.rx.core.AsyncTask.TaskFactory;
+import static org.rx.core.ThreadExecutor.TaskFactory;
 import static org.rx.core.Contract.as;
 
 public class PacketServerHandler<T extends SessionClient> extends TcpServer.BaseServerHandler<T> {

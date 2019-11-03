@@ -18,7 +18,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import static org.rx.core.Contract.require;
-import static org.rx.core.AsyncTask.TaskFactory;
+import static org.rx.core.ThreadExecutor.TaskFactory;
 
 @Slf4j
 public class FileWatcher extends Disposable {

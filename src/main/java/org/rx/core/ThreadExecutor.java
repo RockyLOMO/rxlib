@@ -15,11 +15,10 @@ import java.util.List;
 import java.util.concurrent.*;
 
 import static org.rx.beans.$.$;
-import static org.rx.core.Contract.isNull;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 @Slf4j
-public final class AsyncTask {
+public final class ThreadExecutor {
     @RequiredArgsConstructor
     private static class NamedRunnable<T> implements Runnable, Callable<T> {
         private final String name;
@@ -38,37 +37,57 @@ public final class AsyncTask {
 
         @Override
         public String toString() {
-            return String.format("AsyncTask[%s]", name);
+            return String.format("AsyncTask-%s", name);
         }
     }
 
-    public static final int ThreadCount = Runtime.getRuntime().availableProcessors() + 1;
-    public static final AsyncTask TaskFactory = new AsyncTask(1, App.MaxInt, 4, new SynchronousQueue<>());
+    @RequiredArgsConstructor
+    @Getter
+    public static class WorkQueue<T> extends LinkedTransferQueue<T> {
+        private final ThreadPoolExecutor executor;
+
+        public boolean force(Runnable o) {
+            if (executor.isShutdown()) {
+                throw new RejectedExecutionException("Executor not running, can't force a command into the queue");
+            }
+            // forces the item onto the queue, to be used if the task is rejected
+            return super.offer(o);
+        }
+
+
+    }
+
+    public class  xx extends ThreadPoolExecutor{
+        @Override
+        public void execute(Runnable command) {
+            super.execute(command);
+        }
+    }
+
+    public static final int CpuIntensiveThreads = Runtime.getRuntime().availableProcessors() + 1;
+    public static final int IoIntensiveThreads = Runtime.getRuntime().availableProcessors() * 2;
+    public static final ThreadExecutor TaskFactory = new ThreadExecutor(IoIntensiveThreads, IoIntensiveThreads, 0, new LinkedTransferQueue<>());
     @Getter
     private final ThreadPoolExecutor executor;
     private final Lazy<ScheduledExecutorService> scheduler;
 
-//    private AsyncTask() {
-//        this(ThreadCount, ThreadCount, 4, new LinkedBlockingQueue<>());
-//    }
-
-    private AsyncTask(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
+    private ThreadExecutor(int minThreads, int maxThreads, int keepAliveMinutes, BlockingQueue<Runnable> queue) {
+        new LinkedTransferQueue<>();
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-                .setUncaughtExceptionHandler((thread, ex) -> log.error("AsyncTask {}", thread.getName(), ex))
+                .setUncaughtExceptionHandler((thread, ex) -> log.error(thread.getName(), ex))
                 .setNameFormat("AsyncTask-%d").build();
-        RejectedExecutionHandler rejected = new ThreadPoolExecutor.CallerRunsPolicy();
+        RejectedExecutionHandler rejected = (task, executor) -> {
+            if (executor.isShutdown()) {
+                task.run();
+                return;
+            }
+            if (!tryAs(executor.getQueue(), LinkedTransferQueue.class, q -> q.transfer(task))) {
+                task.run();
+            }
+            new SynchronousQueue();
+        };
         executor = new ThreadPoolExecutor(minThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, queue, threadFactory, rejected);
-        scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(1, threadFactory, rejected));
-    }
-
-    public <T> Future<T> run(Func<T> task) {
-        return run(task, null);
-    }
-
-    public <T> Future<T> run(Func<T> task, String taskName) {
-        require(task);
-
-        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.EMPTY), task));
+        scheduler = new Lazy<>(() -> new ScheduledThreadPoolExecutor(minThreads, threadFactory, rejected));
     }
 
     public void run(Action task) {
@@ -82,6 +101,16 @@ public final class AsyncTask {
             task.invoke();
             return null;
         }));
+    }
+
+    public <T> Future<T> run(Func<T> task) {
+        return run(task, null);
+    }
+
+    public <T> Future<T> run(Func<T> task, String taskName) {
+        require(task);
+
+        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.EMPTY), task));
     }
 
     public Future schedule(Action task, long delay) {
