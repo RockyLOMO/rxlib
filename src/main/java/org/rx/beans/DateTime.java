@@ -150,7 +150,7 @@ public final class DateTime extends Date {
 
     public DateTime(int year, int month, int day, int hour, int minute, int second) {
         Calendar c = getCalendar();
-        c.set(year, month, day, hour, minute, second);
+        c.set(year, month - 1, day, hour, minute, second);
         super.setTime(c.getTimeInMillis());
     }
 
