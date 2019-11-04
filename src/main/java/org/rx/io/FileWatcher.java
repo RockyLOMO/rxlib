@@ -8,6 +8,7 @@ import org.rx.beans.NEnum;
 import org.rx.beans.Tuple;
 import org.rx.core.App;
 import org.rx.core.Disposable;
+import org.rx.core.TaskExecutor;
 
 import java.nio.file.*;
 import java.util.ArrayList;
@@ -18,7 +19,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import static org.rx.core.Contract.require;
-import static org.rx.core.ThreadExecutor.TaskFactory;
 
 @Slf4j
 public class FileWatcher extends Disposable {
@@ -75,7 +75,7 @@ public class FileWatcher extends Disposable {
         }
 
         keepHandle = true;
-        future = TaskFactory.run(() -> {
+        future = TaskExecutor.run(() -> {
             while (keepHandle) {
                 App.catchCall(() -> {
                     WatchKey key = service.take();

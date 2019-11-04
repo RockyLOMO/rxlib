@@ -15,9 +15,9 @@ import static org.rx.beans.$.$;
 import static org.rx.core.Contract.*;
 
 @Slf4j
-public final class ThreadExecutor {
+public final class TaskExecutor {
     @RequiredArgsConstructor
-    private static class NamedRunnable<T> implements Runnable, Callable<T> {
+    private static class Task<T> implements Runnable, Callable<T> {
         private final String name;
         private final Func<T> callable;
 
@@ -48,7 +48,7 @@ public final class ThreadExecutor {
     public static void run(Action task, String taskName) {
         require(task);
 
-        executor.execute(new NamedRunnable<>(isNull(taskName, Strings.EMPTY), () -> {
+        executor.execute(new Task<>(isNull(taskName, Strings.EMPTY), () -> {
             task.invoke();
             return null;
         }));
@@ -61,7 +61,7 @@ public final class ThreadExecutor {
     public static <T> Future<T> run(Func<T> task, String taskName) {
         require(task);
 
-        return executor.submit((Callable<T>) new NamedRunnable<>(isNull(taskName, Strings.EMPTY), task));
+        return executor.submit((Callable<T>) new Task<>(isNull(taskName, Strings.EMPTY), task));
     }
 
     public static Future schedule(Action task, long delay) {
@@ -71,7 +71,7 @@ public final class ThreadExecutor {
     public static Future schedule(Action task, long initialDelay, long delay, String taskName) {
         require(task);
 
-        return scheduler.scheduleWithFixedDelay(new NamedRunnable<>(isNull(taskName, Strings.EMPTY), () -> {
+        return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), () -> {
             task.invoke();
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);

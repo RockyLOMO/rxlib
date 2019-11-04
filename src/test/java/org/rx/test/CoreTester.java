@@ -1,5 +1,7 @@
 package org.rx.test;
 
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
@@ -8,12 +10,15 @@ import org.rx.core.Arrays;
 import org.rx.test.bean.*;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.beans.$.$;
 import static org.rx.core.Contract.*;
 import static org.rx.core.Contract.toJsonString;
 
+@Slf4j
 public class CoreTester {
     //region NQuery
     @Test
@@ -108,6 +113,29 @@ public class CoreTester {
     }
     //endregion
 
+    @SneakyThrows
+    @Test
+    public void threadPool() {
+//        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics(1000);
+//        for (int i = 0; i < 10; i++) {
+//            int n = i;
+//            pool.execute(() -> {
+//                log.info("exec {} begin..", n);
+//                App.sleep(2000);
+//                log.info("exec {} end..", n);
+//            });
+//        }
+
+        DynamicThreadPool pool = new DynamicThreadPool("Rx");
+
+//        ExecutorService es1 = Executors.newCachedThreadPool();
+//        ExecutorService es2 = Executors.newFixedThreadPool(ThreadPool.CpuThreads);
+//        ExecutorService es3 = Executors.newFixedThreadPool(10);
+
+        System.out.println("main thread done");
+        System.in.read();
+    }
+
     @Test
     public void fluentWait() {
         FluentWait.newInstance(2000, 200).until(s -> {
@@ -158,6 +186,15 @@ public class CoreTester {
     }
 
     @Test
+    public void shorterUUID() {
+        UUID id = UUID.randomUUID();
+        String sid = App.toShorterUUID(id);
+        UUID id2 = App.fromShorterUUID(sid);
+        System.out.println(sid);
+        assert id.equals(id2);
+    }
+
+    @Test
     public void readSetting() {
         Map<String, Object> map = App.loadYaml("application.yml");
         System.out.println(map);
@@ -171,14 +208,5 @@ public class CoreTester {
 
         v = App.readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, App.loadYaml(SystemException.CodeFile));
         assert eq(v, "Exception Error Code value=$x");
-    }
-
-    @Test
-    public void shorterUUID() {
-        UUID id = UUID.randomUUID();
-        String sid = App.toShorterUUID(id);
-        UUID id2 = App.fromShorterUUID(sid);
-        System.out.println(sid);
-        assert id.equals(id2);
     }
 }

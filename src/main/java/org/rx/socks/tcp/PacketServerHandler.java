@@ -1,13 +1,13 @@
 package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
+import org.rx.core.TaskExecutor;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.ErrorPacket;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 
-import static org.rx.core.ThreadExecutor.TaskFactory;
 import static org.rx.core.Contract.as;
 
 public class PacketServerHandler<T extends SessionClient> extends TcpServer.BaseServerHandler<T> {
@@ -35,6 +35,6 @@ public class PacketServerHandler<T extends SessionClient> extends TcpServer.Base
         }
 
         //异步避免阻塞
-        TaskFactory.run(() -> server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack)));
+        TaskExecutor.run(() -> server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack)));
     }
 }

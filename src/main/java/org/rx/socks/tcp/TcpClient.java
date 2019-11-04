@@ -25,7 +25,6 @@ import java.util.function.BiConsumer;
 import static org.rx.beans.$.$;
 import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
-import static org.rx.core.ThreadExecutor.TaskFactory;
 
 @Slf4j
 public class TcpClient extends Disposable implements EventTarget<TcpClient> {
@@ -179,7 +178,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
 
         $<Future> $f = $();
-        $f.v = TaskFactory.schedule(() -> {
+        $f.v = TaskExecutor.schedule(() -> {
             try {
                 if (isConnected) {
                     log.debug("Client reconnected");

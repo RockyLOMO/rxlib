@@ -85,11 +85,11 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
     private Function<InetSocketAddress, TcpClient> createFunc;
 
-    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc) {
-        this(createFunc, Config.getSocksTimeout(), 1, ThreadExecutor.IoIntensiveThreads);
+    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int maxSize) {
+        this(createFunc, 1, maxSize, Config.getSocksTimeout());
     }
 
-    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, long timeout, int minSize, int maxSize) {
+    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int minSize, int maxSize, long timeout) {
         require(createFunc);
 
         this.createFunc = createFunc;
