@@ -1,7 +1,7 @@
 package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
-import org.rx.core.TaskExecutor;
+import org.rx.core.Tasks;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.ErrorPacket;
 import org.rx.socks.tcp.packet.HandshakePacket;
@@ -35,6 +35,6 @@ public class PacketServerHandler<T extends SessionClient> extends TcpServer.Base
         }
 
         //异步避免阻塞
-        TaskExecutor.run(() -> server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack)));
+        Tasks.run(() -> server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack)));
     }
 }

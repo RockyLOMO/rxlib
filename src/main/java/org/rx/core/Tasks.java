@@ -15,7 +15,7 @@ import static org.rx.beans.$.$;
 import static org.rx.core.Contract.*;
 
 @Slf4j
-public final class TaskExecutor {
+public final class Tasks {
     @RequiredArgsConstructor
     private static class Task<T> implements Runnable, Callable<T> {
         private final String name;
@@ -39,7 +39,7 @@ public final class TaskExecutor {
     }
 
     private static final ThreadPool executor = new ThreadPool();
-    private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.CallerRunsPolicy());
+    private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
 
     public static void run(Action task) {
         run(task, null);

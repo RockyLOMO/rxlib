@@ -8,7 +8,7 @@ import org.rx.beans.NEnum;
 import org.rx.beans.Tuple;
 import org.rx.core.App;
 import org.rx.core.Disposable;
-import org.rx.core.TaskExecutor;
+import org.rx.core.Tasks;
 
 import java.nio.file.*;
 import java.util.ArrayList;
@@ -75,7 +75,7 @@ public class FileWatcher extends Disposable {
         }
 
         keepHandle = true;
-        future = TaskExecutor.run(() -> {
+        future = Tasks.run(() -> {
             while (keepHandle) {
                 App.catchCall(() -> {
                     WatchKey key = service.take();

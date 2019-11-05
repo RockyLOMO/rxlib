@@ -178,7 +178,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
 
         $<Future> $f = $();
-        $f.v = TaskExecutor.schedule(() -> {
+        $f.v = Tasks.schedule(() -> {
             try {
                 if (isConnected) {
                     log.debug("Client reconnected");

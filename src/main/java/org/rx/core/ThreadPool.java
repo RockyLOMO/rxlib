@@ -36,11 +36,12 @@ public class ThreadPool extends ThreadPoolExecutor {
             int poolSize = executor.getPoolSize();
             if (poolSize == executor.getMaximumPoolSize()) {
                 if (counter.incrementAndGet() > queueCapacity) {
-                    while (counter.get() > queueCapacity) {
+                    do {
                         log.debug("Queue is full & Wait poll");
                         waiter.waitOne();
                         waiter.reset();
                     }
+                    while (counter.get() > queueCapacity);
                     log.debug("Wait poll ok");
                 }
                 return super.offer(t);
