@@ -131,7 +131,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             monitorTimer = Executors.newSingleThreadScheduledExecutor(newThreadFactory(String.format("%sMonitor", poolName)));
         }
         monitorTimer.scheduleWithFixedDelay(() -> {
-            log.info("PoolSize={} QueueSize={} SubmittedTaskCount={} {}", getPoolSize(), getQueue().size(), getSubmittedTaskCount(), getActiveCount());
+            log.info("PoolSize={} QueueSize={} SubmittedTaskCount={}", getPoolSize(), getQueue().size(), getSubmittedTaskCount());
         }, delay, delay, TimeUnit.MILLISECONDS);
         return this;
     }
