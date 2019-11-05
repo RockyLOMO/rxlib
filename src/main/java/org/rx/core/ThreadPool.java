@@ -95,6 +95,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
     public static final int MaxThreads = CpuThreads * 100000;
+    static final int StatisticsDelay = 1000;
 
     public static int computeThreads(long ioTime) {
         return computeThreads(ioTime, 1);
@@ -126,13 +127,13 @@ public class ThreadPool extends ThreadPoolExecutor {
         log.warn("ignore setRejectedExecutionHandler");
     }
 
-    public ThreadPool printStatistics(long delay) {
+    public ThreadPool printStatistics() {
         if (monitorTimer == null) {
             monitorTimer = Executors.newSingleThreadScheduledExecutor(newThreadFactory(String.format("%sMonitor", poolName)));
+            monitorTimer.scheduleWithFixedDelay(() -> {
+                log.info("PoolSize={} QueueSize={} SubmittedTaskCount={}", getPoolSize(), getQueue().size(), getSubmittedTaskCount());
+            }, StatisticsDelay, StatisticsDelay, TimeUnit.MILLISECONDS);
         }
-        monitorTimer.scheduleWithFixedDelay(() -> {
-            log.info("PoolSize={} QueueSize={} SubmittedTaskCount={}", getPoolSize(), getQueue().size(), getSubmittedTaskCount());
-        }, delay, delay, TimeUnit.MILLISECONDS);
         return this;
     }
 

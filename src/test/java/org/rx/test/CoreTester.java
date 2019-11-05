@@ -116,7 +116,7 @@ public class CoreTester {
     @SneakyThrows
     @Test
     public void threadPool() {
-//        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics(1000);
+//        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics();
 //        for (int i = 0; i < 10; i++) {
 //            int n = i;
 //            pool.execute(() -> {
