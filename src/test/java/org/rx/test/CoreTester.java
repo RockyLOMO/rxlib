@@ -116,17 +116,17 @@ public class CoreTester {
     @SneakyThrows
     @Test
     public void threadPool() {
-//        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics();
-//        for (int i = 0; i < 10; i++) {
-//            int n = i;
-//            pool.execute(() -> {
-//                log.info("exec {} begin..", n);
-//                App.sleep(2000);
-//                log.info("exec {} end..", n);
-//            });
-//        }
+        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics();
+        for (int i = 0; i < 10; i++) {
+            int n = i;
+            pool.execute(() -> {
+                log.info("exec {} begin..", n);
+                App.sleep(2000);
+                log.info("exec {} end..", n);
+            });
+        }
 
-        DynamicThreadPool pool = new DynamicThreadPool("Rx");
+//        DynamicThreadPool pool = new DynamicThreadPool("Rx");
 
 //        ExecutorService es1 = Executors.newCachedThreadPool();
 //        ExecutorService es2 = Executors.newFixedThreadPool(ThreadPool.CpuThreads);
