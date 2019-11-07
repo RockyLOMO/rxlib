@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.rx.core.Contract.require;
+
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
     @RequiredArgsConstructor
@@ -95,12 +97,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int MaxThreads = CpuThreads * 100000;
     static final int StatisticsDelay = 1000;
 
-    public static int computeThreads(long ioTime) {
-        return computeThreads(ioTime, 1);
-    }
+    public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
+        require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
-    public static int computeThreads(long ioTime, long cpuTime) {
-        return (int) Math.max(CpuThreads, Math.floor(CpuThreads * (1 + ((double) ioTime / cpuTime))));
+        return (int) Math.max(CpuThreads, Math.floor(CpuThreads * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
     static ThreadFactory newThreadFactory(String nameFormat) {
@@ -110,7 +110,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private AtomicInteger submittedTaskCounter = new AtomicInteger();
-//    private int submittedTaskCapacity;
+    //    private int submittedTaskCapacity;
     @Setter
     @Getter
     private String poolName;
