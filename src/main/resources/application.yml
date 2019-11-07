@@ -1,13 +1,13 @@
 app:
   bufferSize: 512
   socksTimeout: 20000
+  appId: rx
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
     - org.springframework.ui.Model
   #  errorCodeFiles:
   #    - errorCode.yml
-  appId: rx
 
   test.version: 1
   test:
