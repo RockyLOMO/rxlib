@@ -21,13 +21,11 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public boolean isEmpty() {
-//            return super.isEmpty();
             return size() == 0;
         }
 
         @Override
         public int size() {
-//            return super.size();
             return counter.get();
         }
 
@@ -112,7 +110,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private AtomicInteger submittedTaskCounter = new AtomicInteger();
-    private int submittedTaskCapacity;
+//    private int submittedTaskCapacity;
     @Setter
     @Getter
     private String poolName;
@@ -151,7 +149,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     executor.getQueue().offer(r);
                 });
         ((ThreadQueue) getQueue()).setExecutor(this);
-        submittedTaskCapacity = maxThreads + queueCapacity;
+//        submittedTaskCapacity = maxThreads + queueCapacity;
         this.poolName = poolName;
     }
 
@@ -164,11 +162,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Override
     public void execute(Runnable command) {
         int count = submittedTaskCounter.incrementAndGet();
-        if (count > submittedTaskCapacity) {
-//            submittedTaskCounter.decrementAndGet();
-            getRejectedExecutionHandler().rejectedExecution(command, this);
-            return;
-        }
+//        if (count > submittedTaskCapacity) {
+//            getRejectedExecutionHandler().rejectedExecution(command, this);
+//            return;
+//        }
 
         super.execute(command);
     }
