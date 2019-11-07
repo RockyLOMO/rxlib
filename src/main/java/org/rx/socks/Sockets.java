@@ -172,6 +172,7 @@ public final class Sockets {
 
     public static EventLoopGroup eventLoopGroup(int threadAmount, Class<? extends EventLoopGroup> eventLoopGroupClass) {
         return Reflects.newInstance(eventLoopGroupClass, threadAmount);
+//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
     }
 
     public static Class<? extends ServerChannel> serverChannelClass() {

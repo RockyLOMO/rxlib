@@ -6,60 +6,58 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.management.ManagementFactory;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class DynamicThreadPool extends ThreadPool {
-    private static final int Percent = 100;
-    private static final int ThreadCount = 2;
-    private OperatingSystemMXBean systemMXBean;
-    private ScheduledExecutorService statisticsTimer;
+    private static final int PercentRatio = 100;
+    private static final OperatingSystemMXBean systemMXBean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     @Getter
     @Setter
-    private int criticalPercent = 40;
+    private int variable = 2;
+    @Getter
+    @Setter
+    private int minThreshold = 40, maxThreshold = 60;
     @Getter
     @Setter
     private int samplingTimes = 10;
-    private int incrementCounter;
-    private int decrementCounter;
+    @Getter
+    @Setter
+    private int samplingDelay = StatisticsDelay;
+    private AtomicInteger decrementCounter = new AtomicInteger();
+    private AtomicInteger incrementCounter = new AtomicInteger();
+    private Future future;
 
     public int getCpuLoadPercent() {
-        return (int) Math.ceil(systemMXBean.getSystemCpuLoad() * Percent);
+        return (int) Math.ceil(systemMXBean.getSystemCpuLoad() * PercentRatio);
     }
 
     public DynamicThreadPool(String poolName) {
         setPoolName(poolName);
-        systemMXBean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-        statisticsTimer = Executors.newSingleThreadScheduledExecutor(newThreadFactory(String.format("%sMonitor", poolName)));
-        long delay = 1000;
-        statisticsTimer.scheduleWithFixedDelay(() -> {
-//            if (getQueue().isEmpty()) {
-//                return;
-//            }
-            if (getPoolSize() <= getCorePoolSize()) {
+        future = Tasks.schedule(() -> {
+            if (getQueue().isEmpty()) {
                 return;
             }
+            int cpuLoad = getCpuLoadPercent();
+            log.debug("CurrentCpuLoad={}%% Threshold={}-{}%%", cpuLoad, minThreshold, maxThreshold);
+            if (cpuLoad > maxThreshold) {
+                if (decrementCounter.incrementAndGet() >= samplingTimes) {
+                    setMaximumPoolSize(getMaximumPoolSize() - variable);
+                    decrementCounter.set(0);
+                }
+            } else {
+                decrementCounter.set(0);
+            }
 
-            int currentCpuLoad = getCpuLoadPercent();
-            log.debug("CurrentCpuLoad={}%% Critical={}%%", currentCpuLoad, criticalPercent);
-            if (currentCpuLoad > 99) {
-                if (++decrementCounter == samplingTimes) {
-                    setMaximumPoolSize(getMaximumPoolSize() - ThreadCount);
-                    decrementCounter = 0;
+            if (cpuLoad < minThreshold) {
+                if (incrementCounter.incrementAndGet() >= samplingTimes) {
+                    setMaximumPoolSize(getMaximumPoolSize() + variable);
+                    incrementCounter.set(0);
                 }
             } else {
-                decrementCounter = 0;
+                incrementCounter.set(0);
             }
-            if (currentCpuLoad < criticalPercent) {
-                if (++incrementCounter == samplingTimes) {
-                    setMaximumPoolSize(getMaximumPoolSize() + ThreadCount);
-                    incrementCounter = 0;
-                }
-            } else {
-                incrementCounter = 0;
-            }
-        }, delay, delay, TimeUnit.MILLISECONDS);
+        }, samplingDelay, samplingDelay, String.format("%sMonitor", poolName));
     }
 }
