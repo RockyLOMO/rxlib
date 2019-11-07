@@ -138,7 +138,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool() {
-        this(CpuThreads + 1, CpuThreads * 2, 4, CpuThreads * 64, "ThreadPool");
+        this(CpuThreads + 1, CpuThreads * 3, 4, CpuThreads * 64, "ThreadPool");
     }
 
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, String poolName) {
