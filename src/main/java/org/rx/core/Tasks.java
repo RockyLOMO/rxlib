@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,7 @@ public final class Tasks {
         }
     }
 
+    @Getter
     private static final ThreadPool executor = new ThreadPool();
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
 
