@@ -116,12 +116,15 @@ public class CoreTester {
     @SneakyThrows
     @Test
     public void threadPool() {
-        ExecutorService pool = new ThreadPool(1, 2, 1, 5, "RxPool").printStatistics();
-        for (int i = 0; i < 10; i++) {
+        ThreadPool.DynamicConfig config = new ThreadPool.DynamicConfig();
+        config.setMaxThreshold(1);
+        ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
+                .statistics(config);
+        for (int i = 0; i < 100; i++) {
             int n = i;
             pool.execute(() -> {
                 log.info("exec {} begin..", n);
-                App.sleep(2000);
+                App.sleep(20 * 1000);
                 log.info("exec {} end..", n);
             });
         }

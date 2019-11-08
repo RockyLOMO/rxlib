@@ -1,12 +1,12 @@
 package org.rx.core;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import lombok.SneakyThrows;
+import com.sun.management.OperatingSystemMXBean;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.Serializable;
+import java.lang.management.ManagementFactory;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -14,6 +14,16 @@ import static org.rx.core.Contract.require;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public static class DynamicConfig implements Serializable {
+        private int variable = CpuThreads;
+        private int minThreshold = 40, maxThreshold = 60;
+        private int samplingTimes = 4;
+        private int samplingDelay = 2000;
+    }
+
     @RequiredArgsConstructor
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private final int queueCapacity;
@@ -50,6 +60,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (executor.getSubmittedTaskCount() < poolSize) {
                 log.debug("Idle thread to execute");
+                counter.incrementAndGet();
                 return super.offer(t);
             }
 
@@ -58,15 +69,25 @@ public class ThreadPool extends ThreadPoolExecutor {
                 return false;
             }
 
+            counter.incrementAndGet();
             return super.offer(t);
         }
 
         @Override
         public T poll(long timeout, TimeUnit unit) throws InterruptedException {
+            boolean ok = true;
             try {
-                return super.poll(timeout, unit);
+                T t = super.poll(timeout, unit);
+                ok = t != null;
+                return t;
+            } catch (InterruptedException e) {
+                ok = false;
+                throw e;
             } finally {
-                setPoll();
+                if (ok) {
+                    log.debug("setPoll() poll");
+                    setPoll();
+                }
             }
         }
 
@@ -75,6 +96,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return super.take();
             } finally {
+                log.debug("setPoll() take");
                 setPoll();
             }
         }
@@ -83,6 +105,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
+                log.debug("setPoll() remove");
                 setPoll();
             }
             return ok;
@@ -96,7 +119,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
     public static final int MaxThreads = CpuThreads * 100000;
-    static final int StatisticsDelay = 1000;
+    private static final int PercentRatio = 100;
+    private static final OperatingSystemMXBean systemMXBean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+
+    public static int getCpuLoadPercent() {
+        return (int) Math.ceil(systemMXBean.getSystemCpuLoad() * PercentRatio);
+    }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
@@ -110,12 +138,14 @@ public class ThreadPool extends ThreadPoolExecutor {
                 .setNameFormat(nameFormat).build();
     }
 
-    private AtomicInteger submittedTaskCounter = new AtomicInteger();
-    //    private int submittedTaskCapacity;
+    private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     @Setter
     @Getter
     private String poolName;
     private ScheduledExecutorService monitorTimer;
+    private ScheduledFuture monitorFuture;
+    private AtomicInteger decrementCounter;
+    private AtomicInteger incrementCounter;
 
     public int getSubmittedTaskCount() {
         return submittedTaskCounter.get();
@@ -126,13 +156,52 @@ public class ThreadPool extends ThreadPoolExecutor {
         log.warn("ignore setRejectedExecutionHandler");
     }
 
-    public ThreadPool printStatistics() {
+    public synchronized ThreadPool statistics(DynamicConfig dynamicConfig) {
+        require(dynamicConfig);
+
         if (monitorTimer == null) {
             monitorTimer = Executors.newSingleThreadScheduledExecutor(newThreadFactory(String.format("%sMonitor", poolName)));
-            monitorTimer.scheduleWithFixedDelay(() -> {
-                log.info("PoolSize={} QueueSize={} SubmittedTaskCount={}", getPoolSize(), getQueue().size(), getSubmittedTaskCount());
-            }, StatisticsDelay, StatisticsDelay, TimeUnit.MILLISECONDS);
         }
+        if (monitorFuture != null) {
+            monitorFuture.cancel(true);
+        }
+        decrementCounter = new AtomicInteger();
+        incrementCounter = new AtomicInteger();
+        monitorFuture = monitorTimer.scheduleWithFixedDelay(() -> {
+            int cpuLoad = getCpuLoadPercent();
+            log.info("PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),
+                    cpuLoad, dynamicConfig.getMinThreshold(), dynamicConfig.getMaxThreshold());
+
+            if (cpuLoad > dynamicConfig.getMaxThreshold()) {
+                int c = decrementCounter.incrementAndGet();
+                if (c >= dynamicConfig.getSamplingTimes()) {
+                    log.debug("DynamicPoolSize decrement {} ok", dynamicConfig.getVariable());
+                    setMaximumPoolSize(getMaximumPoolSize() - dynamicConfig.getVariable());
+                    decrementCounter.set(0);
+                } else {
+                    log.debug("DynamicPoolSize decrementCounter={}", c);
+                }
+            } else {
+                decrementCounter.set(0);
+            }
+
+            if (getQueue().isEmpty()) {
+                log.debug("DynamicPoolSize increment disabled");
+                return;
+            }
+            if (cpuLoad < dynamicConfig.getMinThreshold()) {
+                int c = incrementCounter.incrementAndGet();
+                if (c >= dynamicConfig.getSamplingTimes()) {
+                    log.debug("DynamicPoolSize increment {} ok", dynamicConfig.getVariable());
+                    setMaximumPoolSize(getMaximumPoolSize() + dynamicConfig.getVariable());
+                    incrementCounter.set(0);
+                } else {
+                    log.debug("DynamicPoolSize incrementCounter={}", c);
+                }
+            } else {
+                incrementCounter.set(0);
+            }
+        }, dynamicConfig.getSamplingDelay(), dynamicConfig.getSamplingDelay(), TimeUnit.MILLISECONDS);
         return this;
     }
 
@@ -150,7 +219,6 @@ public class ThreadPool extends ThreadPoolExecutor {
                     executor.getQueue().offer(r);
                 });
         ((ThreadQueue) getQueue()).setExecutor(this);
-//        submittedTaskCapacity = maxThreads + queueCapacity;
         this.poolName = poolName;
     }
 
@@ -162,12 +230,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void execute(Runnable command) {
-        int count = submittedTaskCounter.incrementAndGet();
-//        if (count > submittedTaskCapacity) {
-//            getRejectedExecutionHandler().rejectedExecution(command, this);
-//            return;
-//        }
-
+        submittedTaskCounter.incrementAndGet();
         super.execute(command);
     }
 
