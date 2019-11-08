@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.*;
@@ -14,7 +15,7 @@ import static org.rx.core.Contract.require;
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
     @RequiredArgsConstructor
-    private static class ThreadQueue<T> extends LinkedTransferQueue<T> {
+    public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private final int queueCapacity;
         @Setter
         private ThreadPool executor;
@@ -136,7 +137,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool() {
-        this(CpuThreads + 1, CpuThreads * 3, 4, CpuThreads * 64, "ThreadPool");
+        this(CpuThreads + 1, computeThreads(1, 2, 1), 4, CpuThreads * 64, "ThreadPool");
     }
 
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, String poolName) {
@@ -168,5 +169,16 @@ public class ThreadPool extends ThreadPoolExecutor {
 //        }
 
         super.execute(command);
+    }
+
+    public void put(Runnable command) {
+        log.debug("Block caller thread Until put");
+        getQueue().offer(command);
+    }
+
+    @SneakyThrows
+    public void transfer(Runnable command) {
+        log.debug("Block caller thread Until consumer");
+        ((ThreadQueue<Runnable>) getQueue()).transfer(command);
     }
 }
