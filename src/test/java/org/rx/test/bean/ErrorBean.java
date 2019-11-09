@@ -1,18 +1,26 @@
 package org.rx.test.bean;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@NoArgsConstructor
+@AllArgsConstructor
 public class ErrorBean {
-    private String error;
-
-//    public ErrorBean(int a){
-//
-//    }
-
-    public String getError() {
-        throw new IllegalArgumentException("test");
-//        return error;
+    private static void theStatic(int hint, String nullable) {
+        System.out.println("hint3-" + nullable);
     }
 
-    public void setError(String error) {
-        this.error = error;
+    @Getter
+    @Setter
+    private String error;
+
+    private ErrorBean(int hint, String nullable) {
+        error = "hint-" + nullable;
+    }
+
+    private void theMethod(int hint, String nullable) {
+        this.error = "hint2-" + nullable;
     }
 }

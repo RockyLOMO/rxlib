@@ -241,7 +241,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @SneakyThrows
     public void transfer(Runnable command) {
-        log.debug("Block caller thread Until consumer");
+        log.debug("Block caller thread Until consume");
         ((ThreadQueue<Runnable>) getQueue()).transfer(command);
     }
 }

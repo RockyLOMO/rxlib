@@ -2,7 +2,10 @@ package org.rx.core;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 
 import java.lang.reflect.*;
@@ -42,6 +45,37 @@ public class Reflects extends TypeUtils {
         return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
     }
 
+    @SneakyThrows
+    public static Object invokeMethod(Class type, Object instance, String name, Object... args) {
+        Class<?>[] parameterTypes = ClassUtils.toClass(args);
+        Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
+        if (method == null) {
+            throw new SystemException("Parameters error");
+        }
+        setAccess(method);
+        return method.invoke(instance, args);
+    }
+
+    @SneakyThrows
+    public static Object readField(Class type, Object instance, String name) {
+        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        return field.get(instance);
+    }
+
+    @SneakyThrows
+    public static void writeField(Class type, Object instance, String name, Object value) {
+        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        field.set(instance, value);
+    }
+
+    public static NQuery<Field> getFields(Class type) {
+        NQuery<Field> fields = NQuery.of(WeakCache.<List<Field>>getOrStore(cacheKey("Reflects.getFields", type), k -> FieldUtils.getAllFieldsList(type)));
+        for (Field field : fields) {
+            setAccess(field);
+        }
+        return fields;
+    }
+
     public static <T> T newInstance(Class<T> type) {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
@@ -53,45 +87,30 @@ public class Reflects extends TypeUtils {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
-        for (Constructor<?> constructor : type.getConstructors()) {
-            Class[] paramTypes = constructor.getParameterTypes();
-            if (paramTypes.length != args.length) {
-                continue;
-            }
-            boolean ok = true;
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (!isInstance(args[i], paramTypes[i])) {
-                    ok = false;
-                    break;
+        try {
+            return ConstructorUtils.invokeConstructor(type, args);
+        } catch (Exception e) {
+            log.warn("Not match any accessible constructors. {}", e.getMessage());
+            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+                Class[] paramTypes = constructor.getParameterTypes();
+                if (paramTypes.length != args.length) {
+                    continue;
                 }
+                boolean ok = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!isInstance(args[i], paramTypes[i])) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+                setAccess(constructor);
+                return (T) constructor.newInstance(args);
             }
-            if (!ok) {
-                continue;
-            }
-            setAccess(constructor);
-            return (T) constructor.newInstance(args);
         }
         throw new SystemException("Parameters error");
-    }
-
-    @SneakyThrows
-    public static Object getFieldValue(Class type, Object instance, String name) {
-        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
-        return field.get(instance);
-    }
-
-    @SneakyThrows
-    public static void setFieldValue(Class type, Object instance, String name, String value) {
-        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
-        field.set(instance, value);
-    }
-
-    public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(WeakCache.<List<Field>>getOrStore(cacheKey("Reflects.getFields", type), k -> FieldUtils.getAllFieldsList(type)));
-        for (Field field : fields) {
-            setAccess(field);
-        }
-        return fields;
     }
 
     private static void setAccess(AccessibleObject member) {

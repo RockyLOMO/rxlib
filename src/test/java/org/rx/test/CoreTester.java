@@ -2,6 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
@@ -11,7 +12,6 @@ import org.rx.test.bean.*;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.beans.$.$;
@@ -117,19 +117,17 @@ public class CoreTester {
     @Test
     public void threadPool() {
         ThreadPool.DynamicConfig config = new ThreadPool.DynamicConfig();
-        config.setMaxThreshold(1);
+//        config.setMaxThreshold(1);
         ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
                 .statistics(config);
         for (int i = 0; i < 100; i++) {
             int n = i;
             pool.execute(() -> {
                 log.info("exec {} begin..", n);
-                App.sleep(20 * 1000);
+                App.sleep(15 * 1000);
                 log.info("exec {} end..", n);
             });
         }
-
-//        DynamicThreadPool pool = new DynamicThreadPool("Rx");
 
 //        ExecutorService es1 = Executors.newCachedThreadPool();
 //        ExecutorService es2 = Executors.newFixedThreadPool(ThreadPool.CpuThreads);
@@ -137,6 +135,17 @@ public class CoreTester {
 
         System.out.println("main thread done");
         System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void reflect() {
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
+        System.out.println(bean.getError());
+
+        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
+        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
+        System.out.println(bean.getError());
     }
 
     @Test
