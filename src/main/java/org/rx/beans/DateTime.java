@@ -1,5 +1,6 @@
 package org.rx.beans;
 
+import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.Contract;
@@ -47,13 +48,10 @@ public final class DateTime extends Date {
         throw new SystemException(values(String.join(",", Formats), dateString), nested);
     }
 
+    @SneakyThrows
     public static DateTime valueOf(String dateString, String format) {
-        try {
-            //SimpleDateFormat not thread safe
-            return new DateTime(FastDateFormat.getInstance(format).parse(dateString));
-        } catch (ParseException ex) {
-            throw SystemException.wrap(ex);
-        }
+        //SimpleDateFormat not thread safe
+        return new DateTime(FastDateFormat.getInstance(format).parse(dateString));
     }
 
     private Calendar calendar;

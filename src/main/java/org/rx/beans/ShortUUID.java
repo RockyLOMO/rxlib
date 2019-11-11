@@ -1,18 +1,17 @@
 package org.rx.beans;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
+
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.UUID;
 
-import static org.rx.core.Contract.require;
-
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ShortUUID {
     public static class Builder {
         private char[] alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
         private int alphabetSize = alphabet.length;
-
-        public Builder() {
-        }
 
         public Builder alphabet(String alphabet) {
             this.alphabet = alphabet.toCharArray();
@@ -30,7 +29,7 @@ public final class ShortUUID {
         public ShortUUID build(UUID uuid) {
             String uuidStr = uuid.toString().replaceAll("-", "");
 
-            Double factor = Math.log(25d) / Math.log(alphabetSize);
+            double factor = Math.log(25d) / Math.log(alphabetSize);
             Double length = Math.ceil(factor * 16);
 
             BigInteger number = new BigInteger(uuidStr, 16);
@@ -91,10 +90,6 @@ public final class ShortUUID {
     }
 
     private final String uuid;
-
-    private ShortUUID(String uuid) {
-        this.uuid = uuid;
-    }
 
     @Override
     public String toString() {

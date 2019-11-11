@@ -64,14 +64,14 @@ public class Files {
             return NQuery.of(NQuery.toList(java.nio.file.Files.newDirectoryStream(directory, java.nio.file.Files::isDirectory)));
         }
         //FileUtils.listFiles() 有bug
-        return NQuery.of(FileUtils.listFilesAndDirs(directory.toFile(), FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter())).select(p -> p.toPath());
+        return NQuery.of(FileUtils.listFilesAndDirs(directory.toFile(), FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter())).select(File::toPath);
     }
 
     public static NQuery<Path> listFiles(Path directory, boolean recursive) {
         directory = checkDirectory(directory);
         File f = directory.toFile();
         IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
-        return NQuery.of(FileUtils.listFiles(f, ff, df)).select(p -> p.toPath());
+        return NQuery.of(FileUtils.listFiles(f, ff, df)).select(File::toPath);
     }
 
     @SneakyThrows

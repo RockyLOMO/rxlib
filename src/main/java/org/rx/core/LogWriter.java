@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.StringWriter;
 
@@ -27,7 +28,7 @@ public class LogWriter extends StringWriter {
     }
 
     @Override
-    public void write(String str) {
+    public void write(@NotNull String str) {
         super.write(prefix);
         super.write(" ");
         super.write(str);

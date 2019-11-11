@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -21,14 +22,14 @@ import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class PingClient {
-    public class Result {
+    public static class Result {
         @Getter
         private final List<Long> results;
         private Lazy<Double> avg;
         private Lazy<Long> min, max;
 
         public int getLossCount() {
-            return (int) results.stream().filter(p -> p == null).count();
+            return (int) results.stream().filter(Objects::isNull).count();
         }
 
         public double getAvg() {
@@ -46,8 +47,8 @@ public final class PingClient {
         private Result(List<Long> results) {
             this.results = results;
             avg = new Lazy<>(() -> results.stream().mapToDouble(p -> isNull(p, 0L)).average().getAsDouble());
-            min = new Lazy<>(() -> results.stream().filter(p -> p != null).mapToLong(p -> p).min().orElse(-1));
-            max = new Lazy<>(() -> results.stream().filter(p -> p != null).mapToLong(p -> p).max().orElse(-1));
+            min = new Lazy<>(() -> results.stream().filter(Objects::nonNull).mapToLong(p -> p).min().orElse(-1));
+            max = new Lazy<>(() -> results.stream().filter(Objects::nonNull).mapToLong(p -> p).max().orElse(-1));
         }
     }
 

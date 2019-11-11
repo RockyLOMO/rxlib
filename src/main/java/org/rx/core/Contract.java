@@ -41,7 +41,7 @@ public final class Contract {
      */
     @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
-        if (args == null || NQuery.of(args).any(p -> p == null)) {
+        if (args == null || NQuery.of(args).any(Objects::isNull)) {
             throw new SystemException(values(toJsonString(args)), "args");
         }
     }
@@ -82,10 +82,7 @@ public final class Contract {
 
     public static <T> boolean eq(T t1, T t2) {
         if (t1 == null) {
-            if (t2 == null) {
-                return true;
-            }
-            return false;
+            return t2 == null;
         }
         return t1.equals(t2);
     }

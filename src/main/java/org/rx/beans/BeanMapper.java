@@ -157,7 +157,7 @@ public class BeanMapper {
             config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
                 String setterName = methodName.toString();
                 targetMethods.add(setterName);
-                if (checkSkip(sourceValue, setterName, skipNull, config)) {
+                if (checkSkip(sourceValue, skipNull)) {
                     Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
                     return invoke(gm, target);
                 }
@@ -254,7 +254,7 @@ public class BeanMapper {
         }
     }
 
-    private boolean checkSkip(Object sourceValue, String setterName, boolean skipNull, MapConfig config) {
+    private boolean checkSkip(Object sourceValue, boolean skipNull) {
         return skipNull && sourceValue == null;
     }
 

@@ -1,19 +1,13 @@
 package org.rx.beans;
 
+import lombok.Getter;
 import org.rx.core.SystemException;
 
 import java.util.Set;
 
 public class BeanMapException extends SystemException {
+    @Getter
     private Set<String> allMethodNames, missedMethodNames;
-
-    public Set<String> getAllMethodNames() {
-        return allMethodNames;
-    }
-
-    public Set<String> getMissedMethodNames() {
-        return missedMethodNames;
-    }
 
     BeanMapException(Exception ex) {
         super(ex);

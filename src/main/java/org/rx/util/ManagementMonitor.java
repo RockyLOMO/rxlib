@@ -1,4 +1,4 @@
-package org.rx.core;
+package org.rx.util;
 
 import com.sun.management.OperatingSystemMXBean;
 

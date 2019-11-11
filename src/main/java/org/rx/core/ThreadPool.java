@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
 import java.lang.management.ManagementFactory;
@@ -91,6 +92,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 
+        @NotNull
         @Override
         public T take() throws InterruptedException {
             try {

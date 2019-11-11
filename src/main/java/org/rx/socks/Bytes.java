@@ -1,10 +1,34 @@
 package org.rx.socks;
 
 import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
+import java.util.Set;
 
 import static org.rx.core.Contract.require;
 
 public class Bytes {
+    public static <E extends Enum<E>> EnumSet<E> toEnumSet(Class<E> enumClass, long vector) {
+        EnumSet<E> set = EnumSet.noneOf(enumClass);
+        for (E e : enumClass.getEnumConstants()) {
+            final long mask = 1 << e.ordinal();
+            if ((mask & vector) != 0) {
+                set.add(e);
+            }
+        }
+        return set;
+    }
+
+    public static <E extends Enum<E>> int toInt(Set<E> set) {
+        int vector = 0;
+        for (E e : set) {
+            if (e.ordinal() >= Integer.SIZE) {
+                throw new IllegalArgumentException("The enum set is too large to fit in a bit vector: " + set);
+            }
+            vector |= 1L << e.ordinal();
+        }
+        return vector;
+    }
+
     public static String readLine(byte[] buffer) {
         require(buffer);
 

@@ -1,9 +1,12 @@
 package org.rx.beans;
 
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
 
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @EqualsAndHashCode
 public final class $<T> implements Serializable {
     public static <T> $<T> $() {
@@ -15,10 +18,6 @@ public final class $<T> implements Serializable {
     }
 
     public T v;
-
-    private $(T val) {
-        v = val;
-    }
 
     @Override
     public String toString() {
