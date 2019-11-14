@@ -6,6 +6,8 @@ import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
+import org.rx.beans.RandomList;
+import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
@@ -168,6 +170,20 @@ public class CoreTester {
 
         assert cache.get(k) == null;
         System.out.println(cache.size());
+    }
+
+    @Test
+    public void randomList() {
+        NQuery<Integer> q = NQuery.of(1, 2);
+        System.out.println(q.toArray());
+
+//        RandomList<String> wr = new RandomList<>();
+//        wr.add("a", 5);
+//        wr.add("b", 2);
+//        wr.add("c", 3);
+//        for (int i = 0; i < 20; i++) {
+//            System.out.println(wr.next());
+//        }
     }
 
     @Test

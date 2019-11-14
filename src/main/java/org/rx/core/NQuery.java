@@ -83,6 +83,10 @@ public final class NQuery<T> implements Iterable<T> {
         return of(Arrays.toList(set));
     }
 
+    public static <T> NQuery<T> of(Iterable<T> iterable) {
+        return of(iterable.iterator());
+    }
+
     public static <T> NQuery<T> of(Iterator<T> iterator) {
         return of(toList(iterator));
     }
@@ -537,8 +541,22 @@ public final class NQuery<T> implements Iterable<T> {
         return String.join(delimiter, select(selector));
     }
 
-    public Object[] toArray() {
-        return current.toArray();
+    public T[] toArray() {
+        List<T> result = toList();
+        Class type = null;
+        for (T t : result) {
+            if (t == null) {
+                continue;
+            }
+            type = t.getClass();
+            break;
+        }
+        if (type == null) {
+            throw new InvalidOperationException("Empty Result");
+        }
+        T[] array = (T[]) Array.newInstance(type, result.size());
+        result.toArray(array);
+        return array;
     }
 
     public T[] toArray(Class<T> type) {
