@@ -1,7 +1,8 @@
 package org.rx.beans;
 
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import org.rx.core.NQuery;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -9,11 +10,13 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.rx.core.Contract.require;
+
 public class RandomList<T> implements Iterable<T> {
-    @RequiredArgsConstructor
+    @AllArgsConstructor
     static class WeightElement<T> {
         public final T element;
-        public final int weight;
+        public int weight;
         public final DataRange<Integer> threshold = new DataRange<>();
     }
 
@@ -21,17 +24,33 @@ public class RandomList<T> implements Iterable<T> {
     private int maxRandomValue;
 
     public RandomList<T> add(T element, int weight) {
-        elements.add(new WeightElement<>(element, weight));
+        require(weight, weight >= 0);
+
+        WeightElement<T> weightElement = findElement(element);
+        if (weightElement == null) {
+            elements.add(new WeightElement<>(element, weight));
+        } else {
+            weightElement.weight = weight;
+        }
         maxRandomValue = 0;
         return this;
     }
 
+    private WeightElement<T> findElement(T element) {
+        return NQuery.of(elements).where(p -> p.element == element).firstOrDefault();
+    }
+
     public int getWeight(T element) {
-        int i = elements.indexOf(element);
-        if (i == -1) {
+        WeightElement<T> weightElement = findElement(element);
+        if (weightElement == null) {
             throw new NoSuchElementException();
         }
-        return elements.get(i).weight;
+        return weightElement.weight;
+    }
+
+    public RandomList<T> remove(T element) {
+        elements.removeIf(p -> p.element == element);
+        return this;
     }
 
     public RandomList<T> clear() {

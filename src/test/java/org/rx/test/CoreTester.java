@@ -174,16 +174,13 @@ public class CoreTester {
 
     @Test
     public void randomList() {
-        NQuery<Integer> q = NQuery.of(1, 2);
-        System.out.println(q.toArray());
-
-//        RandomList<String> wr = new RandomList<>();
-//        wr.add("a", 5);
-//        wr.add("b", 2);
-//        wr.add("c", 3);
-//        for (int i = 0; i < 20; i++) {
-//            System.out.println(wr.next());
-//        }
+        RandomList<String> wr = new RandomList<>();
+        wr.add("a", 5);
+        wr.add("b", 2);
+        wr.add("c", 3);
+        for (int i = 0; i < 20; i++) {
+            System.out.println(wr.next());
+        }
     }
 
     @Test
