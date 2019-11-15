@@ -9,6 +9,8 @@ import org.rx.beans.Tuple;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.Collections;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
@@ -128,12 +130,12 @@ public final class NQuery<T> implements Iterable<T> {
 
     private <TR> List<TR> newList() {
         int count = count();
-        return isParallel ? java.util.Collections.synchronizedList(new ArrayList<>(count)) : new ArrayList<>(count);
+        return isParallel ? new CopyOnWriteArrayList<>() : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {
         int count = count();
-        return isParallel ? java.util.Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
+        return isParallel ? new CopyOnWriteArraySet<>() : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {

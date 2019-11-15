@@ -76,13 +76,8 @@ public class WeakCache<TK, TV> {
             return;
         }
 
-        AutoCloseable ac;
-        if (destroy && (ac = as(val, AutoCloseable.class)) != null) {
-            try {
-                ac.close();
-            } catch (Exception ex) {
-                log.error("Auto close error", ex);
-            }
+        if (destroy) {
+            tryClose(val);
         }
         ref.clear();
     }

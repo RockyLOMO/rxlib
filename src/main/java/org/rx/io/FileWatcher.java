@@ -11,9 +11,8 @@ import org.rx.core.Disposable;
 import org.rx.core.Tasks;
 
 import java.nio.file.*;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
@@ -40,7 +39,7 @@ public class FileWatcher extends Disposable {
     @SneakyThrows
     public FileWatcher(String directoryPath) {
         this.directoryPath = directoryPath;
-        callback = Collections.synchronizedList(new ArrayList<>());
+        callback = new CopyOnWriteArrayList<>();
 
         Files.createDirectory(Files.path(directoryPath));
         service = FileSystems.getDefault().newWatchService();

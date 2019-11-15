@@ -32,7 +32,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.Collections;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -88,7 +88,7 @@ public class App extends SystemUtils {
         threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
-        typeConverter = Collections.synchronizedList(new ArrayList<>(2));
+        typeConverter = new CopyOnWriteArrayList<>();
     }
     //endregion
 

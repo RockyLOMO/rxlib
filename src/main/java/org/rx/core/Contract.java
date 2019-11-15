@@ -5,7 +5,6 @@ import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.$;
 import org.rx.security.MD5Util;
 import org.rx.util.function.BiAction;
 
@@ -115,16 +114,6 @@ public final class Contract {
 
     public static Object[] values(Object... args) {
         return args;
-    }
-
-    public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func) {
-        return tryGet(out, func, null);
-    }
-
-    public static <T, TR> boolean tryGet($<TR> out, Function<T, TR> func, T state) {
-        require(out, func);
-
-        return (out.v = func.apply(state)) != null;
     }
 
     public static String toDescription(AccessibleObject accessibleObject) {
