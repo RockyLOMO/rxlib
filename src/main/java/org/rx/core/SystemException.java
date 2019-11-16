@@ -17,6 +17,7 @@ import java.util.*;
 import static org.rx.core.Contract.*;
 
 /**
+ * 根据Exception来读取errorCode.yml的错误信息
  * ex.fillInStackTrace()
  * https://northconcepts.com/blog/2013/01/18/6-tips-to-improve-your-exception-handling/
  */

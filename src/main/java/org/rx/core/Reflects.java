@@ -65,7 +65,7 @@ public class Reflects extends TypeUtils {
     @SneakyThrows
     public static void writeField(Class type, Object instance, String name, Object value) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
-        field.set(instance, value);
+        field.set(instance, App.changeType(value, field.getType()));
     }
 
     public static NQuery<Field> getFields(Class type) {

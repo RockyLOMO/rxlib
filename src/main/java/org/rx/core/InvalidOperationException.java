@@ -1,19 +1,13 @@
 package org.rx.core;
 
-/**
- * 根据Exception来读取errorCode.yml的错误信息
- */
 public class InvalidOperationException extends SystemException {
-    public static SystemException friendly(String format, Object... args) {
-        return new InvalidOperationException(null).setFriendlyMessage(format, args);
-    }
-
     public InvalidOperationException(String format, Object... args) {
         super(String.format(format, args));
     }
 
-    public InvalidOperationException(Throwable e) {
+    public InvalidOperationException(Throwable e, String format, Object... args) {
         super(e);
+        setFriendlyMessage(format, args);
     }
 
     public <T extends Enum<T>> InvalidOperationException(T errorCode, Object... messageValues) {
