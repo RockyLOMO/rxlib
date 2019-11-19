@@ -2,7 +2,6 @@ package org.rx.core;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.$;
 import org.rx.beans.DateTime;
@@ -22,10 +21,15 @@ public final class Tasks {
         private final String name;
         private final Func<T> callable;
 
-        @SneakyThrows
         @Override
         public T call() {
-            return callable.invoke();
+            try {
+                //后台线程异常
+                return callable.invoke();
+            } catch (Throwable e) {
+                log.error("Task", e);
+                return null;
+            }
         }
 
         @Override
