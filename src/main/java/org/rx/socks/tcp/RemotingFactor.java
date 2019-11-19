@@ -68,7 +68,7 @@ public final class RemotingFactor {
     @RequiredArgsConstructor
     private static class ClientHandler extends Disposable implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
-        private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.packetClient(p, Config.getAppId()), ThreadPool.MaxThreads);
+        private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.client(p, Config.getAppId()), ThreadPool.MaxThreads);
 
         private final Class targetType;
         private final InetSocketAddress serverAddress;
@@ -254,7 +254,7 @@ public final class RemotingFactor {
 
         Class contract = contractInstance.getClass();
         return host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<RemotingClient> server = TcpConfig.packetServer(port, RemotingClient.class);
+            TcpServer<RemotingClient> server = TcpConfig.server(port, RemotingClient.class);
             server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {
                 e.setCancel(true);
