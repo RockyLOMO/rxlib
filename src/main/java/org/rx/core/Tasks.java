@@ -27,7 +27,7 @@ public final class Tasks {
                 //后台线程异常
                 return callable.invoke();
             } catch (Throwable e) {
-                log.error("Task", e);
+                log.error("Task IGNORE", e);
                 return null;
             }
         }
@@ -78,7 +78,11 @@ public final class Tasks {
         require(task);
 
         return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), () -> {
-            task.invoke();
+            try {
+                task.invoke();
+            } catch (Throwable e) {
+                log.error("Task IGNORE", e);
+            }
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
