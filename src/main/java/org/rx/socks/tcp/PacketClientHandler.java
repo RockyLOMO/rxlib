@@ -2,7 +2,6 @@ package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
 import org.rx.core.InvalidOperationException;
-import org.rx.socks.tcp.TcpClient;
 import org.rx.socks.tcp.packet.ErrorPacket;
 import org.rx.socks.tcp.packet.HandshakePacket;
 

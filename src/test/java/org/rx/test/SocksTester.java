@@ -31,12 +31,13 @@ public class SocksTester {
     @Test
     public void apiRpc() {
         UserManagerImpl server = new UserManagerImpl();
-        restartServer(server);
+        restartServer(server, 3307);
 
-        UserManager mgr1 = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
+        UserManager mgr1 = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint("127.0.0.1:3307"), null,
+                p -> Sockets.parseEndpoint("127.0.0.1:3308"));
         assert mgr1.computeInt(1, 1) == 2;
 
-        restartServer(server);
+        restartServer(server, 3308);
 
         mgr1.testError();
         assert mgr1.computeInt(2, 2) == 4;
@@ -75,11 +76,11 @@ public class SocksTester {
         assert args.getFlag() == 1;
     }
 
-    private void restartServer(UserManagerImpl server) {
+    private void restartServer(UserManagerImpl server, int port) {
         if (tcpServer != null) {
             tcpServer.close();
         }
-        tcpServer = RemotingFactor.listen(server, 3307);
+        tcpServer = RemotingFactor.listen(server, port);
         System.out.println("restartServer..");
         App.sleep(4000);
     }

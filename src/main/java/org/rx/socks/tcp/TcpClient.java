@@ -83,7 +83,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
             TcpClient client = getClient();
-            client.channel = null;
             client.isConnected = false;
 
             NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);

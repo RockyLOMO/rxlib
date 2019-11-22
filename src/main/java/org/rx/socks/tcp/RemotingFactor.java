@@ -25,8 +25,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static org.rx.core.App.Config;
+import static org.rx.core.App.retry;
 import static org.rx.core.Contract.*;
 
 @Slf4j
@@ -66,40 +69,30 @@ public final class RemotingFactor {
     }
 
     @RequiredArgsConstructor
-    private static class ClientHandler extends Disposable implements MethodInterceptor {
+    private static class ClientHandler<T> implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
         private static final TcpClientPool pool = new TcpClientPool(p -> TcpConfig.client(p, Config.getAppId()), ThreadPool.MaxThreads);
 
         private final Class targetType;
-        private final InetSocketAddress serverAddress;
-        private final Consumer onDualInit;
+        private final Consumer<T> onHandshake;
+        private final Function<InetSocketAddress, InetSocketAddress> reconnectFunc;
         private final ManualResetEvent waitHandle = new ManualResetEvent();
+        private volatile InetSocketAddress serverAddress;
         private CallPack resultPack;
         private TcpClient client;
-
-        @Override
-        protected void freeObjects() {
-            if (client != null) {
-                log.debug("client close");
-                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
-                client.close();
-                client = null;
-            }
-        }
 
         @Override
         public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
             if (objectMethods.contains(method)) {
                 return methodProxy.invokeSuper(o, args);
             }
-            checkNotClosed();
 
             String methodName = method.getName();
             Serializable pack = null;
             switch (methodName) {
                 case "close":
                     if (args.length == 0) {
-                        close();
+                        closeHandshakeClient();
                         return null;
                     }
                     break;
@@ -112,19 +105,15 @@ public final class RemotingFactor {
                         } else {
                             methodProxy.invokeSuper(o, args);
                         }
-//                        methodProxy.invoke(o, objects);
-//                        method.invoke(o,objects);
-//                        EventTarget eventTarget = (EventTarget) o;
-//                        eventTarget.attachEvent(eventName, event);
                         pack = new RemoteEventPack(eventName, RemoteEventFlag.Post);
                         log.info("client attach {} step1", eventName);
                     }
                     break;
                 case "raiseEvent":
                     if (args.length == 2) {
-                        String eventName = (String) args[0];
-                        EventArgs event = (EventArgs) args[1];
                         if (targetType.isInterface()) {
+                            String eventName = (String) args[0];
+                            EventArgs event = (EventArgs) args[1];
                             EventListener.getInstance().raise(o, eventName, event);
                             return null;
                         } else {
@@ -138,58 +127,10 @@ public final class RemotingFactor {
                 pack = new CallPack(methodName, args);
             }
 
-            if (onDualInit != null) {
+            if (onHandshake != null) {
                 if (client == null) {
-                    client = pool.borrow(serverAddress);
-                    client.setAutoReconnect(true);
-//                    log.info("onDualInit..");
-//                    onDualInit.accept(o); //无效
-                    client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
-                        e.setCancel(true);
-                        log.error("Remoting Error", e.getValue());
-                        waitHandle.set();
-                    });
-                    client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                        log.info("client reconnected");
-                        client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-                        onDualInit.accept(o);
-                    });
-                    client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                        RemoteEventPack remoteEventPack;
-                        if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                            switch (remoteEventPack.flag) {
-                                case Post:
-                                    if (resultPack != null) {
-                                        resultPack.returnValue = null;
-                                    }
-                                    log.info("client attach {} step2 ok", remoteEventPack.eventName);
-                                    break;
-                                case PostBack:
-                                    try {
-                                        if (targetType.isInterface()) {
-                                            EventListener.getInstance().raise(o, remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                        } else {
-                                            EventTarget eventTarget = (EventTarget) o;
-                                            eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
-                                        }
-                                    } catch (Exception ex) {
-                                        log.error("client raise {} error", remoteEventPack.eventName, ex);
-                                    } finally {
-                                        if (!remoteEventPack.broadcast) {
-                                            client.send(remoteEventPack);  //import
-                                        }
-                                        log.info("client raise {} ok", remoteEventPack.eventName);
-                                    }
-                                    return;
-                            }
-                        } else {
-                            resultPack = (CallPack) e.getValue();
-                        }
-                        waitHandle.set();
-                    });
-                    client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                    initHandshakeClient((T) o);
                 }
-
                 client.send(pack);
                 waitHandle.waitOne(client.getConfig().getConnectTimeout());
             } else {
@@ -214,6 +155,84 @@ public final class RemotingFactor {
             return resultPack != null ? resultPack.returnValue : null;
         }
 
+        private void initHandshakeClient(T proxyObject) {
+            log.debug("initHandshakeClient {}", serverAddress);
+            client = pool.borrow(serverAddress);
+            client.setAutoReconnect(true);
+            if (reconnectFunc != null) {
+                client.setAutoReconnect(false);
+                client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Disconnected, (s, e) -> {
+                    log.info("client disconnected");
+                    while (client == null || !client.isConnected()) {
+                        log.info("client serverAddress changed to {}", serverAddress = reconnectFunc.apply(serverAddress));
+                        closeHandshakeClient();
+                        try {
+                            initHandshakeClient(proxyObject);
+                        } catch (Exception ex) {
+                            log.debug("client reconnect error: {}", ex.getMessage());
+                        }
+                    }
+                });
+            }
+            client.<NEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                log.info("client reconnected");
+                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                onHandshake.accept(proxyObject);
+            });
+            client.<ErrorEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                e.setCancel(true);
+                log.error("Remoting Error", e.getValue());
+                waitHandle.set();
+            });
+            client.<PackEventArgs<ChannelHandlerContext>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                RemoteEventPack remoteEventPack;
+                if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                    switch (remoteEventPack.flag) {
+                        case Post:
+                            if (resultPack != null) {
+                                resultPack.returnValue = null;
+                            }
+                            log.info("client attach {} step2 ok", remoteEventPack.eventName);
+                            break;
+                        case PostBack:
+                            try {
+                                if (targetType.isInterface()) {
+                                    EventListener.getInstance().raise(proxyObject, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                } else {
+                                    EventTarget eventTarget = (EventTarget) proxyObject;
+                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                }
+                            } catch (Exception ex) {
+                                log.error("client raise {} error", remoteEventPack.eventName, ex);
+                            } finally {
+                                if (!remoteEventPack.broadcast) {
+                                    client.send(remoteEventPack);  //import
+                                }
+                                log.info("client raise {} ok", remoteEventPack.eventName);
+                            }
+                            return;
+                    }
+                } else {
+                    resultPack = (CallPack) e.getValue();
+                }
+                waitHandle.set();
+            });
+            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+//            log.debug("onHandshake {}", serverAddress);
+//            onHandshake.accept(proxyObject);
+        }
+
+        private void closeHandshakeClient() {
+            if (client == null) {
+                return;
+            }
+            log.debug("client close");
+            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+            client.close();
+            client = null;
+        }
+
+
 //        @SneakyThrows
 //        private static Object getCglibProxyTargetObject(Object proxy) {
 //            Field field = proxy.getClass().getDeclaredField("CGLIB$CALLBACK_0");
@@ -231,20 +250,22 @@ public final class RemotingFactor {
     private static final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, Sockets.parseEndpoint(endpoint), null);
+        return create(contract, Sockets.parseEndpoint(endpoint), null, null);
     }
 
-    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, Consumer<T> onDualInit) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, Consumer<T> onHandshake, Function<InetSocketAddress, InetSocketAddress> onReconnect) {
         require(contract);
 
-        if (EventTarget.class.isAssignableFrom(contract) && onDualInit == null) {
-            onDualInit = p -> {
+        if (EventTarget.class.isAssignableFrom(contract) && onHandshake == null) {
+            onHandshake = p -> {
             };
         }
-        T p = (T) Enhancer.create(contract, new ClientHandler(contract, endpoint, onDualInit));
-        if (onDualInit != null) {
-            log.info("onDualInit..");
-            onDualInit.accept(p);
+        ClientHandler<T> handler = new ClientHandler<>(contract, onHandshake, onReconnect);
+        handler.serverAddress = endpoint;
+        T p = (T) Enhancer.create(contract, handler);
+        if (onHandshake != null) {
+            log.debug("onHandshake {}", endpoint);
+            onHandshake.accept(p);
         }
         return p;
     }

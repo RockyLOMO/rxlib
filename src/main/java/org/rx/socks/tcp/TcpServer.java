@@ -173,6 +173,7 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
     }
 
     public Set<T> getClients(String appId) {
+        //appid is null
         Set<T> set = clients.get(appId);
         if (CollectionUtils.isEmpty(set)) {
             throw new InvalidOperationException(String.format("AppId %s not found", appId));

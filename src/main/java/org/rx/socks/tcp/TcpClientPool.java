@@ -33,9 +33,9 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
             if (method.getName().equals("close")) {
                 pool.returnObject(client.getConfig().getEndpoint(), client);
+                log.debug("Return TcpClient {}", client);
                 return null;
             }
-//            return methodProxy.invokeSuper(o, objects); //有问题
             return methodProxy.invoke(client, objects);
         }
     }

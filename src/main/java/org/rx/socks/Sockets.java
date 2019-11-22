@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.rx.core.App.Config;
+import static org.rx.core.App.retry;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
@@ -99,6 +100,9 @@ public final class Sockets {
 
         BootstrapConfig config = bootstrap.config();
         if (config.group() != null) {
+            if (WorkGroup.isValueCreated() && config.group() == WorkGroup.getValue()) {
+                return;
+            }
             config.group().shutdownGracefully();
         }
     }
@@ -208,6 +212,16 @@ public final class Sockets {
 
         String[] arr = Strings.split(endpoint, ":", 2);
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    public static InetSocketAddress newEndpoint(InetSocketAddress endpoint, int port) {
+        require(endpoint);
+
+        return new InetSocketAddress(endpoint.getAddress(), port);
+    }
+
+    public static String toString(InetSocketAddress endpoint) {
+        return String.format("%s:%s", endpoint.getHostString(), endpoint.getPort());
     }
 
     public static void closeOnFlushed(Socket socket) {
