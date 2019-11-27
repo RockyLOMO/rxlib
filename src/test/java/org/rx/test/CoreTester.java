@@ -24,6 +24,14 @@ import static org.rx.core.Contract.toJsonString;
 public class CoreTester {
     //region NQuery
     @Test
+    public void runParallelNQuery() {
+        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+                .groupBy(p -> p > 5, p -> p.right.first())) {
+            System.out.println(integer.toString());
+        }
+    }
+
+    @Test
     public void runNQuery() {
         Set<Person> personSet = new HashSet<>();
         for (int i = 0; i < 5; i++) {
