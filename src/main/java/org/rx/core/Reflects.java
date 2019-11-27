@@ -18,6 +18,19 @@ import static org.rx.core.Contract.*;
  */
 @Slf4j
 public class Reflects extends TypeUtils {
+    private static final String closeMethod = "close";
+
+    public static boolean invokeClose(Method method, Object obj) {
+        if (!isCloseMethod(method)) {
+            return false;
+        }
+        return tryClose(obj);
+    }
+
+    public static boolean isCloseMethod(Method method) {
+        return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
+    }
+
     @SneakyThrows
     public static void fillProperties(Object instance, Object propBean) {
         require(instance, propBean);
@@ -57,13 +70,13 @@ public class Reflects extends TypeUtils {
     }
 
     @SneakyThrows
-    public static Object readField(Class type, Object instance, String name) {
+    public static <T> T readField(Class type, Object instance, String name) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
-        return field.get(instance);
+        return (T) field.get(instance);
     }
 
     @SneakyThrows
-    public static void writeField(Class type, Object instance, String name, Object value) {
+    public static <T> void writeField(Class type, Object instance, String name, T value) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
         field.set(instance, App.changeType(value, field.getType()));
     }

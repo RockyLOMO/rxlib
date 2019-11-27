@@ -12,8 +12,7 @@ import org.rx.core.StringBuilder;
 
 import java.io.*;
 
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.values;
+import static org.rx.core.Contract.*;
 
 @AllArgsConstructor
 @Getter
@@ -96,7 +95,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     @SneakyThrows
     @Override
     protected void freeObjects() {
-        App.catchCall(this::flush);
+        catchCall(this::flush);
 
         writer.close();
         reader.close();

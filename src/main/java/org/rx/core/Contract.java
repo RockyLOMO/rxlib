@@ -3,16 +3,21 @@ package org.rx.core;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.security.MD5Util;
+import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.Func;
 
 import java.lang.reflect.AccessibleObject;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+@Slf4j
 public final class Contract {
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
     private static NQuery<Class> SkipTypes = NQuery.of();
@@ -52,8 +57,95 @@ public final class Contract {
         }
     }
 
+    //region Delegate
+    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> combine(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
+        if (a == null) {
+            require(b);
+            return wrap(b);
+        }
+        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
+        if (b == null) {
+            return aw;
+        }
+        if (b instanceof EventTarget.Delegate) {
+            aw.getInvocationList().addAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
+        } else {
+            aw.getInvocationList().add(b);
+        }
+        return aw;
+    }
+
+    private static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> EventTarget.Delegate<TSender, TArgs> wrap(BiConsumer<TSender, TArgs> a) {
+        if (a instanceof EventTarget.Delegate) {
+            return (EventTarget.Delegate<TSender, TArgs>) a;
+        }
+        EventTarget.Delegate<TSender, TArgs> delegate = new EventTarget.Delegate<>();
+        delegate.getInvocationList().add(a);
+        return delegate;
+    }
+
+    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> remove(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
+        if (a == null) {
+            require(b);
+            return wrap(b);
+        }
+        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
+        if (b == null) {
+            return aw;
+        }
+        if (b instanceof EventTarget.Delegate) {
+            aw.getInvocationList().removeAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
+        } else {
+            aw.getInvocationList().remove(b);
+        }
+        return aw;
+    }
+    //endregion
+
+    public static String cacheKey(String methodName, Object... args) {
+        require(methodName);
+
+        String k = methodName + toJsonString(args);
+        if (k.length() <= 32) {
+            return k;
+        }
+        return MD5Util.md5Hex(k);
+    }
+
+    public static boolean catchCall(Action action) {
+        require(action);
+
+        try {
+            action.invoke();
+            return true;
+        } catch (Throwable e) {
+            log.warn("catchCall", e);
+        }
+        return false;
+    }
+
+    public static <T> T catchCall(Func<T> action) {
+        require(action);
+
+        try {
+            return action.invoke();
+        } catch (Throwable e) {
+            log.warn("catchCall", e);
+        }
+        return null;
+    }
+
     public static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, AutoCloseable::close);
+        return tryClose(obj, true);
+    }
+
+    public static boolean tryClose(Object obj, boolean quietly) {
+        return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
+    }
+
+    @SneakyThrows
+    public static void sleep(long millis) {
+        Thread.sleep(millis);
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {
@@ -100,16 +192,6 @@ public final class Contract {
             }
         }
         return value;
-    }
-
-    public static String cacheKey(String methodName, Object... args) {
-        require(methodName);
-
-        String k = methodName + toJsonString(args);
-        if (k.length() <= 32) {
-            return k;
-        }
-        return MD5Util.md5Hex(k);
     }
 
     public static Object[] values(Object... args) {

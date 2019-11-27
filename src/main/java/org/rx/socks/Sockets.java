@@ -25,7 +25,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.rx.core.App.Config;
-import static org.rx.core.App.retry;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
@@ -230,7 +229,7 @@ public final class Sockets {
             return;
         }
 
-        App.catchCall(() -> {
+        catchCall(() -> {
             if (socket.isConnected()) {
                 if (!socket.isOutputShutdown()) {
                     socket.shutdownOutput();

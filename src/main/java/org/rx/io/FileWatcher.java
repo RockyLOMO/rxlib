@@ -6,7 +6,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.NEnum;
 import org.rx.beans.Tuple;
-import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.core.Tasks;
 
@@ -17,6 +16,7 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
+import static org.rx.core.Contract.catchCall;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -76,11 +76,11 @@ public class FileWatcher extends Disposable {
         keepHandle = true;
         future = Tasks.run(() -> {
             while (keepHandle) {
-                App.catchCall(() -> {
+                catchCall(() -> {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
                         for (Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
-                            App.catchCall(() -> raiseEvent(event, tuple));
+                            catchCall(() -> raiseEvent(event, tuple));
                         }
                     }
                     key.reset();
