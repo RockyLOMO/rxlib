@@ -8,7 +8,6 @@ import org.rx.beans.FlagsEnum;
 import org.rx.beans.NEnum;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
@@ -19,7 +18,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     @Slf4j
     class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements BiConsumer<TSender, TArgs> {
         @Getter
-        private final List<BiConsumer<TSender, TArgs>> invocationList = new ArrayList<>();
+        private final List<BiConsumer<TSender, TArgs>> invocationList = new CopyOnWriteArrayList<>();
 
         @Override
         public void accept(TSender target, TArgs args) {
