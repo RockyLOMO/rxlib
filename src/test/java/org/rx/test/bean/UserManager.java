@@ -1,6 +1,7 @@
 package org.rx.test.bean;
 
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.FlagsEnum;
 import org.rx.core.EventTarget;
 
 public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
@@ -11,8 +12,8 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
     }
 
     @Override
-    default boolean dynamicAttach() {
-        return true;
+    default FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DynamicAttach.add();
     }
 
     default void close() {

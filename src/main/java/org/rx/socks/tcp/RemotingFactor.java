@@ -26,10 +26,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import static org.rx.core.App.Config;
-import static org.rx.core.App.retry;
 import static org.rx.core.Contract.*;
 
 @Slf4j
@@ -86,22 +84,25 @@ public final class RemotingFactor {
             if (objectMethods.contains(method)) {
                 return methodProxy.invokeSuper(o, args);
             }
+            if (Reflects.isCloseMethod(method)) {
+                closeHandshakeClient();
+                return null;
+            }
 
             String methodName = method.getName();
             Serializable pack = null;
             switch (methodName) {
-                case "close":
-                    if (args.length == 0) {
-                        closeHandshakeClient();
-                        return null;
-                    }
-                    break;
                 case "attachEvent":
+                case "detachEvent":
                     if (args.length == 2) {
                         String eventName = (String) args[0];
                         BiConsumer event = (BiConsumer) args[1];
                         if (targetType.isInterface()) {
-                            EventListener.getInstance().attach(o, eventName, event);
+                            if (methodName.equals("detachEvent")) {
+                                EventListener.getInstance().detach((EventTarget) o, eventName, event);
+                            } else {
+                                EventListener.getInstance().attach((EventTarget) o, eventName, event);
+                            }
                         } else {
                             methodProxy.invokeSuper(o, args);
                         }
@@ -111,17 +112,23 @@ public final class RemotingFactor {
                     break;
                 case "raiseEvent":
                     if (args.length == 2) {
-                        if (targetType.isInterface()) {
+                        if (targetType.isInterface() && args[0] instanceof String) {
                             String eventName = (String) args[0];
                             EventArgs event = (EventArgs) args[1];
-                            EventListener.getInstance().raise(o, eventName, event);
+                            EventListener.getInstance().raise((EventTarget) o, eventName, event);
                             return null;
-                        } else {
-                            return methodProxy.invokeSuper(o, args);
                         }
+                        return methodProxy.invokeSuper(o, args);
                     }
-                case "dynamicAttach":
-                    return methodProxy.invokeSuper(o, args);
+                    break;
+                case "eventFlags":
+                    if (args.length == 0) {
+                        if (targetType.isInterface()) {
+                            return EventTarget.EventFlags.DynamicAttach.add();
+                        }
+                        return methodProxy.invokeSuper(o, args);
+                    }
+                    break;
             }
             if (pack == null) {
                 pack = new CallPack(methodName, args);
@@ -197,7 +204,7 @@ public final class RemotingFactor {
                         case PostBack:
                             try {
                                 if (targetType.isInterface()) {
-                                    EventListener.getInstance().raise(proxyObject, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                    EventListener.getInstance().raise((EventTarget) proxyObject, remoteEventPack.eventName, remoteEventPack.remoteArgs);
                                 } else {
                                     EventTarget eventTarget = (EventTarget) proxyObject;
                                     eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);

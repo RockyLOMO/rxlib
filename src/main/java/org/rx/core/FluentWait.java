@@ -89,7 +89,7 @@ public class FluentWait {
 
     public FluentWait sleep() {
         if (interval > 0) {
-            App.sleep(interval);
+            Contract.sleep(interval);
         }
         return this;
     }

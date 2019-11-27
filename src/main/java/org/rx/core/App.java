@@ -15,9 +15,7 @@ import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
 import org.rx.io.MemoryStream;
-import org.rx.util.function.Action;
 import org.rx.util.function.BiFunc;
-import org.rx.util.function.Func;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -143,34 +141,6 @@ public class App extends SystemUtils {
         }
         log.info(msg.toString());
         return resultList;
-    }
-
-    @SneakyThrows
-    public static void sleep(long millis) {
-        Thread.sleep(millis);
-    }
-
-    public static boolean catchCall(Action action) {
-        require(action);
-
-        try {
-            action.invoke();
-            return true;
-        } catch (Throwable e) {
-            log.warn("catchCall", e);
-        }
-        return false;
-    }
-
-    public static <T> T catchCall(Func<T> action) {
-        require(action);
-
-        try {
-            return action.invoke();
-        } catch (Throwable e) {
-            log.warn("catchCall", e);
-        }
-        return null;
     }
 
     public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state) {

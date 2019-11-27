@@ -3,7 +3,6 @@ package org.rx.test;
 import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.socks.Sockets;
@@ -17,6 +16,8 @@ import org.rx.test.bean.UserManagerImpl;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
+
+import static org.rx.core.Contract.sleep;
 
 public class SocksTester {
     @SneakyThrows
@@ -34,10 +35,10 @@ public class SocksTester {
         restartServer(server, 3307);
 
         UserManager mgr1 = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint("127.0.0.1:3307"), null,
-                p -> Sockets.parseEndpoint("127.0.0.1:3308"));
+                p -> Sockets.parseEndpoint("127.0.0.1:3307"));
         assert mgr1.computeInt(1, 1) == 2;
 
-        restartServer(server, 3308);
+        restartServer(server, 3307);
 
         mgr1.testError();
         assert mgr1.computeInt(2, 2) == 4;
@@ -64,13 +65,13 @@ public class SocksTester {
         mgr2.raiseEvent(event, args);
         assert args.getFlag() == 2;
 
-        App.sleep(1000);
+        sleep(1000);
         args.setFlag(4);
         server.raiseEvent(event, args);
         assert args.getFlag() == 2;
 
         mgr2.close();
-        App.sleep(2000);
+        sleep(2000);
         args.setFlag(4);
         server.raiseEvent(event, args);
         assert args.getFlag() == 1;
@@ -82,7 +83,7 @@ public class SocksTester {
         }
         tcpServer = RemotingFactor.listen(server, port);
         System.out.println("restartServer..");
-        App.sleep(4000);
+        sleep(4000);
     }
 
     @SneakyThrows
@@ -99,7 +100,7 @@ public class SocksTester {
         mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));
             e.setResultList(Arrays.toList("a", "b", "c"));
-            sleep();
+            sleep(1000);
         });
         Thread.sleep(1000);
 //        server.raiseEvent(server.onAdd, new UserManagerImpl.MgrEventArgs());
@@ -110,11 +111,6 @@ public class SocksTester {
         mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);
         server.raiseEvent("onTest", EventArgs.Empty);
-    }
-
-    @SneakyThrows
-    private void sleep() {
-        Thread.sleep(1000);
     }
 
     @Test

@@ -6,8 +6,9 @@ import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
+import org.rx.beans.DateTime;
+import org.rx.beans.FlagsEnum;
 import org.rx.beans.RandomList;
-import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
@@ -15,6 +16,7 @@ import org.rx.test.bean.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.BiConsumer;
 
 import static org.rx.beans.$.$;
 import static org.rx.core.Contract.*;
@@ -113,7 +115,20 @@ public class CoreTester {
         public String name;
         public int age;
     }
+
     //endregion
+
+    @Test
+    public void delegate() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        BiConsumer<UserManager, NEventArgs> b = (s, e) -> System.out.println(e);
+        BiConsumer<UserManager, NEventArgs> x = combine((s, e) -> System.out.println(e), b);
+        x.accept(mgr, new NEventArgs<>(DateTime.now()));
+        remove(x, b).accept(mgr, new NEventArgs(DateTime.now()));
+
+        FlagsEnum<EventTarget.EventFlags> flags = EventTarget.EventFlags.None.add().add(EventTarget.EventFlags.DynamicAttach);
+        System.out.println(flags.has(EventTarget.EventFlags.DynamicAttach));
+    }
 
     @SneakyThrows
     @Test
@@ -126,7 +141,7 @@ public class CoreTester {
             int n = i;
             pool.execute(() -> {
                 log.info("exec {} begin..", n);
-                App.sleep(15 * 1000);
+                sleep(15 * 1000);
                 log.info("exec {} end..", n);
             });
         }

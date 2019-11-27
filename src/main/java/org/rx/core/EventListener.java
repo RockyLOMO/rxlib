@@ -4,14 +4,16 @@ import com.google.common.eventbus.EventBus;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
+@Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class EventListener {
     @Getter
@@ -28,27 +30,31 @@ public class EventListener {
 
     private final Map<Object, Map<String, BiConsumer>> host = Collections.synchronizedMap(new WeakHashMap<>());
 
-    public void attach(Object target, String eventName, BiConsumer event) {
-        require(target, eventName);
+    public void attach(EventTarget target, String method, BiConsumer methodImpl) {
+        require(target, method, methodImpl);
 
-        Map<String, BiConsumer> eventMap = host.computeIfAbsent(target, k -> new ConcurrentHashMap<>());
-        if (event == null) {
-            eventMap.remove(eventName);
-            return;
-        }
-        eventMap.put(eventName, event);
+        Map<String, BiConsumer> map = getMap(target);
+        map.put(method, combine(map.get(method), methodImpl));
     }
 
-    public void raise(Object target, String eventName, EventArgs args) {
-        require(target, eventName, args);
+    public void detach(EventTarget target, String method, BiConsumer methodImpl) {
+        require(target, method, methodImpl);
 
-        Map<String, BiConsumer> eventMap = host.get(target);
-        if (eventMap == null) {
+        Map<String, BiConsumer> map = getMap(target);
+        map.put(method, remove(map.get(method), methodImpl));
+    }
+
+    private Map<String, BiConsumer> getMap(EventTarget target) {
+        return host.computeIfAbsent(target, k -> new ConcurrentHashMap<>());
+    }
+
+    public void raise(EventTarget target, String method, EventArgs args) {
+        require(target, method, args);
+
+        BiConsumer a = getMap(target).get(method);
+        if (a == null) {
             return;
         }
-        BiConsumer event = eventMap.get(eventName);
-        if (event != null) {
-            event.accept(target, args);
-        }
+        a.accept(target, args);
     }
 }

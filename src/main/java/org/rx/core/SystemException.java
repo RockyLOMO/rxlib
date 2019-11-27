@@ -34,7 +34,7 @@ public class SystemException extends NestedRuntimeException {
                 files.addAll(Arrays.toList(App.Config.getErrorCodeFiles()));
             }
 
-            return isNull(App.catchCall(() -> {
+            return isNull(catchCall(() -> {
                 Map<String, Object> codes = App.loadYaml(NQuery.of(files).toArray(String.class));
                 if (codes.isEmpty()) {
                     log.warn("load code.yml fail");
