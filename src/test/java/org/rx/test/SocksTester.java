@@ -10,6 +10,7 @@ import org.rx.socks.tcp.RemotingFactor;
 import org.rx.socks.tcp.TcpProxyServer;
 import org.rx.socks.tcp.TcpServer;
 import org.rx.test.bean.AuthEventArgs;
+import org.rx.test.bean.UserEventArgs;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
 
@@ -97,16 +98,16 @@ public class SocksTester {
         mgr.testError();
         assert mgr.computeInt(17, 1) == 18;
 
-        mgr.<UserManagerImpl.MgrEventArgs>attachEvent("onAdd", (s, e) -> {
+        mgr.<UserEventArgs>attachEvent("onAdd", (s, e) -> {
             System.out.println(String.format("remote event [%s] called..", JSON.toJSONString(e)));
-            e.setResultList(Arrays.toList("a", "b", "c"));
+            e.getResultList().addAll(Arrays.toList("a", "b", "c"));
             sleep(1000);
         });
         Thread.sleep(1000);
 //        server.raiseEvent(server.onAdd, new UserManagerImpl.MgrEventArgs());
 //        mgr.raiseEvent(mgr.onAdd, new UserManagerImpl.MgrEventArgs());
 //        server.addUser();
-        mgr.addUser();
+        mgr.addUser(null);
 
         mgr.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
         Thread.sleep(1000);

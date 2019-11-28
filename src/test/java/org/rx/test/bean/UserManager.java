@@ -19,7 +19,7 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
     default void close() {
     }
 
-    void addUser();
+    void addUser(PersonInfo person);
 
     int computeInt(int x, int y);
 

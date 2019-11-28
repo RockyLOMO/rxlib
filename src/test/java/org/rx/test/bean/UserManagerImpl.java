@@ -1,35 +1,30 @@
 package org.rx.test.bean;
 
 import com.alibaba.fastjson.JSON;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import org.rx.beans.FlagsEnum;
-import org.rx.core.EventArgs;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.InvalidOperationException;
 
-import java.util.List;
 import java.util.function.BiConsumer;
 
+@Slf4j
 public class UserManagerImpl implements UserManager {
-    @Data
-    @EqualsAndHashCode(callSuper = true)
-    public static class MgrEventArgs extends EventArgs {
-        private List<String> resultList;
-    }
+    public volatile BiConsumer<UserManager, UserEventArgs> onAddUser;
 
-    public volatile BiConsumer<UserManager, MgrEventArgs> onAdd;
-
-    @Override
-    public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.add();
-    }
+//    @Override
+//    public FlagsEnum<EventFlags> eventFlags() {
+//        return EventFlags.DynamicAttach.add();
+//    }
 
     @Override
-    public void addUser() {
-        MgrEventArgs e = new MgrEventArgs();
-        raiseEvent(onAdd, e);
-        System.out.println("MgrEventArgs: " + JSON.toJSONString(e.getResultList()));
-        System.out.println("call addUser..");
+    public void addUser(PersonInfo person) {
+        UserEventArgs e = new UserEventArgs(person);
+        raiseEvent(onAddUser, e);
+        if (e.isCancel()) {
+            log.info("addUser canceled");
+            return;
+        }
+        log.info("UserEventArgs.resultList {}", JSON.toJSONString(e.getResultList()));
+        log.info("addUser ok");
     }
 
     @Override

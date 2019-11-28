@@ -6,16 +6,13 @@ import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
-import org.rx.beans.DateTime;
-import org.rx.beans.FlagsEnum;
 import org.rx.beans.RandomList;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
 import static org.rx.beans.$.$;
@@ -35,9 +32,9 @@ public class CoreTester {
 
     @Test
     public void runNQuery() {
-        Set<Person> personSet = new HashSet<>();
+        Set<PersonInfo> personSet = new HashSet<>();
         for (int i = 0; i < 5; i++) {
-            Person p = new Person();
+            PersonInfo p = new PersonInfo();
             p.index = i;
             p.index2 = i % 2 == 0 ? 2 : i;
             p.index3 = i % 2 == 0 ? 3 : 4;
@@ -45,21 +42,21 @@ public class CoreTester {
             p.age = ThreadLocalRandom.current().nextInt(100);
             personSet.add(p);
         }
-        Person px = new Person();
+        PersonInfo px = new PersonInfo();
         px.index2 = 2;
         px.index3 = 41;
         personSet.add(px);
 
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, p -> {
             System.out.println("groupKey: " + p.left);
-            List<Person> list = p.right.toList();
+            List<PersonInfo> list = p.right.toList();
             System.out.println("items: " + Contract.toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
                 NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, p -> {
                     System.out.println("groupKey: " + toJsonString(p.left));
-                    List<Person> list = p.right.toList();
+                    List<PersonInfo> list = p.right.toList();
                     System.out.println("items: " + toJsonString(list));
                     return list.get(0);
                 }));
@@ -111,38 +108,46 @@ public class CoreTester {
         System.out.println("showResult: " + n);
         System.out.println(Contract.toJsonString(q.toList()));
     }
-
-    public interface IPerson {
-
-    }
-
-    public static class Person implements IPerson {
-        public int index;
-        public int index2;
-        public int index3;
-        public String name;
-        public int age;
-    }
-
     //endregion
 
     @Test
-    public void delegate() {
+    public void runNEvent() {
         UserManagerImpl mgr = new UserManagerImpl();
-        BiConsumer<UserManager, NEventArgs> b = (s, e) -> System.out.println(e);
-        BiConsumer<UserManager, NEventArgs> x = combine((s, e) -> System.out.println(e), b);
-        x.accept(mgr, new NEventArgs<>(DateTime.now()));
-        remove(x, b).accept(mgr, new NEventArgs(DateTime.now()));
+        PersonInfo p = new PersonInfo();
+        p.id = 1;
+        p.name = "rx";
+        p.age = 6;
 
-        FlagsEnum<EventTarget.EventFlags> flags = EventTarget.EventFlags.None.add().add(EventTarget.EventFlags.DynamicAttach);
-        System.out.println(flags.has(EventTarget.EventFlags.DynamicAttach));
+        BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+
+        mgr.onAddUser = a;
+        mgr.addUser(p);  //触发事件（a执行）
+
+        mgr.onAddUser = combine(mgr.onAddUser, b);
+        mgr.addUser(p); //触发事件（a, b执行）
+
+        mgr.onAddUser = remove(mgr.onAddUser, b);
+        mgr.addUser(p); //触发事件（b执行）
     }
 
     @SneakyThrows
     @Test
     public void threadPool() {
+        //Executors.newCachedThreadPool(); 没有queue缓冲，一直new thread执行，当cpu负载高时加上更多线程上下文切换损耗，性能会急速下降。
+
+        //Executors.newFixedThreadPool(16); 执行的thread数量固定，但当thread 等待时间（IO时间）过长时会造成吞吐量下降。当thread 执行时间过长时无界的LinkedBlockingQueue可能会OOM。
+
+        //new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(10000));
+        //有界的LinkedBlockingQueue可以避免OOM，但吞吐量下降的情况避免不了，加上LinkedBlockingQueue使用的重量级锁ReentrantLock对并发下性能可能有影响
+
+        //最佳线程数=CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)，由于执行任务的不同，CPU 等待时间和执行时间无法确定，
+        //因此换一种思路，当列队满的情况下，如果CPU使用率小于40%，则会动态增大线程池maxThreads 最大线程数的值来提高吞吐量。如果CPU使用率大于60%，则会动态减小maxThreads 值来降低生产者的任务生产速度。
         ThreadPool.DynamicConfig config = new ThreadPool.DynamicConfig();
-//        config.setMaxThreshold(1);
+        config.setMinThreshold(40);
+        config.setMaxThreshold(60);
+        //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
+        //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
                 .statistics(config);
         for (int i = 0; i < 100; i++) {
@@ -154,23 +159,8 @@ public class CoreTester {
             });
         }
 
-//        ExecutorService es1 = Executors.newCachedThreadPool();
-//        ExecutorService es2 = Executors.newFixedThreadPool(ThreadPool.CpuThreads);
-//        ExecutorService es3 = Executors.newFixedThreadPool(10);
-
         System.out.println("main thread done");
         System.in.read();
-    }
-
-    @SneakyThrows
-    @Test
-    public void reflect() {
-        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
-        System.out.println(bean.getError());
-
-        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
-        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
-        System.out.println(bean.getError());
     }
 
     @Test
@@ -179,6 +169,26 @@ public class CoreTester {
             System.out.println(System.currentTimeMillis());
             return false;
         });
+    }
+
+    @Test
+    public void randomList() {
+        RandomList<String> wr = new RandomList<>();
+        wr.add("a", 5);
+        wr.add("b", 2);
+        wr.add("c", 3);
+        for (int i = 0; i < 20; i++) {
+            System.out.println(wr.next());
+        }
+    }
+
+    @Test
+    public void shorterUUID() {
+        UUID id = UUID.randomUUID();
+        String sid = App.toShorterUUID(id);
+        UUID id2 = App.fromShorterUUID(sid);
+        System.out.println(sid);
+        assert id.equals(id2);
     }
 
     @Test
@@ -195,15 +205,15 @@ public class CoreTester {
         System.out.println(cache.size());
     }
 
+    @SneakyThrows
     @Test
-    public void randomList() {
-        RandomList<String> wr = new RandomList<>();
-        wr.add("a", 5);
-        wr.add("b", 2);
-        wr.add("c", 3);
-        for (int i = 0; i < 20; i++) {
-            System.out.println(wr.next());
-        }
+    public void reflect() {
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
+        System.out.println(bean.getError());
+
+        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
+        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
+        System.out.println(bean.getError());
     }
 
     @Test
@@ -231,15 +241,6 @@ public class CoreTester {
         } catch (SystemException e) {
             e.printStackTrace();
         }
-    }
-
-    @Test
-    public void shorterUUID() {
-        UUID id = UUID.randomUUID();
-        String sid = App.toShorterUUID(id);
-        UUID id2 = App.fromShorterUUID(sid);
-        System.out.println(sid);
-        assert id.equals(id2);
     }
 
     @Test

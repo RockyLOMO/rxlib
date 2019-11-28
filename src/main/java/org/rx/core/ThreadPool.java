@@ -211,6 +211,14 @@ public class ThreadPool extends ThreadPoolExecutor {
         this(CpuThreads + 1, computeThreads(1, 2, 1), 4, CpuThreads * 64, "ThreadPool");
     }
 
+    /**
+     * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
+     * @param coreThreads 最小线程数
+     * @param maxThreads 最大线程数
+     * @param keepAliveMinutes 超出最小线程数的最大线程数存活时间
+     * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
+     * @param poolName 线程池名称
+     */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, String poolName) {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
                 newThreadFactory(String.format("%s-%%d", poolName)), (r, executor) -> {
