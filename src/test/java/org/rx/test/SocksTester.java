@@ -18,72 +18,123 @@ import org.rx.test.bean.UserManagerImpl;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.rx.core.Contract.sleep;
 
 @Slf4j
 public class SocksTester {
     private TcpServer<RemotingFactor.RemotingState> tcpServer;
+    private TcpServer<RemotingFactor.RemotingState> tcpServer2;
 
-//    @Test
-//    public void apiRpc() {
-//        UserManagerImpl server = new UserManagerImpl();
+    @Test
+    public void apiRpc() {
+        UserManagerImpl server = new UserManagerImpl();
+        restartServer(server, 3307);
+
+        String ep = "127.0.0.1:3307";
+        String groupA = "a", groupB = "b";
+        List<UserManager> facadeGroupA = new ArrayList<>();
+        facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
+        facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
+
+        for (UserManager facade : facadeGroupA) {
+            assert facade.computeInt(1, 1) == 2;
+        }
+        //重启server，客户端自动重连
 //        restartServer(server, 3307);
-//
-//        UserManager mgr1 = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint("127.0.0.1:3307"), null,
-//                p -> Sockets.parseEndpoint("127.0.0.1:3307"));
-//        assert mgr1.computeInt(1, 1) == 2;
-//
-//        restartServer(server, 3307);
-//
-//        mgr1.testError();
-//        assert mgr1.computeInt(2, 2) == 4;
-//
-//        UserManager mgr2 = RemotingFactor.create(UserManager.class, "127.0.0.1:3307");
-//        assert mgr2.computeInt(1, 1) == 2;
-//        mgr2.testError();
-//        assert mgr2.computeInt(2, 2) == 4;
-//
-//        String event = "onAuth";
-//        mgr1.<AuthEventArgs>attachEvent(event, (s, e) -> {
-//            System.out.println(String.format("!!Mgr1 %s[flag=%s]!!", event, e.getFlag()));
-//            e.setFlag(1);
-//        });
-//        mgr2.<AuthEventArgs>attachEvent(event, (s, e) -> {
-//            System.out.println(String.format("!!Mgr2 %s[flag=%s]!!", event, e.getFlag()));
-//            e.setFlag(2);
-//        });
-//
-//        AuthEventArgs args = new AuthEventArgs(0);
-//        mgr1.raiseEvent(event, args);
-//        assert args.getFlag() == 1;
-//
-//        mgr2.raiseEvent(event, args);
-//        assert args.getFlag() == 2;
-//
-//        sleep(1000);
-//        args.setFlag(4);
-//        server.raiseEvent(event, args);
-//        assert args.getFlag() == 2;
-//
-//        mgr2.close();
-//        sleep(2000);
-//        args.setFlag(4);
-//        server.raiseEvent(event, args);
-//        assert args.getFlag() == 1;
-//    }
-//
-//    private void restartServer(UserManagerImpl server, int port) {
-//        if (tcpServer != null) {
-//            tcpServer.close();
-//        }
-//        tcpServer = RemotingFactor.listen(server, port);
-//        System.out.println("restartServer..");
-//        sleep(4000);
-//    }
+        for (UserManager facade : facadeGroupA) {
+            facade.testError();
+            assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
+        }
+
+        List<UserManager> facadeGroupB = new ArrayList<>();
+        facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
+        facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
+
+        for (UserManager facade : facadeGroupB) {
+            assert facade.computeInt(1, 1) == 2;
+            facade.testError();
+            assert facade.computeInt(2, 2) == 4;
+        }
+
+        //自定义事件（广播）
+        String groupAEvent = "onAuth-A", groupBEvent = "onAuth-B";
+        for (int i = 0; i < facadeGroupA.size(); i++) {
+            int x = i;
+            facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
+                System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
+                e.setFlag(e.getFlag() + 1);
+            });
+        }
+        for (int i = 0; i < facadeGroupB.size(); i++) {
+            int x = i;
+            facadeGroupB.get(i).<UserEventArgs>attachEvent(groupBEvent, (s, e) -> {
+                System.out.println(String.format("!!groupB - facade%s - %s[flag=%s]!!", x, groupBEvent, e.getFlag()));
+                e.setFlag(e.getFlag() + 1);
+            });
+        }
+
+        UserEventArgs args = new UserEventArgs(PersonInfo.def);
+        facadeGroupA.get(0).raiseEvent(groupAEvent, args);  //客户端触发事件，不广播
+        assert args.getFlag() == 1;
+        facadeGroupA.get(1).raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 2;
+
+        server.raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+
+        facadeGroupB.get(0).raiseEvent(groupBEvent, args);
+        assert args.getFlag() == 4;
+
+        sleep(1000);
+        args.setFlag(8);
+        server.raiseEvent(groupBEvent, args);
+        assert args.getFlag() == 9;
+
+        facadeGroupB.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
+        sleep(1000);
+        args.setFlag(16);
+        server.raiseEvent(groupBEvent, args);
+        assert args.getFlag() == 17;
+    }
 
     @SneakyThrows
+    private void epGroupReconnect() {
+        UserManagerImpl server = new UserManagerImpl();
+        restartServer(server, 3307);
+        String ep = "127.0.0.1:3307";
+        String groupA = "a", groupB = "b";
+
+        UserManager userManager = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, p -> {
+            InetSocketAddress result;
+            if (p.equals(Sockets.parseEndpoint(ep))) {
+                result = Sockets.parseEndpoint("127.0.0.1:3308");
+            } else {
+                result = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+            }
+            log.debug("reconnect {}", result);
+            return result;
+        });
+        assert userManager.computeInt(1, 1) == 2;
+        sleep(1000);
+        tcpServer.close();  //关闭3307
+        Tasks.scheduleOnce(() -> tcpServer2 = RemotingFactor.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
+        System.in.read();
+    }
+
+    private void restartServer(UserManagerImpl server, int port) {
+        if (tcpServer != null) {
+            tcpServer.close();
+        }
+        tcpServer = RemotingFactor.listen(server, port);
+        System.out.println("restartServer on port " + port);
+        sleep(2600);
+    }
+
     @Test
     public void implRpc() {
         //服务端监听
@@ -98,7 +149,7 @@ public class SocksTester {
 
         //注册事件（广播）
         facade.<UserEventArgs>attachEvent("onAddUser", (s, e) -> {
-            log.info("event onAddUser with {} called", JSON.toJSONString(e));
+            log.info("Event onAddUser with {} called", JSON.toJSONString(e));
             e.getResultList().addAll(Arrays.toList("a", "b", "c"));
             e.setCancel(false); //是否取消事件
         });
@@ -106,17 +157,16 @@ public class SocksTester {
 
         //服务端触发事件
         server.addUser(PersonInfo.def);
-
         //客户端触发事件
-//        Tasks.run(() -> facade.addUser(PersonInfo.def));
+        facade.addUser(PersonInfo.def);
 
         //自定义事件
-        facade.attachEvent("onTest", (s, e) -> System.out.println("!!onTest!!"));
+        String eventName = "onCustom";
+        facade.attachEvent(eventName, (s, e) -> System.out.println(String.format("CustomEvent %s called", eventName)));
         sleep(1000);
-        server.raiseEvent("onTest", EventArgs.Empty);
+        server.raiseEvent(eventName, EventArgs.Empty);
         sleep(1000);
-        facade.raiseEvent("onTest", EventArgs.Empty);
-        System.in.read();
+        facade.raiseEvent(eventName, EventArgs.Empty);
     }
 
     @SneakyThrows

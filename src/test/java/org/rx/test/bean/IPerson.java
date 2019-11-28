@@ -1,4 +1,6 @@
 package org.rx.test.bean;
 
-public interface IPerson {
+import java.io.Serializable;
+
+public interface IPerson extends Serializable {
 }

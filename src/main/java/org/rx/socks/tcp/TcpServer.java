@@ -115,8 +115,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         if (args.isCancel()) {
             return;
         }
-        Tasks.run(() -> client.ctx.writeAndFlush(pack));
-//        client.ctx.writeAndFlush(pack);
+        client.ctx.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         log.debug("ServerWrite {}", client.ctx.channel().remoteAddress());
     }
 }

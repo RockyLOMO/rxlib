@@ -63,8 +63,12 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         return EventFlags.None.add();
     }
 
-    @SneakyThrows
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
+        attachEvent(eventName, event, true);
+    }
+
+    @SneakyThrows
+    default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
         require(eventName);
 
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
@@ -72,10 +76,10 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
                 throw new InvalidOperationException(String.format("Event %s not defined", eventName));
             }
-            EventListener.getInstance().attach(this, eventName, event);
+            EventListener.getInstance().attach(this, eventName, event, combine);
             return;
         }
-        field.set(this, combine((BiConsumer<TSender, TArgs>) field.get(this), event));
+        field.set(this, combine ? combine((BiConsumer<TSender, TArgs>) field.get(this), event) : event);
     }
 
     @SneakyThrows

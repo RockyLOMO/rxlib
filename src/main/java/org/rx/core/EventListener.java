@@ -31,10 +31,14 @@ public class EventListener {
     private final Map<Object, Map<String, BiConsumer>> host = Collections.synchronizedMap(new WeakHashMap<>());
 
     public void attach(EventTarget target, String method, BiConsumer methodImpl) {
+        attach(target, method, methodImpl, true);
+    }
+
+    public void attach(EventTarget target, String method, BiConsumer methodImpl, boolean combine) {
         require(target, method, methodImpl);
 
         Map<String, BiConsumer> map = getMap(target);
-        map.put(method, combine(map.get(method), methodImpl));
+        map.put(method, combine ? combine(map.get(method), methodImpl) : methodImpl);
     }
 
     public void detach(EventTarget target, String method, BiConsumer methodImpl) {

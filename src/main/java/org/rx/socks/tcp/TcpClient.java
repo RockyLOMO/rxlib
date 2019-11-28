@@ -127,7 +127,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);
         raiseEvent(onSend, args);
-        if (args.isCancel()) {
+        if (args.isCancel() || ctx == null) {
             return;
         }
         ctx.writeAndFlush(pack);

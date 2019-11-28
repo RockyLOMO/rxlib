@@ -38,6 +38,12 @@ public final class RemotingFactor {
     }
 
     @RequiredArgsConstructor
+    private static class HostValue {
+        public final TcpServer<RemotingState> server;
+        public final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+    }
+
+    @RequiredArgsConstructor
     @Data
     private static class RemoteEventPack implements Serializable {
         private final String eventName;
@@ -130,7 +136,7 @@ public final class RemotingFactor {
                 pack = new CallPack(methodName, args);
             }
 
-            if (onHandshake != null) {
+            if (onHandshake != null || onReconnect != null) {
                 if (client == null) {
                     initHandshakeClient((T) o);
                 }
@@ -240,11 +246,14 @@ public final class RemotingFactor {
         }
     }
 
-    private static final Map<Object, TcpServer<RemotingState>> host = new ConcurrentHashMap<>();
-    private static final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+    private static final Map<Object, HostValue> host = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, Sockets.parseEndpoint(endpoint), Strings.EMPTY, null, null);
+        return create(contract, Sockets.parseEndpoint(endpoint), Strings.EMPTY, null);
+    }
+
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, Consumer<T> onHandshake) {
+        return create(contract, endpoint, groupId, onHandshake, null);
     }
 
     public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, Consumer<T> onHandshake, Function<InetSocketAddress, InetSocketAddress> onReconnect) {
@@ -267,9 +276,9 @@ public final class RemotingFactor {
     public static TcpServer<RemotingState> listen(Object contractInstance, int port) {
         require(contractInstance);
 
-        Class contract = contractInstance.getClass();
         return host.computeIfAbsent(contractInstance, k -> {
             TcpServer<RemotingState> server = TcpConfig.server(port, RemotingState.class);
+            HostValue hostValue = new HostValue(server);
             server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {
                 e.setCancel(true);
@@ -287,9 +296,10 @@ public final class RemotingFactor {
                         case Post:
                             EventTarget eventTarget = (EventTarget) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
-                                NQuery<SessionClient<RemotingState>> clients = NQuery.of(s.getClients(e.getClient().getGroupId())).where(x -> x.getState().broadcast);
+                                String groupId = e.getClient().getGroupId();
+                                NQuery<SessionClient<RemotingState>> clients = NQuery.of(s.getClients(groupId)).where(x -> x.getState().broadcast);
                                 if (!clients.any()) {
-                                    log.warn("Clients is empty");
+                                    log.warn("Group[{}].Client not found", groupId);
                                     return;
                                 }
                                 SessionClient<RemotingState> current = clients.contains(e.getClient()) ? e.getClient() : clients.first();
@@ -297,7 +307,7 @@ public final class RemotingFactor {
                                 pack.id = UUID.randomUUID();
                                 pack.remoteArgs = (EventArgs) args;
                                 BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = BiTuple.of(current, new ManualResetEvent(), pack.remoteArgs);
-                                eventHost.put(pack.id, tuple);
+                                hostValue.eventHost.put(pack.id, tuple);
 
                                 s.send(current, pack);
                                 log.info("server raise {} -> {} step1", current.getId(), pack.eventName);
@@ -319,15 +329,15 @@ public final class RemotingFactor {
                                         log.info("server raise {} broadcast {} ok", client.getId(), pack.eventName);
                                     }
 
-                                    eventHost.remove(pack.id);
+                                    hostValue.eventHost.remove(pack.id);
                                     log.info("server raise {} -> {} done", current.getId(), pack.eventName);
                                 }
-                            });
+                            }, false);  //combine不准
                             s.send(e.getClient(), p);
                             log.info("server attach {} {} ok", e.getClient().getId(), p.eventName);
                             break;
                         case PostBack:
-                            BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = eventHost.get(p.id);
+                            BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = hostValue.eventHost.get(p.id);
                             if (tuple != null) {
                                 log.info("server raise {} -> {} step3", tuple.left.getId(), p.eventName);
                                 tuple.right = p.remoteArgs;
@@ -342,13 +352,8 @@ public final class RemotingFactor {
                 }
 
                 CallPack pack = (CallPack) e.getValue();
-                Method method = NQuery.of(contract.getMethods()).where(p -> p.getName().equals(pack.methodName) && p.getParameterCount() == pack.parameters.length).firstOrDefault();
-                if (method == null) {
-                    throw new InvalidOperationException("Class %s Method %s not found", contract, pack.methodName);
-                }
                 try {
-                    pack.returnValue = Tasks.run(() -> method.invoke(contractInstance, pack.parameters)).get();
-//                    pack.returnValue = method.invoke(contractInstance, pack.parameters);
+                    pack.returnValue = Reflects.invokeMethod(contractInstance.getClass(), contractInstance, pack.methodName, pack.parameters);
                 } catch (Exception ex) {
                     log.error("listen", ex);
                     pack.setErrorMessage(String.format("%s %s", ex.getClass(), ex.getMessage()));
@@ -357,7 +362,7 @@ public final class RemotingFactor {
                 s.send(e.getClient(), pack);
             };
             server.start();
-            return server;
-        });
+            return hostValue;
+        }).server;
     }
 }
