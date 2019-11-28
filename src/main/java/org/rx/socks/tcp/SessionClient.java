@@ -6,21 +6,22 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
-import java.io.Serializable;
 import java.net.SocketAddress;
 
 @RequiredArgsConstructor
-public class SessionClient implements Serializable {
+public class SessionClient<T> {
+    protected final ChannelHandlerContext ctx;
     @Getter
     @Setter
-    private String appId;
-    protected final transient ChannelHandlerContext channel;
+    private String groupId;
+    @Getter
+    private final T state;
 
     public ChannelId getId() {
-        return channel.channel().id();
+        return ctx.channel().id();
     }
 
     public SocketAddress remoteAddress() {
-        return channel.channel().remoteAddress();
+        return ctx.channel().remoteAddress();
     }
 }

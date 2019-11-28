@@ -10,11 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
-import java.lang.ref.WeakReference;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -23,104 +20,26 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TcpServer<T extends SessionClient> extends Disposable implements EventTarget<TcpServer<T>> {
-    public abstract static class BaseServerHandler<T extends SessionClient> extends ChannelInboundHandlerAdapter {
-        protected static final Logger log = LoggerFactory.getLogger(BaseServerHandler.class);
-        private WeakReference<TcpServer<T>> weakRef;
-        private T client;
-
-        protected TcpServer<T> getServer() {
-            TcpServer<T> server = weakRef.get();
-            require(server);
-            return server;
-        }
-
-        protected T getClient() {
-            require(client);
-            return client;
-        }
-
-        public BaseServerHandler(TcpServer<T> server) {
-            require(server);
-            this.weakRef = new WeakReference<>(server);
-        }
-
-        @Override
-        public void channelActive(ChannelHandlerContext ctx) {
-//            super.channelActive(ctx);
-            log.debug("channelActive {}", ctx.channel().remoteAddress());
-            TcpServer<T> server = getServer();
-            if (server.getClients().size() > server.getCapacity()) {
-                log.warn("Not enough capacity");
-                Sockets.closeOnFlushed(ctx.channel());
-                return;
-            }
-            client = server.createClient(ctx);
-            NEventArgs<T> args = new NEventArgs<>(client);
-            server.raiseEvent(server.onConnected, args);
-            if (args.isCancel()) {
-                log.warn("Close client");
-                Sockets.closeOnFlushed(ctx.channel());
-            }
-        }
-
-        @Override
-        public void channelRead(ChannelHandlerContext ctx, Object msg) {
-            log.debug("channelRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
-            TcpServer<T> server = getServer();
-            Serializable pack;
-            if ((pack = as(msg, Serializable.class)) == null) {
-                log.warn("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
-                return;
-            }
-            server.raiseEvent(server.onReceive, new PackEventArgs<>(getClient(), pack));
-        }
-
-        @Override
-        public void channelInactive(ChannelHandlerContext ctx) {
-            log.debug("channelInactive {}", ctx.channel().remoteAddress());
-            TcpServer<T> server = getServer();
-            T client = getClient();
-            try {
-                server.raiseEvent(server.onDisconnected, new NEventArgs<>(client));
-            } finally {
-                server.removeClient(client);
-            }
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
-            TcpServer<T> server = getServer();
-            ErrorEventArgs<T> args = new ErrorEventArgs<>(getClient(), cause);
-            try {
-                server.raiseEvent(server.onError, args);
-            } catch (Exception e) {
-                log.error("serverCaught", e);
-            }
-            if (args.isCancel()) {
-                return;
-            }
-            Sockets.closeOnFlushed(ctx.channel());
-        }
-    }
-
-    public volatile BiConsumer<TcpServer<T>, NEventArgs<T>> onConnected, onDisconnected;
-    public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onSend, onReceive;
+public class TcpServer<T extends Serializable> extends Disposable implements EventTarget<TcpServer<T>> {
+    public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onConnected, onDisconnected, onSend, onReceive;
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
     public volatile BiConsumer<TcpServer<T>, EventArgs> onClosed;
     @Getter
     private final TcpConfig config;
-    private final Class clientType;
+    @Getter
+    private final Class<T> stateType;
     private ServerBootstrap bootstrap;
     private SslContext sslCtx;
-    @Getter(AccessLevel.PROTECTED)
-    private final Map<String, Set<T>> clients = new ConcurrentHashMap<>();
+    private final Map<String, Set<SessionClient<T>>> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
     @Getter
     @Setter
     private volatile int capacity = 1000000;
+
+    public int getClientSize() {
+        return clients.size();
+    }
 
     @Override
     protected void freeObjects() {
@@ -156,40 +75,38 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         }
     }
 
-    protected T createClient(ChannelHandlerContext ctx) {
-        return (T) Reflects.newInstance(isNull(clientType, SessionClient.class), ctx);
+    protected void addClient(SessionClient<T> client) {
+        require(client.getGroupId());
+
+        clients.computeIfAbsent(client.getGroupId(), k -> Collections.synchronizedSet(new HashSet<>())).add(client);
     }
 
-    protected synchronized void addClient(String appId, T client) {
-        client.setAppId(appId);
-        clients.computeIfAbsent(client.getAppId(), k -> Collections.synchronizedSet(new HashSet<>())).add(client);
-    }
-
-    protected synchronized void removeClient(T client) {
-        Set<T> set = getClients(client.getAppId());
+    protected void removeClient(SessionClient<T> client) {
+        Set<SessionClient<T>> set = getClients(client.getGroupId());
         if (set.removeIf(p -> p == client) && set.isEmpty()) {
-            clients.remove(client.getAppId());
+            clients.remove(client.getGroupId());
         }
     }
 
-    public Set<T> getClients(String appId) {
-        //appid is null
-        Set<T> set = clients.get(appId);
+    public Set<SessionClient<T>> getClients(String groupId) {
+        require(groupId);
+
+        Set<SessionClient<T>> set = clients.get(groupId);
         if (CollectionUtils.isEmpty(set)) {
-            throw new InvalidOperationException(String.format("AppId %s not found", appId));
+            throw new InvalidOperationException(String.format("GroupId %s not found", groupId));
         }
         return set;
     }
 
-    public T getClient(String appId, ChannelId channelId) {
-        T client = NQuery.of(getClients(appId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
+    public SessionClient<T> getClient(String groupId, ChannelId channelId) {
+        SessionClient<T> client = NQuery.of(getClients(groupId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
         if (client == null) {
-            throw new InvalidOperationException(String.format("AppId %s with ClientId %s not found", appId, channelId));
+            throw new InvalidOperationException(String.format("GroupId %s with ClientId %s not found", groupId, channelId));
         }
         return client;
     }
 
-    public void send(T client, Serializable pack) {
+    public void send(SessionClient<T> client, Serializable pack) {
         checkNotClosed();
         require(client, pack);
 
@@ -198,6 +115,8 @@ public class TcpServer<T extends SessionClient> extends Disposable implements Ev
         if (args.isCancel()) {
             return;
         }
-        client.channel.writeAndFlush(pack);
+        Tasks.run(() -> client.ctx.writeAndFlush(pack));
+//        client.ctx.writeAndFlush(pack);
+        log.debug("ServerWrite {}", client.ctx.channel().remoteAddress());
     }
 }

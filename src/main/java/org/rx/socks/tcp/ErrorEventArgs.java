@@ -7,9 +7,9 @@ import org.rx.core.NEventArgs;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ErrorEventArgs<T> extends NEventArgs<Throwable> {
-    private T client;
+    private SessionClient<T> client;
 
-    public ErrorEventArgs(T client, Throwable value) {
+    public ErrorEventArgs(SessionClient<T> client, Throwable value) {
         super(value);
         this.client = client;
     }

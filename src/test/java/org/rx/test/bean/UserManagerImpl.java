@@ -2,6 +2,7 @@ package org.rx.test.bean;
 
 import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.beans.FlagsEnum;
 import org.rx.core.InvalidOperationException;
 
 import java.util.function.BiConsumer;
@@ -10,10 +11,10 @@ import java.util.function.BiConsumer;
 public class UserManagerImpl implements UserManager {
     public volatile BiConsumer<UserManager, UserEventArgs> onAddUser;
 
-//    @Override
-//    public FlagsEnum<EventFlags> eventFlags() {
-//        return EventFlags.DynamicAttach.add();
-//    }
+    @Override
+    public FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DynamicAttach.add();
+    }
 
     @Override
     public void addUser(PersonInfo person) {

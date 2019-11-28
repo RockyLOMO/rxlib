@@ -114,7 +114,7 @@ public class CoreTester {
     public void runNEvent() {
         UserManagerImpl mgr = new UserManagerImpl();
         PersonInfo p = new PersonInfo();
-        p.id = 1;
+        p.index = 1;
         p.name = "rx";
         p.age = 6;
 

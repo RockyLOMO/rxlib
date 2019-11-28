@@ -1,10 +1,12 @@
 package org.rx.socks.tcp.packet;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 import java.io.Serializable;
 
-@Data
+@RequiredArgsConstructor
+@Getter
 public class HandshakePacket implements Serializable {
-    private String appId;
+    private final String groupId;
 }

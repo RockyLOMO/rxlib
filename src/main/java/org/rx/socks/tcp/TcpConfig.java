@@ -5,7 +5,9 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.rx.socks.MemoryMode;
 import org.rx.socks.Sockets;
+import org.rx.socks.tcp.packet.HandshakePacket;
 
+import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.function.Supplier;
 
@@ -14,14 +16,14 @@ import static org.rx.core.App.Config;
 @Data
 @RequiredArgsConstructor
 public class TcpConfig {
-    public static TcpClient client(InetSocketAddress serverEndpoint, String appId) {
-        TcpClient client = new TcpClient(packetConfig(serverEndpoint), appId);
+    public static TcpClient client(InetSocketAddress serverEndpoint, String groupId) {
+        TcpClient client = new TcpClient(packetConfig(serverEndpoint), new HandshakePacket(groupId));
         client.getConfig().setHandlerSupplier(() -> new PacketClientHandler(client));
         return client;
     }
 
-    public static <T extends SessionClient> TcpServer<T> server(int port, Class sessionClientType) {
-        TcpServer<T> server = new TcpServer<>(packetConfig(Sockets.getAnyEndpoint(port)), sessionClientType);
+    public static <T extends Serializable> TcpServer<T> server(int port, Class<T> stateType) {
+        TcpServer<T> server = new TcpServer<>(packetConfig(Sockets.getAnyEndpoint(port)), stateType);
         server.getConfig().setHandlerSupplier(() -> new PacketServerHandler<>(server));
         return server;
     }

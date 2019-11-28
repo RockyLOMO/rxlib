@@ -1,22 +1,46 @@
 package org.rx.socks.tcp;
 
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import lombok.extern.slf4j.Slf4j;
+import org.rx.core.EventArgs;
 import org.rx.core.InvalidOperationException;
+import org.rx.core.NEventArgs;
+import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.ErrorPacket;
-import org.rx.socks.tcp.packet.HandshakePacket;
 
-public class PacketClientHandler extends TcpClient.BaseClientHandler {
+import java.io.Serializable;
+import java.lang.ref.WeakReference;
+
+import static org.rx.core.Contract.as;
+import static org.rx.core.Contract.require;
+
+@Slf4j
+public class PacketClientHandler extends ChannelInboundHandlerAdapter {
+    private WeakReference<TcpClient> weakRef;
+
+    private TcpClient getClient() {
+        TcpClient client = weakRef.get();
+        require(client);
+        return client;
+    }
+
     public PacketClientHandler(TcpClient client) {
-        super(client);
+        require(client);
+        this.weakRef = new WeakReference<>(client);
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        super.channelActive(ctx);
+        log.debug("clientActive {}", ctx.channel().remoteAddress());
+        TcpClient client = getClient();
+        client.ctx = ctx;
+        client.isConnected = true;
 
-        HandshakePacket handshake = new HandshakePacket();
-        handshake.setAppId(getClient().getAppId());
-        ctx.writeAndFlush(handshake);
+        ctx.writeAndFlush(client.getHandshake());
+
+        client.connectWaiter.set();
+        client.raiseEvent(client.onConnected, EventArgs.Empty);
     }
 
     @Override
@@ -25,11 +49,41 @@ public class PacketClientHandler extends TcpClient.BaseClientHandler {
             exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", ((ErrorPacket) msg).getErrorMessage())));
             return;
         }
-        if (msg instanceof HandshakePacket) {
-            HandshakePacket handshake = (HandshakePacket) msg;
+        log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+
+        TcpClient client = getClient();
+        Serializable pack;
+        if ((pack = as(msg, Serializable.class)) == null) {
+            log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
             return;
         }
+        client.raiseEvent(client.onReceive, new NEventArgs<>(pack));
+    }
 
-        super.channelRead(ctx, msg);
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) {
+        log.debug("clientInactive {}", ctx.channel().remoteAddress());
+        TcpClient client = getClient();
+        client.isConnected = false;
+
+        NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+        client.raiseEvent(client.onDisconnected, args);
+        client.reconnect();
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
+        TcpClient client = getClient();
+        NEventArgs<Throwable> args = new NEventArgs<>(cause);
+        try {
+            client.raiseEvent(client.onError, args);
+        } catch (Exception e) {
+            log.error("clientCaught", e);
+        }
+        if (args.isCancel()) {
+            return;
+        }
+        Sockets.closeOnFlushed(ctx.channel());
     }
 }
