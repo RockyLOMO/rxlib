@@ -21,7 +21,7 @@ public class SessionClient<T> {
         return ctx.channel().id();
     }
 
-    public SocketAddress remoteAddress() {
+    public SocketAddress getRemoteAddress() {
         return ctx.channel().remoteAddress();
     }
 }

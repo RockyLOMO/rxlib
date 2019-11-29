@@ -18,7 +18,7 @@ public void apiRpc() {
         assert facade.computeInt(1, 1) == 2;
     }
     //重启server，客户端自动重连
-      restartServer(server, 3307);
+    restartServer(server, 3307);
     for (UserManager facade : facadeGroupA) {
         facade.testError();
         assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
