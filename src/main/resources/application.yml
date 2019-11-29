@@ -1,7 +1,6 @@
 app:
   bufferSize: 512
   socksTimeout: 16000
-  appId: rx
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
