@@ -86,7 +86,9 @@ public final class Contract {
 
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> remove(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
         if (a == null) {
-            require(b);
+            if (b == null) {
+                return null;
+            }
             return wrap(b);
         }
         EventTarget.Delegate<TSender, TArgs> aw = wrap(a);

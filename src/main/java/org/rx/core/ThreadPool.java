@@ -1,16 +1,16 @@
 package org.rx.core;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.sun.management.OperatingSystemMXBean;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
-import java.lang.management.ManagementFactory;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 
+import static org.rx.core.Contract.combine;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -21,8 +21,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static class DynamicConfig implements Serializable {
         private int variable = CpuThreads;
         private int minThreshold = 40, maxThreshold = 60;
-        private int samplingTimes = 4;
-        private int samplingDelay = 2000;
+        private int samplingTimes = 8;
     }
 
     @RequiredArgsConstructor
@@ -121,12 +120,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
     public static final int MaxThreads = CpuThreads * 100000;
-    private static final int PercentRatio = 100;
-    private static final OperatingSystemMXBean systemMXBean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-
-    public static int getCpuLoadPercent() {
-        return (int) Math.ceil(systemMXBean.getSystemCpuLoad() * PercentRatio);
-    }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
@@ -144,8 +137,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Setter
     @Getter
     private String poolName;
-    private ScheduledExecutorService monitorTimer;
-    private ScheduledFuture monitorFuture;
+    private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorBean>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
 
@@ -161,49 +153,45 @@ public class ThreadPool extends ThreadPoolExecutor {
     public synchronized ThreadPool statistics(DynamicConfig dynamicConfig) {
         require(dynamicConfig);
 
-        if (monitorTimer == null) {
-            monitorTimer = Executors.newSingleThreadScheduledExecutor(newThreadFactory(String.format("%sMonitor", poolName)));
-        }
-        if (monitorFuture != null) {
-            monitorFuture.cancel(true);
-        }
         decrementCounter = new AtomicInteger();
         incrementCounter = new AtomicInteger();
-        monitorFuture = monitorTimer.scheduleWithFixedDelay(() -> {
-            int cpuLoad = getCpuLoadPercent();
-            log.info("PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),
+        ManagementMonitor monitor = ManagementMonitor.getInstance();
+        monitor.scheduled = combine(Contract.remove(monitor.scheduled, scheduled), scheduled = (s, e) -> {
+            String prefix = String.format("%sMonitor", poolName);
+            int cpuLoad = e.getValue().getCpuLoadPercent();
+            log.debug("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", prefix, getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),
                     cpuLoad, dynamicConfig.getMinThreshold(), dynamicConfig.getMaxThreshold());
 
             if (cpuLoad > dynamicConfig.getMaxThreshold()) {
                 int c = decrementCounter.incrementAndGet();
                 if (c >= dynamicConfig.getSamplingTimes()) {
-                    log.debug("DynamicPoolSize decrement {} ok", dynamicConfig.getVariable());
+                    log.debug("{} decrement {} ok", prefix, dynamicConfig.getVariable());
                     setMaximumPoolSize(getMaximumPoolSize() - dynamicConfig.getVariable());
                     decrementCounter.set(0);
                 } else {
-                    log.debug("DynamicPoolSize decrementCounter={}", c);
+                    log.debug("{} decrementCounter={}", prefix, c);
                 }
             } else {
                 decrementCounter.set(0);
             }
 
             if (getQueue().isEmpty()) {
-                log.debug("DynamicPoolSize increment disabled");
+                log.debug("{} increment disabled", prefix);
                 return;
             }
             if (cpuLoad < dynamicConfig.getMinThreshold()) {
                 int c = incrementCounter.incrementAndGet();
                 if (c >= dynamicConfig.getSamplingTimes()) {
-                    log.debug("DynamicPoolSize increment {} ok", dynamicConfig.getVariable());
+                    log.debug("{} increment {} ok", prefix, dynamicConfig.getVariable());
                     setMaximumPoolSize(getMaximumPoolSize() + dynamicConfig.getVariable());
                     incrementCounter.set(0);
                 } else {
-                    log.debug("DynamicPoolSize incrementCounter={}", c);
+                    log.debug("{} incrementCounter={}", prefix, c);
                 }
             } else {
                 incrementCounter.set(0);
             }
-        }, dynamicConfig.getSamplingDelay(), dynamicConfig.getSamplingDelay(), TimeUnit.MILLISECONDS);
+        });
         return this;
     }
 
@@ -213,11 +201,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     /**
      * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
-     * @param coreThreads 最小线程数
-     * @param maxThreads 最大线程数
+     *
+     * @param coreThreads      最小线程数
+     * @param maxThreads       最大线程数
      * @param keepAliveMinutes 超出最小线程数的最大线程数存活时间
-     * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
-     * @param poolName 线程池名称
+     * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
+     * @param poolName         线程池名称
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, String poolName) {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),

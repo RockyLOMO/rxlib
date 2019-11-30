@@ -1,21 +1,12 @@
-package org.rx.util;
+package org.rx.core;
 
 import com.sun.management.OperatingSystemMXBean;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.rx.core.EventTarget;
-import org.rx.core.InvalidOperationException;
-import org.rx.core.NEventArgs;
-import org.rx.core.Tasks;
+import org.rx.beans.FlagsEnum;
 
-import javax.management.ListenerNotFoundException;
-import javax.management.NotificationBroadcaster;
-import javax.management.NotificationListener;
 import java.lang.management.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.Contract.as;
@@ -55,6 +46,12 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
 //    private MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
 //    private List<MemoryPoolMXBean> memoryPools = ManagementFactory.getMemoryPoolMXBeans();
 //    private Map<NotificationBroadcaster, NotificationListener> gcListeners = new HashMap<>();
+
+
+    @Override
+    public FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DynamicAttach.add(EventFlags.Quietly);
+    }
 
     private ManagementMonitor() {
         os = as(ManagementFactory.getOperatingSystemMXBean(), OperatingSystemMXBean.class);
