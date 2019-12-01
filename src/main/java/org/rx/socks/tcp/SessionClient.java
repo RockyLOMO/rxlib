@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
-import java.net.SocketAddress;
+import java.net.InetSocketAddress;
 
 @RequiredArgsConstructor
 public class SessionClient<T> {
@@ -21,7 +21,7 @@ public class SessionClient<T> {
         return ctx.channel().id();
     }
 
-    public SocketAddress getRemoteAddress() {
-        return ctx.channel().remoteAddress();
+    public InetSocketAddress getRemoteAddress() {
+        return (InetSocketAddress) ctx.channel().remoteAddress();
     }
 }
