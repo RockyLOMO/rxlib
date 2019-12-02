@@ -43,8 +43,8 @@ public class App extends SystemUtils {
     @Data
     public static class Config {
         private int bufferSize = 512;
-        private int socksTimeout = 20000;
-        private String appId = "rx";
+        private int socksTimeout = 16000;
+        private int scheduleDelay = 2000;
         private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
         private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
     }

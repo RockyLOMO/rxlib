@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 
 import static org.rx.beans.$.$;
+import static org.rx.core.App.Config;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -42,7 +43,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private Bootstrap bootstrap;
     private SslContext sslCtx;
     protected ChannelHandlerContext ctx;
-    protected ManualResetEvent connectWaiter;
     @Getter
     protected volatile boolean isConnected;
     @Getter
@@ -62,7 +62,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
         this.config = config;
         this.handshake = handshake;
-        connectWaiter = new ManualResetEvent();
     }
 
     @Override
@@ -88,7 +87,13 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         bootstrap = Sockets.bootstrap(Sockets.channelClass(), null, config.getMemoryMode(), null)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .handler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort())));
-        bootstrap.connect(config.getEndpoint());
+        ManualResetEvent connectWaiter = new ManualResetEvent();
+        bootstrap.connect(config.getEndpoint()).addListener(f -> {
+            if (!f.isSuccess()) {
+                log.debug("Connect {} fail", config.getEndpoint());
+            }
+            connectWaiter.set();
+        }); //不会触发异常
         if (wait) {
             connectWaiter.waitOne(config.getConnectTimeout());
             connectWaiter.reset();
@@ -107,19 +112,17 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                     log.debug("Client reconnected");
                     return;
                 }
-                try {
-                    bootstrap.connect(config.getEndpoint());
-                    connectWaiter.waitOne(config.getConnectTimeout());
-                    connectWaiter.reset();
-                } catch (Exception e) {
-                    log.error("Client reconnected", e);
-                }
+                bootstrap.connect(config.getEndpoint()).addListener(f -> {
+                    if (!f.isSuccess()) {
+                        log.debug("Connect {} fail", config.getEndpoint());
+                    }
+                });
             } finally {
                 if (!autoReconnect || isConnected) {
                     $f.v.cancel(false);
                 }
             }
-        }, 2 * 1000);
+        }, Config.getScheduleDelay());
     }
 
     public void send(Serializable pack) {

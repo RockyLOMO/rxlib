@@ -39,7 +39,6 @@ public class PacketClientHandler extends ChannelInboundHandlerAdapter {
 
         ctx.writeAndFlush(client.getHandshake());
 
-        client.connectWaiter.set();
         client.raiseEvent(client.onConnected, EventArgs.Empty);
     }
 

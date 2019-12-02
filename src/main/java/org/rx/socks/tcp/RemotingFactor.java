@@ -172,14 +172,19 @@ public final class RemotingFactor {
             client = TcpConfig.client(serverAddress, groupId);
             client.connect(true);
             client.setAutoReconnect(true);
+            client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
+                log.info("client reconnected");
+                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                onHandshake.accept(proxyObject);
+            });
             if (onReconnect != null) {
                 client.setAutoReconnect(false);
                 client.attachEvent(TcpClient.EventNames.Disconnected, (s, e) -> {
                     log.info("client disconnected");
                     while (client == null || !client.isConnected()) {
-                        log.info("client serverAddress changed to {}", serverAddress = onReconnect.apply(serverAddress));
-                        closeHandshakeClient();
                         try {
+                            log.info("client serverAddress changed to {}", serverAddress = onReconnect.apply(serverAddress));
+                            closeHandshakeClient();
                             initHandshakeClient(proxyObject);
                         } catch (Exception ex) {
                             log.debug("client reconnect error: {}", ex.getMessage());
@@ -187,11 +192,6 @@ public final class RemotingFactor {
                     }
                 });
             }
-            client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                log.info("client reconnected");
-                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-                onHandshake.accept(proxyObject);
-            });
             client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                 e.setCancel(true);
                 log.error("Remoting Error", e.getValue());
@@ -236,7 +236,7 @@ public final class RemotingFactor {
         }
 
         private void closeHandshakeClient() {
-            if (client == null) {
+            if (client == null || !client.isConnected()) {
                 return;
             }
             log.debug("client close");

@@ -8,9 +8,7 @@ import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.socks.Sockets;
-import org.rx.socks.tcp.RemotingFactor;
-import org.rx.socks.tcp.TcpProxyServer;
-import org.rx.socks.tcp.TcpServer;
+import org.rx.socks.tcp.*;
 import org.rx.test.bean.PersonInfo;
 import org.rx.test.bean.UserEventArgs;
 import org.rx.test.bean.UserManager;
@@ -167,6 +165,13 @@ public class SocksTester {
         server.raiseEvent(eventName, EventArgs.Empty);
         sleep(1000);
         facade.raiseEvent(eventName, EventArgs.Empty);
+    }
+
+    @Test
+    public void client() {
+        TcpClient client = TcpConfig.client(Sockets.parseEndpoint("127.0.0.1:80"), "");
+        client.connect(true);
+        System.out.println(client.isConnected());
     }
 
     @SneakyThrows
