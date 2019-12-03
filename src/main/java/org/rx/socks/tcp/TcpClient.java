@@ -163,7 +163,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpChannelInitializer.class.getClassLoader())),
+                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
                     new PacketClientHandler());
         }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
         ChannelFuture future = bootstrap.connect(config.getEndpoint());

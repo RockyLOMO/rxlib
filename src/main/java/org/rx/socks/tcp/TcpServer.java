@@ -2,6 +2,11 @@ package org.rx.socks.tcp;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
+import io.netty.handler.codec.serialization.ClassResolvers;
+import io.netty.handler.codec.serialization.ObjectDecoder;
+import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
@@ -10,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
+import org.rx.socks.tcp.packet.ErrorPacket;
+import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.util.*;
@@ -21,6 +28,79 @@ import static org.rx.core.Contract.*;
 @Slf4j
 @RequiredArgsConstructor
 public class TcpServer<T extends Serializable> extends Disposable implements EventTarget<TcpServer<T>> {
+    //not shareable
+    private class PacketServerHandler extends ChannelInboundHandlerAdapter {
+        private SessionClient<T> client;
+
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) {
+//        super.channelActive(ctx);
+            log.debug("serverActive {}", ctx.channel().remoteAddress());
+            if (getClientSize() > getCapacity()) {
+                log.warn("Not enough capacity");
+                Sockets.closeOnFlushed(ctx.channel());
+                return;
+            }
+            client = new SessionClient<>(ctx, getStateType() == null ? null : Reflects.newInstance(getStateType()));
+            PackEventArgs<T> args = new PackEventArgs<>(client, null);
+            raiseEvent(onConnected, args);
+            if (args.isCancel()) {
+                log.warn("Close client");
+                Sockets.closeOnFlushed(ctx.channel());
+            }
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            log.debug("serverRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+
+            Serializable pack;
+            if ((pack = as(msg, Serializable.class)) == null) {
+                ctx.writeAndFlush(new ErrorPacket("Packet discard"));
+                Sockets.closeOnFlushed(ctx.channel());
+                return;
+            }
+            if (tryAs(pack, HandshakePacket.class, p -> {
+                client.setGroupId(p.getGroupId());
+                addClient(client);
+            })) {
+                return;
+            }
+
+            if (client.getGroupId() == null) {
+                log.warn("ServerHandshake fail");
+                return;
+            }
+            //异步避免阻塞
+            Tasks.run(() -> raiseEvent(onReceive, new PackEventArgs<>(client, pack)));
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            log.debug("serverInactive {}", ctx.channel().remoteAddress());
+            try {
+                raiseEvent(onDisconnected, new PackEventArgs<>(client, null));
+            } finally {
+                removeClient(client);
+            }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
+            ErrorEventArgs<T> args = new ErrorEventArgs<>(client, cause);
+            try {
+                raiseEvent(onError, args);
+            } catch (Exception e) {
+                log.error("serverCaught", e);
+            }
+            if (args.isCancel()) {
+                return;
+            }
+            Sockets.closeOnFlushed(ctx.channel());
+        }
+    }
+
     public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onConnected, onDisconnected, onSend, onReceive;
     public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
     public volatile BiConsumer<TcpServer<T>, EventArgs> onClosed;
@@ -62,10 +142,20 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode(), null)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
-                .childHandler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc())));
+        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode(), channel -> {
+            ChannelPipeline pipeline = channel.pipeline();
+            if (sslCtx != null) {
+                pipeline.addLast(sslCtx.newHandler(channel.alloc()));
+            }
+            if (config.isEnableCompress()) {
+                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            pipeline.addLast(new ObjectEncoder(),
+                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
+                    new PacketServerHandler());
+        }).option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
         ChannelFuture future = bootstrap.bind(config.getEndpoint()).addListeners(Sockets.FireExceptionThenCloseOnFailure, f -> {
             if (!f.isSuccess()) {
                 return;
