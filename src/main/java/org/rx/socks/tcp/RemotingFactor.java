@@ -24,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.*;
@@ -68,13 +67,13 @@ public final class RemotingFactor {
     }
 
     @RequiredArgsConstructor
-    private static class ClientHandler<T> implements MethodInterceptor {
+    private static class ClientHandler implements MethodInterceptor {
         private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
 
+        public BiConsumer<Object, NEventArgs<TcpClient>> onHandshake;
+        public Function<InetSocketAddress, InetSocketAddress> preReconnect;
         private final Class targetType;
         private final String groupId;
-        private final Consumer<T> onHandshake;
-        private final Function<InetSocketAddress, InetSocketAddress> onReconnect;
         private final ManualResetEvent waitHandle = new ManualResetEvent();
         private volatile InetSocketAddress serverAddress;
         private CallPack resultPack;
@@ -96,14 +95,15 @@ public final class RemotingFactor {
             switch (methodName) {
                 case "attachEvent":
                 case "detachEvent":
-                    if (args.length == 2) {
+                    if (args.length == 2 || args.length == 3) {
                         String eventName = (String) args[0];
                         BiConsumer event = (BiConsumer) args[1];
                         if (targetType.isInterface()) {
                             if (methodName.equals("detachEvent")) {
                                 EventListener.getInstance().detach((EventTarget) o, eventName, event);
                             } else {
-                                EventListener.getInstance().attach((EventTarget) o, eventName, event);
+                                boolean combine = args.length != 3 || (boolean) args[2];
+                                EventListener.getInstance().attach((EventTarget) o, eventName, event, combine);
                             }
                         } else {
                             methodProxy.invokeSuper(o, args);
@@ -136,65 +136,77 @@ public final class RemotingFactor {
                 pack = new CallPack(methodName, args);
             }
 
-            if (onHandshake != null || onReconnect != null) {
-                if (client == null) {
-                    initHandshakeClient((T) o);
-                }
-                client.send(pack);
-                waitHandle.waitOne(client.getConfig().getConnectTimeout());
-            } else {
-                while (nonStatePool.get() == null
-                        && !nonStatePool.compareAndSet(null, new TcpClientPool(p -> TcpConfig.client(p, groupId), ThreadPool.MaxThreads))) {
-                }
-                try (TcpClient client = nonStatePool.get().borrow(serverAddress)) {  //已连接
-                    client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
-                        e.setCancel(true);
-                        log.error("Remoting Error", e.getValue());
-                        waitHandle.set();
-                    });
-                    client.<NEventArgs<Serializable>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                        resultPack = (CallPack) e.getValue();
-                        waitHandle.set();
-                    });
-
+            synchronized (this) {
+                if (onHandshake != null || preReconnect != null) {
+                    initHandshakeClient(o);
                     client.send(pack);
                     waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                } else {
+                    while (nonStatePool.get() == null
+                            && !nonStatePool.compareAndSet(null, new TcpClientPool(p -> TcpConfig.client(p, groupId), ThreadPool.MaxThreads))) {
+                    }
+                    try (TcpClient client = nonStatePool.get().borrow(serverAddress)) {  //已连接
+                        client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
+                            e.setCancel(true);
+                            waitHandle.set();
+                        });
+                        client.<NEventArgs<Serializable>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
+                            resultPack = (CallPack) e.getValue();
+                            waitHandle.set();
+                        });
+
+                        client.send(pack);
+                        waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                    }
                 }
+                log.debug("client send {} ok", pack.getClass());
             }
-            log.debug("client send {} ok", pack.getClass());
 
             waitHandle.reset();
             return resultPack != null ? resultPack.returnValue : null;
         }
 
-        private void initHandshakeClient(T proxyObject) {
+        private void initHandshakeClient(Object proxyObject) {
+            if (client != null) {
+                return;
+            }
             log.debug("initHandshakeClient {}", serverAddress);
             client = TcpConfig.client(serverAddress, groupId);
-            client.connect(true);
             client.setAutoReconnect(true);
+            client.setPreReconnect(preReconnect);
             client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                log.info("client reconnected");
+                log.info("client onHandshake");
                 client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-                onHandshake.accept(proxyObject);
+                if (onHandshake == null) {
+                    return;
+                }
+                onHandshake.accept(proxyObject, new NEventArgs<>(client));
             });
-            if (onReconnect != null) {
-                client.setAutoReconnect(false);
-                client.attachEvent(TcpClient.EventNames.Disconnected, (s, e) -> {
-                    log.info("client disconnected");
-                    while (client == null || !client.isConnected()) {
-                        try {
-                            log.info("client serverAddress changed to {}", serverAddress = onReconnect.apply(serverAddress));
-                            closeHandshakeClient();
-                            initHandshakeClient(proxyObject);
-                        } catch (Exception ex) {
-                            log.debug("client reconnect error: {}", ex.getMessage());
-                        }
-                    }
-                });
-            }
+//            if (onReconnect != null) {
+//                client.attachEvent(TcpClient.EventNames.Disconnected, (s, e) -> {
+//                    log.info("client onReconnect");
+//                    boolean x = client.isAutoReconnect();
+//                    client.setAutoReconnect(false);
+//                    NEventArgs<InetSocketAddress> args = new NEventArgs<>(serverAddress);
+//                    while (!client.isConnected()) {
+//                        try {
+//                            onReconnect.accept(proxyObject, args);
+//                            if (eq(serverAddress, args.getValue())) {
+//                                client.connect(true);
+//                            } else {
+//                                log.info("client serverAddress changed to {}", serverAddress);
+//                                initHandshakeClient(proxyObject);
+//                            }
+//                        } catch (Exception ex) {
+//                            log.debug("client reconnect error: {}", ex.getMessage());
+//                        }
+//                        sleep();
+//                    }
+//                    client.setAutoReconnect(x);
+//                });
+//            }
             client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                 e.setCancel(true);
-                log.error("Remoting Error", e.getValue());
                 waitHandle.set();
             });
             client.<NEventArgs<Serializable>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
@@ -230,9 +242,7 @@ public final class RemotingFactor {
                 }
                 waitHandle.set();
             });
-            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
-//            log.debug("onHandshake {}", serverAddress);
-//            onHandshake.accept(proxyObject);
+            client.connect(true);
         }
 
         private void closeHandshakeClient() {
@@ -252,23 +262,25 @@ public final class RemotingFactor {
         return create(contract, Sockets.parseEndpoint(endpoint), Strings.EMPTY, null);
     }
 
-    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, Consumer<T> onHandshake) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake) {
         return create(contract, endpoint, groupId, onHandshake, null);
     }
 
-    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, Consumer<T> onHandshake, Function<InetSocketAddress, InetSocketAddress> onReconnect) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake, Function<InetSocketAddress, InetSocketAddress> preReconnect) {
         require(contract, endpoint);
 
         if (EventTarget.class.isAssignableFrom(contract) && onHandshake == null) {
-            onHandshake = p -> {
+            onHandshake = (s, e) -> {
             };
         }
-        ClientHandler<T> handler = new ClientHandler<>(contract, groupId, onHandshake, onReconnect);
+        ClientHandler handler = new ClientHandler(contract, groupId);
         handler.serverAddress = endpoint;
+        handler.onHandshake = (BiConsumer<Object, NEventArgs<TcpClient>>) onHandshake;
+        handler.preReconnect = preReconnect;
         T p = (T) Enhancer.create(contract, handler);
-        if (onHandshake != null) {
-            log.debug("onHandshake {}", endpoint);
-            onHandshake.accept(p);
+        if (handler.onHandshake != null || handler.preReconnect != null) {
+            log.debug("initHandshakeClient {}", endpoint);
+            handler.initHandshakeClient(p);
         }
         return p;
     }
@@ -290,7 +302,7 @@ public final class RemotingFactor {
                         case Register:
                             e.getClient().getState().broadcast = true;
                             break;
-                        case Unregister:
+                        case Unregister:  //客户端退出会自动处理
                             e.getClient().getState().broadcast = false;
                             break;
                         case Post:

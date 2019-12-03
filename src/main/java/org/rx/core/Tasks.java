@@ -110,6 +110,20 @@ public final class Tasks {
         return schedule(task, initDelay, oneDay, "scheduleDaily");
     }
 
+    public static Future scheduleUntil(Action task, Func<Boolean> checkFunc, long delay) {
+        require(task, checkFunc);
+
+        $<Future> future = $();
+        future.v = schedule(() -> {
+            if (checkFunc.invoke()) {
+                future.v.cancel(true);
+                return;
+            }
+            task.invoke();
+        }, delay);
+        return future.v;
+    }
+
     public static Future scheduleOnce(Action task, long delay) {
         require(task);
 

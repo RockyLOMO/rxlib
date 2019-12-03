@@ -107,15 +107,15 @@ public class SocksTester {
         String ep = "127.0.0.1:3307";
         String groupA = "a", groupB = "b";
 
-        UserManager userManager = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, p -> {
-            InetSocketAddress result;
+        UserManager userManager = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, (p) -> {
+            InetSocketAddress r;
             if (p.equals(Sockets.parseEndpoint(ep))) {
-                result = Sockets.parseEndpoint("127.0.0.1:3308");
+                r = Sockets.parseEndpoint("127.0.0.1:3308");
             } else {
-                result = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+                r = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
             }
-            log.debug("reconnect {}", result);
-            return result;
+            log.debug("reconnect {}", r);
+            return r;
         });
         assert userManager.computeInt(1, 1) == 2;
         sleep(1000);
@@ -140,7 +140,9 @@ public class SocksTester {
         RemotingFactor.listen(server, 3307);
 
         //客户端 facade
-        UserManagerImpl facade = RemotingFactor.create(UserManagerImpl.class, "127.0.0.1:3307");
+        UserManagerImpl facade = RemotingFactor.create(UserManagerImpl.class, Sockets.parseEndpoint("127.0.0.1:3307"), "", (s, e) -> {
+            System.out.println("onHandshake: " + s.computeInt(1, 2));
+        });
         assert facade.computeInt(1, 1) == 2; //服务端计算并返回
         facade.testError(); //测试异常
         assert facade.computeInt(17, 1) == 18;

@@ -17,6 +17,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static org.rx.core.App.Config;
+
 @Slf4j
 public final class Contract {
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
@@ -24,7 +26,7 @@ public final class Contract {
 
     //App循环引用
     static void init() {
-        String[] jsonSkipTypes = App.Config.getJsonSkipTypes();
+        String[] jsonSkipTypes = Config.getJsonSkipTypes();
         if (!Arrays.isEmpty(jsonSkipTypes)) {
             SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
         }
@@ -143,6 +145,10 @@ public final class Contract {
 
     public static boolean tryClose(Object obj, boolean quietly) {
         return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
+    }
+
+    public static void sleep() {
+        sleep(Config.getScheduleDelay());
     }
 
     @SneakyThrows

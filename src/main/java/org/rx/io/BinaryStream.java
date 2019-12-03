@@ -3,9 +3,12 @@ package org.rx.io;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.App;
+import org.rx.core.Contract;
 import org.rx.socks.Bytes;
 
 import java.io.*;
+
+import static org.rx.core.Contract.Utf8;
 
 public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     private boolean leaveOpen;

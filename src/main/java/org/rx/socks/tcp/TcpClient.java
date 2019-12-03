@@ -1,7 +1,13 @@
 package org.rx.socks.tcp;
 
+import com.google.common.util.concurrent.RateLimiter;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
+import io.netty.handler.codec.serialization.ClassResolvers;
+import io.netty.handler.codec.serialization.ObjectDecoder;
+import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -9,18 +15,20 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.beans.$;
 import org.rx.core.*;
 import org.rx.core.ManualResetEvent;
 import org.rx.socks.Sockets;
+import org.rx.socks.tcp.packet.ErrorPacket;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
-import java.util.concurrent.Future;
+import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
-import static org.rx.beans.$.$;
 import static org.rx.core.App.Config;
+import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -33,6 +41,62 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         String Receive = "onReceive";
     }
 
+    private class PacketClientHandler extends ChannelInboundHandlerAdapter {
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) {
+            log.debug("clientActive {}", ctx.channel().remoteAddress());
+            channel = ctx;
+            connected.compareAndSet(false, true);
+
+            ctx.writeAndFlush(getHandshake()).addListener(p -> {
+                if (p.isSuccess()) {
+                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
+                }
+            });
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            if (msg instanceof ErrorPacket) {
+                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", ((ErrorPacket) msg).getErrorMessage())));
+                return;
+            }
+            log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+
+            Serializable pack;
+            if ((pack = as(msg, Serializable.class)) == null) {
+                log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
+                return;
+            }
+            Tasks.run(() -> raiseEvent(onReceive, new NEventArgs<>(pack)));
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            log.debug("clientInactive {}", ctx.channel().remoteAddress());
+            connected.compareAndSet(true, false);
+
+            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
+            raiseEvent(onDisconnected, args);
+            reconnect();
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
+            NEventArgs<Throwable> args = new NEventArgs<>(cause);
+            try {
+                raiseEvent(onError, args);
+            } catch (Exception e) {
+                log.error("clientCaught", e);
+            }
+            if (args.isCancel()) {
+                return;
+            }
+            Sockets.closeOnFlushed(ctx.channel());
+        }
+    }
+
     public volatile BiConsumer<TcpClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<TcpClient, NEventArgs<Serializable>> onSend, onReceive;
     public volatile BiConsumer<TcpClient, NEventArgs<Throwable>> onError;
@@ -42,12 +106,17 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private HandshakePacket handshake;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
-    protected ChannelHandlerContext ctx;
-    @Getter
-    protected volatile boolean isConnected;
+    private ChannelHandlerContext channel;
+    private AtomicBoolean connected = new AtomicBoolean();
     @Getter
     @Setter
     private volatile boolean autoReconnect;
+    @Setter
+    private volatile Function<InetSocketAddress, InetSocketAddress> preReconnect;
+
+    public boolean isConnected() {
+        return connected.get();
+    }
 
     public TcpClient(TcpConfig config, HandshakePacket handshake) {
         init(config, handshake);
@@ -68,7 +137,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     protected void freeObjects() {
         autoReconnect = false; //import
         Sockets.closeBootstrap(bootstrap);
-        isConnected = false;
+        connected.compareAndSet(true, false);
     }
 
     public void connect() {
@@ -77,63 +146,93 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
     @SneakyThrows
     public void connect(boolean wait) {
-        if (isConnected) {
+        if (isConnected()) {
             throw new InvalidOperationException("Client has connected");
         }
 
         if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = Sockets.bootstrap(Sockets.channelClass(), null, config.getMemoryMode(), null)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
-                .handler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort())));
+        bootstrap = Sockets.bootstrap(Sockets.channelClass(), null, config.getMemoryMode(), channel -> {
+            ChannelPipeline pipeline = channel.pipeline();
+            if (sslCtx != null) {
+                pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));
+            }
+            if (config.isEnableCompress()) {
+                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            pipeline.addLast(new ObjectEncoder(),
+                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpChannelInitializer.class.getClassLoader())),
+                    new PacketClientHandler());
+        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
+        ChannelFuture future = bootstrap.connect(config.getEndpoint());
+        if (!wait) {
+            future.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            return;
+        }
         ManualResetEvent connectWaiter = new ManualResetEvent();
-        bootstrap.connect(config.getEndpoint()).addListener(f -> {
+        future.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.debug("Connect {} fail", config.getEndpoint());
+                log.debug("connect {} fail", config.getEndpoint());
+                f.channel().close();
+                if (autoReconnect) {
+                    reconnect(connectWaiter);
+                    return;
+                }
             }
             connectWaiter.set();
-        }); //不会触发异常
-        if (wait) {
-            connectWaiter.waitOne(config.getConnectTimeout());
-            connectWaiter.reset();
+        });
+        connectWaiter.waitOne();
+        connectWaiter.reset();
+        if (!autoReconnect && !isConnected()) {
+            throw new InvalidOperationException("Client connect fail");
         }
     }
 
     protected void reconnect() {
-        if (!autoReconnect || isConnected) {
+        reconnect(null);
+    }
+
+    private void reconnect(ManualResetEvent mainWaiter) {
+        if (!autoReconnect || isConnected()) {
             return;
         }
 
-        $<Future> $f = $();
-        $f.v = Tasks.schedule(() -> {
-            try {
-                if (isConnected) {
-                    log.debug("Client reconnected");
-                    return;
+        ManualResetEvent waiter = new ManualResetEvent();
+//        RateLimiter limiter = RateLimiter.create(1);
+        Tasks.scheduleUntil(() -> {
+            InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
+            bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    log.debug("connect {} fail", ep);
+                    f.channel().close();
+                } else {
+                    log.debug("connect {} ok", ep);
+                    config.setEndpoint(ep);
                 }
-                bootstrap.connect(config.getEndpoint()).addListener(f -> {
-                    if (!f.isSuccess()) {
-                        log.debug("Connect {} fail", config.getEndpoint());
-                    }
-                });
-            } finally {
-                if (!autoReconnect || isConnected) {
-                    $f.v.cancel(false);
-                }
+                waiter.set();
+            });
+            waiter.waitOne();
+            waiter.reset();
+        }, () -> {
+            boolean ok = !autoReconnect || isConnected();
+            if (ok && mainWaiter != null) {
+                mainWaiter.set();
             }
+            return ok;
         }, Config.getScheduleDelay());
     }
 
     public void send(Serializable pack) {
-        require(pack, (Object) isConnected);
+        require(pack, (Object) isConnected());
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);
         raiseEvent(onSend, args);
-        if (args.isCancel() || ctx == null) {
+        if (args.isCancel() || channel == null) {
             return;
         }
-        ctx.writeAndFlush(pack);
-        log.debug("ClientWrite {}", ctx.channel().remoteAddress());
+        channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        log.debug("clientWrite {} {}", getConfig().getEndpoint(), pack);
     }
 }

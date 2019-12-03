@@ -66,12 +66,15 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                 .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .childHandler(new TcpChannelInitializer(config, sslCtx == null ? null : channel -> sslCtx.newHandler(channel.alloc())));
-        ChannelFuture f = bootstrap.bind(config.getEndpoint());
-        isStarted = true;
-        log.debug("Listened on port {}..", config.getEndpoint());
-
+        ChannelFuture future = bootstrap.bind(config.getEndpoint()).addListeners(Sockets.FireExceptionThenCloseOnFailure, f -> {
+            if (!f.isSuccess()) {
+                return;
+            }
+            isStarted = true;
+            log.debug("Listened on port {}..", config.getEndpoint());
+        });
         if (waitClose) {
-            f.channel().closeFuture().sync();
+            future.channel().closeFuture().sync();
         }
     }
 
@@ -116,6 +119,5 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
             return;
         }
         client.ctx.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-        log.debug("ServerWrite {}", client.ctx.channel().remoteAddress());
     }
 }

@@ -17,9 +17,7 @@ import static org.rx.core.App.Config;
 @RequiredArgsConstructor
 public class TcpConfig {
     public static TcpClient client(InetSocketAddress serverEndpoint, String groupId) {
-        TcpClient client = new TcpClient(packetConfig(serverEndpoint), new HandshakePacket(groupId));
-        client.getConfig().setHandlerSupplier(() -> new PacketClientHandler(client));
-        return client;
+        return new TcpClient(packetConfig(serverEndpoint), new HandshakePacket(groupId));
     }
 
     public static <T extends Serializable> TcpServer<T> server(int port, Class<T> stateType) {
@@ -29,13 +27,14 @@ public class TcpConfig {
     }
 
     private static TcpConfig packetConfig(InetSocketAddress endpoint) {
-        TcpConfig config = new TcpConfig(endpoint);
-        config.setEnableSsl(true);
+        TcpConfig config = new TcpConfig();
+        config.setEndpoint(endpoint);
+        config.setEnableSsl(false);
         config.setEnableCompress(true);
         return config;
     }
 
-    private final InetSocketAddress endpoint;
+    private InetSocketAddress endpoint;
     private int workThread;
     private MemoryMode memoryMode;
     private int connectTimeout = Config.getSocksTimeout();

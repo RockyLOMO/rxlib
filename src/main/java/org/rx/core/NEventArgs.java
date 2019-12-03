@@ -4,7 +4,8 @@ import lombok.*;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@RequiredArgsConstructor
+@NoArgsConstructor
+@AllArgsConstructor
 public class NEventArgs<T> extends EventArgs {
-    private final T value;
+    private T value;
 }

@@ -28,6 +28,12 @@ import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
+    public static final ChannelFutureListener FireExceptionThenCloseOnFailure = f -> {
+        if (!f.isSuccess()) {
+            f.channel().pipeline().fireExceptionCaught(f.cause());
+            f.channel().close();
+        }
+    };
     private static final Lazy<EventLoopGroup> WorkGroup = new Lazy<>(() -> Sockets.eventLoopGroup(0));
 
     public static void writeAndFlush(Channel channel, List<Object> packs) {
@@ -211,6 +217,10 @@ public final class Sockets {
 
         String[] arr = Strings.split(endpoint, ":", 2);
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+    }
+
+    public static InetSocketAddress newEndpoint(String endpoint, int port) {
+        return newEndpoint(parseEndpoint(endpoint), port);
     }
 
     public static InetSocketAddress newEndpoint(InetSocketAddress endpoint, int port) {
