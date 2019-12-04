@@ -28,11 +28,6 @@ import static org.rx.core.Contract.*;
 public final class NQuery<T> implements Iterable<T> {
     //region nestedTypes
     @FunctionalInterface
-    public interface IndexSelector<T, TR> {
-        TR apply(T t, int index);
-    }
-
-    @FunctionalInterface
     public interface IndexPredicate<T> {
         boolean test(T t, int index);
 
@@ -208,7 +203,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().map(selector));
     }
 
-    public <TR> NQuery<TR> select(IndexSelector<T, TR> selector) {
+    public <TR> NQuery<TR> select(Streams.FunctionWithIndex<T, TR> selector) {
         List<TR> result = newList();
         AtomicInteger counter = new AtomicInteger();
         stream().forEach(t -> result.add(selector.apply(t, counter.getAndIncrement())));
@@ -219,7 +214,7 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().flatMap(p -> newStream(selector.apply(p))));
     }
 
-    public <TR> NQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(Streams.FunctionWithIndex<T, Collection<TR>> selector) {
         List<TR> result = newList();
         AtomicInteger counter = new AtomicInteger();
         stream().forEach(t -> newStream(selector.apply(t, counter.getAndIncrement())).forEach(result::add));
@@ -256,6 +251,15 @@ public final class NQuery<T> implements Iterable<T> {
         List<TI> inner = newList();
         stream().forEach(t -> newStream(innerSelector.apply(t)).forEach(inner::add));
         return join(inner, keySelector, resultSelector);
+    }
+
+    public <TI, TR> NQuery<TR> leftJoin(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return me(stream().flatMap(p -> {
+            if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
+                return Stream.of(resultSelector.apply(p, null));
+            }
+            return newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3));
+        }));
     }
 
     public boolean all(Predicate<T> predicate) {
