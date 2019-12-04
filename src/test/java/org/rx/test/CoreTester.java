@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
 import org.rx.beans.RandomList;
+import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
@@ -25,7 +26,7 @@ public class CoreTester {
     @Test
     public void runParallelNQuery() {
         for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-                .groupBy(p -> p > 5, p -> p.right.first())) {
+                .groupBy(p -> p > 5, (p, x) -> x.first())) {
             System.out.println(integer.toString());
         }
     }
@@ -47,16 +48,30 @@ public class CoreTester {
         px.index3 = 41;
         personSet.add(px);
 
-        showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, p -> {
-            System.out.println("groupKey: " + p.left);
-            List<PersonInfo> list = p.right.toList();
+        showResult("leftJoin", NQuery.of(new PersonInfo(27, 27, 27, "jack", 6),
+                new PersonInfo(28, 28, 28, "tom", 6),
+                new PersonInfo(29, 29, 29, "lily", 8),
+                new PersonInfo(30, 30, 30, "cookie", 6)).leftJoin(
+                Arrays.toList(new PersonInfo(27, 27, 27, "cookie", 5),
+                        new PersonInfo(28, 28, 28, "tom", 10),
+                        new PersonInfo(29, 29, 29, "jack", 1),
+                        new PersonInfo(30, 30, 30, "session", 25),
+                        new PersonInfo(31, 31, 31, "trump", 55),
+                        new PersonInfo(32, 32, 32, "jack", 55)), (p, x) -> p.name.equals(x.name), (p, x) -> {
+                    return Tuple.of(p, x);
+                }
+        ));
+
+        showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
+            System.out.println("groupKey: " + p);
+            List<PersonInfo> list = x.toList();
             System.out.println("items: " + Contract.toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, p -> {
-                    System.out.println("groupKey: " + toJsonString(p.left));
-                    List<PersonInfo> list = p.right.toList();
+                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, (p, x) -> {
+                    System.out.println("groupKey: " + toJsonString(p));
+                    List<PersonInfo> list = x.toList();
                     System.out.println("items: " + toJsonString(list));
                     return list.get(0);
                 }));

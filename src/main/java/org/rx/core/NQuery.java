@@ -1,6 +1,8 @@
 package org.rx.core;
 
 import com.google.common.collect.Streams;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
@@ -9,8 +11,6 @@ import org.rx.beans.Tuple;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.Collections;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
@@ -25,8 +25,14 @@ import static org.rx.core.Contract.*;
  *
  * @param <T>
  */
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class NQuery<T> implements Iterable<T> {
     //region nestedTypes
+    @FunctionalInterface
+    public interface IndexSelector<T, TR> {
+        TR apply(T t, int index);
+    }
+
     @FunctionalInterface
     public interface IndexPredicate<T> {
         boolean test(T t, int index);
@@ -106,16 +112,11 @@ public final class NQuery<T> implements Iterable<T> {
     //endregion
 
     //region Member
-    private Collection current;
+    private Collection<T> current;
     private boolean isParallel;
 
     public Stream<T> stream() {
         return isParallel ? current.parallelStream() : current.stream();
-    }
-
-    private NQuery(Collection<T> set, boolean isParallel) {
-        this.current = set;
-        this.isParallel = isParallel;
     }
 
     @Override
@@ -125,12 +126,12 @@ public final class NQuery<T> implements Iterable<T> {
 
     private <TR> List<TR> newList() {
         int count = count();
-        return isParallel ? new CopyOnWriteArrayList<>() : new ArrayList<>(count);
+        return isParallel ? new Vector<>(count) : new ArrayList<>(count);//CopyOnWriteArrayList 写性能差
     }
 
     private <TR> Set<TR> newSet() {
         int count = count();
-        return isParallel ? new CopyOnWriteArraySet<>() : new LinkedHashSet<>(count);
+        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
@@ -157,24 +158,23 @@ public final class NQuery<T> implements Iterable<T> {
     private <TR> NQuery<TR> me(Stream<TR> stream, EachFunc<TR> func) {
         boolean isParallel = stream.isParallel();
         Spliterator<TR> spliterator = stream.spliterator();
-        return me(StreamSupport.stream(
-                new Spliterators.AbstractSpliterator<TR>(spliterator.estimateSize(), spliterator.characteristics()) {
-                    AtomicBoolean breaker = new AtomicBoolean();
-                    AtomicInteger counter = new AtomicInteger();
+        return me(StreamSupport.stream(new Spliterators.AbstractSpliterator<TR>(spliterator.estimateSize(), spliterator.characteristics()) {
+            AtomicBoolean breaker = new AtomicBoolean();
+            AtomicInteger counter = new AtomicInteger();
 
-                    @Override
-                    public boolean tryAdvance(Consumer action) {
-                        return spliterator.tryAdvance(p -> {
-                            int flags = func.each(p, counter.getAndIncrement());
-                            if ((flags & EachFunc.Accept) == EachFunc.Accept) {
-                                action.accept(p);
-                            }
-                            if ((flags & EachFunc.Break) == EachFunc.Break) {
-                                breaker.set(true);
-                            }
-                        }) && !breaker.get();
+            @Override
+            public boolean tryAdvance(Consumer action) {
+                return spliterator.tryAdvance(p -> {
+                    int flags = func.each(p, counter.getAndIncrement());
+                    if ((flags & EachFunc.Accept) == EachFunc.Accept) {
+                        action.accept(p);
                     }
-                }, isParallel));
+                    if ((flags & EachFunc.Break) == EachFunc.Break) {
+                        breaker.set(true);
+                    }
+                }) && !breaker.get();
+            }
+        }, isParallel));
     }
 
     @FunctionalInterface
@@ -203,22 +203,18 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().map(selector));
     }
 
-    public <TR> NQuery<TR> select(Streams.FunctionWithIndex<T, TR> selector) {
-        List<TR> result = newList();
+    public <TR> NQuery<TR> select(IndexSelector<T, TR> selector) {
         AtomicInteger counter = new AtomicInteger();
-        stream().forEach(t -> result.add(selector.apply(t, counter.getAndIncrement())));
-        return me(result);
+        return me(stream().map(p -> selector.apply(p, counter.getAndIncrement())));
     }
 
     public <TR> NQuery<TR> selectMany(Function<T, Collection<TR>> selector) {
         return me(stream().flatMap(p -> newStream(selector.apply(p))));
     }
 
-    public <TR> NQuery<TR> selectMany(Streams.FunctionWithIndex<T, Collection<TR>> selector) {
-        List<TR> result = newList();
+    public <TR> NQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
-        stream().forEach(t -> newStream(selector.apply(t, counter.getAndIncrement())).forEach(result::add));
-        return me(result);
+        return me(stream().flatMap(p -> newStream(selector.apply(p, counter.getAndIncrement()))));
     }
 
     public NQuery<T> where(Predicate<T> predicate) {
@@ -226,15 +222,8 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public NQuery<T> where(IndexPredicate<T> predicate) {
-        List<T> result = newList();
         AtomicInteger counter = new AtomicInteger();
-        stream().forEach(t -> {
-            if (!predicate.test(t, counter.getAndIncrement())) {
-                return;
-            }
-            result.add(t);
-        });
-        return me(result);
+        return me(stream().filter(p -> predicate.test(p, counter.getAndIncrement())));
     }
 
     public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
@@ -242,15 +231,11 @@ public final class NQuery<T> implements Iterable<T> {
     }
 
     public <TI, TR> NQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        List<TI> inner = newList();
-        stream().forEach(t -> inner.add(innerSelector.apply(t)));
-        return join(inner, keySelector, resultSelector);
+        return join(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     public <TI, TR> NQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        List<TI> inner = newList();
-        stream().forEach(t -> newStream(innerSelector.apply(t)).forEach(inner::add));
-        return join(inner, keySelector, resultSelector);
+        return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     public <TI, TR> NQuery<TR> leftJoin(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
@@ -260,6 +245,14 @@ public final class NQuery<T> implements Iterable<T> {
             }
             return newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3));
         }));
+    }
+
+    public <TI, TR> NQuery<TR> leftJoin(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return leftJoin(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
+    }
+
+    public <TI, TR> NQuery<TR> leftJoinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return leftJoin(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     public boolean all(Predicate<T> predicate) {
@@ -365,17 +358,17 @@ public final class NQuery<T> implements Iterable<T> {
         return me(stream().sorted((Comparator<T>) ReverseOrder));
     }
 
-    public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, Function<Tuple<TK, NQuery<T>>, TR> resultSelector) {
+    public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
         Map<TK, List<T>> map = newMap();
         stream().forEach(t -> map.computeIfAbsent(keySelector.apply(t), p -> newList()).add(t));
         List<TR> result = newList();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
-            result.add(resultSelector.apply(Tuple.of(entry.getKey(), of(entry.getValue()))));
+            result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
         }
         return me(result);
     }
 
-    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector, Function<Tuple<Object[], NQuery<T>>, TR> resultSelector) {
+    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector, BiFunction<Object[], NQuery<T>, TR> resultSelector) {
         Map<String, Tuple<Object[], List<T>>> map = newMap();
         stream().forEach(t -> {
             Object[] ks = keySelector.apply(t);
@@ -383,7 +376,7 @@ public final class NQuery<T> implements Iterable<T> {
         });
         List<TR> result = newList();
         for (Tuple<Object[], List<T>> entry : map.values()) {
-            result.add(resultSelector.apply(Tuple.of(entry.left, of(entry.right))));
+            result.add(resultSelector.apply(entry.left, of(entry.right)));
         }
         return me(result);
     }
@@ -599,8 +592,8 @@ public final class NQuery<T> implements Iterable<T> {
      */
     public <TK, TR> Map<TK, TR> toMap(Function<T, TK> keySelector, Function<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
-        for (Object item : current) {
-            result.put(keySelector.apply((T) item), resultSelector.apply((T) item));
+        for (T item : current) {
+            result.put(keySelector.apply(item), resultSelector.apply(item));
         }
         return result;
     }
