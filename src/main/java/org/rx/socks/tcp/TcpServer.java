@@ -88,6 +88,10 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
+            if (!ctx.channel().isActive()) {
+                return;
+            }
+
             ErrorEventArgs<T> args = new ErrorEventArgs<>(client, cause);
             try {
                 raiseEvent(onError, args);

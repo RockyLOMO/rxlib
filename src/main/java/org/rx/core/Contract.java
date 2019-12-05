@@ -1,7 +1,7 @@
 package org.rx.core;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Description;
@@ -214,44 +214,57 @@ public final class Contract {
         return desc.value();
     }
 
-    public static String toJsonString(Object arg) {
-        if (arg == null) {
+    public static <T> T fromJsonObject(Object bean, Class<T> type) {
+        if (bean == null) {
+            return null;
+        }
+        require(type);
+
+        Gson gson = new Gson();
+        if (bean instanceof String) {
+            return gson.fromJson((String) bean, type);
+        }
+        return gson.fromJson(gson.toJsonTree(bean), type);
+    }
+
+    public static String toJsonString(Object bean) {
+        if (bean == null) {
             return "{}";
         }
         String s;
-        if ((s = as(arg, String.class)) != null) {
+        if ((s = as(bean, String.class)) != null) {
             return s;
         }
 
         Function<Object, String> skipResult = p -> p.getClass().getName();
-        Class type = arg.getClass();
+        Class type = bean.getClass();
         List jArr = null;
         Map<Object, Object> jObj = null;
         try {
-            if (type.isArray() || arg instanceof Iterable) {
-                jArr = NQuery.asList(arg);
+            if (type.isArray() || bean instanceof Iterable) {
+                jArr = NQuery.asList(bean);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
                     if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
-                arg = jArr;
-            } else if ((jObj = as(arg, Map.class)) != null) {
+                bean = jArr;
+            } else if ((jObj = as(bean, Map.class)) != null) {
                 for (Map.Entry<Object, Object> kv : jObj.entrySet()) {
                     Object p = kv.getValue();
                     if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jObj.put(kv.getKey(), skipResult.apply(p));
                     }
                 }
-                arg = jObj;
+                bean = jObj;
             } else {
-                Object p = arg;
+                Object p = bean;
                 if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
-                    arg = skipResult.apply(p);
+                    bean = skipResult.apply(p);
                 }
             }
-            return JSON.toJSONString(arg);
+            return new Gson().toJson(bean);
         } catch (Exception ex) {
             NQuery q;
             if (jArr != null) {
@@ -260,15 +273,15 @@ public final class Contract {
             } else if (jObj != null) {
                 q = NQuery.of(jObj.values());
             } else {
-                q = NQuery.of(arg);
+                q = NQuery.of(bean);
             }
             SkipTypes = SkipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
                     .select(p -> p.getClass()).distinct());
 
-            JSONObject json = new JSONObject();
-            json.put("_input", arg.toString());
-            json.put("_error", ex.getMessage());
-            return json.toJSONString();
+            JsonObject json = new JsonObject();
+            json.addProperty("_input", bean.toString());
+            json.addProperty("_error", ex.getMessage());
+            return json.toString();
         }
     }
 }

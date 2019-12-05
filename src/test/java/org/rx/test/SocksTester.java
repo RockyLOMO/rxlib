@@ -1,6 +1,5 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -22,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.rx.core.Contract.sleep;
+import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class SocksTester {
@@ -149,7 +149,7 @@ public class SocksTester {
 
         //注册事件（广播）
         facade.<UserEventArgs>attachEvent("onAddUser", (s, e) -> {
-            log.info("Event onAddUser with {} called", JSON.toJSONString(e));
+            log.info("Event onAddUser with {} called", toJsonString(e));
             e.getResultList().addAll(Arrays.toList("a", "b", "c"));
             e.setCancel(false); //是否取消事件
         });

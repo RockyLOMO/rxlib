@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.lingala.zip4j.core.ZipFile;
@@ -24,6 +23,7 @@ import java.util.*;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class Helper {
@@ -137,7 +137,7 @@ public class Helper {
                         cells.add(value);
                     }
                     if (cells.contains(null)) {
-                        log.debug(String.format("current=%s offset=%s count=%s -> %s/%s", JSON.toJSONString(cells),
+                        log.debug(String.format("current=%s offset=%s count=%s -> %s/%s", toJsonString(cells),
                                 row.getFirstCellNum(), row.getLastCellNum(), rowIndex, sheetIndex));
                     }
                     rows.add(cells.toArray());

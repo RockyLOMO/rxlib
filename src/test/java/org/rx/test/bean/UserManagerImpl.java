@@ -1,11 +1,12 @@
 package org.rx.test.bean;
 
-import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.beans.FlagsEnum;
 import org.rx.core.InvalidOperationException;
 
 import java.util.function.BiConsumer;
+
+import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class UserManagerImpl implements UserManager {
@@ -24,7 +25,7 @@ public class UserManagerImpl implements UserManager {
             log.info("addUser canceled");
             return;
         }
-        log.info("UserEventArgs.resultList {}", JSON.toJSONString(e.getResultList()));
+        log.info("UserEventArgs.resultList {}", toJsonString(e.getResultList()));
         log.info("addUser ok");
     }
 

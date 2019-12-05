@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.alibaba.fastjson.JSONObject;
 import com.google.common.net.HttpHeaders;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -287,7 +286,7 @@ public class App extends SystemUtils {
             }
             Map<String, Object> map = as(p, Map.class);
             if (map != null) {
-                return new JSONObject(map).toJavaObject(type);
+                return fromJsonObject(map, type);
             }
             return changeType(p, type);
         };

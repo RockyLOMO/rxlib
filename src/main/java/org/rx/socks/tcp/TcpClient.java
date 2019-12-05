@@ -84,6 +84,10 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
+            if (!ctx.channel().isActive()) {
+                return;
+            }
+            
             NEventArgs<Throwable> args = new NEventArgs<>(cause);
             try {
                 raiseEvent(onError, args);

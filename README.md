@@ -227,7 +227,7 @@ public void runNQuery() {
 }
 ```
 
-### shadowsocks (Only tested AES encryption)
+### shadowsocks (Only tested AES encryption, BELOW VERSION 2.13.13)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
     * Requirements
         Bouncy Castle v1.5.9 [Release](https://www.bouncycastle.org/)
@@ -241,6 +241,6 @@ public void runNQuery() {
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.13.8</version>
+    <version>2.13.13</version>
 </dependency>
 ```

@@ -1,6 +1,5 @@
 package org.rx.socks.http;
 
-import com.alibaba.fastjson.JSON;
 import com.google.common.net.HttpHeaders;
 import kotlin.Pair;
 import lombok.SneakyThrows;
@@ -371,7 +370,7 @@ public class HttpClient {
         if (!Strings.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
-        log.info("Forward request: {}\nheaders {}", forwardUrl, JSON.toJSONString(headers));
+        log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(headers));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
         if (!servletRequest.getMethod().equalsIgnoreCase(GetMethod)) {

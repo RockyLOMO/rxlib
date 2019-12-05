@@ -1,6 +1,7 @@
 package org.rx.socks;
 
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -27,6 +28,19 @@ public class Bytes {
             vector |= 1L << e.ordinal();
         }
         return vector;
+    }
+
+    public static String dumpBytes(byte[] a) {
+        StringBuilder sb = new StringBuilder(a.length * 2);
+        for (byte b : a)
+            sb.append(String.format("%x", b & 0xff));
+        return sb.toString();
+    }
+
+    public static byte[] randomBytes(int size) {
+        byte[] bytes = new byte[size];
+        new SecureRandom().nextBytes(bytes);
+        return bytes;
     }
 
     public static String readLine(byte[] buffer) {

@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Stopwatch;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
@@ -19,6 +18,7 @@ import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import static org.rx.core.Contract.toJsonString;
 import static org.rx.core.SystemException.DefaultMessage;
 
 @Slf4j
@@ -109,16 +109,6 @@ public class ControllerInterceptor {
             }
             return p;
         }).asCollection());
-    }
-
-    private String toJsonString(Object val) {
-        try {
-            return Contract.toJsonString(val);
-        } catch (Exception ex) {
-            JSONObject err = new JSONObject();
-            err.put("errMsg", ex.getMessage());
-            return err.toJSONString();
-        }
     }
 
     protected Object onException(Exception e, Method method) throws Throwable {

@@ -1,15 +1,14 @@
 package org.rx.util;
 
-import com.alibaba.fastjson.JSONObject;
 import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.rx.beans.Tuple;
-import org.rx.core.Contract;
 import org.rx.core.StringBuilder;
 
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
+import static org.rx.core.Contract.toJsonString;
 
 public class LogInterceptor {
     private static final ThreadLocal threadStatic = ThreadLocal.withInitial(() -> FALSE);
@@ -30,16 +29,6 @@ public class LogInterceptor {
         Object r = joinPoint.proceed();
         msg.appendLine(tuple.right, toJsonString(r));
         return r;
-    }
-
-    protected String toJsonString(Object val) {
-        try {
-            return Contract.toJsonString(val);
-        } catch (Exception ex) {
-            JSONObject err = new JSONObject();
-            err.put("errMsg", ex.getMessage());
-            return err.toJSONString();
-        }
     }
 
     protected Object onException(Exception ex, StringBuilder msg) throws Throwable {
