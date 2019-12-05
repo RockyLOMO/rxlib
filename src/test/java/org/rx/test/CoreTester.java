@@ -1,7 +1,11 @@
 package org.rx.test;
 
+import com.alibaba.fastjson.JSON;
+import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
@@ -272,5 +276,51 @@ public class CoreTester {
 
         v = App.readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, App.loadYaml(SystemException.CodeFile));
         assert eq(v, "Exception Error Code value=$x");
+    }
+
+    @Test
+    public void json() {
+        String str = "abc";
+        assert str.equals(toJsonString(str));
+        String jObj = toJsonString(PersonInfo.def);
+        System.out.println("jObj: " + jObj);
+        assert fromJsonAsObject(jObj, PersonInfo.class).equals(PersonInfo.def);
+        List<PersonInfo> arr = Arrays.toList(PersonInfo.def, PersonInfo.def);
+        String jArr = toJsonString(arr);
+        System.out.println("jArr: " + jArr);
+        assert ListUtils.isEqualList(fromJsonAsList(jArr, PersonInfo.class), arr);
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("name", "rocky");
+        data.put("age", 10);
+        System.out.println(toJsonString(data));
+
+        List<PersonInfo> list = fromJsonAsList(jArr, PersonInfo.class);
+        for (PersonInfo info : list) {
+            System.out.println(info);
+        }
+        list = fromJsonAsList(arr, PersonInfo.class);
+        for (PersonInfo info : list) {
+            System.out.println(info);
+        }
+
+        Tuple<String, List<Float>> tuple = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
+        String tjObj = toJsonString(tuple);
+        tuple = fromJsonAsObject(tjObj, new TypeToken<Tuple<String, List<Float>>>() {
+        }.getType());
+        System.out.println(tuple);
+
+        List<Tuple<String, List<Float>>> tupleList = Arrays.toList(Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F)), Tuple.of("def", Arrays.toList(1.2F, 2F, 3F)));
+        String tjArr = toJsonString(tupleList);
+        tupleList = fromJsonAsList(tjArr, new TypeToken<List<Tuple<String, List<Float>>>>() {
+        }.getType());
+        for (Tuple<String, List<Float>> stringListTuple : tupleList) {
+            System.out.println(stringListTuple);
+        }
+        tupleList = fromJsonAsList(tupleList, new TypeToken<List<Tuple<String, List<Float>>>>() {
+        }.getType());
+        for (Tuple<String, List<Float>> stringListTuple : tupleList) {
+            System.out.println(stringListTuple);
+        }
     }
 }

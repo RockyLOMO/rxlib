@@ -286,7 +286,7 @@ public class App extends SystemUtils {
             }
             Map<String, Object> map = as(p, Map.class);
             if (map != null) {
-                return fromJsonObject(map, type);
+                return fromJsonAsObject(map, type);
             }
             return changeType(p, type);
         };

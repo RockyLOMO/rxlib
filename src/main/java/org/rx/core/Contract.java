@@ -1,7 +1,6 @@
 package org.rx.core;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Description;
@@ -12,6 +11,7 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 
 import java.lang.reflect.AccessibleObject;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -22,13 +22,13 @@ import static org.rx.core.App.Config;
 @Slf4j
 public final class Contract {
     public static final String AllWarnings = "all", Utf8 = "UTF-8";
-    private static NQuery<Class> SkipTypes = NQuery.of();
+    private static NQuery<Class> skipTypes = NQuery.of();
 
     //App循环引用
     static void init() {
         String[] jsonSkipTypes = Config.getJsonSkipTypes();
         if (!Arrays.isEmpty(jsonSkipTypes)) {
-            SkipTypes = SkipTypes.union(NQuery.of(NQuery.asList(jsonSkipTypes)).select(p -> App.loadClass(String.valueOf(p), false)));
+            skipTypes = skipTypes.union(NQuery.of(jsonSkipTypes).select(p -> App.loadClass(String.valueOf(p), false)));
         }
     }
 
@@ -214,17 +214,64 @@ public final class Contract {
         return desc.value();
     }
 
-    public static <T> T fromJsonObject(Object bean, Class<T> type) {
-        if (bean == null) {
+    //region json
+    public static <T> T fromJsonAsObject(Object jsonOrBean, Class<T> type) {
+        if (jsonOrBean == null) {
             return null;
         }
         require(type);
 
-        Gson gson = new Gson();
-        if (bean instanceof String) {
-            return gson.fromJson((String) bean, type);
+        return new Gson().fromJson(toJsonObject(jsonOrBean), type);
+    }
+
+    public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
+        if (jsonOrBean == null) {
+            return null;
         }
-        return gson.fromJson(gson.toJsonTree(bean), type);
+        require(type);
+
+        return new Gson().fromJson(toJsonObject(jsonOrBean), type);
+    }
+
+    public static <T> List<T> fromJsonAsList(Object jsonOrList, Class<T> type) {
+        if (jsonOrList == null) {
+            return Collections.emptyList();
+        }
+        require(type);
+
+        Gson gson = new Gson();
+        return NQuery.of(toJsonArray(jsonOrList)).select(p -> gson.fromJson(p, type)).toList();
+    }
+
+    public static <T> List<T> fromJsonAsList(Object jsonOrList, Type type) {
+        if (jsonOrList == null) {
+            return Collections.emptyList();
+        }
+        require(type);
+
+        Gson gson = new Gson();
+        if (jsonOrList instanceof String) {
+            return gson.fromJson((String) jsonOrList, type);
+        }
+        return gson.fromJson(gson.toJsonTree(jsonOrList), type);
+    }
+
+    public static JsonObject toJsonObject(Object jsonOrBean) {
+        require(jsonOrBean);
+
+        if (jsonOrBean instanceof String) {
+            return (JsonObject) JsonParser.parseString((String) jsonOrBean);
+        }
+        return (JsonObject) new Gson().toJsonTree(jsonOrBean);
+    }
+
+    public static JsonArray toJsonArray(Object jsonOrList) {
+        require(jsonOrList);
+
+        if (jsonOrList instanceof String) {
+            return (JsonArray) JsonParser.parseString((String) jsonOrList);
+        }
+        return (JsonArray) new Gson().toJsonTree(jsonOrList);
     }
 
     public static String toJsonString(Object bean) {
@@ -238,45 +285,33 @@ public final class Contract {
 
         Function<Object, String> skipResult = p -> p.getClass().getName();
         Class type = bean.getClass();
-        List jArr = null;
-        Map<Object, Object> jObj = null;
+        List<Object> jArr = null;
         try {
             if (type.isArray() || bean instanceof Iterable) {
                 jArr = NQuery.asList(bean);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
+                    if (skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
                 bean = jArr;
-            } else if ((jObj = as(bean, Map.class)) != null) {
-                for (Map.Entry<Object, Object> kv : jObj.entrySet()) {
-                    Object p = kv.getValue();
-                    if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
-                        jObj.put(kv.getKey(), skipResult.apply(p));
-                    }
-                }
-                bean = jObj;
             } else {
                 Object p = bean;
-                if (SkipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
+                if (skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                     bean = skipResult.apply(p);
                 }
             }
             return new Gson().toJson(bean);
         } catch (Exception ex) {
-            NQuery q;
+            NQuery<Object> q;
             if (jArr != null) {
                 q = NQuery.of(jArr);
-
-            } else if (jObj != null) {
-                q = NQuery.of(jObj.values());
             } else {
                 q = NQuery.of(bean);
             }
-            SkipTypes = SkipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
-                    .select(p -> p.getClass()).distinct());
+            skipTypes = skipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
+                    .<Class>select(Object::getClass).distinct());
 
             JsonObject json = new JsonObject();
             json.addProperty("_input", bean.toString());
@@ -284,4 +319,5 @@ public final class Contract {
             return json.toString();
         }
     }
+    //endregion
 }
