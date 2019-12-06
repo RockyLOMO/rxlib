@@ -1,8 +1,6 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSON;
-import com.google.gson.JsonObject;
-import com.google.gson.reflect.TypeToken;
+import com.google.common.reflect.TypeToken;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
@@ -10,6 +8,7 @@ import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
+import org.rx.beans.DateTime;
 import org.rx.beans.RandomList;
 import org.rx.beans.Tuple;
 import org.rx.core.*;
@@ -52,18 +51,16 @@ public class CoreTester {
         px.index3 = 41;
         personSet.add(px);
 
-        showResult("leftJoin", NQuery.of(new PersonInfo(27, 27, 27, "jack", 6),
-                new PersonInfo(28, 28, 28, "tom", 6),
-                new PersonInfo(29, 29, 29, "lily", 8),
-                new PersonInfo(30, 30, 30, "cookie", 6)).leftJoin(
-                Arrays.toList(new PersonInfo(27, 27, 27, "cookie", 5),
-                        new PersonInfo(28, 28, 28, "tom", 10),
-                        new PersonInfo(29, 29, 29, "jack", 1),
-                        new PersonInfo(30, 30, 30, "session", 25),
-                        new PersonInfo(31, 31, 31, "trump", 55),
-                        new PersonInfo(32, 32, 32, "jack", 55)), (p, x) -> p.name.equals(x.name), (p, x) -> {
-                    return Tuple.of(p, x);
-                }
+        showResult("leftJoin", NQuery.of(new PersonInfo(27, 27, 27, "jack", 6, DateTime.now()),
+                new PersonInfo(28, 28, 28, "tom", 6, DateTime.now()),
+                new PersonInfo(29, 29, 29, "lily", 8, DateTime.now()),
+                new PersonInfo(30, 30, 30, "cookie", 6, DateTime.now())).leftJoin(
+                Arrays.toList(new PersonInfo(27, 27, 27, "cookie", 5, DateTime.now()),
+                        new PersonInfo(28, 28, 28, "tom", 10, DateTime.now()),
+                        new PersonInfo(29, 29, 29, "jack", 1, DateTime.now()),
+                        new PersonInfo(30, 30, 30, "session", 25, DateTime.now()),
+                        new PersonInfo(31, 31, 31, "trump", 55, DateTime.now()),
+                        new PersonInfo(32, 32, 32, "jack", 55, DateTime.now())), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
@@ -293,6 +290,7 @@ public class CoreTester {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", "rocky");
         data.put("age", 10);
+        data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
 
         List<PersonInfo> list = fromJsonAsList(jArr, PersonInfo.class);

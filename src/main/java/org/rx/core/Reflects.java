@@ -18,6 +18,7 @@ import static org.rx.core.Contract.*;
  */
 @Slf4j
 public class Reflects extends TypeUtils {
+    public static final NQuery<Method> ObjectMethods = NQuery.of(Object.class.getMethods());
     private static final String closeMethod = "close";
 
     public static boolean invokeClose(Method method, Object obj) {

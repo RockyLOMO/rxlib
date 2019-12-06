@@ -68,8 +68,6 @@ public final class RemotingFactor {
 
     @RequiredArgsConstructor
     private static class ClientHandler implements MethodInterceptor {
-        private static final NQuery<Method> objectMethods = NQuery.of(Object.class.getMethods());
-
         public BiConsumer<Object, NEventArgs<TcpClient>> onHandshake;
         public Function<InetSocketAddress, InetSocketAddress> preReconnect;
         private final Class targetType;
@@ -82,7 +80,7 @@ public final class RemotingFactor {
 
         @Override
         public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
-            if (objectMethods.contains(method)) {
+            if (Reflects.ObjectMethods.contains(method)) {
                 return methodProxy.invokeSuper(o, args);
             }
             if (Reflects.isCloseMethod(method)) {
@@ -182,29 +180,6 @@ public final class RemotingFactor {
                 }
                 onHandshake.accept(proxyObject, new NEventArgs<>(client));
             });
-//            if (onReconnect != null) {
-//                client.attachEvent(TcpClient.EventNames.Disconnected, (s, e) -> {
-//                    log.info("client onReconnect");
-//                    boolean x = client.isAutoReconnect();
-//                    client.setAutoReconnect(false);
-//                    NEventArgs<InetSocketAddress> args = new NEventArgs<>(serverAddress);
-//                    while (!client.isConnected()) {
-//                        try {
-//                            onReconnect.accept(proxyObject, args);
-//                            if (eq(serverAddress, args.getValue())) {
-//                                client.connect(true);
-//                            } else {
-//                                log.info("client serverAddress changed to {}", serverAddress);
-//                                initHandshakeClient(proxyObject);
-//                            }
-//                        } catch (Exception ex) {
-//                            log.debug("client reconnect error: {}", ex.getMessage());
-//                        }
-//                        sleep();
-//                    }
-//                    client.setAutoReconnect(x);
-//                });
-//            }
             client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                 e.setCancel(true);
                 waitHandle.set();

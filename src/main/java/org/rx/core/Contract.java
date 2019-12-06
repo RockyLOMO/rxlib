@@ -1,5 +1,8 @@
 package org.rx.core;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.google.gson.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -139,14 +142,6 @@ public final class Contract {
         return null;
     }
 
-    public static boolean tryClose(Object obj) {
-        return tryClose(obj, true);
-    }
-
-    public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
-    }
-
     public static void sleep() {
         sleep(Config.getScheduleDelay());
     }
@@ -154,6 +149,14 @@ public final class Contract {
     @SneakyThrows
     public static void sleep(long millis) {
         Thread.sleep(millis);
+    }
+
+    public static boolean tryClose(Object obj) {
+        return tryClose(obj, true);
+    }
+
+    public static boolean tryClose(Object obj, boolean quietly) {
+        return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {
@@ -216,62 +219,41 @@ public final class Contract {
 
     //region json
     public static <T> T fromJsonAsObject(Object jsonOrBean, Class<T> type) {
-        if (jsonOrBean == null) {
-            return null;
+        Gson gson = gson();
+        if (jsonOrBean instanceof String) {
+            return gson.fromJson((String) jsonOrBean, type);
         }
-        require(type);
-
-        return new Gson().fromJson(toJsonObject(jsonOrBean), type);
+        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
     }
 
     public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
-        if (jsonOrBean == null) {
-            return null;
+        Gson gson = gson();
+        if (jsonOrBean instanceof String) {
+            return gson.fromJson((String) jsonOrBean, type);
         }
-        require(type);
-
-        return new Gson().fromJson(toJsonObject(jsonOrBean), type);
+        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
     }
 
     public static <T> List<T> fromJsonAsList(Object jsonOrList, Class<T> type) {
-        if (jsonOrList == null) {
-            return Collections.emptyList();
-        }
-        require(type);
-
-        Gson gson = new Gson();
-        return NQuery.of(toJsonArray(jsonOrList)).select(p -> gson.fromJson(p, type)).toList();
+        //gson.fromJson() not work
+        return JSON.parseArray(toJsonString(jsonOrList), type);
     }
 
     public static <T> List<T> fromJsonAsList(Object jsonOrList, Type type) {
-        if (jsonOrList == null) {
-            return Collections.emptyList();
-        }
-        require(type);
-
-        Gson gson = new Gson();
+        //(List<T>) JSON.parseArray(toJsonString(jsonOrList), new Type[]{type}); not work
+        Gson gson = gson();
         if (jsonOrList instanceof String) {
             return gson.fromJson((String) jsonOrList, type);
         }
         return gson.fromJson(gson.toJsonTree(jsonOrList), type);
     }
 
-    public static JsonObject toJsonObject(Object jsonOrBean) {
-        require(jsonOrBean);
-
-        if (jsonOrBean instanceof String) {
-            return (JsonObject) JsonParser.parseString((String) jsonOrBean);
-        }
-        return (JsonObject) new Gson().toJsonTree(jsonOrBean);
+    public static JSONObject toJsonObject(Object jsonOrBean) {
+        return JSON.parseObject(toJsonString(jsonOrBean));
     }
 
-    public static JsonArray toJsonArray(Object jsonOrList) {
-        require(jsonOrList);
-
-        if (jsonOrList instanceof String) {
-            return (JsonArray) JsonParser.parseString((String) jsonOrList);
-        }
-        return (JsonArray) new Gson().toJsonTree(jsonOrList);
+    public static JSONArray toJsonArray(Object jsonOrList) {
+        return JSON.parseArray(toJsonString(jsonOrList));
     }
 
     public static String toJsonString(Object bean) {
@@ -302,7 +284,7 @@ public final class Contract {
                     bean = skipResult.apply(p);
                 }
             }
-            return new Gson().toJson(bean);
+            return JSON.toJSONString(bean);  //gson map date not work
         } catch (Exception ex) {
             NQuery<Object> q;
             if (jArr != null) {
@@ -313,11 +295,16 @@ public final class Contract {
             skipTypes = skipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
                     .<Class>select(Object::getClass).distinct());
 
-            JsonObject json = new JsonObject();
-            json.addProperty("_input", bean.toString());
-            json.addProperty("_error", ex.getMessage());
+            JSONObject json = new JSONObject();
+            json.put("_input", bean.toString());
+            json.put("_error", ex.getMessage());
             return json.toString();
         }
+    }
+
+    private static Gson gson() {
+        return new GsonBuilder().registerTypeAdapter(Date.class, (JsonSerializer<Date>) (date, type, jsonSerializationContext) -> date == null ? null : new JsonPrimitive(date.getTime()))
+                .registerTypeAdapter(Date.class, (JsonDeserializer<Date>) (jsonElement, type, jsonDeserializationContext) -> jsonElement == null ? null : new Date(jsonElement.getAsLong())).create();
     }
     //endregion
 }
