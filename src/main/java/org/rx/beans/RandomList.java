@@ -23,6 +23,10 @@ public class RandomList<T> implements Iterable<T> {
     private final List<WeightElement<T>> elements = new ArrayList<>();
     private int maxRandomValue;
 
+    public int size() {
+        return elements.size();
+    }
+
     public RandomList<T> add(T element, int weight) {
         require(weight, weight >= 0);
 

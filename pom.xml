@@ -216,8 +216,6 @@
     </profiles>
     <build>
         <directory>${output}</directory>
-        <outputDirectory>${output}\target\generated-sources</outputDirectory>
-        <testOutputDirectory>${output}\target\generated-test-sources</testOutputDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -262,6 +260,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.6</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>sign-artifacts</id>
