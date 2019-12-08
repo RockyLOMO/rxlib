@@ -8,6 +8,7 @@ import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.Tuple;
 
+import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.Collections;
@@ -26,7 +27,7 @@ import static org.rx.core.Contract.*;
  * @param <T>
  */
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public final class NQuery<T> implements Iterable<T> {
+public final class NQuery<T> implements Iterable<T>, Serializable {
     //region nestedTypes
     @FunctionalInterface
     public interface IndexSelector<T, TR> {

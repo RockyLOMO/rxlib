@@ -26,12 +26,18 @@ import static org.rx.core.Contract.toJsonString;
 @Slf4j
 public class CoreTester {
     //region NQuery
+    @SneakyThrows
     @Test
     public void runParallelNQuery() {
+        ManagementMonitor.getInstance().scheduled = (s, e) -> {
+            System.out.println(toJsonString(e.getValue()));
+        };
+
         for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
                 .groupBy(p -> p > 5, (p, x) -> x.first())) {
             System.out.println(integer.toString());
         }
+        System.in.read();
     }
 
     @Test
