@@ -51,7 +51,6 @@ public class BeanMapper {
 
     public static final String IgnoreProperty = "#ignore";
     private static final String Get = "get", GetBool = "is", Set = "set";
-    private static final WeakCache<Class, CacheItem> methodCache = new WeakCache<>();
     @Getter
     private static final BeanMapper instance = new BeanMapper();
 
@@ -88,7 +87,7 @@ public class BeanMapper {
     }
 
     private static CacheItem getMethods(Class to) {
-        return methodCache.getOrAdd(to, tType -> {
+        return MemoryCache.getOrStore(to, tType -> {
             NQuery<Method> setters = NQuery.of(tType.getMethods())
                     .where(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1);
             NQuery<Method> getters = NQuery.of(tType.getMethods()).where(p -> !"getClass".equals(p.getName())
@@ -96,7 +95,7 @@ public class BeanMapper {
             NQuery<Method> s2 = setters.where(ps -> getters.any(pg -> exEquals(pg.getName(), ps.getName())));
             NQuery<Method> g2 = getters.where(pg -> s2.any(ps -> exEquals(pg.getName(), ps.getName())));
             return new CacheItem(s2, g2);
-        }, true);
+        }, CacheKind.SoftCache);
     }
 
     private static boolean exEquals(String getterName, String setterName) {

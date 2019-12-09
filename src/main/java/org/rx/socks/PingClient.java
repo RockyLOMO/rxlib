@@ -4,6 +4,8 @@ import com.google.common.base.Stopwatch;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.CacheKind;
+import org.rx.core.MemoryCache;
 import org.rx.core.NQuery;
 import org.rx.core.Lazy;
 
@@ -60,7 +62,7 @@ public final class PingClient {
 
         Consumer<Boolean> consumer = null;
         if (cacheResult) {
-            WeakCache<String, Object> cache = WeakCache.getInstance();
+            MemoryCache<String, Object> cache = MemoryCache.getInstance(CacheKind.WeakCache);
             String k = String.format("_PingClient%s", endpoint);
             Boolean result = as(cache.get(k), Boolean.class);
             if (result != null) {

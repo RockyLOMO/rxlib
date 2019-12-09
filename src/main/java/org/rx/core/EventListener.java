@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
-import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
@@ -28,8 +27,6 @@ public class EventListener {
         busLazy.getValue().post(event);
     }
 
-    private final Map<Object, Map<String, BiConsumer>> host = Collections.synchronizedMap(new WeakHashMap<>());
-
     public void attach(EventTarget target, String method, BiConsumer methodImpl) {
         attach(target, method, methodImpl, true);
     }
@@ -49,7 +46,7 @@ public class EventListener {
     }
 
     private Map<String, BiConsumer> getMap(EventTarget target) {
-        return host.computeIfAbsent(target, k -> new ConcurrentHashMap<>());
+        return MemoryCache.getOrStore(target, k -> new ConcurrentHashMap<>());
     }
 
     public void raise(EventTarget target, String method, EventArgs args) {

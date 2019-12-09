@@ -205,7 +205,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return (InetAddress[]) WeakCache.getOrStore(cacheKey("Sockets.getAddresses", host), p -> InetAddress.getAllByName(host));
+        return MemoryCache.getOrStore(cacheKey("Sockets.getAddresses", host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
