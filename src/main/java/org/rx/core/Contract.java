@@ -113,10 +113,10 @@ public final class Contract {
     //endregion
 
     //region extend
-    public static String cacheKey(String methodName, Object... args) {
+    public static String cacheKey(Class type, String methodName, Object... args) {
         require(methodName);
 
-        String k = methodName + toJsonString(args);
+        String k = type.getName() + methodName + toJsonString(args);
         if (k.length() <= 32) {
             return k;
         }

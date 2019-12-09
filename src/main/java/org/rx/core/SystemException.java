@@ -27,7 +27,7 @@ public class SystemException extends NestedRuntimeException {
     public static final String DefaultMessage = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
 
     private static Map<String, Object> getSettings() {
-        return App.getOrStore("SystemException", k -> {
+        return MemoryCache.getOrStore("SystemException", k -> {
             List<String> files = new ArrayList<>();
             files.add(CodeFile);
             if (!Arrays.isEmpty(App.Config.getErrorCodeFiles())) {

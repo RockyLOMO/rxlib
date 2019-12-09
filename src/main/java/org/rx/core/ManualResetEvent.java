@@ -7,7 +7,7 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.Contract.TimeoutInfinite;
 
 public final class ManualResetEvent {
-    private final Object monitor = this;//new Object();
+    private final Object monitor = new Object();
     private volatile boolean open;
 
     public ManualResetEvent() {

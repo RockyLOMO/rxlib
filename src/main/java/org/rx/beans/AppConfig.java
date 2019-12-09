@@ -9,7 +9,7 @@ public class AppConfig {
     private int scheduleDelay = 2000;
     private int bufferSize = 512;
     private int socksTimeout = 16000;
-    private int cacheLiveSeconds = 120;
+    private int cacheLiveMinutes = 4;
     private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
     private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
 }

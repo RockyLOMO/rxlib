@@ -14,7 +14,6 @@ import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
 import org.rx.io.MemoryStream;
-import org.rx.util.function.BiFunc;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -135,10 +134,6 @@ public class App extends SystemUtils {
             i++;
         }
         throw lastEx;
-    }
-
-    public static <T> T getOrStore(String key, BiFunc<String, T> supplier) {
-        return MemoryCache.getOrStore(cacheKey(key), supplier);
     }
 
     public static UUID hash(String key) {
@@ -271,7 +266,7 @@ public class App extends SystemUtils {
     public static Map<String, Object> loadYaml(String... yamlFile) {
         require((Object) yamlFile);
 
-        return getOrStore(String.format("loadYaml-%s", toJsonString(yamlFile)), k -> {
+        return MemoryCache.getOrStore(String.format("loadYaml-%s", toJsonString(yamlFile)), k -> {
             Map<String, Object> result = new HashMap<>();
             Yaml yaml = new Yaml(new SafeConstructor());
             for (String yf : yamlFile) {
