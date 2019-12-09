@@ -158,7 +158,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         long totalMemory = os.getTotalPhysicalMemorySize();
         return new MonitorBean(os.getAvailableProcessors(), cpuLoad, thread.getThreadCount(),
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
-                WeakCache.getOrStore(cacheKey("ManagementMonitor.getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorBean(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
+                MemoryCache.getOrStore(cacheKey("ManagementMonitor.getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorBean(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
     }
 
 //    public void run() {

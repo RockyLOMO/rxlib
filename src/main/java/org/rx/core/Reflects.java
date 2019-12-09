@@ -58,7 +58,7 @@ public class Reflects extends TypeUtils {
     private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
         return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
     }
-    
+
     public static Object invokeMethod(Class type, Object instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
         Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
@@ -87,7 +87,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(WeakCache.<List<Field>>getOrStore(cacheKey("Reflects.getFields", type), k -> FieldUtils.getAllFieldsList(type)));
+        NQuery<Field> fields = NQuery.of(MemoryCache.<String, List<Field>>getOrStore(cacheKey("Reflects.getFields", type), k -> FieldUtils.getAllFieldsList(type)));
         for (Field field : fields) {
             setAccess(field);
         }
