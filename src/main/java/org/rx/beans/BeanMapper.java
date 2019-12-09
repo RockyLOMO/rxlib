@@ -159,7 +159,7 @@ public class BeanMapper {
                 targetMethods.add(setterName);
                 if (checkSkip(sourceValue, skipNull)) {
                     Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
-                    return invoke(gm, target);
+                    return Reflects.invokeMethod(gm, target);
                 }
                 if (trimString && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
@@ -188,7 +188,7 @@ public class BeanMapper {
                         || (fm = fmc.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
                     Method tm;
                     if (nonCheckMatch || ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName))
-                            .firstOrDefault()) != null && invoke(tm, target) != null)) {
+                            .firstOrDefault()) != null && Reflects.invokeMethod(tm, target) != null)) {
                         continue;
                     }
                     throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
@@ -196,7 +196,7 @@ public class BeanMapper {
                 }
                 copiedNames.add(missedName);
                 missedNames.remove(missedName);
-                Object sourceValue = invoke(fm, source);
+                Object sourceValue = Reflects.invokeMethod(fm, source);
                 if (skipNull && sourceValue == null) {
                     continue;
                 }
@@ -207,7 +207,7 @@ public class BeanMapper {
                 if (config.propertyValueMatcher != null) {
                     sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
                 }
-                invoke(tm, target, sourceValue);
+                Reflects.invokeMethod(tm, target, sourceValue);
             }
         }
         if (!nonCheckMatch && !config.isCheck) {
@@ -217,7 +217,7 @@ public class BeanMapper {
                     if ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName)).firstOrDefault()) == null) {
                         continue;
                     }
-                    if (invoke(tm, target) != null) {
+                    if (Reflects.invokeMethod(tm, target) != null) {
                         copiedNames.add(missedName);
                     }
                 }
@@ -243,15 +243,6 @@ public class BeanMapper {
             content = Strings.toTitleCase(content);
         }
         return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length()).equals(content);
-    }
-
-    private Object invoke(Method method, Object obj, Object... args) {
-        try {
-            method.setAccessible(true);//nonCheck
-            return method.invoke(obj, args);
-        } catch (ReflectiveOperationException ex) {
-            throw new BeanMapException(ex);
-        }
     }
 
     private boolean checkSkip(Object sourceValue, boolean skipNull) {

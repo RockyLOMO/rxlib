@@ -1,13 +1,13 @@
 package org.rx.core;
 
 import com.google.common.net.HttpHeaders;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.AppConfig;
 import org.rx.beans.ShortUUID;
 import org.rx.beans.Tuple;
 import org.rx.security.MD5Util;
@@ -39,22 +39,6 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class App extends SystemUtils {
     //region Nested
-    @Data
-    public static class Config {
-        private int bufferSize = 512;
-        private int socksTimeout = 16000;
-        private int scheduleDelay = 2000;
-        private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
-        private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
-    }
-
-    public enum CacheContainerKind {
-        WeakCache,
-        SoftCache,
-        ThreadStatic,
-        ServletRequest
-    }
-
     @RequiredArgsConstructor
     private static class ConvertItem {
         public final Class baseFromType;
@@ -64,25 +48,17 @@ public class App extends SystemUtils {
     //endregion
 
     //region Fields
-    public static final int MaxInt = Integer.MAX_VALUE - 8;
-    public static final int TimeoutInfinite = -1;
-    public static final Config Config;
-    private static final ThreadLocal<Map> threadStatic;
+    public static final AppConfig Config;
     private static final NQuery<Class<?>> supportTypes;
     private static final List<ConvertItem> typeConverter;
 
-    public static Map threadMap() {
-        return threadStatic.get();
-    }
-
     static {
         System.setProperty("bootstrapPath", getBootstrapPath());
-        Config = isNull(readSetting("app", Config.class), new Config());
-        if (Config.bufferSize <= 0) {
-            Config.bufferSize = 512;
+        Config = isNull(readSetting("app", AppConfig.class), new AppConfig());
+        if (Config.getBufferSize() <= 0) {
+            Config.setBufferSize(512);
         }
         Contract.init();
-        threadStatic = ThreadLocal.withInitial(HashMap::new);
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
         typeConverter = new CopyOnWriteArrayList<>();
@@ -162,37 +138,7 @@ public class App extends SystemUtils {
     }
 
     public static <T> T getOrStore(String key, BiFunc<String, T> supplier) {
-        return getOrStore(key, supplier, CacheContainerKind.WeakCache);
-    }
-
-    @SneakyThrows
-    public static <T> T getOrStore(String key, BiFunc<String, T> supplier, CacheContainerKind containerKind) {
-        require(key, supplier, containerKind);
-
-        String k = cacheKey(key);
-        Object v;
-        switch (containerKind) {
-            case ThreadStatic:
-                v = threadMap().computeIfAbsent(k, supplier.toFunction());
-                break;
-            case ServletRequest:
-                HttpServletRequest request = getCurrentRequest();
-                if (request == null) {
-                    return supplier.invoke(key);
-                }
-                v = request.getAttribute(k);
-                if (v == null) {
-                    request.setAttribute(k, v = supplier.invoke(k));
-                }
-                break;
-            case SoftCache:
-                v = WeakCache.getInstance().getOrAdd(key, (BiFunc<String, Object>) supplier, true);
-                break;
-            default:
-                v = WeakCache.getInstance().getOrAdd(key, (BiFunc<String, Object>) supplier, false);
-                break;
-        }
-        return (T) v;
+        return MemoryCache.getOrStore(cacheKey(key), supplier);
     }
 
     public static UUID hash(String key) {
@@ -684,7 +630,7 @@ public class App extends SystemUtils {
 
         Cookie cookie = new Cookie(name, HttpClient.encodeUrl(value));
         cookie.setPath("/");
-        cookie.setSecure(true);
+//        cookie.setSecure(true);
         cookie.setHttpOnly(true);
         if (expire != null) {
             cookie.setMaxAge((int) new DateTime(expire).subtract(DateTime.now()).getTotalSeconds());
@@ -697,7 +643,7 @@ public class App extends SystemUtils {
 
         Cookie cookie = new Cookie(name, null);
         cookie.setPath("/");
-        cookie.setSecure(true);
+//        cookie.setSecure(true);
         cookie.setHttpOnly(true);
         cookie.setMaxAge(-1);
         response.addCookie(cookie);

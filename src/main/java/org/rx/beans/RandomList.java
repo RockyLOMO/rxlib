@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.rx.core.NQuery;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -12,7 +13,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.Contract.require;
 
-public class RandomList<T> implements Iterable<T> {
+public class RandomList<T> implements Iterable<T>, Serializable {
     @AllArgsConstructor
     static class WeightElement<T> {
         public final T element;

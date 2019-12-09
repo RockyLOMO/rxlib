@@ -58,14 +58,18 @@ public class Reflects extends TypeUtils {
     private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
         return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
     }
-
-    @SneakyThrows
+    
     public static Object invokeMethod(Class type, Object instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
         Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
         if (method == null) {
             throw new SystemException("Parameters error");
         }
+        return invokeMethod(method, instance, args);
+    }
+
+    @SneakyThrows
+    public static Object invokeMethod(Method method, Object instance, Object... args) {
         setAccess(method);
         return method.invoke(instance, args);
     }

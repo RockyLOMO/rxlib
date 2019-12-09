@@ -3,7 +3,6 @@ package org.rx.io;
 import lombok.SneakyThrows;
 import org.rx.beans.$;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.App;
 import org.rx.core.SystemException;
 import org.rx.util.BytesSegment;
 
@@ -11,12 +10,11 @@ import java.io.*;
 import java.util.Arrays;
 import java.util.function.Supplier;
 
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.values;
+import static org.rx.core.Contract.*;
 
 public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> {
     public static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = App.MaxInt;
+        private volatile int minPosition, length, maxLength = MaxInt;
 
         public int getPosition() {
             return count;

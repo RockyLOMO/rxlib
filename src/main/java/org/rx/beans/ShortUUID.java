@@ -3,12 +3,13 @@ package org.rx.beans;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
+import java.io.Serializable;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.UUID;
 
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public final class ShortUUID {
+public final class ShortUUID implements Serializable {
     public static class Builder {
         private char[] alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
         private int alphabetSize = alphabet.length;

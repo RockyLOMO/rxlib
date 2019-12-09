@@ -14,7 +14,6 @@ import static org.rx.core.Contract.as;
 import static org.rx.core.Contract.cacheKey;
 
 public class ManagementMonitor implements EventTarget<ManagementMonitor> {
-
     private static final double PERCENT = 100.0D, k = 1024, m = k * 1024, g = m * 1024, t = g * 1024;
     @Getter
     private static final ManagementMonitor instance = new ManagementMonitor();

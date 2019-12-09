@@ -24,7 +24,10 @@ import static org.rx.core.App.Config;
 
 @Slf4j
 public final class Contract {
-    public static final String AllWarnings = "all", Utf8 = "UTF-8";
+    public static final String AllWarnings = "all",
+            Utf8 = "UTF-8";
+    public static final int TimeoutInfinite = -1,
+            MaxInt = Integer.MAX_VALUE - 8;
     private static NQuery<Class> skipTypes = NQuery.of();
 
     //App循环引用
@@ -109,6 +112,7 @@ public final class Contract {
     }
     //endregion
 
+    //region extend
     public static String cacheKey(String methodName, Object... args) {
         require(methodName);
 
@@ -140,15 +144,6 @@ public final class Contract {
             log.warn("catchCall", e);
         }
         return null;
-    }
-
-    public static void sleep() {
-        sleep(Config.getScheduleDelay());
-    }
-
-    @SneakyThrows
-    public static void sleep(long millis) {
-        Thread.sleep(millis);
     }
 
     public static boolean tryClose(Object obj) {
@@ -216,6 +211,16 @@ public final class Contract {
         }
         return desc.value();
     }
+
+    public static void sleep() {
+        sleep(Config.getSleepMillis());
+    }
+
+    @SneakyThrows
+    public static void sleep(long millis) {
+        Thread.sleep(millis);
+    }
+    //endregion
 
     //region json
     public static <T> T fromJsonAsObject(Object jsonOrBean, Class<T> type) {

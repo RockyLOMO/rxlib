@@ -1,9 +1,10 @@
 package org.rx.core;
 
+import lombok.RequiredArgsConstructor;
+
 import java.util.function.Supplier;
 
-import static org.rx.core.Contract.require;
-
+@RequiredArgsConstructor
 public final class Lazy<T> {
     private T value;
     private final Supplier<T> supplier;
@@ -25,11 +26,5 @@ public final class Lazy<T> {
 
     public Lazy(Class<T> type) {
         this(() -> Reflects.newInstance(type));
-    }
-
-    public Lazy(Supplier<T> supplier) {
-        require(supplier);
-
-        this.supplier = supplier;
     }
 }

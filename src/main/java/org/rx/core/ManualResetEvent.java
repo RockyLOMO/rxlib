@@ -4,8 +4,10 @@ import lombok.SneakyThrows;
 
 import java.util.concurrent.TimeoutException;
 
+import static org.rx.core.Contract.TimeoutInfinite;
+
 public final class ManualResetEvent {
-    private final Object monitor = new Object();
+    private final Object monitor = this;//new Object();
     private volatile boolean open;
 
     public ManualResetEvent() {
@@ -18,15 +20,19 @@ public final class ManualResetEvent {
 
     @SneakyThrows
     public void waitOne() {
-        waitOne(App.TimeoutInfinite);
+        waitOne(TimeoutInfinite);
     }
 
-    @SneakyThrows
+    //    @SneakyThrows
     public void waitOne(long timeout) throws TimeoutException {
-        timeout = timeout == App.TimeoutInfinite ? 0 : timeout;
+        timeout = timeout == TimeoutInfinite ? 0 : timeout;
         synchronized (monitor) {
             while (!open) {
-                monitor.wait(timeout);
+                try {
+                    monitor.wait(timeout);
+                } catch (InterruptedException e) {
+                    //ignore
+                }
                 if (timeout > 0) {
                     if (!open) {
                         throw new TimeoutException("Call waitOne() time out");
