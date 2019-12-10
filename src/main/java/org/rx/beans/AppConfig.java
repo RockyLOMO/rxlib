@@ -10,6 +10,6 @@ public class AppConfig {
     private int bufferSize = 512;
     private int socksTimeout = 16000;
     private int cacheLiveMinutes = 4;
-    private String[] jsonSkipTypes = Arrays.EMPTY_STRING_ARRAY;
+    private String[] jsonSkipTypes = new String[]{"javax.servlet.ServletRequest", "javax.servlet.ServletResponse", "org.springframework.ui.Model"};
     private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
 }

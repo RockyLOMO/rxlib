@@ -129,5 +129,10 @@ class Internal {
     }
 
     static final WeakCache WeakCache = new WeakCache<>();
-    static final Lazy<GoogleCache> LazyCache = new Lazy<>(() -> new GoogleCache<>(CacheBuilder.newBuilder().maximumSize(MaxInt).expireAfterAccess(App.Config.getCacheLiveMinutes(), TimeUnit.MINUTES).build()));
+    static final GoogleCache SoftCache = new GoogleCache<>(newBuilder().softValues().build());
+    static final Lazy<GoogleCache> LazyCache = new Lazy<>(() -> new GoogleCache<>(newBuilder().expireAfterAccess(App.Config.getCacheLiveMinutes(), TimeUnit.MINUTES).build()));
+
+    private static CacheBuilder<Object, Object> newBuilder() {
+        return CacheBuilder.newBuilder().maximumSize(MaxInt);
+    }
 }

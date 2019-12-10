@@ -23,6 +23,8 @@ public interface MemoryCache<TK, TV> {
                 return ThreadCache.getInstance();
             case LruCache:
                 return Internal.LazyCache.getValue();
+            case SoftCache:
+                return Internal.SoftCache;
             default:
                 return Internal.WeakCache;
         }
