@@ -1,5 +1,6 @@
 package org.rx.util;
 
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -21,7 +22,7 @@ public final class SpringContextUtil implements InitializingBean, ApplicationCon
 
     }
 
-    public void setApplicationContext(ApplicationContext applicationContext) {
+    public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
 //        if (applicationContext == null) {
 //            return;
 //        }
@@ -33,19 +34,13 @@ public final class SpringContextUtil implements InitializingBean, ApplicationCon
         return applicationContext;
     }
 
-    /**
-     * 类名(首字母小写)
-     *
-     * @param name
-     * @param <T>
-     * @return
-     */
+    //类名(首字母小写)
     public static <T> T getBean(String name) {
         return (T) getApplicationContext().getBean(name);
     }
 
     public static <T> T getBean(Class<T> clazz) {
         Map<String, T> beanMaps = getApplicationContext().getBeansOfType(clazz);
-        return beanMaps != null && !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
+        return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
     }
 }

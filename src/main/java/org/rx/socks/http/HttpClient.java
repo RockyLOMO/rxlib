@@ -200,10 +200,6 @@ public class HttpClient {
         this(30 * 1000, null, null);
     }
 
-    /**
-     * @param millis
-     * @param proxy  new Proxy(Proxy.Type.HTTP, Sockets.parseEndpoint("127.0.0.1:8888"))
-     */
     public HttpClient(int millis, String rawCookie, Proxy proxy) {
         Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_UserAgent);
         boolean cookieJar = Strings.isEmpty(rawCookie);

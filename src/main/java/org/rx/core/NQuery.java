@@ -582,15 +582,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return toMap(keySelector, p -> p);
     }
 
-    /**
-     * Collectors.toMap 会校验value为null的情况
-     *
-     * @param keySelector
-     * @param resultSelector
-     * @param <TK>
-     * @param <TR>
-     * @return
-     */
+    //Collectors.toMap 会校验value为null的情况
     public <TK, TR> Map<TK, TR> toMap(Function<T, TK> keySelector, Function<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
         for (T item : current) {

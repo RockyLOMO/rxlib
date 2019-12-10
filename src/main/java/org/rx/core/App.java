@@ -337,14 +337,7 @@ public class App extends SystemUtils {
         return loadClass(className, initialize, true);
     }
 
-    /**
-     * ClassPath.from(classloader).getTopLevelClasses(packageDirName)
-     *
-     * @param className
-     * @param initialize
-     * @param throwOnEmpty
-     * @return
-     */
+    //ClassPath.from(classloader).getTopLevelClasses(packageDirName)
     public static Class loadClass(String className, boolean initialize, boolean throwOnEmpty) {
         try {
             return Class.forName(className, initialize, getClassLoader());
@@ -374,11 +367,6 @@ public class App extends SystemUtils {
         }
     }
 
-    /**
-     * @param baseFromType
-     * @param toType
-     * @param converter    BiFunction<TFromValue, TToType, TToValue>
-     */
     public synchronized static <TFromValue> void registerConverter(Class<TFromValue> baseFromType, Class toType, BiFunction<TFromValue, Class, Object> converter) {
         require(baseFromType, toType, converter);
 

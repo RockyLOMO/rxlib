@@ -45,12 +45,7 @@ public final class Contract {
         }
     }
 
-    /**
-     * require((Object) T[]);
-     * require(arg, (Object) boolean);
-     *
-     * @param args
-     */
+    //区分 require((Object) T[]); 和 require(arg, (Object) boolean);
     @ErrorCode(value = "args", messageKeys = {"$args"})
     public static void require(Object... args) {
         if (args == null || NQuery.of(args).any(Objects::isNull)) {
