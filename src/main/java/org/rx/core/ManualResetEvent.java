@@ -32,6 +32,7 @@ public final class ManualResetEvent {
                     monitor.wait(timeout);
                 } catch (InterruptedException e) {
                     //ignore
+                    throw SystemException.wrap(e);
                 }
                 if (timeout > 0) {
                     if (!open) {

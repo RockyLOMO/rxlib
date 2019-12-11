@@ -1,5 +1,7 @@
 package org.rx.core;
 
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
@@ -54,12 +56,24 @@ public class SystemException extends NestedRuntimeException {
         return new SystemException(cause);
     }
 
+    public static NQuery<StackTraceElement> threadStack() {
+        return NQuery.of(Thread.currentThread().getStackTrace()).take(8);
+    }
+
+    public static void dumpStack(StringBuilder msg) {
+        for (StackTraceElement stack : threadStack()) {
+            msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
+        }
+    }
+
     private String friendlyMessage;
     private Map<String, Object> data;
     /**
      * Gets the method that throws the current cause.
      */
+    @Getter(AccessLevel.PROTECTED)
     private BiTuple<Class, Method, ErrorCode> targetSite;
+    @Getter
     private Enum errorCode;
 
     @Override
@@ -76,14 +90,6 @@ public class SystemException extends NestedRuntimeException {
             data = new HashMap<>();
         }
         return data;
-    }
-
-    protected BiTuple<Class, Method, ErrorCode> getTargetSite() {
-        return targetSite;
-    }
-
-    public Enum getErrorCode() {
-        return errorCode;
     }
 
     protected SystemException(String message) {
@@ -112,9 +118,7 @@ public class SystemException extends NestedRuntimeException {
             messageValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
-        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-        for (int i = 0; i < Math.min(8, stackTrace.length); i++) {
-            StackTraceElement stack = stackTrace[i];
+        for (StackTraceElement stack : threadStack()) {
             Map<String, Object> methodSettings = as(App.readSetting(stack.getClassName(), null, getSettings()), Map.class);
             if (methodSettings == null) {
                 continue;

@@ -95,12 +95,12 @@ public class FluentWait {
         return this;
     }
 
-    public <T> T until(Function<UntilState, T> supplier) {
+    public <T> T until(Function<UntilState, T> supplier) throws TimeoutException {
         return until(supplier, null);
     }
 
-    @SneakyThrows
-    public <T> T until(Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) {
+    //    @SneakyThrows
+    public <T> T until(Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) throws TimeoutException {
         require(supplier);
 
         Throwable lastException;
@@ -144,14 +144,14 @@ public class FluentWait {
     }
 
     private Throwable propagateIfNotIgnored(Throwable e) {
-        Iterator tor = this.ignoredExceptions.iterator();
-        Class ignoredException;
+        Iterator<Class<? extends Throwable>> tor = this.ignoredExceptions.iterator();
+        Class<? extends Throwable> ignoredException;
         do {
             if (!tor.hasNext()) {
                 Throwables.throwIfUnchecked(e);
                 throw new RuntimeException(e);
             }
-            ignoredException = (Class) tor.next();
+            ignoredException = tor.next();
         } while (!ignoredException.isInstance(e));
         return e;
     }
