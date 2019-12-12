@@ -3,7 +3,7 @@ package org.rx.test;
 import lombok.Getter;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Description;
-import org.rx.beans.BeanMapper;
+import org.rx.util.BeanMapper;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.core.App;

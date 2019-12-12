@@ -1,8 +1,11 @@
-package org.rx.beans;
+package org.rx.util;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import net.sf.cglib.beans.BeanCopier;
+import org.rx.beans.FlagsEnum;
+import org.rx.beans.NEnum;
+import org.rx.beans.Tuple;
 import org.rx.core.*;
 
 import org.rx.core.StringBuilder;
@@ -24,18 +27,6 @@ import static org.rx.core.Contract.require;
  */
 public class BeanMapper {
     @RequiredArgsConstructor
-    public enum Flags implements NEnum<Flags> {
-        None(0),
-        SkipNull(1),
-        TrimString(1 << 1),
-        ValidateBean(1 << 2),
-        NonCheckMatch(1 << 3);
-
-        @Getter
-        private final int value;
-    }
-
-    @RequiredArgsConstructor
     private static class MapConfig {
         public final BeanCopier copier;
         public volatile boolean isCheck;
@@ -43,14 +34,7 @@ public class BeanMapper {
         public BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher;
     }
 
-    @RequiredArgsConstructor
-    private static class CacheItem {
-        public final NQuery<Method> setters;
-        public final NQuery<Method> getters;
-    }
-
     public static final String IgnoreProperty = "#ignore";
-    private static final String Get = "get", GetBool = "is", Set = "set";
     @Getter
     private static final BeanMapper instance = new BeanMapper();
 
@@ -84,23 +68,6 @@ public class BeanMapper {
             }
             return p;
         };
-    }
-
-    private static CacheItem getMethods(Class to) {
-        return MemoryCache.getOrStore(to, tType -> {
-            NQuery<Method> setters = NQuery.of(tType.getMethods())
-                    .where(p -> p.getName().startsWith(Set) && p.getParameterCount() == 1);
-            NQuery<Method> getters = NQuery.of(tType.getMethods()).where(p -> !"getClass".equals(p.getName())
-                    && (p.getName().startsWith(Get) || p.getName().startsWith(GetBool)) && p.getParameterCount() == 0);
-            NQuery<Method> s2 = setters.where(ps -> getters.any(pg -> exEquals(pg.getName(), ps.getName())));
-            NQuery<Method> g2 = getters.where(pg -> s2.any(ps -> exEquals(pg.getName(), ps.getName())));
-            return new CacheItem(s2, g2);
-        }, CacheKind.SoftCache);
-    }
-
-    private static boolean exEquals(String getterName, String setterName) {
-        return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length())
-                .equals(setterName.substring(Set.length()));
     }
 
     private Map<UUID, MapConfig> config = new ConcurrentHashMap<>();
@@ -143,38 +110,38 @@ public class BeanMapper {
         return map(source, Reflects.newInstance(targetType), Flags.None);
     }
 
-    public <T> T map(Object source, T target, NEnum<Flags> flags) {
+    public <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags) {
         require(source, target);
+        if (flags == null) {
+            flags = BeanMapFlag.None.add();
+        }
 
         Class from = source.getClass(), to = target.getClass();
         MapConfig config = getConfig(from, to);
-        boolean skipNull = checkFlag(flags, Flags.SkipNull), trimString = checkFlag(flags, Flags.TrimString),
-                nonCheckMatch = checkFlag(flags, Flags.NonCheckMatch);
-        final CacheItem tmc = getMethods(to);
-        TreeSet<String> targetMethods = new TreeSet<>();
+        boolean skipNull = flags.has(BeanMapFlag.SkipNull), trimString = flags.has(BeanMapFlag.TrimString), nonCheckMatch = flags.has(BeanMapFlag.NonCheckMatch);
+        final Reflects.PropertyCacheNode toProperties = Reflects.getProperties(to);
+        TreeSet<String> copiedNames = new TreeSet<>();
         if (config.propertyMatcher == null) {
             config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
                 String setterName = methodName.toString();
-                targetMethods.add(setterName);
+                copiedNames.add(setterName);
                 if (checkSkip(sourceValue, skipNull)) {
-                    Method gm = tmc.getters.where(p -> exEquals(p.getName(), setterName)).first();
+                    Method gm = toProperties.getters.where(p -> Reflects.propertyEquals(p.getName(), setterName)).first();
                     return Reflects.invokeMethod(gm, target);
                 }
                 if (trimString && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
                 }
                 if (config.propertyValueMatcher != null) {
-                    Method tm = tmc.setters.where(p -> exEquals(p.getName(), setterName)).first();
+                    Method tm = toProperties.setters.where(p -> Reflects.propertyEquals(p.getName(), setterName)).first();
                     sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
                 }
                 return App.changeType(sourceValue, targetMethodType);
             });
         }
-        TreeSet<String> copiedNames = targetMethods;
-        Set<String> allNames = tmc.setters.select(Method::getName).toSet(),
-                missedNames = NQuery.of(allNames).except(copiedNames).toSet();
+        Set<String> allNames = toProperties.setters.select(Method::getName).toSet(), missedNames = NQuery.of(allNames).except(copiedNames).toSet();
         if (config.propertyMatcher != null) {
-            final CacheItem fmc = getMethods(from);
+            final Reflects.PropertyCacheNode fromProperties = Reflects.getProperties(from);
             //避免missedNames.remove引发异常
             for (String missedName : new ArrayList<>(missedNames)) {
                 Method fm;
@@ -184,9 +151,9 @@ public class BeanMapper {
                     continue;
                 }
                 if (fromName.length() == 0
-                        || (fm = fmc.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
+                        || (fm = fromProperties.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
                     Method tm;
-                    if (nonCheckMatch || ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName))
+                    if (nonCheckMatch || ((tm = properties.getters.where(p -> exEquals(p.getName(), missedName))
                             .firstOrDefault()) != null && Reflects.invokeMethod(tm, target) != null)) {
                         continue;
                     }
@@ -202,7 +169,7 @@ public class BeanMapper {
                 if (trimString && sourceValue instanceof String) {
                     sourceValue = ((String) sourceValue).trim();
                 }
-                Method tm = tmc.setters.where(p -> p.getName().equals(missedName)).first();
+                Method tm = properties.setters.where(p -> p.getName().equals(missedName)).first();
                 if (config.propertyValueMatcher != null) {
                     sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
                 }
@@ -213,7 +180,7 @@ public class BeanMapper {
             synchronized (config) {
                 for (String missedName : missedNames) {
                     Method tm;
-                    if ((tm = tmc.getters.where(p -> exEquals(p.getName(), missedName)).firstOrDefault()) == null) {
+                    if ((tm = properties.getters.where(p -> exEquals(p.getName(), missedName)).firstOrDefault()) == null) {
                         continue;
                     }
                     if (Reflects.invokeMethod(tm, target) != null) {
@@ -231,17 +198,6 @@ public class BeanMapper {
             ValidateUtil.validateBean(target);
         }
         return target;
-    }
-
-    private boolean gmEquals(String getterName, String content) {
-        if (content.startsWith(Get)) {
-            content = content.substring(Get.length());
-        } else if (content.startsWith(GetBool)) {
-            content = content.substring(GetBool.length());
-        } else {
-            content = Strings.toTitleCase(content);
-        }
-        return getterName.substring(getterName.startsWith(GetBool) ? GetBool.length() : Get.length()).equals(content);
     }
 
     private boolean checkSkip(Object sourceValue, boolean skipNull) {

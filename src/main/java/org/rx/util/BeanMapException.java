@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.util;
 
 import lombok.Getter;
 import org.rx.core.SystemException;

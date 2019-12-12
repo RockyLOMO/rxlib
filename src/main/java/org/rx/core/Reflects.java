@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
@@ -18,8 +19,40 @@ import static org.rx.core.Contract.*;
  */
 @Slf4j
 public class Reflects extends TypeUtils {
+    @RequiredArgsConstructor
+    public static class PropertyCacheNode {
+        public final NQuery<Method> setters;
+        public final NQuery<Method> getters;
+    }
+
     public static final NQuery<Method> ObjectMethods = NQuery.of(Object.class.getMethods());
-    private static final String closeMethod = "close";
+    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
+
+    public static PropertyCacheNode getProperties(Class to) {
+        return MemoryCache.getOrStore(to, tType -> {
+            Method getClass = ObjectMethods.first(p -> p.getName().equals("getClass"));
+            NQuery<Method> q = NQuery.of(tType.getMethods());
+            NQuery<Method> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1);
+            NQuery<Method> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0);
+            NQuery<Method> s2 = setters.where(ps -> getters.any(pg -> propertyEquals(pg.getName(), ps.getName())));
+            NQuery<Method> g2 = getters.where(pg -> s2.any(ps -> propertyEquals(pg.getName(), ps.getName())));
+            return new PropertyCacheNode(s2, g2);
+        }, CacheKind.SoftCache);
+    }
+
+    public static boolean propertyEquals(String getterName, String setterName) {
+        String name;
+        if (setterName.startsWith(getProperty)) {
+            name = setterName.substring(getProperty.length());
+        } else if (setterName.startsWith(getBoolProperty)) {
+            name = setterName.substring(getBoolProperty.length());
+        } else if (setterName.startsWith(setProperty)) {
+            name = setterName.substring(setProperty.length());
+        } else {
+            name = Strings.toTitleCase(setterName);
+        }
+        return getterName.substring(getterName.startsWith(getProperty) ? getProperty.length() : getBoolProperty.length()).equals(name);
+    }
 
     public static boolean invokeClose(Method method, Object obj) {
         if (!isCloseMethod(method)) {

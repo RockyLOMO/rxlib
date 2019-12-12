@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.rx.beans.BeanMapper;
+import org.rx.util.BeanMapper;
 import org.rx.beans.BiTuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
