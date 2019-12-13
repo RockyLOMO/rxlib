@@ -14,11 +14,11 @@ public class UserManagerImpl implements UserManager {
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.add();
+        return EventFlags.DynamicAttach.flags();
     }
 
     @Override
-    public void addUser(PersonInfo person) {
+    public void addUser(PersonBean person) {
         UserEventArgs e = new UserEventArgs(person);
         raiseEvent(onAddUser, e);
         if (e.isCancel()) {

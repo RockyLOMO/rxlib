@@ -24,10 +24,8 @@ import static org.rx.core.App.Config;
 
 @Slf4j
 public final class Contract {
-    public static final String AllWarnings = "all",
-            Utf8 = "UTF-8";
-    public static final int TimeoutInfinite = -1,
-            MaxInt = Integer.MAX_VALUE - 8;
+    public static final String NonWarning = "all", Utf8 = "UTF-8";
+    public static final int TimeoutInfinite = -1, MaxInt = Integer.MAX_VALUE - 8;
     private static NQuery<Class> skipTypes = NQuery.of();
 
     //App循环引用
@@ -59,53 +57,6 @@ public final class Contract {
             throw new SystemException(values(arg), "test");
         }
     }
-
-    //region Delegate
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> combine(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
-        if (a == null) {
-            require(b);
-            return wrap(b);
-        }
-        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
-        if (b == null) {
-            return aw;
-        }
-        if (b instanceof EventTarget.Delegate) {
-            aw.getInvocationList().addAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
-        } else {
-            aw.getInvocationList().add(b);
-        }
-        return aw;
-    }
-
-    private static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> EventTarget.Delegate<TSender, TArgs> wrap(BiConsumer<TSender, TArgs> a) {
-        if (a instanceof EventTarget.Delegate) {
-            return (EventTarget.Delegate<TSender, TArgs>) a;
-        }
-        EventTarget.Delegate<TSender, TArgs> delegate = new EventTarget.Delegate<>();
-        delegate.getInvocationList().add(a);
-        return delegate;
-    }
-
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> remove(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
-        if (a == null) {
-            if (b == null) {
-                return null;
-            }
-            return wrap(b);
-        }
-        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
-        if (b == null) {
-            return aw;
-        }
-        if (b instanceof EventTarget.Delegate) {
-            aw.getInvocationList().removeAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
-        } else {
-            aw.getInvocationList().remove(b);
-        }
-        return aw;
-    }
-    //endregion
 
     //region extend
     public static String cacheKey(String methodName, Object... args) {
@@ -165,6 +116,7 @@ public final class Contract {
         return true;
     }
 
+    @SuppressWarnings(NonWarning)
     public static <T> T as(Object obj, Class<T> type) {
         if (!Reflects.isInstance(obj, type)) {
             return null;
@@ -214,6 +166,53 @@ public final class Contract {
     @SneakyThrows
     public static void sleep(long millis) {
         Thread.sleep(millis);
+    }
+    //endregion
+
+    //region Delegate
+    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> combine(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
+        if (a == null) {
+            require(b);
+            return wrap(b);
+        }
+        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
+        if (b == null) {
+            return aw;
+        }
+        if (b instanceof EventTarget.Delegate) {
+            aw.getInvocationList().addAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
+        } else {
+            aw.getInvocationList().add(b);
+        }
+        return aw;
+    }
+
+    private static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> EventTarget.Delegate<TSender, TArgs> wrap(BiConsumer<TSender, TArgs> a) {
+        if (a instanceof EventTarget.Delegate) {
+            return (EventTarget.Delegate<TSender, TArgs>) a;
+        }
+        EventTarget.Delegate<TSender, TArgs> delegate = new EventTarget.Delegate<>();
+        delegate.getInvocationList().add(a);
+        return delegate;
+    }
+
+    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> remove(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
+        if (a == null) {
+            if (b == null) {
+                return null;
+            }
+            return wrap(b);
+        }
+        EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
+        if (b == null) {
+            return aw;
+        }
+        if (b instanceof EventTarget.Delegate) {
+            aw.getInvocationList().removeAll(((EventTarget.Delegate<TSender, TArgs>) b).getInvocationList());
+        } else {
+            aw.getInvocationList().remove(b);
+        }
+        return aw;
     }
     //endregion
 

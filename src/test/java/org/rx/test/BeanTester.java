@@ -1,75 +1,113 @@
 package org.rx.test;
 
-import lombok.Getter;
 import org.junit.jupiter.api.Test;
-import org.rx.annotation.Description;
+import org.rx.annotation.Mapping;
+import org.rx.beans.FlagsEnum;
+import org.rx.test.bean.PersonBean;
+import org.rx.test.bean.PersonGender;
+import org.rx.util.BeanMapConverter;
+import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.rx.beans.DateTime;
 import org.rx.beans.Tuple;
 import org.rx.core.App;
-import org.rx.test.bean.ErrorBean;
 import org.rx.beans.NEnum;
-import org.rx.test.bean.SourceBean;
 import org.rx.test.bean.TargetBean;
+import org.rx.util.NullValueMappingStrategy;
 
-import java.lang.reflect.Constructor;
-import java.math.BigDecimal;
+import java.util.Date;
+
+import static org.rx.core.Contract.toJsonString;
 
 public class BeanTester {
     @Test
     public void testMapperCode() {
-        System.out.println(BeanMapper.genCode(SourceBean.class));
+        System.out.println(BeanMapper.genCode(PersonBean.class));
+    }
+
+    //因为有default method，暂不支持abstract class
+    interface PersonMapper {
+        PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
+
+        class DateToIntConvert implements BeanMapConverter<Date, Integer> {
+            @Override
+            public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
+                return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
+            }
+        }
+
+        //该interface下所有map方法的执行flags
+        default FlagsEnum<BeanMapFlag> flags() {
+            return BeanMapFlag.LogOnAllMapFail.flags();
+        }
+
+        @Mapping(target = "gender", ignore = true)
+        @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
+        @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = NullValueMappingStrategy.SetToDefault)
+        @Mapping(target = "birth", converter = DateToIntConvert.class)
+        TargetBean toTarget(PersonBean source);
+
+        @Mapping(target = "gender", ignore = true)
+        @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
+        @Mapping(target = "kids", nullValueStrategy = NullValueMappingStrategy.Ignore)
+        @Mapping(target = "birth", converter = DateToIntConvert.class)
+        default TargetBean toTargetWith(PersonBean source, TargetBean target) {
+            target.setKids(10L);//自定义默认值，先执行默认方法再copy properties
+            return target;
+        }
     }
 
     @Test
-    public void testMapper() {
+    public void defineMapBean() {
+        PersonBean f = new PersonBean();
+        f.setIndex(2);
+        f.setName("王湵范");
+        f.setAge(6);
+        f.setBirth(new DateTime(2020, 2, 20));
+        f.setGender(PersonGender.Boy);
+        f.setMoney(200L);
 
-        BeanMapper mapper = new BeanMapper();
-        mapper.setConfig(SourceBean.class, TargetBean.class, targetProperty -> {
-            switch (targetProperty) {
-                case "info":
-                    return "name";
-                case "luckyNum":
-                    return BeanMapper.IgnoreProperty;
-            }
-//            return null;
-            return targetProperty;
-        }, (targetProperty, sourceTuple) -> {
-            switch (targetProperty) {
-                case "age":
-                    return sourceTuple.left.toString();
-                case "money":
-                    return new BigDecimal((Long) sourceTuple.left);
-            }
-            return sourceTuple.left;
-        });
+        //定义用法
+        TargetBean result = PersonMapper.INSTANCE.toTarget(f);
+        System.out.println(toJsonString(f));
+        System.out.println(toJsonString(result));
 
-        SourceBean f = new SourceBean();
-        f.setName("HW ");
-        f.setAge(100);
+        result = new TargetBean();
+        PersonMapper.INSTANCE.toTargetWith(f, result);
+        System.out.println(toJsonString(f));
+        System.out.println(toJsonString(result));
+    }
+
+    @Test
+    public void normalMapBean() {
+        PersonBean f = new PersonBean();
+        f.setIndex(2);
+        f.setName("王湵范");
+        f.setAge(6);
+        f.setBirth(new DateTime(2020, 2, 20));
+        f.setGender(PersonGender.Boy);
         f.setMoney(200L);
         TargetBean t = new TargetBean();
         t.setKids(10L);
-        mapper.map(f, t, BeanMapper.Flags.TrimString.add(BeanMapper.Flags.SkipNull));
-        System.out.println(t);
-        assert t.getName().equals(f.getName().trim());
-        assert t.getInfo().equals(f.getName().trim());
-        assert t.getLuckyNum() == 0;
+
+        //普通用法，属性名一致
+        BeanMapper mapper = BeanMapper.getInstance();
+//        mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
+        mapper.map(f, t, BeanMapFlag.LogOnAllMapFail.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
+        System.out.println(toJsonString(f));
+        System.out.println(toJsonString(t));
     }
 
     @Test
     public void testConvert() {
-        System.out.println(TestEnum.class.isAssignableFrom(NEnum.class));
-        System.out.println(NEnum.class.isAssignableFrom(TestEnum.class));
-        System.out.println(TestEnum.class.isAssignableFrom(TestEnum.class));
-        App.registerConverter(Integer.class, TestEnum.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
-        App.registerConverter(TestEnum.class, Integer.class, (p1, p2) -> p1.getValue());
+        App.registerConverter(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
+        App.registerConverter(PersonGender.class, Integer.class, (p1, p2) -> p1.getValue());
 
-        int val = App.changeType(TestEnum.One, Integer.class);
+        int val = App.changeType(PersonGender.Boy, Integer.class);
         assert val == 1;
 
-        TestEnum testEnum = App.changeType(1, TestEnum.class);
-        assert testEnum == TestEnum.One;
+        PersonGender testEnum = App.changeType(1, PersonGender.class);
+        assert testEnum == PersonGender.Boy;
         int integer = App.changeType("1", Integer.class);
         assert integer == 1;
     }
@@ -99,6 +137,11 @@ public class BeanTester {
     }
 
     @Test
+    public void testEnum() {
+        System.out.println(PersonGender.Girl.toDescription());
+    }
+
+    @Test
     public void testTuple() {
         Tuple<String, Integer> tuple = Tuple.of("s", 1);
         tuple.setRight(2);
@@ -108,30 +151,5 @@ public class BeanTester {
         assert tuple.right == 1;
         assert tuple.equals(tuple2);
         assert !tuple.equals(tuple3);
-    }
-
-    @Test
-    public void testConstructor() throws Exception {
-        Constructor constructor = ErrorBean.class.getConstructor(new Class[0]);
-        System.out.println(constructor != null);
-    }
-
-    public enum TestEnum implements NEnum<TestEnum> {
-        @Description("1")
-        One(1),
-        @Description("2")
-        Two(2);
-
-        @Getter
-        private int value;
-
-        TestEnum(int val) {
-            value = val;
-        }
-    }
-
-    @Test
-    public void testEnum() {
-        System.out.println(TestEnum.Two.toDescription());
     }
 }

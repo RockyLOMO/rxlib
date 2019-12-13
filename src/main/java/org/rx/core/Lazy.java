@@ -23,8 +23,4 @@ public final class Lazy<T> {
         }
         return value;
     }
-
-    public Lazy(Class<T> type) {
-        this(() -> Reflects.newInstance(type));
-    }
 }

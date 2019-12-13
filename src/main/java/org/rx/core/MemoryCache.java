@@ -4,6 +4,7 @@ import org.rx.util.function.BiFunc;
 
 import java.util.*;
 
+import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.require;
 
 public interface MemoryCache<TK, TV> {
@@ -17,6 +18,7 @@ public interface MemoryCache<TK, TV> {
         return MemoryCache.<TK, TV>getInstance(kind).get(key, supplier);
     }
 
+    @SuppressWarnings(NonWarning)
     static <TK, TV> MemoryCache<TK, TV> getInstance(CacheKind kind) {
         switch (kind) {
             case ThreadCache:

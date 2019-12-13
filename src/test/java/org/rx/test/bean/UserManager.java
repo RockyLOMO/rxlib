@@ -13,13 +13,13 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
 
     @Override
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.add();
+        return EventFlags.DynamicAttach.flags();
     }
 
     default void close() {
     }
 
-    void addUser(PersonInfo person);
+    void addUser(PersonBean person);
 
     int computeInt(int x, int y);
 

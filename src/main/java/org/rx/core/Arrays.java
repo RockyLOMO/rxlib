@@ -6,6 +6,7 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.require;
 
 /**
@@ -13,6 +14,7 @@ import static org.rx.core.Contract.require;
  * Arrays.copyOf();
  */
 public class Arrays extends ArrayUtils {
+    @SuppressWarnings(NonWarning)
     public static <T> List<T> toList(T one) {
         require(one);
 
@@ -21,6 +23,7 @@ public class Arrays extends ArrayUtils {
         return toList(arr);
     }
 
+    @SuppressWarnings(NonWarning)
     @SafeVarargs
     public static <T> List<T> toList(T... items) {
         require((Object) items);

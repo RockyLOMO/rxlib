@@ -1,11 +1,10 @@
 package org.rx.util;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.beans.BeanCopier;
-import net.sf.cglib.core.Converter;
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.annotation.Mapping;
 import org.rx.beans.FlagsEnum;
 import org.rx.core.*;
@@ -18,19 +17,18 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.*;
 
-/**
- * map from multi sources https://yq.aliyun.com/articles/14958
- */
 @Slf4j
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class BeanMapper {
     @RequiredArgsConstructor
     private static class MapConfig {
         private final BeanCopier copier;
-        private final List<Mapping> mappings = new Vector<>();
+        private final ConcurrentHashMap<Method, Mapping[]> mappings = new ConcurrentHashMap<>();
     }
 
     @Getter
     private static final BeanMapper instance = new BeanMapper();
+    private static final Mapping[] empty = new Mapping[0];
 
     public static String genCode(Class entity) {
         require(entity);
@@ -50,21 +48,45 @@ public class BeanMapper {
     }
 
     private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
-    @Getter
-    @Setter
-    private FlagsEnum<BeanMapFlag> flags;
 
-    private MapConfig getConfig(Class from, Class to) {
-        require(from, to);
+    @SuppressWarnings(NonWarning)
+    public <T> T define(Class<T> type) {
+        require(type);
+        require(type, type.isInterface());
 
-        return config.computeIfAbsent(cacheKey(from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
+        return (T) Enhancer.create(type, (MethodInterceptor) (o, method, args, methodProxy) -> {
+            if (Reflects.ObjectMethods.contains(method)) {
+                return methodProxy.invokeSuper(o, args);
+            }
+            Object target = null;
+            if (method.isDefault()) {
+                target = Reflects.invokeDefaultMethod(method, o, args);
+            }
+            switch (args.length) {
+                case 1:
+                    if (method.getReturnType() == void.class) {
+                        return null;
+                    }
+                    setMappings(args[0].getClass(), method.getReturnType(), method);
+                    if (target == null) {
+                        target = Reflects.newInstance(method.getReturnType());
+                    }
+                    return map(args[0], target, null, method);
+                case 2:
+                    setMappings(args[0].getClass(), args[1].getClass(), method);
+                    map(args[0], args[1], null, method);
+                    return method.getReturnType() == void.class ? null : args[1];
+            }
+            throw new InvalidOperationException("Error Define Method %s", method.getName());
+        });
     }
 
-    public BeanMapper setMappings(Class from, Class to, List<Mapping> mappings) {
-        MapConfig config = getConfig(from, to);
-        config.mappings.clear();
-        config.mappings.addAll(mappings);
-        return this;
+    private void setMappings(Class from, Class to, Method method) {
+        getConfig(from, to).mappings.computeIfAbsent(method, k -> method.getAnnotationsByType(Mapping.class));
+    }
+
+    private MapConfig getConfig(Class from, Class to) {
+        return config.computeIfAbsent(cacheKey(from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
     }
 
     public <T> T map(Object source, Class<T> targetType) {
@@ -76,16 +98,21 @@ public class BeanMapper {
     }
 
     public <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags) {
+        return map(source, target, flags, null);
+    }
+
+    @SuppressWarnings(NonWarning)
+    private <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags, Method method) {
         require(source, target);
         if (flags == null) {
-            flags = BeanMapFlag.LogOnMatchFail.add();
+            flags = BeanMapFlag.LogOnAllMapFail.flags();
         }
 
         boolean skipNull = flags.has(BeanMapFlag.SkipNull);
         Class from = source.getClass(), to = target.getClass();
         MapConfig config = getConfig(from, to);
-        NQuery<Mapping> mappings = NQuery.of(config.mappings);
-        final Reflects.PropertyCacheNode toProperties = Reflects.getProperties(to);
+        NQuery<Mapping> mappings = NQuery.of(method != null ? config.mappings.getOrDefault(method, empty) : empty);
+        final NQuery<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
         config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
             String propertyName = Reflects.propertyName(methodName.toString());
@@ -97,20 +124,24 @@ public class BeanMapper {
             return App.changeType(sourceValue, targetType);
         });
 
-        final Reflects.PropertyCacheNode fromProperties = Reflects.getProperties(from);
+        final NQuery<Reflects.PropertyNode> fromProperties = Reflects.getProperties(from);
         for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
             copiedNames.add(mapping.target());
-            Object sourceValue = Reflects.invokeMethod(fromProperties.getters.first(p -> eq(mapping.source(), Reflects.propertyName(p.getName()))), source);
-            Method targetMethod = toProperties.setters.first(p -> eq(Reflects.propertyName(p.getName()), mapping.target()));
+            Object sourceValue = null;
+            Reflects.PropertyNode propertyNode = fromProperties.firstOrDefault(p -> eq(mapping.source(), p.propertyName));
+            if (propertyNode != null) {
+                sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
+            }
+            Method targetMethod = toProperties.first(p -> eq(p.propertyName, mapping.target())).setter;
             Class targetType = targetMethod.getParameterTypes()[0];
             sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), target, skipNull, toProperties);
             Reflects.invokeMethod(targetMethod, target, App.changeType(sourceValue, targetType));
         }
 
-        boolean logOnFail = flags.has(BeanMapFlag.LogOnMatchFail), throwOnFail = flags.has(BeanMapFlag.ThrowOnMatchFail);
+        boolean logOnFail = flags.has(BeanMapFlag.LogOnAllMapFail), throwOnFail = flags.has(BeanMapFlag.ThrowOnAllMapFail);
         if (logOnFail || throwOnFail) {
-            NQuery<String> missedProperties = toProperties.setters.select(p -> Reflects.propertyName(p.getName())).except(copiedNames);
-            String failMsg = String.format("Map %s to %s missed properties\n\t%s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
+            NQuery<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
+            String failMsg = String.format("Map %s to %s missed properties: %s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
             if (throwOnFail) {
                 throw new BeanMapException(failMsg, missedProperties.toSet());
             }
@@ -123,10 +154,11 @@ public class BeanMapper {
         return target;
     }
 
-    private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, Reflects.PropertyCacheNode toProperties) {
+    @SuppressWarnings(NonWarning)
+    private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
-                || (sourceValue == null && (skipNull || eq(mapping.nullValueMappingStrategy(), NullValueMappingStrategy.Ignore)))) {
-            return Reflects.invokeMethod(toProperties.getters.first(p -> eq(Reflects.propertyName(p.getName()), propertyName)), target);
+                || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), NullValueMappingStrategy.Ignore)))) {
+            return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
         }
         if (sourceValue instanceof String) {
             String val = (String) sourceValue;
@@ -138,10 +170,10 @@ public class BeanMapper {
             }
             sourceValue = val;
         }
-        if (sourceValue == null && eq(mapping.nullValueMappingStrategy(), NullValueMappingStrategy.SetToDefault)) {
+        if (sourceValue == null && eq(mapping.nullValueStrategy(), NullValueMappingStrategy.SetToDefault)) {
             sourceValue = mapping.defaultValue();
         }
-        if (mapping.converter() != Converter.class) {
+        if (mapping.converter() != BeanMapConverter.class) {
             sourceValue = Reflects.newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
         }
         return sourceValue;

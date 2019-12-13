@@ -31,10 +31,10 @@ public final class ShortUUID implements Serializable {
             String uuidStr = uuid.toString().replaceAll("-", "");
 
             double factor = Math.log(25d) / Math.log(alphabetSize);
-            Double length = Math.ceil(factor * 16);
+            double length = Math.ceil(factor * 16);
 
             BigInteger number = new BigInteger(uuidStr, 16);
-            String encoded = encode(number, alphabet, length.intValue());
+            String encoded = encode(number, alphabet, (int) length);
 
             return new ShortUUID(encoded);
         }
@@ -79,14 +79,12 @@ public final class ShortUUID implements Serializable {
                 str = String.format("%32s", str).replace(' ', '0');
             }
 
-            StringBuilder sb = new StringBuilder()
+            return new StringBuilder()
                     .append(str.substring(0, 8)).append("-")
                     .append(str.substring(8, 12)).append("-")
                     .append(str.substring(12, 16)).append("-")
                     .append(str.substring(16, 20)).append("-")
-                    .append(str.substring(20, 32));
-
-            return sb.toString();
+                    .append(str.substring(20, 32)).toString();
         }
     }
 

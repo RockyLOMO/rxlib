@@ -1,16 +1,17 @@
 package org.rx.beans;
 
 import org.rx.core.Arrays;
-import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 
 import java.util.Collection;
 import java.util.EnumSet;
 
+import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.require;
 
 public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
+    @SuppressWarnings(NonWarning)
     public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, int flags) {
         require(type);
 
@@ -64,12 +65,13 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return String.join(", ", NQuery.of(toSet()).select(NEnum::toDescription));
     }
 
+    @SuppressWarnings(NonWarning)
     FlagsEnum(NEnum<T> nEnum) {
         type = (Class<T>) nEnum.getClass();
         flags = nEnum.getValue();
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     public FlagsEnum<T> add(T... nEnum) {
         require(nEnum);
 
@@ -79,7 +81,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return this;
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     public FlagsEnum<T> remove(T... nEnum) {
         require(nEnum);
 
@@ -89,7 +91,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return this;
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     public boolean has(T... nEnum) {
         require(nEnum);
 
@@ -100,6 +102,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return (flags & val) == val;
     }
 
+    @SuppressWarnings(NonWarning)
     public EnumSet<T> toSet() {
         EnumSet<T> set = EnumSet.noneOf(type);
         for (T constant : type.getEnumConstants()) {

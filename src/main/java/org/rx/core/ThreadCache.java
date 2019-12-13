@@ -8,12 +8,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.tryClose;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
     private static final ThreadCache cache = new ThreadCache<>();
 
+    @SuppressWarnings(NonWarning)
     public static <TK, TV> ThreadCache<TK, TV> getInstance() {
         return cache;
     }

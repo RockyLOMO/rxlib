@@ -45,8 +45,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     //endregion
 
     //region staticMembers
-    private static final Comparator NaturalOrder = Comparator.naturalOrder(), ReverseOrder = Comparator.reverseOrder();
-
+    @SuppressWarnings(NonWarning)
     @ErrorCode(value = "argError", messageKeys = {"$type"})
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
@@ -163,6 +162,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             AtomicBoolean breaker = new AtomicBoolean();
             AtomicInteger counter = new AtomicInteger();
 
+            @SuppressWarnings(NonWarning)
             @Override
             public boolean tryAdvance(Consumer action) {
                 return spliterator.tryAdvance(p -> {
@@ -239,6 +239,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
+    @SuppressWarnings(NonWarning)
     public <TI, TR> NQuery<TR> leftJoin(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
             if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
@@ -288,6 +289,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return except(toList(set));
     }
 
+    @SuppressWarnings(NonWarning)
     public NQuery<T> except(Collection<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
@@ -312,6 +314,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparator(keySelector)));
     }
 
+    @SuppressWarnings(NonWarning)
     public static <T, TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
         return (p1, p2) -> {
             Comparable c1 = as(keySelector.apply(p1), Comparable.class);
@@ -331,6 +334,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
+    @SuppressWarnings(NonWarning)
     public static <T> Comparator<T> getComparatorMany(Function<T, Object[]> keySelector) {
         return (p1, p2) -> {
             Object[] k1s = keySelector.apply(p1);
@@ -355,8 +359,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
+    @SuppressWarnings(NonWarning)
     public NQuery<T> reverse() {
-        return me(stream().sorted((Comparator<T>) ReverseOrder));
+        return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
     }
 
     public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
@@ -399,8 +404,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return max(stream());
     }
 
+    @SuppressWarnings(NonWarning)
     private <TR> TR max(Stream<TR> stream) {
-        return stream.max((Comparator<TR>) NaturalOrder).orElse(null);
+        return stream.max((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
     public <TR> TR max(Function<T, TR> selector) {
@@ -411,8 +417,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return min(stream());
     }
 
+    @SuppressWarnings(NonWarning)
     private <TR> TR min(Stream<TR> stream) {
-        return stream.min((Comparator<TR>) NaturalOrder).orElse(null);
+        return stream.min((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
     public <TR> TR min(Function<T, TR> selector) {
@@ -423,14 +430,17 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return stream().mapToDouble(selector).sum();
     }
 
+    @SuppressWarnings(NonWarning)
     public <TR> NQuery<TR> cast() {
         return (NQuery<TR>) this;
     }
 
+    @SuppressWarnings(NonWarning)
     public <TR> NQuery<TR> ofType(Class<TR> type) {
         return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
+    @SuppressWarnings(NonWarning)
     public T first() {
         return stream().findFirst().get();
     }
@@ -451,6 +461,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return where(predicate).firstOrDefault();
     }
 
+    @SuppressWarnings(NonWarning)
     public T last() {
         return Streams.findLast(stream()).get();
     }
@@ -460,7 +471,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public T lastOrDefault() {
-        return Streams.findLast(stream()).orElse(null);
+        return lastOrDefault((T) null);
+    }
+
+    public T lastOrDefault(T defaultValue) {
+        return Streams.findLast(stream()).orElse(defaultValue);
     }
 
     public T lastOrDefault(Predicate<T> predicate) {
@@ -545,6 +560,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return String.join(delimiter, select(selector));
     }
 
+    @SuppressWarnings(NonWarning)
     public T[] toArray() {
         List<T> result = toList();
         Class type = null;
@@ -563,6 +579,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return array;
     }
 
+    @SuppressWarnings(NonWarning)
     public T[] toArray(Class<T> type) {
         List<T> result = toList();
         T[] array = (T[]) Array.newInstance(type, result.size());

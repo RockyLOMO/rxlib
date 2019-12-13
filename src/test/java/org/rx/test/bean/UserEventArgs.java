@@ -11,7 +11,7 @@ import java.util.List;
 @Getter
 @RequiredArgsConstructor
 public class UserEventArgs extends EventArgs {
-    private final PersonInfo user;
+    private final PersonBean user;
     @Setter
     private int flag;
     private final List<String> resultList = new ArrayList<>();

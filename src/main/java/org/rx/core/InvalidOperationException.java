@@ -18,12 +18,4 @@ public class InvalidOperationException extends SystemException {
         super(e);
         setErrorCode(errorCode, messageValues);
     }
-
-    public InvalidOperationException(Object[] messageValues, String errorName) {
-        super(messageValues, errorName);
-    }
-
-    public InvalidOperationException(Object[] messageValues, Throwable ex) {
-        super(messageValues, ex);
-    }
 }

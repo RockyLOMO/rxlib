@@ -3,7 +3,6 @@ package org.rx.beans;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.SystemException;
 
@@ -14,8 +13,7 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import static org.rx.beans.$.$;
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.values;
+import static org.rx.core.Contract.*;
 
 /**
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
@@ -74,37 +72,37 @@ public final class DateTime extends Date {
         return DateTime.valueOf(this.toString(format), format);
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH) + 1;
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
+    @SuppressWarnings(NonWarning)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);
@@ -146,6 +144,7 @@ public final class DateTime extends Date {
         this(year, month, day, 0, 0, 0);
     }
 
+    @SuppressWarnings(NonWarning)
     public DateTime(int year, int month, int day, int hour, int minute, int second) {
         Calendar c = getCalendar();
         c.set(year, month - 1, day, hour, minute, second);

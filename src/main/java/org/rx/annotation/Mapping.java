@@ -1,16 +1,18 @@
 package org.rx.annotation;
 
-import net.sf.cglib.core.Converter;
+import org.rx.util.BeanMapConverter;
 import org.rx.util.NullValueMappingStrategy;
 
 import java.lang.annotation.*;
 
-@Repeatable(Mapping.Mappings.class)
-@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@Repeatable(Mapping.Mappings.class)
 public @interface Mapping {
-    @Retention(RetentionPolicy.CLASS)
     @Target({ElementType.METHOD})
+    @Retention(RetentionPolicy.RUNTIME)
+    @Inherited
     @interface Mappings {
         Mapping[] value();
     }
@@ -25,9 +27,9 @@ public @interface Mapping {
 
     String defaultValue() default "";
 
-    NullValueMappingStrategy nullValueMappingStrategy() default NullValueMappingStrategy.SetToNull;
+    NullValueMappingStrategy nullValueStrategy() default NullValueMappingStrategy.SetToNull;
 
     boolean trim() default false;
 
-    Class<? extends Converter> converter() default Converter.class;
+    Class<? extends BeanMapConverter> converter() default BeanMapConverter.class;
 }

@@ -8,7 +8,7 @@ import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.*;
-import org.rx.test.bean.PersonInfo;
+import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.UserEventArgs;
 import org.rx.test.bean.UserManager;
 import org.rx.test.bean.UserManagerImpl;
@@ -76,7 +76,7 @@ public class SocksTester {
             });
         }
 
-        UserEventArgs args = new UserEventArgs(PersonInfo.def);
+        UserEventArgs args = new UserEventArgs(PersonBean.def);
         facadeGroupA.get(0).raiseEvent(groupAEvent, args);  //客户端触发事件，不广播
         assert args.getFlag() == 1;
         facadeGroupA.get(1).raiseEvent(groupAEvent, args);
@@ -156,9 +156,9 @@ public class SocksTester {
         sleep(1000);
 
         //服务端触发事件
-        server.addUser(PersonInfo.def);
+        server.addUser(PersonBean.def);
         //客户端触发事件
-        facade.addUser(PersonInfo.def);
+        facade.addUser(PersonBean.def);
 
         //自定义事件
         String eventName = "onCustom";

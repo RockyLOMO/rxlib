@@ -182,7 +182,7 @@ public class SystemException extends NestedRuntimeException {
     private ErrorCode findCode(AccessibleObject member, String errorName, Throwable cause) {
         NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
         if (!errorCodes.any()) {
-            log.debug("SystemException: Not found @ErrorCode in %s", member.toString());
+            log.debug("SystemException: Not found @ErrorCode in {}", member.toString());
             return null;
         }
         if (errorName != null) {

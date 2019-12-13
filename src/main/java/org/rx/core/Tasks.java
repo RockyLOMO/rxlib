@@ -87,8 +87,9 @@ public final class Tasks {
         }), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
 
+
     public static List<Future> scheduleDaily(Action task, String... timeArray) {
-        require(timeArray);
+        require((Object) timeArray);
 
         return NQuery.of(timeArray).select(p -> scheduleDaily(task, p)).toList();
     }
@@ -96,9 +97,9 @@ public final class Tasks {
     /**
      * 每天按指定时间执行
      *
-     * @param task
+     * @param task Action
      * @param time "HH:mm:ss"
-     * @return
+     * @return Future
      */
     public static Future scheduleDaily(Action task, String time) {
         require(task, time);

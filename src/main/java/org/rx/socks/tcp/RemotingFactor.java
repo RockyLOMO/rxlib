@@ -125,7 +125,7 @@ public final class RemotingFactor {
                 case "eventFlags":
                     if (args.length == 0) {
                         if (targetType.isInterface()) {
-                            return EventTarget.EventFlags.DynamicAttach.add();
+                            return EventTarget.EventFlags.DynamicAttach.flags();
                         }
                         return methodProxy.invokeSuper(o, args);
                     }
@@ -306,7 +306,7 @@ public final class RemotingFactor {
                                 } catch (TimeoutException ex) {
                                     log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
-                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapFlag.None.add());
+                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapFlag.None.flags());
                                     pack.broadcast = true;
                                     pack.remoteArgs = tuple.right;
                                     for (SessionClient<RemotingState> client : clients) {

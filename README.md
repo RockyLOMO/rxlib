@@ -1,102 +1,79 @@
 # rxlib-java
 A set of utilities for Java.
 
-* Rpc - netty tcp 实现
+* BeanMapper - 基于cglib bytecode实现，[cglib性能参考](https://yq.aliyun.com/articles/14958)
 ```java
-@Test
-public void apiRpc() {
-    UserManagerImpl server = new UserManagerImpl();
-    restartServer(server, 3307);
+//因为有default method，暂不支持abstract class
+interface PersonMapper {
+    PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
 
-    String ep = "127.0.0.1:3307";
-    String groupA = "a", groupB = "b";
-    List<UserManager> facadeGroupA = new ArrayList<>();
-    facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-    facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-
-    for (UserManager facade : facadeGroupA) {
-        assert facade.computeInt(1, 1) == 2;
-    }
-    //重启server，客户端自动重连
-    restartServer(server, 3307);
-    for (UserManager facade : facadeGroupA) {
-        facade.testError();
-        assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
+    class DateToIntConvert implements BeanMapConverter<Date, Integer> {
+        @Override
+        public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
+            return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
+        }
     }
 
-    List<UserManager> facadeGroupB = new ArrayList<>();
-    facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-    facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-
-    for (UserManager facade : facadeGroupB) {
-        assert facade.computeInt(1, 1) == 2;
-        facade.testError();
-        assert facade.computeInt(2, 2) == 4;
+    //该interface下所有map方法的执行flags
+    default FlagsEnum<BeanMapFlag> flags() {
+        return BeanMapFlag.LogOnAllMapFail.flags();
     }
 
-    //自定义事件（广播）
-    String groupAEvent = "onAuth-A", groupBEvent = "onAuth-B";
-    for (int i = 0; i < facadeGroupA.size(); i++) {
-        int x = i;
-        facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
-            System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
-            e.setFlag(e.getFlag() + 1);
-        });
+    @Mapping(target = "gender", ignore = true)
+    @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
+    @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = NullValueMappingStrategy.SetToDefault)
+    @Mapping(target = "birth", converter = DateToIntConvert.class)
+    TargetBean toTarget(PersonBean source);
+
+    @Mapping(target = "gender", ignore = true)
+    @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
+    @Mapping(target = "kids", nullValueStrategy = NullValueMappingStrategy.Ignore)
+    @Mapping(target = "birth", converter = DateToIntConvert.class)
+    default TargetBean toTargetWith(PersonBean source, TargetBean target) {
+        target.setKids(10L);//自定义默认值，先执行默认方法再copy properties
+        return target;
     }
-    for (int i = 0; i < facadeGroupB.size(); i++) {
-        int x = i;
-        facadeGroupB.get(i).<UserEventArgs>attachEvent(groupBEvent, (s, e) -> {
-            System.out.println(String.format("!!groupB - facade%s - %s[flag=%s]!!", x, groupBEvent, e.getFlag()));
-            e.setFlag(e.getFlag() + 1);
-        });
-    }
-
-    UserEventArgs args = new UserEventArgs(PersonInfo.def);
-    facadeGroupA.get(0).raiseEvent(groupAEvent, args);  //客户端触发事件，不广播
-    assert args.getFlag() == 1;
-    facadeGroupA.get(1).raiseEvent(groupAEvent, args);
-    assert args.getFlag() == 2;
-
-    server.raiseEvent(groupAEvent, args);
-    assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
-
-    facadeGroupB.get(0).raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 4;
-
-    sleep(1000);
-    args.setFlag(8);
-    server.raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 9;
-
-    facadeGroupB.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-    sleep(1000);
-    args.setFlag(16);
-    server.raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 17;
 }
 
-@SneakyThrows
-private void epGroupReconnect() {
-    UserManagerImpl server = new UserManagerImpl();
-    restartServer(server, 3307);
-    String ep = "127.0.0.1:3307";
-    String groupA = "a", groupB = "b";
+@Test
+public void defineMapBean() {
+    PersonBean f = new PersonBean();
+    f.setIndex(2);
+    f.setName("王湵范");
+    f.setAge(6);
+    f.setBirth(new DateTime(2020, 2, 20));
+    f.setGender(PersonGender.Boy);
+    f.setMoney(200L);
 
-    UserManager userManager = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, p -> {
-        InetSocketAddress result;
-        if (p.equals(Sockets.parseEndpoint(ep))) {
-            result = Sockets.parseEndpoint("127.0.0.1:3308");
-        } else {
-            result = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
-        }
-        log.debug("reconnect {}", result);
-        return result;
-    });
-    assert userManager.computeInt(1, 1) == 2;
-    sleep(1000);
-    tcpServer.close();  //关闭3307
-    Tasks.scheduleOnce(() -> tcpServer2 = RemotingFactor.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
-    System.in.read();
+    //定义用法
+    TargetBean result = PersonMapper.INSTANCE.toTarget(f);
+    System.out.println(toJsonString(f));
+    System.out.println(toJsonString(result));
+
+    result = new TargetBean();
+    PersonMapper.INSTANCE.toTargetWith(f, result);
+    System.out.println(toJsonString(f));
+    System.out.println(toJsonString(result));
+}
+
+@Test
+public void normalMapBean() {
+    PersonBean f = new PersonBean();
+    f.setIndex(2);
+    f.setName("王湵范");
+    f.setAge(6);
+    f.setBirth(new DateTime(2020, 2, 20));
+    f.setGender(PersonGender.Boy);
+    f.setMoney(200L);
+    TargetBean t = new TargetBean();
+    t.setKids(10L);
+
+    //普通用法，属性名一致
+    BeanMapper mapper = BeanMapper.getInstance();
+//    mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常，提醒开发是否漏设置属性
+    mapper.map(f, t, BeanMapFlag.LogOnAllMapFail.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
+    System.out.println(toJsonString(f));
+    System.out.println(toJsonString(t));
 }
 ```
 
@@ -135,98 +112,8 @@ public void threadPool() {
 }
 ```
 
-* NEvent
-```java
-@Test
-public void runNEvent() {
-    UserManagerImpl mgr = new UserManagerImpl();
-    PersonInfo p = new PersonInfo();
-    p.id = 1;
-    p.name = "rx";
-    p.age = 6;
-
-    BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-    BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-
-    mgr.onAddUser = a;
-    mgr.addUser(p);  //触发事件（a执行）
-
-    mgr.onAddUser = combine(mgr.onAddUser, b);
-    mgr.addUser(p); //触发事件（a, b执行）
-
-    mgr.onAddUser = remove(mgr.onAddUser, b);
-    mgr.addUser(p); //触发事件（b执行）
-}
-```
-
-* NQuery - lambda parallel stream
-```java
-@Test
-public void runNQuery() {
-    Set<Person> personSet = new HashSet<>();
-    for (int i = 0; i < 5; i++) {
-        Person p = new Person();
-        p.index = i;
-        p.index2 = i % 2 == 0 ? 2 : i;
-        p.index3 = i % 2 == 0 ? 3 : 4;
-        p.name = Strings.randomValue(5);
-        p.age = ThreadLocalRandom.current().nextInt(100);
-        personSet.add(p);
-    }
-    Person px = new Person();
-    px.index2 = 2;
-    px.index3 = 41;
-    personSet.add(px);
-
-    showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, p -> {
-        System.out.println("groupKey: " + p.left);
-        List<Person> list = p.right.toList();
-        System.out.println("items: " + Contract.toJsonString(list));
-        return list.get(0);
-    }));
-    showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-            NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, p -> {
-                System.out.println("groupKey: " + toJsonString(p.left));
-                List<Person> list = p.right.toList();
-                System.out.println("items: " + toJsonString(list));
-                return list.get(0);
-            }));
-
-    showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
-    showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
-    showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-            NQuery.of(personSet).orderByMany(p -> new Object[]{p.index2, p.index}));
-    showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-            NQuery.of(personSet).orderByDescendingMany(p -> new Object[]{p.index2, p.index}));
-
-    showResult("select(p -> p.index).reverse()",
-            NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
-
-    showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer>max(p -> p.index));
-    showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer>min(p -> p.index));
-
-    showResult("take(0).average(p -> p.index)", NQuery.of(personSet).take(0).average(p -> p.index));
-    showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
-    showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
-    showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
-
-    showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
-    NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
-    showResult("ofType(Integer.class)", oq.ofType(Integer.class));
-
-    showResult("firstOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).firstOrDefault());
-    showResult("lastOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).lastOrDefault());
-    showResult("skip(2)", NQuery.of(personSet).orderBy(p -> p.index).skip(2));
-    showResult("take(2)", NQuery.of(personSet).orderBy(p -> p.index).take(2));
-
-    showResult(".skipWhile((p, i) -> p.index < 3)",
-            NQuery.of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
-
-    showResult(".takeWhile((p, i) -> p.index < 3)",
-            NQuery.of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
-}
-```
-
+* [Rpc - netty tcp 实现](https://github.com/RockyLOMO/rxlib/wiki/Rpc---netty-tcp-%E5%AE%9E%E7%8E%B0)
+* [NQuery - lambda parallel stream](https://github.com/RockyLOMO/rxlib/wiki/NQuery---lambda-parallel-stream)
 ### shadowsocks (Only tested AES encryption, BELOW VERSION 2.13.13)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
     * Requirements

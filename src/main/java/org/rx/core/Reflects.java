@@ -8,9 +8,11 @@ import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
+import org.rx.beans.Tuple;
 import sun.reflect.CallerSensitive;
 import sun.reflect.Reflection;
 
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
 import java.util.List;
 
@@ -19,78 +21,114 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class Reflects extends TypeUtils {
     @RequiredArgsConstructor
-    public static class PropertyCacheNode {
-        public final NQuery<Method> setters;
-        public final NQuery<Method> getters;
+    public static class PropertyNode {
+        public final String propertyName;
+        public final Method setter;
+        public final Method getter;
     }
 
     public static final NQuery<Method> ObjectMethods = NQuery.of(Object.class.getMethods());
+    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
     private static final Throwable getStackTraceInstance = new Throwable();
     private static final Method getStackTraceMethod;
-    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
+    private static final Constructor<MethodHandles.Lookup> lookupConstructor;
+    private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
 
     static {
         getStackTraceMethod = MethodUtils.getMatchingMethod(Throwable.class, "getStackTraceElement", int.class);
         getStackTraceMethod.setAccessible(true);
+        try {
+            lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
+            setAccess(lookupConstructor);
+        } catch (NoSuchMethodException e) {
+            throw SystemException.wrap(e);
+        }
     }
 
-    public static PropertyCacheNode getProperties(Class to) {
+    public static NQuery<PropertyNode> getProperties(Class to) {
         return MemoryCache.getOrStore(to, tType -> {
             Method getClass = ObjectMethods.first(p -> p.getName().equals("getClass"));
             NQuery<Method> q = NQuery.of(tType.getMethods());
-            NQuery<Method> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1);
-            NQuery<Method> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0);
-            NQuery<Method> s2 = setters.where(ps -> getters.any(pg -> propertyEquals(pg.getName(), ps.getName())));
-            NQuery<Method> g2 = getters.where(pg -> s2.any(ps -> propertyEquals(pg.getName(), ps.getName())));
-            return new PropertyCacheNode(s2, g2);
+            NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
+            NQuery<Tuple<String, Method>> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0).select(p -> Tuple.of(propertyName(p.getName()), p));
+            return setters.join(getters.asCollection(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
         }, CacheKind.SoftCache);
-    }
-
-    public static boolean propertyEquals(String getterName, String setterName) {
-        String name;
-        if (setterName.startsWith(getProperty)) {
-            name = setterName.substring(getProperty.length());
-        } else if (setterName.startsWith(getBoolProperty)) {
-            name = setterName.substring(getBoolProperty.length());
-        } else if (setterName.startsWith(setProperty)) {
-            name = setterName.substring(setProperty.length());
-        } else {
-            name = Strings.toTitleCase(setterName);
-        }
-        return getterName.substring(getterName.startsWith(getProperty) ? getProperty.length() : getBoolProperty.length()).equals(name);
     }
 
     public static String propertyName(String getterOrSetterName) {
         require(getterOrSetterName);
 
+        String name;
         if (getterOrSetterName.startsWith(getProperty)) {
-            return getterOrSetterName.substring(getProperty.length());
+            name = getterOrSetterName.substring(getProperty.length());
+        } else if (getterOrSetterName.startsWith(getBoolProperty)) {
+            name = getterOrSetterName.substring(getBoolProperty.length());
+        } else if (getterOrSetterName.startsWith(setProperty)) {
+            name = getterOrSetterName.substring(setProperty.length());
+        } else {
+            name = getterOrSetterName;
         }
-        if (getterOrSetterName.startsWith(getBoolProperty)) {
-            return getterOrSetterName.substring(getBoolProperty.length());
+
+        if (Character.isLowerCase(name.charAt(0))) {
+            return name;
         }
-        if (getterOrSetterName.startsWith(setProperty)) {
-            return getterOrSetterName.substring(setProperty.length());
-        }
-        if (Character.isLowerCase(getterOrSetterName.charAt(0))) {
-            return getterOrSetterName;
-        }
-        return getterOrSetterName.substring(0, 1).toLowerCase() + getterOrSetterName.substring(1);
+        return name.substring(0, 1).toLowerCase() + name.substring(1);
     }
+
+//    @SneakyThrows
+//    public static void fillProperties(Object instance, Object propBean) {
+//        require(instance, propBean);
+//
+//        NQuery<Method> methods = NQuery.of(instance.getClass().getMethods());
+//        for (Field field : getFields(propBean.getClass())) {
+//            Object val = field.get(propBean);
+//            if (val == null) {
+//                continue;
+//            }
+//            String methodName = String.format("set%s", Strings.toTitleCase(field.getName()));
+//            Method method = methods.where(p -> p.getName().equals(methodName)).firstOrDefault();
+//            if (method == null) {
+//                continue;
+//            }
+//            try {
+//                method.invoke(instance, checkArgs(method.getParameterTypes(), val));
+//            } catch (Exception e) {
+//                log.warn("fillProperties", e);
+//            }
+//        }
+//    }
+//
+//    @SuppressWarnings(NonWarning)
+//    private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
+//        return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
+//    }
 
     @CallerSensitive
     public static NQuery<StackTraceElement> threadStack(int takeCount) {
         //Thread.currentThread().getStackTrace()性能略差
         return NQuery.of(new Throwable().getStackTrace()).take(takeCount);
-
-        //return (StackTraceElement) getStackTraceMethod.invoke(getStackTraceInstance, index);
     }
 
-    //    @CallerSensitive
+    @SneakyThrows
+    public static StackTraceElement callerStack(int depth) {
+        return (StackTraceElement) getStackTraceMethod.invoke(getStackTraceInstance, depth);
+    }
+
+    @SuppressWarnings(NonWarning)
     public static Class<?> callerClass(int depth) {
         Class<?> type = Reflection.getCallerClass(2 + depth);
         log.debug("getCallerClass: {}", type.getName());
         return type;
+    }
+
+    @SneakyThrows
+    public static Object invokeDefaultMethod(Method method, Object instance, Object... args) {
+        require(method, method.isDefault());
+        Class<?> declaringClass = method.getDeclaringClass();
+        return lookupConstructor.newInstance(declaringClass, lookupFlags)
+                .unreflectSpecial(method, declaringClass)
+                .bindTo(instance)
+                .invokeWithArguments(args);
     }
 
     public static boolean invokeClose(Method method, Object obj) {
@@ -102,33 +140,6 @@ public class Reflects extends TypeUtils {
 
     public static boolean isCloseMethod(Method method) {
         return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
-    }
-
-    @SneakyThrows
-    public static void fillProperties(Object instance, Object propBean) {
-        require(instance, propBean);
-
-        NQuery<Method> methods = NQuery.of(instance.getClass().getMethods());
-        for (Field field : getFields(propBean.getClass())) {
-            Object val = field.get(propBean);
-            if (val == null) {
-                continue;
-            }
-            String methodName = String.format("set%s", Strings.toTitleCase(field.getName()));
-            Method method = methods.where(p -> p.getName().equals(methodName)).firstOrDefault();
-            if (method == null) {
-                continue;
-            }
-            try {
-                method.invoke(instance, checkArgs(method.getParameterTypes(), val));
-            } catch (Exception e) {
-                log.warn("fillProperties", e);
-            }
-        }
-    }
-
-    private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
-        return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
     }
 
     public static Object invokeMethod(Class type, Object instance, String name, Object... args) {
@@ -146,6 +157,7 @@ public class Reflects extends TypeUtils {
         return method.invoke(instance, args);
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
     public static <T> T readField(Class type, Object instance, String name) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
@@ -170,6 +182,7 @@ public class Reflects extends TypeUtils {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
     public static <T> T newInstance(Class<T> type, Object... args) {
         require(type);

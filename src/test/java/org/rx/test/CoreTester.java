@@ -4,7 +4,6 @@ import com.google.common.reflect.TypeToken;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
-import org.apache.commons.lang3.reflect.MethodUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.$;
@@ -14,7 +13,6 @@ import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
-import sun.reflect.Reflection;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -43,43 +41,42 @@ public class CoreTester {
 
     @Test
     public void runNQuery() {
-        Set<PersonInfo> personSet = new HashSet<>();
+        Set<PersonBean> personSet = new HashSet<>();
         for (int i = 0; i < 5; i++) {
-            PersonInfo p = new PersonInfo();
-            p.index = i;
-            p.index2 = i % 2 == 0 ? 2 : i;
-            p.index3 = i % 2 == 0 ? 3 : 4;
+            PersonBean p = new PersonBean();
+            p.index = i % 2 == 0 ? 2 : i;
+            p.index2 = i % 2 == 0 ? 3 : 4;
             p.name = Strings.randomValue(5);
             p.age = ThreadLocalRandom.current().nextInt(100);
             personSet.add(p);
         }
-        PersonInfo px = new PersonInfo();
-        px.index2 = 2;
-        px.index3 = 41;
+        PersonBean px = new PersonBean();
+        px.index = 2;
+        px.index2 = 41;
         personSet.add(px);
 
-        showResult("leftJoin", NQuery.of(new PersonInfo(27, 27, 27, "jack", 6, DateTime.now()),
-                new PersonInfo(28, 28, 28, "tom", 6, DateTime.now()),
-                new PersonInfo(29, 29, 29, "lily", 8, DateTime.now()),
-                new PersonInfo(30, 30, 30, "cookie", 6, DateTime.now())).leftJoin(
-                Arrays.toList(new PersonInfo(27, 27, 27, "cookie", 5, DateTime.now()),
-                        new PersonInfo(28, 28, 28, "tom", 10, DateTime.now()),
-                        new PersonInfo(29, 29, 29, "jack", 1, DateTime.now()),
-                        new PersonInfo(30, 30, 30, "session", 25, DateTime.now()),
-                        new PersonInfo(31, 31, 31, "trump", 55, DateTime.now()),
-                        new PersonInfo(32, 32, 32, "jack", 55, DateTime.now())), (p, x) -> p.name.equals(x.name), Tuple::of
+        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.Boy, 6, DateTime.now(), 1L),
+                new PersonBean(28, 28, "tom", PersonGender.Boy, 6, DateTime.now(), 1L),
+                new PersonBean(29, 29, "lily", PersonGender.Girl, 8, DateTime.now(), 1L),
+                new PersonBean(30, 30, "cookie", PersonGender.Boy, 6, DateTime.now(), 1L)).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.Boy, 5, DateTime.now(), 1L),
+                        new PersonBean(28, 28, "tom", PersonGender.Boy, 10, DateTime.now(), 1L),
+                        new PersonBean(29, 29, "jack", PersonGender.Boy, 1, DateTime.now(), 1L),
+                        new PersonBean(30, 30, "session", PersonGender.Boy, 25, DateTime.now(), 1L),
+                        new PersonBean(31, 31, "trump", PersonGender.Boy, 55, DateTime.now(), 1L),
+                        new PersonBean(32, 32, "jack", PersonGender.Boy, 55, DateTime.now(), 1L)), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
             System.out.println("groupKey: " + p);
-            List<PersonInfo> list = x.toList();
+            List<PersonBean> list = x.toList();
             System.out.println("items: " + Contract.toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index2, p.index3}, (p, x) -> {
+                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index, p.index2}, (p, x) -> {
                     System.out.println("groupKey: " + toJsonString(p));
-                    List<PersonInfo> list = x.toList();
+                    List<PersonBean> list = x.toList();
                     System.out.println("items: " + toJsonString(list));
                     return list.get(0);
                 }));
@@ -136,7 +133,7 @@ public class CoreTester {
     @Test
     public void runNEvent() {
         UserManagerImpl mgr = new UserManagerImpl();
-        PersonInfo p = new PersonInfo();
+        PersonBean p = new PersonBean();
         p.index = 1;
         p.name = "rx";
         p.age = 6;
@@ -296,13 +293,13 @@ public class CoreTester {
     public void json() {
         String str = "abc";
         assert str.equals(toJsonString(str));
-        String jObj = toJsonString(PersonInfo.def);
+        String jObj = toJsonString(PersonBean.def);
         System.out.println("jObj: " + jObj);
-        assert fromJsonAsObject(jObj, PersonInfo.class).equals(PersonInfo.def);
-        List<PersonInfo> arr = Arrays.toList(PersonInfo.def, PersonInfo.def);
+        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
+        List<PersonBean> arr = Arrays.toList(PersonBean.def, PersonBean.def);
         String jArr = toJsonString(arr);
         System.out.println("jArr: " + jArr);
-        assert ListUtils.isEqualList(fromJsonAsList(jArr, PersonInfo.class), arr);
+        assert ListUtils.isEqualList(fromJsonAsList(jArr, PersonBean.class), arr);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", "rocky");
@@ -310,12 +307,12 @@ public class CoreTester {
         data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
 
-        List<PersonInfo> list = fromJsonAsList(jArr, PersonInfo.class);
-        for (PersonInfo info : list) {
+        List<PersonBean> list = fromJsonAsList(jArr, PersonBean.class);
+        for (PersonBean info : list) {
             System.out.println(info);
         }
-        list = fromJsonAsList(arr, PersonInfo.class);
-        for (PersonInfo info : list) {
+        list = fromJsonAsList(arr, PersonBean.class);
+        for (PersonBean info : list) {
             System.out.println(info);
         }
 

@@ -20,6 +20,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         @Getter
         private final List<BiConsumer<TSender, TArgs>> invocationList = new CopyOnWriteArrayList<>();
 
+        @SuppressWarnings(NonWarning)
         @Override
         public void accept(TSender target, TArgs args) {
             require(target, args);
@@ -60,13 +61,14 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.None.add();
+        return EventFlags.None.flags();
     }
 
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
         attachEvent(eventName, event, true);
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
         require(eventName);
@@ -82,6 +84,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         field.set(this, combine ? combine((BiConsumer<TSender, TArgs>) field.get(this), event) : event);
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
     default <TArgs extends EventArgs> void detachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
         require(eventName);
@@ -97,6 +100,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         field.set(this, remove((BiConsumer<TSender, TArgs>) field.get(this), event));
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(String eventName, TArgs args) {
         require(eventName);
@@ -112,6 +116,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         raiseEvent((BiConsumer<TSender, TArgs>) field.get(this), args);
     }
 
+    @SuppressWarnings(NonWarning)
     default <TArgs extends EventArgs> void raiseEvent(BiConsumer<TSender, TArgs> event, TArgs args) {
         require(args);
 

@@ -23,7 +23,6 @@ public final class ManualResetEvent {
         waitOne(TimeoutInfinite);
     }
 
-    //    @SneakyThrows
     public void waitOne(long timeout) throws TimeoutException {
         timeout = timeout == TimeoutInfinite ? 0 : timeout;
         synchronized (monitor) {

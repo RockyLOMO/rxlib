@@ -6,17 +6,20 @@ import lombok.NoArgsConstructor;
 import org.rx.beans.DateTime;
 
 import java.util.Date;
+import java.util.UUID;
 
 @NoArgsConstructor
 @AllArgsConstructor
 @Data
-public class PersonInfo implements IPerson {
-    public static final PersonInfo def = new PersonInfo(1, 2, 3, "rx", 6, DateTime.now());
+public class PersonBean implements IPerson {
+    public static final PersonBean def = new PersonBean(1, 2, "王湵范", PersonGender.Girl, 6, DateTime.now(), 100L);
 
     public int index;
     public int index2;
-    public int index3;
+    public final UUID id = UUID.randomUUID();
     public String name;
+    public PersonGender gender;
     public int age;
     public Date birth;
+    public Long money;
 }
