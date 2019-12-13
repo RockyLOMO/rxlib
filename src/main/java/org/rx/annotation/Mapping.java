@@ -1,5 +1,8 @@
 package org.rx.annotation;
 
+import net.sf.cglib.core.Converter;
+import org.rx.util.NullValueMappingStrategy;
+
 import java.lang.annotation.*;
 
 @Repeatable(Mapping.Mappings.class)
@@ -16,17 +19,15 @@ public @interface Mapping {
 
     String source() default "";
 
-    String dateFormat() default "";
-
-    String numberFormat() default "";
-
-    String constant() default "";
+    String format() default "";
 
     boolean ignore() default false;
 
     String defaultValue() default "";
 
-    NullValueCheckStrategy nullValueCheckStrategy() default NullValueCheckStrategy.ON_IMPLICIT_CONVERSION;
+    NullValueMappingStrategy nullValueMappingStrategy() default NullValueMappingStrategy.SetToNull;
 
-    NullValuePropertyMappingStrategy nullValuePropertyMappingStrategy() default NullValuePropertyMappingStrategy.SET_TO_NULL;
+    boolean trim() default false;
+
+    Class<? extends Converter> converter() default Converter.class;
 }

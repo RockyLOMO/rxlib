@@ -14,6 +14,7 @@ import org.rx.beans.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
+import sun.reflect.Reflection;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -186,7 +187,7 @@ public class CoreTester {
     }
 
     @Test
-    public void fluentWait() {
+    public void fluentWait() throws TimeoutException {
         FluentWait.newInstance(2000, 200).until(s -> {
             System.out.println(System.currentTimeMillis());
             return false;
@@ -230,12 +231,22 @@ public class CoreTester {
     @SneakyThrows
     @Test
     public void reflect() {
+        assert Reflects.callerClass(0) == this.getClass();
+        System.out.println(cacheKey("reflect"));
+
+        for (StackTraceElement traceElement : Reflects.threadStack(8)) {
+            System.out.println(traceElement);
+        }
+//        for (int i = 0; i < 8; i++) {
+//            System.out.println(Reflects.getStackTrace(i));
+//        }
+
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
         System.out.println(bean.getError());
-
-        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
-        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
-        System.out.println(bean.getError());
+//
+//        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
+//        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
+//        System.out.println(bean.getError());
     }
 
     @Test

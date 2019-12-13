@@ -23,6 +23,7 @@ public class BeanTester {
 
     @Test
     public void testMapper() {
+
         BeanMapper mapper = new BeanMapper();
         mapper.setConfig(SourceBean.class, TargetBean.class, targetProperty -> {
             switch (targetProperty) {

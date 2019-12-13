@@ -7,15 +7,10 @@ import java.util.Set;
 
 public class BeanMapException extends SystemException {
     @Getter
-    private Set<String> allMethodNames, missedMethodNames;
+    private Set<String> missedProperties;
 
-    BeanMapException(Exception ex) {
-        super(ex);
-    }
-
-    public BeanMapException(String message, Set<String> allMethodNames, Set<String> missedMethodNames) {
+    public BeanMapException(String message, Set<String> missedProperties) {
         super(message);
-        this.allMethodNames = allMethodNames;
-        this.missedMethodNames = missedMethodNames;
+        this.missedProperties = missedProperties;
     }
 }

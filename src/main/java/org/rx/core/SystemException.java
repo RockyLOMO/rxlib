@@ -56,12 +56,8 @@ public class SystemException extends NestedRuntimeException {
         return new SystemException(cause);
     }
 
-    public static NQuery<StackTraceElement> threadStack() {
-        return NQuery.of(Thread.currentThread().getStackTrace()).take(8);
-    }
-
     public static void dumpStack(StringBuilder msg) {
-        for (StackTraceElement stack : threadStack()) {
+        for (StackTraceElement stack : Reflects.threadStack(12)) {
             msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
         }
     }
@@ -118,7 +114,7 @@ public class SystemException extends NestedRuntimeException {
             messageValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
-        for (StackTraceElement stack : threadStack()) {
+        for (StackTraceElement stack : Reflects.threadStack(8)) {
             Map<String, Object> methodSettings = as(App.readSetting(stack.getClassName(), null, getSettings()), Map.class);
             if (methodSettings == null) {
                 continue;

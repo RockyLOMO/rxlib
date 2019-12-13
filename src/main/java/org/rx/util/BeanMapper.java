@@ -2,39 +2,33 @@ package org.rx.util;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.beans.BeanCopier;
+import net.sf.cglib.core.Converter;
+import org.rx.annotation.Mapping;
 import org.rx.beans.FlagsEnum;
-import org.rx.beans.NEnum;
-import org.rx.beans.Tuple;
 import org.rx.core.*;
-
 import org.rx.core.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
-import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
-import static org.rx.core.Contract.isNull;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 /**
  * map from multi sources https://yq.aliyun.com/articles/14958
  */
+@Slf4j
 public class BeanMapper {
     @RequiredArgsConstructor
     private static class MapConfig {
-        public final BeanCopier copier;
-        public volatile boolean isCheck;
-        public Function<String, String> propertyMatcher;
-        public BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher;
+        private final BeanCopier copier;
+        private final List<Mapping> mappings = new Vector<>();
     }
 
-    public static final String IgnoreProperty = "#ignore";
     @Getter
     private static final BeanMapper instance = new BeanMapper();
 
@@ -55,160 +49,101 @@ public class BeanMapper {
         return code.toString();
     }
 
-    @SuppressWarnings(Contract.AllWarnings)
-    public static Function<String, String> match(String... pairs) {
-        require(pairs);
-        require(pairs, pairs.length % 2 == 0);
-
-        return p -> {
-            for (int i = 1; i < pairs.length; i += 2) {
-                if (p.equals(pairs[i])) {
-                    return pairs[i - 1];
-                }
-            }
-            return p;
-        };
-    }
-
-    private Map<UUID, MapConfig> config = new ConcurrentHashMap<>();
+    private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
+    @Getter
+    @Setter
+    private FlagsEnum<BeanMapFlag> flags;
 
     private MapConfig getConfig(Class from, Class to) {
         require(from, to);
 
-        UUID k = App.hash(from.getName() + to.getName());
-        MapConfig mapConfig = config.get(k);
-        if (mapConfig == null) {
-            config.put(k, mapConfig = new MapConfig(BeanCopier.create(from, to, true)));
-        }
-        return mapConfig;
+        return config.computeIfAbsent(cacheKey(from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
     }
 
-    public BeanMapper setConfig(Class from, Class to, Function<String, String> propertyMatcher, BiFunction<String, Tuple<Object, Class>, Object> propertyValueMatcher) {
+    public BeanMapper setMappings(Class from, Class to, List<Mapping> mappings) {
         MapConfig config = getConfig(from, to);
-        synchronized (config) {
-            config.propertyMatcher = propertyMatcher;
-            config.propertyValueMatcher = propertyValueMatcher;
-        }
+        config.mappings.clear();
+        config.mappings.addAll(mappings);
         return this;
     }
 
-    public <TF, TT> TT[] mapToArray(Collection<TF> fromSet, Class<TT> toType) {
-        require(fromSet, toType);
-
-        List<TT> toSet = new ArrayList<>();
-        for (Object o : fromSet) {
-            toSet.add(map(o, toType));
-        }
-        TT[] x = (TT[]) Array.newInstance(toType, toSet.size());
-        toSet.toArray(x);
-        return x;
+    public <T> T map(Object source, Class<T> targetType) {
+        return map(source, Reflects.newInstance(targetType));
     }
 
-    public <T> T map(Object source, Class<T> targetType) {
-        require(targetType);
-
-        return map(source, Reflects.newInstance(targetType), Flags.None);
+    public <T> T map(Object source, T target) {
+        return map(source, target, null);
     }
 
     public <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags) {
         require(source, target);
         if (flags == null) {
-            flags = BeanMapFlag.None.add();
+            flags = BeanMapFlag.LogOnMatchFail.add();
         }
 
+        boolean skipNull = flags.has(BeanMapFlag.SkipNull);
         Class from = source.getClass(), to = target.getClass();
         MapConfig config = getConfig(from, to);
-        boolean skipNull = flags.has(BeanMapFlag.SkipNull), trimString = flags.has(BeanMapFlag.TrimString), nonCheckMatch = flags.has(BeanMapFlag.NonCheckMatch);
+        NQuery<Mapping> mappings = NQuery.of(config.mappings);
         final Reflects.PropertyCacheNode toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
-        if (config.propertyMatcher == null) {
-            config.copier.copy(source, target, (sourceValue, targetMethodType, methodName) -> {
-                String setterName = methodName.toString();
-                copiedNames.add(setterName);
-                if (checkSkip(sourceValue, skipNull)) {
-                    Method gm = toProperties.getters.where(p -> Reflects.propertyEquals(p.getName(), setterName)).first();
-                    return Reflects.invokeMethod(gm, target);
-                }
-                if (trimString && sourceValue instanceof String) {
-                    sourceValue = ((String) sourceValue).trim();
-                }
-                if (config.propertyValueMatcher != null) {
-                    Method tm = toProperties.setters.where(p -> Reflects.propertyEquals(p.getName(), setterName)).first();
-                    sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
-                }
-                return App.changeType(sourceValue, targetMethodType);
-            });
-        }
-        Set<String> allNames = toProperties.setters.select(Method::getName).toSet(), missedNames = NQuery.of(allNames).except(copiedNames).toSet();
-        if (config.propertyMatcher != null) {
-            final Reflects.PropertyCacheNode fromProperties = Reflects.getProperties(from);
-            //避免missedNames.remove引发异常
-            for (String missedName : new ArrayList<>(missedNames)) {
-                Method fm;
-                String fromName = isNull(config.propertyMatcher.apply(getFieldName(missedName)), "");
-                if (IgnoreProperty.equals(fromName)) {
-                    missedNames.remove(missedName);
-                    continue;
-                }
-                if (fromName.length() == 0
-                        || (fm = fromProperties.getters.where(p -> gmEquals(p.getName(), fromName)).firstOrDefault()) == null) {
-                    Method tm;
-                    if (nonCheckMatch || ((tm = properties.getters.where(p -> exEquals(p.getName(), missedName))
-                            .firstOrDefault()) != null && Reflects.invokeMethod(tm, target) != null)) {
-                        continue;
-                    }
-                    throw new BeanMapException(String.format("Not fund %s in %s..", fromName, from.getSimpleName()),
-                            allNames, missedNames);
-                }
-                copiedNames.add(missedName);
-                missedNames.remove(missedName);
-                Object sourceValue = Reflects.invokeMethod(fm, source);
-                if (skipNull && sourceValue == null) {
-                    continue;
-                }
-                if (trimString && sourceValue instanceof String) {
-                    sourceValue = ((String) sourceValue).trim();
-                }
-                Method tm = properties.setters.where(p -> p.getName().equals(missedName)).first();
-                if (config.propertyValueMatcher != null) {
-                    sourceValue = config.propertyValueMatcher.apply(getFieldName(tm.getName()), Tuple.of(sourceValue, tm.getParameterTypes()[0]));
-                }
-                Reflects.invokeMethod(tm, target, sourceValue);
+        config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
+            String propertyName = Reflects.propertyName(methodName.toString());
+            copiedNames.add(propertyName);
+            Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
+            if (mapping != null) {
+                sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, target, skipNull, toProperties);
             }
+            return App.changeType(sourceValue, targetType);
+        });
+
+        final Reflects.PropertyCacheNode fromProperties = Reflects.getProperties(from);
+        for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
+            copiedNames.add(mapping.target());
+            Object sourceValue = Reflects.invokeMethod(fromProperties.getters.first(p -> eq(mapping.source(), Reflects.propertyName(p.getName()))), source);
+            Method targetMethod = toProperties.setters.first(p -> eq(Reflects.propertyName(p.getName()), mapping.target()));
+            Class targetType = targetMethod.getParameterTypes()[0];
+            sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), target, skipNull, toProperties);
+            Reflects.invokeMethod(targetMethod, target, App.changeType(sourceValue, targetType));
         }
-        if (!nonCheckMatch && !config.isCheck) {
-            synchronized (config) {
-                for (String missedName : missedNames) {
-                    Method tm;
-                    if ((tm = properties.getters.where(p -> exEquals(p.getName(), missedName)).firstOrDefault()) == null) {
-                        continue;
-                    }
-                    if (Reflects.invokeMethod(tm, target) != null) {
-                        copiedNames.add(missedName);
-                    }
-                }
-                if (!missedNames.isEmpty()) {
-                    throw new BeanMapException(String.format("Map %s to %s missed method %s..", from.getSimpleName(),
-                            to.getSimpleName(), String.join(", ", missedNames)), allNames, missedNames);
-                }
-                config.isCheck = true;
+
+        boolean logOnFail = flags.has(BeanMapFlag.LogOnMatchFail), throwOnFail = flags.has(BeanMapFlag.ThrowOnMatchFail);
+        if (logOnFail || throwOnFail) {
+            NQuery<String> missedProperties = toProperties.setters.select(p -> Reflects.propertyName(p.getName())).except(copiedNames);
+            String failMsg = String.format("Map %s to %s missed properties\n\t%s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
+            if (throwOnFail) {
+                throw new BeanMapException(failMsg, missedProperties.toSet());
             }
+            log.warn(failMsg);
         }
-        if (checkFlag(flags, Flags.ValidateBean)) {
+
+        if (flags.has(BeanMapFlag.ValidateBean)) {
             ValidateUtil.validateBean(target);
         }
         return target;
     }
 
-    private boolean checkSkip(Object sourceValue, boolean skipNull) {
-        return skipNull && sourceValue == null;
-    }
-
-    private boolean checkFlag(NEnum<Flags> flags, Flags value) {
-        return flags.add().has(value);
-    }
-
-    private String getFieldName(String methodName) {
-        return methodName.substring(3, 4).toLowerCase() + methodName.substring(4);
+    private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, Reflects.PropertyCacheNode toProperties) {
+        if (mapping.ignore()
+                || (sourceValue == null && (skipNull || eq(mapping.nullValueMappingStrategy(), NullValueMappingStrategy.Ignore)))) {
+            return Reflects.invokeMethod(toProperties.getters.first(p -> eq(Reflects.propertyName(p.getName()), propertyName)), target);
+        }
+        if (sourceValue instanceof String) {
+            String val = (String) sourceValue;
+            if (mapping.trim()) {
+                val = val.trim();
+            }
+            if (!Strings.isNullOrEmpty(mapping.format())) {
+                val = String.format(mapping.format(), val);
+            }
+            sourceValue = val;
+        }
+        if (sourceValue == null && eq(mapping.nullValueMappingStrategy(), NullValueMappingStrategy.SetToDefault)) {
+            sourceValue = mapping.defaultValue();
+        }
+        if (mapping.converter() != Converter.class) {
+            sourceValue = Reflects.newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
+        }
+        return sourceValue;
     }
 }

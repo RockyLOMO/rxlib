@@ -8,15 +8,14 @@ import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
+import sun.reflect.CallerSensitive;
+import sun.reflect.Reflection;
 
 import java.lang.reflect.*;
 import java.util.List;
 
 import static org.rx.core.Contract.*;
 
-/**
- * sun.reflect.Reflection.getCallerClass()
- */
 @Slf4j
 public class Reflects extends TypeUtils {
     @RequiredArgsConstructor
@@ -26,7 +25,14 @@ public class Reflects extends TypeUtils {
     }
 
     public static final NQuery<Method> ObjectMethods = NQuery.of(Object.class.getMethods());
+    private static final Throwable getStackTraceInstance = new Throwable();
+    private static final Method getStackTraceMethod;
     private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
+
+    static {
+        getStackTraceMethod = MethodUtils.getMatchingMethod(Throwable.class, "getStackTraceElement", int.class);
+        getStackTraceMethod.setAccessible(true);
+    }
 
     public static PropertyCacheNode getProperties(Class to) {
         return MemoryCache.getOrStore(to, tType -> {
@@ -52,6 +58,39 @@ public class Reflects extends TypeUtils {
             name = Strings.toTitleCase(setterName);
         }
         return getterName.substring(getterName.startsWith(getProperty) ? getProperty.length() : getBoolProperty.length()).equals(name);
+    }
+
+    public static String propertyName(String getterOrSetterName) {
+        require(getterOrSetterName);
+
+        if (getterOrSetterName.startsWith(getProperty)) {
+            return getterOrSetterName.substring(getProperty.length());
+        }
+        if (getterOrSetterName.startsWith(getBoolProperty)) {
+            return getterOrSetterName.substring(getBoolProperty.length());
+        }
+        if (getterOrSetterName.startsWith(setProperty)) {
+            return getterOrSetterName.substring(setProperty.length());
+        }
+        if (Character.isLowerCase(getterOrSetterName.charAt(0))) {
+            return getterOrSetterName;
+        }
+        return getterOrSetterName.substring(0, 1).toLowerCase() + getterOrSetterName.substring(1);
+    }
+
+    @CallerSensitive
+    public static NQuery<StackTraceElement> threadStack(int takeCount) {
+        //Thread.currentThread().getStackTrace()性能略差
+        return NQuery.of(new Throwable().getStackTrace()).take(takeCount);
+
+        //return (StackTraceElement) getStackTraceMethod.invoke(getStackTraceInstance, index);
+    }
+
+    //    @CallerSensitive
+    public static Class<?> callerClass(int depth) {
+        Class<?> type = Reflection.getCallerClass(2 + depth);
+        log.debug("getCallerClass: {}", type.getName());
+        return type;
     }
 
     public static boolean invokeClose(Method method, Object obj) {
@@ -120,7 +159,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(MemoryCache.<String, List<Field>>getOrStore(cacheKey(Reflects.class, "getFields", type), k -> FieldUtils.getAllFieldsList(type)));
+        NQuery<Field> fields = NQuery.of(MemoryCache.<String, List<Field>>getOrStore(cacheKey("getFields", type), k -> FieldUtils.getAllFieldsList(type)));
         for (Field field : fields) {
             setAccess(field);
         }

@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.rx.beans.BiTuple;
 import org.rx.core.*;
@@ -305,7 +306,7 @@ public final class RemotingFactor {
                                 } catch (TimeoutException ex) {
                                     log.warn("remoteEvent {}", pack.eventName, ex);
                                 } finally {
-                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapper.Flags.None);
+                                    BeanMapper.getInstance().map(tuple.right, args, BeanMapFlag.None.add());
                                     pack.broadcast = true;
                                     pack.remoteArgs = tuple.right;
                                     for (SessionClient<RemotingState> client : clients) {

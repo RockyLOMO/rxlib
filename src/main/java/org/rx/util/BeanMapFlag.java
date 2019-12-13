@@ -8,9 +8,9 @@ import org.rx.beans.NEnum;
 public enum BeanMapFlag implements NEnum<BeanMapFlag> {
     None(0),
     SkipNull(1),
-    TrimString(1 << 1),
-    ValidateBean(1 << 2),
-    NonCheckMatch(1 << 3);
+    ValidateBean(1 << 1),
+    LogOnMatchFail(1 << 2),
+    ThrowOnMatchFail(1 << 3);
 
     @Getter
     private final int value;
