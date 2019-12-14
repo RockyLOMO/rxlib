@@ -121,11 +121,12 @@ public class Reflects extends TypeUtils {
         return type;
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
-    public static Object invokeDefaultMethod(Method method, Object instance, Object... args) {
+    public static <T> T invokeDefaultMethod(Method method, Object instance, Object... args) {
         require(method, method.isDefault());
         Class<?> declaringClass = method.getDeclaringClass();
-        return lookupConstructor.newInstance(declaringClass, lookupFlags)
+        return (T) lookupConstructor.newInstance(declaringClass, lookupFlags)
                 .unreflectSpecial(method, declaringClass)
                 .bindTo(instance)
                 .invokeWithArguments(args);
@@ -142,7 +143,7 @@ public class Reflects extends TypeUtils {
         return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
     }
 
-    public static Object invokeMethod(Class type, Object instance, String name, Object... args) {
+    public static <T> T invokeMethod(Class type, Object instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
         Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
         if (method == null) {
@@ -151,10 +152,11 @@ public class Reflects extends TypeUtils {
         return invokeMethod(method, instance, args);
     }
 
+    @SuppressWarnings(NonWarning)
     @SneakyThrows
-    public static Object invokeMethod(Method method, Object instance, Object... args) {
+    public static <T> T invokeMethod(Method method, Object instance, Object... args) {
         setAccess(method);
-        return method.invoke(instance, args);
+        return (T) method.invoke(instance, args);
     }
 
     @SuppressWarnings(NonWarning)

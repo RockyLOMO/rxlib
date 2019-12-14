@@ -20,25 +20,20 @@ import java.util.Date;
 import static org.rx.core.Contract.toJsonString;
 
 public class BeanTester {
-    @Test
-    public void testMapperCode() {
-        System.out.println(BeanMapper.genCode(PersonBean.class));
-    }
-
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
+
+        //该interface下所有map方法的执行flags
+        default FlagsEnum<BeanMapFlag> getFlags() {
+            return BeanMapFlag.LogOnNotAllMapped.flags();
+        }
 
         class DateToIntConvert implements BeanMapConverter<Date, Integer> {
             @Override
             public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
                 return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
             }
-        }
-
-        //该interface下所有map方法的执行flags
-        default FlagsEnum<BeanMapFlag> flags() {
-            return BeanMapFlag.LogOnAllMapFail.flags();
         }
 
         @Mapping(target = "gender", ignore = true)
@@ -93,7 +88,7 @@ public class BeanTester {
         //普通用法，属性名一致
         BeanMapper mapper = BeanMapper.getInstance();
 //        mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
-        mapper.map(f, t, BeanMapFlag.LogOnAllMapFail.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
+        mapper.map(f, t, BeanMapFlag.LogOnNotAllMapped.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
     }

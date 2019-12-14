@@ -7,16 +7,16 @@ A set of utilities for Java.
 interface PersonMapper {
     PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
 
+    //该interface下所有map方法的执行flags
+    default FlagsEnum<BeanMapFlag> getFlags() {
+        return BeanMapFlag.LogOnNotAllMapped.flags();
+    }
+
     class DateToIntConvert implements BeanMapConverter<Date, Integer> {
         @Override
         public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
             return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
         }
-    }
-
-    //该interface下所有map方法的执行flags
-    default FlagsEnum<BeanMapFlag> flags() {
-        return BeanMapFlag.LogOnAllMapFail.flags();
     }
 
     @Mapping(target = "gender", ignore = true)

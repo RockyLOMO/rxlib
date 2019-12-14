@@ -8,7 +8,6 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.annotation.Mapping;
 import org.rx.beans.FlagsEnum;
 import org.rx.core.*;
-import org.rx.core.StringBuilder;
 import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Method;
@@ -24,30 +23,15 @@ public class BeanMapper {
     private static class MapConfig {
         private final BeanCopier copier;
         private final ConcurrentHashMap<Method, Mapping[]> mappings = new ConcurrentHashMap<>();
+        private FlagsEnum<BeanMapFlag> flags;
     }
 
     @Getter
     private static final BeanMapper instance = new BeanMapper();
     private static final Mapping[] empty = new Mapping[0];
 
-    public static String genCode(Class entity) {
-        require(entity);
-
-        String var = entity.getSimpleName();
-        if (var.length() > 1) {
-            var = var.substring(0, 1).toLowerCase() + var.substring(1);
-        }
-        StringBuilder code = new StringBuilder();
-        for (java.lang.reflect.Method method : entity.getMethods()) {
-            String name = method.getName();
-            if (name.startsWith("set") && method.getParameterCount() == 1) {
-                code.appendLine("%s.%s(null);", var, name);
-            }
-        }
-        return code.toString();
-    }
-
     private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
+    private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LogOnNotAllMapped.flags();
 
     @SuppressWarnings(NonWarning)
     public <T> T define(Class<T> type) {
@@ -63,26 +47,39 @@ public class BeanMapper {
                 target = Reflects.invokeDefaultMethod(method, o, args);
             }
             switch (args.length) {
-                case 1:
+                case 1: {
                     if (method.getReturnType() == void.class) {
                         return null;
                     }
-                    setMappings(args[0].getClass(), method.getReturnType(), method);
+                    MapConfig config = setMappings(args[0].getClass(), method.getReturnType(), type, o, method);
                     if (target == null) {
                         target = Reflects.newInstance(method.getReturnType());
                     }
-                    return map(args[0], target, null, method);
+                    return map(args[0], target, config.flags, method);
+                }
                 case 2:
-                    setMappings(args[0].getClass(), args[1].getClass(), method);
-                    map(args[0], args[1], null, method);
+                    MapConfig config = setMappings(args[0].getClass(), args[1].getClass(), type, o, method);
+                    map(args[0], args[1], config.flags, method);
                     return method.getReturnType() == void.class ? null : args[1];
             }
             throw new InvalidOperationException("Error Define Method %s", method.getName());
         });
     }
 
-    private void setMappings(Class from, Class to, Method method) {
-        getConfig(from, to).mappings.computeIfAbsent(method, k -> method.getAnnotationsByType(Mapping.class));
+    private MapConfig setMappings(Class from, Class to, Class<?> type, Object o, Method method) {
+        MapConfig config = getConfig(from, to);
+        config.mappings.computeIfAbsent(method, k -> {
+            try {
+                Method defMethod = type.getDeclaredMethod("getFlags");
+                if (defMethod.isDefault()) {
+                    config.flags = Reflects.invokeDefaultMethod(defMethod, o);
+                }
+            } catch (Exception e) {
+                log.debug("{} Read flags fail {}", type, e.getMessage());
+            }
+            return method.getAnnotationsByType(Mapping.class);
+        });
+        return config;
     }
 
     private MapConfig getConfig(Class from, Class to) {
@@ -105,7 +102,7 @@ public class BeanMapper {
     private <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags, Method method) {
         require(source, target);
         if (flags == null) {
-            flags = BeanMapFlag.LogOnAllMapFail.flags();
+            flags = this.flags;
         }
 
         boolean skipNull = flags.has(BeanMapFlag.SkipNull);
@@ -138,7 +135,7 @@ public class BeanMapper {
             Reflects.invokeMethod(targetMethod, target, App.changeType(sourceValue, targetType));
         }
 
-        boolean logOnFail = flags.has(BeanMapFlag.LogOnAllMapFail), throwOnFail = flags.has(BeanMapFlag.ThrowOnAllMapFail);
+        boolean logOnFail = flags.has(BeanMapFlag.LogOnNotAllMapped), throwOnFail = flags.has(BeanMapFlag.ThrowOnNotAllMapped);
         if (logOnFail || throwOnFail) {
             NQuery<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
             String failMsg = String.format("Map %s to %s missed properties: %s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
