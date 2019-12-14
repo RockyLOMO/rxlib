@@ -9,8 +9,6 @@ import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.beans.Tuple;
-import sun.reflect.CallerSensitive;
-import sun.reflect.Reflection;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
@@ -27,16 +25,20 @@ public class Reflects extends TypeUtils {
         public final Method getter;
     }
 
+    static class SecurityManagerEx extends SecurityManager {
+        static SecurityManagerEx instance = new SecurityManagerEx();
+
+        Class callerClass(int depth) {
+            return getClassContext()[depth];
+        }
+    }
+
     public static final NQuery<Method> ObjectMethods = NQuery.of(Object.class.getMethods());
     private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
-    private static final Throwable getStackTraceInstance = new Throwable();
-    private static final Method getStackTraceMethod;
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
     private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
 
     static {
-        getStackTraceMethod = MethodUtils.getMatchingMethod(Throwable.class, "getStackTraceElement", int.class);
-        getStackTraceMethod.setAccessible(true);
         try {
             lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
             setAccess(lookupConstructor);
@@ -103,20 +105,20 @@ public class Reflects extends TypeUtils {
 //        return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();
 //    }
 
-    @CallerSensitive
+    public static void dumpStack(StringBuilder msg) {
+        for (StackTraceElement stack : threadStack(12)) {
+            msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
+        }
+    }
+
     public static NQuery<StackTraceElement> threadStack(int takeCount) {
         //Thread.currentThread().getStackTrace()性能略差
-        return NQuery.of(new Throwable().getStackTrace()).take(takeCount);
+        return NQuery.of(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
-    @SneakyThrows
-    public static StackTraceElement callerStack(int depth) {
-        return (StackTraceElement) getStackTraceMethod.invoke(getStackTraceInstance, depth);
-    }
-
-    @SuppressWarnings(NonWarning)
     public static Class<?> callerClass(int depth) {
-        Class<?> type = Reflection.getCallerClass(2 + depth);
+        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
+        Class<?> type = SecurityManagerEx.instance.callerClass(2 + depth);
         log.debug("getCallerClass: {}", type.getName());
         return type;
     }

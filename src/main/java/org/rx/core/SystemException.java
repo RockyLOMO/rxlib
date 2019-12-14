@@ -56,12 +56,6 @@ public class SystemException extends NestedRuntimeException {
         return new SystemException(cause);
     }
 
-    public static void dumpStack(StringBuilder msg) {
-        for (StackTraceElement stack : Reflects.threadStack(12)) {
-            msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
-        }
-    }
-
     private String friendlyMessage;
     private Map<String, Object> data;
     /**
