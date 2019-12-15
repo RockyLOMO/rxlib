@@ -106,7 +106,7 @@ public class RandomList<T> implements Iterable<T>, Serializable {
             maxRandomValue = hold.threshold.end;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-        return NQuery.of(elements).first(p -> p.threshold.within(v)).element;
+        return NQuery.of(elements).first(p -> p.threshold.has(v)).element;
         //二分法查找
 //        int start = 1, end = elements.size() - 1;
 //        while (true) {
