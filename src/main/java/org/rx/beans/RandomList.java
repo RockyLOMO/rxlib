@@ -109,7 +109,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
                 }
                 hold = element;
             }
-            maxRandomValue = hold.threshold.end;
+            maxRandomValue = hold.threshold.end + 1;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
         return NQuery.of(elements).single(p -> p.threshold.has(v)).element;
