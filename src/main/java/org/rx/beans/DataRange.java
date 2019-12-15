@@ -21,7 +21,7 @@ public class DataRange<T extends Comparable<T>> implements Serializable {
         this.end = end;
     }
 
-    public boolean fit(T data) {
+    public boolean within(T data) {
         return start.compareTo(data) <= 0 && end.compareTo(data) >= 0;
     }
 }

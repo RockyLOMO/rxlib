@@ -105,18 +105,19 @@ public class RandomList<T> implements Iterable<T>, Serializable {
             }
             maxRandomValue = hold.threshold.end;
         }
-        int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
+        Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
+        return NQuery.of(elements).first(p -> p.threshold.within(v)).element;
         //二分法查找
-        int start = 1, end = elements.size() - 1;
-        while (true) {
-            int index = (start + end) / 2;
-            if (v < elements.get(index).threshold.start) {
-                end = index - 1;
-            } else if (v >= elements.get(index).threshold.end) {
-                start = index + 1;
-            } else {
-                return elements.get(index).element;
-            }
-        }
+//        int start = 1, end = elements.size() - 1;
+//        while (true) {
+//            int index = (start + end) / 2;
+//            if (v < elements.get(index).threshold.start) {
+//                end = index - 1;
+//            } else if (v >= elements.get(index).threshold.end) {
+//                start = index + 1;
+//            } else {
+//                return elements.get(index).element;
+//            }
+//        }
     }
 }
