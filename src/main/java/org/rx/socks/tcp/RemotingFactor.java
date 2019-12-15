@@ -1,6 +1,5 @@
 package org.rx.socks.tcp;
 
-import lombok.Data;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -8,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import org.rx.core.StringBuilder;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.rx.beans.BiTuple;
@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -39,12 +38,11 @@ public final class RemotingFactor {
 
     @RequiredArgsConstructor
     private static class HostValue {
-        public final TcpServer<RemotingState> server;
-        public final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+        private final TcpServer<RemotingState> server;
+        private final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
     }
 
     @RequiredArgsConstructor
-    @Data
     private static class RemoteEventPack implements Serializable {
         private final String eventName;
         private final RemoteEventFlag flag;
@@ -58,12 +56,10 @@ public final class RemotingFactor {
     }
 
     @RequiredArgsConstructor
-    @Data
     private static class CallPack implements Serializable {
         private final String methodName;
         private final Object[] parameters;
         private Object returnValue;
-
         private String errorMessage;
     }
 
@@ -72,12 +68,17 @@ public final class RemotingFactor {
         public BiConsumer<Object, NEventArgs<TcpClient>> onHandshake;
         public Function<InetSocketAddress, InetSocketAddress> preReconnect;
         private final Class targetType;
+        @Getter
         private final String groupId;
         private final ManualResetEvent waitHandle = new ManualResetEvent();
-        private volatile InetSocketAddress serverAddress;
-        private CallPack resultPack;
+        private InetSocketAddress serverAddress;
+        private volatile CallPack resultPack;
         private TcpClient client;
-        private AtomicReference<TcpClientPool> nonStatePool = new AtomicReference<>();
+        private final Lazy<TcpClientPool> nonStatePool = new Lazy<>(() -> {
+            TcpClientPool pool = new TcpClientPool();
+            pool.onCreate = (s, e) -> e.setPoolingClient(TcpConfig.client(e.getValue(), getGroupId()));
+            return pool;
+        });
 
         @Override
         public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
@@ -85,7 +86,7 @@ public final class RemotingFactor {
                 return methodProxy.invokeSuper(o, args);
             }
             if (Reflects.isCloseMethod(method)) {
-                closeHandshakeClient();
+                closeClient();
                 return null;
             }
 
@@ -137,14 +138,10 @@ public final class RemotingFactor {
 
             synchronized (this) {
                 if (onHandshake != null || preReconnect != null) {
-                    initHandshakeClient(o);
-                    client.send(pack);
-                    waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                    initHandshake(o);
+                    send(client, pack);
                 } else {
-                    while (nonStatePool.get() == null
-                            && !nonStatePool.compareAndSet(null, new TcpClientPool(p -> TcpConfig.client(p, groupId), ThreadPool.MaxThreads))) {
-                    }
-                    try (TcpClient client = nonStatePool.get().borrow(serverAddress)) {  //已连接
+                    try (TcpClient client = nonStatePool.getValue().borrow(serverAddress)) {  //已连接
                         client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                             e.setCancel(true);
                             waitHandle.set();
@@ -153,28 +150,48 @@ public final class RemotingFactor {
                             resultPack = (CallPack) e.getValue();
                             waitHandle.set();
                         });
-
-                        client.send(pack);
-                        waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                        send(client, pack);
                     }
                 }
-                log.debug("client send {} ok", pack.getClass());
             }
-
-            waitHandle.reset();
             return resultPack != null ? resultPack.returnValue : null;
         }
 
-        private void initHandshakeClient(Object proxyObject) {
+        private void send(TcpClient client, Serializable pack) throws TimeoutException {
+            StringBuilder msg = new StringBuilder();
+            boolean debug = tryAs(pack, CallPack.class, p -> {
+                msg.appendLine("Rpc client %s.%s", targetType.getSimpleName(), p.methodName);
+                msg.appendLine("Request:\t%s", toJsonString(p.parameters));
+            });
+            try {
+                client.send(pack);
+                waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                waitHandle.reset();
+                if (debug) {
+                    msg.appendLine("Response:\t%s", resultPack != null ? resultPack.errorMessage != null ? resultPack.errorMessage : toJsonString(resultPack.returnValue) : "null");
+                }
+            } catch (TimeoutException e) {
+                if (debug) {
+                    msg.appendLine("Response:\t%s", e.getMessage());
+                }
+                throw e;
+            } finally {
+                if (debug) {
+                    log.debug(msg.toString());
+                }
+            }
+        }
+
+        private void initHandshake(Object proxyObject) {
             if (client != null) {
                 return;
             }
-            log.debug("initHandshakeClient {}", serverAddress);
+            log.debug("client initHandshake {}", serverAddress);
             client = TcpConfig.client(serverAddress, groupId);
             client.setAutoReconnect(true);
             client.setPreReconnect(preReconnect);
             client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
-                log.info("client onHandshake");
+                log.debug("client onHandshake {}", serverAddress);
                 client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
                 if (onHandshake == null) {
                     return;
@@ -186,34 +203,33 @@ public final class RemotingFactor {
                 waitHandle.set();
             });
             client.<NEventArgs<Serializable>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                RemoteEventPack remoteEventPack;
-                if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
-                    switch (remoteEventPack.flag) {
+                if (!tryAs(e.getValue(), RemoteEventPack.class, p -> {
+                    switch (p.flag) {
                         case Post:
                             if (resultPack != null) {
                                 resultPack.returnValue = null;
                             }
-                            log.info("client attach {} step2 ok", remoteEventPack.eventName);
+                            log.info("client attach {} step2 ok", p.eventName);
                             break;
                         case PostBack:
                             try {
                                 if (targetType.isInterface()) {
-                                    EventListener.getInstance().raise((EventTarget) proxyObject, remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                    EventListener.getInstance().raise((EventTarget) proxyObject, p.eventName, p.remoteArgs);
                                 } else {
                                     EventTarget eventTarget = (EventTarget) proxyObject;
-                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
+                                    eventTarget.raiseEvent(p.eventName, p.remoteArgs);
                                 }
                             } catch (Exception ex) {
-                                log.error("client raise {} error", remoteEventPack.eventName, ex);
+                                log.error("client raise {}", p.eventName, ex);
                             } finally {
-                                if (!remoteEventPack.broadcast) {
-                                    client.send(remoteEventPack);  //import
+                                if (!p.broadcast) {
+                                    client.send(p);  //import
                                 }
-                                log.info("client raise {} ok", remoteEventPack.eventName);
+                                log.info("client raise {} ok", p.eventName);
                             }
-                            return;
+                            break;
                     }
-                } else {
+                })) {
                     resultPack = (CallPack) e.getValue();
                 }
                 waitHandle.set();
@@ -221,7 +237,7 @@ public final class RemotingFactor {
             client.connect(true);
         }
 
-        private void closeHandshakeClient() {
+        private void closeClient() {
             if (client == null || !client.isConnected()) {
                 return;
             }
@@ -255,8 +271,7 @@ public final class RemotingFactor {
         handler.preReconnect = preReconnect;
         T p = (T) Enhancer.create(contract, handler);
         if (handler.onHandshake != null || handler.preReconnect != null) {
-            log.debug("initHandshakeClient {}", endpoint);
-            handler.initHandshakeClient(p);
+            handler.initHandshake(p);
         }
         return p;
     }
@@ -270,7 +285,7 @@ public final class RemotingFactor {
             server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {
                 e.setCancel(true);
-                s.send(e.getClient(), new ErrorPacket(String.format("Remoting call error: %s", e.getValue().getMessage())));
+                s.send(e.getClient(), new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
             };
             server.onReceive = (s, e) -> {
                 if (tryAs(e.getValue(), RemoteEventPack.class, p -> {
@@ -304,7 +319,7 @@ public final class RemotingFactor {
                                     tuple.middle.waitOne(server.getConfig().getConnectTimeout());
                                     log.info("server raise {} -> {} step2", current.getId(), pack.eventName);
                                 } catch (TimeoutException ex) {
-                                    log.warn("remoteEvent {}", pack.eventName, ex);
+                                    log.warn("server raise {}", pack.eventName, ex);
                                 } finally {
                                     BeanMapper.getInstance().map(tuple.right, args, BeanMapFlag.None.flags());
                                     pack.broadcast = true;
@@ -340,12 +355,18 @@ public final class RemotingFactor {
                 }
 
                 CallPack pack = (CallPack) e.getValue();
+                StringBuilder msg = new StringBuilder();
+                msg.appendLine("Rpc server %s.%s", contractInstance.getClass().getSimpleName(), pack.methodName);
+                msg.appendLine("Request:\t%s", toJsonString(pack.parameters));
                 try {
                     pack.returnValue = Reflects.invokeMethod(contractInstance.getClass(), contractInstance, pack.methodName, pack.parameters);
+                    msg.appendLine("Response:\t%s", toJsonString(pack.returnValue));
                 } catch (Exception ex) {
-                    log.error("listen", ex);
-                    pack.setErrorMessage(String.format("%s %s", ex.getClass(), ex.getMessage()));
+                    log.error("Rpc", ex);
+                    pack.errorMessage = String.format("ERROR: %s %s", ex.getClass().getSimpleName(), ex.getMessage());
+                    msg.appendLine("Response:\t%s", pack.errorMessage);
                 }
+                log.debug(msg.toString());
                 java.util.Arrays.fill(pack.parameters, null);
                 s.send(e.getClient(), pack);
             };

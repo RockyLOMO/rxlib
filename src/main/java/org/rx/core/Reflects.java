@@ -77,29 +77,6 @@ public class Reflects extends TypeUtils {
         return name.substring(0, 1).toLowerCase() + name.substring(1);
     }
 
-//    @SneakyThrows
-//    public static void fillProperties(Object instance, Object propBean) {
-//        require(instance, propBean);
-//
-//        NQuery<Method> methods = NQuery.of(instance.getClass().getMethods());
-//        for (Field field : getFields(propBean.getClass())) {
-//            Object val = field.get(propBean);
-//            if (val == null) {
-//                continue;
-//            }
-//            String methodName = String.format("set%s", Strings.toTitleCase(field.getName()));
-//            Method method = methods.where(p -> p.getName().equals(methodName)).firstOrDefault();
-//            if (method == null) {
-//                continue;
-//            }
-//            try {
-//                method.invoke(instance, checkArgs(method.getParameterTypes(), val));
-//            } catch (Exception e) {
-//                log.warn("fillProperties", e);
-//            }
-//        }
-//    }
-//
 //    @SuppressWarnings(NonWarning)
 //    private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
 //        return NQuery.of(args).select((p, i) -> App.changeType(p, parameterTypes[i])).toArray();

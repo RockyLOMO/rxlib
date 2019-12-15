@@ -119,7 +119,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
-    public static final int MaxThreads = CpuThreads * 100000;
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);

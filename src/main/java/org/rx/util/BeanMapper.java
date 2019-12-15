@@ -138,11 +138,13 @@ public class BeanMapper {
         boolean logOnFail = flags.has(BeanMapFlag.LogOnNotAllMapped), throwOnFail = flags.has(BeanMapFlag.ThrowOnNotAllMapped);
         if (logOnFail || throwOnFail) {
             NQuery<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
-            String failMsg = String.format("Map %s to %s missed properties: %s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
-            if (throwOnFail) {
-                throw new BeanMapException(failMsg, missedProperties.toSet());
+            if (missedProperties.any()) {
+                String failMsg = String.format("Map %s to %s missed properties: %s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
+                if (throwOnFail) {
+                    throw new BeanMapException(failMsg, missedProperties.toSet());
+                }
+                log.warn(failMsg);
             }
-            log.warn(failMsg);
         }
 
         if (flags.has(BeanMapFlag.ValidateBean)) {

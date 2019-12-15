@@ -23,7 +23,6 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -45,8 +44,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             log.debug("clientActive {}", ctx.channel().remoteAddress());
-            channel = ctx;
-            connected.compareAndSet(false, true);
 
             ctx.writeAndFlush(getHandshake()).addListener(p -> {
                 if (p.isSuccess()) {
@@ -74,7 +71,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
-            connected.compareAndSet(true, false);
 
             NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
             raiseEvent(onDisconnected, args);
@@ -87,7 +83,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             if (!ctx.channel().isActive()) {
                 return;
             }
-            
+
             NEventArgs<Throwable> args = new NEventArgs<>(cause);
             try {
                 raiseEvent(onError, args);
@@ -110,16 +106,15 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private HandshakePacket handshake;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
-    private ChannelHandlerContext channel;
-    private AtomicBoolean connected = new AtomicBoolean();
+    private volatile Channel channel;
     @Getter
     @Setter
-    private volatile boolean autoReconnect;
+    private boolean autoReconnect;
     @Setter
-    private volatile Function<InetSocketAddress, InetSocketAddress> preReconnect;
+    private Function<InetSocketAddress, InetSocketAddress> preReconnect;
 
     public boolean isConnected() {
-        return connected.get();
+        return channel != null && channel.isActive();
     }
 
     public TcpClient(TcpConfig config, HandshakePacket handshake) {
@@ -141,7 +136,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     protected void freeObjects() {
         autoReconnect = false; //import
         Sockets.closeBootstrap(bootstrap);
-        connected.compareAndSet(true, false);
     }
 
     public void connect() {
@@ -185,6 +179,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                     return;
                 }
             }
+            channel = f.channel();
             connectWaiter.set();
         });
         connectWaiter.waitOne();
@@ -213,6 +208,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                     f.channel().close();
                 } else {
                     log.debug("connect {} ok", ep);
+                    channel = f.channel();
                     config.setEndpoint(ep);
                 }
                 waiter.set();
@@ -229,11 +225,11 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     }
 
     public void send(Serializable pack) {
-        require(pack, (Object) isConnected());
+        require(pack, isConnected());
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);
         raiseEvent(onSend, args);
-        if (args.isCancel() || channel == null) {
+        if (args.isCancel()) {
             return;
         }
         channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);

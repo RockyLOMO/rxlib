@@ -8,10 +8,7 @@ import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.*;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.UserEventArgs;
-import org.rx.test.bean.UserManager;
-import org.rx.test.bean.UserManagerImpl;
+import org.rx.test.bean.*;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -170,10 +167,13 @@ public class SocksTester {
     }
 
     @Test
-    public void client() {
-        TcpClient client = TcpConfig.client(Sockets.parseEndpoint("127.0.0.1:80"), "");
-        client.connect(true);
-        System.out.println(client.isConnected());
+    public void poolRpc() {
+        RemotingFactor.listen(HttpUserManager.INSTANCE, 3307);
+
+        HttpUserManager facade = RemotingFactor.create(HttpUserManager.class, "127.0.0.1:3307");
+        for (int i = 0; i < 50; i++) {
+            facade.computeInt(1, i);
+        }
     }
 
     @SneakyThrows

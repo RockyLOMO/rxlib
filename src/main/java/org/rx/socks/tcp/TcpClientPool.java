@@ -1,10 +1,11 @@
 package org.rx.socks.tcp;
 
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
-import net.sf.cglib.proxy.MethodProxy;
 import org.apache.commons.pool2.BaseKeyedPooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
@@ -15,40 +16,29 @@ import org.rx.core.*;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 
 import static org.rx.core.App.Config;
 import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class TcpClientPool extends Disposable implements EventTarget<TcpClientPool> {
-    private class ProxyHandle implements MethodInterceptor {
-        private TcpClient client;
-
-        public ProxyHandle(TcpClient client) {
-            this.client = client;
-        }
-
-        @Override
-        public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
-            if (Reflects.isCloseMethod(method)) {
-                pool.returnObject(client.getConfig().getEndpoint(), client);
-                log.debug("Return TcpClient {}", client);
-                return null;
-            }
-            return methodProxy.invoke(client, objects);
-        }
+    @Data
+    @EqualsAndHashCode(callSuper = true)
+    public static class EventArgs extends NEventArgs<InetSocketAddress> {
+        private TcpClient poolingClient;
     }
 
     private class TcpClientFactory extends BaseKeyedPooledObjectFactory<InetSocketAddress, TcpClient> {
         @Override
         public TcpClient create(InetSocketAddress inetSocketAddress) {
-            TcpClient client = createFunc.apply(inetSocketAddress);
-            client.getConfig().setConnectTimeout((int) pool.getMaxWaitMillis());
-            raiseEvent(onCreate, new NEventArgs<>(client));
-            client.connect(true);
-            log.debug("Create TcpClient {}", client.isConnected());
-            return client;
+            EventArgs args = new EventArgs();
+            args.setValue(inetSocketAddress);
+            raiseEvent(onCreate, args);
+            require(args.poolingClient);
+            args.poolingClient.getConfig().setConnectTimeout((int) pool.getMaxWaitMillis());
+            args.poolingClient.connect(true);
+            log.debug("Create TcpClient {}", args.poolingClient);
+            return args.poolingClient;
         }
 
         @Override
@@ -65,7 +55,10 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         public void destroyObject(InetSocketAddress key, PooledObject<TcpClient> p) throws Exception {
             super.destroyObject(key, p);
             p.getObject().close();
-            raiseEvent(onDestroy, new NEventArgs<>(p.getObject()));
+            EventArgs args = new EventArgs();
+            args.setValue(key);
+            args.poolingClient = p.getObject();
+            raiseEvent(onDestroy, args);
         }
 
         @Override
@@ -81,18 +74,14 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         }
     }
 
-    public volatile BiConsumer<TcpClientPool, NEventArgs<TcpClient>> onCreate, onDestroy;
+    public volatile BiConsumer<TcpClientPool, EventArgs> onCreate, onDestroy;
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
-    private Function<InetSocketAddress, TcpClient> createFunc;
 
-    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int maxSize) {
-        this(createFunc, 1, maxSize, Config.getSocksTimeout());
+    public TcpClientPool() {
+        this(2, ThreadPool.CpuThreads * 2, Config.getSocksTimeout());
     }
 
-    public TcpClientPool(Function<InetSocketAddress, TcpClient> createFunc, int minSize, int maxSize, long timeout) {
-        require(createFunc);
-
-        this.createFunc = createFunc;
+    public TcpClientPool(int minSize, int maxSize, long timeout) {
         GenericKeyedObjectPoolConfig<TcpClient> config = new GenericKeyedObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);
@@ -114,6 +103,14 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         checkNotClosed();
 
         TcpClient client = pool.borrowObject(key);
-        return (TcpClient) Enhancer.create(TcpClient.class, new ProxyHandle(client));
+        log.debug("Take TcpClient {}", client);
+        return (TcpClient) Enhancer.create(TcpClient.class, (MethodInterceptor) (o, method, objects, methodProxy) -> {
+            if (Reflects.isCloseMethod(method)) {
+                pool.returnObject(client.getConfig().getEndpoint(), client);
+                log.debug("Return TcpClient {}", client);
+                return null;
+            }
+            return methodProxy.invoke(client, objects);
+        });
     }
 }

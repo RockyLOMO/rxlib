@@ -69,6 +69,25 @@ public final class Contract {
         return MD5Util.md5Hex(k);
     }
 
+    @SneakyThrows
+    public static <T> T retry(int retryCount, Func<T> func) {
+        require(func);
+
+        SystemException lastEx = null;
+        int i = 1;
+        while (i <= retryCount) {
+            try {
+                return func.invoke();
+            } catch (Exception ex) {
+                if (i == retryCount) {
+                    lastEx = SystemException.wrap(ex);
+                }
+            }
+            i++;
+        }
+        throw lastEx;
+    }
+
     public static boolean catchCall(Action action) {
         require(action);
 

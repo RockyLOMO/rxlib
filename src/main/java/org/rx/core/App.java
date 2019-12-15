@@ -117,25 +117,6 @@ public class App extends SystemUtils {
         return resultList;
     }
 
-    public static <T, TR> TR retry(int retryCount, Function<T, TR> func, T state) {
-        require(retryCount, retryCount > 0);
-        require(func);
-
-        SystemException lastEx = null;
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                return func.apply(state);
-            } catch (Exception ex) {
-                if (i == retryCount) {
-                    lastEx = SystemException.wrap(ex);
-                }
-            }
-            i++;
-        }
-        throw lastEx;
-    }
-
     public static UUID hash(String key) {
         require(key);
 
