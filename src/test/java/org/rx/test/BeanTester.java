@@ -2,20 +2,19 @@ package org.rx.test;
 
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
-import org.rx.beans.FlagsEnum;
+import org.rx.beans.*;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.BeanMapConverter;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
-import org.rx.beans.DateTime;
-import org.rx.beans.Tuple;
 import org.rx.core.App;
-import org.rx.beans.NEnum;
 import org.rx.test.bean.TargetBean;
 import org.rx.util.NullValueMappingStrategy;
 
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.rx.core.Contract.toJsonString;
 
@@ -91,6 +90,26 @@ public class BeanTester {
         mapper.map(f, t, BeanMapFlag.LogOnNotAllMapped.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
+    }
+
+    @Test
+    public void suid() {
+        String d = "wyf520";
+        SUID suid = SUID.compute(d);
+        System.out.println(suid.toString());
+
+        SUID valueOf = SUID.valueOf(suid.toString());
+        System.out.println(valueOf.toString());
+
+        assert suid.equals(valueOf);
+
+        Set<SUID> set = new HashSet<>();
+        for (int i = 0; i < 10000; i++) {
+            SUID suid1 = SUID.randomSUID();
+            System.out.println(suid1.toString());
+            set.add(suid1);
+        }
+        assert set.size() == 10000;
     }
 
     @Test

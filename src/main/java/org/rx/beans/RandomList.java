@@ -5,63 +5,35 @@ import org.jetbrains.annotations.NotNull;
 import org.rx.core.NQuery;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.Contract.require;
 
-public class RandomList<T> implements Iterable<T>, Serializable {
+public class RandomList<T> implements Collection<T>, Serializable {
     @AllArgsConstructor
-    static class WeightElement<T> {
-        public final T element;
-        public int weight;
-        public final DataRange<Integer> threshold = new DataRange<>();
+    private static class WeightElement<T> {
+        private final T element;
+        private int weight;
+        private final DataRange<Integer> threshold = new DataRange<>();
     }
 
     private final List<WeightElement<T>> elements = new ArrayList<>();
-    private int maxRandomValue;
+    private volatile int maxRandomValue;
 
+    @Override
     public int size() {
         return elements.size();
     }
 
-    public RandomList<T> add(T element, int weight) {
-        require(weight, weight >= 0);
-
-        WeightElement<T> weightElement = findElement(element);
-        if (weightElement == null) {
-            elements.add(new WeightElement<>(element, weight));
-        } else {
-            weightElement.weight = weight;
-        }
-        maxRandomValue = 0;
-        return this;
+    @Override
+    public boolean isEmpty() {
+        return elements.isEmpty();
     }
 
-    private WeightElement<T> findElement(T element) {
-        return NQuery.of(elements).where(p -> p.element == element).firstOrDefault();
-    }
-
-    public int getWeight(T element) {
-        WeightElement<T> weightElement = findElement(element);
-        if (weightElement == null) {
-            throw new NoSuchElementException();
-        }
-        return weightElement.weight;
-    }
-
-    public RandomList<T> remove(T element) {
-        elements.removeIf(p -> p.element == element);
-        return this;
-    }
-
-    public RandomList<T> clear() {
-        elements.clear();
-        maxRandomValue = 0;
-        return this;
+    @Override
+    public boolean contains(Object element) {
+        return findElement((T) element) != null;
     }
 
     @NotNull
@@ -80,6 +52,40 @@ public class RandomList<T> implements Iterable<T>, Serializable {
                 return elements.get(offset).element;
             }
         };
+    }
+
+    @NotNull
+    @Override
+    public Object[] toArray() {
+        return NQuery.of(elements).select(p -> p.element).toArray();
+    }
+
+    @NotNull
+    @Override
+    public <T1> T1[] toArray(@NotNull T1[] a) {
+        System.arraycopy(toArray(), 0, a, 0, a.length);
+        return a;
+    }
+
+    @Override
+    public boolean add(T t) {
+        add(t, 2);
+        return true;
+    }
+
+    public boolean add(T element, int weight) {
+        require(weight, weight >= 0);
+
+        boolean changed = false;
+        WeightElement<T> weightElement = findElement(element);
+        if (weightElement == null) {
+            elements.add(new WeightElement<>(element, weight));
+            changed = true;
+        } else {
+            weightElement.weight = weight;
+        }
+        maxRandomValue = 0;
+        return changed;
     }
 
     public T next() {
@@ -106,7 +112,7 @@ public class RandomList<T> implements Iterable<T>, Serializable {
             maxRandomValue = hold.threshold.end;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-        return NQuery.of(elements).first(p -> p.threshold.has(v)).element;
+        return NQuery.of(elements).single(p -> p.threshold.has(v)).element;
         //二分法查找
 //        int start = 1, end = elements.size() - 1;
 //        while (true) {
@@ -119,5 +125,63 @@ public class RandomList<T> implements Iterable<T>, Serializable {
 //                return elements.get(index).element;
 //            }
 //        }
+    }
+
+    public int getWeight(T element) {
+        WeightElement<T> weightElement = findElement(element);
+        if (weightElement == null) {
+            throw new NoSuchElementException();
+        }
+        return weightElement.weight;
+    }
+
+    private WeightElement<T> findElement(T element) {
+        return NQuery.of(elements).where(p -> p.element == element).firstOrDefault();
+    }
+
+    @Override
+    public boolean remove(Object element) {
+        return elements.removeIf(p -> p.element == element);
+    }
+
+    @Override
+    public boolean containsAll(@NotNull Collection<?> c) {
+        return NQuery.of(elements).all(c::contains);
+    }
+
+    @Override
+    public boolean addAll(@NotNull Collection<? extends T> c) {
+        boolean changed = false;
+        for (T t : c) {
+            if (add(t)) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    @Override
+    public boolean removeAll(@NotNull Collection<?> c) {
+        boolean changed = false;
+        for (Object o : c) {
+            if (remove(o)) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    @Override
+    public boolean retainAll(@NotNull Collection<?> c) {
+        int size = elements.size();
+        elements.clear();
+        elements.addAll(NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).asCollection());
+        return size != elements.size();
+    }
+
+    @Override
+    public void clear() {
+        elements.clear();
+        maxRandomValue = 0;
     }
 }
