@@ -11,7 +11,8 @@ import java.util.UUID;
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ShortUUID implements Serializable {
     public static class Builder {
-        private char[] alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+        //        private char[] alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+        private char[] alphabet = "123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
         private int alphabetSize = alphabet.length;
 
         public Builder alphabet(String alphabet) {

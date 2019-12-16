@@ -15,6 +15,7 @@ import org.rx.util.NullValueMappingStrategy;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.rx.core.Contract.toJsonString;
 
@@ -93,23 +94,45 @@ public class BeanTester {
     }
 
     @Test
+    public void rndList() {
+        RandomList<String> randomList = new RandomList<>();
+        randomList.add("a", 5);
+        randomList.add("b", 5);
+        for (int i = 0; i < 100000; i++) {
+            System.out.println(randomList.next());
+        }
+    }
+
+    @Test
     public void suid() {
         String d = "wyf520";
-        SUID suid = SUID.compute(d);
-        System.out.println(suid.toString());
+//        SUID suid = SUID.compute(d);
+//        System.out.println(suid.toString());
+//
+//        SUID valueOf = SUID.valueOf(suid.toString());
+//        System.out.println(valueOf.toString());
+//
+//        assert suid.equals(valueOf);
+//
+//        Set<SUID> set = new HashSet<>();
+//        for (int i = 0; i < 10000; i++) {
+//            SUID suid1 = SUID.randomSUID();
+//            System.out.println(suid1.toString());
+//            set.add(suid1);
+//        }
+//        assert set.size() == 10000;
 
-        SUID valueOf = SUID.valueOf(suid.toString());
-        System.out.println(valueOf.toString());
+        int len = 100000;
+        Set<String> set = new HashSet<>();
+        for (int i = 0; i < len; i++) {
+            UUID id = UUID.randomUUID();
+            String s = new ShortUUID.Builder().build(id).toString();
+            System.out.println(s);
+            set.add(s);
 
-        assert suid.equals(valueOf);
-
-        Set<SUID> set = new HashSet<>();
-        for (int i = 0; i < 10000; i++) {
-            SUID suid1 = SUID.randomSUID();
-            System.out.println(suid1.toString());
-            set.add(suid1);
+            assert UUID.fromString(new ShortUUID.Builder().decode(s)).equals(id);
         }
-        assert set.size() == 10000;
+        assert set.size() == len;
     }
 
     @Test

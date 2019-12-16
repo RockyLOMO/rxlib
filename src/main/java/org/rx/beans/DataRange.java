@@ -22,6 +22,6 @@ public class DataRange<T extends Comparable<T>> implements Serializable {
     }
 
     public boolean has(T data) {
-        return start.compareTo(data) <= 0 && end.compareTo(data) >= 0;
+        return start.compareTo(data) <= 0 && end.compareTo(data) > 0;
     }
 }

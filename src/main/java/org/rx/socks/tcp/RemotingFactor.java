@@ -203,33 +203,34 @@ public final class RemotingFactor {
                 waitHandle.set();
             });
             client.<NEventArgs<Serializable>>attachEvent(TcpClient.EventNames.Receive, (s, e) -> {
-                if (!tryAs(e.getValue(), RemoteEventPack.class, p -> {
-                    switch (p.flag) {
+                RemoteEventPack remoteEventPack;
+                if ((remoteEventPack = as(e.getValue(), RemoteEventPack.class)) != null) {
+                    switch (remoteEventPack.flag) {
                         case Post:
                             if (resultPack != null) {
                                 resultPack.returnValue = null;
                             }
-                            log.info("client attach {} step2 ok", p.eventName);
+                            log.info("client attach {} step2 ok", remoteEventPack.eventName);
                             break;
                         case PostBack:
                             try {
                                 if (targetType.isInterface()) {
-                                    EventListener.getInstance().raise((EventTarget) proxyObject, p.eventName, p.remoteArgs);
+                                    EventListener.getInstance().raise((EventTarget) proxyObject, remoteEventPack.eventName, remoteEventPack.remoteArgs);
                                 } else {
                                     EventTarget eventTarget = (EventTarget) proxyObject;
-                                    eventTarget.raiseEvent(p.eventName, p.remoteArgs);
+                                    eventTarget.raiseEvent(remoteEventPack.eventName, remoteEventPack.remoteArgs);
                                 }
                             } catch (Exception ex) {
-                                log.error("client raise {}", p.eventName, ex);
+                                log.error("client raise {}", remoteEventPack.eventName, ex);
                             } finally {
-                                if (!p.broadcast) {
-                                    client.send(p);  //import
+                                if (!remoteEventPack.broadcast) {
+                                    client.send(remoteEventPack);  //import
                                 }
-                                log.info("client raise {} ok", p.eventName);
+                                log.info("client raise {} ok", remoteEventPack.eventName);
                             }
-                            break;
+                            return;  //import
                     }
-                })) {
+                } else {
                     resultPack = (CallPack) e.getValue();
                 }
                 waitHandle.set();

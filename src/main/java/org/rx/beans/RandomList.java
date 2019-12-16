@@ -1,6 +1,7 @@
 package org.rx.beans;
 
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.rx.core.NQuery;
 
@@ -10,6 +11,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.Contract.require;
 
+@Slf4j
 public class RandomList<T> implements Collection<T>, Serializable {
     @AllArgsConstructor
     private static class WeightElement<T> {
@@ -109,9 +111,10 @@ public class RandomList<T> implements Collection<T>, Serializable {
                 }
                 hold = element;
             }
-            maxRandomValue = hold.threshold.end + 1;
+            maxRandomValue = hold.threshold.end;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
+        log.debug("next {}/{}", maxRandomValue, v);
         return NQuery.of(elements).single(p -> p.threshold.has(v)).element;
         //二分法查找
 //        int start = 1, end = elements.size() - 1;
