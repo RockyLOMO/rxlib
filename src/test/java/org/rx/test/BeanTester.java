@@ -118,7 +118,7 @@ public class BeanTester {
         assert suid.equals(valueOf);
 
         Set<SUID> set = new HashSet<>();
-        int len = 100000;
+        int len = 100000;  //1530ms
         invoke(() -> {
             for (int i = 0; i < len; i++) {
                 SUID suid1 = SUID.randomSUID();

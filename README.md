@@ -1,82 +1,6 @@
 # rxlib-java
 A set of utilities for Java.
 
-* BeanMapper - 基于cglib bytecode实现，[cglib性能参考](https://yq.aliyun.com/articles/14958)
-```java
-//因为有default method，暂不支持abstract class
-interface PersonMapper {
-    PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
-
-    //该interface下所有map方法的执行flags
-    default FlagsEnum<BeanMapFlag> getFlags() {
-        return BeanMapFlag.LogOnNotAllMapped.flags();
-    }
-
-    class DateToIntConvert implements BeanMapConverter<Date, Integer> {
-        @Override
-        public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
-            return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
-        }
-    }
-
-    @Mapping(target = "gender", ignore = true)
-    @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
-    @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = NullValueMappingStrategy.SetToDefault)
-    @Mapping(target = "birth", converter = DateToIntConvert.class)
-    TargetBean toTarget(PersonBean source);
-
-    @Mapping(target = "gender", ignore = true)
-    @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
-    @Mapping(target = "kids", nullValueStrategy = NullValueMappingStrategy.Ignore)
-    @Mapping(target = "birth", converter = DateToIntConvert.class)
-    default TargetBean toTargetWith(PersonBean source, TargetBean target) {
-        target.setKids(10L);//自定义默认值，先执行默认方法再copy properties
-        return target;
-    }
-}
-
-@Test
-public void defineMapBean() {
-    PersonBean f = new PersonBean();
-    f.setIndex(2);
-    f.setName("王湵范");
-    f.setAge(6);
-    f.setBirth(new DateTime(2020, 2, 20));
-    f.setGender(PersonGender.Boy);
-    f.setMoney(200L);
-
-    //定义用法
-    TargetBean result = PersonMapper.INSTANCE.toTarget(f);
-    System.out.println(toJsonString(f));
-    System.out.println(toJsonString(result));
-
-    result = new TargetBean();
-    PersonMapper.INSTANCE.toTargetWith(f, result);
-    System.out.println(toJsonString(f));
-    System.out.println(toJsonString(result));
-}
-
-@Test
-public void normalMapBean() {
-    PersonBean f = new PersonBean();
-    f.setIndex(2);
-    f.setName("王湵范");
-    f.setAge(6);
-    f.setBirth(new DateTime(2020, 2, 20));
-    f.setGender(PersonGender.Boy);
-    f.setMoney(200L);
-    TargetBean t = new TargetBean();
-    t.setKids(10L);
-
-    //普通用法，属性名一致
-    BeanMapper mapper = BeanMapper.getInstance();
-//    mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常，提醒开发是否漏设置属性
-    mapper.map(f, t, BeanMapFlag.LogOnAllMapFail.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
-    System.out.println(toJsonString(f));
-    System.out.println(toJsonString(t));
-}
-```
-
 * ThreadPool - optimum thread count
 ```java
 @SneakyThrows
@@ -112,8 +36,11 @@ public void threadPool() {
 }
 ```
 
+* [BeanMapper - 基于cglib bytecode实现](https://github.com/RockyLOMO/rxlib/wiki/BeanMapper---%E5%9F%BA%E4%BA%8Ecglib-bytecode%E5%AE%9E%E7%8E%B0)
 * [Rpc - netty tcp 实现](https://github.com/RockyLOMO/rxlib/wiki/Rpc---netty-tcp-%E5%AE%9E%E7%8E%B0)
 * [NQuery - lambda parallel stream](https://github.com/RockyLOMO/rxlib/wiki/NQuery---lambda-parallel-stream)
+* [SUID - Base64缩短的不丢精度的UUID](https://github.com/RockyLOMO/rxlib/wiki/ShortUUID---%E5%9F%BA%E4%BA%8EBase64%E7%BC%A9%E7%9F%AD)
+
 ### shadowsocks (Only tested AES encryption, BELOW VERSION 2.13.13)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
     * Requirements
@@ -124,6 +51,7 @@ public void threadPool() {
         new Thread(server).start();
 
 ### Maven
+
 ```xml
 <dependency>
     <groupId>com.github.rockylomo</groupId>
