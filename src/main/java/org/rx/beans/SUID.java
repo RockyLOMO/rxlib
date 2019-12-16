@@ -4,12 +4,15 @@ import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.rx.core.StringBuilder;
 import org.rx.security.MD5Util;
 
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.UUID;
+
+import static org.rx.core.Contract.require;
 
 @EqualsAndHashCode
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
@@ -19,8 +22,24 @@ public final class SUID implements Serializable {
     }
 
     public static SUID valueOf(String suid) {
-        byte[] bytes = Base64.getUrlDecoder().decode(suid);
-        return new SUID(newUUID(bytes));
+        require(suid);
+
+        switch (suid.length()) {
+            case 22:
+                byte[] bytes = Base64.getUrlDecoder().decode(suid);
+                return new SUID(newUUID(bytes));
+            case 32:
+            case 36:
+                if (suid.length() == 32) {
+                    suid = new StringBuilder().append(suid.substring(0, 8)).append("-")
+                            .append(suid.substring(8, 12)).append("-")
+                            .append(suid.substring(12, 16)).append("-")
+                            .append(suid.substring(16, 20)).append("-")
+                            .append(suid.substring(20, 32)).toString();
+                }
+                return new SUID(UUID.fromString(suid));
+        }
+        throw new IllegalArgumentException("suid");
     }
 
     public static SUID randomSUID() {

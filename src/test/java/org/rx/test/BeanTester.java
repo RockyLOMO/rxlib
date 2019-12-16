@@ -1,5 +1,7 @@
 package org.rx.test;
 
+import com.google.common.base.Stopwatch;
+import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.beans.*;
@@ -11,11 +13,12 @@ import org.rx.util.BeanMapper;
 import org.rx.core.App;
 import org.rx.test.bean.TargetBean;
 import org.rx.util.NullValueMappingStrategy;
+import org.rx.util.function.Action;
 
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Contract.toJsonString;
 
@@ -106,33 +109,33 @@ public class BeanTester {
     @Test
     public void suid() {
         String d = "wyf520";
-//        SUID suid = SUID.compute(d);
-//        System.out.println(suid.toString());
-//
-//        SUID valueOf = SUID.valueOf(suid.toString());
-//        System.out.println(valueOf.toString());
-//
-//        assert suid.equals(valueOf);
-//
-//        Set<SUID> set = new HashSet<>();
-//        for (int i = 0; i < 10000; i++) {
-//            SUID suid1 = SUID.randomSUID();
-//            System.out.println(suid1.toString());
-//            set.add(suid1);
-//        }
-//        assert set.size() == 10000;
+        SUID suid = SUID.compute(d);
+        System.out.println(suid.toString());
 
+        SUID valueOf = SUID.valueOf(suid.toString());
+        System.out.println(valueOf.toString());
+
+        assert suid.equals(valueOf);
+
+        Set<SUID> set = new HashSet<>();
         int len = 100000;
-        Set<String> set = new HashSet<>();
-        for (int i = 0; i < len; i++) {
-            UUID id = UUID.randomUUID();
-            String s = new ShortUUID.Builder().build(id).toString();
-            System.out.println(s);
-            set.add(s);
+        invoke(() -> {
+            for (int i = 0; i < len; i++) {
+                SUID suid1 = SUID.randomSUID();
+                System.out.println(suid1.toString());
+                set.add(suid1);
 
-            assert UUID.fromString(new ShortUUID.Builder().decode(s)).equals(id);
-        }
+                assert SUID.valueOf(suid1.toString()).equals(suid1);
+            }
+        });
         assert set.size() == len;
+    }
+
+    @SneakyThrows
+    private void invoke(Action action) {
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        action.invoke();
+        System.out.println(stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
     }
 
     @Test

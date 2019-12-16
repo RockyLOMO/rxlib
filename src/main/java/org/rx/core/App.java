@@ -8,7 +8,6 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.beans.AppConfig;
-import org.rx.beans.ShortUUID;
 import org.rx.beans.Tuple;
 import org.rx.security.MD5Util;
 import org.rx.beans.DateTime;
@@ -164,25 +163,6 @@ public class App extends SystemUtils {
             lsb = (lsb << 8) | (guidBytes[i] & 0xff);
         }
         return new UUID(msb, lsb);
-    }
-
-    /**
-     * 把 UUID 转为22位长字符串
-     */
-    public static String toShorterUUID(UUID uuid) {
-        require(uuid);
-
-        return new ShortUUID.Builder().build(uuid).toString();
-    }
-
-    /**
-     * 把22位长字符串转为 UUID
-     */
-    public static UUID fromShorterUUID(String shorterUUID) {
-        require(shorterUUID);
-        require(shorterUUID, shorterUUID.length() == 22);
-
-        return UUID.fromString(new ShortUUID.Builder().decode(shorterUUID));
     }
 
     public static <T> T readSetting(String key) {
