@@ -203,15 +203,6 @@ public class CoreTester {
     }
 
     @Test
-    public void shorterUUID() {
-        UUID id = UUID.randomUUID();
-        String sid = App.toShorterUUID(id);
-        UUID id2 = App.fromShorterUUID(sid);
-        System.out.println(sid);
-        assert id.equals(id2);
-    }
-
-    @Test
     public void weakCache() {
         MemoryCache<String, Object> cache = MemoryCache.getInstance(CacheKind.WeakCache);
         String k = "a";

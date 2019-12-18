@@ -1,9 +1,59 @@
 搬瓦工 https://bandwagonhost.com/
 
-        <dependency>
-            <groupId>com.github.stuxuhai</groupId>
-            <artifactId>jpinyin</artifactId>
-            <version>1.1.8</version>
-        </dependency>
+<dependency>
+    <groupId>net.lingala.zip4j</groupId>
+    <artifactId>zip4j</artifactId>
+    <version>1.3.3</version>
+</dependency>
+    public static String zip(String sourcePath, String password) throws ZipException {
+        require(sourcePath);
+
+        String baseFileName = FilenameUtils.getBaseName(sourcePath);
+        String zipFilePath = baseFileName + ".zip";
+        zip(sourcePath, zipFilePath, password);
+        return zipFilePath;
+    }
+
+    public static void zip(String sourcePath, String zipFilePath, String password) throws ZipException {
+        require(sourcePath, zipFilePath);
+
+        ZipParameters zipParameters = new ZipParameters();
+        zipParameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+        zipParameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+        if (!Strings.isEmpty(password)) {
+            zipParameters.setEncryptFiles(true);
+            zipParameters.setEncryptionMethod(Zip4jConstants.ENC_METHOD_AES);
+            zipParameters.setAesKeyStrength(Zip4jConstants.AES_STRENGTH_256);
+            zipParameters.setPassword(password);
+        }
+        ZipFile zipFile = new ZipFile(zipFilePath);
+        File source = new File(sourcePath);
+        if (source.isDirectory()) {
+            zipFile.addFolder(source, zipParameters);
+        } else {
+            zipFile.addFile(source, zipParameters);
+        }
+    }
+
+    public static void unzip(String destPath) throws ZipException {
+        String baseFileName = FilenameUtils.getBaseName(destPath);
+        String zipFilePath = baseFileName + ".zip";
+        unzip(destPath, zipFilePath, null);
+    }
+
+    public static void unzip(String destPath, String zipFilePath, String password) throws ZipException {
+        ZipFile zipFile = new ZipFile(zipFilePath);
+        if (zipFile.isEncrypted()) {
+            zipFile.setPassword(password);
+        }
+        zipFile.extractAll(destPath);
+    }
+
+
+<dependency>
+    <groupId>com.github.stuxuhai</groupId>
+    <artifactId>jpinyin</artifactId>
+    <version>1.1.8</version>
+</dependency>
 ----
-App,Strings warnings.
+App warnings.

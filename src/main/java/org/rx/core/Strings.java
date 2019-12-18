@@ -80,6 +80,10 @@ public class Strings extends StringUtils {
          */
         String Email = "^[\\w-]+(\\.[\\w-]+)*@[\\w-]+(\\.[\\w-]+)+$";
         /**
+         * 身份证
+         */
+        String CitizenId = "^(\\d{15}$|^\\d{18}$|^\\d{17}(\\d|X|x))$";
+        /**
          * 验证手机号码
          */
         String Mobile = "^0{0,1}1[3|5|7|8]\\d{9}$";
@@ -102,7 +106,7 @@ public class Strings extends StringUtils {
         /**
          * 验证URL
          */
-        String Url = "^http(s)?://([\\w-]+\\.)+[\\w-]+(/[\\w- ./?%&=]*)?$";
+        String Url = "^((http|https|ftp):\\/\\/)?(\\w(\\:\\w)?@)?([0-9a-z_-]+\\.)*?([a-z0-9-]+\\.[a-z]{2,6}(\\.[a-z]{2})?(\\:[0-9]{2,6})?)((\\/[^?#<>\\/\\\\*\":]*)+(\\?[^#]*)?(#.*)?)?$";
         /**
          * 验证浮点数
          */
@@ -191,6 +195,6 @@ public class Strings extends StringUtils {
     //#endregion
 
     public static boolean isMatch(String input, String regularExp) {
-        return input != null && regularExp != null && Pattern.matches(input, regularExp);
+        return input != null && regularExp != null && Pattern.matches(regularExp, input);
     }
 }

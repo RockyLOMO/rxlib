@@ -122,9 +122,6 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     private int diskWarningThreshold;
     private final OperatingSystemMXBean os;
     private final ThreadMXBean thread = ManagementFactory.getThreadMXBean();
-//    private MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
-//    private List<MemoryPoolMXBean> memoryPools = ManagementFactory.getMemoryPoolMXBeans();
-//    private Map<NotificationBroadcaster, NotificationListener> gcListeners = new HashMap<>();
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
@@ -160,56 +157,4 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
                 MemoryCache.getOrStore(cacheKey("getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorBean(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
     }
-
-//    public void run() {
-    //        for (GarbageCollectorMXBean gcBean : ManagementFactory.getGarbageCollectorMXBeans()) {
-//            if (!(gcBean instanceof NotificationBroadcaster)) {
-//                continue;
-//            }
-//            String gcName = gcBean.getName();
-//            NotificationListener listener = (notification, handback) -> {
-//                if (gcBean instanceof com.sun.management.GarbageCollectorMXBean) {
-//                    put(gc, ((com.sun.management.GarbageCollectorMXBean) gcBean).getLastGcInfo().getDuration(), "name", gcName);
-//                }
-//            };
-//            NotificationBroadcaster broadcaster = ((NotificationBroadcaster) gcBean);
-//            broadcaster.addNotificationListener(listener, null, null);
-//            gcListeners.put(broadcaster, listener);
-//        }
-//
-//        // Runtime rt = Runtime.getRuntime();
-//        // add(memory, MB(rt.totalMemory() - rt.freeMemory()), "type", "heap_used");
-//        MemoryUsage heap = memory.getHeapMemoryUsage();
-//        put(memoryMB, MB(heap.getCommitted()), "type", "heap_committed");
-//        long heapUsed = heap.getUsed();
-//        put(memoryMB, MB(heapUsed), "type", "heap_used");
-//        long heapMax = heap.getMax();
-//        put(memoryMB, MB(heapMax), "type", "heap_max");
-//        put(memoryPercent, PERCENT(heapUsed, heapMax), "type", "heap");
-//        MemoryUsage nonHeap = memory.getNonHeapMemoryUsage();
-//        put(memoryMB, MB(nonHeap.getCommitted()), "type", "non_heap_committed");
-//        long nonHeapUsed = nonHeap.getUsed();
-//        put(memoryMB, MB(nonHeapUsed), "type", "non_heap_used");
-//        long nonHeapMax = nonHeap.getMax();
-//        if (nonHeapMax > 0) {
-//            put(memoryMB, MB(nonHeapMax), "type", "non_heap_max");
-//            put(memoryPercent, PERCENT(nonHeapUsed, nonHeapMax), "type", "non_heap");
-//        }
-//
-//        for (MemoryPoolMXBean memoryPool : memoryPools) {
-//            String poolName = memoryPool.getName();
-//            MemoryUsage pool = memoryPool.getUsage();
-//            if (pool == null) {
-//                continue;
-//            }
-//            put(memoryPoolMB, MB(pool.getCommitted()), "type", "committed", "name", poolName);
-//            long poolUsed = pool.getUsed();
-//            put(memoryPoolMB, MB(poolUsed), "type", "used", "name", poolName);
-//            long poolMax = pool.getMax();
-//            if (poolMax > 0) {
-//                put(memoryPoolMB, MB(poolMax), "type", "max", "name", poolName);
-//                put(memoryPoolPercent, PERCENT(poolUsed, poolMax), "name", poolName);
-//            }
-//        }
-//    }
 }

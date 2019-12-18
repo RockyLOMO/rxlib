@@ -2,71 +2,20 @@ package org.rx.util;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import net.lingala.zip4j.core.ZipFile;
-import net.lingala.zip4j.exception.ZipException;
-import net.lingala.zip4j.model.ZipParameters;
-import net.lingala.zip4j.util.Zip4jConstants;
-import org.apache.commons.io.FilenameUtils;
 import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.rx.core.Strings;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Function;
 
-import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class Helper {
-    public static String zip(String sourcePath, String password) throws ZipException {
-        require(sourcePath);
-
-        String baseFileName = FilenameUtils.getBaseName(sourcePath);
-        String zipFilePath = baseFileName + ".zip";
-        zip(sourcePath, zipFilePath, password);
-        return zipFilePath;
-    }
-
-    public static void zip(String sourcePath, String zipFilePath, String password) throws ZipException {
-        require(sourcePath, zipFilePath);
-
-        ZipParameters zipParameters = new ZipParameters();
-        zipParameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
-        zipParameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
-        if (!Strings.isEmpty(password)) {
-            zipParameters.setEncryptFiles(true);
-            zipParameters.setEncryptionMethod(Zip4jConstants.ENC_METHOD_AES);
-            zipParameters.setAesKeyStrength(Zip4jConstants.AES_STRENGTH_256);
-            zipParameters.setPassword(password);
-        }
-        ZipFile zipFile = new ZipFile(zipFilePath);
-        File source = new File(sourcePath);
-        if (source.isDirectory()) {
-            zipFile.addFolder(source, zipParameters);
-        } else {
-            zipFile.addFile(source, zipParameters);
-        }
-    }
-
-    public static void unzip(String destPath) throws ZipException {
-        String baseFileName = FilenameUtils.getBaseName(destPath);
-        String zipFilePath = baseFileName + ".zip";
-        unzip(destPath, zipFilePath, null);
-    }
-
-    public static void unzip(String destPath, String zipFilePath, String password) throws ZipException {
-        ZipFile zipFile = new ZipFile(zipFilePath);
-        if (zipFile.isEncrypted()) {
-            zipFile.setPassword(password);
-        }
-        zipFile.extractAll(destPath);
-    }
-
     @SneakyThrows
     public static Map<String, List<Object[]>> readExcel(InputStream in, boolean skipColumn) {
         return readExcel(in, skipColumn, false);

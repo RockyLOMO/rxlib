@@ -2,6 +2,7 @@ package org.rx.util.validator;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.rx.core.Strings;
 
 import javax.validation.Constraint;
 import javax.validation.Payload;
@@ -19,11 +20,11 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 public @interface PatternEx {
     @RequiredArgsConstructor
     enum Flag {
-        Email("邮箱", "^[\\w-]+(\\.[\\w-]+)*@[\\w-]+(\\.[\\w-]+)+$"),
-        Url("链接", "^((http|https|ftp):\\/\\/)?(\\w(\\:\\w)?@)?([0-9a-z_-]+\\.)*?([a-z0-9-]+\\.[a-z]{2,6}(\\.[a-z]{2})?(\\:[0-9]{2,6})?)((\\/[^?#<>\\/\\\\*\":]*)+(\\?[^#]*)?(#.*)?)?$"),
-        CitizenId("身份证", "^(\\d{15}$|^\\d{18}$|^\\d{17}(\\d|X|x))$"),
-        Mobile("手机", "^0{0,1}1[3|5|7|8]\\d{9}$"),
-        Tel("座机", "(\\d+-)?(\\d{4}-?\\d{7}|\\d{3}-?\\d{8}|^\\d{7,8})(-\\d+)?");
+        Email("邮箱", Strings.RegularExp.Email),
+        Url("链接", Strings.RegularExp.Url),
+        CitizenId("身份证", Strings.RegularExp.CitizenId),
+        Mobile("手机", Strings.RegularExp.Mobile),
+        Tel("座机", Strings.RegularExp.Telephone);
 
         private final String name;
         @Getter
