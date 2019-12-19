@@ -101,8 +101,13 @@ public class BeanTester {
         RandomList<String> randomList = new RandomList<>();
         randomList.add("a", 5);
         randomList.add("b", 5);
+        randomList.add("c", 5);
+        randomList.add("d", 5);
         for (int i = 0; i < 100000; i++) {
-            System.out.println(randomList.next());
+            String next = randomList.next();
+            System.out.println(next);
+            randomList.remove(next);
+            randomList.add(next);
         }
     }
 

@@ -71,22 +71,29 @@ public class RandomList<T> implements Collection<T>, Serializable {
 
     @Override
     public boolean add(T t) {
-        add(t, 2);
-        return true;
+        return add(t, 2);
     }
 
     public boolean add(T element, int weight) {
         require(weight, weight >= 0);
 
-        boolean changed = false;
+        boolean changed;
         WeightElement<T> weightElement = findElement(element);
         if (weightElement == null) {
             elements.add(new WeightElement<>(element, weight));
             changed = true;
         } else {
-            weightElement.weight = weight;
+            if (changed = weightElement.weight != weight) {
+                weightElement.weight = weight;
+            }
         }
-        maxRandomValue = 0;
+        return change(changed);
+    }
+
+    private boolean change(boolean changed) {
+        if (changed) {
+            maxRandomValue = 0;
+        }
         return changed;
     }
 
@@ -114,8 +121,9 @@ public class RandomList<T> implements Collection<T>, Serializable {
             maxRandomValue = hold.threshold.end;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-        log.debug("next {}/{}", maxRandomValue, v);
-        return NQuery.of(elements).single(p -> p.threshold.has(v)).element;
+        NQuery<WeightElement<T>> q = NQuery.of(elements);
+        log.debug("{}\tnext {}/{}", q.select(p -> String.format("%s threshold[%s-%s]", p.element, p.threshold.start, p.threshold.end)).toJoinString(",", p -> p), v, maxRandomValue);
+        return q.single(p -> p.threshold.has(v)).element;
         //二分法查找
 //        int start = 1, end = elements.size() - 1;
 //        while (true) {
@@ -144,7 +152,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
 
     @Override
     public boolean remove(Object element) {
-        return elements.removeIf(p -> p.element == element);
+        return change(elements.removeIf(p -> p.element == element));
     }
 
     @Override
@@ -179,12 +187,12 @@ public class RandomList<T> implements Collection<T>, Serializable {
         int size = elements.size();
         elements.clear();
         elements.addAll(NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).asCollection());
-        return size != elements.size();
+        return change(size != elements.size());
     }
 
     @Override
     public void clear() {
         elements.clear();
-        maxRandomValue = 0;
+        change(true);
     }
 }

@@ -207,6 +207,7 @@
     </profiles>
     <build>
         <directory>${output}</directory>
+        <outputDirectory>${output}\op</outputDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
