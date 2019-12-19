@@ -1,8 +1,9 @@
-package org.rx.util.validator;
+package org.rx.annotation;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Strings;
+import org.rx.util.Validator;
 
 import javax.validation.Constraint;
 import javax.validation.Payload;
@@ -16,9 +17,10 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER})
 @Retention(RUNTIME)
 @Documented
-@Constraint(validatedBy = PatternExValidator.class)
-public @interface PatternEx {
+@Constraint(validatedBy = Validator.RegexValidator.class)
+public @interface ValidRegex {
     @RequiredArgsConstructor
+    @Getter
     enum Flag {
         Email("邮箱", Strings.RegularExp.Email),
         Url("链接", Strings.RegularExp.Url),
@@ -27,13 +29,7 @@ public @interface PatternEx {
         Tel("座机", Strings.RegularExp.Telephone);
 
         private final String name;
-        @Getter
         private final String regexp;
-
-        @Override
-        public String toString() {
-            return name;
-        }
     }
 
     Flag value();

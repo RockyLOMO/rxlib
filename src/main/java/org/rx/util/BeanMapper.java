@@ -8,7 +8,6 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.annotation.Mapping;
 import org.rx.beans.FlagsEnum;
 import org.rx.core.*;
-import org.rx.util.validator.ValidateUtil;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -148,7 +147,7 @@ public class BeanMapper {
         }
 
         if (flags.has(BeanMapFlag.ValidateBean)) {
-            ValidateUtil.validateBean(target);
+            Validator.validateBean(target);
         }
         return target;
     }

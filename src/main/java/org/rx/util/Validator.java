@@ -1,4 +1,4 @@
-package org.rx.util.validator;
+package org.rx.util;
 
 import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -6,31 +6,50 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
 
-import javax.validation.ConstraintViolation;
-import javax.validation.Validation;
-import javax.validation.Validator;
+import javax.validation.*;
 import javax.validation.executable.ExecutableValidator;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 
-import org.rx.util.LogInterceptor;
+import org.rx.annotation.EnableValid;
+import org.rx.annotation.ValidRegex;
 import org.rx.core.StringBuilder;
 
 import java.util.Set;
-import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
-public class ValidateUtil extends LogInterceptor {
+public class Validator extends SpringLogInterceptor {
+    public static class RegexValidator implements ConstraintValidator<ValidRegex, String> {
+        private ValidRegex validRegex;
+
+        @Override
+        public void initialize(ValidRegex validRegex) {
+            this.validRegex = validRegex;
+        }
+
+        @Override
+        public boolean isValid(String s, ConstraintValidatorContext constraintValidatorContext) {
+            if (s == null) {
+                return true;
+            }
+
+            Pattern p = Pattern.compile(validRegex.value().getRegexp(), Pattern.CASE_INSENSITIVE);
+            return p.matcher(s).matches();
+        }
+    }
+
     /**
      * 验证bean实体 @Valid deep valid
      *
      * @param bean
      */
     public static void validateBean(Object bean) {
-        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        javax.validation.Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         for (ConstraintViolation<Object> violation : validator.validate(bean)) {
             doThrow(violation);
         }
@@ -42,15 +61,13 @@ public class ValidateUtil extends LogInterceptor {
 
     private static void doThrow(ConstraintViolation<Object> violation) {
         String pn = violation.getPropertyPath().toString(), vm = violation.getMessage();
-        throw new ConstraintException(pn, vm,
-                String.format("%s.%s%s", violation.getRootBeanClass().getSimpleName(), pn, vm));
+        throw new ValidateException(pn, vm, String.format("%s.%s%s", violation.getRootBeanClass().getSimpleName(), pn, vm));
     }
 
     public static void validateConstructor(Constructor member, Object[] parameterValues, boolean validateValues) {
-        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        javax.validation.Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         ExecutableValidator executableValidator = validator.forExecutables();
-        Set<ConstraintViolation<Object>> result = executableValidator.validateConstructorParameters(member,
-                parameterValues);
+        Set<ConstraintViolation<Object>> result = executableValidator.validateConstructorParameters(member, parameterValues);
         for (ConstraintViolation<Object> violation : result) {
             doThrow(violation);
         }
@@ -61,11 +78,10 @@ public class ValidateUtil extends LogInterceptor {
         }
     }
 
-    public static Object validateMethod(Method member, Object instance, Object[] parameterValues, boolean validateValues, Function returnValueFuc) {
-        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+    public static Object validateMethod(Method member, Object instance, Object[] parameterValues, boolean validateValues, Supplier<Object> delayReturnValue) {
+        javax.validation.Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         ExecutableValidator executableValidator = validator.forExecutables();
-        for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member,
-                parameterValues)) {
+        for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member, parameterValues)) {
             doThrow(violation);
         }
         if (validateValues && parameterValues != null) {
@@ -74,12 +90,11 @@ public class ValidateUtil extends LogInterceptor {
             }
         }
 
-        if (returnValueFuc == null) {
+        if (delayReturnValue == null) {
             return null;
         }
         Object retVal;
-        for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member,
-                retVal = returnValueFuc.apply(null))) {
+        for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member, retVal = delayReturnValue.get())) {
             doThrow(violation);
         }
         return retVal;
@@ -125,8 +140,7 @@ public class ValidateUtil extends LogInterceptor {
             }
 
             MethodSignature ms = (MethodSignature) signature;
-            return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues,
-                    p -> super.onProcess(joinPoint, msg));
+            return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues, () -> super.onProcess(joinPoint, msg));
         }
 
         if (validateValues) {

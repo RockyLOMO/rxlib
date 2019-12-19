@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.socks;
 
 import lombok.Getter;
 

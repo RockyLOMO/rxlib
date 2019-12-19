@@ -11,23 +11,11 @@ import java.util.Map;
 import static org.rx.core.Contract.require;
 
 @Component
-public final class SpringContextUtil implements InitializingBean, ApplicationContextAware {
+public class SpringContext implements InitializingBean, ApplicationContextAware {
     /**
      * applicationContext.xml SpringContextHolder
      */
     private static ApplicationContext applicationContext;
-
-    @Override
-    public void afterPropertiesSet() {
-
-    }
-
-    public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
-//        if (applicationContext == null) {
-//            return;
-//        }
-        SpringContextUtil.applicationContext = applicationContext;
-    }
 
     public static ApplicationContext getApplicationContext() {
         require(applicationContext);
@@ -42,5 +30,16 @@ public final class SpringContextUtil implements InitializingBean, ApplicationCon
     public static <T> T getBean(Class<T> clazz) {
         Map<String, T> beanMaps = getApplicationContext().getBeansOfType(clazz);
         return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
+    }
+
+    @Override
+    public void afterPropertiesSet() {
+    }
+
+    public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
+//        if (applicationContext == null) {
+//            return;
+//        }
+        SpringContext.applicationContext = applicationContext;
     }
 }

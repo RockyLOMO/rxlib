@@ -10,8 +10,8 @@ import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.rx.core.Contract.toJsonString;
 
-public class LogInterceptor {
-    private static final ThreadLocal threadStatic = ThreadLocal.withInitial(() -> FALSE);
+public class SpringLogInterceptor {
+//    private static final ThreadLocal<Boolean> threadStatic = ThreadLocal.withInitial(() -> FALSE);
 
     @SneakyThrows
     protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
@@ -43,20 +43,22 @@ public class LogInterceptor {
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(signature.getDeclaringType());
-        if ((Boolean) threadStatic.get() || !log.isInfoEnabled()) {
+        if (
+//                threadStatic.get() ||
+                        !log.isInfoEnabled()) {
             return joinPoint.proceed();
         }
 
         StringBuilder msg = new StringBuilder();
         try {
-            threadStatic.set(TRUE);
+//            threadStatic.set(TRUE);
             msg.appendLine("Call %s", signature.getName());
             return onProcess(joinPoint, msg);
         } catch (Exception e) {
             return onException(e, msg);
         } finally {
             log.info(msg.toString());
-            threadStatic.set(FALSE);
+//            threadStatic.set(FALSE);
         }
     }
 }

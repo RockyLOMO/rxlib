@@ -3,15 +3,15 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
-    <bean id="springContextUtil" class="org.rx.util.SpringContextUtil"/>
-    <bean id="validateAspect" class="org.rx.util.validator.ValidateUtil"/>
+    <bean id="springContext" class="org.rx.util.SpringContext"/>
+    <bean id="validateAspect" class="org.rx.util.Validator"/>
     <aop:config proxy-target-class="true">
         <aop:aspect id="va" ref="validateAspect">
             <!--<aop:pointcut id="vaPointcut"-->
             <!--expression="execution(public * org.rx..*.*(..))-->
             <!--and !execution(* java.rx.validator.*(..))"/>-->
             <aop:pointcut id="vaPointcut"
-                          expression="@annotation(org.rx.util.validator.EnableValid) or @within(org.rx.util.validator.EnableValid)"/>
+                          expression="@annotation(org.rx.annotation.EnableValid) or @within(org.rx.annotation.EnableValid)"/>
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>

@@ -8,7 +8,6 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.util.validator.ConstraintException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,7 +25,7 @@ import static org.rx.core.SystemException.DefaultMessage;
 //@Component
 //@Order(0)
 //@ControllerAdvice
-public class ControllerInterceptor {
+public class SpringControllerInterceptor {
     public interface IRequireSignIn {
         boolean isSignIn(String methodName, Object[] args);
     }
@@ -122,7 +121,7 @@ public class ControllerInterceptor {
     public ResponseEntity handleException(Exception e, HttpServletRequest request) {
         String msg = DefaultMessage, debugMsg = null;
         Exception logEx = e;
-        if (e instanceof ConstraintException || handleInfoLogExceptions().distinct().any(p -> Reflects.isInstance(e, p))) {
+        if (e instanceof ValidateException || handleInfoLogExceptions().distinct().any(p -> Reflects.isInstance(e, p))) {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logEx = null;
