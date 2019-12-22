@@ -3,6 +3,7 @@ package org.rx.core;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.google.gson.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -242,6 +243,9 @@ public final class Contract {
             return gson.fromJson((String) jsonOrBean, type);
         }
         return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
+//        return JSON.toJavaObject(jsonOrBean, type);
+//        return JSON.parseObject(toJsonString(jsonOrBean), type);
+//        return JSON.parseObject(toJsonString(jsonOrBean)).toJavaObject(type);
     }
 
     public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
