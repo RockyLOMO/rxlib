@@ -8,12 +8,12 @@ import org.rx.beans.NEnum;
 import org.rx.beans.Tuple;
 import org.rx.core.Disposable;
 import org.rx.core.Tasks;
+import org.rx.util.function.TripleAction;
 
 import java.nio.file.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
-import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import static org.rx.core.Contract.catchCall;
@@ -34,7 +34,7 @@ public class FileWatcher extends Disposable {
     private WatchService service;
     private volatile boolean keepHandle;
     private Future future;
-    private final List<Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>>> callback;
+    private final List<Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>>> callback;
 
     @SneakyThrows
     public FileWatcher(String directoryPath) {
@@ -54,7 +54,7 @@ public class FileWatcher extends Disposable {
         service = null;
     }
 
-    public boolean tryPeek(BiConsumer<ChangeKind, Path> onChange) {
+    public boolean tryPeek(TripleAction<ChangeKind, Path> onChange) {
         require(onChange);
 
         WatchKey key = service.poll();
@@ -79,7 +79,7 @@ public class FileWatcher extends Disposable {
                 catchCall(() -> {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
-                        for (Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
+                        for (Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
                             catchCall(() -> raiseEvent(event, tuple));
                         }
                     }
@@ -91,18 +91,19 @@ public class FileWatcher extends Disposable {
         return this;
     }
 
-    public FileWatcher callback(BiConsumer<ChangeKind, Path> onChange) {
+    public FileWatcher callback(TripleAction<ChangeKind, Path> onChange) {
         return callback(onChange, null);
     }
 
-    public FileWatcher callback(BiConsumer<ChangeKind, Path> onChange, Predicate<Path> filter) {
+    public FileWatcher callback(TripleAction<ChangeKind, Path> onChange, Predicate<Path> filter) {
         require(keepHandle, onChange);
 
         callback.add(Tuple.of(onChange, filter));
         return this;
     }
 
-    private void raiseEvent(WatchEvent<?> event, Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple) {
+    @SneakyThrows
+    private void raiseEvent(WatchEvent<?> event, Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>> tuple) {
         WatchEvent<Path> $event = (WatchEvent<Path>) event;
         Path absolutePath = Paths.get(directoryPath, $event.context().toString());
         if (tuple.right != null && !tuple.right.test(absolutePath)) {
@@ -116,12 +117,13 @@ public class FileWatcher extends Disposable {
         } else {
             changeKind = ChangeKind.Delete;
         }
-        tuple.left.accept(changeKind, absolutePath);
+        tuple.left.invoke(changeKind, absolutePath);
     }
 
+    @SneakyThrows
     protected void raiseCallback(ChangeKind kind, Path changedPath) {
-        for (Tuple<BiConsumer<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
-            tuple.left.accept(kind, changedPath);
+        for (Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
+            tuple.left.invoke(kind, changedPath);
         }
     }
 

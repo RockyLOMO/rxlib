@@ -5,10 +5,10 @@ import org.rx.core.SystemException;
 import java.util.function.Function;
 
 @FunctionalInterface
-public interface BiFunc<TParam, TResult> {
-    TResult invoke(TParam param) throws Throwable;
+public interface BiFunc<TP, TR> {
+    TR invoke(TP param) throws Throwable;
 
-    default Function<TParam, TResult> toFunction() {
+    default Function<TP, TR> toFunction() {
         return p -> {
             try {
                 return invoke(p);
