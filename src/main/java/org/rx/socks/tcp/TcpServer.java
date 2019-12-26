@@ -78,11 +78,8 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
-            try {
-                raiseEvent(onDisconnected, new PackEventArgs<>(client, null));
-            } finally {
-                removeClient(client);
-            }
+            removeClient(client);
+            raiseEvent(onDisconnected, new PackEventArgs<>(client, null));
         }
 
         @Override
