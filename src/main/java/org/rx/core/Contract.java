@@ -302,7 +302,7 @@ public final class Contract {
                 jArr = NQuery.asList(bean);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
+                    if (p != null && skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
@@ -323,6 +323,7 @@ public final class Contract {
             }
             skipTypes = skipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
                     .<Class>select(Object::getClass).distinct());
+            log.warn("toJsonString {}", skipTypes.toJoinString(",", Class::getName), ex);
 
             JSONObject json = new JSONObject();
             json.put("_input", bean.toString());
