@@ -7,14 +7,17 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.google.gson.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
+import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
+import org.rx.beans.Tuple;
 import org.rx.security.MD5Util;
-import org.rx.util.function.Action;
-import org.rx.util.function.BiAction;
-import org.rx.util.function.Func;
+import org.rx.util.function.*;
 
-import java.lang.reflect.AccessibleObject;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -171,8 +174,8 @@ public final class Contract {
         return args;
     }
 
-    public static String toDescription(AccessibleObject accessibleObject) {
-        Description desc = accessibleObject.getAnnotation(Description.class);
+    public static String toDescription(AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
         if (desc == null) {
             return null;
         }
@@ -186,6 +189,10 @@ public final class Contract {
     @SneakyThrows
     public static void sleep(long millis) {
         Thread.sleep(millis);
+    }
+
+    public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
+        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, args, Tuple.of(proxyObject, methodProxy)));
     }
     //endregion
 

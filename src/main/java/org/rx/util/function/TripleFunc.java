@@ -5,10 +5,10 @@ import org.rx.core.SystemException;
 import java.util.function.BiFunction;
 
 @FunctionalInterface
-public interface TripleFunc<TP1, T2, TR> {
-    TR invoke(TP1 param1, T2 param2) throws Throwable;
+public interface TripleFunc<T1, T2, TR> {
+    TR invoke(T1 param1, T2 param2) throws Throwable;
 
-    default BiFunction<TP1, T2, TR> toFunction() {
+    default BiFunction<T1, T2, TR> toFunction() {
         return (p1, p2) -> {
             try {
                 return invoke(p1, p2);

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -192,18 +193,6 @@
         </dependency>
     </dependencies>
 
-<!--    <profiles>-->
-<!--        <profile>-->
-<!--            <id>disable-javadoc-doclint</id>-->
-<!--            <activation>-->
-<!--                <jdk>[1.8,)</jdk>-->
-<!--            </activation>-->
-<!--            <properties>-->
-<!--                <additionalparam>-Xdoclint:none</additionalparam>-->
-<!--                <doclint>none</doclint>-->
-<!--            </properties>-->
-<!--        </profile>-->
-<!--    </profiles>-->
     <build>
         <directory>${output}</directory>
         <outputDirectory>${output}\op</outputDirectory>
@@ -214,18 +203,16 @@
                 <version>3.1.1</version>
                 <configuration>
                     <failOnError>false</failOnError>
-<!--&lt;!&ndash;                    <charset>UTF-8</charset>&ndash;&gt;-->
-<!--&lt;!&ndash;                    <encoding>UTF-8</encoding>&ndash;&gt;-->
-<!--&lt;!&ndash;                    <docencoding>UTF-8</docencoding>&ndash;&gt;-->
-<!--                    <doclint>none</doclint><additionalOptions>-->
-<!--                    <additionalOption>-Xdoclint:none</additionalOption>-->
-<!--                </additionalOptions>-->
-<!--                    &lt;!&ndash;                    <additionalparam>-Xdoclint:none</additionalparam>&ndash;&gt;-->
+                    <charset>UTF-8</charset>
+                    <encoding>UTF-8</encoding>
+                    <docencoding>UTF-8</docencoding>
+                    <!--                    <doclint>none</doclint><additionalOptions>-->
+                    <!--                    <additionalOption>-Xdoclint:none</additionalOption>-->
+                    <!--                </additionalOptions>-->
                 </configuration>
                 <executions>
                     <execution>
                         <id>attach-javadocs</id>
-<!--                        <phase>package</phase>-->
                         <goals>
                             <goal>jar</goal>
                         </goals>
@@ -234,7 +221,6 @@
                             <additionalOptions>
                                 <additionalOption>-Xdoclint:none</additionalOption>
                             </additionalOptions>
-                            <!--                            <additionalparam>-Xdoclint:none</additionalparam>-->
                         </configuration>
                     </execution>
                 </executions>
@@ -259,9 +245,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.6</version>
-                <!--                <configuration>-->
-                <!--                    <skip>true</skip>-->
-                <!--                </configuration>-->
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>sign-artifacts</id>
@@ -298,15 +284,15 @@
                     </execution>
                 </executions>
             </plugin>
-<!--                        <plugin>-->
-<!--                            <groupId>org.apache.maven.plugins</groupId>-->
-<!--                            <artifactId>maven-surefire-plugin</artifactId>-->
-<!--                            <version>2.22.2</version>-->
-<!--                            <configuration>-->
-<!--                                <useSystemClassLoader>true</useSystemClassLoader>-->
-<!--                                <skipTests>true</skipTests>-->
-<!--                            </configuration>-->
-<!--                        </plugin>-->
+            <!--                        <plugin>-->
+            <!--                            <groupId>org.apache.maven.plugins</groupId>-->
+            <!--                            <artifactId>maven-surefire-plugin</artifactId>-->
+            <!--                            <version>2.22.2</version>-->
+            <!--                            <configuration>-->
+            <!--                                <useSystemClassLoader>true</useSystemClassLoader>-->
+            <!--                                <skipTests>true</skipTests>-->
+            <!--                            </configuration>-->
+            <!--                        </plugin>-->
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <executions>
