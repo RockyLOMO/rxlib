@@ -589,7 +589,8 @@ public class App extends SystemUtils {
         cookie.setPath("/");
 //        cookie.setSecure(true);
         cookie.setHttpOnly(true);
-        cookie.setMaxAge(-1);
+//        cookie.setMaxAge(-1);
+        cookie.setMaxAge(0);
         response.addCookie(cookie);
     }
     //endregion

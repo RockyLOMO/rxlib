@@ -4,9 +4,9 @@ import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.rx.util.function.BiFunc;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.tryClose;
@@ -20,7 +20,8 @@ public final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
         return cache;
     }
 
-    private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(HashMap::new);
+    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
+    private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 
     @Override
     public int size() {
