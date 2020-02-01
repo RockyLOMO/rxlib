@@ -124,16 +124,17 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public static Map<String, String> parseQueryString(String queryString) {
+    public static Map<String, String> parseQueryString(String url) {
         Map<String, String> params = new LinkedHashMap<>();
-        if (queryString == null) {
+        if (Strings.isEmpty(url)) {
             return params;
         }
-        if (queryString.startsWith("?")) {
-            queryString = queryString.substring(1);
-        }
 
-        String[] pairs = queryString.split("&");
+        int i = url.indexOf("?");
+        if (i != -1) {
+            url = url.substring(i + 1);
+        }
+        String[] pairs = url.split("&");
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
@@ -145,25 +146,31 @@ public class HttpClient {
         return params;
     }
 
-    public static String buildQueryString(String baseUrl, Map<String, Object> params) {
-        if (params == null) {
-            return baseUrl;
+    public static String buildQueryString(String url, Map<String, Object> params) {
+        if (url == null) {
+            url = "";
         }
-        if (baseUrl == null) {
-            baseUrl = "";
+        if (params == null) {
+            return url;
         }
 
-        String c = baseUrl.lastIndexOf("?") == -1 ? "?" : "&";
-        StringBuilder url = new StringBuilder(baseUrl);
-        for (String key : params.keySet()) {
-            Object val = params.get(key);
+        Map<String, Object> query = (Map) parseQueryString(url);
+        query.putAll(params);
+        int i = url.indexOf("?");
+        if (i != -1) {
+            url = url.substring(0, i);
+        }
+        StringBuilder sb = new StringBuilder(url);
+
+        for (Map.Entry<String, Object> entry : query.entrySet()) {
+            Object val = entry.getValue();
             if (val == null) {
                 continue;
             }
-            url.append(url.length() == baseUrl.length() ? c : "&")
-                    .append(encodeUrl(key)).append("=").append(encodeUrl(val.toString()));
+            sb.append(sb.length() == url.length() ? "?" : "&")
+                    .append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
         }
-        return url.toString();
+        return sb.toString();
     }
     //endregion
 

@@ -7,6 +7,7 @@ import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.socks.Sockets;
+import org.rx.socks.http.HttpClient;
 import org.rx.socks.tcp.*;
 import org.rx.test.bean.*;
 
@@ -16,6 +17,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.rx.core.Contract.sleep;
 import static org.rx.core.Contract.toJsonString;
@@ -181,6 +183,18 @@ public class SocksTester {
     public void testProxy() {
         TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
         System.in.read();
+    }
+
+    @Test
+    public void queryString() {
+        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        Map<String, Object> map = HttpClient.parseQueryString(url);
+        System.out.println(toJsonString(map));
+
+        map.put("userId", "newId");
+        map.put("ok", "1");
+        System.out.println(HttpClient.buildQueryString(url, map));
+        System.out.println(HttpClient.buildQueryString("http://f-li.cn/blog/1.html", map));
     }
 
     @Test
