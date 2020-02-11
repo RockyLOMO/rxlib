@@ -188,7 +188,7 @@ public class SocksTester {
     @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = HttpClient.parseQueryString(url);
+        Map<String, Object> map = (Map) HttpClient.parseQueryString(url);
         System.out.println(toJsonString(map));
 
         map.put("userId", "newId");

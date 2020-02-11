@@ -194,12 +194,18 @@ public class CoreTester {
     @Test
     public void randomList() {
         RandomList<String> wr = new RandomList<>();
-        wr.add("a", 5);
-        wr.add("b", 2);
-        wr.add("c", 3);
-        for (int i = 0; i < 20; i++) {
-            System.out.println(wr.next());
+        wr.add("a");
+        wr.add("b");
+        wr.add("c");
+        for (String s : wr) {
+            System.out.println(s);
         }
+//        wr.add("a", 5);
+//        wr.add("b", 2);
+//        wr.add("c", 3);
+//        for (int i = 0; i < 20; i++) {
+//            System.out.println(wr.next());
+//        }
     }
 
     @Test
