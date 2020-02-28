@@ -56,6 +56,6 @@ public void threadPool() {
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.13.13</version>
+    <version>2.14.2</version>
 </dependency>
 ```

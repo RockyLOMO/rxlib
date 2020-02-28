@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -57,10 +58,10 @@
         <okhttp.version>4.4.0</okhttp.version>
         <netty.version>4.1.45.Final</netty.version>
         <snakeyaml.version>1.25</snakeyaml.version>
+
         <spring.version>5.2.4.RELEASE</spring.version>
         <aspectj.version>1.9.5</aspectj.version>
         <poi.version>4.1.1</poi.version>
-
         <rdbc.mysql>5.1.48</rdbc.mysql>
         <rdbc.HikariCP>3.4.2</rdbc.HikariCP>
         <rdbc.druid>1.1.21</rdbc.druid>
@@ -261,7 +262,7 @@
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.6</version>
                 <configuration>
-<!--                    <skip>true</skip>-->
+                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
@@ -299,15 +300,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!--                        <plugin>-->
-            <!--                            <groupId>org.apache.maven.plugins</groupId>-->
-            <!--                            <artifactId>maven-surefire-plugin</artifactId>-->
-            <!--                            <version>2.22.2</version>-->
-            <!--                            <configuration>-->
-            <!--                                <useSystemClassLoader>true</useSystemClassLoader>-->
-            <!--                                <skipTests>true</skipTests>-->
-            <!--                            </configuration>-->
-            <!--                        </plugin>-->
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <executions>
