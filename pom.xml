@@ -10,7 +10,7 @@
 
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.14.2-SNAPSHOT</version>
+    <version>2.14.2</version>
     <!-- -SNAPSHOT -->
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
@@ -256,22 +256,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!--            <plugin>-->
-            <!--                <groupId>org.apache.maven.plugins</groupId>-->
-            <!--                <artifactId>maven-site-plugin</artifactId>-->
-            <!--                &lt;!&ndash;                <version>3.6</version>&ndash;&gt;-->
-            <!--                <configuration>-->
-            <!--                    <reportPlugins>-->
-            <!--                        <plugin>-->
-            <!--                            <groupId>org.apache.maven.plugins</groupId>-->
-            <!--                            <artifactId>maven-javadoc-plugin</artifactId>-->
-            <!--                            <configuration>-->
-            <!--                                <additionalparam>-Xdoclint:none</additionalparam>-->
-            <!--                            </configuration>-->
-            <!--                        </plugin>-->
-            <!--                    </reportPlugins>-->
-            <!--                </configuration>-->
-            <!--            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
