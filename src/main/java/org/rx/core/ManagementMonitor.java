@@ -4,7 +4,7 @@ import com.sun.management.OperatingSystemMXBean;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.rx.beans.FlagsEnum;
+import org.rx.bean.FlagsEnum;
 
 import java.io.File;
 import java.lang.management.*;

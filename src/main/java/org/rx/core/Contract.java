@@ -3,7 +3,6 @@ package org.rx.core;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.google.gson.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +11,7 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.Tuple;
+import org.rx.bean.Tuple;
 import org.rx.security.MD5Util;
 import org.rx.util.function.*;
 

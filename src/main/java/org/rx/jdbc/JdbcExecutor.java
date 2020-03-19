@@ -9,7 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
-import org.rx.beans.$;
+import org.rx.bean.$;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.util.function.BiFunc;

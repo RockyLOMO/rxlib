@@ -6,10 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.$;
-import org.rx.beans.DateTime;
-import org.rx.beans.RandomList;
-import org.rx.beans.Tuple;
+import org.rx.bean.$;
+import org.rx.bean.DateTime;
+import org.rx.bean.RandomList;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
@@ -18,7 +18,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
-import static org.rx.beans.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.core.Contract.*;
 import static org.rx.core.Contract.toJsonString;
 

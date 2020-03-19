@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.bean;
 
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

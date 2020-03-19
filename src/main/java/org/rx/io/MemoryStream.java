@@ -1,7 +1,7 @@
 package org.rx.io;
 
 import lombok.SneakyThrows;
-import org.rx.beans.$;
+import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.SystemException;
 import org.rx.socks.BytesSegment;

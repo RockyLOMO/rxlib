@@ -1,35 +1,30 @@
 package org.rx.jdbc;
 
-import com.mysql.jdbc.StringUtils;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.parser.ParserException;
+import com.alibaba.druid.util.JdbcUtils;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.CacheKind;
 import org.rx.core.MemoryCache;
-import org.rx.core.Strings;
 
 import java.io.InputStream;
 import java.io.Reader;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.sql.*;
-import java.util.regex.Pattern;
 
+@Slf4j
 public class JdbcUtil {
     public static boolean isQuery(String query) {
-        String stripComments = StringUtils.stripComments(query, "'\"", "'\"", true, false, true, true);
-        return StringUtils.startsWithIgnoreCaseAndWs(stripComments, "SELECT") || StringUtils.startsWithIgnoreCaseAndWs(stripComments, "SHOW");
-    }
-
-    @Deprecated
-    public static boolean isQueryByPattern(String query) {
-        query = removeQueryComments(query).trim();
-        return Strings.startsWithIgnoreCase(query, "SELECT ") ||
-                Strings.startsWithIgnoreCase(query, "SHOW ");
-    }
-
-    private static String removeQueryComments(String query) {
         return MemoryCache.getOrStore(query, k -> {
-            Pattern p = Pattern.compile("(?ms)('(?:''|[^'])*')|--.*?$|/\\*.*?\\*/|#.*?$|");
-            return p.matcher(query).replaceAll("$1");
+            try {
+                SQLUtils.toSelectItem(query, JdbcUtils.MYSQL);
+                return true;
+            } catch (ParserException e) {
+                log.warn("isQuery {}", query, e);
+            }
+            return false;
         }, CacheKind.LruCache);
     }
 

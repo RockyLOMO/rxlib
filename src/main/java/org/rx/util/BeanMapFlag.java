@@ -2,7 +2,7 @@ package org.rx.util;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.beans.NEnum;
+import org.rx.bean.NEnum;
 
 @RequiredArgsConstructor
 public enum BeanMapFlag implements NEnum<BeanMapFlag> {

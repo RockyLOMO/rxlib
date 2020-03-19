@@ -10,7 +10,7 @@ import net.sf.cglib.proxy.MethodProxy;
 import org.rx.core.StringBuilder;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
-import org.rx.beans.BiTuple;
+import org.rx.bean.BiTuple;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
 import org.rx.core.ManualResetEvent;

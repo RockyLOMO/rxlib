@@ -1,16 +1,16 @@
 package org.rx.core;
 
 import com.google.common.net.HttpHeaders;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.AppConfig;
-import org.rx.beans.Tuple;
+import org.rx.bean.*;
 import org.rx.security.MD5Util;
-import org.rx.beans.DateTime;
 import org.rx.socks.http.HttpClient;
 import org.rx.io.MemoryStream;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -36,19 +36,20 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class App extends SystemUtils {
-    //region Nested
+    //region NestedTypes
     @RequiredArgsConstructor
-    private static class ConvertItem {
-        public final Class baseFromType;
-        public final Class toType;
-        public final BiFunction<Object, Class, Object> converter;
+    @Getter
+    private static class ConvertBean<TS, TT> {
+        private final Class<TS> baseFromType;
+        private final Class<TT> toType;
+        private final BiFunction<TS, Class<TT>, TT> converter;
     }
     //endregion
 
     //region Fields
     public static final AppConfig Config;
     private static final NQuery<Class<?>> supportTypes;
-    private static final List<ConvertItem> typeConverter;
+    private static final List<ConvertBean<?, ?>> typeConverter;
 
     static {
         System.setProperty("bootstrapPath", getBootstrapPath());
@@ -60,6 +61,11 @@ public class App extends SystemUtils {
         supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
         typeConverter = new CopyOnWriteArrayList<>();
+
+        registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
+//        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
+        registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
+        registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
     }
     //endregion
 
@@ -328,22 +334,13 @@ public class App extends SystemUtils {
         }
     }
 
-    public synchronized static <TFromValue> void registerConverter(Class<TFromValue> baseFromType, Class toType, BiFunction<TFromValue, Class, Object> converter) {
+    public static <TS, TT> void registerConvert(Class<TS> baseFromType, Class<TT> toType, BiFunction<TS, Class<TT>, TT> converter) {
         require(baseFromType, toType, converter);
 
-        typeConverter.add(0, new ConvertItem(baseFromType, toType, (BiFunction) converter));
+        typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
         if (!supportTypes.contains(baseFromType)) {
             supportTypes.asCollection().add(baseFromType);
         }
-    }
-
-    private static BiFunction<Object, Class, Object> getConverter(Object fromValue, Class toType) {
-        for (ConvertItem convertItem : NQuery.of(typeConverter).toList()) {
-            if (Reflects.isInstance(fromValue, convertItem.baseFromType) && convertItem.toType.isAssignableFrom(toType)) {
-                return convertItem.converter;
-            }
-        }
-        return null;
     }
 
     @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
@@ -372,12 +369,14 @@ public class App extends SystemUtils {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        if (!(supportTypes.any(p -> p.equals(fromType)))) {
+        if (!(supportTypes.any(p -> ClassUtils.isAssignable(fromType, p)))) {
             throw new SystemException(values(fromType, toType), "notSupported");
         }
-        BiFunction<Object, Class, Object> converter = getConverter(value, toType);
-        if (converter != null) {
-            return (T) converter.apply(value, toType);
+        Object fValue = value;
+        Class<T> tType = toType;
+        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(tType));
+        if (convertBean != null) {
+            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
         }
 
         String val = value.toString();
@@ -387,21 +386,35 @@ public class App extends SystemUtils {
             value = new BigDecimal(val);
         } else if (toType.isEnum()) {
             NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
-            value = q.where(p -> p.equals(val)).singleOrDefault();
+            String fVal = val;
+            value = q.where(p -> p.equals(fVal)).singleOrDefault();
             if (value == null) {
                 throw new SystemException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
             }
         } else {
-            final String of = "valueOf";
             try {
-                Method m;
-                if (Date.class.isAssignableFrom(toType)) {
-                    m = DateTime.class.getDeclaredMethod(of, strType);
+                toType = (Class) ClassUtils.primitiveToWrapper(toType);
+                if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
+                    if ("0".equals(val)) {
+                        value = Boolean.FALSE;
+                    } else if ("1".equals(val)) {
+                        value = Boolean.TRUE;
+                    } else {
+                        throw new InvalidOperationException("Value should be 0 or 1");
+                    }
                 } else {
-                    toType = checkType(toType);
-                    m = toType.getDeclaredMethod(of, strType);
+                    if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
+                        if (Boolean.FALSE.toString().equals(val)) {
+                            val = "0";
+                        } else if (Boolean.TRUE.toString().equals(val)) {
+                            val = "1";
+                        } else {
+                            throw new InvalidOperationException("Value should be true or false");
+                        }
+                    }
+                    Method m = toType.getDeclaredMethod("valueOf", strType);
+                    value = m.invoke(null, val);
                 }
-                value = m.invoke(null, val);
             } catch (NoSuchMethodException ex) {
                 throw new SystemException(values(toType), ex);
             } catch (ReflectiveOperationException ex) {
@@ -411,20 +424,20 @@ public class App extends SystemUtils {
         return (T) value;
     }
 
-    @ErrorCode(messageKeys = {"$type"})
-    private static Class checkType(Class type) {
-        if (!type.isPrimitive()) {
-            return type;
-        }
-
-        String pName = type.equals(int.class) ? "Integer" : type.getName();
-        String newName = "java.lang." + pName.substring(0, 1).toUpperCase() + pName.substring(1, pName.length());
-        try {
-            return Class.forName(newName);
-        } catch (ClassNotFoundException ex) {
-            throw new SystemException(values(newName), ex);
-        }
-    }
+//    @ErrorCode(messageKeys = {"$type"})
+//    private static Class checkType(Class type) {
+//        if (!type.isPrimitive()) {
+//            return type;
+//        }
+//
+//        String pName = type.equals(int.class) ? "Integer" : type.getName();
+//        String newName = "java.lang." + pName.substring(0, 1).toUpperCase() + pName.substring(1);
+//        try {
+//            return Class.forName(newName);
+//        } catch (ClassNotFoundException ex) {
+//            throw new SystemException(values(newName), ex);
+//        }
+//    }
 
     public static boolean isBase64String(String base64String) {
         if (Strings.isNullOrEmpty(base64String)) {

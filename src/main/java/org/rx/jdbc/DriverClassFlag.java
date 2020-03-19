@@ -1,7 +1,7 @@
 package org.rx.jdbc;
 
 import lombok.Getter;
-import org.rx.beans.NEnum;
+import org.rx.bean.NEnum;
 import org.rx.core.Arrays;
 import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;

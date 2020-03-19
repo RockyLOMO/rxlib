@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.bean;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

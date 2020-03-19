@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.bean;
 
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;

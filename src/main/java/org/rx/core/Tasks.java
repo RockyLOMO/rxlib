@@ -3,15 +3,15 @@ package org.rx.core;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.beans.$;
-import org.rx.beans.DateTime;
+import org.rx.bean.$;
+import org.rx.bean.DateTime;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
 import java.util.List;
 import java.util.concurrent.*;
 
-import static org.rx.beans.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.core.Contract.*;
 
 @Slf4j

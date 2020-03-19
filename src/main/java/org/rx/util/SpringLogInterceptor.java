@@ -3,11 +3,9 @@ package org.rx.util;
 import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
-import org.rx.beans.Tuple;
+import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
 
-import static java.lang.Boolean.FALSE;
-import static java.lang.Boolean.TRUE;
 import static org.rx.core.Contract.toJsonString;
 
 public class SpringLogInterceptor {

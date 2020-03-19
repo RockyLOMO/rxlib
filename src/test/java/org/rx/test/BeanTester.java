@@ -4,7 +4,7 @@ import com.google.common.base.Stopwatch;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
-import org.rx.beans.*;
+import org.rx.bean.*;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.BeanMapConverter;
@@ -145,8 +145,7 @@ public class BeanTester {
 
     @Test
     public void testConvert() {
-        App.registerConverter(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
-        App.registerConverter(PersonGender.class, Integer.class, (p1, p2) -> p1.getValue());
+        App.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
 
         int val = App.changeType(PersonGender.Boy, Integer.class);
         assert val == 1;
@@ -155,6 +154,12 @@ public class BeanTester {
         assert testEnum == PersonGender.Boy;
         int integer = App.changeType("1", Integer.class);
         assert integer == 1;
+
+        assert App.changeType(1, boolean.class);
+        assert App.changeType(1, Boolean.class);
+
+        assert App.changeType(true, byte.class) == 1;
+        assert App.changeType(true, Byte.class) == 1;
     }
 
     @Test

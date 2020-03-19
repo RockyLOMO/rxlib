@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.bean;
 
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
@@ -12,7 +12,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.beans.$.$;
+import static org.rx.bean.$.$;
 import static org.rx.core.Contract.*;
 
 /**

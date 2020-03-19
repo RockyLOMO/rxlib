@@ -6,7 +6,7 @@ import net.sf.cglib.beans.BeanCopier;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.annotation.Mapping;
-import org.rx.beans.FlagsEnum;
+import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 
 import java.lang.reflect.Method;

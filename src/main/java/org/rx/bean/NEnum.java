@@ -1,4 +1,4 @@
-package org.rx.beans;
+package org.rx.bean;
 
 import lombok.SneakyThrows;
 import org.rx.core.Contract;

@@ -1,7 +1,7 @@
 package org.rx.test.bean;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.beans.FlagsEnum;
+import org.rx.bean.FlagsEnum;
 import org.rx.core.InvalidOperationException;
 
 import java.util.function.BiConsumer;

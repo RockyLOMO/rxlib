@@ -3,7 +3,7 @@ package org.rx.test.bean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.rx.beans.DateTime;
+import org.rx.bean.DateTime;
 
 import java.util.Date;
 import java.util.UUID;

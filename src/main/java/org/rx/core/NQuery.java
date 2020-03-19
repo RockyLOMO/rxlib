@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.Tuple;
+import org.rx.bean.Tuple;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;

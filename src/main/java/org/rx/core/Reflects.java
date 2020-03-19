@@ -8,7 +8,7 @@ import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
-import org.rx.beans.Tuple;
+import org.rx.bean.Tuple;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;

@@ -4,8 +4,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.beans.FlagsEnum;
-import org.rx.beans.NEnum;
+import org.rx.bean.FlagsEnum;
+import org.rx.bean.NEnum;
 
 import java.lang.reflect.Field;
 import java.util.List;

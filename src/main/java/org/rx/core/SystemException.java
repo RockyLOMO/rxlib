@@ -5,9 +5,9 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
-import org.rx.beans.$;
-import org.rx.beans.BiTuple;
-import org.rx.beans.Tuple;
+import org.rx.bean.$;
+import org.rx.bean.BiTuple;
+import org.rx.bean.Tuple;
 import org.springframework.core.NestedRuntimeException;
 
 import java.lang.reflect.AccessibleObject;
