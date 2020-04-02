@@ -58,8 +58,8 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         int read;
         while ((read = from.read(buffer, 0, buffer.length)) > 0) {
             to.write(buffer, 0, read);
-            to.flush();
         }
+        to.flush();
     }
 
     protected TI reader;

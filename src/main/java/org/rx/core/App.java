@@ -10,9 +10,11 @@ import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
+import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
 import org.rx.socks.http.HttpClient;
 import org.rx.io.MemoryStream;
+import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.yaml.snakeyaml.Yaml;
@@ -424,21 +426,6 @@ public class App extends SystemUtils {
         return (T) value;
     }
 
-//    @ErrorCode(messageKeys = {"$type"})
-//    private static Class checkType(Class type) {
-//        if (!type.isPrimitive()) {
-//            return type;
-//        }
-//
-//        String pName = type.equals(int.class) ? "Integer" : type.getName();
-//        String newName = "java.lang." + pName.substring(0, 1).toUpperCase() + pName.substring(1);
-//        try {
-//            return Class.forName(newName);
-//        } catch (ClassNotFoundException ex) {
-//            throw new SystemException(values(newName), ex);
-//        }
-//    }
-
     public static boolean isBase64String(String base64String) {
         if (Strings.isNullOrEmpty(base64String)) {
             return false;
@@ -548,17 +535,21 @@ public class App extends SystemUtils {
 
         File file = new File(filePath);
         response.setCharacterEncoding(Contract.Utf8);
-        response.setContentType("application/octet-stream");
+        response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
         response.setContentLength((int) file.length());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
         try (FileInputStream in = new FileInputStream(file)) {
-            OutputStream out = response.getOutputStream();
-            byte[] buffer = new byte[4096];
-            int length;
-            while ((length = in.read(buffer)) > 0) {
-                out.write(buffer, 0, length);
-            }
-            out.flush();
+            IOStream.copyTo(in, response.getOutputStream());
+        }
+    }
+
+    @SneakyThrows
+    public static void cacheResponse(HttpServletResponse response, int cacheSeconds, String contentType, InputStream in) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, String.format("max-age=%s", cacheSeconds));
+        response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.utcNow().addSeconds(cacheSeconds).getTime()).toString());
+        response.setContentType(contentType);
+        if (in != null) {
+            IOStream.copyTo(in, response.getOutputStream());
         }
     }
 

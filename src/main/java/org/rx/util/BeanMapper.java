@@ -128,7 +128,12 @@ public class BeanMapper {
             if (propertyNode != null) {
                 sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
             }
-            Method targetMethod = toProperties.first(p -> eq(p.propertyName, mapping.target())).setter;
+            propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, mapping.target()));
+            if (propertyNode == null) {
+                log.warn("Target property {} not found", mapping.target());
+                continue;
+            }
+            Method targetMethod = propertyNode.setter;
             Class targetType = targetMethod.getParameterTypes()[0];
             sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), target, skipNull, toProperties);
             Reflects.invokeMethod(targetMethod, target, App.changeType(sourceValue, targetType));

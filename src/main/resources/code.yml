@@ -22,7 +22,6 @@ org:
         changeType[enumError]: Not found $name in $names of $eType enum
         changeType<NoSuchMethodException>: Not found ValueOf method of $type
         changeType<ReflectiveOperationException>: Convert $val from $fType to $tType error
-        checkType: Try find $type primitive type failed
     beans.DateTime:
       valueOf<ParseException>: Only supported $formats date formats, current date string is $date
     io:

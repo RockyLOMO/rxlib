@@ -26,7 +26,9 @@ public class Arrays extends ArrayUtils {
     @SuppressWarnings(NonWarning)
     @SafeVarargs
     public static <T> List<T> toList(T... items) {
-        require((Object) items);
+        if (items == null) {
+            return new ArrayList<>();
+        }
 
         List<T> list = new ArrayList<>(items.length);
         for (T t : items) {
