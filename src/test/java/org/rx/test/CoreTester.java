@@ -153,6 +153,27 @@ public class CoreTester {
 
     @SneakyThrows
     @Test
+    public void asyncTask() {
+        ThreadPool.DynamicConfig config = new ThreadPool.DynamicConfig();
+        config.setMinThreshold(40);
+        config.setMaxThreshold(60);
+        Tasks.getExecutor().statistics(config);
+
+        for (int i = 0; i < 6; i++) {
+            int x = i;
+            Tasks.run(() -> {
+                log.info("Exec: " + x);
+                sleep(2000);
+            }, "k", ThreadPool.ExecuteFlag.Parallel)
+                    .whenComplete((r, e) -> log.info("Done: " + x));
+        }
+
+        System.out.println("main thread done");
+        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
     public void threadPool() {
         //Executors.newCachedThreadPool(); 没有queue缓冲，一直new thread执行，当cpu负载高时加上更多线程上下文切换损耗，性能会急速下降。
 

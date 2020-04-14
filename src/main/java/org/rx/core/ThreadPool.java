@@ -8,10 +8,10 @@ import org.jetbrains.annotations.NotNull;
 import java.io.Serializable;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.combine;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
@@ -118,6 +118,20 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
+    public interface NamedRunnable extends Runnable {
+        String getName();
+
+        default ExecuteFlag getFlag() {
+            return ExecuteFlag.Parallel;
+        }
+    }
+
+    public enum ExecuteFlag {
+        Parallel,
+        Synchronous,
+        Single;
+    }
+
     public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -133,6 +147,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
+    private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> syncRoot = new ConcurrentHashMap<>();
     @Setter
     @Getter
     private String poolName;
@@ -216,12 +232,61 @@ public class ThreadPool extends ThreadPoolExecutor {
                     log.debug("Block caller thread Until offer");
                     executor.getQueue().offer(r);
                 });
-        ((ThreadQueue) getQueue()).setExecutor(this);
+        ((ThreadQueue<Runnable>) getQueue()).setExecutor(this);
         this.poolName = poolName;
+    }
+
+    @SneakyThrows
+    @Override
+    protected void beforeExecute(Thread t, Runnable r) {
+        NamedRunnable p = tryAs(r);
+        if (p != null) {
+            if (p.getFlag() == null || p.getFlag() == ExecuteFlag.Parallel) {
+                return;
+            }
+            ReentrantLock locker = syncRoot.computeIfAbsent(p.getName(), k -> new ReentrantLock());
+            switch (p.getFlag()) {
+                case Single:
+                    if (!locker.tryLock()) {
+                        throw new InterruptedException();
+                    }
+                    log.debug("{} {} tryLock", p.getFlag(), p.getName());
+                    break;
+                case Synchronous:
+                    locker.lock();
+                    log.debug("{} {} lock", p.getFlag(), p.getName());
+                    break;
+            }
+        }
+
+        super.beforeExecute(t, r);
+    }
+
+    private NamedRunnable tryAs(Runnable command) {
+        Runnable r = funcMap.remove(command);
+        if (r != null) {
+            return as(r, NamedRunnable.class);
+        }
+
+        if ((r = command) instanceof CompletableFuture.AsynchronousCompletionTask) {
+            r = Reflects.readField(r.getClass(), r, "fn");
+            funcMap.put(command, r);
+        }
+        return as(r, NamedRunnable.class);
     }
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
+        NamedRunnable p = tryAs(r);
+        if (p != null) {
+            //todo when remove
+            ReentrantLock locker = syncRoot.get(p.getName());
+            if (locker != null) {
+                log.debug("{} {} unlock", p.getFlag(), p.getName());
+                locker.unlock();
+            }
+        }
+
         super.afterExecute(r, t);
         submittedTaskCounter.decrementAndGet();
     }
@@ -232,7 +297,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         super.execute(command);
     }
 
-    public void put(Runnable command) {
+    public void offer(Runnable command) {
         log.debug("Block caller thread Until put");
         getQueue().offer(command);
     }
