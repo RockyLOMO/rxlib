@@ -31,6 +31,18 @@ public void threadPool() {
         });
     }
 
+    for (int i = 0; i < 6; i++) {
+        int x = i;
+        //ThreadPool.ExecuteFlag.Parallel    默认无锁
+        //ThreadPool.ExecuteFlag.Synchronous 根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
+        //ThreadPool.ExecuteFlag.Single      根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+        Tasks.run(() -> {
+            log.info("Exec: " + x);
+            sleep(2000);
+        }, "myTaskId", ThreadPool.ExecuteFlag.Single)
+                .whenCompleteAsync((r, e) -> log.info("Done: " + x));
+    }
+
     System.out.println("main thread done");
     System.in.read();
 }
