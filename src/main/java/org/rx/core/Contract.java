@@ -244,13 +244,13 @@ public final class Contract {
 
     //region json
     public static <T> T fromJsonAsObject(Object jsonOrBean, Class<T> type) {
-        Gson gson = gson();
-        if (jsonOrBean instanceof String) {
-            return gson.fromJson((String) jsonOrBean, type);
-        }
-        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
+//        Gson gson = gson();
+//        if (jsonOrBean instanceof String) {
+//            return gson.fromJson((String) jsonOrBean, type);
+//        }
+//        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
+        return JSON.parseObject(toJsonString(jsonOrBean), type);
 //        return JSON.toJavaObject(jsonOrBean, type);
-//        return JSON.parseObject(toJsonString(jsonOrBean), type);
 //        return JSON.parseObject(toJsonString(jsonOrBean)).toJavaObject(type);
     }
 
