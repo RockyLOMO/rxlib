@@ -13,7 +13,9 @@ import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
+import org.rx.util.Helper;
 
+import java.io.FileInputStream;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -24,6 +26,18 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class CoreTester {
+    @SneakyThrows
+    @Test
+    public void excel() {
+        String path = "D:/data3.xlsx";
+        Map<String, List<Object[]>> map = Helper.readExcel(new FileInputStream(path), false);
+        for (Map.Entry<String, List<Object[]>> entry : map.entrySet()) {
+            System.out.println(entry.getKey());
+//            System.out.println(toJsonString(entry.getValue()));
+            System.out.println();
+        }
+    }
+
     //region NQuery
     @SneakyThrows
     @Test

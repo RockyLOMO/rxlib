@@ -6,6 +6,8 @@ import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
@@ -13,6 +15,7 @@ import java.util.*;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.Contract.tryClose;
 
 @Slf4j
 public class Helper {
@@ -24,12 +27,19 @@ public class Helper {
     @SneakyThrows
     public static Map<String, List<Object[]>> readExcel(InputStream in, boolean skipColumn, boolean keepNullRow) {
         Map<String, List<Object[]>> data = new LinkedHashMap<>();
-        try (HSSFWorkbook workbook = new HSSFWorkbook(in)) {
+        Workbook workbook;
+        try {
+            workbook = new XSSFWorkbook(in);
+        } catch (Exception e) {
+            log.warn("readExcel", e);
+            workbook = new HSSFWorkbook(in);
+        }
+        try {
             for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
                 List<Object[]> rows = new ArrayList<>();
-                HSSFSheet sheet = workbook.getSheetAt(sheetIndex);
+                Sheet sheet = workbook.getSheetAt(sheetIndex);
                 for (int rowIndex = skipColumn ? 1 : sheet.getFirstRowNum(); rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-                    HSSFRow row = sheet.getRow(rowIndex);
+                    Row row = sheet.getRow(rowIndex);
                     if (row == null) {
                         if (keepNullRow) {
                             rows.add(null);
@@ -38,13 +48,14 @@ public class Helper {
                     }
                     List<Object> cells = new ArrayList<>();
                     for (int i = row.getFirstCellNum(); i < row.getLastCellNum(); i++) {
-                        HSSFCell cell = row.getCell(i);
+                        Cell cell = row.getCell(i);
                         if (cell == null) {
                             cells.add(null);
                             continue;
                         }
                         Object value;
-                        switch (cell.getCellTypeEnum()) {
+
+                        switch (cell.getCellType()) {
                             case NUMERIC:
                                 value = cell.getNumericCellValue();
                                 break;
@@ -52,19 +63,25 @@ public class Helper {
                                 value = cell.getBooleanCellValue();
                                 break;
                             default:
-                                value = cell.getStringCellValue();
+//                                value = cell.getStringCellValue();
+                                if (cell.getCellType() == CellType.ERROR) {
+                                    cell.setCellType(CellType.STRING);
+                                    log.debug("sheetIndex={} rowIndex={} rowCellLength={} cells={}", sheetIndex, rowIndex, row.getLastCellNum(), toJsonString(cells));
+                                }
+                                value = cell.toString();
                                 break;
                         }
                         cells.add(value);
                     }
                     if (cells.contains(null)) {
-                        log.debug(String.format("current=%s offset=%s count=%s -> %s/%s", toJsonString(cells),
-                                row.getFirstCellNum(), row.getLastCellNum(), rowIndex, sheetIndex));
+                        log.debug("sheetIndex={} rowIndex={} rowCellLength={} cells={}", sheetIndex, rowIndex, row.getLastCellNum(), toJsonString(cells));
                     }
                     rows.add(cells.toArray());
                 }
                 data.put(sheet.getSheetName(), rows);
             }
+        } finally {
+            tryClose(workbook);
         }
         return data;
     }
