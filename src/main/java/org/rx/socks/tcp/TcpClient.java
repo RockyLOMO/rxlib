@@ -1,6 +1,5 @@
 package org.rx.socks.tcp;
 
-import com.google.common.util.concurrent.RateLimiter;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
@@ -109,7 +108,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private volatile Channel channel;
     @Getter
     @Setter
-    private boolean autoReconnect;
+    private volatile boolean autoReconnect;
     @Setter
     private Function<InetSocketAddress, InetSocketAddress> preReconnect;
 
@@ -199,7 +198,6 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
 
         ManualResetEvent waiter = new ManualResetEvent();
-//        RateLimiter limiter = RateLimiter.create(1);
         Tasks.scheduleUntil(() -> {
             InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
             bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
