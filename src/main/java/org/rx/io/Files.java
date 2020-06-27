@@ -49,12 +49,15 @@ public class Files {
     }
 
     private static Path checkDirectory(Path dirOrFile) {
-        String sp = dirOrFile.toString();
-        String np = FilenameUtils.getBaseName(sp);
-        if (Strings.isEmpty(np) || sp.equals(np)) {
+        String p = dirOrFile.toString();
+        if (Strings.isNullOrEmpty(FilenameUtils.getExtension(p))) {
             return dirOrFile;
         }
-        return path(np);
+        String bp = FilenameUtils.getFullPathNoEndSeparator(p);
+        if (Strings.equals(p, bp)) {
+            return dirOrFile;
+        }
+        return path(bp);
     }
 
     @SneakyThrows

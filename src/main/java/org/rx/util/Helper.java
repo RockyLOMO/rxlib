@@ -29,10 +29,11 @@ public class Helper {
         Map<String, List<Object[]>> data = new LinkedHashMap<>();
         Workbook workbook;
         try {
-            workbook = new XSSFWorkbook(in);
-        } catch (Exception e) {
-            log.warn("readExcel", e);
             workbook = new HSSFWorkbook(in);
+        } catch (Exception e) {
+            log.warn("readExcel {}", e.getMessage());
+            //todo in stream pos
+            workbook = new XSSFWorkbook(in);
         }
         try {
             for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {

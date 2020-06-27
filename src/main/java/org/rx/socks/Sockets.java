@@ -34,7 +34,6 @@ public final class Sockets {
             f.channel().close();
         }
     };
-    private static final Lazy<EventLoopGroup> WorkGroup = new Lazy<>(() -> Sockets.eventLoopGroup(0));
 
     public static void writeAndFlush(Channel channel, List<Object> packs) {
         require(channel);
@@ -65,8 +64,7 @@ public final class Sockets {
 
         Bootstrap b = new Bootstrap()
                 .group(channel != null ? channel.eventLoop() :
-                        channelClass == channelClass() ? WorkGroup.getValue() :
-                                channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup())
+                        channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup())
                 .channel(channel != null ? channel.getClass() : channelClass);
         if (EpollServerSocketChannel.class.isAssignableFrom(channelClass)) {
             b.option(EpollChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
@@ -105,9 +103,6 @@ public final class Sockets {
 
         BootstrapConfig config = bootstrap.config();
         if (config.group() != null) {
-            if (WorkGroup.isValueCreated() && config.group() == WorkGroup.getValue()) {
-                return;
-            }
             config.group().shutdownGracefully();
         }
     }
