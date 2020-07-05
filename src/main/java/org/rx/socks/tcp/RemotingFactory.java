@@ -29,7 +29,7 @@ import java.util.function.Function;
 import static org.rx.core.Contract.*;
 
 @Slf4j
-public final class RemotingFactor {
+public final class RemotingFactory {
     public static class RemotingState implements Serializable {
         @Getter
         @Setter
@@ -182,7 +182,7 @@ public final class RemotingFactor {
             }
         }
 
-        private void initHandshake(Object proxyObject) {
+        private synchronized void initHandshake(Object proxyObject) {
             if (client != null) {
                 return;
             }
@@ -192,11 +192,11 @@ public final class RemotingFactor {
             client.setPreReconnect(preReconnect);
             client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
                 log.debug("client onHandshake {}", serverAddress);
-                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
+                s.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Register));
                 if (onHandshake == null) {
                     return;
                 }
-                onHandshake.accept(proxyObject, new NEventArgs<>(client));
+                onHandshake.accept(proxyObject, new NEventArgs<>(s));
             });
             client.<NEventArgs<Throwable>>attachEvent(TcpClient.EventNames.Error, (s, e) -> {
                 e.setCancel(true);
@@ -224,7 +224,7 @@ public final class RemotingFactor {
                                 log.error("client raise {}", remoteEventPack.eventName, ex);
                             } finally {
                                 if (!remoteEventPack.broadcast) {
-                                    client.send(remoteEventPack);  //import
+                                    s.send(remoteEventPack);  //import
                                 }
                                 log.info("client raise {} ok", remoteEventPack.eventName);
                             }
@@ -238,7 +238,7 @@ public final class RemotingFactor {
             client.connect(true);
         }
 
-        private void closeClient() {
+        private synchronized void closeClient() {
             if (client == null || !client.isConnected()) {
                 return;
             }

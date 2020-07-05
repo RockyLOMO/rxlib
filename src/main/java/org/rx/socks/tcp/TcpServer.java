@@ -123,7 +123,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     }
 
     @Override
-    protected void freeObjects() {
+    protected synchronized void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
         isStarted = false;
         raiseEvent(onClosed, EventArgs.Empty);
@@ -134,7 +134,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     }
 
     @SneakyThrows
-    public void start(boolean waitClose) {
+    public synchronized void start(boolean waitClose) {
         if (isStarted) {
             throw new InvalidOperationException("Server has started");
         }

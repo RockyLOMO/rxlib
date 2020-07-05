@@ -22,6 +22,7 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -111,28 +112,29 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     private volatile boolean autoReconnect;
     @Setter
     private Function<InetSocketAddress, InetSocketAddress> preReconnect;
+    private volatile Future reconnectFuture;
+    private volatile ChannelFuture reconnectChannelFuture;
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
     }
 
+    protected boolean isShouldReconnect() {
+        return autoReconnect && !isConnected();
+    }
+
     public TcpClient(TcpConfig config, HandshakePacket handshake) {
-        init(config, handshake);
-    }
-
-    protected TcpClient() {
-    }
-
-    @SneakyThrows
-    protected void init(TcpConfig config, HandshakePacket handshake) {
         require(config, handshake);
 
         this.config = config;
         this.handshake = handshake;
     }
 
+    protected TcpClient() {
+    }
+
     @Override
-    protected void freeObjects() {
+    protected synchronized void freeObjects() {
         autoReconnect = false; //import
         Sockets.closeBootstrap(bootstrap);
     }
@@ -142,7 +144,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     }
 
     @SneakyThrows
-    public void connect(boolean wait) {
+    public synchronized void connect(boolean wait) {
         if (isConnected()) {
             throw new InvalidOperationException("Client has connected");
         }
@@ -192,37 +194,39 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         reconnect(null);
     }
 
-    private void reconnect(ManualResetEvent mainWaiter) {
-        if (!autoReconnect || isConnected()) {
+    private synchronized void reconnect(ManualResetEvent mainWaiter) {
+        if (!isShouldReconnect() || reconnectFuture != null) {
             return;
         }
-
-        ManualResetEvent waiter = new ManualResetEvent();
-        Tasks.scheduleUntil(() -> {
+        reconnectFuture = Tasks.scheduleUntil(() -> {
+            if (!isShouldReconnect() || reconnectChannelFuture != null) {
+                return;
+            }
             InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
-            bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
+            reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.debug("connect {} fail", ep);
+                    log.debug("reconnect {} fail", ep);
                     f.channel().close();
-                } else {
-                    log.debug("connect {} ok", ep);
-                    channel = f.channel();
-                    config.setEndpoint(ep);
+                    return;
                 }
-                waiter.set();
+                log.debug("reconnect {} ok", ep);
+                channel = f.channel();
+                config.setEndpoint(ep);
+                reconnectChannelFuture = null;
             });
-            waiter.waitOne();
-            waiter.reset();
         }, () -> {
-            boolean ok = !autoReconnect || isConnected();
-            if (ok && mainWaiter != null) {
-                mainWaiter.set();
+            boolean ok = !isShouldReconnect();
+            if (ok) {
+                if (mainWaiter != null) {
+                    mainWaiter.set();
+                }
+                reconnectFuture = null;
             }
             return ok;
         }, Config.getScheduleDelay());
     }
 
-    public void send(Serializable pack) {
+    public synchronized void send(Serializable pack) {
         require(pack, isConnected());
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);

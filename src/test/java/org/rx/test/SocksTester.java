@@ -24,8 +24,8 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class SocksTester {
-    private TcpServer<RemotingFactor.RemotingState> tcpServer;
-    private TcpServer<RemotingFactor.RemotingState> tcpServer2;
+    private TcpServer<RemotingFactory.RemotingState> tcpServer;
+    private TcpServer<RemotingFactory.RemotingState> tcpServer2;
 
     @Test
     public void apiRpc() {
@@ -35,8 +35,8 @@ public class SocksTester {
         String ep = "127.0.0.1:3307";
         String groupA = "a", groupB = "b";
         List<UserManager> facadeGroupA = new ArrayList<>();
-        facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-        facadeGroupA.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
+        facadeGroupA.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
+        facadeGroupA.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
 
         for (UserManager facade : facadeGroupA) {
             assert facade.computeInt(1, 1) == 2;
@@ -49,8 +49,8 @@ public class SocksTester {
         }
 
         List<UserManager> facadeGroupB = new ArrayList<>();
-        facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-        facadeGroupB.add(RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
+        facadeGroupB.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
+        facadeGroupB.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
 
         for (UserManager facade : facadeGroupB) {
             assert facade.computeInt(1, 1) == 2;
@@ -106,7 +106,7 @@ public class SocksTester {
         String ep = "127.0.0.1:3307";
         String groupA = "a", groupB = "b";
 
-        UserManager userManager = RemotingFactor.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, (p) -> {
+        UserManager userManager = RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, (p) -> {
             InetSocketAddress r;
             if (p.equals(Sockets.parseEndpoint(ep))) {
                 r = Sockets.parseEndpoint("127.0.0.1:3308");
@@ -119,7 +119,7 @@ public class SocksTester {
         assert userManager.computeInt(1, 1) == 2;
         sleep(1000);
         tcpServer.close();  //关闭3307
-        Tasks.scheduleOnce(() -> tcpServer2 = RemotingFactor.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
+        Tasks.scheduleOnce(() -> tcpServer2 = RemotingFactory.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
         System.in.read();
     }
 
@@ -127,7 +127,7 @@ public class SocksTester {
         if (tcpServer != null) {
             tcpServer.close();
         }
-        tcpServer = RemotingFactor.listen(server, port);
+        tcpServer = RemotingFactory.listen(server, port);
         System.out.println("restartServer on port " + port);
         sleep(2600);
     }
@@ -136,10 +136,10 @@ public class SocksTester {
     public void implRpc() {
         //服务端监听
         UserManagerImpl server = new UserManagerImpl();
-        RemotingFactor.listen(server, 3307);
+        RemotingFactory.listen(server, 3307);
 
         //客户端 facade
-        UserManagerImpl facade = RemotingFactor.create(UserManagerImpl.class, Sockets.parseEndpoint("127.0.0.1:3307"), "", (s, e) -> {
+        UserManagerImpl facade = RemotingFactory.create(UserManagerImpl.class, Sockets.parseEndpoint("127.0.0.1:3307"), "", (s, e) -> {
             System.out.println("onHandshake: " + s.computeInt(1, 2));
         });
         assert facade.computeInt(1, 1) == 2; //服务端计算并返回
@@ -170,9 +170,9 @@ public class SocksTester {
 
     @Test
     public void poolRpc() {
-        RemotingFactor.listen(HttpUserManager.INSTANCE, 3307);
+        RemotingFactory.listen(HttpUserManager.INSTANCE, 3307);
 
-        HttpUserManager facade = RemotingFactor.create(HttpUserManager.class, "127.0.0.1:3307");
+        HttpUserManager facade = RemotingFactory.create(HttpUserManager.class, "127.0.0.1:3307");
         for (int i = 0; i < 50; i++) {
             facade.computeInt(1, i);
         }
@@ -180,7 +180,7 @@ public class SocksTester {
 
     @SneakyThrows
     @Test
-    public void testProxy() {
+    public void proxyServer() {
         TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
         System.in.read();
     }
