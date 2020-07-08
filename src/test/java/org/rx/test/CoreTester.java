@@ -127,6 +127,11 @@ public class CoreTester {
 
         showResult(".takeWhile((p, i) -> p.index < 3)",
                 NQuery.of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
+
+        NQuery<PersonBean> set0 = NQuery.of(personSet);
+        NQuery<PersonBean> set1 = set0.take(1);
+        System.out.println(String.format("set a=%s,b=%s", set0.count(), set1.count()));
+        assert set0.count() > set1.count();
     }
 
     private void showResult(String n, Object q) {

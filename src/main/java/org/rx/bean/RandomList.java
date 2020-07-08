@@ -186,7 +186,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     public boolean retainAll(@NotNull Collection<?> c) {
         int size = elements.size();
         elements.clear();
-        elements.addAll(NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).asCollection());
+        elements.addAll(NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList());
         return change(size != elements.size());
     }
 

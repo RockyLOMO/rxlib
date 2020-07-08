@@ -1,8 +1,10 @@
 package org.rx.core;
 
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
+import lombok.SneakyThrows;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
@@ -27,7 +29,7 @@ import static org.rx.core.Contract.*;
  * @param <T>
  */
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public final class NQuery<T> implements Iterable<T>, Serializable {
+public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     //region nestedTypes
     @FunctionalInterface
     public interface IndexSelector<T, TR> {
@@ -86,42 +88,45 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return of(Arrays.toList(set));
     }
 
-    public static <T> NQuery<T> of(Iterable<T> iterable) {
-        return of(iterable.iterator());
-    }
-
-    public static <T> NQuery<T> of(Iterator<T> iterator) {
-        return of(toList(iterator));
-    }
-
     public static <T> NQuery<T> of(Stream<T> stream) {
         require(stream);
 
-        return of(stream.collect(Collectors.toList()), stream.isParallel());
+        return of(stream::iterator, stream.isParallel());
     }
 
-    public static <T> NQuery<T> of(Collection<T> set) {
-        return of(set, false);
+    public static <T> NQuery<T> of(Iterator<T> iterator) {
+        require(iterator);
+
+        return of(() -> iterator);
     }
 
-    public static <T> NQuery<T> of(Collection<T> set, boolean isParallel) {
-        require(set);
+    public static <T> NQuery<T> of(Iterable<T> iterable) {
+        return of(iterable, false);
+    }
 
-        return new NQuery<>(set, isParallel);
+    public static <T> NQuery<T> of(Iterable<T> iterable, boolean isParallel) {
+        require(iterable);
+
+        return new NQuery<>(iterable, isParallel);
     }
     //endregion
 
     //region Member
-    private Collection<T> current;
+    private Iterable<T> iterable;
     private boolean isParallel;
 
+    @SneakyThrows
+    public NQuery<T> clone() {
+        return (NQuery<T>) super.clone();
+    }
+
     public Stream<T> stream() {
-        return isParallel ? current.parallelStream() : current.stream();
+        return StreamSupport.stream(iterable.spliterator(), isParallel);
     }
 
     @Override
     public Iterator<T> iterator() {
-        return stream().iterator();
+        return iterable.iterator();
     }
 
     private <TR> List<TR> newList() {
@@ -139,11 +144,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return isParallel ? Collections.synchronizedMap(new LinkedHashMap<>(count)) : new LinkedHashMap<>(count);
     }
 
-    private <TR> Stream<TR> newStream(Collection<TR> set) {
-        return isParallel ? set.parallelStream() : set.stream();
+    private <TR> Stream<TR> newStream(Iterable<TR> iterable) {
+        return StreamSupport.stream(iterable.spliterator(), isParallel);
     }
 
-    private <TR> NQuery<TR> me(Collection<TR> set) {
+    private <TR> NQuery<TR> me(Iterable<TR> set) {
         return of(set, isParallel);
     }
 
@@ -393,7 +398,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public int count() {
-        return current.size();
+        return (int) stream().count();
     }
 
     public int count(Predicate<T> predicate) {
@@ -446,7 +451,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public T first(Predicate<T> predicate) {
-        return where(predicate).first();
+        return stream().filter(predicate).findFirst().get();
     }
 
     public T firstOrDefault() {
@@ -458,7 +463,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public T firstOrDefault(Predicate<T> predicate) {
-        return where(predicate).firstOrDefault();
+        return stream().filter(predicate).findFirst().orElse(null);
     }
 
     @SuppressWarnings(NonWarning)
@@ -467,7 +472,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public T last(Predicate<T> predicate) {
-        return where(predicate).last();
+        return Streams.findLast(stream().filter(predicate)).get();
     }
 
     public T lastOrDefault() {
@@ -479,33 +484,41 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public T lastOrDefault(Predicate<T> predicate) {
-        return where(predicate).lastOrDefault();
+        return Streams.findLast(stream().filter(predicate)).orElse(null);
     }
 
-    @ErrorCode(messageKeys = {"$count"})
     public T single() {
-        int count = count();
-        if (count != 1) {
-            throw new SystemException(values(count));
-        }
-        return first();
-    }
-
-    public T single(Predicate<T> predicate) {
-        return where(predicate).single();
+        return single(null);
     }
 
     @ErrorCode(messageKeys = {"$count"})
-    public T singleOrDefault() {
-        int count = count();
-        if (count > 1) {
-            throw new SystemException(values(count));
+    public T single(Predicate<T> predicate) {
+        Stream<T> stream = stream();
+        if (predicate != null) {
+            stream = stream.filter(predicate);
         }
-        return firstOrDefault();
+        List<T> list = stream.limit(2).collect(Collectors.toList());
+        if (list.size() != 1) {
+            throw new SystemException(values(list.size()));
+        }
+        return list.get(0);
     }
 
+    public T singleOrDefault() {
+        return singleOrDefault(null);
+    }
+
+    @ErrorCode(messageKeys = {"$count"})
     public T singleOrDefault(Predicate<T> predicate) {
-        return where(predicate).singleOrDefault();
+        Stream<T> stream = stream();
+        if (predicate != null) {
+            stream = stream.filter(predicate);
+        }
+        List<T> list = stream.limit(2).collect(Collectors.toList());
+        if (list.size() > 1) {
+            throw new SystemException(values(list.size()));
+        }
+        return list.isEmpty() ? null : list.get(0);
     }
 
     public NQuery<T> skip(int count) {
@@ -552,10 +565,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         });
     }
 
-    public Collection<T> asCollection() {
-        return current;
-    }
-
     public String toJoinString(String delimiter, Function<T, String> selector) {
         return String.join(delimiter, select(selector));
     }
@@ -589,13 +598,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public List<T> toList() {
         List<T> result = newList();
-        result.addAll(current);
+        Iterables.addAll(result, iterable);
         return result;
     }
 
     public Set<T> toSet() {
         Set<T> result = newSet();
-        result.addAll(current);
+        Iterables.addAll(result, iterable);
         return result;
     }
 
@@ -606,7 +615,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     //Collectors.toMap 会校验value为null的情况
     public <TK, TR> Map<TK, TR> toMap(Function<T, TK> keySelector, Function<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
-        for (T item : current) {
+        for (T item : iterable) {
             result.put(keySelector.apply(item), resultSelector.apply(item));
         }
         return result;

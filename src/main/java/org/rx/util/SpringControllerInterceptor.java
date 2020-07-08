@@ -107,7 +107,7 @@ public class SpringControllerInterceptor {
                 }
             }
             return p;
-        }).asCollection());
+        }).toList());
     }
 
     protected Object onException(Exception e, Method method) throws Throwable {

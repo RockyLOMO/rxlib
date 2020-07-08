@@ -50,7 +50,7 @@ public class App extends SystemUtils {
 
     //region Fields
     public static final AppConfig Config;
-    private static final NQuery<Class<?>> supportTypes;
+    private static final List<Class<?>> supportTypes;
     private static final List<ConvertBean<?, ?>> typeConverter;
 
     static {
@@ -60,8 +60,8 @@ public class App extends SystemUtils {
             Config.setBufferSize(512);
         }
         Contract.init();
-        supportTypes = NQuery.of(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class);
+        supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
+                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class));
         typeConverter = new CopyOnWriteArrayList<>();
 
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
@@ -341,7 +341,7 @@ public class App extends SystemUtils {
 
         typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
         if (!supportTypes.contains(baseFromType)) {
-            supportTypes.asCollection().add(baseFromType);
+            supportTypes.add(baseFromType);
         }
     }
 
@@ -366,12 +366,13 @@ public class App extends SystemUtils {
         if (Reflects.isInstance(value, toType)) {
             return (T) value;
         }
-        Class<?> strType = supportTypes.first();
+        NQuery<Class<?>> typeQuery = NQuery.of(supportTypes);
+        Class<?> strType = typeQuery.first();
         if (toType.equals(strType)) {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        if (!(supportTypes.any(p -> ClassUtils.isAssignable(fromType, p)))) {
+        if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
             throw new SystemException(values(fromType, toType), "notSupported");
         }
         Object fValue = value;

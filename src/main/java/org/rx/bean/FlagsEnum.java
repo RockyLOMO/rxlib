@@ -42,10 +42,9 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, String names) {
         require(type, names);
 
-        Collection<T> list = NQuery.of(Strings.split(names, ", "))
+        return valueOf(type, EnumSet.copyOf(NQuery.of(Strings.split(names, ", "))
                 .join(Arrays.toList(type.getEnumConstants()), (p1, p2) -> p1.equals(p2.name()), (p1, p2) -> p2)
-                .asCollection();
-        return valueOf(type, EnumSet.copyOf(list));
+                .toList()));
     }
 
     private final Class<T> type;
