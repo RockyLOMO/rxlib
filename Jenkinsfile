@@ -6,7 +6,7 @@ pipeline {
   stages {
     stage('Build') {
       steps {
-        bat 'mvn -B -Dmaven.test.skip=true clean install'
+        bat 'mvn -B -Dmaven.test.skip=true clean install --settings D:\cache\maven\settings.xml'
       }
     }
   }
