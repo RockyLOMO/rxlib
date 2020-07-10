@@ -6,7 +6,11 @@ pipeline {
   stages {
     stage('Build') {
       steps {
-        sh 'mvn -B -Dmaven.test.skip=true clean install'
+        if (isUnix()) {
+          sh 'mvn -B -Dmaven.test.skip=true clean install'
+        } else {
+          bat 'mvn -B -Dmaven.test.skip=true clean install'
+        }
       }
     }
   }
