@@ -5,9 +5,9 @@ pipeline {
   }
   stages {
     stage('Build') {
-    steps {
-      sh 'mvn -B -Dmaven.test.skip=true clean install'
-    }
+      steps {
+        bat 'mvn -B -Dmaven.test.skip=true clean install'
+      }
     }
   }
 }
