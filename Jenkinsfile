@@ -1,14 +1,12 @@
 pipeline {
-  agent {
-    docker {
-      image 'maven:alpine'
-      args '-v /d/cache/maven:/root/.m2'
-    }
+  agent any
+  tools {
+    maven 'Default'
   }
   stages {
     stage('Build') {
       steps {
-        sh 'mvn -B -Dmaven.test.skip=true install'
+        sh 'mvn -B -Dmaven.test.skip=true clean install'
       }
     }
   }

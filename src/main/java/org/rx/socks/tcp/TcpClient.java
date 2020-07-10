@@ -205,7 +205,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
             reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.debug("reconnect {} fail", ep);
+                    log.info("reconnect {} fail", ep);
                     f.channel().close();
                     return;
                 }
