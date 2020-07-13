@@ -7,3 +7,4 @@ target/
 *.iml
 config.json
 bootstrapPath_IS_UNDEFINED
+.DS_Store

@@ -79,6 +79,7 @@ public class Files {
 
     @SneakyThrows
     public static boolean delete(Path dirOrFile) {
-        return java.nio.file.Files.deleteIfExists(dirOrFile);
+        return FileUtils.deleteQuietly(dirOrFile.toFile());
+//        return java.nio.file.Files.deleteIfExists(dirOrFile);  //java.nio.file.directorynotemptyexception
     }
 }
