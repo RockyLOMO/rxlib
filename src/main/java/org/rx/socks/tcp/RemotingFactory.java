@@ -170,10 +170,12 @@ public final class RemotingFactory {
                 if (debug) {
                     msg.appendLine("Response:\t%s", resultPack != null ? resultPack.errorMessage != null ? resultPack.errorMessage : toJsonString(resultPack.returnValue) : "null");
                 }
-                if (resultPack.errorMessage != null) {
-                    String errMsg = resultPack.errorMessage;
-                    resultPack.errorMessage = null;
-                    throw new RemotingException(errMsg);
+                if (resultPack != null) {
+                    if (resultPack.errorMessage != null) {
+                        String errMsg = resultPack.errorMessage;
+                        resultPack.errorMessage = null;
+                        throw new RemotingException(errMsg);
+                    }
                 }
             } catch (TimeoutException e) {
                 if (debug) {
