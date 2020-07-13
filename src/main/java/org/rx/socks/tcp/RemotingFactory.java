@@ -170,6 +170,11 @@ public final class RemotingFactory {
                 if (debug) {
                     msg.appendLine("Response:\t%s", resultPack != null ? resultPack.errorMessage != null ? resultPack.errorMessage : toJsonString(resultPack.returnValue) : "null");
                 }
+                if (resultPack.errorMessage != null) {
+                    String errMsg = resultPack.errorMessage;
+                    resultPack.errorMessage = null;
+                    throw new RemotingException(errMsg);
+                }
             } catch (TimeoutException e) {
                 if (debug) {
                     msg.appendLine("Response:\t%s", e.getMessage());
@@ -363,8 +368,9 @@ public final class RemotingFactory {
                     pack.returnValue = Reflects.invokeMethod(contractInstance.getClass(), contractInstance, pack.methodName, pack.parameters);
                     msg.appendLine("Response:\t%s", toJsonString(pack.returnValue));
                 } catch (Exception ex) {
-                    log.error("Rpc", ex);
-                    pack.errorMessage = String.format("ERROR: %s %s", ex.getClass().getSimpleName(), ex.getMessage());
+                    Throwable cause = ex.getCause();
+                    log.error("Rpc", cause);
+                    pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                     msg.appendLine("Response:\t%s", pack.errorMessage);
                 }
                 log.debug(msg.toString());
