@@ -22,6 +22,7 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -136,7 +137,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Override
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
-        Sockets.closeBootstrap(bootstrap);
+        Sockets.closeOnFlushed(channel, f -> Sockets.closeBootstrap(bootstrap));
     }
 
     public void connect() {

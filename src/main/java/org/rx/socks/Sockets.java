@@ -21,6 +21,7 @@ import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -47,12 +48,19 @@ public final class Sockets {
     }
 
     public static void closeOnFlushed(Channel channel) {
+        closeOnFlushed(channel, null);
+    }
+
+    public static void closeOnFlushed(Channel channel, ChannelFutureListener futureListener) {
         require(channel);
 
         if (!channel.isActive()) {
             return;
         }
-        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+        ChannelFuture future = channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+        if (futureListener != null) {
+            future.addListener(futureListener);
+        }
     }
 
     public static Bootstrap bootstrap() {
