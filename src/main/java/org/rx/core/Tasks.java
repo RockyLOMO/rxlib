@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
+import org.rx.bean.SUID;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -57,13 +58,13 @@ public final class Tasks {
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
 
     public static CompletableFuture<Void> run(Action task) {
-        return run(task, null, null);
+        return run(task, SUID.randomSUID().toString(), null);
     }
 
     public static CompletableFuture<Void> run(Action task, String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        require(task);
+        require(task, taskName);
 
-        Task<Void> t = new Task<>(isNull(taskName, Strings.EMPTY), executeFlag, () -> {
+        Task<Void> t = new Task<>(taskName, executeFlag, () -> {
             task.invoke();
             return null;
         });
@@ -72,13 +73,13 @@ public final class Tasks {
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, null, null);
+        return run(task, SUID.randomSUID().toString(), null);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task, String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        require(task);
+        require(task, taskName);
 
-        Task<T> t = new Task<>(isNull(taskName, Strings.EMPTY), executeFlag, task);
+        Task<T> t = new Task<>(taskName, executeFlag, task);
         return CompletableFuture.supplyAsync(t, executor);
 //        return executor.submit((Callable<T>) t);
     }
