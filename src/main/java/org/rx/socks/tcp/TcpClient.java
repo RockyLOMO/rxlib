@@ -28,8 +28,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 import static org.rx.core.App.Config;
-import static org.rx.core.Contract.as;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 @Slf4j
 public class TcpClient extends Disposable implements EventTarget<TcpClient> {
@@ -137,7 +136,10 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Override
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
-        Sockets.closeOnFlushed(channel, f -> Sockets.closeBootstrap(bootstrap));
+        Sockets.closeOnFlushed(channel, f -> {
+            sleep(2000);
+            Sockets.closeBootstrap(bootstrap);
+        });
     }
 
     public void connect() {

@@ -125,8 +125,8 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
 
     @Override
     protected synchronized void freeObjects() {
-        Sockets.closeBootstrap(bootstrap);
         isStarted = false;
+        Sockets.closeBootstrap(bootstrap);
         raiseEvent(onClosed, EventArgs.Empty);
     }
 
