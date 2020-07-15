@@ -56,7 +56,8 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
-                ctx.writeAndFlush(new ErrorPacket("Packet discard"));
+//                ctx.writeAndFlush(new ErrorPacket("Packet discard"));
+                log.warn("Packet discard");
                 Sockets.closeOnFlushed(ctx.channel());
                 return;
             }
