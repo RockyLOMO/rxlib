@@ -217,8 +217,8 @@
     </dependencies>
 
     <build>
-<!--        <directory>${output}</directory>-->
-<!--        <outputDirectory>${output}/op</outputDirectory>-->
+        <!--        <directory>${output}</directory>-->
+        <!--        <outputDirectory>${output}/op</outputDirectory>-->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
