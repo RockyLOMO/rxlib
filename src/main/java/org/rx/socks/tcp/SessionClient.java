@@ -1,6 +1,6 @@
 package org.rx.socks.tcp;
 
-import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelId;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +10,7 @@ import java.net.InetSocketAddress;
 
 @RequiredArgsConstructor
 public class SessionClient<T> {
-    protected final ChannelHandlerContext ctx;
+    protected final Channel channel;
     @Getter
     @Setter
     private String groupId;
@@ -18,10 +18,10 @@ public class SessionClient<T> {
     private final T state;
 
     public ChannelId getId() {
-        return ctx.channel().id();
+        return channel.id();
     }
 
     public InetSocketAddress getRemoteAddress() {
-        return (InetSocketAddress) ctx.channel().remoteAddress();
+        return (InetSocketAddress) channel.remoteAddress();
     }
 }

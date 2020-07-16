@@ -15,7 +15,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.socks.Sockets;
-import org.rx.socks.tcp.packet.ErrorPacket;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
@@ -35,30 +34,32 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
 //        super.channelActive(ctx);
-            log.debug("serverActive {}", ctx.channel().remoteAddress());
+            Channel channel = ctx.channel();
+            log.debug("serverActive {}", channel.remoteAddress());
             if (getClientSize() > getCapacity()) {
                 log.warn("Not enough capacity");
-                Sockets.closeOnFlushed(ctx.channel());
+                Sockets.closeOnFlushed(channel);
                 return;
             }
-            client = new SessionClient<>(ctx, getStateType() == null ? null : Reflects.newInstance(getStateType()));
+            client = new SessionClient<>(channel, getStateType() == null ? null : Reflects.newInstance(getStateType()));
             PackEventArgs<T> args = new PackEventArgs<>(client, null);
             raiseEvent(onConnected, args);
             if (args.isCancel()) {
                 log.warn("Close client");
-                Sockets.closeOnFlushed(ctx.channel());
+                Sockets.closeOnFlushed(channel);
             }
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-            log.debug("serverRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
+            Channel channel = ctx.channel();
+            log.debug("serverRead {} {}", channel.remoteAddress(), msg.getClass());
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
 //                ctx.writeAndFlush(new ErrorPacket("Packet discard"));
                 log.warn("Packet discard");
-                Sockets.closeOnFlushed(ctx.channel());
+                Sockets.closeOnFlushed(channel);
                 return;
             }
             if (tryAs(pack, HandshakePacket.class, p -> {
@@ -85,8 +86,9 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            log.error("serverCaught {}", ctx.channel().remoteAddress(), cause);
-            if (!ctx.channel().isActive()) {
+            Channel channel = ctx.channel();
+            log.error("serverCaught {}", channel.remoteAddress(), cause);
+            if (!channel.isActive()) {
                 return;
             }
 
@@ -99,7 +101,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
             if (args.isCancel()) {
                 return;
             }
-            Sockets.closeOnFlushed(ctx.channel());
+            Sockets.closeOnFlushed(channel);
         }
     }
 
@@ -112,6 +114,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     private final Class<T> stateType;
     private ServerBootstrap bootstrap;
     private SslContext sslCtx;
+    private volatile Channel channel;
     private final Map<String, Set<SessionClient<T>>> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
@@ -126,16 +129,12 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     @Override
     protected synchronized void freeObjects() {
         isStarted = false;
-        Sockets.closeBootstrap(bootstrap);
+        Sockets.closeOnFlushed(channel, f -> Sockets.closeBootstrap(bootstrap));
         raiseEvent(onClosed, EventArgs.Empty);
     }
 
-    public void start() {
-        start(false);
-    }
-
     @SneakyThrows
-    public synchronized void start(boolean waitClose) {
+    public synchronized void start() {
         if (isStarted) {
             throw new InvalidOperationException("Server has started");
         }
@@ -158,16 +157,14 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                     new PacketServerHandler());
         }).option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
-        ChannelFuture future = bootstrap.bind(config.getEndpoint()).addListeners(Sockets.FireExceptionThenCloseOnFailure, f -> {
+        bootstrap.bind(config.getEndpoint()).addListeners(Sockets.FireExceptionThenCloseOnFailure, (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 return;
             }
             isStarted = true;
+            channel = f.channel();
             log.debug("Listened on port {}..", config.getEndpoint());
         });
-        if (waitClose) {
-            future.channel().closeFuture().sync();
-        }
     }
 
     protected void addClient(SessionClient<T> client) {
@@ -207,9 +204,9 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
 
         PackEventArgs<T> args = new PackEventArgs<>(client, pack);
         raiseEvent(onSend, args);
-        if (args.isCancel()) {
+        if (args.isCancel() || !client.channel.isActive()) {
             return;
         }
-        client.ctx.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 }

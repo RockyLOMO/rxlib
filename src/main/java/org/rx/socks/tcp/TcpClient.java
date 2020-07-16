@@ -22,7 +22,6 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -72,8 +71,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("clientInactive {}", ctx.channel().remoteAddress());
 
-            NEventArgs<ChannelHandlerContext> args = new NEventArgs<>(ctx);
-            raiseEvent(onDisconnected, args);
+            raiseEvent(onDisconnected, EventArgs.Empty);
             reconnect();
         }
 
@@ -168,16 +166,14 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                     new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
                     new PacketClientHandler());
         }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
-        ChannelFuture future = bootstrap.connect(config.getEndpoint());
+        ChannelFuture future = bootstrap.connect(config.getEndpoint()).addListener(Sockets.FireExceptionThenCloseOnFailure);
         if (!wait) {
-            future.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
             return;
         }
         ManualResetEvent connectWaiter = new ManualResetEvent();
         future.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.debug("connect {} fail", config.getEndpoint());
-                f.channel().close();
                 if (autoReconnect) {
                     reconnect(connectWaiter);
                     return;
@@ -206,10 +202,9 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 return;
             }
             InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
-            reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
+            reconnectChannelFuture = bootstrap.connect(ep).addListeners(Sockets.FireExceptionThenCloseOnFailure, (ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.info("reconnect {} fail", ep);
-                    f.channel().close();
                     return;
                 }
                 log.debug("reconnect {} ok", ep);
