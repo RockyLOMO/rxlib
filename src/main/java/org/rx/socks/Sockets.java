@@ -21,7 +21,6 @@ import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -29,13 +28,6 @@ import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
-    public static final ChannelFutureListener FireExceptionThenCloseOnFailure = f -> {
-        if (!f.isSuccess()) {
-            f.channel().pipeline().fireExceptionCaught(f.cause());
-            f.channel().close();
-        }
-    };
-
     public static void writeAndFlush(Channel channel, List<Object> packs) {
         require(channel);
 

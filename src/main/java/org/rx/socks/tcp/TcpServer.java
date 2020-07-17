@@ -157,8 +157,10 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                     new PacketServerHandler());
         }).option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
-        bootstrap.bind(config.getEndpoint()).addListeners(Sockets.FireExceptionThenCloseOnFailure, (ChannelFutureListener) f -> {
+        bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
+                log.error("Listened on port {} fail..", config.getEndpoint(), f.cause());
+                f.channel().close();
                 return;
             }
             isStarted = true;
