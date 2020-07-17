@@ -11,6 +11,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -56,34 +57,23 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap() {
-        return bootstrap(channelClass(), null, null, null);
+        return bootstrap(null, null, null);
     }
 
-    public static Bootstrap bootstrap(Class<? extends Channel> channelClass, Channel channel, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        require(channelClass);
-
+    public static Bootstrap bootstrap(Channel channel, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+        Class<? extends Channel> channelClass = channel != null ? channel.getClass() : channelClass();
+        boolean isEpoll = EpollSocketChannel.class.isAssignableFrom(channelClass);
         Bootstrap b = new Bootstrap()
                 .group(channel != null ? channel.eventLoop() :
-                        channelClass.getName().startsWith("Epoll") ? new EpollEventLoopGroup() : new NioEventLoopGroup())
-                .channel(channel != null ? channel.getClass() : channelClass);
-        if (EpollServerSocketChannel.class.isAssignableFrom(channelClass)) {
-            b.option(EpollChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
-                    .option(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .option(EpollChannelOption.TCP_NODELAY, true)
-                    .option(EpollChannelOption.SO_KEEPALIVE, true);
-            if (mode != null) {
-                b.option(EpollChannelOption.SO_SNDBUF, mode.getSendBuf())
-                        .option(EpollChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-            }
-        } else {
-            b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
-                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .option(ChannelOption.TCP_NODELAY, true)
-                    .option(ChannelOption.SO_KEEPALIVE, true);
-            if (mode != null) {
-                b.option(ChannelOption.SO_SNDBUF, mode.getSendBuf())
-                        .option(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-            }
+                        isEpoll ? new EpollEventLoopGroup() : new NioEventLoopGroup())
+                .channel(channelClass)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
+                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_KEEPALIVE, true);
+        if (mode != null) {
+            b.option(ChannelOption.SO_SNDBUF, mode.getSendBuf())
+                    .option(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
         }
         if (initChannel != null) {
             b.handler(new ChannelInitializer<SocketChannel>() {
@@ -112,35 +102,20 @@ public final class Sockets {
     }
 
     public static ServerBootstrap serverBootstrap(int bossThreadAmount, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        Class<? extends ServerChannel> channelClass = serverChannelClass();
         ServerBootstrap b = new ServerBootstrap()
                 .group(eventLoopGroup(bossThreadAmount), eventLoopGroup(workThreadAmount))
-                .channel(channelClass);
-        if (EpollServerSocketChannel.class.isAssignableFrom(channelClass)) {
-            b.option(EpollChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
-                    .option(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .childOption(EpollChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .childOption(EpollChannelOption.TCP_NODELAY, true)
-                    .childOption(EpollChannelOption.SO_KEEPALIVE, true);
-            if (mode != null) {
-                b.option(EpollChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
-                        .option(EpollChannelOption.SO_BACKLOG, mode.getBacklog())
-                        .childOption(EpollChannelOption.SO_SNDBUF, mode.getSendBuf())
-                        .childOption(EpollChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-            }
-        } else {
-            b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
-                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .channel(serverChannelClass())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
+                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 //                    .option(ChannelOption.SO_REUSEADDR, true)
-                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .childOption(ChannelOption.TCP_NODELAY, true)
-                    .childOption(ChannelOption.SO_KEEPALIVE, true);
-            if (mode != null) {
-                b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
-                        .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
-                        .childOption(ChannelOption.SO_SNDBUF, mode.getSendBuf())
-                        .childOption(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-            }
+                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_KEEPALIVE, true);
+        if (mode != null) {
+            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
+                    .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
+                    .childOption(ChannelOption.SO_SNDBUF, mode.getSendBuf())
+                    .childOption(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
         }
         b.handler(new LoggingHandler(LogLevel.INFO));
         if (initChannel != null) {
@@ -170,21 +145,18 @@ public final class Sockets {
         }
     }
 
-    public static EventLoopGroup eventLoopGroup(int threadAmount) {
-        return eventLoopGroup(threadAmount, Epoll.isAvailable() ? EpollEventLoopGroup.class : NioEventLoopGroup.class);
+    private static Class<? extends SocketChannel> channelClass() {
+        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
-    public static EventLoopGroup eventLoopGroup(int threadAmount, Class<? extends EventLoopGroup> eventLoopGroupClass) {
-        return Reflects.newInstance(eventLoopGroupClass, threadAmount);
-//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
-    }
-
-    public static Class<? extends ServerChannel> serverChannelClass() {
+    private static Class<? extends ServerSocketChannel> serverChannelClass() {
         return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     }
 
-    public static Class<? extends Channel> channelClass() {
-        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
+    private static EventLoopGroup eventLoopGroup(int threadAmount) {
+        Class<? extends EventLoopGroup> eventLoopGroupClass = Epoll.isAvailable() ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
+        return Reflects.newInstance(eventLoopGroupClass, threadAmount);
+//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
     }
 
     //region Address

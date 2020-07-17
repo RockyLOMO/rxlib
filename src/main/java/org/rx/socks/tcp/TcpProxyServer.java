@@ -59,7 +59,7 @@ public class TcpProxyServer extends Disposable {
         public void channelActive(ChannelHandlerContext inbound) {
             InetSocketAddress proxyEndpoint = proxyRule.invoke((InetSocketAddress) inbound.channel().remoteAddress());
             log.debug("connect to backend {}", proxyEndpoint);
-            Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().getClass(), inbound.channel(), memoryMode, s -> s.pipeline().addLast(new BackendHandler(inbound)));
+            Bootstrap bootstrap = Sockets.bootstrap(inbound.channel(), memoryMode, s -> s.pipeline().addLast(new BackendHandler(inbound)));
             outbound = bootstrap.connect(proxyEndpoint).channel();
         }
 

@@ -153,7 +153,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = Sockets.bootstrap(Sockets.channelClass(), null, config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.bootstrap(null, config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));
@@ -175,7 +175,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         future.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.error("connect {} fail", config.getEndpoint(), f.cause());
-                f.channel().close();
+//                f.channel().close();
                 if (autoReconnect) {
                     reconnect(connectWaiter);
                     return;
