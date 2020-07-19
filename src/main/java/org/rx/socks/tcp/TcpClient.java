@@ -69,7 +69,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
-            log.debug("clientInactive {}", ctx.channel().remoteAddress());
+            log.info("clientInactive {}", ctx.channel().remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.Empty);
             reconnect();
@@ -177,7 +177,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         future.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.error("connect {} fail", config.getEndpoint(), f.cause());
-//                f.channel().close();
+                f.channel().close();
                 if (autoReconnect) {
                     reconnect(connectWaiter);
                     return;
@@ -202,6 +202,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             return;
         }
         reconnectFuture = Tasks.scheduleUntil(() -> {
+            log.info("reconnect check..");
             if (!isShouldReconnect() || reconnectChannelFuture != null) {
                 return;
             }
