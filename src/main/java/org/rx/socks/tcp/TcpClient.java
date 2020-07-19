@@ -134,10 +134,12 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     @Override
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
-        Sockets.closeOnFlushed(channel, f -> {
-//            sleep(2000);  暂停会有ClosedChannelException
-            Sockets.closeBootstrap(bootstrap);
-        });
+//        Sockets.closeOnFlushed(channel, f -> {
+////            sleep(2000);  暂停会有ClosedChannelException
+//            Sockets.closeBootstrap(bootstrap);
+//        });
+        Sockets.closeOnFlushed(channel);
+        Sockets.closeBootstrap(bootstrap);
     }
 
     public void connect() {

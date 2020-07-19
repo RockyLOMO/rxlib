@@ -259,7 +259,7 @@ public final class RemotingFactory {
     private static final Map<Object, HostValue> host = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, Sockets.parseEndpoint(endpoint), Strings.EMPTY, null);
+        return create(contract, Sockets.parseEndpoint(endpoint), contract.getName(), null);
     }
 
     public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake) {
