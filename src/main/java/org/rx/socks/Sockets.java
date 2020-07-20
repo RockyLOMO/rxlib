@@ -56,12 +56,12 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap bootstrap() {
-        return bootstrap(null, null, null);
+    public static Bootstrap bootstrap(boolean tryEpoll) {
+        return bootstrap(tryEpoll, null, null, null);
     }
 
-    public static Bootstrap bootstrap(Channel channel, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        Class<? extends Channel> channelClass = channel != null ? channel.getClass() : channelClass();
+    public static Bootstrap bootstrap(boolean tryEpoll, Channel channel, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+        Class<? extends Channel> channelClass = channel != null ? channel.getClass() : channelClass(tryEpoll);
         boolean isEpoll = EpollSocketChannel.class.isAssignableFrom(channelClass);
         Bootstrap b = new Bootstrap()
                 .group(channel != null ? channel.eventLoop() :
@@ -97,14 +97,14 @@ public final class Sockets {
         }
     }
 
-    public static ServerBootstrap serverBootstrap() {
-        return serverBootstrap(1, 0, null, null);
+    public static ServerBootstrap serverBootstrap(boolean tryEpoll) {
+        return serverBootstrap(tryEpoll, 1, 0, null, null);
     }
 
-    public static ServerBootstrap serverBootstrap(int bossThreadAmount, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+    public static ServerBootstrap serverBootstrap(boolean tryEpoll, int bossThreadAmount, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
         ServerBootstrap b = new ServerBootstrap()
-                .group(eventLoopGroup(bossThreadAmount), eventLoopGroup(workThreadAmount))
-                .channel(serverChannelClass())
+                .group(eventLoopGroup(tryEpoll, bossThreadAmount), eventLoopGroup(tryEpoll, workThreadAmount))
+                .channel(serverChannelClass(tryEpoll))
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 //                    .option(ChannelOption.SO_REUSEADDR, true)
@@ -145,18 +145,22 @@ public final class Sockets {
         }
     }
 
-    private static Class<? extends SocketChannel> channelClass() {
-        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
+    private static Class<? extends SocketChannel> channelClass(boolean tryEpoll) {
+        return epoll(tryEpoll) ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
-    private static Class<? extends ServerSocketChannel> serverChannelClass() {
-        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+    private static Class<? extends ServerSocketChannel> serverChannelClass(boolean tryEpoll) {
+        return epoll(tryEpoll) ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     }
 
-    private static EventLoopGroup eventLoopGroup(int threadAmount) {
-        Class<? extends EventLoopGroup> eventLoopGroupClass = Epoll.isAvailable() ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
+    private static EventLoopGroup eventLoopGroup(boolean tryEpoll, int threadAmount) {
+        Class<? extends EventLoopGroup> eventLoopGroupClass = epoll(tryEpoll) ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
         return Reflects.newInstance(eventLoopGroupClass, threadAmount);
 //        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
+    }
+
+    private static boolean epoll(boolean enable) {
+        return enable && Epoll.isAvailable();
     }
 
     //region Address

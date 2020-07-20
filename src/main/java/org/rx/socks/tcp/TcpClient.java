@@ -46,7 +46,8 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
             ctx.writeAndFlush(getHandshake()).addListener(p -> {
                 if (p.isSuccess()) {
-                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
+                    raiseEvent(onConnected, EventArgs.Empty);
+//                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
                 }
             });
         }
@@ -155,7 +156,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = Sockets.bootstrap(null, config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.bootstrap(config.isTryEpoll(), null, config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));

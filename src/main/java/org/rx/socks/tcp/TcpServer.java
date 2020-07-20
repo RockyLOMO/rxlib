@@ -14,6 +14,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
@@ -120,7 +121,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     private volatile boolean isStarted;
     @Getter
     @Setter
-    private volatile int capacity = 1000000;
+    private int capacity = 100000;
 
     public int getClientSize() {
         return clients.size();
@@ -143,7 +144,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(1, config.getWorkThread(), config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.serverBootstrap(config.isTryEpoll(), 1, config.getWorkThread(), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));
@@ -167,6 +168,21 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
             channel = f.channel();
             log.debug("Listened on port {}..", config.getEndpoint());
         });
+    }
+
+    public String dump() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Set<SessionClient<T>>> entry : clients.entrySet()) {
+            sb.appendLine("%s:", entry.getKey());
+            int i = 1;
+            for (SessionClient<T> client : entry.getValue()) {
+                sb.append("\t%s:%s", client.getRemoteAddress(), client.getId());
+                if (i++ % 3 == 0) {
+                    sb.appendLine();
+                }
+            }
+        }
+        return sb.toString();
     }
 
     protected void addClient(SessionClient<T> client) {

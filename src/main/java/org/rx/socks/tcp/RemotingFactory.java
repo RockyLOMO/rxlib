@@ -70,13 +70,15 @@ public final class RemotingFactory {
         private final Class targetType;
         @Getter
         private final String groupId;
+        @Getter
+        private final boolean tryEpoll;
         private final ManualResetEvent waitHandle = new ManualResetEvent();
         private InetSocketAddress serverAddress;
         private volatile CallPack resultPack;
         private TcpClient client;
         private final Lazy<TcpClientPool> nonStatePool = new Lazy<>(() -> {
             TcpClientPool pool = new TcpClientPool();
-            pool.onCreate = (s, e) -> e.setPoolingClient(TcpConfig.client(e.getValue(), getGroupId()));
+            pool.onCreate = (s, e) -> e.setPoolingClient(TcpConfig.client(isTryEpoll(), e.getValue(), getGroupId()));
             return pool;
         });
 
@@ -194,7 +196,7 @@ public final class RemotingFactory {
                 return;
             }
             log.debug("client initHandshake {}", serverAddress);
-            client = TcpConfig.client(serverAddress, groupId);
+            client = TcpConfig.client(tryEpoll, serverAddress, groupId);
             client.setAutoReconnect(true);
             client.setPreReconnect(preReconnect);
             client.attachEvent(TcpClient.EventNames.Connected, (s, e) -> {
@@ -259,21 +261,21 @@ public final class RemotingFactory {
     private static final Map<Object, HostValue> host = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, Sockets.parseEndpoint(endpoint), contract.getName(), null);
+        return create(contract, Sockets.parseEndpoint(endpoint), contract.getSimpleName(), null);
     }
 
     public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake) {
-        return create(contract, endpoint, groupId, onHandshake, null);
+        return create(contract, endpoint, groupId, onHandshake, null, true);
     }
 
-    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake, Function<InetSocketAddress, InetSocketAddress> preReconnect) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, String groupId, BiConsumer<T, NEventArgs<TcpClient>> onHandshake, Function<InetSocketAddress, InetSocketAddress> preReconnect, boolean tryEpoll) {
         require(contract, endpoint);
 
         if (EventTarget.class.isAssignableFrom(contract) && onHandshake == null) {
             onHandshake = (s, e) -> {
             };
         }
-        ClientHandler handler = new ClientHandler(contract, groupId);
+        ClientHandler handler = new ClientHandler(contract, groupId, tryEpoll);
         handler.serverAddress = endpoint;
         handler.onHandshake = (BiConsumer<Object, NEventArgs<TcpClient>>) onHandshake;
         handler.preReconnect = preReconnect;
@@ -288,7 +290,7 @@ public final class RemotingFactory {
         require(contractInstance);
 
         return host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<RemotingState> server = TcpConfig.server(port, RemotingState.class);
+            TcpServer<RemotingState> server = TcpConfig.server(true, port, RemotingState.class);
             HostValue hostValue = new HostValue(server);
             server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {

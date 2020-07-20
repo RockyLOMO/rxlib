@@ -14,22 +14,23 @@ import static org.rx.core.App.Config;
 @Data
 @RequiredArgsConstructor
 public class TcpConfig {
-    public static TcpClient client(InetSocketAddress serverEndpoint, String groupId) {
-        return new TcpClient(packetConfig(serverEndpoint), new HandshakePacket(groupId));
+    public static TcpClient client(boolean tryEpoll, InetSocketAddress serverEndpoint, String groupId) {
+        return new TcpClient(packetConfig(tryEpoll, serverEndpoint), new HandshakePacket(groupId));
     }
 
-    public static <T extends Serializable> TcpServer<T> server(int port, Class<T> stateType) {
-        return new TcpServer<>(packetConfig(Sockets.getAnyEndpoint(port)), stateType);
+    public static <T extends Serializable> TcpServer<T> server(boolean tryEpoll, int port, Class<T> stateType) {
+        return new TcpServer<>(packetConfig(tryEpoll, Sockets.getAnyEndpoint(port)), stateType);
     }
 
-    private static TcpConfig packetConfig(InetSocketAddress endpoint) {
-        TcpConfig config = new TcpConfig();
+    private static TcpConfig packetConfig(boolean tryEpoll, InetSocketAddress endpoint) {
+        TcpConfig config = new TcpConfig(tryEpoll);
         config.setEndpoint(endpoint);
         config.setEnableSsl(false);
         config.setEnableCompress(true);
         return config;
     }
 
+    private final boolean tryEpoll;
     private InetSocketAddress endpoint;
     private int workThread;
     private MemoryMode memoryMode;

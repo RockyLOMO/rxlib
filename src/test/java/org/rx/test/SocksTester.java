@@ -115,7 +115,7 @@ public class SocksTester {
             }
             log.debug("reconnect {}", r);
             return r;
-        });
+        }, true);
         assert userManager.computeInt(1, 1) == 2;
         sleep(1000);
         tcpServer.close();  //关闭3307
@@ -178,12 +178,12 @@ public class SocksTester {
         }
     }
 
-    @SneakyThrows
-    @Test
-    public void proxyServer() {
-        TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
-        System.in.read();
-    }
+//    @SneakyThrows
+//    @Test
+//    public void proxyServer() {
+//        TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
+//        System.in.read();
+//    }
 
     @Test
     public void queryString() {
