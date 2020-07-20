@@ -46,8 +46,8 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
             ctx.writeAndFlush(getHandshake()).addListener(p -> {
                 if (p.isSuccess()) {
-                    raiseEvent(onConnected, EventArgs.Empty);
-//                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
+//                    raiseEvent(onConnected, EventArgs.Empty);
+                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
                 }
             });
         }
