@@ -119,7 +119,7 @@ public final class Contract {
     }
 
     public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
+        return tryAs(obj, AutoCloseable.class, !quietly ? AutoCloseable::close : p -> catchCall(p::close));
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {

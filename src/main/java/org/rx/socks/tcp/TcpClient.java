@@ -203,7 +203,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
             return;
         }
         reconnectFuture = Tasks.scheduleUntil(() -> {
-            log.info("reconnect check..");
+            log.info("reconnect {} check..", config.getEndpoint());
             if (!isShouldReconnect() || reconnectChannelFuture != null) {
                 return;
             }
