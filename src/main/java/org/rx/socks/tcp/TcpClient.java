@@ -251,7 +251,10 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
     }
 
     public synchronized void send(Serializable pack) {
-        require(pack, isConnected());
+        require(pack);
+        if (!isConnected()) {
+            throw new InvalidOperationException("Client has disconnected");
+        }
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);
         raiseEvent(onSend, args);

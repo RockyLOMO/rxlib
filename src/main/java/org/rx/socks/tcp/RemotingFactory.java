@@ -250,11 +250,13 @@ public final class RemotingFactory {
         }
 
         private synchronized void closeClient() {
-            if (client == null || !client.isConnected()) {
+            if (client == null) {
                 return;
             }
             log.debug("client close");
-            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+            if (client.isConnected()) {
+                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+            }
             client.close();
             client = null;
         }
