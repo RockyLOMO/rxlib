@@ -230,6 +230,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
                 if (!f.isSuccess()) {
                     log.info("reconnect {} fail", ep);
                     f.channel().close();
+                    reconnectChannelFuture = null;
                     return;
                 }
                 log.info("reconnect {} ok", ep);
