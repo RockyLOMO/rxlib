@@ -6,7 +6,6 @@ import org.rx.socks.MemoryMode;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 
 import static org.rx.core.App.Config;
@@ -18,8 +17,8 @@ public class TcpConfig {
         return new TcpClient(packetConfig(tryEpoll, serverEndpoint), new HandshakePacket(groupId));
     }
 
-    public static <T extends Serializable> TcpServer<T> server(boolean tryEpoll, int port, Class<T> stateType) {
-        return new TcpServer<>(packetConfig(tryEpoll, Sockets.getAnyEndpoint(port)), stateType);
+    public static TcpServer server(boolean tryEpoll, int port) {
+        return new TcpServer(packetConfig(tryEpoll, Sockets.getAnyEndpoint(port)));
     }
 
     private static TcpConfig packetConfig(boolean tryEpoll, InetSocketAddress endpoint) {

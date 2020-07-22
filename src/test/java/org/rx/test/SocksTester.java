@@ -24,8 +24,8 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class SocksTester {
-    private TcpServer<RemotingFactory.RemotingState> tcpServer;
-    private TcpServer<RemotingFactory.RemotingState> tcpServer2;
+    private TcpServer tcpServer;
+    private TcpServer tcpServer2;
 
     @Test
     public void apiRpc() {
@@ -44,7 +44,10 @@ public class SocksTester {
         //重启server，客户端自动重连
         restartServer(server, 3307);
         for (UserManager facade : facadeGroupA) {
-            facade.testError();
+            try {
+                facade.testError();
+            } catch (RemotingException e) {
+            }
             assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
         }
 
@@ -54,7 +57,11 @@ public class SocksTester {
 
         for (UserManager facade : facadeGroupB) {
             assert facade.computeInt(1, 1) == 2;
-            facade.testError();
+            try {
+                facade.testError();
+            } catch (RemotingException e) {
+
+            }
             assert facade.computeInt(2, 2) == 4;
         }
 
@@ -143,7 +150,11 @@ public class SocksTester {
             System.out.println("onHandshake: " + s.computeInt(1, 2));
         });
         assert facade.computeInt(1, 1) == 2; //服务端计算并返回
-        facade.testError(); //测试异常
+        try {
+            facade.testError(); //测试异常
+        } catch (RemotingException e) {
+
+        }
         assert facade.computeInt(17, 1) == 18;
 
         //注册事件（广播）

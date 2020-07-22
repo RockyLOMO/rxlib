@@ -10,10 +10,13 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.util.Attribute;
+import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.core.ManualResetEvent;
 import org.rx.socks.Sockets;
@@ -22,6 +25,7 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.Date;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -30,7 +34,7 @@ import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 @Slf4j
-public class TcpClient extends Disposable implements EventTarget<TcpClient> {
+public class TcpClient extends Disposable implements ITcpClient, EventTarget<TcpClient> {
     public interface EventNames {
         String Error = "onError";
         String Connected = "onConnected";
@@ -44,7 +48,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         public void channelActive(ChannelHandlerContext ctx) {
             log.debug("clientActive {}", ctx.channel().remoteAddress());
 
-            ctx.writeAndFlush(getHandshake()).addListener(p -> {
+            ctx.writeAndFlush(handshake).addListener(p -> {
                 if (p.isSuccess()) {
 //                    raiseEvent(onConnected, EventArgs.Empty);
                     Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
@@ -101,10 +105,11 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
     public volatile BiConsumer<TcpClient, NEventArgs<Throwable>> onError;
     @Getter
     private TcpConfig config;
-    @Getter
     private HandshakePacket handshake;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
+    @Getter
+    private Date connectedTime;
     private volatile Channel channel;
     @Getter
     @Setter
@@ -116,6 +121,18 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
+    }
+
+    @Override
+    public ChannelId getId() {
+        require(isConnected());
+
+        return channel.id();
+    }
+
+    @Override
+    public String getGroupId() {
+        return handshake.getGroupId();
     }
 
     protected boolean isShouldReconnect() {
@@ -185,6 +202,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 }
             }
             channel = f.channel();
+            connectedTime = DateTime.now();
             connectWaiter.set();
         });
         connectWaiter.waitOne();
@@ -216,6 +234,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 }
                 log.info("reconnect {} ok", ep);
                 channel = f.channel();
+                connectedTime = DateTime.now();
                 config.setEndpoint(ep);
                 reconnectChannelFuture = null;
             });
@@ -241,5 +260,15 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         }
         channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         log.debug("clientWrite {} {}", getConfig().getEndpoint(), pack);
+    }
+
+    @Override
+    public <T> Attribute<T> attr(String name) {
+        return channel.attr(AttributeKey.valueOf(name));
+    }
+
+    @Override
+    public boolean hasAttr(String name) {
+        return channel.hasAttr(AttributeKey.valueOf(name));
     }
 }
