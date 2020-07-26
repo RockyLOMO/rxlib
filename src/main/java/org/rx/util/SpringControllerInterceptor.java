@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.toJsonString;
-import static org.rx.core.SystemException.DefaultMessage;
+import static org.rx.core.SystemException.DEFAULT_MESSAGE;
 
 @Slf4j
 //@Aspect
@@ -119,7 +119,7 @@ public class SpringControllerInterceptor {
     //    @ResponseStatus(HttpStatus.OK)
 //    @ExceptionHandler({Exception.class})
     public ResponseEntity handleException(Exception e, HttpServletRequest request) {
-        String msg = DefaultMessage, debugMsg = null;
+        String msg = DEFAULT_MESSAGE, debugMsg = null;
         Exception logEx = e;
         if (e instanceof ValidateException || handleInfoLogExceptions().distinct().any(p -> Reflects.isInstance(e, p))) {
             //参数校验错误 ignore log

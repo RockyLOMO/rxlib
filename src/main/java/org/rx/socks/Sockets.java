@@ -25,7 +25,6 @@ import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 public final class Sockets {
@@ -67,7 +66,7 @@ public final class Sockets {
                 .group(channel != null ? channel.eventLoop() :
                         isEpoll ? new EpollEventLoopGroup() : new NioEventLoopGroup())
                 .channel(channelClass)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getSocksTimeout())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true);
@@ -105,7 +104,7 @@ public final class Sockets {
         ServerBootstrap b = new ServerBootstrap()
                 .group(eventLoopGroup(tryEpoll, bossThreadAmount), eventLoopGroup(tryEpoll, workThreadAmount))
                 .channel(serverChannelClass(tryEpoll))
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Config.getSocksTimeout())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getSocksTimeout())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 //                    .option(ChannelOption.SO_REUSEADDR, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)

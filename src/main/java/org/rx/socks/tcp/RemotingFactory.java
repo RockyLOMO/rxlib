@@ -84,7 +84,7 @@ public final class RemotingFactory {
 
         @Override
         public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
-            if (Reflects.ObjectMethods.contains(method)) {
+            if (Reflects.OBJECT_METHODS.contains(method)) {
                 return methodProxy.invokeSuper(o, args);
             }
             if (Reflects.isCloseMethod(method)) {

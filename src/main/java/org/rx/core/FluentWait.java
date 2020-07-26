@@ -11,7 +11,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.core.Contract.TimeoutInfinite;
+import static org.rx.core.Contract.TIMEOUT_INFINITE;
 import static org.rx.core.Contract.require;
 
 public class FluentWait {
@@ -43,26 +43,26 @@ public class FluentWait {
     private String message;
     private List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
     private boolean throwOnFail = true;
-    private long retryMills = TimeoutInfinite;
+    private long retryMills = TIMEOUT_INFINITE;
     private boolean retryFirstCall;
 
     private FluentWait() {
     }
 
     public FluentWait timeout(long timeoutMillis) {
-        require(timeoutMillis, timeoutMillis > TimeoutInfinite);
+        require(timeoutMillis, timeoutMillis > TIMEOUT_INFINITE);
         this.timeout = timeoutMillis;
         return this;
     }
 
     public FluentWait interval(long intervalMillis) {
-        require(intervalMillis, intervalMillis > TimeoutInfinite);
+        require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
         this.interval = intervalMillis;
         return this;
     }
 
     public FluentWait retryMills(long retryMills) {
-        require(retryMills, retryMills >= TimeoutInfinite);
+        require(retryMills, retryMills >= TIMEOUT_INFINITE);
         this.retryMills = retryMills;
         return this;
     }
@@ -110,7 +110,7 @@ public class FluentWait {
             retryFunc.test(state);
         }
 
-        int retryCount = retryMills == TimeoutInfinite ? TimeoutInfinite : (int) (interval > 0 ? Math.floor((double) retryMills / interval) : timeout);
+        int retryCount = retryMills == TIMEOUT_INFINITE ? TIMEOUT_INFINITE : (int) (interval > 0 ? Math.floor((double) retryMills / interval) : timeout);
         do {
             try {
                 lastResult = supplier.apply(state);
@@ -126,7 +126,7 @@ public class FluentWait {
 
             sleep();
 
-            if (retryMills > TimeoutInfinite && (retryCount == 0 || state.checkCount % retryCount == 0)) {
+            if (retryMills > TIMEOUT_INFINITE && (retryCount == 0 || state.checkCount % retryCount == 0)) {
                 if (retryFunc != null && !retryFunc.test(state)) {
                     break;
                 }

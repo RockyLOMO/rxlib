@@ -14,7 +14,7 @@ import static org.rx.core.Contract.*;
 
 public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> {
     public static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = MaxInt;
+        private volatile int minPosition, length, maxLength = MAX_INT;
 
         public int getPosition() {
             return count;

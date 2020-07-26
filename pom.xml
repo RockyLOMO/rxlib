@@ -63,7 +63,7 @@
         <aspectj.version>1.9.5</aspectj.version>
         <poi.version>4.1.2</poi.version>
         <rdbc.HikariCP>3.4.5</rdbc.HikariCP>
-        <rdbc.druid>1.1.21</rdbc.druid>
+        <rdbc.druid>1.1.23</rdbc.druid>
     </properties>
 
     <dependencyManagement>

@@ -32,7 +32,7 @@ public class AESUtil {
     public static String encryptToBase64(String data, String key) {
         require(data, key);
 
-        byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), key.getBytes(Contract.Utf8));
+        byte[] valueByte = encrypt(data.getBytes(Contract.UTF_8), key.getBytes(Contract.UTF_8));
         return App.convertToBase64String(valueByte);
     }
 
@@ -40,15 +40,15 @@ public class AESUtil {
     public static String decryptFromBase64(String data, String key) {
         require(data, key);
 
-        byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(Contract.Utf8));
-        return new String(valueByte, Contract.Utf8);
+        byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(Contract.UTF_8));
+        return new String(valueByte, Contract.UTF_8);
     }
 
     @SneakyThrows
     public static String encryptWithKeyBase64(String data, String key) {
         require(data, key);
 
-        byte[] valueByte = encrypt(data.getBytes(Contract.Utf8), App.convertFromBase64String(key));
+        byte[] valueByte = encrypt(data.getBytes(Contract.UTF_8), App.convertFromBase64String(key));
         return App.convertToBase64String(valueByte);
     }
 
@@ -57,7 +57,7 @@ public class AESUtil {
         require(data, key);
 
         byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
-        return new String(valueByte, Contract.Utf8);
+        return new String(valueByte, Contract.UTF_8);
     }
 
     /**

@@ -20,7 +20,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         @Getter
         private final List<BiConsumer<TSender, TArgs>> invocationList = new CopyOnWriteArrayList<>();
 
-        @SuppressWarnings(NonWarning)
+        @SuppressWarnings(NON_WARNING)
         @Override
         public void accept(TSender target, TArgs args) {
             require(target, args);
@@ -68,7 +68,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         attachEvent(eventName, event, true);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @SneakyThrows
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
         require(eventName);
@@ -84,7 +84,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         field.set(this, combine ? combine((BiConsumer<TSender, TArgs>) field.get(this), event) : event);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @SneakyThrows
     default <TArgs extends EventArgs> void detachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
         require(eventName);
@@ -100,7 +100,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         field.set(this, remove((BiConsumer<TSender, TArgs>) field.get(this), event));
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(String eventName, TArgs args) {
         require(eventName);
@@ -116,7 +116,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         raiseEvent((BiConsumer<TSender, TArgs>) field.get(this), args);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     default <TArgs extends EventArgs> void raiseEvent(BiConsumer<TSender, TArgs> event, TArgs args) {
         require(args);
 

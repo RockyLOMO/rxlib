@@ -6,7 +6,7 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.rx.core.Contract.NonWarning;
+import static org.rx.core.Contract.NON_WARNING;
 import static org.rx.core.Contract.require;
 
 /**
@@ -14,7 +14,7 @@ import static org.rx.core.Contract.require;
  * Arrays.copyOf();
  */
 public class Arrays extends ArrayUtils {
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public static <T> List<T> toList(T one) {
         require(one);
 
@@ -23,7 +23,7 @@ public class Arrays extends ArrayUtils {
         return toList(arr);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @SafeVarargs
     public static <T> List<T> toList(T... items) {
         if (items == null) {

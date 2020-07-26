@@ -25,7 +25,7 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
         return new FlagsEnum<>(this);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     default FlagsEnum<T> flags(T... nEnum) {
         require(nEnum);
 
@@ -34,7 +34,7 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
         return flagsEnum;
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @SneakyThrows
     default String toDescription() {
         Class type = this.getClass();

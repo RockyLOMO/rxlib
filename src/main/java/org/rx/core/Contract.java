@@ -11,10 +11,15 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.LibConfig;
 import org.rx.bean.Tuple;
 import org.rx.security.MD5Util;
 import org.rx.util.function.*;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
@@ -23,20 +28,23 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import static org.rx.core.App.Config;
-
+//入口，注意循环引用
 @Slf4j
 public final class Contract {
-    public static final String NonWarning = "all", Utf8 = "UTF-8";
-    public static final int TimeoutInfinite = -1, MaxInt = Integer.MAX_VALUE - 8;
-    private static NQuery<Class> skipTypes = NQuery.of();
+    public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
+    public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
+    public static final LibConfig CONFIG;
+    private static NQuery<Class> skipTypes;
 
-    //App循环引用
-    static void init() {
-        String[] jsonSkipTypes = Config.getJsonSkipTypes();
-        if (!Arrays.isEmpty(jsonSkipTypes)) {
-            skipTypes = skipTypes.union(NQuery.of(jsonSkipTypes).select(p -> App.loadClass(String.valueOf(p), false)));
+    static {
+        skipTypes = NQuery.of();
+        CONFIG = isNull(readSetting("app", LibConfig.class), new LibConfig());
+        if (CONFIG.getBufferSize() <= 0) {
+            CONFIG.setBufferSize(512);
         }
+        skipTypes = NQuery.of(CONFIG.getJsonSkipTypesEx());
+
+        System.setProperty("bootstrapPath", App.getBootstrapPath());
     }
 
     @ErrorCode(value = "arg")
@@ -61,17 +69,117 @@ public final class Contract {
         }
     }
 
-    //region extend
-    public static String cacheKey(String methodName, Object... args) {
-        require(methodName);
-
-        String k = Reflects.callerClass(1).getName() + methodName + toJsonString(args);
-        if (k.length() <= 32) {
-            return k;
-        }
-        return MD5Util.md5Hex(k);
+    //region yml
+    public static <T> T readSetting(String key) {
+        return readSetting(key, null);
     }
 
+    public static <T> T readSetting(String key, Class<T> type) {
+        return readSetting(key, type, loadYaml("application.yml"));
+    }
+
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
+        return readSetting(key, type, settings, false);
+    }
+
+    @ErrorCode(value = "keyError", messageKeys = {"$key", "$type"})
+    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$type"})
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
+        require(key, settings);
+
+        Function<Object, T> func = p -> {
+            if (type == null) {
+                return (T) p;
+            }
+            Map<String, Object> map = as(p, Map.class);
+            if (map != null) {
+                return fromJsonAsObject(map, type);
+            }
+            return Reflects.changeType(p, type);
+        };
+        Object val;
+        if ((val = settings.get(key)) != null) {
+            return func.apply(val);
+        }
+
+        StringBuilder kBuf = new StringBuilder();
+        String d = ".";
+        String[] splits = Strings.split(key, d);
+        int c = splits.length - 1;
+        for (int i = 0; i <= c; i++) {
+            if (kBuf.getLength() > 0) {
+                kBuf.append(d);
+            }
+            String k = kBuf.append(splits[i]).toString();
+            if ((val = settings.get(k)) == null) {
+                continue;
+            }
+            if (i == c) {
+                return func.apply(val);
+            }
+            if ((settings = as(val, Map.class)) == null) {
+                throw new SystemException(values(k, type), "partialKeyError");
+            }
+            kBuf.setLength(0);
+        }
+
+        if (throwOnEmpty) {
+            throw new SystemException(values(key, type), "keyError");
+        }
+        return null;
+    }
+
+    @SneakyThrows
+    public static Map<String, Object> loadYaml(String... yamlFile) {
+        require((Object) yamlFile);
+
+        Map<String, Object> result = new HashMap<>();
+        Yaml yaml = new Yaml(new SafeConstructor());
+        for (String yf : yamlFile) {
+            File file = new File(yf);
+            for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getClassLoader().getResourceAsStream(yf))) {
+                Map<String, Object> one = (Map<String, Object>) data;
+                fillDeep(one, result);
+            }
+        }
+        return result;
+    }
+
+    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
+        if (one == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : one.entrySet()) {
+            Map<String, Object> nextOne;
+            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
+                all.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
+            if (nextAll == null) {
+                all.put(entry.getKey(), nextOne);
+                continue;
+            }
+            fillDeep(nextOne, nextAll);
+        }
+    }
+
+    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
+        require(yamlContent, beanType);
+
+        Yaml yaml = new Yaml();
+        return yaml.loadAs(yamlContent, beanType);
+    }
+
+    public static <T> String dumpYaml(T bean) {
+        require(bean);
+
+        Yaml yaml = new Yaml();
+        return yaml.dump(bean);
+    }
+    //endregion
+
+    //region extend
     @SneakyThrows
     public static <T> T retry(int retryCount, Func<T> func) {
         require(func);
@@ -119,7 +227,7 @@ public final class Contract {
     }
 
     public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? AutoCloseable::close : p -> catchCall(p::close));
+        return tryAs(obj, AutoCloseable.class, quietly ? p -> catchCall(p::close) : AutoCloseable::close);
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {
@@ -138,7 +246,7 @@ public final class Contract {
         return true;
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public static <T> T as(Object obj, Class<T> type) {
         if (!Reflects.isInstance(obj, type)) {
             return null;
@@ -181,21 +289,33 @@ public final class Contract {
         return desc.value();
     }
 
+    public static String cacheKey(String methodName, Object... args) {
+        require(methodName);
+
+        String k = Reflects.callerClass(1).getName() + methodName + toJsonString(args);
+        if (k.length() <= 32) {
+            return k;
+        }
+        return MD5Util.md5Hex(k);
+    }
+
+    public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
+        require(type, func);
+
+        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, args, Tuple.of(proxyObject, methodProxy)));
+    }
+
     public static void sleep() {
-        sleep(Config.getSleepMillis());
+        sleep(CONFIG.getSleepMillis());
     }
 
     @SneakyThrows
     public static void sleep(long millis) {
         Thread.sleep(millis);
     }
-
-    public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
-        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, args, Tuple.of(proxyObject, methodProxy)));
-    }
     //endregion
 
-    //region Delegate
+    //region delegate
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> combine(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
         if (a == null) {
             require(b);

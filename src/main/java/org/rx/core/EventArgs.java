@@ -9,8 +9,7 @@ import java.io.Serializable;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class EventArgs implements Serializable {
-    @Deprecated
-    public static final EventArgs Empty = new EventArgs();
+    public static final EventArgs EMPTY = new EventArgs();
 
     @Getter
     @Setter

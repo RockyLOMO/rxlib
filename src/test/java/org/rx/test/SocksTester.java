@@ -163,9 +163,9 @@ public class SocksTester {
         String eventName = "onCustom";
         facade.attachEvent(eventName, (s, e) -> System.out.println(String.format("CustomEvent %s called", eventName)));
         sleep(1000);
-        server.raiseEvent(eventName, EventArgs.Empty);
+        server.raiseEvent(eventName, EventArgs.EMPTY);
         sleep(1000);
-        facade.raiseEvent(eventName, EventArgs.Empty);
+        facade.raiseEvent(eventName, EventArgs.EMPTY);
     }
 
     @Test

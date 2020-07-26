@@ -4,7 +4,7 @@ import lombok.SneakyThrows;
 
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Contract.TimeoutInfinite;
+import static org.rx.core.Contract.TIMEOUT_INFINITE;
 
 public final class ManualResetEvent {
     private final Object monitor = new Object();
@@ -20,11 +20,11 @@ public final class ManualResetEvent {
 
     @SneakyThrows
     public void waitOne() {
-        waitOne(TimeoutInfinite);
+        waitOne(TIMEOUT_INFINITE);
     }
 
     public void waitOne(long timeout) throws TimeoutException {
-        timeout = timeout == TimeoutInfinite ? 0 : timeout;
+        timeout = timeout == TIMEOUT_INFINITE ? 0 : timeout;
         synchronized (monitor) {
             while (!open) {
                 try {

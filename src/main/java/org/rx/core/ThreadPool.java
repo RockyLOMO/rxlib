@@ -19,7 +19,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @NoArgsConstructor
     @Data
     public static class DynamicConfig implements Serializable {
-        private int variable = CpuThreads;
+        private int variable = CPU_THREADS;
         private int minThreshold = 40, maxThreshold = 60;
         private int samplingTimes = 8;
     }
@@ -132,12 +132,12 @@ public class ThreadPool extends ThreadPoolExecutor {
         Single;
     }
 
-    public static final int CpuThreads = Runtime.getRuntime().availableProcessors();
+    public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
-        return (int) Math.max(CpuThreads, Math.floor(CpuThreads * cpuUtilization * (1 + (double) waitTime / cpuTime)));
+        return (int) Math.max(CPU_THREADS, Math.floor(CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
     static ThreadFactory newThreadFactory(String nameFormat) {
@@ -211,7 +211,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool() {
-        this(CpuThreads + 1, computeThreads(1, 2, 1), 4, CpuThreads * 64, "ThreadPool");
+        this(CPU_THREADS + 1, computeThreads(1, 2, 1), 4, CPU_THREADS * 64, "ThreadPool");
     }
 
     /**

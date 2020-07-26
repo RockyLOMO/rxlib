@@ -1,6 +1,7 @@
 app:
+  bufferSize: 512
   socksTimeout: 16000
-  cacheLiveMinutes: 4
+  lruCacheExpireMinutes: 4
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

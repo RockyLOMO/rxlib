@@ -26,7 +26,6 @@ import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-import static org.rx.core.App.Config;
 import static org.rx.core.Contract.*;
 
 @Slf4j
@@ -46,8 +45,8 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
 
             ctx.writeAndFlush(getHandshake()).addListener(p -> {
                 if (p.isSuccess()) {
-//                    raiseEvent(onConnected, EventArgs.Empty);
-                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.Empty));
+                    //握手需要异步
+                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.EMPTY));
                 }
             });
         }
@@ -72,7 +71,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
         public void channelInactive(ChannelHandlerContext ctx) {
             log.info("clientInactive {}", ctx.channel().remoteAddress());
 
-            raiseEvent(onDisconnected, EventArgs.Empty);
+            raiseEvent(onDisconnected, EventArgs.EMPTY);
             reconnect();
         }
 
@@ -228,7 +227,7 @@ public class TcpClient extends Disposable implements EventTarget<TcpClient> {
                 reconnectFuture = null;
             }
             return ok;
-        }, Config.getScheduleDelay());
+        }, CONFIG.getScheduleDelay());
     }
 
     public synchronized void send(Serializable pack) {

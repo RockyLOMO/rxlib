@@ -8,14 +8,12 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
-import org.rx.bean.RandomList;
+import org.rx.bean.NEnum;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.test.bean.*;
-import org.rx.util.Helper;
 
-import java.io.FileInputStream;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -26,18 +24,6 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class CoreTester {
-    @SneakyThrows
-    @Test
-    public void excel() {
-        String path = "D:/data3.xlsx";
-        Map<String, List<Object[]>> map = Helper.readExcel(new FileInputStream(path), false);
-        for (Map.Entry<String, List<Object[]>> entry : map.entrySet()) {
-            System.out.println(entry.getKey());
-//            System.out.println(toJsonString(entry.getValue()));
-            System.out.println();
-        }
-    }
-
     //region NQuery
     @SneakyThrows
     @Test
@@ -235,23 +221,6 @@ public class CoreTester {
     }
 
     @Test
-    public void randomList() {
-        RandomList<String> wr = new RandomList<>();
-        wr.add("a");
-        wr.add("b");
-        wr.add("c");
-        for (String s : wr) {
-            System.out.println(s);
-        }
-//        wr.add("a", 5);
-//        wr.add("b", 2);
-//        wr.add("c", 3);
-//        for (int i = 0; i < 20; i++) {
-//            System.out.println(wr.next());
-//        }
-    }
-
-    @Test
     public void weakCache() {
         MemoryCache<String, Object> cache = MemoryCache.getInstance(CacheKind.WeakCache);
         String k = "a";
@@ -263,6 +232,52 @@ public class CoreTester {
 
         assert cache.get(k) == null;
         System.out.println(cache.size());
+    }
+
+    @Test
+    @ErrorCode(messageKeys = {"$x"})
+    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = {"$x"})
+    public void exceptionCode() {
+        String val = "rx";
+        SystemException ex = new SystemException(values(val));
+        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
+
+        ex = new SystemException(values(val), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String uid = "userId";
+        ex.setErrorCode(UserManager.BizCode.argument, uid);
+        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
+
+        String date = "2017-08-24 02:02:02";
+        assert Reflects.changeType(date, Date.class) instanceof Date;
+        try {
+            date = "x";
+            Reflects.changeType(date, Date.class);
+        } catch (SystemException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void testConvert() {
+        Reflects.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
+
+        int val = Reflects.changeType(PersonGender.Boy, Integer.class);
+        assert val == 1;
+
+        PersonGender testEnum = Reflects.changeType(1, PersonGender.class);
+        assert testEnum == PersonGender.Boy;
+        int integer = Reflects.changeType("1", Integer.class);
+        assert integer == 1;
+
+        assert Reflects.changeType(1, boolean.class);
+        assert Reflects.changeType(1, Boolean.class);
+
+        assert Reflects.changeType(true, byte.class) == 1;
+        assert Reflects.changeType(true, Byte.class) == 1;
     }
 
     @SneakyThrows
@@ -287,45 +302,18 @@ public class CoreTester {
     }
 
     @Test
-    @ErrorCode(messageKeys = {"$x"})
-    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = {"$x"})
-    public void exceptionCode() {
-        String val = "rx";
-        SystemException ex = new SystemException(values(val));
-        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
-
-        ex = new SystemException(values(val), new IllegalArgumentException());
-        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
-        $<IllegalArgumentException> out = $();
-        assert ex.tryGet(out, IllegalArgumentException.class);
-
-        String uid = "userId";
-        ex.setErrorCode(UserManager.BizCode.argument, uid);
-        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
-
-        String date = "2017-08-24 02:02:02";
-        assert App.changeType(date, Date.class) instanceof Date;
-        try {
-            date = "x";
-            App.changeType(date, Date.class);
-        } catch (SystemException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Test
-    public void readSetting() {
-        Map<String, Object> map = App.loadYaml("application.yml");
+    public void appSetting() {
+        Map<String, Object> map = loadYaml("application.yml");
         System.out.println(map);
-        Object v = App.readSetting("app.test.version");
+        Object v = readSetting("app.test.version");
         assert v.equals(0);
-        v = App.readSetting("not");
+        v = readSetting("not");
         assert v == null;
 
-        v = App.readSetting("org.rx.test.CoreTester", null, App.loadYaml(SystemException.CodeFile));
+        v = readSetting("org.rx.test.CoreTester", null, loadYaml(SystemException.CODE_FILE));
         assert v instanceof Map;
 
-        v = App.readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, App.loadYaml(SystemException.CodeFile));
+        v = readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, loadYaml(SystemException.CODE_FILE));
         assert eq(v, "Exception Error Code value=$x");
     }
 
@@ -346,7 +334,6 @@ public class CoreTester {
         data.put("age", 10);
         data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
-
         List<PersonBean> list = fromJsonAsList(jArr, PersonBean.class);
         for (PersonBean info : list) {
             System.out.println(info);

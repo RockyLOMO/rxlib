@@ -9,7 +9,7 @@ import org.rx.socks.tcp.packet.HandshakePacket;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 
-import static org.rx.core.App.Config;
+import static org.rx.core.Contract.CONFIG;
 
 @Data
 @RequiredArgsConstructor
@@ -34,7 +34,7 @@ public class TcpConfig {
     private InetSocketAddress endpoint;
     private int workThread;
     private MemoryMode memoryMode;
-    private int connectTimeout = Config.getSocksTimeout();
+    private int connectTimeout = CONFIG.getSocksTimeout();
     private boolean enableSsl;
     private boolean enableCompress;
 }

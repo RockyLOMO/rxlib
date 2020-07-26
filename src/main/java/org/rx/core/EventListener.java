@@ -31,7 +31,7 @@ public class EventListener {
         attach(target, method, methodImpl, true);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public void attach(EventTarget target, String method, BiConsumer methodImpl, boolean combine) {
         require(target, method, methodImpl);
 
@@ -39,7 +39,7 @@ public class EventListener {
         map.put(method, combine ? combine(map.get(method), methodImpl) : methodImpl);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public void detach(EventTarget target, String method, BiConsumer methodImpl) {
         require(target, method, methodImpl);
 
@@ -51,7 +51,7 @@ public class EventListener {
         return MemoryCache.getOrStore(target, k -> new ConcurrentHashMap<>());
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public void raise(EventTarget target, String method, EventArgs args) {
         require(target, method, args);
 

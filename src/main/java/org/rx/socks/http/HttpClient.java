@@ -96,9 +96,9 @@ public class HttpClient {
         String[] pairs = raw.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.UTF_8) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.Utf8).trim()
+                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.UTF_8).trim()
                     : "";
             map.put(key, value);
         }
@@ -111,7 +111,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLEncoder.encode(str, Contract.Utf8).replace("+", "%20");
+        return URLEncoder.encode(str, Contract.UTF_8).replace("+", "%20");
     }
 
     @SneakyThrows
@@ -120,7 +120,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLDecoder.decode(str, Contract.Utf8).replace("%20", "+");
+        return URLDecoder.decode(str, Contract.UTF_8).replace("%20", "+");
     }
 
     @SneakyThrows
@@ -137,9 +137,9 @@ public class HttpClient {
         String[] pairs = url.split("&");
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.Utf8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.UTF_8) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.Utf8)
+                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.UTF_8)
                     : null;
             params.put(key, value);
         }

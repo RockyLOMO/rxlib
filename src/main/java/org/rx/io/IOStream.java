@@ -3,7 +3,6 @@ package org.rx.io;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.SystemException;
@@ -18,7 +17,7 @@ import static org.rx.core.Contract.*;
 @Getter
 public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable {
     public static String readString(InputStream stream) {
-        return readString(stream, Contract.Utf8);
+        return readString(stream, Contract.UTF_8);
     }
 
     @SneakyThrows
@@ -27,7 +26,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[App.Config.getBufferSize()];
+            byte[] buffer = new byte[CONFIG.getBufferSize()];
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -37,7 +36,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     }
 
     public static void writeString(OutputStream stream, String value) {
-        writeString(stream, value, Contract.Utf8);
+        writeString(stream, value, Contract.UTF_8);
     }
 
     @SneakyThrows
@@ -54,7 +53,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     public static void copyTo(InputStream from, OutputStream to) {
         require(from, to);
 
-        byte[] buffer = new byte[App.Config.getBufferSize() * 2];
+        byte[] buffer = new byte[CONFIG.getBufferSize() * 2];
         int read;
         while ((read = from.read(buffer, 0, buffer.length)) > 0) {
             to.write(buffer, 0, read);

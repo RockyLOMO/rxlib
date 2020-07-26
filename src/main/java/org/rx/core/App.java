@@ -1,14 +1,10 @@
 package org.rx.core;
 
 import com.google.common.net.HttpHeaders;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
@@ -17,60 +13,20 @@ import org.rx.io.MemoryStream;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
-import java.lang.reflect.Method;
-import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 import static org.rx.core.Contract.*;
 
 @Slf4j
 public class App extends SystemUtils {
-    //region NestedTypes
-    @RequiredArgsConstructor
-    @Getter
-    private static class ConvertBean<TS, TT> {
-        private final Class<TS> baseFromType;
-        private final Class<TT> toType;
-        private final BiFunction<TS, Class<TT>, TT> converter;
-    }
-    //endregion
-
-    //region Fields
-    public static final AppConfig Config;
-    private static final List<Class<?>> supportTypes;
-    private static final List<ConvertBean<?, ?>> typeConverter;
-
-    static {
-        System.setProperty("bootstrapPath", getBootstrapPath());
-        Config = isNull(readSetting("app", AppConfig.class), new AppConfig());
-        if (Config.getBufferSize() <= 0) {
-            Config.setBufferSize(512);
-        }
-        Contract.init();
-        supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class));
-        typeConverter = new CopyOnWriteArrayList<>();
-
-        registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
-//        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
-        registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
-        registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
-    }
-    //endregion
-
     //region Basic
     public static String getBootstrapPath() {
         String p = App.class.getClassLoader().getResource("").getFile();
@@ -172,261 +128,9 @@ public class App extends SystemUtils {
         }
         return new UUID(msb, lsb);
     }
-
-    public static <T> T readSetting(String key) {
-        return readSetting(key, null);
-    }
-
-    public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, loadYaml("application.yml"));
-    }
-
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
-        return readSetting(key, type, settings, false);
-    }
-
-    @ErrorCode(value = "keyError", messageKeys = {"$key", "$type"})
-    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$type"})
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
-        require(key, settings);
-
-        Function<Object, T> func = p -> {
-            if (type == null) {
-                return (T) p;
-            }
-            Map<String, Object> map = as(p, Map.class);
-            if (map != null) {
-                return fromJsonAsObject(map, type);
-            }
-            return changeType(p, type);
-        };
-        Object val;
-        if ((val = settings.get(key)) != null) {
-            return func.apply(val);
-        }
-
-        StringBuilder kBuf = new StringBuilder();
-        String d = ".";
-        String[] splits = Strings.split(key, d);
-        int c = splits.length - 1;
-        for (int i = 0; i <= c; i++) {
-            if (kBuf.getLength() > 0) {
-                kBuf.append(d);
-            }
-            String k = kBuf.append(splits[i]).toString();
-            if ((val = settings.get(k)) == null) {
-                continue;
-            }
-            if (i == c) {
-                return func.apply(val);
-            }
-            if ((settings = as(val, Map.class)) == null) {
-                throw new SystemException(values(k, type), "partialKeyError");
-            }
-            kBuf.setLength(0);
-        }
-
-        if (throwOnEmpty) {
-            throw new SystemException(values(key, type), "keyError");
-        }
-        return null;
-    }
-
-    public static Map<String, Object> loadYaml(String... yamlFile) {
-        require((Object) yamlFile);
-
-        return MemoryCache.getOrStore(String.format("loadYaml-%s", toJsonString(yamlFile)), k -> {
-            Map<String, Object> result = new HashMap<>();
-            Yaml yaml = new Yaml(new SafeConstructor());
-            for (String yf : yamlFile) {
-                File file = new File(yf);
-                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : getClassLoader().getResourceAsStream(yf))) {
-                    Map<String, Object> one = (Map<String, Object>) data;
-                    fillDeep(one, result);
-                }
-            }
-            return result;
-        });
-    }
-
-    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
-        if (one == null) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : one.entrySet()) {
-            Map<String, Object> nextOne;
-            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
-                all.put(entry.getKey(), entry.getValue());
-                continue;
-            }
-            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
-            if (nextAll == null) {
-                all.put(entry.getKey(), nextOne);
-                continue;
-            }
-            fillDeep(nextOne, nextAll);
-        }
-    }
-
-    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
-        require(yamlContent, beanType);
-
-        Yaml yaml = new Yaml();
-        return yaml.loadAs(yamlContent, beanType);
-    }
-
-    public static <T> String dumpYaml(T bean) {
-        require(bean);
-
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
-    }
     //endregion
 
-    //region Class
-    @ErrorCode(messageKeys = {"$name", "$type"})
-    public static InputStream getResource(Class owner, String name) {
-        InputStream resource = owner.getResourceAsStream(name);
-        if (resource == null) {
-            throw new SystemException(values(owner, name));
-        }
-        return resource;
-    }
-
-    /**
-     * ClassLoader.getSystemClassLoader()
-     *
-     * @return
-     */
-    public static ClassLoader getClassLoader() {
-        return isNull(Thread.currentThread().getContextClassLoader(), App.class.getClassLoader());
-    }
-
-    public static <T> Class<T> loadClass(String className, boolean initialize) {
-        return loadClass(className, initialize, true);
-    }
-
-    //ClassPath.from(classloader).getTopLevelClasses(packageDirName)
-    public static Class loadClass(String className, boolean initialize, boolean throwOnEmpty) {
-        try {
-            return Class.forName(className, initialize, getClassLoader());
-        } catch (ClassNotFoundException e) {
-            if (!throwOnEmpty) {
-                return null;
-            }
-            throw SystemException.wrap(e);
-        }
-    }
-
-    public static <T> T convert(Object val, Class<T> toType) {
-        return tryConvert(val, toType).right;
-    }
-
-    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType) {
-        return tryConvert(val, toType, null);
-    }
-
-    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType, T defaultVal) {
-        require(toType);
-
-        try {
-            return Tuple.of(true, changeType(val, toType));
-        } catch (Exception ex) {
-            return Tuple.of(false, defaultVal);
-        }
-    }
-
-    public static <TS, TT> void registerConvert(Class<TS> baseFromType, Class<TT> toType, BiFunction<TS, Class<TT>, TT> converter) {
-        require(baseFromType, toType, converter);
-
-        typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
-        if (!supportTypes.contains(baseFromType)) {
-            supportTypes.add(baseFromType);
-        }
-    }
-
-    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
-    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
-    public static <T> T changeType(Object value, Class<T> toType) {
-        require(toType);
-
-        if (value == null) {
-            if (toType.isPrimitive()) {
-                if (boolean.class.equals(toType)) {
-                    value = false;
-                } else {
-                    value = 0;
-                }
-            } else {
-                return null;
-            }
-        }
-        if (Reflects.isInstance(value, toType)) {
-            return (T) value;
-        }
-        NQuery<Class<?>> typeQuery = NQuery.of(supportTypes);
-        Class<?> strType = typeQuery.first();
-        if (toType.equals(strType)) {
-            return (T) value.toString();
-        }
-        final Class<?> fromType = value.getClass();
-        if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
-            throw new SystemException(values(fromType, toType), "notSupported");
-        }
-        Object fValue = value;
-        Class<T> tType = toType;
-        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(tType));
-        if (convertBean != null) {
-            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
-        }
-
-        String val = value.toString();
-        if (toType.equals(UUID.class)) {
-            value = UUID.fromString(val);
-        } else if (toType.equals(BigDecimal.class)) {
-            value = new BigDecimal(val);
-        } else if (toType.isEnum()) {
-            NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
-            String fVal = val;
-            value = q.where(p -> p.equals(fVal)).singleOrDefault();
-            if (value == null) {
-                throw new SystemException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
-            }
-        } else {
-            try {
-                toType = (Class) ClassUtils.primitiveToWrapper(toType);
-                if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
-                    if ("0".equals(val)) {
-                        value = Boolean.FALSE;
-                    } else if ("1".equals(val)) {
-                        value = Boolean.TRUE;
-                    } else {
-                        throw new InvalidOperationException("Value should be 0 or 1");
-                    }
-                } else {
-                    if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
-                        if (Boolean.FALSE.toString().equals(val)) {
-                            val = "0";
-                        } else if (Boolean.TRUE.toString().equals(val)) {
-                            val = "1";
-                        } else {
-                            throw new InvalidOperationException("Value should be true or false");
-                        }
-                    }
-                    Method m = toType.getDeclaredMethod("valueOf", strType);
-                    value = m.invoke(null, val);
-                }
-            } catch (NoSuchMethodException ex) {
-                throw new SystemException(values(toType), ex);
-            } catch (ReflectiveOperationException ex) {
-                throw new SystemException(values(fromType, toType, val), ex);
-            }
-        }
-        return (T) value;
-    }
-
+    //region Base64
     public static boolean isBase64String(String base64String) {
         if (Strings.isNullOrEmpty(base64String)) {
             return false;
@@ -440,14 +144,14 @@ public class App extends SystemUtils {
         require(data);
 
         byte[] ret = Base64.getEncoder().encode(data);
-        return new String(ret, Contract.Utf8);
+        return new String(ret, StandardCharsets.UTF_8);
     }
 
     @SneakyThrows
     public static byte[] convertFromBase64String(String base64) {
         require(base64);
 
-        byte[] data = base64.getBytes(Contract.Utf8);
+        byte[] data = base64.getBytes(StandardCharsets.UTF_8);
         return Base64.getDecoder().decode(data);
     }
 
@@ -535,7 +239,7 @@ public class App extends SystemUtils {
         }
 
         File file = new File(filePath);
-        response.setCharacterEncoding(Contract.Utf8);
+        response.setCharacterEncoding(Contract.UTF_8);
         response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
         response.setContentLength((int) file.length());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
@@ -594,7 +298,6 @@ public class App extends SystemUtils {
         cookie.setPath("/");
 //        cookie.setSecure(true);
         cookie.setHttpOnly(true);
-//        cookie.setMaxAge(-1);
         cookie.setMaxAge(0);
         response.addCookie(cookie);
     }

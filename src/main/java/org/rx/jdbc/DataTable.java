@@ -6,6 +6,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.App;
 import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
+import org.rx.core.Reflects;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -110,7 +111,7 @@ public class DataTable implements Serializable {
 
         if (dataType != null) {
             for (DataRow row : memoryRows) {
-                row.items.set(column.ordinal, App.changeType(row.items.get(column.ordinal), dataType));
+                row.items.set(column.ordinal, Reflects.changeType(row.items.get(column.ordinal), dataType));
             }
         }
         column.dataType = dataType;

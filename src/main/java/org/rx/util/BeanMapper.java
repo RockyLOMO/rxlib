@@ -32,13 +32,13 @@ public class BeanMapper {
     private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LogOnNotAllMapped.flags();
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public <T> T define(Class<T> type) {
         require(type);
         require(type, type.isInterface());
 
         return (T) Enhancer.create(type, (MethodInterceptor) (o, method, args, methodProxy) -> {
-            if (Reflects.ObjectMethods.contains(method)) {
+            if (Reflects.OBJECT_METHODS.contains(method)) {
                 return methodProxy.invokeSuper(o, args);
             }
             Object target = null;
@@ -97,7 +97,7 @@ public class BeanMapper {
         return map(source, target, flags, null);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     private <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags, Method method) {
         require(source, target);
         if (flags == null) {
@@ -117,7 +117,7 @@ public class BeanMapper {
             if (mapping != null) {
                 sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, target, skipNull, toProperties);
             }
-            return App.changeType(sourceValue, targetType);
+            return Reflects.changeType(sourceValue, targetType);
         });
 
         final NQuery<Reflects.PropertyNode> fromProperties = Reflects.getProperties(from);
@@ -136,7 +136,7 @@ public class BeanMapper {
             Method targetMethod = propertyNode.setter;
             Class targetType = targetMethod.getParameterTypes()[0];
             sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), target, skipNull, toProperties);
-            Reflects.invokeMethod(targetMethod, target, App.changeType(sourceValue, targetType));
+            Reflects.invokeMethod(targetMethod, target, Reflects.changeType(sourceValue, targetType));
         }
 
         boolean logOnFail = flags.has(BeanMapFlag.LogOnNotAllMapped), throwOnFail = flags.has(BeanMapFlag.ThrowOnNotAllMapped);
@@ -157,7 +157,7 @@ public class BeanMapper {
         return target;
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
                 || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), NullValueMappingStrategy.Ignore)))) {

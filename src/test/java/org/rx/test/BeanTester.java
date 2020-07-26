@@ -10,7 +10,6 @@ import org.rx.test.bean.PersonGender;
 import org.rx.util.BeanMapConverter;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
-import org.rx.core.App;
 import org.rx.test.bean.TargetBean;
 import org.rx.util.NullValueMappingStrategy;
 import org.rx.util.function.Action;
@@ -112,6 +111,23 @@ public class BeanTester {
     }
 
     @Test
+    public void randomList() {
+        RandomList<String> wr = new RandomList<>();
+        wr.add("a");
+        wr.add("b");
+        wr.add("c");
+        for (String s : wr) {
+            System.out.println(s);
+        }
+//        wr.add("a", 5);
+//        wr.add("b", 2);
+//        wr.add("c", 3);
+//        for (int i = 0; i < 20; i++) {
+//            System.out.println(wr.next());
+//        }
+    }
+
+    @Test
     public void suid() {
         String d = "wyf520";
         SUID suid = SUID.compute(d);
@@ -141,25 +157,6 @@ public class BeanTester {
         Stopwatch stopwatch = Stopwatch.createStarted();
         action.invoke();
         System.out.println(stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
-    }
-
-    @Test
-    public void testConvert() {
-        App.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
-
-        int val = App.changeType(PersonGender.Boy, Integer.class);
-        assert val == 1;
-
-        PersonGender testEnum = App.changeType(1, PersonGender.class);
-        assert testEnum == PersonGender.Boy;
-        int integer = App.changeType("1", Integer.class);
-        assert integer == 1;
-
-        assert App.changeType(1, boolean.class);
-        assert App.changeType(1, Boolean.class);
-
-        assert App.changeType(true, byte.class) == 1;
-        assert App.changeType(true, Byte.class) == 1;
     }
 
     @Test

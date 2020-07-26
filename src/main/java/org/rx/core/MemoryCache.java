@@ -1,10 +1,10 @@
 package org.rx.core;
 
+import org.rx.core.cache.CacheFactory;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
 
-import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.require;
 
 public interface MemoryCache<TK, TV> {
@@ -18,18 +18,14 @@ public interface MemoryCache<TK, TV> {
         return MemoryCache.<TK, TV>getInstance(kind).get(key, supplier);
     }
 
-    @SuppressWarnings(NonWarning)
     static <TK, TV> MemoryCache<TK, TV> getInstance(CacheKind kind) {
-        switch (kind) {
-            case ThreadCache:
-                return ThreadCache.getInstance();
-            case LruCache:
-                return Internal.LazyCache.getValue();
-            case SoftCache:
-                return Internal.SoftCache;
-            default:
-                return Internal.WeakCache;
-        }
+        require(kind);
+
+        return getInstance(kind.name());
+    }
+
+    static <TK, TV> MemoryCache<TK, TV> getInstance(String name) {
+        return CacheFactory.getInstance().get(name);
     }
 
     int size();

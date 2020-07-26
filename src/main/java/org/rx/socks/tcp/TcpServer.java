@@ -131,7 +131,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
     protected synchronized void freeObjects() {
         isStarted = false;
         Sockets.closeOnFlushed(channel, f -> Sockets.closeBootstrap(bootstrap));
-        raiseEvent(onClosed, EventArgs.Empty);
+        raiseEvent(onClosed, EventArgs.EMPTY);
     }
 
     @SneakyThrows

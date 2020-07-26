@@ -72,37 +72,37 @@ public final class DateTime extends Date {
         return DateTime.valueOf(this.toString(format), format);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH) + 1;
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);
@@ -144,7 +144,7 @@ public final class DateTime extends Date {
         this(year, month, day, 0, 0, 0);
     }
 
-    @SuppressWarnings(NonWarning)
+    @SuppressWarnings(NON_WARNING)
     public DateTime(int year, int month, int day, int hour, int minute, int second) {
         Calendar c = getCalendar();
         c.set(year, month - 1, day, hour, minute, second);

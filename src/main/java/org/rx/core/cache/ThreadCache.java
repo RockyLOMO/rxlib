@@ -1,25 +1,15 @@
-package org.rx.core;
+package org.rx.core.cache;
 
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import org.rx.core.MemoryCache;
 import org.rx.util.function.BiFunc;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Contract.NonWarning;
 import static org.rx.core.Contract.tryClose;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
-    private static final ThreadCache cache = new ThreadCache<>();
-
-    @SuppressWarnings(NonWarning)
-    public static <TK, TV> ThreadCache<TK, TV> getInstance() {
-        return cache;
-    }
-
+final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
     private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 

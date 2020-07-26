@@ -13,11 +13,10 @@ import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
 import org.rx.core.*;
 
-import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.App.Config;
+import static org.rx.core.Contract.CONFIG;
 import static org.rx.core.Contract.require;
 
 @Slf4j
@@ -78,7 +77,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
 
     public TcpClientPool() {
-        this(2, ThreadPool.CpuThreads * 2, Config.getSocksTimeout());
+        this(2, ThreadPool.CPU_THREADS * 2, CONFIG.getSocksTimeout());
     }
 
     public TcpClientPool(int minSize, int maxSize, long timeout) {

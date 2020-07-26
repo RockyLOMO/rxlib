@@ -25,19 +25,19 @@ import static org.rx.core.Contract.*;
  */
 @Slf4j
 public class SystemException extends NestedRuntimeException {
-    public static final String CodeFile = "code.yml";
-    public static final String DefaultMessage = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
+    public static final String CODE_FILE = "code.yml";
+    public static final String DEFAULT_MESSAGE = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
 
     private static Map<String, Object> getSettings() {
         return MemoryCache.getOrStore("SystemException", k -> {
             List<String> files = new ArrayList<>();
-            files.add(CodeFile);
-            if (!Arrays.isEmpty(App.Config.getErrorCodeFiles())) {
-                files.addAll(Arrays.toList(App.Config.getErrorCodeFiles()));
+            files.add(CODE_FILE);
+            if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
+                files.addAll(Arrays.toList(CONFIG.getErrorCodeFiles()));
             }
 
             return isNull(catchCall(() -> {
-                Map<String, Object> codes = App.loadYaml(NQuery.of(files).toArray(String.class));
+                Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));
                 if (codes.isEmpty()) {
                     log.warn("load code.yml fail");
                 }
@@ -72,7 +72,7 @@ public class SystemException extends NestedRuntimeException {
     }
 
     public String getFriendlyMessage() {
-        return isNull(friendlyMessage, DefaultMessage);
+        return isNull(friendlyMessage, DEFAULT_MESSAGE);
     }
 
     public Map<String, Object> getData() {
@@ -109,12 +109,12 @@ public class SystemException extends NestedRuntimeException {
         }
 
         for (StackTraceElement stack : Reflects.threadStack(8)) {
-            Map<String, Object> methodSettings = as(App.readSetting(stack.getClassName(), null, getSettings()), Map.class);
+            Map<String, Object> methodSettings = as(readSetting(stack.getClassName(), null, getSettings()), Map.class);
             if (methodSettings == null) {
                 continue;
             }
             Tuple<Class, Method[]> caller = as(MemoryCache.getOrStore(stack.getClassName(), p -> {
-                Class type = App.loadClass(p, false);
+                Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);
             if (caller == null) {
@@ -159,7 +159,7 @@ public class SystemException extends NestedRuntimeException {
         }
 
         Class type = enumErrorCode.getClass();
-        Map<String, Object> methodSettings = as(App.readSetting(type.getName(), null, getSettings()), Map.class);
+        Map<String, Object> methodSettings = as(readSetting(type.getName(), null, getSettings()), Map.class);
         if (methodSettings == null) {
             return this;
         }

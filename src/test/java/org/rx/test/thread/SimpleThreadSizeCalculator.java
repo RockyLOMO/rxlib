@@ -6,7 +6,7 @@ import org.rx.socks.http.HttpClient;
 import java.math.BigDecimal;
 import java.util.concurrent.BlockingQueue;
 
-import static org.rx.core.Contract.MaxInt;
+import static org.rx.core.Contract.MAX_INT;
 
 public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
     @Override
@@ -19,7 +19,7 @@ public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
 
     @Override
     protected BlockingQueue createWorkQueue() {
-        return new ThreadPool.ThreadQueue(MaxInt);
+        return new ThreadPool.ThreadQueue(MAX_INT);
     }
 
     public static void main(String[] args) {

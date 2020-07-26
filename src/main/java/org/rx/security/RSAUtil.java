@@ -67,7 +67,7 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initSign(priKey);
-        signature.update(getContentBytes(content, Contract.Utf8));
+        signature.update(getContentBytes(content, Contract.UTF_8));
         return App.convertToBase64String(signature.sign());
     }
 
@@ -106,7 +106,7 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initVerify(pubKey);
-        signature.update(getContentBytes(content, Contract.Utf8));
+        signature.update(getContentBytes(content, Contract.UTF_8));
         return signature.verify(App.convertFromBase64String(sign));
     }
 
