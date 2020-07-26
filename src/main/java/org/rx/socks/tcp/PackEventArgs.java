@@ -6,10 +6,10 @@ import org.rx.core.NEventArgs;
 import java.io.Serializable;
 
 @Getter
-public class PackEventArgs<T> extends NEventArgs<Serializable> {
-    private final SessionClient<T> client;
+public class PackEventArgs extends NEventArgs<Serializable> {
+    private final ITcpClient client;
 
-    public PackEventArgs(SessionClient<T> client, Serializable pack) {
+    public PackEventArgs(ITcpClient client, Serializable pack) {
         super(pack);
         this.client = client;
     }

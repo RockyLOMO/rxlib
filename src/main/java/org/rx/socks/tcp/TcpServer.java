@@ -10,27 +10,77 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.util.Attribute;
+import io.netty.util.AttributeKey;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
+import org.rx.bean.DateTime;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.socks.Sockets;
 import org.rx.socks.tcp.packet.HandshakePacket;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.Contract.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TcpServer<T extends Serializable> extends Disposable implements EventTarget<TcpServer<T>> {
+public class TcpServer extends Disposable implements EventTarget<TcpServer> {
+    @RequiredArgsConstructor
+    private class TcpClient extends Disposable implements ITcpClient {
+        protected final Channel channel;
+        @Getter
+        private final DateTime connectedTime = DateTime.now();
+        @Getter
+        private volatile String groupId;
+
+        @Override
+        public boolean isConnected() {
+            return channel.isActive();
+        }
+
+        @Override
+        public ChannelId getId() {
+            return channel.id();
+        }
+
+        public InetSocketAddress getRemoteAddress() {
+            return (InetSocketAddress) channel.remoteAddress();
+        }
+
+        @Override
+        protected void freeObjects() {
+            Sockets.closeOnFlushed(channel);
+        }
+
+        @Override
+        public synchronized void send(Serializable pack) {
+            if (!raiseSend(this, pack)) {
+                return;
+            }
+            channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        }
+
+        @Override
+        public <T> Attribute<T> attr(String name) {
+            return channel.attr(AttributeKey.valueOf(name));
+        }
+
+        @Override
+        public boolean hasAttr(String name) {
+            return channel.hasAttr(AttributeKey.valueOf(name));
+        }
+    }
+
     //not shareable
     private class PacketServerHandler extends ChannelInboundHandlerAdapter {
-        private SessionClient<T> client;
+        private TcpClient client;
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
@@ -42,8 +92,10 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                 Sockets.closeOnFlushed(channel);
                 return;
             }
-            client = new SessionClient<>(channel, getStateType() == null ? null : Reflects.newInstance(getStateType()));
-            PackEventArgs<T> args = new PackEventArgs<>(client, null);
+
+            client = new TcpClient(channel);
+            clients.add(client);
+            PackEventArgs args = new PackEventArgs(client, null);
             raiseEvent(onConnected, args);
             if (args.isCancel()) {
                 log.warn("Close client");
@@ -64,25 +116,22 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                 return;
             }
             if (tryAs(pack, HandshakePacket.class, p -> {
-                client.setGroupId(p.getGroupId());
-                addClient(client);
+                if ((client.groupId = p.getGroupId()) == null) {
+                    log.warn("Handshake with non groupId");
+                }
             })) {
                 return;
             }
 
-            if (client.getGroupId() == null) {
-                log.warn("ServerHandshake fail");
-                return;
-            }
             //异步避免阻塞
-            Tasks.run(() -> raiseEvent(onReceive, new PackEventArgs<>(client, pack)));
+            Tasks.run(() -> raiseEvent(onReceive, new PackEventArgs(client, pack)));
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
-            removeClient(client);
-            raiseEvent(onDisconnected, new PackEventArgs<>(client, null));
+            clients.remove(client);
+            raiseEvent(onDisconnected, new PackEventArgs(client, null));
         }
 
         @Override
@@ -93,7 +142,7 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
                 return;
             }
 
-            ErrorEventArgs<T> args = new ErrorEventArgs<>(client, cause);
+            ErrorEventArgs args = new ErrorEventArgs(client, cause);
             try {
                 raiseEvent(onError, args);
             } catch (Exception e) {
@@ -106,22 +155,20 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         }
     }
 
-    public volatile BiConsumer<TcpServer<T>, PackEventArgs<T>> onConnected, onDisconnected, onSend, onReceive;
-    public volatile BiConsumer<TcpServer<T>, ErrorEventArgs<T>> onError;
-    public volatile BiConsumer<TcpServer<T>, EventArgs> onClosed;
+    public volatile BiConsumer<TcpServer, PackEventArgs> onConnected, onDisconnected, onSend, onReceive;
+    public volatile BiConsumer<TcpServer, ErrorEventArgs> onError;
+    public volatile BiConsumer<TcpServer, EventArgs> onClosed;
     @Getter
     private final TcpConfig config;
-    @Getter
-    private final Class<T> stateType;
     private ServerBootstrap bootstrap;
     private SslContext sslCtx;
     private volatile Channel channel;
-    private final Map<String, Set<SessionClient<T>>> clients = new ConcurrentHashMap<>();
+    private final List<TcpClient> clients = new CopyOnWriteArrayList<>();
     @Getter
     private volatile boolean isStarted;
     @Getter
     @Setter
-    private int capacity = 100000;
+    private int capacity = 10000;
 
     public int getClientSize() {
         return clients.size();
@@ -172,10 +219,10 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
 
     public String dump() {
         StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, Set<SessionClient<T>>> entry : clients.entrySet()) {
-            sb.appendLine("%s:", entry.getKey());
+        for (Tuple<String, NQuery<TcpClient>> tuple : NQuery.of(clients).groupBy(p -> p.groupId, Tuple::of)) {
+            sb.appendLine("%s:", tuple.left);
             int i = 1;
-            for (SessionClient<T> client : entry.getValue()) {
+            for (TcpClient client : tuple.right) {
                 sb.append("\t%s:%s", client.getRemoteAddress(), client.getId());
                 if (i++ % 3 == 0) {
                     sb.appendLine();
@@ -185,46 +232,37 @@ public class TcpServer<T extends Serializable> extends Disposable implements Eve
         return sb.toString();
     }
 
-    protected void addClient(SessionClient<T> client) {
-        require(client.getGroupId());
-
-        clients.computeIfAbsent(client.getGroupId(), k -> Collections.synchronizedSet(new HashSet<>())).add(client);
-    }
-
-    protected void removeClient(SessionClient<T> client) {
-        Set<SessionClient<T>> set = getClients(client.getGroupId());
-        if (set.removeIf(p -> p == client) && set.isEmpty()) {
-            clients.remove(client.getGroupId());
-        }
-    }
-
-    public Set<SessionClient<T>> getClients(String groupId) {
-        require(groupId);
-
-        Set<SessionClient<T>> set = clients.get(groupId);
-        if (CollectionUtils.isEmpty(set)) {
-            throw new InvalidOperationException(String.format("GroupId %s not found", groupId));
-        }
-        return set;
-    }
-
-    public SessionClient<T> getClient(String groupId, ChannelId channelId) {
-        SessionClient<T> client = NQuery.of(getClients(groupId)).where(p -> p.getId().equals(channelId)).singleOrDefault();
-        if (client == null) {
-            throw new InvalidOperationException(String.format("GroupId %s with ClientId %s not found", groupId, channelId));
-        }
-        return client;
-    }
-
-    public void send(SessionClient<T> client, Serializable pack) {
+    protected boolean raiseSend(TcpClient client, Serializable pack) {
         checkNotClosed();
-        require(client, pack);
 
-        PackEventArgs<T> args = new PackEventArgs<>(client, pack);
+        PackEventArgs args = new PackEventArgs(client, pack);
         raiseEvent(onSend, args);
-        if (args.isCancel() || !client.channel.isActive()) {
-            return;
+        return !args.isCancel() && client.isConnected();
+    }
+
+    public List<ITcpClient> getClients(String groupId) {
+        checkNotClosed();
+
+        NQuery<TcpClient> q = NQuery.of(clients);
+        if (groupId != null) {
+            q = q.where(p -> eq(p.groupId, groupId));
+            if (!q.any()) {
+                throw new InvalidOperationException(String.format("Clients with GroupId %s not found", groupId));
+            }
         }
-        client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        return q.<ITcpClient>cast().toList();
+    }
+
+    public ITcpClient getClient(String groupId, ChannelId channelId) {
+        checkNotClosed();
+
+        NQuery<TcpClient> q = NQuery.of(clients);
+        if (groupId != null) {
+            q = q.where(p -> eq(p.groupId, groupId) && eq(p.getId(), channelId));
+            if (!q.any()) {
+                throw new InvalidOperationException(String.format("Clients with GroupId %s and ClientId %s not found", groupId, channelId));
+            }
+        }
+        return q.<ITcpClient>cast().first();
     }
 }

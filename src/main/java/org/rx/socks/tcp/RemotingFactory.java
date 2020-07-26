@@ -1,5 +1,6 @@
 package org.rx.socks.tcp;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -30,7 +31,8 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public final class RemotingFactory {
-    public static class RemotingState implements Serializable {
+    @AllArgsConstructor
+    public static class RemotingState {
         @Getter
         @Setter
         private boolean broadcast;
@@ -38,8 +40,8 @@ public final class RemotingFactory {
 
     @RequiredArgsConstructor
     private static class HostValue {
-        private final TcpServer<RemotingState> server;
-        private final Map<UUID, BiTuple<SessionClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
+        private final TcpServer server;
+        private final Map<UUID, BiTuple<ITcpClient, ManualResetEvent, EventArgs>> eventHost = new ConcurrentHashMap<>();
     }
 
     @RequiredArgsConstructor
@@ -248,16 +250,19 @@ public final class RemotingFactory {
         }
 
         private synchronized void closeClient() {
-            if (client == null || !client.isConnected()) {
+            if (client == null) {
                 return;
             }
             log.debug("client close");
-            client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+            if (client.isConnected()) {
+                client.send(new RemoteEventPack(Strings.EMPTY, RemoteEventFlag.Unregister));
+            }
             client.close();
             client = null;
         }
     }
 
+    private static final String AttrRemotingState = "RS";
     private static final Map<Object, HostValue> host = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
@@ -286,43 +291,43 @@ public final class RemotingFactory {
         return p;
     }
 
-    public static TcpServer<RemotingState> listen(Object contractInstance, int port) {
+    public static TcpServer listen(Object contractInstance, int port) {
         require(contractInstance);
 
         return host.computeIfAbsent(contractInstance, k -> {
-            TcpServer<RemotingState> server = TcpConfig.server(true, port, RemotingState.class);
+            TcpServer server = TcpConfig.server(true, port);
             HostValue hostValue = new HostValue(server);
             server.onClosed = (s, e) -> host.remove(contractInstance);
             server.onError = (s, e) -> {
                 e.setCancel(true);
-                s.send(e.getClient(), new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
+                e.getClient().send(new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
             };
             server.onReceive = (s, e) -> {
                 if (tryAs(e.getValue(), RemoteEventPack.class, p -> {
                     switch (p.flag) {
                         case Register:
-                            e.getClient().getState().broadcast = true;
+                            e.getClient().<RemotingState>attr(AttrRemotingState).set(new RemotingState(true));
                             break;
                         case Unregister:  //客户端退出会自动处理
-                            e.getClient().getState().broadcast = false;
+                            e.getClient().<RemotingState>attr(AttrRemotingState).get().broadcast = false;
                             break;
                         case Post:
                             EventTarget eventTarget = (EventTarget) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 String groupId = e.getClient().getGroupId();
-                                NQuery<SessionClient<RemotingState>> clients = NQuery.of(s.getClients(groupId)).where(x -> x.getState().broadcast);
+                                NQuery<ITcpClient> clients = NQuery.of(s.getClients(groupId)).where(x -> x.<RemotingState>attr(AttrRemotingState).get().broadcast);
                                 if (!clients.any()) {
                                     log.warn("Group[{}].Client not found", groupId);
                                     return;
                                 }
-                                SessionClient<RemotingState> current = clients.contains(e.getClient()) ? e.getClient() : clients.first();
+                                ITcpClient current = clients.contains(e.getClient()) ? e.getClient() : clients.first();
                                 RemoteEventPack pack = new RemoteEventPack(p.eventName, RemoteEventFlag.PostBack);
                                 pack.id = UUID.randomUUID();
                                 pack.remoteArgs = (EventArgs) args;
-                                BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = BiTuple.of(current, new ManualResetEvent(), pack.remoteArgs);
+                                BiTuple<ITcpClient, ManualResetEvent, EventArgs> tuple = BiTuple.of(current, new ManualResetEvent(), pack.remoteArgs);
                                 hostValue.eventHost.put(pack.id, tuple);
 
-                                s.send(current, pack);
+                                current.send(pack);
                                 log.info("server raise {} -> {} step1", current.getId(), pack.eventName);
                                 try {
                                     //必须等
@@ -334,11 +339,11 @@ public final class RemotingFactory {
                                     BeanMapper.getInstance().map(tuple.right, args, BeanMapFlag.None.flags());
                                     pack.broadcast = true;
                                     pack.remoteArgs = tuple.right;
-                                    for (SessionClient<RemotingState> client : clients) {
+                                    for (ITcpClient client : clients) {
                                         if (client == current) {
                                             continue;
                                         }
-                                        s.send(client, pack);
+                                        client.send(pack);
                                         log.info("server raise {} broadcast {} ok", client.getId(), pack.eventName);
                                     }
 
@@ -346,11 +351,11 @@ public final class RemotingFactory {
                                     log.info("server raise {} -> {} done", current.getId(), pack.eventName);
                                 }
                             }, false);  //combine不准
-                            s.send(e.getClient(), p);
+                            e.getClient().send(p);
                             log.info("server attach {} {} ok", e.getClient().getId(), p.eventName);
                             break;
                         case PostBack:
-                            BiTuple<SessionClient, ManualResetEvent, EventArgs> tuple = hostValue.eventHost.get(p.id);
+                            BiTuple<ITcpClient, ManualResetEvent, EventArgs> tuple = hostValue.eventHost.get(p.id);
                             if (tuple != null) {
                                 log.info("server raise {} -> {} step3", tuple.left.getId(), p.eventName);
                                 tuple.right = p.remoteArgs;
@@ -379,7 +384,7 @@ public final class RemotingFactory {
                 }
                 log.debug(msg.toString());
                 java.util.Arrays.fill(pack.parameters, null);
-                s.send(e.getClient(), pack);
+                e.getClient().send(pack);
             };
             server.start();
             return hostValue;
