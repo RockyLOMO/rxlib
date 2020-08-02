@@ -25,7 +25,7 @@ public class JdbcUtil {
                 log.warn("isQuery {}", query, e);
             }
             return false;
-        }, CacheKind.LruCache);
+        });
     }
 
     @SneakyThrows

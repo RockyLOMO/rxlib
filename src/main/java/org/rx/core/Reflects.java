@@ -178,13 +178,13 @@ public class Reflects extends TypeUtils {
 //    }
 
     public static NQuery<PropertyNode> getProperties(Class to) {
-        return MemoryCache.getOrStore(to, tType -> {
+        return MemoryCache.getOrStore(Tuple.of("getProperties", to), tType -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
-            NQuery<Method> q = NQuery.of(tType.getMethods());
+            NQuery<Method> q = NQuery.of(tType.right.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
             NQuery<Tuple<String, Method>> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0).select(p -> Tuple.of(propertyName(p.getName()), p));
             return setters.join(getters.toList(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
-        });
+        }, CacheKind.WeakCache);
     }
 
     public static String propertyName(String getterOrSetterName) {
@@ -221,7 +221,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(MemoryCache.<String, List<Field>>getOrStore(cacheKey("getFields", type), k -> FieldUtils.getAllFieldsList(type)));
+        NQuery<Field> fields = NQuery.of(MemoryCache.<Tuple<String, Class>, List<Field>>getOrStore(Tuple.of("getFields", type), k -> FieldUtils.getAllFieldsList(type), CacheKind.WeakCache));
         for (Field field : fields) {
             setAccess(field);
         }

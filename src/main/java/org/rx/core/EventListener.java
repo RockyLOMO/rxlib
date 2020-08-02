@@ -48,7 +48,7 @@ public class EventListener {
     }
 
     private Map<String, BiConsumer> getMap(EventTarget target) {
-        return MemoryCache.getOrStore(target, k -> new ConcurrentHashMap<>());
+        return MemoryCache.getOrStore(target, k -> new ConcurrentHashMap<>(), CacheKind.WeakCache);
     }
 
     @SuppressWarnings(NON_WARNING)

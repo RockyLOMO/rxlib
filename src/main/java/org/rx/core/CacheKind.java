@@ -1,7 +1,7 @@
 package org.rx.core;
 
 public enum CacheKind {
-    ThreadCache,
+    LruCache,
     WeakCache,
-    LruCache
+    ThreadCache
 }

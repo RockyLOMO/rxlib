@@ -9,11 +9,14 @@ import static org.rx.core.Contract.require;
 
 public interface MemoryCache<TK, TV> {
     static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier) {
-        return getOrStore(key, supplier, CacheKind.WeakCache);
+        return getOrStore(key, supplier, null);
     }
 
     static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier, CacheKind kind) {
-        require(key, supplier, kind);
+        require(key, supplier);
+        if (kind == null) {
+            kind = CacheKind.LruCache;
+        }
 
         return MemoryCache.<TK, TV>getInstance(kind).get(key, supplier);
     }
@@ -21,11 +24,7 @@ public interface MemoryCache<TK, TV> {
     static <TK, TV> MemoryCache<TK, TV> getInstance(CacheKind kind) {
         require(kind);
 
-        return getInstance(kind.name());
-    }
-
-    static <TK, TV> MemoryCache<TK, TV> getInstance(String name) {
-        return CacheFactory.getInstance().get(name);
+        return CacheFactory.getInstance().get(kind.name());
     }
 
     int size();
