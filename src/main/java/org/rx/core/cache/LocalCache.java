@@ -15,8 +15,8 @@ class LocalCache<TK, TV> implements Cache<TK, TV> {
     private final com.google.common.cache.Cache<TK, TV> cache = CacheBuilder.newBuilder().maximumSize(MAX_INT).expireAfterAccess(CONFIG.getLruCacheExpireMinutes(), TimeUnit.MINUTES).build();
 
     @Override
-    public int size() {
-        return (int) cache.size();
+    public long size() {
+        return cache.size();
     }
 
     @Override
@@ -25,21 +25,23 @@ class LocalCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public void put(TK key, TV val) {
+    public TV put(TK key, TV val) {
+        TV oldVal = cache.getIfPresent(key);
+        if (oldVal == null) {
+            return null;
+        }
         cache.put(key, val);
+        return oldVal;
     }
 
     @Override
-    public void remove(TK key, boolean destroy) {
+    public TV remove(TK key) {
         TV val = cache.getIfPresent(key);
         if (val == null) {
-            return;
+            return null;
         }
-
         cache.invalidate(key);
-        if (destroy) {
-            tryClose(val);
-        }
+        return val;
     }
 
     @Override

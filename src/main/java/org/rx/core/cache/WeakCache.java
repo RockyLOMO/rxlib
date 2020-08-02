@@ -11,7 +11,6 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.tryClose;
 
 @Slf4j
 final class WeakCache<TK, TV> implements Cache<TK, TV> {
@@ -19,7 +18,7 @@ final class WeakCache<TK, TV> implements Cache<TK, TV> {
     private final Map<TK, TV> container = Collections.synchronizedMap(new WeakHashMap<>());
 
     @Override
-    public int size() {
+    public long size() {
         return container.size();
     }
 
@@ -29,16 +28,13 @@ final class WeakCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public void put(TK key, TV val) {
-        container.put(key, val);
+    public TV put(TK key, TV val) {
+        return container.put(key, val);
     }
 
     @Override
-    public void remove(TK key, boolean destroy) {
-        TV val = container.remove(key);
-        if (destroy) {
-            tryClose(val);
-        }
+    public TV remove(TK key) {
+        return container.remove(key);
     }
 
     @Override

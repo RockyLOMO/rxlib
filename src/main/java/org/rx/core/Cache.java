@@ -6,6 +6,7 @@ import org.rx.util.function.BiFunc;
 import java.util.*;
 
 import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.tryClose;
 
 public interface Cache<TK, TV> {
     static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier) {
@@ -27,17 +28,20 @@ public interface Cache<TK, TV> {
         return CacheFactory.getInstance().get(kind.name());
     }
 
-    int size();
+    long size();
 
     Set<TK> keySet();
 
-    void put(TK key, TV val);
+    TV put(TK key, TV val);
 
-    default void remove(TK key) {
-        remove(key, true);
+    TV remove(TK key);
+
+    default void remove(TK key, boolean destroy) {
+        TV v = remove(key);
+        if (destroy) {
+            tryClose(v);
+        }
     }
-
-    void remove(TK key, boolean destroy);
 
     void clear();
 

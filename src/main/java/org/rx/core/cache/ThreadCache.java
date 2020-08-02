@@ -7,14 +7,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Contract.tryClose;
-
 final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
     private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 
     @Override
-    public int size() {
+    public long size() {
         return local.get().size();
     }
 
@@ -24,16 +22,13 @@ final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public void put(TK key, TV val) {
-        local.get().put(key, val);
+    public TV put(TK key, TV val) {
+        return local.get().put(key, val);
     }
 
     @Override
-    public void remove(TK key, boolean destroy) {
-        TV val = local.get().remove(key);
-        if (destroy) {
-            tryClose(val);
-        }
+    public TV remove(TK key) {
+        return local.get().remove(key);
     }
 
     @Override
