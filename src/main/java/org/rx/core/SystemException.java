@@ -29,7 +29,7 @@ public class SystemException extends NestedRuntimeException {
     public static final String DEFAULT_MESSAGE = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
 
     private static Map<String, Object> getSettings() {
-        return MemoryCache.getOrStore("SystemException", k -> {
+        return Cache.getOrStore("SystemException", k -> {
             List<String> files = new ArrayList<>();
             files.add(CODE_FILE);
             if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
@@ -113,7 +113,7 @@ public class SystemException extends NestedRuntimeException {
             if (methodSettings == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(MemoryCache.getOrStore(stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(Cache.getOrStore(stack.getClassName(), p -> {
                 Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);

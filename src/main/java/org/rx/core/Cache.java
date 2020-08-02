@@ -7,7 +7,7 @@ import java.util.*;
 
 import static org.rx.core.Contract.require;
 
-public interface MemoryCache<TK, TV> {
+public interface Cache<TK, TV> {
     static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier) {
         return getOrStore(key, supplier, null);
     }
@@ -18,10 +18,10 @@ public interface MemoryCache<TK, TV> {
             kind = CacheKind.LruCache;
         }
 
-        return MemoryCache.<TK, TV>getInstance(kind).get(key, supplier);
+        return Cache.<TK, TV>getInstance(kind).get(key, supplier);
     }
 
-    static <TK, TV> MemoryCache<TK, TV> getInstance(CacheKind kind) {
+    static <TK, TV> Cache<TK, TV> getInstance(CacheKind kind) {
         require(kind);
 
         return CacheFactory.getInstance().get(kind.name());
@@ -31,7 +31,7 @@ public interface MemoryCache<TK, TV> {
 
     Set<TK> keySet();
 
-    void add(TK key, TV val);
+    void put(TK key, TV val);
 
     default void remove(TK key) {
         remove(key, true);

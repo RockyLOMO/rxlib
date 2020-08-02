@@ -5,8 +5,7 @@ import com.alibaba.druid.sql.parser.ParserException;
 import com.alibaba.druid.util.JdbcUtils;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.CacheKind;
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -17,7 +16,7 @@ import java.sql.*;
 @Slf4j
 public class JdbcUtil {
     public static boolean isQuery(String query) {
-        return MemoryCache.getOrStore(query, k -> {
+        return Cache.getOrStore(query, k -> {
             try {
                 SQLUtils.toSelectItem(query, JdbcUtils.MYSQL);
                 return true;

@@ -3,7 +3,7 @@ package org.rx.core.cache;
 import lombok.Getter;
 import org.rx.core.CacheKind;
 import org.rx.core.InvalidOperationException;
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,7 +15,7 @@ public final class CacheFactory {
     @Getter
     private static final CacheFactory instance = new CacheFactory();
 
-    private final Map<String, MemoryCache> registered = new ConcurrentHashMap<>(3);
+    private final Map<String, Cache> registered = new ConcurrentHashMap<>(3);
 
     private CacheFactory() {
         register(CacheKind.ThreadCache.name(), new ThreadCache<>());
@@ -23,7 +23,7 @@ public final class CacheFactory {
         register(CacheKind.LruCache.name(), new LocalCache<>());
     }
 
-    public <T extends MemoryCache> void register(String name, MemoryCache cache) {
+    public <T extends Cache> void register(String name, Cache cache) {
         require(name, cache);
 
         registered.put(name, cache);
@@ -34,8 +34,8 @@ public final class CacheFactory {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public <TK, TV> MemoryCache<TK, TV> get(String name) {
-        MemoryCache<TK, TV> cache = registered.get(name);
+    public <TK, TV> Cache<TK, TV> get(String name) {
+        Cache<TK, TV> cache = registered.get(name);
         if (cache == null) {
             throw new InvalidOperationException("MemoryCache %s not registered", name);
         }

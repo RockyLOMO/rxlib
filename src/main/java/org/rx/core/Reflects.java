@@ -178,7 +178,7 @@ public class Reflects extends TypeUtils {
 //    }
 
     public static NQuery<PropertyNode> getProperties(Class to) {
-        return MemoryCache.getOrStore(Tuple.of("getProperties", to), tType -> {
+        return Cache.getOrStore(Tuple.of("getProperties", to), tType -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
             NQuery<Method> q = NQuery.of(tType.right.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
@@ -221,7 +221,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(MemoryCache.<Tuple<String, Class>, List<Field>>getOrStore(Tuple.of("getFields", type), k -> FieldUtils.getAllFieldsList(type), CacheKind.WeakCache));
+        NQuery<Field> fields = NQuery.of(Cache.<Tuple<String, Class>, List<Field>>getOrStore(Tuple.of("getFields", type), k -> FieldUtils.getAllFieldsList(type), CacheKind.WeakCache));
         for (Field field : fields) {
             setAccess(field);
         }

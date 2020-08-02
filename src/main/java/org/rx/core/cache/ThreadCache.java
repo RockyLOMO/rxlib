@@ -1,6 +1,6 @@
 package org.rx.core.cache;
 
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 import org.rx.util.function.BiFunc;
 
 import java.util.Map;
@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.tryClose;
 
-final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
+final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
     private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 
@@ -24,7 +24,7 @@ final class ThreadCache<TK, TV> implements MemoryCache<TK, TV> {
     }
 
     @Override
-    public void add(TK key, TV val) {
+    public void put(TK key, TV val) {
         local.get().put(key, val);
     }
 

@@ -1,9 +1,8 @@
 package org.rx.core.cache;
 
-import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.SneakyThrows;
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 import org.rx.core.SystemException;
 import org.rx.util.function.BiFunc;
 
@@ -12,8 +11,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Contract.*;
 
-class LocalCache<TK, TV> implements MemoryCache<TK, TV> {
-    private final Cache<TK, TV> cache = CacheBuilder.newBuilder().maximumSize(MAX_INT).expireAfterAccess(CONFIG.getLruCacheExpireMinutes(), TimeUnit.MINUTES).build();
+class LocalCache<TK, TV> implements Cache<TK, TV> {
+    private final com.google.common.cache.Cache<TK, TV> cache = CacheBuilder.newBuilder().maximumSize(MAX_INT).expireAfterAccess(CONFIG.getLruCacheExpireMinutes(), TimeUnit.MINUTES).build();
 
     @Override
     public int size() {
@@ -26,7 +25,7 @@ class LocalCache<TK, TV> implements MemoryCache<TK, TV> {
     }
 
     @Override
-    public void add(TK key, TV val) {
+    public void put(TK key, TV val) {
         cache.put(key, val);
     }
 

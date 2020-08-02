@@ -175,7 +175,7 @@ public final class Sockets {
     }
 
     public InetAddress[] getAddresses(String host) {
-        return MemoryCache.getOrStore(cacheKey("getAddresses", host), p -> InetAddress.getAllByName(host));
+        return Cache.getOrStore(cacheKey("getAddresses", host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {

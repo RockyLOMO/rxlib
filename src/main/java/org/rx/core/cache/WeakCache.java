@@ -2,7 +2,7 @@ package org.rx.core.cache;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 import org.rx.util.function.BiFunc;
 
 import java.util.Collections;
@@ -14,7 +14,7 @@ import static org.rx.core.Contract.require;
 import static org.rx.core.Contract.tryClose;
 
 @Slf4j
-final class WeakCache<TK, TV> implements MemoryCache<TK, TV> {
+final class WeakCache<TK, TV> implements Cache<TK, TV> {
     //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
     private final Map<TK, TV> container = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -29,7 +29,7 @@ final class WeakCache<TK, TV> implements MemoryCache<TK, TV> {
     }
 
     @Override
-    public void add(TK key, TV val) {
+    public void put(TK key, TV val) {
         container.put(key, val);
     }
 
@@ -64,7 +64,7 @@ final class WeakCache<TK, TV> implements MemoryCache<TK, TV> {
 
         TV v = get(key);
         if (v == null) {
-            add(key, v = supplier.invoke(key));
+            put(key, v = supplier.invoke(key));
         }
         return v;
     }

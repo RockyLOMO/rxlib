@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.CacheKind;
-import org.rx.core.MemoryCache;
+import org.rx.core.Cache;
 import org.rx.core.NQuery;
 import org.rx.core.Lazy;
 
@@ -62,13 +62,13 @@ public final class PingClient {
 
         Consumer<Boolean> consumer = null;
         if (cacheResult) {
-            MemoryCache<String, Object> cache = MemoryCache.getInstance(CacheKind.WeakCache);
+            Cache<String, Object> cache = Cache.getInstance(CacheKind.WeakCache);
             String k = String.format("_PingClient%s", endpoint);
             Boolean result = as(cache.get(k), Boolean.class);
             if (result != null) {
                 return result;
             }
-            consumer = p -> cache.add(k, p);
+            consumer = p -> cache.put(k, p);
         }
         boolean ok = new PingClient().ping(endpoint).getLossCount() == 0;
         if (consumer != null) {
