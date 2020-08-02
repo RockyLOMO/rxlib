@@ -10,7 +10,7 @@
 
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.16-SNAPSHOT</version>
+    <version>2.16</version>
     <!-- -SNAPSHOT -->
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
@@ -259,6 +259,14 @@
                         <goals>
                             <goal>sign</goal>
                         </goals>
+                        <!--                        <configuration>-->
+                        <!--                            <executable>gpg</executable>-->
+                        <!--                            <gpgArguments>-->
+                        <!--                                <arg>&#45;&#45;pinentry-mode</arg>-->
+                        <!--                                <arg>loopback</arg>-->
+                        <!--                            </gpgArguments>-->
+                        <!--                            <passphrase>${gpg.passphrase}</passphrase>-->
+                        <!--                        </configuration>-->
                     </execution>
                 </executions>
             </plugin>
