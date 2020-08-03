@@ -5,6 +5,7 @@
 
     <bean id="springContext" class="org.rx.util.SpringContext"/>
     <bean id="validateAspect" class="org.rx.util.Validator"/>
+    <bean id="controllerAspect" class="org.rx.util.SpringControllerInterceptor"/>
     <aop:config proxy-target-class="true">
         <aop:aspect id="va" ref="validateAspect">
             <!--<aop:pointcut id="vaPointcut"-->
@@ -13,6 +14,13 @@
             <aop:pointcut id="vaPointcut"
                           expression="@annotation(org.rx.annotation.EnableValid) or @within(org.rx.annotation.EnableValid)"/>
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
+        </aop:aspect>
+    </aop:config>
+    <aop:config proxy-target-class="true">
+        <aop:aspect id="ca" ref="controllerAspect">
+            <aop:pointcut id="caPointcut"
+                          expression="execution(public * org.rx.*.controller..*.*(..)))"/>
+            <aop:around pointcut-ref="caPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>
 </beans>

@@ -25,23 +25,23 @@ class LocalCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public TV put(TK key, TV val) {
-        TV oldVal = cache.getIfPresent(key);
-        if (oldVal == null) {
+    public synchronized TV put(TK key, TV val) {
+        TV v = cache.getIfPresent(key);
+        if (v == null) {
             return null;
         }
         cache.put(key, val);
-        return oldVal;
+        return v;
     }
 
     @Override
-    public TV remove(TK key) {
-        TV val = cache.getIfPresent(key);
-        if (val == null) {
+    public synchronized TV remove(TK key) {
+        TV v = cache.getIfPresent(key);
+        if (v == null) {
             return null;
         }
         cache.invalidate(key);
-        return val;
+        return v;
     }
 
     @Override

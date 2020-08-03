@@ -9,8 +9,6 @@ import org.rx.core.StringBuilder;
 import static org.rx.core.Contract.toJsonString;
 
 public class SpringLogInterceptor {
-//    private static final ThreadLocal<Boolean> threadStatic = ThreadLocal.withInitial(() -> FALSE);
-
     @SneakyThrows
     protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
         Object p = joinPoint.getArgs();
@@ -29,9 +27,9 @@ public class SpringLogInterceptor {
         return r;
     }
 
-    protected Object onException(Exception ex, StringBuilder msg) throws Throwable {
-        msg.appendLine("Error:\t\t\t%s", ex.getMessage());
-        throw ex;
+    protected Object onException(Exception e, StringBuilder msg) throws Throwable {
+        msg.appendLine("Error:\t\t\t%s", e.getMessage());
+        throw e;
     }
 
     protected Tuple<String, String> getProcessFormat() {
@@ -41,22 +39,28 @@ public class SpringLogInterceptor {
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(signature.getDeclaringType());
-        if (
-//                threadStatic.get() ||
-                        !log.isInfoEnabled()) {
+        if (!log.isInfoEnabled()) {
             return joinPoint.proceed();
         }
 
         StringBuilder msg = new StringBuilder();
+        boolean hasError = false;
         try {
-//            threadStatic.set(TRUE);
             msg.appendLine("Call %s", signature.getName());
             return onProcess(joinPoint, msg);
         } catch (Exception e) {
-            return onException(e, msg);
+            try {
+                return onException(e, msg);
+            } catch (Throwable ie) {
+                hasError = true;
+                throw ie;
+            }
         } finally {
-            log.info(msg.toString());
-//            threadStatic.set(FALSE);
+            if (hasError) {
+                log.error(msg.toString());
+            } else {
+                log.info(msg.toString());
+            }
         }
     }
 }

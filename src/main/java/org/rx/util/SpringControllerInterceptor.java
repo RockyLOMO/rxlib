@@ -8,8 +8,13 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
@@ -21,10 +26,10 @@ import static org.rx.core.Contract.toJsonString;
 import static org.rx.core.SystemException.DEFAULT_MESSAGE;
 
 @Slf4j
+@Component
+@ControllerAdvice
 //@Aspect
-//@Component
 //@Order(0)
-//@ControllerAdvice
 public class SpringControllerInterceptor {
     public interface IRequireSignIn {
         boolean isSignIn(String methodName, Object[] args);
@@ -33,7 +38,7 @@ public class SpringControllerInterceptor {
     private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
     protected String notSignInMsg = "Not sign in";
 
-    public Object onAround(ProceedingJoinPoint joinPoint) throws Throwable {
+    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         // 1 先过滤出有RequestMapping的方法
         final Signature signature = joinPoint.getSignature();
         if (!(signature instanceof MethodSignature) || skipMethods.any(p -> p.equals(signature.getName()))) {
@@ -43,14 +48,13 @@ public class SpringControllerInterceptor {
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(signature.getDeclaringType());
         MethodSignature methodSignature = (MethodSignature) signature;
         Method method = methodSignature.getMethod();
+        StringBuilder msg = new StringBuilder().appendLine();
 
-        StringBuilder logContent = new StringBuilder().appendLine();
+        // 2.1 获取接口的类及方法名
+        msg.appendLine(String.format("Class:\t%s.%s", method.getDeclaringClass().getName(), method.getName()));
 
-        // 2.2 获取接口的类及方法名
-        logContent.appendLine(String.format("Class:\t%s.%s", method.getDeclaringClass().getName(), method.getName()));
-
-        // 2.3 拼装接口URL
-        // 2.3.1 获取Class上的FeignURL
+        // 2.2 拼装接口URL
+        // 2.2.1 获取Class上的FeignURL
         String url = "";
         Function<RequestMapping, String> reqMappingFunc = p -> String.join(",", ArrayUtils.isNotEmpty(p.value()) ? p.value() : p.path());
         Class parentType = method.getDeclaringClass(), feignType = NQuery.of(parentType).firstOrDefault();
@@ -63,15 +67,16 @@ public class SpringControllerInterceptor {
         }
 
         Method feignMethod = parentType.getDeclaredMethod(method.getName(), method.getParameterTypes());
-        // 2.3.2 获取Class RequestMapping URL
+        // 2.2.2 获取Class RequestMapping URL
         RequestMapping methodReqMapping = feignMethod.getAnnotation(RequestMapping.class);
         if (methodReqMapping != null) {
             url += reqMappingFunc.apply(methodReqMapping);
         }
 
-        logContent.appendLine(String.format("Url：\t%s", url));
-        logContent.append(String.format("Request:\t%s", onToString(joinPoint.getArgs(), method)));
+        msg.appendLine(String.format("Url：\t%s", url));
+        msg.append(String.format("Request:\t%s", toArgsString(method, joinPoint.getArgs())));
         Object returnValue = null;
+        boolean hasError = false;
         try {
             Stopwatch watcher = Stopwatch.createStarted();
             if (joinPoint.getTarget() instanceof IRequireSignIn) {
@@ -81,18 +86,27 @@ public class SpringControllerInterceptor {
             }
             returnValue = joinPoint.proceed();
             long ms = watcher.elapsed(TimeUnit.MILLISECONDS);
-            logContent.appendLine(String.format("\tElapsed = %sms", ms));
-        } catch (Exception ex) {
-            logContent.append(String.format("Error:\t%s", ex.getMessage()));
-            returnValue = onException(ex, method);
+            msg.appendLine(String.format("\tElapsed = %sms", ms));
+        } catch (Exception e) {
+            try {
+                msg.append(String.format("Error:\t%s", e.getMessage()));
+                returnValue = onException(e, msg);
+            } catch (Throwable ie) {
+                hasError = true;
+                throw ie;
+            }
         } finally {
-            logContent.appendLine(String.format("Response:\t%s", toJsonString(returnValue)));
-            log.info(logContent.toString());
+            msg.appendLine(String.format("Response:\t%s", toJsonString(returnValue)));
+            if (hasError) {
+                log.error(msg.toString());
+            } else {
+                log.info(msg.toString());
+            }
         }
         return returnValue;
     }
 
-    protected String onToString(Object[] args, Method method) {
+    protected String toArgsString(Method method, Object[] args) {
         if (ArrayUtils.isEmpty(args)) {
             return "NULL";
         }
@@ -110,18 +124,17 @@ public class SpringControllerInterceptor {
         }).toList());
     }
 
-    protected Object onException(Exception e, Method method) throws Throwable {
-        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(method.getDeclaringClass());
-        log.error("ControllerError", e);
+    protected Object onException(Exception e, StringBuilder msg) throws Throwable {
+        msg.appendLine("ControllerError:\t\t%s", e);
         throw e;
     }
 
-    //    @ResponseStatus(HttpStatus.OK)
-//    @ExceptionHandler({Exception.class})
+    @ResponseStatus(HttpStatus.OK)
+    @ExceptionHandler({Exception.class})
     public ResponseEntity handleException(Exception e, HttpServletRequest request) {
         String msg = DEFAULT_MESSAGE, debugMsg = null;
         Exception logEx = e;
-        if (e instanceof ValidateException || handleInfoLogExceptions().distinct().any(p -> Reflects.isInstance(e, p))) {
+        if (e instanceof ValidateException || handleInfoLevelExceptions().any(p -> Reflects.isInstance(e, p))) {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logEx = null;
@@ -136,7 +149,7 @@ public class SpringControllerInterceptor {
         return ResponseEntity.ok(handleExceptionResponse(msg, debugMsg));
     }
 
-    protected NQuery<Class> handleInfoLogExceptions() {
+    protected NQuery<Class> handleInfoLevelExceptions() {
         return NQuery.of();
     }
 

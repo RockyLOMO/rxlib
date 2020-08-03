@@ -37,9 +37,6 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     }
 
     public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
-//        if (applicationContext == null) {
-//            return;
-//        }
         SpringContext.applicationContext = applicationContext;
     }
 }
