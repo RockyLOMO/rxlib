@@ -2,9 +2,9 @@ package org.rx.bean;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.rx.core.NQuery;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;

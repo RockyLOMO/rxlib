@@ -16,11 +16,11 @@
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
     </aop:config>
-    <aop:config proxy-target-class="true">
-        <aop:aspect id="ca" ref="controllerAspect">
-            <aop:pointcut id="caPointcut"
-                          expression="execution(public * org.rx.*.controller..*.*(..)))"/>
-            <aop:around pointcut-ref="caPointcut" method="doAround"/>
-        </aop:aspect>
-    </aop:config>
+<!--    <aop:config proxy-target-class="true">-->
+<!--        <aop:aspect id="ca" ref="controllerAspect">-->
+<!--            <aop:pointcut id="caPointcut"-->
+<!--                          expression="execution(public * org.rx.*.controller..*.*(..)))"/>-->
+<!--            <aop:around pointcut-ref="caPointcut" method="doAround"/>-->
+<!--        </aop:aspect>-->
+<!--    </aop:config>-->
 </beans>

@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -36,7 +35,7 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     public void afterPropertiesSet() {
     }
 
-    public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
+    public void setApplicationContext(ApplicationContext applicationContext) {
         SpringContext.applicationContext = applicationContext;
     }
 }

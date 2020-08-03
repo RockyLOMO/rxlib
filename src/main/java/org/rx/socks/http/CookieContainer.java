@@ -4,7 +4,6 @@ import lombok.Getter;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
-import org.jetbrains.annotations.NotNull;
 import org.rx.socks.http.cookie.PersistentCookieJar;
 import org.rx.socks.http.cookie.cache.SetCookieCache;
 import org.rx.socks.http.cookie.persistence.MemoryCookiePersistor;
@@ -18,14 +17,14 @@ public final class CookieContainer implements CookieJar {
     private final PersistentCookieJar cookieJar = new PersistentCookieJar(new SetCookieCache(), new MemoryCookiePersistor());
 
     @Override
-    public void saveFromResponse(@NotNull HttpUrl httpUrl, @NotNull List<Cookie> list) {
+    public void saveFromResponse(HttpUrl httpUrl, List<Cookie> list) {
         require(httpUrl, list);
 
         cookieJar.saveFromResponse(httpUrl, list);
     }
 
     @Override
-    public List<Cookie> loadForRequest(@NotNull HttpUrl httpUrl) {
+    public List<Cookie> loadForRequest(HttpUrl httpUrl) {
         require(httpUrl);
 
         return cookieJar.loadForRequest(httpUrl);

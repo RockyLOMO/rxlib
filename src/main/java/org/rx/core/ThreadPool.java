@@ -3,7 +3,6 @@ package org.rx.core;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
 import java.util.concurrent.*;
@@ -91,7 +90,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 
-        @NotNull
         @Override
         public T take() throws InterruptedException {
             try {
