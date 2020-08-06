@@ -4,7 +4,7 @@ import lombok.SneakyThrows;
 import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.SystemException;
-import org.rx.socks.BytesSegment;
+import org.rx.net.BytesSegment;
 
 import java.io.*;
 import java.util.Arrays;

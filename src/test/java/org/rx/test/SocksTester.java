@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
-import org.rx.socks.Sockets;
-import org.rx.socks.http.HttpClient;
-import org.rx.socks.tcp.*;
+import org.rx.net.Sockets;
+import org.rx.net.http.HttpClient;
+import org.rx.net.tcp.*;
 import org.rx.test.bean.*;
 
 import java.io.InputStreamReader;

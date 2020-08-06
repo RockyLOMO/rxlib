@@ -1,7 +1,7 @@
 package org.rx.test.thread;
 
 import org.rx.core.ThreadPool;
-import org.rx.socks.http.HttpClient;
+import org.rx.net.http.HttpClient;
 
 import java.math.BigDecimal;
 import java.util.concurrent.BlockingQueue;

@@ -4,7 +4,7 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
-import org.rx.socks.Sockets;
+import org.rx.net.Sockets;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;

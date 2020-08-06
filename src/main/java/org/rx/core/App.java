@@ -8,7 +8,7 @@ import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
 import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
-import org.rx.socks.http.HttpClient;
+import org.rx.net.http.HttpClient;
 import org.rx.io.MemoryStream;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.context.request.RequestContextHolder;

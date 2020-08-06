@@ -3,7 +3,7 @@ package org.rx.io;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.App;
-import org.rx.socks.Bytes;
+import org.rx.net.Bytes;
 
 import java.io.*;
 
