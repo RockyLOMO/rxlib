@@ -17,6 +17,7 @@ import org.rx.core.Disposable;
 import org.rx.core.InvalidOperationException;
 import org.rx.net.Sockets;
 
+//thanks https://github.com/hsupu/netty-socks
 @Slf4j
 @RequiredArgsConstructor
 public class SocksProxyServer extends Disposable {
@@ -58,11 +59,9 @@ public class SocksProxyServer extends Disposable {
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));
             if (isAuth()) {
-                //socks auth
                 channel.pipeline().addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
                         .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), new Socks5PasswordAuthRequestHandler(SocksProxyServer.this));
             }
-            //socks connection
             channel.pipeline().addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
         }).option(ChannelOption.SO_BACKLOG, config.getBacklog())

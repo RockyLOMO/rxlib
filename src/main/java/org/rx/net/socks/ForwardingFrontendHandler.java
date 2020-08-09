@@ -20,9 +20,7 @@ public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
         }
 
         Channel inbound = ctx.channel();
-        log.trace(String.format("%s forwarded to %s -> %s",
-                inbound.remoteAddress(),
-                outbound.localAddress(), outbound.remoteAddress()));
+        log.trace("{} forwarded to {} -> {}", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         outbound.writeAndFlush(msg).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
     }
 
@@ -34,7 +32,7 @@ public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel inbound = ctx.channel();
-        log.warn(String.format("channel %s <-> %s thrown", inbound.localAddress(), inbound.remoteAddress()), cause);
-        Sockets.closeOnFlushed(outbound);
+        log.warn("{} forwarded to {} -> {} thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
+        Sockets.closeOnFlushed(inbound);
     }
 }

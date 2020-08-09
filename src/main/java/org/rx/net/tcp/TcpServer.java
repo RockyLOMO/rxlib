@@ -209,13 +209,13 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
         bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.error("Listened on port {} fail..", config.getEndpoint(), f.cause());
-                f.channel().close();
+                isStarted = false;
                 return;
             }
-            isStarted = true;
             channel = f.channel();
             log.debug("Listened on port {}..", config.getEndpoint());
         });
+        isStarted = true;
     }
 
     public String dump() {
