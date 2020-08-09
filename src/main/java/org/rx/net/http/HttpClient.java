@@ -204,7 +204,7 @@ public class HttpClient {
     }
 
     public HttpClient() {
-        this(30 * 1000, null, null);
+        this(CONFIG.getNetTimeoutMillis(), null, null);
     }
 
     public HttpClient(int millis, String rawCookie, Proxy proxy) {

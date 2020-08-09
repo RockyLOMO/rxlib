@@ -97,7 +97,7 @@ public final class Sockets {
                 .group(channel != null ? channel.eventLoop() :
                         isEpoll ? new EpollEventLoopGroup() : new NioEventLoopGroup())
                 .channel(channelClass)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getSocksTimeout())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getNetTimeoutMillis())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true);
@@ -135,7 +135,7 @@ public final class Sockets {
         ServerBootstrap b = new ServerBootstrap()
                 .group(eventLoopGroup(tryEpoll, bossThreadAmount), eventLoopGroup(tryEpoll, workThreadAmount))
                 .channel(serverChannelClass(tryEpoll))
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getSocksTimeout())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONFIG.getNetTimeoutMillis())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 //                    .option(ChannelOption.SO_REUSEADDR, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
@@ -264,6 +264,7 @@ public final class Sockets {
 
         catchCall(() -> {
             if (socket.isConnected()) {
+                socket.setSoLinger(true, 2);
                 if (!socket.isOutputShutdown()) {
                     socket.shutdownOutput();
                 }
@@ -271,7 +272,6 @@ public final class Sockets {
                     socket.shutdownInput();
                 }
             }
-            socket.setSoLinger(true, 2);
             socket.close();
         });
     }

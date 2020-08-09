@@ -182,7 +182,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
                     new PacketClientHandler());
-        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
+        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
         ChannelFuture future = bootstrap.connect(config.getEndpoint());
         if (!wait) {
             future.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);

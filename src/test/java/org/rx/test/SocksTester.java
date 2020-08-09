@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
+import org.rx.net.PingClient;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.Authenticator;
@@ -224,6 +225,11 @@ public class SocksTester {
         ss.start();
 
         System.in.read();
+    }
+
+    @Test
+    public void ping() {
+        PingClient.test("x.f-li.cn:80", r -> log.info(toJsonString(r)));
     }
 
     @Test

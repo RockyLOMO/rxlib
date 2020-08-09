@@ -3,86 +3,56 @@ package org.rx.net;
 import com.google.common.base.Stopwatch;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.CacheKind;
-import org.rx.core.Cache;
-import org.rx.core.NQuery;
-import org.rx.core.Lazy;
+import org.rx.util.function.BiAction;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.List;
-import java.util.Objects;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
-import static org.rx.core.Contract.as;
-import static org.rx.core.Contract.isNull;
 import static org.rx.core.Contract.require;
 
 @Slf4j
 public final class PingClient {
+    @Getter
     public static class Result {
-        @Getter
-        private final List<Long> results;
-        private Lazy<Double> avg;
-        private Lazy<Long> min, max;
+        private static final long nullVal = -1L;
+        private final long[] values;
+        private int lossCount;
+        private double avg;
+        private long min, max;
 
-        public int getLossCount() {
-            return (int) results.stream().filter(Objects::isNull).count();
-        }
-
-        public double getAvg() {
-            return avg.getValue();
-        }
-
-        public long getMin() {
-            return min.getValue();
-        }
-
-        public long getMax() {
-            return max.getValue();
-        }
-
-        private Result(List<Long> results) {
-            this.results = results;
-            avg = new Lazy<>(() -> results.stream().mapToDouble(p -> isNull(p, 0L)).average().getAsDouble());
-            min = new Lazy<>(() -> results.stream().filter(Objects::nonNull).mapToLong(p -> p).min().orElse(-1));
-            max = new Lazy<>(() -> results.stream().filter(Objects::nonNull).mapToLong(p -> p).max().orElse(-1));
+        private Result(long[] values) {
+            this.values = values;
+            lossCount = (int) Arrays.stream(values).filter(p -> p == nullVal).count();
+            avg = Arrays.stream(values).mapToDouble(p -> p == nullVal ? 0L : p).average().getAsDouble();
+            min = Arrays.stream(values).filter(p -> p != nullVal).min().orElse(nullVal);
+            max = Arrays.stream(values).filter(p -> p != nullVal).max().orElse(nullVal);
         }
     }
 
     public static boolean test(String endpoint) {
-        return test(endpoint, null, false);
+        return test(endpoint, null);
     }
 
-    public static boolean test(String endpoint, Consumer<String> onOk, boolean cacheResult) {
+    @SneakyThrows
+    public static boolean test(String endpoint, BiAction<Result> onOk) {
         require(endpoint);
 
-        Consumer<Boolean> consumer = null;
-        if (cacheResult) {
-            Cache<String, Object> cache = Cache.getInstance(CacheKind.WeakCache);
-            String k = String.format("_PingClient%s", endpoint);
-            Boolean result = as(cache.get(k), Boolean.class);
-            if (result != null) {
-                return result;
-            }
-            consumer = p -> cache.put(k, p);
-        }
-        boolean ok = new PingClient().ping(endpoint).getLossCount() == 0;
-        if (consumer != null) {
-            consumer.accept(ok);
-        }
+        Result result = new PingClient().ping(endpoint);
+        boolean ok = result.getLossCount() == 0;
         if (ok && onOk != null) {
-            onOk.accept(endpoint);
+            onOk.invoke(result);
         }
         return ok;
     }
 
     @Getter
     @Setter
-    private int connectTimeout = 10000;
+    private int connectTimeoutSeconds = 8;
     private final Stopwatch watcher = Stopwatch.createUnstarted();
 
     public Result ping(String endpoint) {
@@ -92,19 +62,22 @@ public final class PingClient {
     public Result ping(InetSocketAddress endpoint, int times) {
         require(endpoint);
 
-        return new Result(NQuery.of(new int[times]).select(p -> {
+        long[] value = new long[times];
+        for (int i = 0; i < value.length; i++) {
             Socket sock = new Socket();
             try {
                 watcher.start();
-                sock.connect(endpoint, connectTimeout);
+                sock.connect(endpoint, connectTimeoutSeconds * 1000);
             } catch (IOException ex) {
                 log.info("Ping error {}", ex.getMessage());
-                return null;
+                value[i] = Result.nullVal;
+                continue;
             } finally {
                 watcher.stop();
                 Sockets.closeOnFlushed(sock);
             }
-            return watcher.elapsed(TimeUnit.MILLISECONDS);
-        }).toList());
+            value[i] = watcher.elapsed(TimeUnit.MILLISECONDS);
+        }
+        return new Result(value);
     }
 }

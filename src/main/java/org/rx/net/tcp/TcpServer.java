@@ -205,7 +205,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
                     new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
                     new PacketServerHandler());
         }).option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
         bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.error("Listened on port {} fail..", config.getEndpoint(), f.cause());

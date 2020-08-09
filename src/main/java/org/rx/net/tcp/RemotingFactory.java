@@ -169,7 +169,7 @@ public final class RemotingFactory {
             });
             try {
                 client.send(pack);
-                waitHandle.waitOne(client.getConfig().getConnectTimeout());
+                waitHandle.waitOne(client.getConfig().getConnectTimeoutMillis());
                 waitHandle.reset();
                 if (debug) {
                     msg.appendLine("Response:\t%s", resultPack != null ? resultPack.errorMessage != null ? resultPack.errorMessage : toJsonString(resultPack.returnValue) : "null");
@@ -331,7 +331,7 @@ public final class RemotingFactory {
                                 log.info("server raise {} -> {} step1", current.getId(), pack.eventName);
                                 try {
                                     //必须等
-                                    tuple.middle.waitOne(server.getConfig().getConnectTimeout());
+                                    tuple.middle.waitOne(server.getConfig().getConnectTimeoutMillis());
                                     log.info("server raise {} -> {} step2", current.getId(), pack.eventName);
                                 } catch (TimeoutException ex) {
                                     log.warn("server raise {}", pack.eventName, ex);
