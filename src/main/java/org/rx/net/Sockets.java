@@ -21,9 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.springframework.util.CollectionUtils;
 
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -40,6 +38,36 @@ public final class Sockets {
             }
             channel.flush();
         });
+    }
+
+    public static void dumpPipeline(String name, Channel channel) {
+        if (log.isTraceEnabled()) {
+            ChannelPipeline pipeline = channel.pipeline();
+            List<ChannelInboundHandler> inboundHandlers = new LinkedList<>();
+            List<ChannelOutboundHandler> outboundHandlers = new LinkedList<>();
+            log.trace(name + " list:");
+            for (Map.Entry<String, ChannelHandler> entry : pipeline) {
+                String prefix;
+                ChannelHandler handler = entry.getValue();
+                if (handler instanceof ChannelInboundHandler) {
+                    prefix = "in";
+                    inboundHandlers.add((ChannelInboundHandler) handler);
+                } else if (handler instanceof ChannelOutboundHandler) {
+                    prefix = "out";
+                    outboundHandlers.add((ChannelOutboundHandler) handler);
+                } else {
+                    prefix = "?";
+                    log.trace(String.format("%s %s: %s", prefix, entry.getKey(), entry.getValue()));
+                }
+            }
+            log.trace(name + " sorted:");
+            for (ChannelInboundHandler handler : inboundHandlers) {
+                log.trace(String.format("in %s", handler));
+            }
+            for (ChannelOutboundHandler handler : outboundHandlers) {
+                log.trace(String.format("out %s", handler));
+            }
+        }
     }
 
     public static void closeOnFlushed(Channel channel) {
@@ -167,10 +195,10 @@ public final class Sockets {
     }
 
     //region Address
-    public static final InetAddress LocalAddress, AnyAddress;
+    public static final InetAddress LoopbackAddress, AnyAddress;
 
     static {
-        LocalAddress = InetAddress.getLoopbackAddress();
+        LoopbackAddress = InetAddress.getLoopbackAddress();
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
@@ -178,11 +206,6 @@ public final class Sockets {
         }
     }
 
-    /**
-     * 获取本机的IP
-     *
-     * @return Ip地址
-     */
     public static String getLocalAddress() {
         try {
             for (Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces(); interfaces.hasMoreElements(); ) {
@@ -301,6 +324,7 @@ public final class Sockets {
             this.password = password;
         }
 
+        @Override
         protected PasswordAuthentication getPasswordAuthentication() {
             return new PasswordAuthentication(userName, password.toCharArray());
         }

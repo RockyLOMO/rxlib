@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import io.netty.channel.socket.SocketChannel;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,12 @@ import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
+import org.rx.net.socks.Authenticator;
+import org.rx.net.socks.SocksConfig;
+import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.tcp.*;
 import org.rx.test.bean.*;
 
@@ -195,6 +202,29 @@ public class SocksTester {
 //        TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
 //        System.in.read();
 //    }
+
+    @SneakyThrows
+    @Test
+    public void socks5() {
+        SocksConfig config = new SocksConfig();
+        config.setListenPort(1081);
+        SocksProxyServer ss = new SocksProxyServer(config);
+        ss.setAuthenticator(new Authenticator() {
+            @Override
+            public boolean auth(String username, String password) {
+                return username.equals("ss");
+            }
+
+            @Override
+            public Upstream<SocketChannel> upstream(String username) {
+//                return new DirectUpstream();
+                return new Socks5Upstream("127.0.0.1:1080");
+            }
+        });
+        ss.start();
+
+        System.in.read();
+    }
 
     @Test
     public void queryString() {
