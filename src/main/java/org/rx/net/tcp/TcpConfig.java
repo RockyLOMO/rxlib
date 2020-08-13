@@ -33,7 +33,7 @@ public class TcpConfig {
     private InetSocketAddress endpoint;
     private int workThread;
     private MemoryMode memoryMode;
-    private int connectTimeout = CONFIG.getSocksTimeout();
+    private int connectTimeoutMillis = CONFIG.getNetTimeoutMillis();
     private boolean enableSsl;
     private boolean enableCompress;
 }

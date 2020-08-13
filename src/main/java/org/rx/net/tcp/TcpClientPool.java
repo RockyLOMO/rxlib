@@ -34,7 +34,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
             args.setValue(inetSocketAddress);
             raiseEvent(onCreate, args);
             require(args.poolingClient);
-            args.poolingClient.getConfig().setConnectTimeout((int) pool.getMaxWaitMillis());
+            args.poolingClient.getConfig().setConnectTimeoutMillis((int) pool.getMaxWaitMillis());
             args.poolingClient.connect(true);
             log.debug("Create TcpClient {}", args.poolingClient);
             return args.poolingClient;
@@ -77,7 +77,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
 
     public TcpClientPool() {
-        this(2, ThreadPool.CPU_THREADS * 2, CONFIG.getSocksTimeout());
+        this(2, ThreadPool.CPU_THREADS * 2, CONFIG.getNetTimeoutMillis());
     }
 
     public TcpClientPool(int minSize, int maxSize, long timeout) {

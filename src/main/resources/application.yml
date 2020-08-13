@@ -1,6 +1,6 @@
 app:
   bufferSize: 512
-  socksTimeout: 16000
+  netTimeoutMillis: 16000
   lruCacheExpireMinutes: 4
   jsonSkipTypes:
     - javax.servlet.ServletRequest
