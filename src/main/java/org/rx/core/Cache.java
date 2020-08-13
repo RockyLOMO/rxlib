@@ -34,6 +34,10 @@ public interface Cache<TK, TV> {
 
     TV put(TK key, TV val);
 
+    default TV put(TK key, TV value, int expireMinutes) {
+        return put(key, value);
+    }
+
     TV remove(TK key);
 
     default void remove(TK key, boolean destroy) {
@@ -48,4 +52,8 @@ public interface Cache<TK, TV> {
     TV get(TK key);
 
     TV get(TK key, BiFunc<TK, TV> supplier);
+
+    default TV get(TK key, BiFunc<TK, TV> supplier, int expireMinutes) {
+        return get(key, supplier);
+    }
 }

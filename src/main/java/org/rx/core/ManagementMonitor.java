@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.rx.bean.FlagsEnum;
 
 import java.io.File;
+import java.io.Serializable;
 import java.lang.management.*;
 import java.util.function.BiConsumer;
 
@@ -20,7 +21,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
 
     @RequiredArgsConstructor
     @Getter
-    public static class DiskMonitorBean {
+    public static class DiskMonitorBean implements Serializable {
         private final String name;
         private final long usedSpace, totalSpace;
 
