@@ -154,7 +154,7 @@ public class Validator extends SpringLogInterceptor {
     }
 
     @Override
-    protected Object onException(Exception ex, StringBuilder msg) throws Throwable {
+    protected Object onException(Signature signature, Exception ex, StringBuilder msg) throws Throwable {
         msg.appendLine("validate fail %s..", ex.getMessage());
         throw ex;
     }

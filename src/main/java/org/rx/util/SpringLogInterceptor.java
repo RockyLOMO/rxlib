@@ -27,7 +27,7 @@ public class SpringLogInterceptor {
         return r;
     }
 
-    protected Object onException(Exception e, StringBuilder msg) throws Throwable {
+    protected Object onException(Signature signature, Exception e, StringBuilder msg) throws Throwable {
         msg.appendLine("Error:\t\t\t%s", e.getMessage());
         throw e;
     }
@@ -50,7 +50,7 @@ public class SpringLogInterceptor {
             return onProcess(joinPoint, msg);
         } catch (Exception e) {
             try {
-                return onException(e, msg);
+                return onException(signature, e, msg);
             } catch (Throwable ie) {
                 hasError = true;
                 throw ie;
