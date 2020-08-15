@@ -12,7 +12,9 @@ import java.util.concurrent.TimeUnit;
 import static org.rx.core.Contract.*;
 
 class LocalCache<TK, TV> implements Cache<TK, TV> {
-    private final com.google.common.cache.Cache<TK, TV> cache = CacheBuilder.newBuilder().maximumSize(MAX_INT).expireAfterAccess(CONFIG.getLruCacheExpireMinutes(), TimeUnit.MINUTES).expireAfterWrite(CONFIG.getLruCacheExpireMinutes(), TimeUnit.MINUTES).build();
+    private final com.google.common.cache.Cache<TK, TV> cache = CacheBuilder.newBuilder().maximumSize(MAX_INT)
+            .expireAfterAccess(CONFIG.getCacheExpireMinutes(), TimeUnit.MINUTES)
+            .expireAfterWrite(CONFIG.getCacheExpireMinutes(), TimeUnit.MINUTES).build();
 
     @Override
     public long size() {

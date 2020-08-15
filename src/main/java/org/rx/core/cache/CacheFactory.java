@@ -1,7 +1,6 @@
 package org.rx.core.cache;
 
 import lombok.Getter;
-import org.rx.core.CacheKind;
 import org.rx.core.InvalidOperationException;
 import org.rx.core.Cache;
 
@@ -18,9 +17,9 @@ public final class CacheFactory {
     private final Map<String, Cache> registered = new ConcurrentHashMap<>(3);
 
     private CacheFactory() {
-        register(CacheKind.ThreadCache.name(), new ThreadCache<>());
-        register(CacheKind.WeakCache.name(), new WeakCache<>());
-        register(CacheKind.LruCache.name(), new LocalCache<>());
+        register(Cache.THREAD_CACHE, new ThreadCache<>());
+        register(Cache.WEAK_CACHE, new WeakCache<>());
+        register(Cache.LRU_CACHE, new LocalCache<>());
     }
 
     public <T extends Cache> void register(String name, Cache cache) {

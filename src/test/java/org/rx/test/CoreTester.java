@@ -222,7 +222,7 @@ public class CoreTester {
 
     @Test
     public void weakCache() {
-        Cache<String, Object> cache = Cache.getInstance(CacheKind.WeakCache);
+        Cache<String, Object> cache = Cache.getInstance(Cache.WEAK_CACHE);
         String k = "a";
         cache.put(k, new Object());
         assert cache.get(k) != null;

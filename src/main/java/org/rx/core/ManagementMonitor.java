@@ -40,7 +40,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
 
     @RequiredArgsConstructor
     @Getter
-    public static class MonitorBean {
+    public static class MonitorBean implements Serializable {
         private final int cpuThreads;
         private final double cpuLoad;
         private final int liveThreadCount;
@@ -156,6 +156,6 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         long totalMemory = os.getTotalPhysicalMemorySize();
         return new MonitorBean(os.getAvailableProcessors(), cpuLoad, thread.getThreadCount(),
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
-                Cache.getOrStore(cacheKey("getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorBean(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
+                Cache.getOrSet(cacheKey("getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorBean(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
     }
 }

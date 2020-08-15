@@ -12,7 +12,9 @@ public class LibConfig {
     private int scheduleDelay = 2000;
     private int bufferSize = 512;
     private int netTimeoutMillis = 16000;
-    private int lruCacheExpireMinutes = 4;
+    private int cacheExpireMinutes = 4;
+    private boolean autoCompressCacheKey = true;
+    private String defaultCache = "LruCache";
     private String[] jsonSkipTypes = new String[]{"javax.servlet.ServletRequest", "javax.servlet.ServletResponse", "org.springframework.ui.Model"};
     private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
 

@@ -16,7 +16,7 @@ import java.sql.*;
 @Slf4j
 public class JdbcUtil {
     public static boolean isQuery(String query) {
-        return Cache.getOrStore(query, k -> {
+        return Cache.getOrSet(query, k -> {
             try {
                 SQLUtils.toSelectItem(query, JdbcUtils.MYSQL);
                 return true;

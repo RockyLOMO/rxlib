@@ -90,7 +90,7 @@ public class SpringControllerInterceptor {
         } catch (Exception e) {
             try {
                 msg.append(String.format("Error:\t%s", e.getMessage()));
-                returnValue = onException(e, msg);
+                returnValue = onException(method, e, msg);
             } catch (Throwable ie) {
                 hasError = true;
                 throw ie;
@@ -124,7 +124,7 @@ public class SpringControllerInterceptor {
         }).toList());
     }
 
-    protected Object onException(Exception e, StringBuilder msg) throws Throwable {
+    protected Object onException(Method method, Exception e, StringBuilder msg) throws Throwable {
         msg.appendLine("ControllerError:\t\t%s", e);
         throw e;
     }

@@ -5,27 +5,34 @@ import org.rx.util.function.BiFunc;
 
 import java.util.*;
 
-import static org.rx.core.Contract.require;
-import static org.rx.core.Contract.tryClose;
+import static org.rx.core.Contract.*;
 
 public interface Cache<TK, TV> {
-    static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier) {
-        return getOrStore(key, supplier, null);
+    int NON_EXPIRE_MINUTES = 0;
+    String LRU_CACHE = "LruCache";
+    String WEAK_CACHE = "WeakCache";
+    String THREAD_CACHE = "ThreadCache";
+
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier) {
+        return getOrSet(key, supplier, NON_EXPIRE_MINUTES);
     }
 
-    static <TK, TV> TV getOrStore(TK key, BiFunc<TK, TV> supplier, CacheKind kind) {
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, int expireMinutes) {
+        return getOrSet(key, supplier, expireMinutes, CONFIG.getDefaultCache());
+    }
+
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, String cacheName) {
+        return getOrSet(key, supplier, NON_EXPIRE_MINUTES, cacheName);
+    }
+
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, int expireMinutes, String cacheName) {
         require(key, supplier);
-        if (kind == null) {
-            kind = CacheKind.LruCache;
-        }
 
-        return Cache.<TK, TV>getInstance(kind).get(key, supplier);
+        return Cache.<TK, TV>getInstance(cacheName).get(key, supplier, expireMinutes);
     }
 
-    static <TK, TV> Cache<TK, TV> getInstance(CacheKind kind) {
-        require(kind);
-
-        return CacheFactory.getInstance().get(kind.name());
+    static <TK, TV> Cache<TK, TV> getInstance(String name) {
+        return CacheFactory.getInstance().get(name);
     }
 
     long size();

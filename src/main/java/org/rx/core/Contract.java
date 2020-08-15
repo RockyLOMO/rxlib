@@ -12,8 +12,8 @@ import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.LibConfig;
+import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
-import org.rx.security.MD5Util;
 import org.rx.util.function.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -290,13 +290,15 @@ public final class Contract {
     }
 
     public static String cacheKey(String methodName, Object... args) {
-        require(methodName);
-
-        String k = Reflects.callerClass(1).getName() + methodName + toJsonString(args);
-        if (k.length() <= 32) {
-            return k;
+        StringBuilder k = new StringBuilder();
+        if (!CONFIG.isAutoCompressCacheKey()) {
+            k.append(Reflects.callerClass(1).getSimpleName());
         }
-        return MD5Util.md5Hex(k);
+        k.append(methodName).append(toJsonString(args));
+        if (!CONFIG.isAutoCompressCacheKey() || k.getLength() <= 22) {
+            return k.toString();
+        }
+        return SUID.compute(k.toString()).toString();
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {

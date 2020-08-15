@@ -26,10 +26,10 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class SystemException extends NestedRuntimeException {
     public static final String CODE_FILE = "code.yml";
-    public static final String DEFAULT_MESSAGE = isNull(getSettings().get("default"), "网络繁忙，请稍后再试。").toString();
+    public static final String DEFAULT_MESSAGE = isNull((String) getSettings().get("default"), "网络繁忙，请稍后再试。");
 
     private static Map<String, Object> getSettings() {
-        return Cache.getOrStore("SystemException", k -> {
+        return Cache.getOrSet("SystemException", k -> {
             List<String> files = new ArrayList<>();
             files.add(CODE_FILE);
             if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
@@ -113,7 +113,7 @@ public class SystemException extends NestedRuntimeException {
             if (methodSettings == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(Cache.getOrStore(stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
                 Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);
