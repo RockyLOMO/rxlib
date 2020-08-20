@@ -3,7 +3,8 @@ package org.rx.core;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.google.gson.*;
+import com.alibaba.fastjson.parser.Feature;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
@@ -24,6 +25,7 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -34,15 +36,14 @@ public final class Contract {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
     public static final LibConfig CONFIG;
-    private static NQuery<Class> skipTypes;
+    private static final Set<Class> skipTypes = ConcurrentHashMap.newKeySet();
 
     static {
-        skipTypes = NQuery.of();
         CONFIG = isNull(readSetting("app", LibConfig.class), new LibConfig());
         if (CONFIG.getBufferSize() <= 0) {
             CONFIG.setBufferSize(512);
         }
-        skipTypes = NQuery.of(CONFIG.getJsonSkipTypesEx());
+        skipTypes.addAll(CONFIG.getJsonSkipTypesEx());
 
         System.setProperty("bootstrapPath", App.getBootstrapPath());
     }
@@ -93,7 +94,7 @@ public final class Contract {
             }
             Map<String, Object> map = as(p, Map.class);
             if (map != null) {
-                return fromJsonAsObject(map, type);
+                return fromJson(map, type);
             }
             return Reflects.changeType(p, type);
         };
@@ -365,97 +366,86 @@ public final class Contract {
     //endregion
 
     //region json
-    public static <T> T fromJsonAsObject(Object jsonOrBean, Class<T> type) {
+//    public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
 //        Gson gson = gson();
 //        if (jsonOrBean instanceof String) {
 //            return gson.fromJson((String) jsonOrBean, type);
 //        }
 //        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
-        return JSON.parseObject(toJsonString(jsonOrBean), type);
-//        return JSON.toJavaObject(jsonOrBean, type);
-//        return JSON.parseObject(toJsonString(jsonOrBean)).toJavaObject(type);
+//        //final 字段不会覆盖
+////        return JSON.parseObject(toJsonString(jsonOrBean), type);
+//    }
+
+//    public static <T> List<T> fromJsonAsList(Object jsonOrList, Type... type) {
+//        //(List<T>) JSON.parseArray(toJsonString(jsonOrList), new Type[]{type}); not work
+//        if (jsonOrList instanceof String) {
+//            return gson.fromJson((String) jsonOrList, TypeToken.getArray(type).getType());
+//        }
+//        return gson.fromJson(gson.toJsonTree(jsonOrList), type);
+//    }
+
+    //final 字段不会覆盖
+    public static <T> T fromJson(Object src, Type type) {
+        return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
     }
 
-    public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
-        Gson gson = gson();
-        if (jsonOrBean instanceof String) {
-            return gson.fromJson((String) jsonOrBean, type);
-        }
-        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
+    public static JSONObject toJsonObject(Object src) {
+        return JSON.parseObject(toJsonString(src));
     }
 
-    public static <T> List<T> fromJsonAsList(Object jsonOrList, Class<T> type) {
-        //gson.fromJson() not work
-        return JSON.parseArray(toJsonString(jsonOrList), type);
+    public static JSONArray toJsonArray(Object src) {
+        return JSON.parseArray(toJsonString(src));
     }
 
-    public static <T> List<T> fromJsonAsList(Object jsonOrList, Type type) {
-        //(List<T>) JSON.parseArray(toJsonString(jsonOrList), new Type[]{type}); not work
-        Gson gson = gson();
-        if (jsonOrList instanceof String) {
-            return gson.fromJson((String) jsonOrList, type);
-        }
-        return gson.fromJson(gson.toJsonTree(jsonOrList), type);
-    }
-
-    public static JSONObject toJsonObject(Object jsonOrBean) {
-        return JSON.parseObject(toJsonString(jsonOrBean));
-    }
-
-    public static JSONArray toJsonArray(Object jsonOrList) {
-        return JSON.parseArray(toJsonString(jsonOrList));
-    }
-
-    public static String toJsonString(Object bean) {
-        if (bean == null) {
+    public static String toJsonString(Object src) {
+        if (src == null) {
             return "{}";
         }
         String s;
-        if ((s = as(bean, String.class)) != null) {
+        if ((s = as(src, String.class)) != null) {
             return s;
         }
 
         Function<Object, String> skipResult = p -> p.getClass().getName();
-        Class type = bean.getClass();
+        Class type = src.getClass();
         List<Object> jArr = null;
         try {
-            if (type.isArray() || bean instanceof Iterable) {
-                jArr = NQuery.asList(bean);
+            if (type.isArray() || src instanceof Iterable) {
+                jArr = NQuery.asList(src);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (p != null && skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
+                    if (p != null && NQuery.of(skipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
-                bean = jArr;
+                src = jArr;
             } else {
-                Object p = bean;
-                if (skipTypes.any(p2 -> Reflects.isInstance(p, p2))) {
-                    bean = skipResult.apply(p);
+                Object p = src;
+                if (NQuery.of(skipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
+                    src = skipResult.apply(p);
                 }
             }
-            return JSON.toJSONString(bean);  //gson map date not work
+            return JSON.toJSONString(src, SerializerFeature.DisableCircularReferenceDetect);  //gson map date not work
         } catch (Exception ex) {
             NQuery<Object> q;
             if (jArr != null) {
                 q = NQuery.of(jArr);
             } else {
-                q = NQuery.of(bean);
+                q = NQuery.of(src);
             }
-            skipTypes = skipTypes.union(q.where(p -> p != null && !p.getClass().getName().startsWith("java."))
-                    .<Class>select(Object::getClass).distinct());
-            log.warn("toJsonString {}", skipTypes.toJoinString(",", Class::getName), ex);
+            skipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            log.warn("toJsonString {}", NQuery.of(skipTypes).toJoinString(",", Class::getName), ex);
 
             JSONObject json = new JSONObject();
-            json.put("_input", bean.toString());
+            json.put("_input", src.toString());
             json.put("_error", ex.getMessage());
             return json.toString();
         }
     }
 
-    private static Gson gson() {
-        return new GsonBuilder().registerTypeAdapter(Date.class, (JsonSerializer<Date>) (date, type, jsonSerializationContext) -> date == null ? null : new JsonPrimitive(date.getTime()))
-                .registerTypeAdapter(Date.class, (JsonDeserializer<Date>) (jsonElement, type, jsonDeserializationContext) -> jsonElement == null ? null : new Date(jsonElement.getAsLong())).create();
-    }
+//    private static Gson gson() {
+//        return new GsonBuilder().registerTypeAdapter(Date.class, (JsonSerializer<Date>) (date, type, jsonSerializationContext) -> date == null ? null : new JsonPrimitive(date.getTime()))
+//                .registerTypeAdapter(Date.class, (JsonDeserializer<Date>) (jsonElement, type, jsonDeserializationContext) -> jsonElement == null ? null : new Date(jsonElement.getAsLong())).create();
+//    }
     //endregion
 }

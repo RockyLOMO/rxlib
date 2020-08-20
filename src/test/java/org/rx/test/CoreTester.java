@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import com.google.common.reflect.TypeToken;
+import com.alibaba.fastjson.TypeReference;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
@@ -322,44 +322,40 @@ public class CoreTester {
         String str = "abc";
         assert str.equals(toJsonString(str));
         String jObj = toJsonString(PersonBean.def);
-        System.out.println("jObj: " + jObj);
-        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
+        System.out.println("encode jObj: " + jObj);
+        System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
+//        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
         List<PersonBean> arr = Arrays.toList(PersonBean.def, PersonBean.def);
         String jArr = toJsonString(arr);
-        System.out.println("jArr: " + jArr);
-        assert ListUtils.isEqualList(fromJsonAsList(jArr, PersonBean.class), arr);
+        System.out.println("encode jArr: " + jArr);
+        System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
+        }.getType()));
+//        assert ListUtils.isEqualList(fromJsonAsList(jArr, List.class), arr);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", "rocky");
         data.put("age", 10);
         data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
-        List<PersonBean> list = fromJsonAsList(jArr, PersonBean.class);
-        for (PersonBean info : list) {
-            System.out.println(info);
-        }
-        list = fromJsonAsList(arr, PersonBean.class);
-        for (PersonBean info : list) {
-            System.out.println(info);
-        }
+        System.out.println(fromJson(data, Map.class).toString());
 
         Tuple<String, List<Float>> tuple = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
         String tjObj = toJsonString(tuple);
-        tuple = fromJsonAsObject(tjObj, new TypeToken<Tuple<String, List<Float>>>() {
+        tuple = fromJson(tjObj, new TypeReference<Tuple<String, List<Float>>>() {
         }.getType());
         System.out.println(tuple);
 
-        List<Tuple<String, List<Float>>> tupleList = Arrays.toList(Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F)), Tuple.of("def", Arrays.toList(1.2F, 2F, 3F)));
+        List<Tuple<String, List<Float>>> tupleList = Arrays.toList(Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F)), Tuple.of("xyz", Arrays.toList(1.2F, 2F, 3F)));
         String tjArr = toJsonString(tupleList);
-        tupleList = fromJsonAsList(tjArr, new TypeToken<List<Tuple<String, List<Float>>>>() {
+        tupleList = fromJson(tjArr, new TypeReference<List<Tuple<String, List<Float>>>>() {
         }.getType());
-        for (Tuple<String, List<Float>> stringListTuple : tupleList) {
-            System.out.println(stringListTuple);
+        for (Tuple<String, List<Float>> item : tupleList) {
+            System.out.println(item);
         }
-        tupleList = fromJsonAsList(tupleList, new TypeToken<List<Tuple<String, List<Float>>>>() {
+        tupleList = fromJson(tupleList, new TypeReference<List<Tuple<String, List<Float>>>>() {
         }.getType());
-        for (Tuple<String, List<Float>> stringListTuple : tupleList) {
-            System.out.println(stringListTuple);
+        for (Tuple<String, List<Float>> item : tupleList) {
+            System.out.println(item);
         }
     }
 }
