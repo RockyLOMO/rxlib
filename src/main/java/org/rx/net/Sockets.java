@@ -17,6 +17,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.springframework.util.CollectionUtils;
@@ -206,25 +207,37 @@ public final class Sockets {
         }
     }
 
-    public static String getLocalAddress() {
-        try {
-            for (Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces(); interfaces.hasMoreElements(); ) {
-                NetworkInterface networkInterface = interfaces.nextElement();
-                if (networkInterface.isLoopback() || networkInterface.isVirtual() || !networkInterface.isUp()) {
+    //InetAddress.getLocalHost(); 可能会返回127.0.0.1
+    @SneakyThrows
+    public static Inet4Address getLocalAddress() {
+        Inet4Address candidateAddress = null;
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface networkInterface = interfaces.nextElement();
+            if (networkInterface.isLoopback() || networkInterface.isVirtual() || !networkInterface.isUp()) {
+                continue;
+            }
+            Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+            while (addresses.hasMoreElements()) {
+                InetAddress address = addresses.nextElement();
+                if (address.isLoopbackAddress() || !(address instanceof Inet4Address)) {
                     continue;
                 }
-                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
-                if (addresses.hasMoreElements()) {
-                    InetAddress address = addresses.nextElement();
-                    if (address instanceof Inet4Address) {
-                        return address.getHostAddress();
-                    }
+                if (address.isSiteLocalAddress()) {
+                    return (Inet4Address) address;
+                }
+                candidateAddress = (Inet4Address) address;
+            }
+        }
+        if (candidateAddress == null) {
+            try (DatagramSocket socket = new DatagramSocket()) {
+                socket.connect(InetAddress.getByName("8.8.8.8"), 53);
+                if (socket.getLocalAddress() instanceof Inet4Address) {
+                    return (Inet4Address) socket.getLocalAddress();
                 }
             }
-        } catch (SocketException e) {
-            log.debug("Error when getting host ip address: <{}>.", e.getMessage());
         }
-        return "127.0.0.1";
+        throw new InvalidOperationException("LAN IP not found");
     }
 
     public InetAddress[] getAddresses(String host) {
