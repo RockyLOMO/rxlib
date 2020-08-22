@@ -13,8 +13,8 @@ import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.LibConfig;
-import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
+import org.rx.security.MD5Util;
 import org.rx.util.function.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -296,10 +296,11 @@ public final class Contract {
             k.append(Reflects.callerClass(1).getSimpleName());
         }
         k.append(methodName).append(toJsonString(args));
-        if (!CONFIG.isAutoCompressCacheKey() || k.getLength() <= 22) {
+        if (!CONFIG.isAutoCompressCacheKey() || k.getLength() <= 32) {
             return k.toString();
         }
-        return SUID.compute(k.toString()).toString();
+        //cache ram换cpu，故不用SUID
+        return MD5Util.md5Hex(k.toString());
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
