@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.Arrays;
 import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.PingClient;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
@@ -228,6 +229,16 @@ public class SocksTester {
         map.put("ok", "1");
         System.out.println(HttpClient.buildQueryString(url, map));
         System.out.println(HttpClient.buildQueryString("http://f-li.cn/blog/1.html", map));
+    }
+
+    @Test
+    public void authenticEndpoint() {
+        String aep = "yf:123456@d.f-li.cn:1080";
+        AuthenticEndpoint endpoint = new AuthenticEndpoint(aep);
+        assert Sockets.toString(endpoint.getEndpoint()).equals("d.f-li.cn:1080");
+        assert endpoint.getUsername().equals("yf");
+        assert endpoint.getPassword().equals("123456");
+        assert endpoint.toString().equals(aep);
     }
 
     @Test
