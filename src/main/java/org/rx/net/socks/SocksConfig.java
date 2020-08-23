@@ -3,8 +3,11 @@ package org.rx.net.socks;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
+import java.net.SocketAddress;
 
 @Data
 @NoArgsConstructor
@@ -16,4 +19,5 @@ public class SocksConfig implements Serializable {
     private int connectTimeoutMillis = 3000;
     private int readTimeoutSeconds = 60;
     private int writeTimeoutSeconds = 60;
+    private BiFunc<SocketAddress, Upstream> upstreamSupplier;
 }

@@ -4,7 +4,10 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.SystemException;
 import org.rx.net.Sockets;
+
+import java.net.InetSocketAddress;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -22,12 +25,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
+        InetSocketAddress socketAddress = InetSocketAddress.createUnresolved(msg.dstAddr(), msg.dstPort());
         Sockets.bootstrap(true, inbound.channel(), null, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             if (socksProxyServer.getAuthenticator() != null) {
-                socksProxyServer.getAuthenticator().upstream(ProxyChannelManageHandler.get(inbound).getUsername()).initChannel(channel);
+                //ProxyChannelManageHandler.get(inbound).getUsername()
+                try {
+                    socksProxyServer.getConfig().getUpstreamSupplier().invoke(socketAddress).initChannel(channel);
+                } catch (Throwable e) {
+                    throw SystemException.wrap(e);
+                }
             }
-        }).connect(msg.dstAddr(), msg.dstPort()).addListener((ChannelFutureListener) f -> {
+        }).connect(socketAddress).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
                 return;

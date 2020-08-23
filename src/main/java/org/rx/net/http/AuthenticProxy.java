@@ -7,14 +7,13 @@ import okhttp3.*;
 import java.net.Proxy;
 import java.net.SocketAddress;
 
-public class ProxyWithAuth extends Proxy {
-    @Getter
+@Getter
+public class AuthenticProxy extends Proxy {
     private Authenticator authenticator;
-    @Getter
     @Setter
     private boolean directOnFail;
 
-    public ProxyWithAuth(Type type, SocketAddress sa, String username, String password) {
+    public AuthenticProxy(Type type, SocketAddress sa, String username, String password) {
         super(type, sa);
         authenticator = (route, response) -> {
             String name = "Proxy-Authorization";

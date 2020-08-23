@@ -235,7 +235,7 @@ public class HttpClient {
         };
         SSLContext sslContext = SSLContext.getInstance("SSL");
         sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
-        Authenticator authenticator = proxy instanceof ProxyWithAuth ? ((ProxyWithAuth) proxy).getAuthenticator() : Authenticator.NONE;
+        Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(pool)
                 .retryOnConnectionFailure(false)
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)

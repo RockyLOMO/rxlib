@@ -16,11 +16,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.InvalidOperationException;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.DirectUpstream;
 
 //thanks https://github.com/hsupu/netty-socks
 @Slf4j
 @RequiredArgsConstructor
 public class SocksProxyServer extends Disposable {
+    @Getter
     private final SocksConfig config;
     @Getter(AccessLevel.PROTECTED)
     @Setter
@@ -45,6 +47,9 @@ public class SocksProxyServer extends Disposable {
             throw new InvalidOperationException("Server has started");
         }
 
+        if (config.getUpstreamSupplier() == null) {
+            config.setUpstreamSupplier(endpoint -> new DirectUpstream());
+        }
         if (flowLogger == null) {
             flowLogger = new FlowLoggerImpl();
         }
