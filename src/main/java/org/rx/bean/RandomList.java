@@ -18,6 +18,19 @@ public class RandomList<T> implements Collection<T>, Serializable {
         private final T element;
         private int weight;
         private final DataRange<Integer> threshold = new DataRange<>();
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            WeightElement<?> that = (WeightElement<?>) o;
+            return Objects.equals(element, that.element);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(element);
+        }
     }
 
     private final List<WeightElement<T>> elements = new ArrayList<>();

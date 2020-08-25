@@ -206,7 +206,7 @@ public class SocksTester {
     public void socks5() {
         SocksConfig config = new SocksConfig();
         config.setListenPort(1081);
-        config.setUpstreamSupplier(addr -> new Socks5Upstream("127.0.0.1:1080"));
+        config.setUpstreamSupplier(addr -> new Socks5Upstream(new AuthenticEndpoint("127.0.0.1:1080")));
         SocksProxyServer ss = new SocksProxyServer(config);
         ss.setAuthenticator((username, password) -> username.equals("ss"));
         ss.start();

@@ -3,17 +3,24 @@ package org.rx.net.socks;
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.SystemException;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
     private final SocksProxyServer socksProxyServer;
 
+    @SneakyThrows
     @Override
     protected void channelRead0(final ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) throws Exception {
         ChannelPipeline pipeline = inbound.pipeline();
@@ -25,27 +32,37 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        InetSocketAddress socketAddress = InetSocketAddress.createUnresolved(msg.dstAddr(), msg.dstPort());
+        InetSocketAddress dstAddr = InetSocketAddress.createUnresolved(msg.dstAddr(), msg.dstPort());
+        BiFunc<SocketAddress, Upstream> upstreamSupplier = socksProxyServer.getConfig().getUpstreamSupplier();
+        Upstream upstream = upstreamSupplier == null ? new DirectUpstream() : upstreamSupplier.invoke(dstAddr);
+        connect(inbound, msg.dstAddrType(), upstream, dstAddr);
+    }
+
+    private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, Upstream upstream, SocketAddress dstAddr) {
         Sockets.bootstrap(true, inbound.channel(), null, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
-            if (socksProxyServer.getAuthenticator() != null) {
-                //ProxyChannelManageHandler.get(inbound).getUsername()
+            //ProxyChannelManageHandler.get(inbound).getUsername()
+            upstream.initChannel(channel);
+        }).connect(dstAddr).addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess()) {
+                TripleFunc<SocketAddress, Upstream, Upstream> upstreamPreReconnect = socksProxyServer.getConfig().getUpstreamPreReconnect();
+                Upstream newUpstream;
                 try {
-                    socksProxyServer.getConfig().getUpstreamSupplier().invoke(socketAddress).initChannel(channel);
+                    if (upstreamPreReconnect != null && (newUpstream = upstreamPreReconnect.invoke(dstAddr, upstream)) != null) {
+                        connect(inbound, addrType, newUpstream, dstAddr);
+                        return;
+                    }
                 } catch (Throwable e) {
                     throw SystemException.wrap(e);
                 }
-            }
-        }).connect(socketAddress).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
+                inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
-            log.trace("socks5 connect to backend {}:{}", msg.dstAddr(), msg.dstPort());
+            log.trace("socks5 connect to backend {}", dstAddr);
             Channel outbound = f.channel();
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));
             inbound.pipeline().addLast("to-upstream", new ForwardingFrontendHandler(outbound));
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, msg.dstAddrType()));
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, addrType));
         });
     }
 }
