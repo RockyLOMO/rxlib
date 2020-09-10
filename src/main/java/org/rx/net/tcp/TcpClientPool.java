@@ -77,7 +77,7 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
     private final GenericKeyedObjectPool<InetSocketAddress, TcpClient> pool;
 
     public TcpClientPool() {
-        this(2, ThreadPool.CPU_THREADS * 2, CONFIG.getNetTimeoutMillis());
+        this(CONFIG.getNetMinPoolSize(), CONFIG.getNetMaxPoolSize(), CONFIG.getNetTimeoutMillis());
     }
 
     public TcpClientPool(int minSize, int maxSize, long timeout) {

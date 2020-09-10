@@ -43,6 +43,9 @@ public final class Contract {
         if (CONFIG.getBufferSize() <= 0) {
             CONFIG.setBufferSize(512);
         }
+        if (CONFIG.getNetMaxPoolSize() <= 0) {
+            CONFIG.setNetMaxPoolSize(Runtime.getRuntime().availableProcessors() * 2);
+        }
         skipTypes.addAll(CONFIG.getJsonSkipTypesEx());
 
         System.setProperty("bootstrapPath", App.getBootstrapPath());

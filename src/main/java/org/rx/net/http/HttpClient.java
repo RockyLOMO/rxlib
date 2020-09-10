@@ -35,16 +35,15 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class HttpClient {
-    public static final String GetMethod = "GET", PostMethod = "POST", HeadMethod = "HEAD";
-    public static final String IE_UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
-    public static final CookieContainer CookieContainer;
-    private static final ConnectionPool pool;
-    private static final MediaType FormType = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JsonType = MediaType.parse("application/json; charset=utf-8");
+    public static final String GET_METHOD = "GET", POST_METHOD = "POST", HEAD_METHOD = "HEAD";
+    public static final String IE_USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
+    public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
+    private static final ConnectionPool POOL = new ConnectionPool(CONFIG.getNetMaxPoolSize(), CONFIG.getCacheExpireMinutes(), TimeUnit.MINUTES);
+    private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     static {
-        System.setProperty("jsse.enableSNIExtension", "false");
-        CookieContainer = new CookieContainer();
-        pool = new ConnectionPool();
+        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2");
+//        System.setProperty("jsse.enableSNIExtension", "false");
     }
 
     //region StaticMembers
@@ -52,7 +51,7 @@ public class HttpClient {
         require(url, raw);
 
         HttpUrl httpUrl = HttpUrl.get(url);
-        CookieContainer.saveFromResponse(httpUrl, parseRawCookie(httpUrl, raw));
+        COOKIE_CONTAINER.saveFromResponse(httpUrl, parseRawCookie(httpUrl, raw));
     }
 
     public static String toRawCookie(List<Cookie> cookies) {
@@ -172,10 +171,43 @@ public class HttpClient {
         }
         return sb.toString();
     }
+
+    @SneakyThrows
+    private static OkHttpClient createClient(int timeoutMillis, boolean cookieJar, Proxy proxy) {
+        X509TrustManager trustManager = new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
+        SSLContext sslContext = SSLContext.getInstance("SSL");
+        sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+        Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL)
+                .retryOnConnectionFailure(false)
+                .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
+                .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .proxy(proxy)
+                .proxyAuthenticator(authenticator);
+        if (cookieJar) {
+            builder = builder.cookieJar(COOKIE_CONTAINER);
+        }
+        return builder.build();
+    }
     //endregion
 
+    private final OkHttpClient client;
     private Headers headers;
-    private OkHttpClient client;
     private Response response;
 
     public void setHeader(String name, String value) {
@@ -207,47 +239,14 @@ public class HttpClient {
         this(CONFIG.getNetTimeoutMillis(), null, null);
     }
 
-    public HttpClient(int millis, String rawCookie, Proxy proxy) {
-        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_UserAgent);
+    public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
+        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_USER_AGENT);
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
             builder = builder.set("cookie", rawCookie);
         }
         headers = builder.build();
-        client = createClient(millis, cookieJar, proxy);
-    }
-
-    @SneakyThrows
-    private OkHttpClient createClient(int millis, boolean cookieJar, Proxy proxy) {
-        X509TrustManager trustManager = new X509TrustManager() {
-            @Override
-            public void checkClientTrusted(X509Certificate[] chain, String authType) {
-            }
-
-            @Override
-            public void checkServerTrusted(X509Certificate[] chain, String authType) {
-            }
-
-            @Override
-            public X509Certificate[] getAcceptedIssuers() {
-                return new X509Certificate[0];
-            }
-        };
-        SSLContext sslContext = SSLContext.getInstance("SSL");
-        sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
-        Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(pool)
-                .retryOnConnectionFailure(false)
-                .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
-                .connectTimeout(millis, TimeUnit.MILLISECONDS)
-                .readTimeout(millis, TimeUnit.MILLISECONDS)
-                .writeTimeout(millis, TimeUnit.MILLISECONDS)
-                .proxy(proxy)
-                .proxyAuthenticator(authenticator);
-        if (cookieJar) {
-            builder = builder.cookieJar(CookieContainer);
-        }
-        return builder.build();
+        client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy));
     }
 
     private Request.Builder createRequest(String url) {
@@ -255,7 +254,7 @@ public class HttpClient {
     }
 
     public Map<String, List<String>> head(String url) {
-        handleString(invoke(url, HttpClient.HeadMethod, null, null));
+        handleString(invoke(url, HttpClient.HEAD_METHOD, null, null));
 
         return responseHeaders();
     }
@@ -263,19 +262,19 @@ public class HttpClient {
     public String get(String url) {
         require(url);
 
-        return handleString(invoke(url, HttpClient.GetMethod, null, null));
+        return handleString(invoke(url, HttpClient.GET_METHOD, null, null));
     }
 
     public MemoryStream getStream(String url) {
         require(url);
 
-        return handleStream(invoke(url, HttpClient.GetMethod, null, null));
+        return handleStream(invoke(url, HttpClient.GET_METHOD, null, null));
     }
 
     public File getFile(String url, String filePath) {
         require(url, filePath);
 
-        return handleFile(invoke(url, HttpClient.GetMethod, null, null), filePath);
+        return handleFile(invoke(url, HttpClient.GET_METHOD, null, null), filePath);
     }
 
     public String post(String url, Map<String, Object> formData) {
@@ -285,13 +284,13 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleString(invoke(url, HttpClient.PostMethod, FormType, dataString));
+        return handleString(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString));
     }
 
     public String post(String url, Object json) {
         require(url, json);
 
-        return handleString(invoke(url, HttpClient.PostMethod, JsonType, toJsonString(json)));
+        return handleString(invoke(url, HttpClient.POST_METHOD, JSON_TYPE, toJsonString(json)));
     }
 
     public MemoryStream postStream(String url, Map<String, Object> formData) {
@@ -301,7 +300,7 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleStream(invoke(url, HttpClient.PostMethod, FormType, dataString));
+        return handleStream(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString));
     }
 
     public File postFile(String url, Map<String, Object> formData, String filePath) {
@@ -311,13 +310,13 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleFile(invoke(url, HttpClient.PostMethod, FormType, dataString), filePath);
+        return handleFile(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString), filePath);
     }
 
     public File postFile(String url, Object json, String filePath) {
         require(url, json, filePath);
 
-        return handleFile(invoke(url, HttpClient.PostMethod, JsonType, toJsonString(json)), filePath);
+        return handleFile(invoke(url, HttpClient.POST_METHOD, JSON_TYPE, toJsonString(json)), filePath);
     }
 
     @SneakyThrows
@@ -325,13 +324,16 @@ public class HttpClient {
         Request.Builder request = createRequest(url);
         RequestBody requestBody;
         switch (method) {
-            case HttpClient.PostMethod:
-                requestBody = RequestBody.create(contentType, content);
+            case HttpClient.POST_METHOD:
+                requestBody = RequestBody.create(content, contentType);
                 request = request.post(requestBody);
                 break;
             default:
                 request = request.get();
                 break;
+        }
+        if (response != null) {
+            response.close();
         }
         response = client.newCall(request.build()).execute();
         return response.body();
@@ -365,7 +367,7 @@ public class HttpClient {
 
     @SneakyThrows
     public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
-        Map<String, String> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, p -> servletRequest.getHeader(p));
+        Map<String, String> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, servletRequest::getHeader);
         headers.remove("host");
         setHeaders(headers);
 
@@ -376,7 +378,7 @@ public class HttpClient {
         log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(headers));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
-        if (!servletRequest.getMethod().equalsIgnoreCase(GetMethod)) {
+        if (!servletRequest.getMethod().equalsIgnoreCase(GET_METHOD)) {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
                 if (servletRequest.getContentType() != null) {

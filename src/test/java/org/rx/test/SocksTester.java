@@ -10,6 +10,7 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.PingClient;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.RestClient;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -239,6 +240,12 @@ public class SocksTester {
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
+    }
+
+    @Test
+    public void restClient() {
+        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/");
+        System.out.println(facade.queryIp());
     }
 
     @Test

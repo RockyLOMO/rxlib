@@ -12,6 +12,8 @@ public class LibConfig {
     private int scheduleDelay = 2000;
     private int bufferSize = 512;
     private int netTimeoutMillis = 16000;
+    private int netMinPoolSize = 2;
+    private int netMaxPoolSize;
     private int cacheExpireMinutes = 4;
     private boolean autoCompressCacheKey = true;
     private String defaultCache = "LruCache";
