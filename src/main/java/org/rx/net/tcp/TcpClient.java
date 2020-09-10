@@ -202,7 +202,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
             connectedTime = DateTime.now();
             connectWaiter.set();
         });
-        connectWaiter.waitOne();
+        connectWaiter.waitOne(getConfig().getConnectTimeoutMillis());
         connectWaiter.reset();
         if (!autoReconnect && !isConnected()) {
             throw new InvalidOperationException("Client connect fail");
