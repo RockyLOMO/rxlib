@@ -16,7 +16,7 @@ public class LibConfig {
     private int netMaxPoolSize;
     private int cacheExpireMinutes = 4;
     private boolean autoCompressCacheKey = true;
-    private String defaultCache = "LruCache";
+    private String defaultCache = Cache.LRU_CACHE;
     private String[] jsonSkipTypes = new String[]{"javax.servlet.ServletRequest", "javax.servlet.ServletResponse", "org.springframework.ui.Model"};
     private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
 

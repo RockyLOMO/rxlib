@@ -3,6 +3,7 @@ package org.rx.net.http;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,7 +21,7 @@ import static org.rx.core.Contract.*;
 public final class RestClient {
     static final ThreadLocal<Type> RESULT_TYPE = new ThreadLocal<>();
 
-    public static <T> T facade(Class<T> contract, String serverPrefixUrl) {
+    public static <T> T facade(Class<T> contract, String serverPrefixUrl, BiFunc<String, Boolean> checkResponse) {
         RequestMapping baseMapping = contract.getAnnotation(RequestMapping.class);
         String prefix = serverPrefixUrl + getFirstPath(baseMapping);
         boolean defMethod = isPostMethod(baseMapping);
@@ -49,6 +50,7 @@ public final class RestClient {
                 return data;
             };
 
+            Exception ex = null;
             StringBuilder logMsg = new StringBuilder();
             String responseText = null;
             HttpClient client = new HttpClient();
@@ -69,9 +71,16 @@ public final class RestClient {
                     logMsg.appendLine("Request:\t%s", toJsonString(data));
                     responseText = client.get(HttpClient.buildQueryString(reqUrl, data));
                 }
-            } finally {
-                logMsg.append("Response:\t%s", responseText);
-                log.info(logMsg.toString());
+            } catch (Exception e) {
+                ex = e;
+            }
+            logMsg.append("Response:\t%s", responseText);
+            if (ex != null || (checkResponse != null && !checkResponse.invoke(responseText))) {
+                throw new RestErrorException(logMsg.toString(), ex);
+            }
+            log.info(logMsg.toString());
+            if (m.getReturnType().equals(Void.class)) {
+                return null;
             }
             return fromJson(responseText, isNull(RESULT_TYPE.get(), m.getReturnType()));
         });

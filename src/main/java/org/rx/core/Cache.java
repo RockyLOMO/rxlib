@@ -31,6 +31,10 @@ public interface Cache<TK, TV> {
         return Cache.<TK, TV>getInstance(cacheName).get(key, supplier, expireMinutes);
     }
 
+    static <TK, TV> Cache<TK, TV> getInstance() {
+        return getInstance(CONFIG.getDefaultCache());
+    }
+
     static <TK, TV> Cache<TK, TV> getInstance(String name) {
         return CacheFactory.getInstance().get(name);
     }
