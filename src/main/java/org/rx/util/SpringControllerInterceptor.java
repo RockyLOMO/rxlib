@@ -6,15 +6,13 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.ControllerAdvice;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
@@ -35,6 +33,7 @@ public class SpringControllerInterceptor {
         boolean isSignIn(String methodName, Object[] args);
     }
 
+    protected static final ThreadLocal<Tuple<Method, StringBuilder>> context = new ThreadLocal<>();
     private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
     protected String notSignInMsg = "Not sign in";
 
@@ -88,12 +87,13 @@ public class SpringControllerInterceptor {
             long ms = watcher.elapsed(TimeUnit.MILLISECONDS);
             msg.appendLine(String.format("\tElapsed = %sms", ms));
         } catch (Exception e) {
+            hasError = true;
             try {
                 msg.append(String.format("Error:\t%s", e.getMessage()));
-                returnValue = onException(method, e, msg);
-            } catch (Throwable ie) {
-                hasError = true;
-                throw ie;
+                context.set(Tuple.of(method, msg));
+                returnValue = onException(e, App.getCurrentRequest());
+            } finally {
+                context.remove();
             }
         } finally {
             msg.appendLine(String.format("Response:\t%s", toJsonString(returnValue)));
@@ -124,14 +124,10 @@ public class SpringControllerInterceptor {
         }).toList());
     }
 
-    protected Object onException(Method method, Exception e, StringBuilder msg) throws Throwable {
-        msg.appendLine("ControllerError:\t\t%s", e);
-        throw e;
-    }
-
-    @ResponseStatus(HttpStatus.OK)
     @ExceptionHandler({Exception.class})
-    public ResponseEntity handleException(Exception e, HttpServletRequest request) {
+    @ResponseStatus(HttpStatus.OK)
+    @ResponseBody
+    public Object onException(Exception e, HttpServletRequest request) {
         String msg = DEFAULT_MESSAGE, debugMsg = null;
         Exception logEx = e;
         if (e instanceof ValidateException || handleInfoLevelExceptions().any(p -> Reflects.isInstance(e, p))) {
@@ -142,11 +138,17 @@ public class SpringControllerInterceptor {
             msg = ((SystemException) e).getFriendlyMessage();
             debugMsg = e.getMessage();
         }
+
         if (logEx != null) {
-            log.error("HttpError {}", request.getRequestURL().toString(), logEx);
+            Tuple<Method, StringBuilder> tuple = context.get();
+            if (tuple != null) {
+                tuple.right.appendLine("ControllerError:\t\t%s", logEx);
+            } else {
+                log.error("HttpError {}", request.getRequestURL().toString(), logEx);
+            }
         }
 
-        return ResponseEntity.ok(handleExceptionResponse(msg, debugMsg));
+        return handleExceptionResponse(msg, debugMsg);
     }
 
     protected NQuery<Class> handleInfoLevelExceptions() {
