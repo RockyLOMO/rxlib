@@ -1,6 +1,8 @@
 package org.rx.util;
 
 import com.google.common.base.Stopwatch;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -10,7 +12,6 @@ import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,7 +36,8 @@ public class SpringControllerInterceptor {
 
     protected static final ThreadLocal<Tuple<Method, StringBuilder>> context = new ThreadLocal<>();
     private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
-    protected String notSignInMsg = "Not sign in";
+    @Getter(AccessLevel.PROTECTED)
+    private String notSignInMsg = "Not sign in";
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         // 1 先过滤出有RequestMapping的方法
@@ -89,9 +91,11 @@ public class SpringControllerInterceptor {
         } catch (Exception e) {
             hasError = true;
             try {
-                msg.append(String.format("Error:\t%s", e.getMessage()));
+                msg.append(String.format("\nError:\t%s", e));
                 context.set(Tuple.of(method, msg));
                 returnValue = onException(e, App.getCurrentRequest());
+            } catch (Exception ex) {
+                log.error("onException", ex);
             } finally {
                 context.remove();
             }
@@ -129,23 +133,21 @@ public class SpringControllerInterceptor {
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
         String msg = DEFAULT_MESSAGE, debugMsg = null;
-        Exception logEx = e;
-        if (e instanceof ValidateException || handleInfoLevelExceptions().any(p -> Reflects.isInstance(e, p))) {
+        boolean logInfo = false;
+        if (e instanceof ValidateException || handleInfoLevelExceptions().any(p -> Reflects.isInstance(e, p))
+                || Strings.equals(e.getMessage(), getNotSignInMsg())) {
             //参数校验错误 ignore log
             msg = e.getMessage();
-            logEx = null;
+            logInfo = true;
         } else if (e instanceof SystemException) {
             msg = ((SystemException) e).getFriendlyMessage();
             debugMsg = e.getMessage();
         }
 
-        if (logEx != null) {
-            Tuple<Method, StringBuilder> tuple = context.get();
-            if (tuple != null) {
-                tuple.right.appendLine("ControllerError:\t\t%s", logEx);
-            } else {
-                log.error("HttpError {}", request.getRequestURL().toString(), logEx);
-            }
+        if (logInfo) {
+            log.info("HttpError {} {}", request.getRequestURL().toString(), e.getMessage());
+        } else {
+            log.error("HttpError {}", request.getRequestURL().toString(), e);
         }
 
         return handleExceptionResponse(msg, debugMsg);
