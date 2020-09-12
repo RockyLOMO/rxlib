@@ -303,6 +303,16 @@ public class Reflects extends TypeUtils {
         }
     }
 
+    public static Object defaultValue(Class type) {
+        if (type.isPrimitive()) {
+            if (type.equals(boolean.class)) {
+                return false;
+            }
+            return changeType(0, type);
+        }
+        return null;
+    }
+
     @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
     @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
     @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})

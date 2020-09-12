@@ -8,7 +8,6 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.springframework.http.HttpStatus;
@@ -18,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -34,15 +35,17 @@ public class SpringControllerInterceptor {
         boolean isSignIn(String methodName, Object[] args);
     }
 
-    protected static final ThreadLocal<Tuple<Method, StringBuilder>> context = new ThreadLocal<>();
-    private static final NQuery<String> skipMethods = NQuery.of("setServletRequest", "setServletResponse");
+    @Getter(AccessLevel.PROTECTED)
+    private List<String> skipMethods = Arrays.toList("setServletRequest", "setServletResponse", "isSignIn");
+    @Getter(AccessLevel.PROTECTED)
+    private List<Class> infoLevelExceptions = new ArrayList<>();
     @Getter(AccessLevel.PROTECTED)
     private String notSignInMsg = "Not sign in";
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         // 1 先过滤出有RequestMapping的方法
         final Signature signature = joinPoint.getSignature();
-        if (!(signature instanceof MethodSignature) || skipMethods.any(p -> p.equals(signature.getName()))) {
+        if (!(signature instanceof MethodSignature) || getSkipMethods().contains(signature.getName())) {
             return joinPoint.proceed();
         }
 
@@ -82,7 +85,7 @@ public class SpringControllerInterceptor {
             Stopwatch watcher = Stopwatch.createStarted();
             if (joinPoint.getTarget() instanceof IRequireSignIn) {
                 if (!((IRequireSignIn) joinPoint.getTarget()).isSignIn(method.getName(), joinPoint.getArgs())) {
-                    throw new InvalidOperationException(notSignInMsg);
+                    throw new InvalidOperationException(getNotSignInMsg());
                 }
             }
             returnValue = joinPoint.proceed();
@@ -90,15 +93,8 @@ public class SpringControllerInterceptor {
             msg.appendLine(String.format("\tElapsed = %sms", ms));
         } catch (Exception e) {
             hasError = true;
-            try {
-                msg.append(String.format("\nError:\t%s", e));
-                context.set(Tuple.of(method, msg));
-                returnValue = onException(e, App.getCurrentRequest());
-            } catch (Exception ex) {
-                log.error("onException", ex);
-            } finally {
-                context.remove();
-            }
+            msg.appendLine(String.format("\n\tError:\t%s", e));
+            returnValue = innerOnException(e, App.getCurrentRequest(), method);
         } finally {
             msg.appendLine(String.format("Response:\t%s", toJsonString(returnValue)));
             if (hasError) {
@@ -131,10 +127,14 @@ public class SpringControllerInterceptor {
     @ExceptionHandler({Exception.class})
     @ResponseStatus(HttpStatus.OK)
     @ResponseBody
-    public Object onException(Exception e, HttpServletRequest request) {
+    public Object onException(Exception e, HttpServletRequest request) throws Exception {
+        return innerOnException(e, request, null);
+    }
+
+    private Object innerOnException(Exception e, HttpServletRequest request, Method method) throws Exception {
         String msg = DEFAULT_MESSAGE, debugMsg = null;
         boolean logInfo = false;
-        if (e instanceof ValidateException || handleInfoLevelExceptions().any(p -> Reflects.isInstance(e, p))
+        if (e instanceof ValidateException || NQuery.of(getInfoLevelExceptions()).any(p -> Reflects.isInstance(e, p))
                 || Strings.equals(e.getMessage(), getNotSignInMsg())) {
             //参数校验错误 ignore log
             msg = e.getMessage();
@@ -150,14 +150,14 @@ public class SpringControllerInterceptor {
             log.error("HttpError {}", request.getRequestURL().toString(), e);
         }
 
-        return handleExceptionResponse(msg, debugMsg);
+        return handleExceptionResponse(e, method, msg, debugMsg);
     }
 
-    protected NQuery<Class> handleInfoLevelExceptions() {
-        return NQuery.of();
-    }
-
-    protected Object handleExceptionResponse(String msg, String debugMsg) {
+    protected Object handleExceptionResponse(Exception e, Method method, String msg, String debugMsg) throws Exception {
+        if (method != null) {
+            throw e;
+//            return Reflects.defaultValue(method.getReturnType());
+        }
         return msg + "\n" + debugMsg;
     }
 }
