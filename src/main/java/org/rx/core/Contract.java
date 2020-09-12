@@ -13,6 +13,7 @@ import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.LibConfig;
+import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.security.MD5Util;
 import org.rx.util.function.*;
@@ -295,14 +296,17 @@ public final class Contract {
 
     public static String cacheKey(String methodName, Object... args) {
         StringBuilder k = new StringBuilder(Reflects.callerClass(1).getSimpleName());
-        int offset = k.getLength();
+        int offset = 10;
+        if (k.getLength() > offset) {
+            k.setLength(offset);
+        } else {
+            offset = k.getLength();
+        }
         k.append(methodName).append(toJsonString(args));
         if (k.getLength() <= 32) {
             return k.toString();
         }
-        //cache ram换cpu，故不用SUID
-        String hex = MD5Util.md5Hex(k.substring(offset));
-        return k.setLength(offset).append(hex).toString();
+        return k.setLength(offset).append(SUID.compute(k.substring(offset))).toString();
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {

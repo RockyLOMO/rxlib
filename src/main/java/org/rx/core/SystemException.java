@@ -43,7 +43,7 @@ public class SystemException extends NestedRuntimeException {
                 }
                 return codes;
             }), Collections.emptyMap());
-        });
+        }, Cache.WEAK_CACHE);
     }
 
     public static SystemException wrap(Throwable cause) {
@@ -116,7 +116,7 @@ public class SystemException extends NestedRuntimeException {
             Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
                 Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
-            }), Tuple.class);
+            }, Cache.WEAK_CACHE), Tuple.class);
             if (caller == null) {
                 continue;
             }
