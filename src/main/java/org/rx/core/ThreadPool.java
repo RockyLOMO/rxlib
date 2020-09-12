@@ -246,7 +246,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             switch (p.getFlag()) {
                 case Single:
                     if (!locker.tryLock()) {
-                        throw new InterruptedException();
+                        throw new InterruptedException(String.format("SingleExecute %s locked by other thread", p.getName()));
                     }
                     log.debug("{} {} tryLock", p.getFlag(), p.getName());
                     break;

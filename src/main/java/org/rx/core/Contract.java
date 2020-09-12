@@ -306,7 +306,8 @@ public final class Contract {
         if (k.getLength() <= 32) {
             return k.toString();
         }
-        return k.setLength(offset).append(SUID.compute(k.substring(offset))).toString();
+        String hex = k.substring(offset);
+        return k.setLength(offset).append(SUID.compute(hex)).toString();
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {

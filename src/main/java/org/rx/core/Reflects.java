@@ -221,7 +221,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static NQuery<Field> getFields(Class type) {
-        NQuery<Field> fields = NQuery.of(Cache.<Tuple<String, Class>, List<Field>>getOrSet(Tuple.of("getFields", type), k -> FieldUtils.getAllFieldsList(type), Cache.LRU_CACHE));
+        NQuery<Field> fields = NQuery.of(Cache.<Tuple<String, Class>, List<Field>>getOrSet(Tuple.of("getFields", type), k -> FieldUtils.getAllFieldsList(type), Cache.WEAK_CACHE));
         for (Field field : fields) {
             setAccess(field);
         }
