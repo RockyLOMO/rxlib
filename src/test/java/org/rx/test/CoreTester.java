@@ -285,36 +285,17 @@ public class CoreTester {
     public void reflect() {
         assert Reflects.callerClass(0) == this.getClass();
         System.out.println(cacheKey("reflect"));
+        System.out.println(cacheKey("reflect", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
         for (StackTraceElement traceElement : Reflects.threadStack(8)) {
             System.out.println(traceElement);
         }
-//        for (int i = 0; i < 8; i++) {
-//            System.out.println(Reflects.getStackTrace(i));
-//        }
-
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
         System.out.println(bean.getError());
-//
+
 //        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
 //        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
 //        System.out.println(bean.getError());
-    }
-
-    @Test
-    public void appSetting() {
-        Map<String, Object> map = loadYaml("application.yml");
-        System.out.println(map);
-        Object v = readSetting("app.test.version");
-        assert v.equals(0);
-        v = readSetting("not");
-        assert v == null;
-
-        v = readSetting("org.rx.test.CoreTester", null, loadYaml(SystemException.CODE_FILE));
-        assert v instanceof Map;
-
-        v = readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, loadYaml(SystemException.CODE_FILE));
-        assert eq(v, "Exception Error Code value=$x");
     }
 
     @Test
@@ -357,5 +338,21 @@ public class CoreTester {
         for (Tuple<String, List<Float>> item : tupleList) {
             System.out.println(item);
         }
+    }
+
+    @Test
+    public void appSetting() {
+        Map<String, Object> map = loadYaml("application.yml");
+        System.out.println(map);
+        Object v = readSetting("app.test.version");
+        assert v.equals(0);
+        v = readSetting("not");
+        assert v == null;
+
+        v = readSetting("org.rx.test.CoreTester", null, loadYaml(SystemException.CODE_FILE));
+        assert v instanceof Map;
+
+        v = readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, loadYaml(SystemException.CODE_FILE));
+        assert eq(v, "Exception Error Code value=$x");
     }
 }

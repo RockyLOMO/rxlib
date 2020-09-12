@@ -244,7 +244,7 @@ public class SocksTester {
 
     @Test
     public void restClient() {
-        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/");
+        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
         System.out.println(facade.queryIp());
     }
 

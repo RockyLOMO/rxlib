@@ -12,6 +12,4 @@ app:
   #    - errorCode.yml
 
   test.version: 1
-  test:
-    version: 2
 app.test.version: 0

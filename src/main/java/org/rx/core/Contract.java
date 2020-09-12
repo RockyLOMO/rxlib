@@ -294,16 +294,15 @@ public final class Contract {
     }
 
     public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder();
-        if (!CONFIG.isAutoCompressCacheKey()) {
-            k.append(Reflects.callerClass(1).getSimpleName());
-        }
+        StringBuilder k = new StringBuilder(Reflects.callerClass(1).getSimpleName());
+        int offset = k.getLength();
         k.append(methodName).append(toJsonString(args));
-        if (!CONFIG.isAutoCompressCacheKey() || k.getLength() <= 32) {
+        if (k.getLength() <= 32) {
             return k.toString();
         }
         //cache ram换cpu，故不用SUID
-        return MD5Util.md5Hex(k.toString());
+        String hex = MD5Util.md5Hex(k.substring(offset));
+        return k.setLength(offset).append(hex).toString();
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
