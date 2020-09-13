@@ -16,6 +16,7 @@ import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
@@ -31,7 +32,7 @@ import static org.rx.core.Contract.*;
 public class Reflects extends TypeUtils {
     //region NestedTypes
     @RequiredArgsConstructor
-    public static class PropertyNode {
+    public static class PropertyNode implements Serializable {
         public final String propertyName;
         public final Method setter;
         public final Method getter;
