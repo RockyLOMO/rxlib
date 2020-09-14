@@ -26,7 +26,7 @@ public class SpringLogInterceptor {
         msg.appendLine(tuple.right, toJsonString(r));
         return r;
     }
-
+    //            return Reflects.defaultValue(method.getReturnType());
     protected Object onException(Signature signature, Exception e, StringBuilder msg) throws Throwable {
         msg.appendLine("Error:\t\t\t%s", e.getMessage());
         throw e;

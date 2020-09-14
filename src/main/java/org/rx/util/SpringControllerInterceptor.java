@@ -17,8 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -36,9 +36,9 @@ public class SpringControllerInterceptor {
     }
 
     @Getter(AccessLevel.PROTECTED)
-    private List<String> skipMethods = Arrays.toList("setServletRequest", "setServletResponse", "isSignIn");
+    private List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
     @Getter(AccessLevel.PROTECTED)
-    private List<Class> infoLevelExceptions = new ArrayList<>();
+    private List<Class> infoLevelExceptions = new CopyOnWriteArrayList<>();
     @Getter(AccessLevel.PROTECTED)
     private String notSignInMsg = "Not sign in";
 
@@ -94,7 +94,8 @@ public class SpringControllerInterceptor {
         } catch (Exception e) {
             hasError = true;
             msg.appendLine(String.format("\n\tError:\t%s", e));
-            returnValue = innerOnException(e, App.getCurrentRequest(), method);
+            //抛出，controller return 常量会覆盖
+            throw e;
         } finally {
             msg.appendLine(String.format("Response:\t%s", toJsonString(returnValue)));
             if (hasError) {
@@ -127,11 +128,7 @@ public class SpringControllerInterceptor {
     @ExceptionHandler({Exception.class})
     @ResponseStatus(HttpStatus.OK)
     @ResponseBody
-    public Object onException(Exception e, HttpServletRequest request) throws Exception {
-        return innerOnException(e, request, null);
-    }
-
-    private Object innerOnException(Exception e, HttpServletRequest request, Method method) throws Exception {
+    public Object onException(Exception e, HttpServletRequest request) {
         String msg = DEFAULT_MESSAGE, debugMsg = null;
         boolean logInfo = false;
         if (e instanceof ValidateException || NQuery.of(getInfoLevelExceptions()).any(p -> Reflects.isInstance(e, p))
@@ -150,14 +147,10 @@ public class SpringControllerInterceptor {
             log.error("HttpError {}", request.getRequestURL().toString(), e);
         }
 
-        return handleExceptionResponse(e, method, msg, debugMsg);
+        return handleExceptionResponse(e, msg, debugMsg);
     }
 
-    protected Object handleExceptionResponse(Exception e, Method method, String msg, String debugMsg) throws Exception {
-        if (method != null) {
-            throw e;
-//            return Reflects.defaultValue(method.getReturnType());
-        }
+    protected Object handleExceptionResponse(Exception e, String msg, String debugMsg) {
         return msg + "\n" + debugMsg;
     }
 }
