@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.client.RestClientException;
 
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
@@ -76,7 +77,7 @@ public final class RestClient {
             }
             logMsg.append("Response:\t%s", responseText);
             if (ex != null || (checkResponse != null && !checkResponse.invoke(responseText))) {
-                throw new RestErrorException(logMsg.toString(), ex);
+                throw new RestClientException(logMsg.toString(), ex);
             }
             log.info(logMsg.toString());
             if (m.getReturnType().equals(Void.class)) {
