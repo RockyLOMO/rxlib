@@ -42,7 +42,7 @@ public class HttpClient {
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     static {
-        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2");
+//        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2");//SSLv2Hello
 //        System.setProperty("jsse.enableSNIExtension", "false");
     }
 

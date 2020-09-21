@@ -265,7 +265,7 @@
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.6</version>
                 <configuration>
-                    <skip>false</skip>
+                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
@@ -274,14 +274,12 @@
                         <goals>
                             <goal>sign</goal>
                         </goals>
-                        <!--                        <configuration>-->
-                        <!--                            <executable>gpg</executable>-->
-                        <!--                            <gpgArguments>-->
-                        <!--                                <arg>&#45;&#45;pinentry-mode</arg>-->
-                        <!--                                <arg>loopback</arg>-->
-                        <!--                            </gpgArguments>-->
-                        <!--                            <passphrase>${gpg.passphrase}</passphrase>-->
-                        <!--                        </configuration>-->
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
