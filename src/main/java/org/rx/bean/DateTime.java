@@ -4,7 +4,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.NQuery;
-import org.rx.core.SystemException;
+import org.rx.core.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
@@ -31,19 +31,19 @@ public final class DateTime extends Date {
         return now().asUniversalTime();
     }
 
-    @ErrorCode(cause = ParseException.class, messageKeys = {"$formats", "$date"})
+    @ErrorCode(cause = ParseException.class)
     public static DateTime valueOf(String dateString) {
-        SystemException lastEx = null;
+        ApplicationException lastEx = null;
         for (String format : Formats) {
             try {
                 return valueOf(dateString, format);
-            } catch (SystemException ex) {
+            } catch (ApplicationException ex) {
                 lastEx = ex;
             }
         }
         $<ParseException> out = $();
         Exception nested = lastEx.tryGet(out, ParseException.class) ? out.v : lastEx;
-        throw new SystemException(values(String.join(",", Formats), dateString), nested);
+        throw new ApplicationException(values(String.join(",", Formats), dateString), nested);
     }
 
     @SneakyThrows
@@ -121,19 +121,19 @@ public final class DateTime extends Date {
     }
 
     public double getTotalDays() {
-        return super.getTime() / (24 * 60 * 60 * 1000);
+        return super.getTime() / (24d * 60 * 60 * 1000);
     }
 
     public double getTotalHours() {
-        return super.getTime() / (60 * 60 * 1000);
+        return super.getTime() / (60d * 60 * 1000);
     }
 
     public double getTotalMinutes() {
-        return super.getTime() / (60 * 1000);
+        return super.getTime() / (60d * 1000);
     }
 
     public double getTotalSeconds() {
-        return super.getTime() / (1000);
+        return super.getTime() / (1000d);
     }
 
     public double getTotalMilliseconds() {

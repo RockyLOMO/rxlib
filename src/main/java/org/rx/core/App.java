@@ -1,22 +1,13 @@
 package org.rx.core;
 
-import com.google.common.net.HttpHeaders;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
-import org.rx.io.IOStream;
+import org.rx.core.cache.ThreadCache;
 import org.rx.security.MD5Util;
-import org.rx.net.http.HttpClient;
 import org.rx.io.MemoryStream;
-import org.springframework.util.MimeTypeUtils;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +18,11 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class App extends SystemUtils {
+    static {
+        log.debug("init {}", ThreadCache.class);
+        System.setProperty("bootstrapPath", getBootstrapPath());
+    }
+
     //region Basic
     public static String getBootstrapPath() {
         String p = App.class.getClassLoader().getResource("").getFile();
@@ -37,7 +33,7 @@ public class App extends SystemUtils {
                 p = p.substring(1);
             }
         }
-        System.out.println("bootstrapPath:" + p);
+        log.debug("bootstrapPath: {}", p);
         return p;
     }
 
@@ -186,120 +182,9 @@ public class App extends SystemUtils {
         }
     }
 
-    public static <T> T deepClone(T obj) {
+    public static <T extends Serializable> T deepClone(T obj) {
         byte[] data = serialize(obj);
         return (T) deserialize(data);
-    }
-    //endregion
-
-    //region Servlet
-    public static HttpServletRequest getCurrentRequest() {
-        ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        return ra == null ? null : ra.getRequest();
-    }
-
-    public static String getRequestIp(HttpServletRequest request) {
-        if (request == null) {
-            return "0.0.0.0";
-        }
-
-        String ip = request.getHeader(HttpHeaders.X_FORWARDED_FOR);
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_CLIENT_IP");
-        }
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("x-real-ip");
-        }
-        if (Strings.isNullOrEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        String[] ips = ip.split(",");
-        if (ips.length > 1) {
-            ip = ips[0];
-        }
-        return ip;
-    }
-
-    @SneakyThrows
-    public static void downloadFile(HttpServletResponse response, String filePath) {
-        require(response, filePath);
-        switch (filePath) {
-            case "info":
-            case "error":
-                filePath = String.format("%s/logs/%s", System.getProperty("catalina.home"), filePath);
-        }
-
-        File file = new File(filePath);
-        response.setCharacterEncoding(Contract.UTF_8);
-        response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
-        response.setContentLength((int) file.length());
-        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
-        try (FileInputStream in = new FileInputStream(file)) {
-            IOStream.copyTo(in, response.getOutputStream());
-        }
-    }
-
-    @SneakyThrows
-    public static void cacheResponse(HttpServletResponse response, int cacheSeconds, String contentType, InputStream in) {
-        response.setHeader(HttpHeaders.CACHE_CONTROL, String.format("max-age=%s", cacheSeconds));
-        response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.utcNow().addSeconds(cacheSeconds).getTime()).toString());
-        response.setContentType(contentType);
-        if (in != null) {
-            IOStream.copyTo(in, response.getOutputStream());
-        }
-    }
-
-    public static String getCookie(String name) {
-        require(name);
-
-        HttpServletRequest servletRequest = getCurrentRequest();
-        if (servletRequest == null) {
-            throw new InvalidOperationException("上下环境无ServletRequest");
-        }
-
-        return catchCall(() -> {
-            if (ArrayUtils.isEmpty(servletRequest.getCookies())) {
-                return null;
-            }
-            return NQuery.of(servletRequest.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
-        });
-    }
-
-    public static void setCookie(HttpServletResponse response, String name, String value) {
-        setCookie(response, name, value);
-    }
-
-    public static void setCookie(HttpServletResponse response, String name, String value, Date expire) {
-        require(response, name);
-
-        Cookie cookie = new Cookie(name, HttpClient.encodeUrl(value));
-        cookie.setPath("/");
-//        cookie.setSecure(true);
-        cookie.setHttpOnly(true);
-        if (expire != null) {
-            cookie.setMaxAge((int) new DateTime(expire).subtract(DateTime.now()).getTotalSeconds());
-        }
-        response.addCookie(cookie);
-    }
-
-    public static void deleteCookie(HttpServletResponse response, String name) {
-        require(response, name);
-
-        Cookie cookie = new Cookie(name, null);
-        cookie.setPath("/");
-//        cookie.setSecure(true);
-        cookie.setHttpOnly(true);
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
     }
     //endregion
 }

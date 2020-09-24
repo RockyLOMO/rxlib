@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 @Data
-public class LibConfig {
+public class RxConfig {
     private int sleepMillis = 200;
     private int scheduleDelay = 2000;
     private int bufferSize = 512;

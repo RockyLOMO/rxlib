@@ -185,7 +185,7 @@ public class BeanTester {
 
     @Test
     public void testEnum() {
-        System.out.println(PersonGender.Girl.toDescription());
+        System.out.println(PersonGender.Girl.description());
     }
 
     @Test

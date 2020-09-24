@@ -9,6 +9,8 @@ import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;
@@ -48,7 +50,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
 
     //region staticMembers
     @SuppressWarnings(NON_WARNING)
-    @ErrorCode(value = "argError", messageKeys = {"$type"})
+    @ErrorCode("argError")
     public static <T> List<T> asList(Object arrayOrIterable) {
         require(arrayOrIterable);
 
@@ -68,7 +70,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
             return toList(iterable);
         }
 
-        throw new SystemException(values(type.getSimpleName()), "argError");
+        throw new ApplicationException(values(type.getSimpleName()), "argError");
     }
 
     public static <T> List<T> toList(Iterable<T> iterable) {
@@ -491,7 +493,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return single(null);
     }
 
-    @ErrorCode(messageKeys = {"$count"})
+    @ErrorCode
     public T single(Predicate<T> predicate) {
         Stream<T> stream = stream();
         if (predicate != null) {
@@ -499,7 +501,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         }
         List<T> list = stream.limit(2).collect(Collectors.toList());
         if (list.size() != 1) {
-            throw new SystemException(values(list.size()));
+            throw new ApplicationException(values(list.size()));
         }
         return list.get(0);
     }
@@ -508,7 +510,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return singleOrDefault(null);
     }
 
-    @ErrorCode(messageKeys = {"$count"})
+    @ErrorCode
     public T singleOrDefault(Predicate<T> predicate) {
         Stream<T> stream = stream();
         if (predicate != null) {
@@ -516,7 +518,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         }
         List<T> list = stream.limit(2).collect(Collectors.toList());
         if (list.size() > 1) {
-            throw new SystemException(values(list.size()));
+            throw new ApplicationException(values(list.size()));
         }
         return list.isEmpty() ? null : list.get(0);
     }
@@ -581,7 +583,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
             break;
         }
         if (type == null) {
-            throw new InvalidOperationException("Empty Result");
+            throw new InvalidException("Empty Result");
         }
         T[] array = (T[]) Array.newInstance(type, result.size());
         result.toArray(array);

@@ -2,35 +2,37 @@ default: Network error, please retry later.
 
 org:
   rx:
-    core:
-      Reflects:
-        getResource: Not found resource $name with type $type
-        changeType[notSupported]: Not supported convert $fType to $tType
-        changeType[enumError]: Not found $name in $names of $eType enum
-        changeType<NoSuchMethodException>: Not found ValueOf method of $type
-        changeType<ReflectiveOperationException>: Convert $val from $fType to $tType error
-      Contract:
-        require[arg]: Parameter is null
-        require[args]: Parameters $args have null value
-        require[test]: Parameter $arg test failed
-        readSetting[keyError]: Not found key $key with type $type
-        readSetting[partialKeyError]: Not found partial key $key with type $type
-      NQuery:
-        single: Require 1 element, current set has $count elements
-        singleOrDefault: Require less than 1 element, current set has $count elements
-      Disposable:
-        checkNotClosed: Cannot access a closed $type
-      Strings:
-        split[lengthError]: Result array not fit $len length
-    bean.DateTime:
-      valueOf<ParseException>: Only supported $formats date formats, current date string is $date
     io:
       IOStream:
         getPosition: The stream does not support seeking
         setPosition: The stream does not support seeking
-        getLength: A class derived from $type does not support seeking
+        getLength: A class derived from {0} does not support seeking
       MemoryStream:
         getBuffer: The MemoryStream instance was not created with a publicly visible buffer
+    core:
+      Reflects:
+        getResource: Not found resource {0} with type {1}
+        newInstance: Constructor {0} parameter type not match
+        invokeMethod: Method {0}.{1} parameter type not match
+        changeType[notSupported]: Not supported convert {0} to {1}
+        changeType[enumError]: Not found {0} in {1} of $eType enum
+        changeType<NoSuchMethodException>: Not found ValueOf method of {0}
+        changeType<ReflectiveOperationException>: Convert {0} from {1} to {2} error
+      Strings:
+        split[lengthError]: Result array not fit {0} length
+      NQuery:
+        single: Require 1 element, current set has {0} elements
+        singleOrDefault: Require less than 1 element, current set has {0} elements
+      Disposable:
+        checkNotClosed: Cannot access a closed {0}
+      Contract:
+        require[arg]: Parameter is null
+        require[args]: Parameters {0} have null value
+        require[test]: Parameter {0} test failed
+        readSetting[keyError]: Not found key {0} with type {1}
+        readSetting[partialKeyError]: Not found partial key {0} with type {1}
+    bean.DateTime:
+      valueOf<ParseException>: Only supported {0} date formats, current date string is {1}
 
     test:
       CoreTester:

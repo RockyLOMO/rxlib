@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import org.rx.annotation.ErrorCode;
+import org.rx.core.exception.ApplicationException;
 
 import static org.rx.core.Contract.values;
 
@@ -27,10 +28,10 @@ public abstract class Disposable implements AutoCloseable {
 
     protected abstract void freeObjects();
 
-    @ErrorCode(messageKeys = {"$type"})
+    @ErrorCode
     protected void checkNotClosed() {
         if (closed) {
-            throw new SystemException(values(this.getClass().getSimpleName()));
+            throw new ApplicationException(values(this.getClass().getSimpleName()));
         }
     }
 

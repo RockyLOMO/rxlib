@@ -5,9 +5,9 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.SystemException;
 import org.rx.core.Contract;
 import org.rx.core.StringBuilder;
+import org.rx.core.exception.ApplicationException;
 
 import java.io.*;
 
@@ -78,17 +78,17 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
 
     @ErrorCode
     public int getPosition() {
-        throw new SystemException(values());
+        throw new ApplicationException(values());
     }
 
     @ErrorCode
     public void setPosition(int position) {
-        throw new SystemException(values());
+        throw new ApplicationException(values());
     }
 
-    @ErrorCode(messageKeys = {"$type"})
+    @ErrorCode
     public int getLength() {
-        throw new SystemException(values(this.getClass().getSimpleName()));
+        throw new ApplicationException(values(this.getClass().getSimpleName()));
     }
 
     @SneakyThrows

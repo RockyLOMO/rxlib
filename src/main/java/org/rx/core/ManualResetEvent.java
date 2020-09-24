@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.SneakyThrows;
+import org.rx.core.exception.InvalidException;
 
 import java.util.concurrent.TimeoutException;
 
@@ -31,7 +32,7 @@ public final class ManualResetEvent {
                     monitor.wait(timeout);
                 } catch (InterruptedException e) {
                     //ignore
-                    throw SystemException.wrap(e);
+                    throw InvalidException.wrap(e);
                 }
                 if (timeout > 0) {
                     if (!open) {

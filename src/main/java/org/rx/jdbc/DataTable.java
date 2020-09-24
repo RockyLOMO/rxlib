@@ -3,8 +3,6 @@ package org.rx.jdbc;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
-import org.rx.core.App;
-import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
 import org.rx.core.Reflects;
 
@@ -87,7 +85,7 @@ public class DataTable implements Serializable {
 
     synchronized void setOrdinal(DataColumn column, int ordinal) {
         if (flowRows != null) {
-            throw new InvalidOperationException("Not supported");
+            throw new UnsupportedOperationException();
         }
         if (column.ordinal == ordinal) {
             return;
@@ -103,7 +101,7 @@ public class DataTable implements Serializable {
 
     synchronized <T> DataColumn<T> setDataType(DataColumn column, Class<T> dataType) {
         if (flowRows != null) {
-            throw new InvalidOperationException("Not supported");
+            throw new UnsupportedOperationException();
         }
         if (column.dataType == dataType) {
             return column;

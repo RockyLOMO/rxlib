@@ -46,7 +46,7 @@ final class WeakCache<TK, TV> implements Cache<TK, TV> {
     public TV get(TK key) {
         TV val = container.get(key);
         if (val == null) {
-            log.debug("get key {} is gc", key);
+            log.debug("Get key {} is GC", key);
             remove(key);
             return null;
         }

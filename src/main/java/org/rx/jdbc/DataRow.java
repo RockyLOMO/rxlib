@@ -2,8 +2,8 @@ package org.rx.jdbc;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.core.InvalidOperationException;
 import org.rx.core.Reflects;
+import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -65,7 +65,7 @@ public class DataRow implements Serializable {
         require(column, column.getTable() == table);
 
         if (column.dataType != null && !Reflects.isInstance(item, column.dataType)) {
-            throw new InvalidOperationException("Item type error");
+            throw new InvalidException("Item type error");
         }
         items.add(column.ordinal, item);
     }

@@ -12,4 +12,4 @@ app:
   #    - errorCode.yml
 
   test.version: 1
-app.test.version: 0
+app.test.version: 2

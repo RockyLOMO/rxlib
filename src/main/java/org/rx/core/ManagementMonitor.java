@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.exception.InvalidException;
 
 import java.io.File;
 import java.io.Serializable;
@@ -132,7 +133,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     private ManagementMonitor() {
         os = as(ManagementFactory.getOperatingSystemMXBean(), OperatingSystemMXBean.class);
         if (os == null) {
-            throw new InvalidOperationException("getOperatingSystemMXBean fail");
+            throw new InvalidException("getOperatingSystemMXBean fail");
         }
         Tasks.schedule(() -> {
             NEventArgs<MonitorBean> args = new NEventArgs<>(getBean());

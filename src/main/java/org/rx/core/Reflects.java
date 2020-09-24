@@ -14,6 +14,8 @@ import org.rx.bean.DateTime;
 import org.rx.bean.NEnum;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 
 import java.io.InputStream;
 import java.io.Serializable;
@@ -67,7 +69,7 @@ public class Reflects extends TypeUtils {
             lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
             setAccess(lookupConstructor);
         } catch (NoSuchMethodException e) {
-            throw SystemException.wrap(e);
+            throw InvalidException.wrap(e);
         }
 
         supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
@@ -98,11 +100,11 @@ public class Reflects extends TypeUtils {
         return type;
     }
 
-    @ErrorCode(messageKeys = {"$name", "$type"})
+    @ErrorCode
     public static InputStream getResource(Class owner, String name) {
         InputStream resource = owner.getResourceAsStream(name);
         if (resource == null) {
-            throw new SystemException(values(owner, name));
+            throw new ApplicationException(values(owner, name));
         }
         return resource;
     }
@@ -129,7 +131,7 @@ public class Reflects extends TypeUtils {
             if (!throwOnEmpty) {
                 return null;
             }
-            throw SystemException.wrap(e);
+            throw InvalidException.wrap(e);
         }
     }
     //endregion
@@ -157,11 +159,12 @@ public class Reflects extends TypeUtils {
         return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
     }
 
+    @ErrorCode
     public static <T> T invokeMethod(Class type, Object instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
         Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
         if (method == null) {
-            throw new SystemException("Parameters error");
+            throw new ApplicationException(values(type.getName(), name));
         }
         return invokeMethod(method, instance, args);
     }
@@ -234,6 +237,7 @@ public class Reflects extends TypeUtils {
     }
 
     @SuppressWarnings(NON_WARNING)
+    @ErrorCode
     @SneakyThrows
     public static <T> T newInstance(Class<T> type, Object... args) {
         require(type);
@@ -264,7 +268,7 @@ public class Reflects extends TypeUtils {
                 return (T) constructor.newInstance(args);
             }
         }
-        throw new SystemException("Parameters error");
+        throw new ApplicationException(values(type.getName()));
     }
 
     private static void setAccess(AccessibleObject member) {
@@ -314,10 +318,10 @@ public class Reflects extends TypeUtils {
         return null;
     }
 
-    @ErrorCode(value = "notSupported", messageKeys = {"$fType", "$tType"})
-    @ErrorCode(value = "enumError", messageKeys = {"$name", "$names", "$eType"})
-    @ErrorCode(cause = NoSuchMethodException.class, messageKeys = {"$type"})
-    @ErrorCode(cause = ReflectiveOperationException.class, messageKeys = {"$fType", "$tType", "$val"})
+    @ErrorCode("notSupported")
+    @ErrorCode("enumError")
+    @ErrorCode(cause = NoSuchMethodException.class)
+    @ErrorCode(cause = ReflectiveOperationException.class)
     public static <T> T changeType(Object value, Class<T> toType) {
         require(toType);
 
@@ -342,7 +346,7 @@ public class Reflects extends TypeUtils {
         }
         final Class<?> fromType = value.getClass();
         if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
-            throw new SystemException(values(fromType, toType), "notSupported");
+            throw new ApplicationException(values(fromType, toType), "notSupported");
         }
         Object fValue = value;
         Class<T> tType = toType;
@@ -361,7 +365,7 @@ public class Reflects extends TypeUtils {
             String fVal = val;
             value = q.where(p -> p.equals(fVal)).singleOrDefault();
             if (value == null) {
-                throw new SystemException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
+                throw new ApplicationException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
             }
         } else {
             try {
@@ -372,7 +376,7 @@ public class Reflects extends TypeUtils {
                     } else if ("1".equals(val)) {
                         value = Boolean.TRUE;
                     } else {
-                        throw new InvalidOperationException("Value should be 0 or 1");
+                        throw new InvalidException("Value should be 0 or 1");
                     }
                 } else {
                     if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
@@ -381,16 +385,16 @@ public class Reflects extends TypeUtils {
                         } else if (Boolean.TRUE.toString().equals(val)) {
                             val = "1";
                         } else {
-                            throw new InvalidOperationException("Value should be true or false");
+                            throw new InvalidException("Value should be true or false");
                         }
                     }
                     Method m = toType.getDeclaredMethod("valueOf", strType);
                     value = m.invoke(null, val);
                 }
             } catch (NoSuchMethodException ex) {
-                throw new SystemException(values(toType), ex);
+                throw new ApplicationException(values(toType), ex);
             } catch (ReflectiveOperationException ex) {
-                throw new SystemException(values(fromType, toType, val), ex);
+                throw new ApplicationException(values(fromType, toType, val), ex);
             }
         }
         return (T) value;

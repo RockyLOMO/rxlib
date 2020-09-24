@@ -2,8 +2,8 @@ package org.rx.jdbc;
 
 import lombok.AccessLevel;
 import lombok.Getter;
-import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
+import org.rx.core.exception.InvalidException;
 
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -32,7 +32,7 @@ public class MixResultSet extends SuperResultSet {
     @Override
     protected Object innerGetObject(int columnIndex) {
         if (row == null) {
-            throw new InvalidOperationException("No data");
+            throw new InvalidException("No data");
         }
         return row.get(columnIndex - 1);
     }

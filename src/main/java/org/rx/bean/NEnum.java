@@ -36,8 +36,8 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    default String toDescription() {
+    default String description() {
         Class type = this.getClass();
-        return Contract.toDescription(type.getField(((T) this).name()));
+        return Contract.description(type.getField(((T) this).name()));
     }
 }

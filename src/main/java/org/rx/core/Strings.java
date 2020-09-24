@@ -2,6 +2,7 @@ package org.rx.core;
 
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
+import org.rx.core.exception.ApplicationException;
 
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
@@ -51,7 +52,7 @@ public class Strings extends StringUtils {
         return split(str, delimiter, -1);
     }
 
-    @ErrorCode(value = "lengthError", messageKeys = {"$len"})
+    @ErrorCode("lengthError")
     public static String[] split(String str, String delimiter, int fixedLength) {
         String[] result;
         if (isNullOrEmpty(str)) {
@@ -60,7 +61,7 @@ public class Strings extends StringUtils {
             result = str.split(Pattern.quote(delimiter));
         }
         if (fixedLength > -1 && fixedLength != result.length) {
-            throw new SystemException(values(fixedLength), "lengthError");
+            throw new ApplicationException(values(fixedLength), "lengthError");
         }
         return result;
     }

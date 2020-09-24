@@ -3,9 +3,9 @@ package org.rx.jdbc;
 import lombok.Getter;
 import org.rx.bean.NEnum;
 import org.rx.core.Arrays;
-import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
+import org.rx.core.exception.InvalidException;
 
 import java.util.Collections;
 import java.util.List;
@@ -31,7 +31,7 @@ public enum DriverClassFlag implements NEnum {
     public static DriverClassFlag recognize(String jdbcUrl) {
         DriverClassFlag flag = NQuery.of(DriverClassFlag.values()).firstOrDefault(p -> NQuery.of(p.urlPrefixes).any(x -> Strings.startsWithIgnoreCase(jdbcUrl, x)));
         if (flag == null) {
-            throw new InvalidOperationException("Recognize url %s fail", jdbcUrl);
+            throw new InvalidException("Recognize url %s fail", jdbcUrl);
         }
         return flag;
     }

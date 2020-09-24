@@ -197,6 +197,7 @@ public class CoreTester {
         config.setMaxThreshold(60);
         //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
+        //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
                 .statistics(config);
         for (int i = 0; i < 100; i++) {

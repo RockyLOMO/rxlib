@@ -12,10 +12,11 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.LibConfig;
+import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
-import org.rx.security.MD5Util;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 import org.rx.util.function.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -32,15 +33,16 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 //入口，注意循环引用
+@SuppressWarnings(Contract.NON_WARNING)
 @Slf4j
 public final class Contract {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
-    public static final LibConfig CONFIG;
+    public static final RxConfig CONFIG;
     private static final Set<Class> skipTypes = ConcurrentHashMap.newKeySet();
 
     static {
-        CONFIG = isNull(readSetting("app", LibConfig.class), new LibConfig());
+        CONFIG = isNull(readSetting("app", RxConfig.class), new RxConfig());
         if (CONFIG.getBufferSize() <= 0) {
             CONFIG.setBufferSize(512);
         }
@@ -48,31 +50,66 @@ public final class Contract {
             CONFIG.setNetMaxPoolSize(Runtime.getRuntime().availableProcessors() * 2);
         }
         skipTypes.addAll(CONFIG.getJsonSkipTypesEx());
-
-        System.setProperty("bootstrapPath", App.getBootstrapPath());
     }
 
-    @ErrorCode(value = "arg")
+    //region basic
+    @ErrorCode("arg")
     public static void require(Object arg) {
         if (arg == null) {
-            throw new SystemException(values(), "arg");
+            throw new ApplicationException(values(), "arg");
         }
     }
 
     //区分 require((Object) T[]); 和 require(arg, (Object) boolean);
-    @ErrorCode(value = "args", messageKeys = {"$args"})
-    public static void require(Object... args) {
+    @ErrorCode("args")
+    public static void require(Object arg1, Object... args) {
+        require(arg1);
         if (args == null || NQuery.of(args).any(Objects::isNull)) {
-            throw new SystemException(values(toJsonString(args)), "args");
+            throw new ApplicationException(values(toJsonString(args)), "args");
         }
     }
 
-    @ErrorCode(value = "test", messageKeys = {"$arg"})
+    @ErrorCode("test")
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
-            throw new SystemException(values(arg), "test");
+            throw new ApplicationException(values(arg), "test");
         }
     }
+
+    public static <T> T as(Object obj, Class<T> type) {
+        if (!Reflects.isInstance(obj, type)) {
+            return null;
+        }
+        return (T) obj;
+    }
+
+    public static <T> boolean eq(T t1, T t2) {
+        if (t1 == null) {
+            return t2 == null;
+        }
+        return t1.equals(t2);
+    }
+
+    public static <T> T isNull(T value, T defaultVal) {
+        if (value == null) {
+            return defaultVal;
+        }
+        return value;
+    }
+
+    public static <T> T isNull(T value, Supplier<T> supplier) {
+        if (value == null) {
+            if (supplier != null) {
+                value = supplier.get();
+            }
+        }
+        return value;
+    }
+
+    public static Object[] values(Object... args) {
+        return args;
+    }
+    //endregion
 
     //region yml
     public static <T> T readSetting(String key) {
@@ -87,8 +124,8 @@ public final class Contract {
         return readSetting(key, type, settings, false);
     }
 
-    @ErrorCode(value = "keyError", messageKeys = {"$key", "$type"})
-    @ErrorCode(value = "partialKeyError", messageKeys = {"$key", "$type"})
+    @ErrorCode("keyError")
+    @ErrorCode("partialKeyError")
     public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
         require(key, settings);
 
@@ -123,20 +160,20 @@ public final class Contract {
                 return func.apply(val);
             }
             if ((settings = as(val, Map.class)) == null) {
-                throw new SystemException(values(k, type), "partialKeyError");
+                throw new ApplicationException(values(k, type), "partialKeyError");
             }
             kBuf.setLength(0);
         }
 
         if (throwOnEmpty) {
-            throw new SystemException(values(key, type), "keyError");
+            throw new ApplicationException(values(key, type), "keyError");
         }
         return null;
     }
 
     @SneakyThrows
     public static Map<String, Object> loadYaml(String... yamlFile) {
-        require((Object) yamlFile);
+        require(yamlFile);
 
         Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml(new SafeConstructor());
@@ -187,16 +224,17 @@ public final class Contract {
     //region extend
     @SneakyThrows
     public static <T> T retry(int retryCount, Func<T> func) {
+        require(retryCount, retryCount >= 1);
         require(func);
 
-        SystemException lastEx = null;
+        InvalidException lastEx = null;
         int i = 1;
         while (i <= retryCount) {
             try {
                 return func.invoke();
             } catch (Exception ex) {
                 if (i == retryCount) {
-                    lastEx = SystemException.wrap(ex);
+                    lastEx = InvalidException.wrap(ex);
                 }
             }
             i++;
@@ -227,6 +265,30 @@ public final class Contract {
         return null;
     }
 
+    public static String cacheKey(String methodName, Object... args) {
+        StringBuilder k = new StringBuilder(Reflects.callerClass(1).getSimpleName());
+        int offset = 10;
+        if (k.getLength() > offset) {
+            k.setLength(offset);
+        } else {
+            offset = k.getLength();
+        }
+        k.append(methodName).append(toJsonString(args));
+        if (k.getLength() <= 32) {
+            return k.toString();
+        }
+        String hex = k.substring(offset);
+        return k.setLength(offset).append(SUID.compute(hex)).toString();
+    }
+
+    public static String description(AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
     public static boolean tryClose(Object obj) {
         return tryClose(obj, true);
     }
@@ -249,65 +311,6 @@ public final class Contract {
             action.invoke(t);
         }
         return true;
-    }
-
-    @SuppressWarnings(NON_WARNING)
-    public static <T> T as(Object obj, Class<T> type) {
-        if (!Reflects.isInstance(obj, type)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> boolean eq(T t1, T t2) {
-        if (t1 == null) {
-            return t2 == null;
-        }
-        return t1.equals(t2);
-    }
-
-    public static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
-    }
-
-    public static <T> T isNull(T value, Supplier<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.get();
-            }
-        }
-        return value;
-    }
-
-    public static Object[] values(Object... args) {
-        return args;
-    }
-
-    public static String toDescription(AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
-    }
-
-    public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder(Reflects.callerClass(1).getSimpleName());
-        int offset = 10;
-        if (k.getLength() > offset) {
-            k.setLength(offset);
-        } else {
-            offset = k.getLength();
-        }
-        k.append(methodName).append(toJsonString(args));
-        if (k.getLength() <= 32) {
-            return k.toString();
-        }
-        String hex = k.substring(offset);
-        return k.setLength(offset).append(SUID.compute(hex)).toString();
     }
 
     public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
@@ -374,24 +377,6 @@ public final class Contract {
     //endregion
 
     //region json
-//    public static <T> T fromJsonAsObject(Object jsonOrBean, Type type) {
-//        Gson gson = gson();
-//        if (jsonOrBean instanceof String) {
-//            return gson.fromJson((String) jsonOrBean, type);
-//        }
-//        return gson.fromJson(gson.toJsonTree(jsonOrBean), type);
-//        //final 字段不会覆盖
-////        return JSON.parseObject(toJsonString(jsonOrBean), type);
-//    }
-
-//    public static <T> List<T> fromJsonAsList(Object jsonOrList, Type... type) {
-//        //(List<T>) JSON.parseArray(toJsonString(jsonOrList), new Type[]{type}); not work
-//        if (jsonOrList instanceof String) {
-//            return gson.fromJson((String) jsonOrList, TypeToken.getArray(type).getType());
-//        }
-//        return gson.fromJson(gson.toJsonTree(jsonOrList), type);
-//    }
-
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
         return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
@@ -450,10 +435,5 @@ public final class Contract {
             return json.toString();
         }
     }
-
-//    private static Gson gson() {
-//        return new GsonBuilder().registerTypeAdapter(Date.class, (JsonSerializer<Date>) (date, type, jsonSerializationContext) -> date == null ? null : new JsonPrimitive(date.getTime()))
-//                .registerTypeAdapter(Date.class, (JsonDeserializer<Date>) (jsonElement, type, jsonDeserializationContext) -> jsonElement == null ? null : new Date(jsonElement.getAsLong())).create();
-//    }
     //endregion
 }

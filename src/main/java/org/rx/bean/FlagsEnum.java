@@ -59,8 +59,8 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     @Override
-    public String toDescription() {
-        return String.join(", ", NQuery.of(toSet()).select(NEnum::toDescription));
+    public String description() {
+        return String.join(", ", NQuery.of(toSet()).select(NEnum::description));
     }
 
     @SuppressWarnings(NON_WARNING)

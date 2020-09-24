@@ -3,6 +3,7 @@ package org.rx.core;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
 import java.util.concurrent.*;
@@ -225,7 +226,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
                 newThreadFactory(String.format("%s-%%d", poolName)), (r, executor) -> {
                     if (executor.isShutdown()) {
-                        throw new InvalidOperationException("Executor %s is shutdown", poolName);
+                        throw new InvalidException("Executor %s is shutdown", poolName);
                     }
                     log.debug("Block caller thread Until offer");
                     executor.getQueue().offer(r);

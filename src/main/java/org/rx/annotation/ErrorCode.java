@@ -15,7 +15,6 @@ public @interface ErrorCode {
     }
 
     enum MessageFormatter {
-        KeyValueFormat,
         StringFormat,
         MessageFormat
     }
@@ -24,7 +23,5 @@ public @interface ErrorCode {
 
     Class<? extends Throwable> cause() default Exception.class;
 
-    MessageFormatter messageFormatter() default MessageFormatter.KeyValueFormat;
-
-    String[] messageKeys() default {};
+    MessageFormatter messageFormatter() default MessageFormatter.MessageFormat;
 }

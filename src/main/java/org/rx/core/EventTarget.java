@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.NEnum;
+import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -76,7 +77,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
-                throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+                throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().attach(this, eventName, event, combine);
             return;
@@ -92,7 +93,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
-                throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+                throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().detach(this, eventName, event);
             return;
@@ -108,7 +109,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
-                throw new InvalidOperationException(String.format("Event %s not defined", eventName));
+                throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().raise(this, eventName, args);
             return;

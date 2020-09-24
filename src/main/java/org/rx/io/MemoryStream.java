@@ -3,7 +3,7 @@ package org.rx.io;
 import lombok.SneakyThrows;
 import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.SystemException;
+import org.rx.core.exception.ApplicationException;
 import org.rx.net.BytesSegment;
 
 import java.io.*;
@@ -185,7 +185,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     public byte[] getBuffer() {
         checkNotClosed();
         if (!publiclyVisible) {
-            throw new SystemException(values());
+            throw new ApplicationException(values());
         }
 
         return writer.getBuffer();

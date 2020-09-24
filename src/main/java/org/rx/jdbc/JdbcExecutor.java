@@ -12,6 +12,7 @@ import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.bean.$;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
+import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import javax.sql.DataSource;
@@ -201,7 +202,7 @@ public class JdbcExecutor extends Disposable {
             }
             return new HikariDataSource(config);
         } catch (Exception e) {
-            throw new InvalidOperationException(e, jdbcUrl);
+            throw new InvalidException(jdbcUrl, e);
         }
     }
 

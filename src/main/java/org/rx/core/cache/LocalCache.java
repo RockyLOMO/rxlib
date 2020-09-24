@@ -3,7 +3,7 @@ package org.rx.core.cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.SneakyThrows;
 import org.rx.core.Cache;
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.Set;
@@ -63,7 +63,7 @@ class LocalCache<TK, TV> implements Cache<TK, TV> {
             try {
                 return supplier.invoke(key);
             } catch (Throwable e) {
-                throw SystemException.wrap(e);
+                throw InvalidException.wrap(e);
             }
         });
     }

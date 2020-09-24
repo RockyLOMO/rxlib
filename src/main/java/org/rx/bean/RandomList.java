@@ -4,13 +4,14 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.NQuery;
 
-import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.rx.core.Contract.NON_WARNING;
 import static org.rx.core.Contract.require;
 
+@SuppressWarnings(NON_WARNING)
 @Slf4j
 public class RandomList<T> implements Collection<T>, Serializable {
     @AllArgsConstructor
@@ -109,11 +110,10 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public boolean containsAll(@NotNull Collection<?> c) {
+    public boolean containsAll(Collection<?> c) {
         return NQuery.of(elements).all(c::contains);
     }
 
-    @NotNull
     @Override
     public synchronized Iterator<T> iterator() {
         return new Iterator<T>() {
@@ -131,15 +131,13 @@ public class RandomList<T> implements Collection<T>, Serializable {
         };
     }
 
-    @NotNull
     @Override
     public Object[] toArray() {
         return NQuery.of(elements).select(p -> p.element).toArray();
     }
 
-    @NotNull
     @Override
-    public <T1> T1[] toArray(@NotNull T1[] a) {
+    public <T1> T1[] toArray(T1[] a) {
         System.arraycopy(toArray(), 0, a, 0, a.length);
         return a;
     }
@@ -178,7 +176,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public synchronized boolean addAll(@NotNull Collection<? extends T> c) {
+    public synchronized boolean addAll(Collection<? extends T> c) {
         boolean changed = false;
         for (T t : c) {
             if (add(t)) {
@@ -189,7 +187,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public synchronized boolean removeAll(@NotNull Collection<?> c) {
+    public synchronized boolean removeAll(Collection<?> c) {
         boolean changed = false;
         for (Object o : c) {
             if (remove(o)) {
@@ -200,7 +198,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public synchronized boolean retainAll(@NotNull Collection<?> c) {
+    public synchronized boolean retainAll(Collection<?> c) {
         int size = elements.size();
         List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList();
         elements.clear();

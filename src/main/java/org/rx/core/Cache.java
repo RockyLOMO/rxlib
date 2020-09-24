@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import org.rx.core.cache.CacheFactory;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
@@ -36,7 +35,7 @@ public interface Cache<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(String name) {
-        return CacheFactory.getInstance().get(name);
+        return Container.getInstance().get(name);
     }
 
     long size();
