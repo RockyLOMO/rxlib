@@ -36,7 +36,6 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class HttpClient {
     public static final String GET_METHOD = "GET", POST_METHOD = "POST", HEAD_METHOD = "HEAD";
-    public static final String IE_USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko";
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
     private static final ConnectionPool POOL = new ConnectionPool(CONFIG.getNetMaxPoolSize(), CONFIG.getCacheExpireMinutes(), TimeUnit.MINUTES);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -210,14 +209,24 @@ public class HttpClient {
     private Headers headers;
     private Response response;
 
-    public void setHeader(String name, String value) {
-        setHeaders(Collections.singletonMap(name, value));
+    public String userAgent(String userAgent) {
+        String ua = headers.get(HttpHeaders.USER_AGENT);
+        setRequestHeader(HttpHeaders.USER_AGENT, userAgent);
+        return ua;
     }
 
-    public void setHeaders(Map<String, String> headers) {
+    public void setRequestHeader(String name, String value) {
+        setRequestHeaders(Collections.singletonMap(name, value));
+    }
+
+    public void setRequestHeaders(Map<String, String> headers) {
         require(headers);
 
-        this.headers = this.headers.newBuilder().addAll(Headers.of(headers)).build();
+        Headers.Builder builder = this.headers.newBuilder();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            builder.set(entry.getKey(), entry.getValue());
+        }
+        this.headers = builder.build();
     }
 
     private Response getResponse() {
@@ -240,7 +249,7 @@ public class HttpClient {
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, IE_USER_AGENT);
+        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, CONFIG.getNetUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
             builder = builder.set("cookie", rawCookie);
@@ -369,7 +378,7 @@ public class HttpClient {
     public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
         Map<String, String> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, servletRequest::getHeader);
         headers.remove("host");
-        setHeaders(headers);
+        setRequestHeaders(headers);
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {
