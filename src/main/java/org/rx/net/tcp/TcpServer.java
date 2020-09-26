@@ -18,6 +18,7 @@ import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.tcp.packet.HandshakePacket;
 
@@ -185,7 +186,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
     @SneakyThrows
     public synchronized void start() {
         if (isStarted) {
-            throw new InvalidOperationException("Server has started");
+            throw new InvalidException("Server has started");
         }
 
         if (config.isEnableSsl()) {
@@ -248,7 +249,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
         if (groupId != null) {
             q = q.where(p -> eq(p.groupId, groupId));
             if (!q.any()) {
-                throw new InvalidOperationException(String.format("Clients with GroupId %s not found", groupId));
+                throw new InvalidException("Clients with GroupId %s not found", groupId);
             }
         }
         return q.<ITcpClient>cast().toList();
@@ -261,7 +262,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
         if (groupId != null) {
             q = q.where(p -> eq(p.groupId, groupId) && eq(p.getId(), channelId));
             if (!q.any()) {
-                throw new InvalidOperationException(String.format("Clients with GroupId %s and ClientId %s not found", groupId, channelId));
+                throw new InvalidException("Clients with GroupId %s and ClientId %s not found", groupId, channelId);
             }
         }
         return q.<ITcpClient>cast().first();

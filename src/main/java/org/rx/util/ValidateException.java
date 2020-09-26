@@ -1,10 +1,10 @@
 package org.rx.util;
 
 import lombok.Getter;
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 
 @Getter
-public class ValidateException extends SystemException {
+public class ValidateException extends InvalidException {
     private String propertyName;
     private String violationMessage;
 

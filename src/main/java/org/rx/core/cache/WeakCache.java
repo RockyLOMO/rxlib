@@ -13,38 +13,38 @@ import java.util.WeakHashMap;
 import static org.rx.core.Contract.require;
 
 @Slf4j
-final class WeakCache<TK, TV> implements Cache<TK, TV> {
+public final class WeakCache<TK, TV> implements Cache<TK, TV> {
     //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
-    private final Map<TK, TV> container = Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<TK, TV> map = Collections.synchronizedMap(new WeakHashMap<>());
 
     @Override
     public long size() {
-        return container.size();
+        return map.size();
     }
 
     @Override
     public Set<TK> keySet() {
-        return container.keySet();
+        return map.keySet();
     }
 
     @Override
     public TV put(TK key, TV val) {
-        return container.put(key, val);
+        return map.put(key, val);
     }
 
     @Override
     public TV remove(TK key) {
-        return container.remove(key);
+        return map.remove(key);
     }
 
     @Override
     public void clear() {
-        container.clear();
+        map.clear();
     }
 
     @Override
     public TV get(TK key) {
-        TV val = container.get(key);
+        TV val = map.get(key);
         if (val == null) {
             log.debug("Get key {} is GC", key);
             remove(key);

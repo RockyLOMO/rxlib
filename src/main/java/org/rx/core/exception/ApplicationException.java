@@ -56,7 +56,7 @@ public class ApplicationException extends InvalidException {
             codeValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
         this.codeValues = codeValues;
-        stacks = Reflects.threadStack(8);
+        stacks = Reflects.stackTrace(8);
         init();
     }
 
@@ -67,7 +67,7 @@ public class ApplicationException extends InvalidException {
             codeValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
         this.codeValues = codeValues;
-        stacks = Reflects.threadStack(8);
+        stacks = Reflects.stackTrace(8);
         init();
     }
 

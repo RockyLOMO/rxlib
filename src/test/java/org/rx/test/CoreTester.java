@@ -3,7 +3,6 @@ package org.rx.test;
 import com.alibaba.fastjson.TypeReference;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.ListUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
@@ -12,7 +11,10 @@ import org.rx.bean.NEnum;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 import org.rx.test.bean.*;
+import org.rx.test.common.TestUtil;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -23,7 +25,7 @@ import static org.rx.core.Contract.*;
 import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
-public class CoreTester {
+public class CoreTester extends TestUtil {
     //region NQuery
     @SneakyThrows
     @Test
@@ -236,34 +238,7 @@ public class CoreTester {
     }
 
     @Test
-    @ErrorCode(messageKeys = {"$x"})
-    @ErrorCode(cause = IllegalArgumentException.class, messageKeys = {"$x"})
-    public void exceptionCode() {
-        String val = "rx";
-        SystemException ex = new SystemException(values(val));
-        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
-
-        ex = new SystemException(values(val), new IllegalArgumentException());
-        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
-        $<IllegalArgumentException> out = $();
-        assert ex.tryGet(out, IllegalArgumentException.class);
-
-        String uid = "userId";
-        ex.setErrorCode(UserManager.BizCode.argument, uid);
-        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
-
-        String date = "2017-08-24 02:02:02";
-        assert Reflects.changeType(date, Date.class) instanceof Date;
-        try {
-            date = "x";
-            Reflects.changeType(date, Date.class);
-        } catch (SystemException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Test
-    public void testConvert() {
+    public void convert() {
         Reflects.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
 
         int val = Reflects.changeType(PersonGender.Boy, Integer.class);
@@ -284,19 +259,47 @@ public class CoreTester {
     @SneakyThrows
     @Test
     public void reflect() {
-        assert Reflects.callerClass(0) == this.getClass();
+        assert Reflects.stackClass(0) == this.getClass();
         System.out.println(cacheKey("reflect"));
         System.out.println(cacheKey("reflect", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
-        for (StackTraceElement traceElement : Reflects.threadStack(8)) {
+        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
             System.out.println(traceElement);
         }
-        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 0, null);
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
         System.out.println(bean.getError());
 
-//        Reflects.invokeMethod(ErrorBean.class, null, "theStatic", 0, null);
+        Reflects.invokeMethod(ErrorBean.class, "theStatic", 0, null);
+        Reflects.invokeMethod(bean, "theMethod", 2, null);
 //        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
 //        System.out.println(bean.getError());
+    }
+
+    @Test
+    @ErrorCode
+    @ErrorCode(cause = IllegalArgumentException.class)
+    public void exceptionCode() {
+        String val = "rx";
+        ApplicationException ex = new ApplicationException(values(val));
+        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
+
+        ex = new ApplicationException(values(val), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String uid = "userId";
+        ex = new ApplicationException(UserManager.BizCode.argument, null, values(uid));
+        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
+
+        String date = "2017-08-24 02:02:02";
+        assert Reflects.changeType(date, DateTime.class) instanceof Date;
+        try {
+            date = "x";
+            Reflects.changeType(date, Date.class);
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
     }
 
     @Test
@@ -346,14 +349,14 @@ public class CoreTester {
         Map<String, Object> map = loadYaml("application.yml");
         System.out.println(map);
         Object v = readSetting("app.test.version");
-        assert v.equals(0);
+        assert v.equals(1);
         v = readSetting("not");
         assert v == null;
 
-        v = readSetting("org.rx.test.CoreTester", null, loadYaml(SystemException.CODE_FILE));
+        v = readSetting("org.rx.test.CoreTester", null, loadYaml("code.yml"));
         assert v instanceof Map;
 
-        v = readSetting("org.rx.test.CoreTester.testCode<IllegalArgumentException>", null, loadYaml(SystemException.CODE_FILE));
-        assert eq(v, "Exception Error Code value=$x");
+        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("code.yml"));
+        assert eq(v, "Exception Error Code value={0}");
     }
 }

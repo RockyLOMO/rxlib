@@ -6,7 +6,7 @@ import org.rx.core.EventTarget;
 
 public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
     enum BizCode {
-        @ErrorCode(messageKeys = {"$arg"})
+        @ErrorCode
         argument,
         returnValue;
     }

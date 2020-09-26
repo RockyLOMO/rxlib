@@ -2,7 +2,7 @@ package org.rx.test.bean;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
-import org.rx.core.InvalidOperationException;
+import org.rx.core.exception.InvalidException;
 
 import java.util.function.BiConsumer;
 
@@ -36,6 +36,6 @@ public class UserManagerImpl implements UserManager {
 
     @Override
     public void testError() {
-        throw new InvalidOperationException("testError");
+        throw new InvalidException("testError");
     }
 }

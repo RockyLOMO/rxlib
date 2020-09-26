@@ -374,7 +374,7 @@ public final class RemotingFactory {
                 msg.appendLine("Rpc server %s.%s", contractInstance.getClass().getSimpleName(), pack.methodName);
                 msg.appendLine("Request:\t%s", toJsonString(pack.parameters));
                 try {
-                    pack.returnValue = Reflects.invokeMethod(contractInstance.getClass(), contractInstance, pack.methodName, pack.parameters);
+                    pack.returnValue = Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
                     msg.appendLine("Response:\t%s", toJsonString(pack.returnValue));
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();

@@ -1,5 +1,8 @@
 package org.rx.core;
 
+import org.rx.core.cache.LocalCache;
+import org.rx.core.cache.ThreadCache;
+import org.rx.core.cache.WeakCache;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
@@ -35,7 +38,16 @@ public interface Cache<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(String name) {
-        return Container.getInstance().get(name);
+        return Container.getInstance().getOrRegister(name, () -> {
+            switch (name) {
+                case THREAD_CACHE:
+                    return new ThreadCache<>();
+                case WEAK_CACHE:
+                    return new WeakCache<>();
+                default:
+                    return new LocalCache<>(CONFIG.getCacheExpireMinutes());
+            }
+        });
     }
 
     long size();

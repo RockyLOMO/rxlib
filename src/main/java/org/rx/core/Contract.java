@@ -266,7 +266,7 @@ public final class Contract {
     }
 
     public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder(Reflects.callerClass(1).getSimpleName());
+        StringBuilder k = new StringBuilder(Reflects.stackClass(1).getSimpleName());
         int offset = 10;
         if (k.getLength() > offset) {
             k.setLength(offset);

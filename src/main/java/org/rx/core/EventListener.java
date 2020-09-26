@@ -17,14 +17,13 @@ import static org.rx.core.Contract.*;
 public class EventListener {
     @Getter
     private static final EventListener instance = new EventListener();
-    private static Lazy<EventBus> busLazy = new Lazy<>(EventBus::new);
 
     public static void register(Object object) {
-        busLazy.getValue().register(object);
+        Container.getInstance().getOrRegister(EventBus.class).register(object);
     }
 
     public static void post(Object event) {
-        busLazy.getValue().post(event);
+        Container.getInstance().getOrRegister(EventBus.class).post(event);
     }
 
     public void attach(EventTarget target, String method, BiConsumer methodImpl) {

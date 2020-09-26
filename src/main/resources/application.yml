@@ -11,5 +11,5 @@ app:
   #  errorCodeFiles:
   #    - errorCode.yml
 
-  test.version: 1
-app.test.version: 2
+  test.version: 2
+app.test.version: 1

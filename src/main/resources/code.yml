@@ -36,7 +36,7 @@ org:
 
     test:
       CoreTester:
-        testCode: Default Error Code value=$x
-        testCode<IllegalArgumentException>: Exception Error Code value=$x
+        exceptionCode: Default Error Code value={0}
+        exceptionCode<IllegalArgumentException>: Exception Error Code value={0}
       bean.UserManager$BizCode:
-        argument: Enum Error Code value=$arg
+        argument: Enum Error Code value={0}

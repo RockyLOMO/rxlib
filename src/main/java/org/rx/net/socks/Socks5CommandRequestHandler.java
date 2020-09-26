@@ -5,7 +5,7 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -53,7 +53,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 } catch (Throwable e) {
-                    throw SystemException.wrap(e);
+                    throw InvalidException.wrap(e);
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;

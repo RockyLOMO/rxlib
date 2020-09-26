@@ -1,6 +1,6 @@
 package org.rx.util.function;
 
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 
 import java.util.function.BiConsumer;
 
@@ -13,7 +13,7 @@ public interface TripleAction<T1, T2> {
             try {
                 invoke(p1, p2);
             } catch (Throwable e) {
-                throw SystemException.wrap(e);
+                throw InvalidException.wrap(e);
             }
         };
     }

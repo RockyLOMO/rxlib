@@ -5,10 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.beans.BeanCopier;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
-import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
+import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -63,7 +63,7 @@ public class BeanMapper {
                 }
                 return map(args[0], target, config.flags, method);
             }
-            throw new InvalidOperationException("Error Define Method %s", method.getName());
+            throw new InvalidException("Error Define Method %s", method.getName());
         });
     }
 
@@ -162,7 +162,7 @@ public class BeanMapper {
     @SuppressWarnings(NON_WARNING)
     private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
-                || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), NullValueMappingStrategy.Ignore)))) {
+                || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore)))) {
             return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
         }
         if (sourceValue instanceof String) {
@@ -175,7 +175,7 @@ public class BeanMapper {
             }
             sourceValue = val;
         }
-        if (sourceValue == null && eq(mapping.nullValueStrategy(), NullValueMappingStrategy.SetToDefault)) {
+        if (sourceValue == null && eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.SetToDefault)) {
             sourceValue = mapping.defaultValue();
         }
         if (mapping.converter() != BeanMapConverter.class) {

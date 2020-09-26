@@ -1,6 +1,6 @@
 package org.rx.util;
 
-public enum NullValueMappingStrategy {
+public enum BeanMapNullValueStrategy {
     SetToNull,
     SetToDefault,
     Ignore

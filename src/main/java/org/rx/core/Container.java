@@ -4,6 +4,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.Func;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,6 +16,20 @@ public final class Container {
     @Getter
     private static final Container instance = new Container();
     private final Map<String, Object> holder = new ConcurrentHashMap<>();
+
+    public <T> T getOrRegister(Class<T> type) {
+        return (T) holder.computeIfAbsent(type.getName(), k -> Reflects.newInstance(type));
+    }
+
+    public <T> T getOrRegister(String name, Func<T> func) {
+        return (T) holder.computeIfAbsent(name, k -> {
+            try {
+                return func.invoke();
+            } catch (Throwable e) {
+                throw InvalidException.wrap(e);
+            }
+        });
+    }
 
     public <T> T get(Class<T> type) {
         return get(type.getName());

@@ -14,7 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
-import org.rx.core.InvalidOperationException;
+import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.DirectUpstream;
 
@@ -44,7 +44,7 @@ public class SocksProxyServer extends Disposable {
 
     public synchronized void start() {
         if (isStarted) {
-            throw new InvalidOperationException("Server has started");
+            throw new InvalidException("Server has started");
         }
 
         if (config.getUpstreamSupplier() == null) {

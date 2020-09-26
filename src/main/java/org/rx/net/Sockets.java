@@ -20,6 +20,7 @@ import io.netty.handler.logging.LoggingHandler;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
+import org.rx.core.exception.InvalidException;
 import org.springframework.util.CollectionUtils;
 
 import java.util.*;
@@ -203,7 +204,7 @@ public final class Sockets {
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
         } catch (Exception ex) {
-            throw SystemException.wrap(ex);
+            throw InvalidException.wrap(ex);
         }
     }
 
@@ -237,7 +238,7 @@ public final class Sockets {
                 }
             }
         }
-        throw new InvalidOperationException("LAN IP not found");
+        throw new InvalidException("LAN IP not found");
     }
 
     public InetAddress[] getAddresses(String host) {

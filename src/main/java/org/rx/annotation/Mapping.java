@@ -1,7 +1,7 @@
 package org.rx.annotation;
 
 import org.rx.util.BeanMapConverter;
-import org.rx.util.NullValueMappingStrategy;
+import org.rx.util.BeanMapNullValueStrategy;
 
 import java.lang.annotation.*;
 
@@ -27,7 +27,7 @@ public @interface Mapping {
 
     String defaultValue() default "";
 
-    NullValueMappingStrategy nullValueStrategy() default NullValueMappingStrategy.SetToNull;
+    BeanMapNullValueStrategy nullValueStrategy() default BeanMapNullValueStrategy.SetToNull;
 
     boolean trim() default false;
 

@@ -8,9 +8,9 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import org.apache.commons.io.IOUtils;
 import org.rx.core.Contract;
-import org.rx.core.InvalidOperationException;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
+import org.rx.core.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.io.IOStream;
 
@@ -222,7 +222,7 @@ public class HttpClient {
 
     private Response getResponse() {
         if (response == null) {
-            throw new InvalidOperationException("No response");
+            throw new InvalidException("No response");
         }
         return response;
     }

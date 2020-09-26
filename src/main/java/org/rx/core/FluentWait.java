@@ -3,6 +3,7 @@ package org.rx.core;
 import com.google.common.base.Throwables;
 import lombok.*;
 import org.rx.bean.DateTime;
+import org.rx.core.exception.InvalidException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -149,7 +150,7 @@ public class FluentWait {
         do {
             if (!tor.hasNext()) {
                 Throwables.throwIfUnchecked(e);
-                throw new RuntimeException(e);
+                throw InvalidException.wrap(e);
             }
             ignoredException = tor.next();
         } while (!ignoredException.isInstance(e));

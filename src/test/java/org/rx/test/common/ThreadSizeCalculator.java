@@ -1,4 +1,4 @@
-package org.rx.test.thread;
+package org.rx.test.common;
 
 import java.lang.management.ManagementFactory;
 import java.math.BigDecimal;

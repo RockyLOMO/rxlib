@@ -1,11 +1,11 @@
 package org.rx.util;
 
 import lombok.Getter;
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 
 import java.util.Set;
 
-public class BeanMapException extends SystemException {
+public class BeanMapException extends InvalidException {
     @Getter
     private Set<String> missedProperties;
 

@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.core.ManualResetEvent;
+import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.tcp.packet.ErrorPacket;
 import org.rx.net.tcp.packet.HandshakePacket;
@@ -58,7 +59,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             if (msg instanceof ErrorPacket) {
-                exceptionCaught(ctx, new InvalidOperationException(String.format("Server error message: %s", ((ErrorPacket) msg).getErrorMessage())));
+                exceptionCaught(ctx, new InvalidException("Server error message: %s", ((ErrorPacket) msg).getErrorMessage()));
                 return;
             }
             log.debug("clientRead {} {}", ctx.channel().remoteAddress(), msg.getClass());
@@ -164,7 +165,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
     @SneakyThrows
     public synchronized void connect(boolean wait) {
         if (isConnected()) {
-            throw new InvalidOperationException("Client has connected");
+            throw new InvalidException("Client has connected");
         }
 
         if (config.isEnableSsl()) {
@@ -205,7 +206,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         connectWaiter.waitOne(getConfig().getConnectTimeoutMillis());
         connectWaiter.reset();
         if (!autoReconnect && !isConnected()) {
-            throw new InvalidOperationException("Client connect fail");
+            throw new InvalidException("Client connect fail");
         }
     }
 
@@ -251,7 +252,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
     public synchronized void send(Serializable pack) {
         require(pack);
         if (!isConnected()) {
-            throw new InvalidOperationException("Client has disconnected");
+            throw new InvalidException("Client has disconnected");
         }
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);

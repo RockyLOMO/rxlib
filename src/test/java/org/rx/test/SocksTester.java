@@ -216,6 +216,12 @@ public class SocksTester {
     }
 
     @Test
+    public void restClient() {
+        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
+        System.out.println(facade.queryIp());
+    }
+
+    @Test
     public void ping() {
         PingClient.test("x.f-li.cn:80", r -> log.info(toJsonString(r)));
     }
@@ -240,12 +246,6 @@ public class SocksTester {
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
-    }
-
-    @Test
-    public void restClient() {
-        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
-        System.out.println(facade.queryIp());
     }
 
     @Test

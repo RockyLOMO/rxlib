@@ -1,6 +1,6 @@
 package org.rx.util.function;
 
-import org.rx.core.SystemException;
+import org.rx.core.exception.InvalidException;
 
 import java.util.function.Function;
 
@@ -13,7 +13,7 @@ public interface BiFunc<TP, TR> {
             try {
                 return invoke(p);
             } catch (Throwable e) {
-                throw SystemException.wrap(e);
+                throw InvalidException.wrap(e);
             }
         };
     }

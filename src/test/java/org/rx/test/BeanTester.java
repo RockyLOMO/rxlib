@@ -1,27 +1,25 @@
 package org.rx.test;
 
-import com.google.common.base.Stopwatch;
-import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
+import org.rx.test.common.TestUtil;
 import org.rx.util.BeanMapConverter;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.rx.test.bean.TargetBean;
-import org.rx.util.NullValueMappingStrategy;
-import org.rx.util.function.Action;
+import org.rx.util.BeanMapNullValueStrategy;
 
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
+import static org.rx.core.Contract.eq;
 import static org.rx.core.Contract.toJsonString;
 
-public class BeanTester {
+public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
@@ -40,13 +38,13 @@ public class BeanTester {
 
         @Mapping(target = "gender", ignore = true)
         @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
-        @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = NullValueMappingStrategy.SetToDefault)
+        @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = BeanMapNullValueStrategy.SetToDefault)
         @Mapping(target = "birth", converter = DateToIntConvert.class)
         TargetBean toTarget(PersonBean source);
 
         @Mapping(target = "gender", ignore = true)
         @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
-        @Mapping(target = "kids", nullValueStrategy = NullValueMappingStrategy.Ignore)
+        @Mapping(target = "kids", nullValueStrategy = BeanMapNullValueStrategy.Ignore)
         @Mapping(target = "birth", converter = DateToIntConvert.class)
         default TargetBean toTargetWith(PersonBean source, TargetBean target) {
             target.setKids(10L);//自定义默认值，先执行默认方法再copy properties
@@ -96,35 +94,24 @@ public class BeanTester {
     }
 
     @Test
-    public void rndList() {
-        RandomList<String> randomList = new RandomList<>();
-        randomList.add("a", 5);
-        randomList.add("b", 5);
-        randomList.add("c", 5);
-        randomList.add("d", 5);
-        for (int i = 0; i < 100000; i++) {
-            String next = randomList.next();
-            System.out.println(next);
-            randomList.remove(next);
-            randomList.add(next);
-        }
-    }
-
-    @Test
     public void randomList() {
-        RandomList<String> wr = new RandomList<>();
-        wr.add("a");
-        wr.add("b");
-        wr.add("c");
-        for (String s : wr) {
+        RandomList<String> list = new RandomList<>();
+        list.add("a", 4);
+        list.add("b", 3);
+        list.add("c", 2);
+        list.add("d", 1);
+        for (String s : list) {
             System.out.println(s);
         }
-//        wr.add("a", 5);
-//        wr.add("b", 2);
-//        wr.add("c", 3);
-//        for (int i = 0; i < 20; i++) {
-//            System.out.println(wr.next());
-//        }
+        for (int i = 0; i < 20; i++) {
+            System.out.println(list.next());
+        }
+        for (int i = 0; i < 10000; i++) {
+            String next = list.next();
+            System.out.println(next);
+            list.remove(next);
+            list.add(next);
+        }
     }
 
     @Test
@@ -140,7 +127,7 @@ public class BeanTester {
 
         Set<SUID> set = new HashSet<>();
         int len = 100000;  //1530ms
-        invoke(() -> {
+        invoke("suid", () -> {
             for (int i = 0; i < len; i++) {
                 SUID suid1 = SUID.randomSUID();
                 System.out.println(suid1.toString());
@@ -152,15 +139,8 @@ public class BeanTester {
         assert set.size() == len;
     }
 
-    @SneakyThrows
-    private void invoke(Action action) {
-        Stopwatch stopwatch = Stopwatch.createStarted();
-        action.invoke();
-        System.out.println(stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
-    }
-
     @Test
-    public void testDate() {
+    public void dateTime() {
         DateTime now = DateTime.now();
         DateTime utc = DateTime.utcNow();
         DateTime d = new DateTime(2010, 8, 24, 11, 12, 13);
@@ -184,12 +164,12 @@ public class BeanTester {
     }
 
     @Test
-    public void testEnum() {
-        System.out.println(PersonGender.Girl.description());
+    public void nenum() {
+        assert eq(PersonGender.Girl.description(), "女孩");
     }
 
     @Test
-    public void testTuple() {
+    public void tuple() {
         Tuple<String, Integer> tuple = Tuple.of("s", 1);
         tuple.setRight(2);
         Tuple<String, Integer> tuple2 = Tuple.of("s", 1);

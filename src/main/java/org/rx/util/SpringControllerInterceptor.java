@@ -10,6 +10,8 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.toJsonString;
-import static org.rx.core.SystemException.DEFAULT_MESSAGE;
+import static org.rx.core.exception.ApplicationException.DEFAULT_MESSAGE;
 
 @Slf4j
 @Component
@@ -85,7 +87,7 @@ public class SpringControllerInterceptor {
             Stopwatch watcher = Stopwatch.createStarted();
             if (joinPoint.getTarget() instanceof IRequireSignIn) {
                 if (!((IRequireSignIn) joinPoint.getTarget()).isSignIn(method.getName(), joinPoint.getArgs())) {
-                    throw new InvalidOperationException(getNotSignInMsg());
+                    throw new InvalidException(getNotSignInMsg());
                 }
             }
             returnValue = joinPoint.proceed();
@@ -136,8 +138,8 @@ public class SpringControllerInterceptor {
             //参数校验错误 ignore log
             msg = e.getMessage();
             logInfo = true;
-        } else if (e instanceof SystemException) {
-            msg = ((SystemException) e).getFriendlyMessage();
+        } else if (e instanceof ApplicationException) {
+            msg = ((ApplicationException) e).getFriendlyMessage();
             debugMsg = e.getMessage();
         }
 

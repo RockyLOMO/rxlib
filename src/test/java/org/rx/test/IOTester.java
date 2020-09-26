@@ -85,10 +85,6 @@ public class IOTester {
         for (Path p : Files.listFiles(Files.path("/"), true)) {
             System.out.println(p);
         }
-//        System.out.println("---");
-//        for (File file : Files.listDirectories(Files.comboPath("D:\\"), false)) {
-//            System.out.println(file.getPath() + "," + file.getParent());
-//        }
     }
 
     @Test

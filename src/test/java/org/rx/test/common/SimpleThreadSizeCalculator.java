@@ -1,4 +1,4 @@
-package org.rx.test.thread;
+package org.rx.test.common;
 
 import org.rx.core.ThreadPool;
 import org.rx.net.http.HttpClient;

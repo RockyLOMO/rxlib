@@ -51,7 +51,7 @@ public class Reflects extends TypeUtils {
     static class SecurityManagerEx extends SecurityManager {
         static SecurityManagerEx instance = new SecurityManagerEx();
 
-        Class callerClass(int depth) {
+        Class stackClass(int depth) {
             return getClassContext()[depth];
         }
     }
@@ -83,21 +83,19 @@ public class Reflects extends TypeUtils {
 
     //region class
     public static void dumpStack(StringBuilder msg) {
-        for (StackTraceElement stack : threadStack(12)) {
+        for (StackTraceElement stack : stackTrace(12)) {
             msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
         }
     }
 
-    public static NQuery<StackTraceElement> threadStack(int takeCount) {
+    public static NQuery<StackTraceElement> stackTrace(int takeCount) {
         //Thread.currentThread().getStackTrace()性能略差
         return NQuery.of(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
-    public static Class<?> callerClass(int depth) {
+    public static Class<?> stackClass(int depth) {
         //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
-        Class<?> type = SecurityManagerEx.instance.callerClass(2 + depth);
-        log.debug("getCallerClass: {}", type.getName());
-        return type;
+        return (Class<?>) SecurityManagerEx.instance.stackClass(2 + depth);
     }
 
     @ErrorCode
@@ -157,6 +155,14 @@ public class Reflects extends TypeUtils {
 
     public static boolean isCloseMethod(Method method) {
         return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
+    }
+
+    public static <T> T invokeMethod(Class type, String name, Object... args) {
+        return invokeMethod(type, null, name, args);
+    }
+
+    public static <T> T invokeMethod(Object instance, String name, Object... args) {
+        return invokeMethod(instance.getClass(), instance, name, args);
     }
 
     @ErrorCode

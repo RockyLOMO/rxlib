@@ -1,7 +1,6 @@
 package org.rx.core.cache;
 
 import org.rx.core.Cache;
-import org.rx.core.Container;
 import org.rx.util.function.BiFunc;
 
 import java.util.Map;
@@ -9,12 +8,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
-    static {
-        Container.getInstance().register(Cache.THREAD_CACHE, new ThreadCache<>());
-        Container.getInstance().register(Cache.WEAK_CACHE, new WeakCache<>());
-        Container.getInstance().register(Cache.LRU_CACHE, new LocalCache<>());
-    }
-
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
     private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 
