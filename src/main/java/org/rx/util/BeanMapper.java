@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.beans.BeanCopier;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
+import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
@@ -45,21 +46,22 @@ public class BeanMapper {
             if (method.isDefault()) {
                 target = Reflects.invokeDefaultMethod(method, o, args);
             }
-            switch (args.length) {
-                case 1: {
-                    if (method.getReturnType() == void.class) {
-                        return null;
-                    }
-                    MapConfig config = setMappings(args[0].getClass(), method.getReturnType(), type, o, method);
-                    if (target == null) {
-                        target = Reflects.newInstance(method.getReturnType());
-                    }
-                    return map(args[0], target, config.flags, method);
+
+            boolean noreturn = method.getReturnType() == void.class;
+            if (args.length >= 2) {
+                MapConfig config = setMappings(args[0].getClass(), noreturn ? args[1].getClass() : method.getReturnType(), type, o, method);
+                map(args[0], isNull(target, args[1]), config.flags, method);
+                return noreturn ? null : args[1];
+            }
+            if (args.length == 1) {
+                if (noreturn) {
+                    return null;
                 }
-                case 2:
-                    MapConfig config = setMappings(args[0].getClass(), args[1].getClass(), type, o, method);
-                    map(args[0], args[1], config.flags, method);
-                    return method.getReturnType() == void.class ? null : args[1];
+                MapConfig config = setMappings(args[0].getClass(), method.getReturnType(), type, o, method);
+                if (target == null) {
+                    target = Reflects.newInstance(method.getReturnType());
+                }
+                return map(args[0], target, config.flags, method);
             }
             throw new InvalidOperationException("Error Define Method %s", method.getName());
         });
