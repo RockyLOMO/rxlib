@@ -70,7 +70,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
             return toList(iterable);
         }
 
-        throw new ApplicationException(values(type.getSimpleName()), "argError");
+        throw new ApplicationException("argError", values(type.getSimpleName()));
     }
 
     public static <T> List<T> toList(Iterable<T> iterable) {

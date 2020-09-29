@@ -6,6 +6,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -19,8 +20,8 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
-    private static Map<String, Object> getSettings() {
-        return Cache.getOrSet(cacheKey("getSettings"), k -> {
+    private static Map<String, Object> getMessageSource() {
+        return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
             List<String> files = new ArrayList<>();
             files.add("code.yml");
             if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
@@ -40,25 +41,46 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     @SneakyThrows
     @Override
     public void handle(ApplicationException e) {
-        if (e.getEnumCode() != null) {
-            Class type = e.getEnumCode().getClass();
-            Map<String, Object> methodSettings = as(readSetting(type.getName(), null, getSettings()), Map.class);
-            if (methodSettings == null) {
+        Class<?> codeType = e.getErrorCode().getClass();
+        if (codeType.isEnum()) {
+            Map<String, Object> messageSource = as(readSetting(codeType.getName(), null, getMessageSource()), Map.class);
+            if (messageSource == null) {
                 return;
             }
-            Field field = type.getDeclaredField(e.getEnumCode().name());
+            Enum<?> anEnum = (Enum<?>) e.getErrorCode();
+            Field field = codeType.getDeclaredField(anEnum.name());
             ErrorCode errorCode;
             if ((errorCode = findCode(field, null, null)) == null) {
-                return;
+                errorCode = new ErrorCode() {
+                    @Override
+                    public Class<? extends Annotation> annotationType() {
+                        return ErrorCode.class;
+                    }
+
+                    @Override
+                    public String value() {
+                        return null;
+                    }
+
+                    @Override
+                    public Class<? extends Throwable> cause() {
+                        return Exception.class;
+                    }
+
+                    @Override
+                    public MessageFormatter messageFormatter() {
+                        return MessageFormatter.MessageFormat;
+                    }
+                };
             }
 
-            e.setFriendlyMessage(friendlyMessage(methodSettings, e.getEnumCode().name(), errorCode, e.getCodeValues()));
+            e.setFriendlyMessage(friendlyMessage(errorCode, messageSource, anEnum.name(), e.getCodeValues()));
             return;
         }
 
         for (StackTraceElement stack : e.getStacks()) {
-            Map<String, Object> methodSettings = as(readSetting(stack.getClassName(), null, getSettings()), Map.class);
-            if (methodSettings == null) {
+            Map<String, Object> messageSource = as(readSetting(stack.getClassName(), null, getMessageSource()), Map.class);
+            if (messageSource == null) {
                 continue;
             }
             Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
@@ -75,7 +97,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
                 if (!method.getName().equals(stack.getMethodName())) {
                     continue;
                 }
-                if ((errorCode = findCode(method, e.getMethodCode(), e.getCause())) == null) {
+                if ((errorCode = findCode(method, e.getErrorCode().toString(), e.getCause())) == null) {
                     continue;
                 }
 
@@ -87,7 +109,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
                 continue;
             }
 
-            e.setFriendlyMessage(friendlyMessage(methodSettings, targetSite.getName(), errorCode, e.getCodeValues()));
+            e.setFriendlyMessage(friendlyMessage(errorCode, messageSource, targetSite.getName(), e.getCodeValues()));
             break;
         }
 
@@ -124,25 +146,25 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
         return errorCodes.first();
     }
 
-    private String friendlyMessage(Map<String, Object> methodSettings, String messageName, ErrorCode errorCode, Object[] messageValues) {
+    private String friendlyMessage(ErrorCode errorCode, Map<String, Object> messageSource, String code, Object[] values) {
         if (!Strings.isNullOrEmpty(errorCode.value())) {
-            messageName += "[" + errorCode.value() + "]";
+            code += "[" + errorCode.value() + "]";
         }
         if (!Exception.class.equals(errorCode.cause())) {
-            messageName += "<" + errorCode.cause().getSimpleName() + ">";
+            code += "<" + errorCode.cause().getSimpleName() + ">";
         }
-        String msg = as(methodSettings.get(messageName), String.class);
+        String msg = as(messageSource.get(code), String.class);
         if (msg == null) {
-            log.debug("SystemException: Not found messageName {}", messageName);
+            log.debug("SystemException: Not found messageName {}", code);
             return null;
         }
 
         switch (errorCode.messageFormatter()) {
             case StringFormat:
-                msg = String.format(msg, messageValues);
+                msg = String.format(msg, values);
                 break;
             default:
-                msg = MessageFormat.format(msg, messageValues);
+                msg = MessageFormat.format(msg, values);
                 break;
         }
         return msg;

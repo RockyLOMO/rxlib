@@ -40,3 +40,4 @@ org:
         exceptionCode<IllegalArgumentException>: Exception Error Code value={0}
       bean.UserManager$BizCode:
         argument: Enum Error Code value={0}
+        returnValue: Enum Error returnValue={0}

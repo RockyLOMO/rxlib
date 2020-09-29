@@ -61,7 +61,7 @@ public class Strings extends StringUtils {
             result = str.split(Pattern.quote(delimiter));
         }
         if (fixedLength > -1 && fixedLength != result.length) {
-            throw new ApplicationException(values(fixedLength), "lengthError");
+            throw new ApplicationException("lengthError", values(fixedLength));
         }
         return result;
     }

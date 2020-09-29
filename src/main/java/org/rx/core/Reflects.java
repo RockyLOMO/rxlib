@@ -352,7 +352,7 @@ public class Reflects extends TypeUtils {
         }
         final Class<?> fromType = value.getClass();
         if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
-            throw new ApplicationException(values(fromType, toType), "notSupported");
+            throw new ApplicationException("notSupported", values(fromType, toType));
         }
         Object fValue = value;
         Class<T> tType = toType;
@@ -371,7 +371,7 @@ public class Reflects extends TypeUtils {
             String fVal = val;
             value = q.where(p -> p.equals(fVal)).singleOrDefault();
             if (value == null) {
-                throw new ApplicationException(values(val, String.join(",", q), toType.getSimpleName()), "enumError");
+                throw new ApplicationException("enumError", values(val, String.join(",", q), toType.getSimpleName()));
             }
         } else {
             try {

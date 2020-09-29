@@ -289,8 +289,11 @@ public class CoreTester extends TestUtil {
         assert ex.tryGet(out, IllegalArgumentException.class);
 
         String uid = "userId";
-        ex = new ApplicationException(UserManager.BizCode.argument, null, values(uid));
+        ex = new ApplicationException(UserManager.BizCode.argument, values(uid));
         assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
+
+        ex = new ApplicationException(UserManager.BizCode.returnValue, values(uid));
+        assert eq(ex.getFriendlyMessage(), "Enum Error returnValue=" + uid);
 
         String date = "2017-08-24 02:02:02";
         assert Reflects.changeType(date, DateTime.class) instanceof Date;

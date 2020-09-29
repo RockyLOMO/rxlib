@@ -56,7 +56,7 @@ public final class Contract {
     @ErrorCode("arg")
     public static void require(Object arg) {
         if (arg == null) {
-            throw new ApplicationException(values(), "arg");
+            throw new ApplicationException("arg", values());
         }
     }
 
@@ -65,14 +65,14 @@ public final class Contract {
     public static void require(Object arg1, Object... args) {
         require(arg1);
         if (args == null || NQuery.of(args).any(Objects::isNull)) {
-            throw new ApplicationException(values(toJsonString(args)), "args");
+            throw new ApplicationException("args", values(toJsonString(args)));
         }
     }
 
     @ErrorCode("test")
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
-            throw new ApplicationException(values(arg), "test");
+            throw new ApplicationException("test", values(arg));
         }
     }
 
@@ -160,13 +160,13 @@ public final class Contract {
                 return func.apply(val);
             }
             if ((settings = as(val, Map.class)) == null) {
-                throw new ApplicationException(values(k, type), "partialKeyError");
+                throw new ApplicationException("partialKeyError", values(k, type));
             }
             kBuf.setLength(0);
         }
 
         if (throwOnEmpty) {
-            throw new ApplicationException(values(key, type), "keyError");
+            throw new ApplicationException("keyError", values(key, type));
         }
         return null;
     }

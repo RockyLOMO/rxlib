@@ -21,12 +21,11 @@ public class ApplicationException extends InvalidException {
 
     public static final String DEFAULT_MESSAGE = "网络繁忙，请稍后再试。";
     private final UUID id = UUID.randomUUID();
-    private final NQuery<StackTraceElement> stacks;
-    private String methodCode;
-    private Enum enumCode;
+    private final Object errorCode;
     private final Object[] codeValues;
     @Setter
     private String friendlyMessage;
+    private final NQuery<StackTraceElement> stacks;
 
     @Override
     public String getMessage() {
@@ -38,40 +37,52 @@ public class ApplicationException extends InvalidException {
     }
 
     public ApplicationException(Object[] codeValues) {
-        this((String) null, null, codeValues);
-    }
-
-    public ApplicationException(Object[] codeValues, String methodCode) {
-        this(methodCode, null, codeValues);
+        this(codeValues, null);
     }
 
     public ApplicationException(Object[] codeValues, Throwable cause) {
-        this((String) null, cause, codeValues);
+        this(Strings.EMPTY, codeValues, cause);
     }
 
-    public ApplicationException(String methodCode, Throwable cause, Object[] codeValues) {
+    public <T extends Enum<T>> ApplicationException(T errorCode) {
+        this(errorCode, null, null);
+    }
+
+    public <T extends Enum<T>> ApplicationException(T errorCode, Throwable cause) {
+        this(errorCode, null, cause);
+    }
+
+    public <T extends Enum<T>> ApplicationException(T errorCode, Object[] codeValues) {
+        this(errorCode, codeValues, null);
+    }
+
+    public <T extends Enum<T>> ApplicationException(T errorCode, Object[] codeValues, Throwable cause) {
+        this((Object) errorCode, codeValues, cause);
+    }
+
+    public ApplicationException(String errorCode, Object[] codeValues) {
+        this(errorCode, codeValues, null);
+    }
+
+    public ApplicationException(String errorCode, Object[] codeValues, Throwable cause) {
+        this((Object) errorCode, codeValues, cause);
+    }
+
+    protected ApplicationException(Object errorCode, Object[] codeValues, Throwable cause) {
         super(cause != null ? cause.getMessage() : null, cause);
-        this.methodCode = methodCode;
+        require(errorCode);
+        require(errorCode, NQuery.of(Enum.class, String.class).any(p -> Reflects.isInstance(errorCode, p)));
+
+        this.errorCode = errorCode;
         if (codeValues == null) {
             codeValues = Arrays.EMPTY_OBJECT_ARRAY;
         }
         this.codeValues = codeValues;
-        stacks = Reflects.stackTrace(8);
-        init();
-    }
-
-    public ApplicationException(Enum enumCode, Throwable cause, Object[] codeValues) {
-        super(cause != null ? cause.getMessage() : null, cause);
-        this.enumCode = enumCode;
-        if (codeValues == null) {
-            codeValues = Arrays.EMPTY_OBJECT_ARRAY;
+        if (errorCode instanceof CharSequence) {
+            stacks = Reflects.stackTrace(8);
+        } else {
+            stacks = null;
         }
-        this.codeValues = codeValues;
-        stacks = Reflects.stackTrace(8);
-        init();
-    }
-
-    private void init() {
         ExceptionCodeHandler handler = Container.getInstance().get(ExceptionCodeHandler.class);
         handler.handle(this);
     }
