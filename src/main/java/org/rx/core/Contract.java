@@ -9,12 +9,11 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
-import net.sf.cglib.proxy.MethodProxy;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.InterceptProxy;
 import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
-import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.*;
@@ -313,10 +312,10 @@ public final class Contract {
         return true;
     }
 
-    public static <T> T proxy(Class<T> type, QuadraFunc<Method, Object[], Tuple<Object, MethodProxy>, Object> func) {
+    public static <T> T proxy(Class<T> type, TripleFunc<Method, InterceptProxy, Object> func) {
         require(type, func);
 
-        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, args, Tuple.of(proxyObject, methodProxy)));
+        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
     }
 
     public static void sleep() {

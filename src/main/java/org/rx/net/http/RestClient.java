@@ -26,7 +26,7 @@ public final class RestClient {
         RequestMapping baseMapping = contract.getAnnotation(RequestMapping.class);
         String prefix = serverPrefixUrl + getFirstPath(baseMapping);
         boolean defMethod = isPostMethod(baseMapping);
-        return proxy(contract, (m, a, t) -> {
+        return proxy(contract, (m, p) -> {
             RequestMapping pathMapping = m.getAnnotation(RequestMapping.class);
             String path = getFirstPath(pathMapping);
             if (Strings.isEmpty(path)) {
@@ -42,7 +42,7 @@ public final class RestClient {
                     Parameter parameter = parameters[i];
                     RequestParam param = parameter.getAnnotation(RequestParam.class);
                     String name = param != null ? !Strings.isEmpty(param.value()) ? param.value() : param.name() : parameter.getName();
-                    Object val = a[i];
+                    Object val = p.arguments[i];
                     if (val == null && param != null) {
                         val = catchCall(() -> Reflects.changeType(param.defaultValue(), parameter.getType()));
                     }
@@ -59,8 +59,8 @@ public final class RestClient {
                 if (doPost) {
                     logMsg.appendLine("POST: %s", reqUrl);
                     if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
-                        logMsg.appendLine("Request:\t%s", toJsonString(a[0]));
-                        responseText = client.post(reqUrl, a[0]);
+                        logMsg.appendLine("Request:\t%s", toJsonString(p.arguments[0]));
+                        responseText = client.post(reqUrl, p.arguments[0]);
                     } else {
                         Map<String, Object> data = getFormData.invoke();
                         logMsg.appendLine("Request:\t%s", toJsonString(data));

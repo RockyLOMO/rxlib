@@ -67,12 +67,12 @@ public abstract class SuperStatement extends SuperJdbc implements Statement {
         boolean query = JdbcUtil.isQuery(sql);
         if (query) {
             ResultSet wrap = executeQuery(sql);
-            setResultSet(proxy(ResultSet.class, (m, a, t) -> {
+            setResultSet(proxy(ResultSet.class, (m, p) -> {
                 if (Reflects.isCloseMethod(m) && closeOnCompletion) {
                     this.close();
                     return null;
                 }
-                return t.right.invoke(wrap, a);
+                return p.fastInvoke(wrap);
             }));
         } else {
             setUpdateCount(executeUpdate(sql));

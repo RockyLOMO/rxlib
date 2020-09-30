@@ -275,12 +275,12 @@ public abstract class SuperPreparedStatement extends SuperStatement implements P
         boolean query = JdbcUtil.isQuery(getRawSql());
         if (query) {
             ResultSet wrap = executeQuery();
-            setResultSet(proxy(ResultSet.class, (m, a, t) -> {
+            setResultSet(proxy(ResultSet.class, (m, p) -> {
                 if (Reflects.isCloseMethod(m) && isCloseOnCompletion()) {
                     this.close();
                     return null;
                 }
-                return t.right.invoke(wrap, a);
+                return p.fastInvoke(wrap);
             }));
         } else {
             setUpdateCount(executeUpdate());

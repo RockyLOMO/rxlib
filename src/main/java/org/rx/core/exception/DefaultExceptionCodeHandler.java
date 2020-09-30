@@ -20,7 +20,7 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
-    private static Map<String, Object> getMessageSource() {
+    protected Map<String, Object> getMessageSource() {
         return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
             List<String> files = new ArrayList<>();
             files.add("code.yml");
