@@ -209,6 +209,12 @@ public class HttpClient {
     private Headers headers;
     private Response response;
 
+    public String cookie(String rawCookie) {
+        String ua = headers.get(HttpHeaders.COOKIE);
+        setRequestHeader(HttpHeaders.COOKIE, rawCookie);
+        return ua;
+    }
+
     public String userAgent(String userAgent) {
         String ua = headers.get(HttpHeaders.USER_AGENT);
         setRequestHeader(HttpHeaders.USER_AGENT, userAgent);
@@ -252,7 +258,7 @@ public class HttpClient {
         Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, CONFIG.getNetUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
-            builder = builder.set("cookie", rawCookie);
+            builder = builder.set(HttpHeaders.COOKIE, rawCookie);
         }
         headers = builder.build();
         client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy));

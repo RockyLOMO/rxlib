@@ -18,4 +18,8 @@ public class InterceptProxy {
     public <T> T fastInvoke(Object instance) throws Throwable {
         return (T) method.invoke(instance, arguments);
     }
+
+    public <T> T fastInvokeSuper() throws Throwable {
+        return (T) method.invokeSuper(proxyObject, arguments);
+    }
 }
