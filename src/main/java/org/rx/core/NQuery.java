@@ -11,6 +11,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.*;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;
@@ -32,22 +33,6 @@ import static org.rx.core.Contract.*;
  */
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
-    //region nestedTypes
-    @FunctionalInterface
-    public interface IndexSelector<T, TR> {
-        TR apply(T t, int index);
-    }
-
-    @FunctionalInterface
-    public interface IndexPredicate<T> {
-        boolean test(T t, int index);
-
-        default IndexPredicate<T> negate() {
-            return (t, i) -> !test(t, i);
-        }
-    }
-    //endregion
-
     //region staticMembers
     @SuppressWarnings(NON_WARNING)
     @ErrorCode("argError")
@@ -196,54 +181,55 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
     //endregion
 
-    public NQuery<T> each(IndexPredicate<T> func) {
+    @SneakyThrows
+    public NQuery<T> each(PredicateFuncWithIndex<T> func) {
         Iterator<T> tor = this.iterator();
         int i = 0;
         while (tor.hasNext()) {
-            if (!func.test(tor.next(), i++)) {
+            if (!func.invoke(tor.next(), i++)) {
                 break;
             }
         }
         return this;
     }
 
-    public <TR> NQuery<TR> select(Function<T, TR> selector) {
-        return me(stream().map(selector));
+    public <TR> NQuery<TR> select(BiFunc<T, TR> selector) {
+        return me(stream().map(selector.toFunction()));
     }
 
-    public <TR> NQuery<TR> select(IndexSelector<T, TR> selector) {
+    public <TR> NQuery<TR> select(BiFuncWithIndex<T, TR> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().map(p -> selector.apply(p, counter.getAndIncrement())));
+        return me(stream().map(p -> sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement()))));
     }
 
-    public <TR> NQuery<TR> selectMany(Function<T, Collection<TR>> selector) {
-        return me(stream().flatMap(p -> newStream(selector.apply(p))));
+    public <TR> NQuery<TR> selectMany(BiFunc<T, Collection<TR>> selector) {
+        return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p)))));
     }
 
-    public <TR> NQuery<TR> selectMany(IndexSelector<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(BiFuncWithIndex<T, Collection<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().flatMap(p -> newStream(selector.apply(p, counter.getAndIncrement()))));
+        return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement())))));
     }
 
-    public NQuery<T> where(Predicate<T> predicate) {
-        return me(stream().filter(predicate));
+    public NQuery<T> where(PredicateFunc<T> predicate) {
+        return me(stream().filter(predicate.toPredicate()));
     }
 
-    public NQuery<T> where(IndexPredicate<T> predicate) {
+    public NQuery<T> where(PredicateFuncWithIndex<T> predicate) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().filter(p -> predicate.test(p, counter.getAndIncrement())));
+        return me(stream().filter(p -> sneakyInvoke(() -> predicate.invoke(p, counter.getAndIncrement()))));
     }
 
     public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
-    public <TI, TR> NQuery<TR> join(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return join(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
+    public <TI, TR> NQuery<TR> join(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return join(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> joinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
+    public <TI, TR> NQuery<TR> joinMany(BiFunc<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return join(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     @SuppressWarnings(NON_WARNING)
@@ -256,24 +242,24 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         }));
     }
 
-    public <TI, TR> NQuery<TR> leftJoin(Function<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return leftJoin(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
+    public <TI, TR> NQuery<TR> leftJoin(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return leftJoin(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> leftJoinMany(Function<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return leftJoin(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
+    public <TI, TR> NQuery<TR> leftJoinMany(BiFunc<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+        return leftJoin(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public boolean all(Predicate<T> predicate) {
-        return stream().allMatch(predicate);
+    public boolean all(PredicateFunc<T> predicate) {
+        return stream().allMatch(predicate.toPredicate());
     }
 
     public boolean any() {
         return stream().findAny().isPresent();
     }
 
-    public boolean any(Predicate<T> predicate) {
-        return stream().anyMatch(predicate);
+    public boolean any(PredicateFunc<T> predicate) {
+        return stream().anyMatch(predicate.toPredicate());
     }
 
     public boolean contains(T item) {
@@ -317,35 +303,35 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return concat(set);
     }
 
-    public <TK> NQuery<T> orderBy(Function<T, TK> keySelector) {
+    public <TK> NQuery<T> orderBy(BiFunc<T, TK> keySelector) {
         return me(stream().sorted(getComparator(keySelector)));
     }
 
     @SuppressWarnings(NON_WARNING)
-    public static <T, TK> Comparator<T> getComparator(Function<T, TK> keySelector) {
-        return (p1, p2) -> {
-            Comparable c1 = as(keySelector.apply(p1), Comparable.class);
-            Comparable c2 = as(keySelector.apply(p2), Comparable.class);
+    public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector) {
+        return (p1, p2) -> sneakyInvoke(() -> {
+            Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
+            Comparable c2 = as(keySelector.invoke(p2), Comparable.class);
             if (c1 == null || c2 == null) {
                 return 0;
             }
             return c1.compareTo(c2);
-        };
+        });
     }
 
-    public <TK> NQuery<T> orderByDescending(Function<T, TK> keySelector) {
+    public <TK> NQuery<T> orderByDescending(BiFunc<T, TK> keySelector) {
         return me(stream().sorted(getComparator(keySelector).reversed()));
     }
 
-    public NQuery<T> orderByMany(Function<T, Object[]> keySelector) {
+    public NQuery<T> orderByMany(BiFunc<T, Object[]> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
     @SuppressWarnings(NON_WARNING)
-    public static <T> Comparator<T> getComparatorMany(Function<T, Object[]> keySelector) {
-        return (p1, p2) -> {
-            Object[] k1s = keySelector.apply(p1);
-            Object[] k2s = keySelector.apply(p2);
+    public static <T> Comparator<T> getComparatorMany(BiFunc<T, Object[]> keySelector) {
+        return (p1, p2) -> sneakyInvoke(() -> {
+            Object[] k1s = keySelector.invoke(p1);
+            Object[] k2s = keySelector.invoke(p2);
             for (int i = 0; i < k1s.length; i++) {
                 Comparable c1 = as(k1s[i], Comparable.class);
                 Comparable c2 = as(k2s[i], Comparable.class);
@@ -359,10 +345,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
                 return r;
             }
             return 0;
-        };
+        });
     }
 
-    public NQuery<T> orderByDescendingMany(Function<T, Object[]> keySelector) {
+    public NQuery<T> orderByDescendingMany(BiFunc<T, Object[]> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
@@ -371,9 +357,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
     }
 
-    public <TK, TR> NQuery<TR> groupBy(Function<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
+    public <TK, TR> NQuery<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
         Map<TK, List<T>> map = newMap();
-        stream().forEach(t -> map.computeIfAbsent(keySelector.apply(t), p -> newList()).add(t));
+        stream().forEach(t -> map.computeIfAbsent(sneakyInvoke(() -> keySelector.invoke(t)), p -> newList()).add(t));
         List<TR> result = newList();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
             result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
@@ -381,10 +367,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(result);
     }
 
-    public <TR> NQuery<TR> groupByMany(Function<T, Object[]> keySelector, BiFunction<Object[], NQuery<T>, TR> resultSelector) {
+    public <TR> NQuery<TR> groupByMany(BiFunc<T, Object[]> keySelector, BiFunction<Object[], NQuery<T>, TR> resultSelector) {
         Map<String, Tuple<Object[], List<T>>> map = newMap();
         stream().forEach(t -> {
-            Object[] ks = keySelector.apply(t);
+            Object[] ks = sneakyInvoke(() -> keySelector.invoke(t));
             map.computeIfAbsent(toJsonString(ks), p -> Tuple.of(ks, newList())).right.add(t);
         });
         List<TR> result = newList();
@@ -403,8 +389,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return (int) stream().count();
     }
 
-    public int count(Predicate<T> predicate) {
-        return (int) stream().filter(predicate).count();
+    public int count(PredicateFunc<T> predicate) {
+        return (int) stream().filter(predicate.toPredicate()).count();
     }
 
     public T max() {
@@ -416,8 +402,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream.max((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
-    public <TR> TR max(Function<T, TR> selector) {
-        return max(stream().map(selector));
+    public <TR> TR max(BiFunc<T, TR> selector) {
+        return max(stream().map(selector.toFunction()));
     }
 
     public T min() {
@@ -429,8 +415,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream.min((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
-    public <TR> TR min(Function<T, TR> selector) {
-        return min(stream().map(selector));
+    public <TR> TR min(BiFunc<T, TR> selector) {
+        return min(stream().map(selector.toFunction()));
     }
 
     public double sum(ToDoubleFunction<T> selector) {
@@ -452,8 +438,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream().findFirst().get();
     }
 
-    public T first(Predicate<T> predicate) {
-        return stream().filter(predicate).findFirst().get();
+    public T first(PredicateFunc<T> predicate) {
+        return stream().filter(predicate.toPredicate()).findFirst().get();
     }
 
     public T firstOrDefault() {
@@ -464,8 +450,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream().findFirst().orElse(defaultValue);
     }
 
-    public T firstOrDefault(Predicate<T> predicate) {
-        return stream().filter(predicate).findFirst().orElse(null);
+    public T firstOrDefault(PredicateFunc<T> predicate) {
+        return stream().filter(predicate.toPredicate()).findFirst().orElse(null);
     }
 
     @SuppressWarnings(NON_WARNING)
@@ -473,8 +459,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return Streams.findLast(stream()).get();
     }
 
-    public T last(Predicate<T> predicate) {
-        return Streams.findLast(stream().filter(predicate)).get();
+    public T last(PredicateFunc<T> predicate) {
+        return Streams.findLast(stream().filter(predicate.toPredicate())).get();
     }
 
     public T lastOrDefault() {
@@ -485,8 +471,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return Streams.findLast(stream()).orElse(defaultValue);
     }
 
-    public T lastOrDefault(Predicate<T> predicate) {
-        return Streams.findLast(stream().filter(predicate)).orElse(null);
+    public T lastOrDefault(PredicateFunc<T> predicate) {
+        return Streams.findLast(stream().filter(predicate.toPredicate())).orElse(null);
     }
 
     public T single() {
@@ -494,10 +480,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
 
     @ErrorCode
-    public T single(Predicate<T> predicate) {
+    public T single(PredicateFunc<T> predicate) {
         Stream<T> stream = stream();
         if (predicate != null) {
-            stream = stream.filter(predicate);
+            stream = stream.filter(predicate.toPredicate());
         }
         List<T> list = stream.limit(2).collect(Collectors.toList());
         if (list.size() != 1) {
@@ -511,10 +497,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
 
     @ErrorCode
-    public T singleOrDefault(Predicate<T> predicate) {
+    public T singleOrDefault(PredicateFunc<T> predicate) {
         Stream<T> stream = stream();
         if (predicate != null) {
-            stream = stream.filter(predicate);
+            stream = stream.filter(predicate.toPredicate());
         }
         List<T> list = stream.limit(2).collect(Collectors.toList());
         if (list.size() > 1) {
@@ -527,11 +513,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(stream().skip(count));
     }
 
-    public NQuery<T> skipWhile(Predicate<T> predicate) {
-        return skipWhile((p, i) -> predicate.test(p));
+    public NQuery<T> skipWhile(PredicateFunc<T> predicate) {
+        return skipWhile((p, i) -> predicate.invoke(p));
     }
 
-    public NQuery<T> skipWhile(IndexPredicate<T> predicate) {
+    public NQuery<T> skipWhile(PredicateFuncWithIndex<T> predicate) {
         AtomicBoolean doAccept = new AtomicBoolean();
         return me((p, i) -> {
             int flags = EachFunc.None;
@@ -539,7 +525,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
                 flags |= EachFunc.Accept;
                 return flags;
             }
-            if (!predicate.test(p, i)) {
+            if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
                 doAccept.set(true);
                 flags |= EachFunc.Accept;
             }
@@ -551,14 +537,14 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(stream().limit(count));
     }
 
-    public NQuery<T> takeWhile(Predicate<T> predicate) {
-        return takeWhile((p, i) -> predicate.test(p));
+    public NQuery<T> takeWhile(PredicateFunc<T> predicate) {
+        return takeWhile((p, i) -> predicate.invoke(p));
     }
 
-    public NQuery<T> takeWhile(IndexPredicate<T> predicate) {
+    public NQuery<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
         return me((p, i) -> {
             int flags = EachFunc.None;
-            if (!predicate.test(p, i)) {
+            if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
                 flags |= EachFunc.Break;
                 return flags;
             }
@@ -567,7 +553,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         });
     }
 
-    public String toJoinString(String delimiter, Function<T, String> selector) {
+    public String toJoinString(String delimiter, BiFunc<T, String> selector) {
         return String.join(delimiter, select(selector));
     }
 
@@ -610,15 +596,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return result;
     }
 
-    public <TK> Map<TK, T> toMap(Function<T, TK> keySelector) {
+    public <TK> Map<TK, T> toMap(BiFunc<T, TK> keySelector) {
         return toMap(keySelector, p -> p);
     }
 
     //Collectors.toMap 会校验value为null的情况
-    public <TK, TR> Map<TK, TR> toMap(Function<T, TK> keySelector, Function<T, TR> resultSelector) {
+    @SneakyThrows
+    public <TK, TR> Map<TK, TR> toMap(BiFunc<T, TK> keySelector, BiFunc<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
         for (T item : iterable) {
-            result.put(keySelector.apply(item), resultSelector.apply(item));
+            result.put(keySelector.invoke(item), resultSelector.invoke(item));
         }
         return result;
     }

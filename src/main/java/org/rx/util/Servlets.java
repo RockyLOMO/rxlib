@@ -23,7 +23,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Date;
 
-import static org.rx.core.Contract.catchCall;
+import static org.rx.core.Contract.sneakyInvoke;
 import static org.rx.core.Contract.require;
 
 public class Servlets extends ServletRequestUtils {
@@ -106,12 +106,12 @@ public class Servlets extends ServletRequestUtils {
         require(name);
 
         HttpServletRequest request = currentRequest().left;
-        return catchCall(() -> {
+        return sneakyInvoke(() -> {
             if (ArrayUtils.isEmpty(request.getCookies())) {
                 return null;
             }
             return NQuery.of(request.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
-        });
+        }, true);
     }
 
     public static void setCookie(String name, String value) {

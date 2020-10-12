@@ -276,7 +276,7 @@ public final class Sockets {
             return;
         }
 
-        catchCall(() -> {
+        sneakyInvoke(() -> {
             if (socket.isConnected()) {
                 socket.setSoLinger(true, 2);
                 if (!socket.isOutputShutdown()) {
@@ -287,7 +287,7 @@ public final class Sockets {
                 }
             }
             socket.close();
-        });
+        }, true);
     }
     //#endregion
 

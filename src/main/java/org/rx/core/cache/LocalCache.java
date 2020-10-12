@@ -3,7 +3,6 @@ package org.rx.core.cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.SneakyThrows;
 import org.rx.core.Cache;
-import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.Set;
@@ -63,12 +62,6 @@ public class LocalCache<TK, TV> implements Cache<TK, TV> {
     @SneakyThrows
     @Override
     public TV get(TK key, BiFunc<TK, TV> supplier) {
-        return cache.get(key, () -> {
-            try {
-                return supplier.invoke(key);
-            } catch (Throwable e) {
-                throw InvalidException.wrap(e);
-            }
-        });
+        return cache.get(key, () -> sneakyInvoke(() -> supplier.invoke(key)));
     }
 }

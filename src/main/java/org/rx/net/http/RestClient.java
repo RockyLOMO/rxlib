@@ -44,7 +44,7 @@ public final class RestClient {
                     String name = param != null ? !Strings.isEmpty(param.value()) ? param.value() : param.name() : parameter.getName();
                     Object val = p.arguments[i];
                     if (val == null && param != null) {
-                        val = catchCall(() -> Reflects.changeType(param.defaultValue(), parameter.getType()));
+                        val = Reflects.changeType(param.defaultValue(), parameter.getType());
                     }
                     data.put(name, val);
                 }

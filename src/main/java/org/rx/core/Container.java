@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.NON_WARNING;
+import static org.rx.core.Contract.sneakyInvoke;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Container {
@@ -22,13 +23,7 @@ public final class Container {
     }
 
     public <T> T getOrRegister(String name, Func<T> func) {
-        return (T) holder.computeIfAbsent(name, k -> {
-            try {
-                return func.invoke();
-            } catch (Throwable e) {
-                throw InvalidException.wrap(e);
-            }
-        });
+        return (T) holder.computeIfAbsent(name, k -> sneakyInvoke(func));
     }
 
     public <T> T get(Class<T> type) {

@@ -1,20 +1,14 @@
 package org.rx.util.function;
 
-import org.rx.core.exception.InvalidException;
-
 import java.util.function.BiFunction;
+
+import static org.rx.core.Contract.sneakyInvoke;
 
 @FunctionalInterface
 public interface TripleFunc<T1, T2, TR> {
     TR invoke(T1 param1, T2 param2) throws Throwable;
 
     default BiFunction<T1, T2, TR> toFunction() {
-        return (p1, p2) -> {
-            try {
-                return invoke(p1, p2);
-            } catch (Throwable e) {
-                throw InvalidException.wrap(e);
-            }
-        };
+        return (p1, p2) -> sneakyInvoke(() -> invoke(p1, p2));
     }
 }

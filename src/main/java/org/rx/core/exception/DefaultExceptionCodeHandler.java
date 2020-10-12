@@ -28,13 +28,13 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
                 files.addAll(Arrays.toList(CONFIG.getErrorCodeFiles()));
             }
 
-            return isNull(catchCall(() -> {
+            return isNull(Contract.sneakyInvoke(() -> {
                 Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));
                 if (codes.isEmpty()) {
                     log.warn("load code.yml fail");
                 }
                 return codes;
-            }), Collections.emptyMap());
+            }, true), Collections.emptyMap());
         }, Cache.WEAK_CACHE);
     }
 

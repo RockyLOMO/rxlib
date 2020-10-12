@@ -9,6 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.InterceptProxy;
@@ -241,25 +242,35 @@ public final class Contract {
         throw lastEx;
     }
 
-    public static boolean catchCall(Action action) {
-        require(action);
+    public static boolean sneakyInvoke(Action action) {
+        return sneakyInvoke(action, false);
+    }
 
+    public static boolean sneakyInvoke(Action action, boolean quietly) {
         try {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            log.warn("catchCall", e);
+            if (!quietly) {
+                ExceptionUtils.rethrow(e);
+            }
+            log.warn("sneakyInvoke", e);
         }
         return false;
     }
 
-    public static <T> T catchCall(Func<T> action) {
-        require(action);
+    public static <T> T sneakyInvoke(Func<T> action) {
+        return sneakyInvoke(action, false);
+    }
 
+    public static <T> T sneakyInvoke(Func<T> action, boolean quietly) {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            log.warn("catchCall", e);
+            if (!quietly) {
+                ExceptionUtils.rethrow(e);
+            }
+            log.warn("sneakyInvoke", e);
         }
         return null;
     }
@@ -293,7 +304,7 @@ public final class Contract {
     }
 
     public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? p -> catchCall(p::close) : AutoCloseable::close);
+        return tryAs(obj, AutoCloseable.class, quietly ? p -> sneakyInvoke(p::close, true) : AutoCloseable::close);
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {

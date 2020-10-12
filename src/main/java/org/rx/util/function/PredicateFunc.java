@@ -1,14 +1,14 @@
 package org.rx.util.function;
 
-import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.rx.core.Contract.sneakyInvoke;
 
 @FunctionalInterface
-public interface BiFunc<TP, TR> {
-    TR invoke(TP param) throws Throwable;
+public interface PredicateFunc<T> {
+    boolean invoke(T t) throws Throwable;
 
-    default Function<TP, TR> toFunction() {
+    default Predicate<T> toPredicate() {
         return p -> sneakyInvoke(() -> invoke(p));
     }
 }

@@ -94,7 +94,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     @SneakyThrows
     @Override
     protected void freeObjects() {
-        catchCall(this::flush);
+        sneakyInvoke(this::flush, true);
 
         writer.close();
         reader.close();
