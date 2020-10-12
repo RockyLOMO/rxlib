@@ -6,8 +6,9 @@ import org.rx.core.Strings;
 import org.springframework.core.NestedRuntimeException;
 
 public class InvalidException extends NestedRuntimeException {
-    public static void rethrow(Throwable cause) {
+    public static Throwable rethrow(Throwable cause) {
         ExceptionUtils.rethrow(cause);
+        return cause;
     }
 
     public static InvalidException wrap(Throwable cause) {

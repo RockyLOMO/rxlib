@@ -221,11 +221,11 @@ public class JdbcExecutor extends Disposable {
     }
 
     public boolean testConnect() {
-        return isNull(sneakyInvoke(() -> {
+        return quietly(() -> {
             try (Connection conn = createConnection()) {
                 return conn.isValid(6);
             }
-        }, true), false);
+        }, () -> false);
     }
 
     @SneakyThrows

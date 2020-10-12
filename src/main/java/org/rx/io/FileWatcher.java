@@ -16,8 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
 
-import static org.rx.core.Contract.sneakyInvoke;
-import static org.rx.core.Contract.require;
+import static org.rx.core.Contract.*;
 
 @Slf4j
 public class FileWatcher extends Disposable {
@@ -76,15 +75,15 @@ public class FileWatcher extends Disposable {
         keepHandle = true;
         future = Tasks.run(() -> {
             while (keepHandle) {
-                sneakyInvoke(() -> {
+                quietly(() -> {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
                         for (Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
-                            sneakyInvoke(() -> raiseEvent(event, tuple), true);
+                            quietly(() -> raiseEvent(event, tuple));
                         }
                     }
                     key.reset();
-                }, true);
+                });
             }
             return null;
         });

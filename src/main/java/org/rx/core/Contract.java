@@ -222,55 +222,85 @@ public final class Contract {
     //endregion
 
     //region extend
-    @SneakyThrows
-    public static <T> T retry(int retryCount, Func<T> func) {
-        require(retryCount, retryCount >= 1);
-        require(func);
-
-        InvalidException lastEx = null;
-        int i = 1;
-        while (i <= retryCount) {
-            try {
-                return func.invoke();
-            } catch (Exception ex) {
-                if (i == retryCount) {
-                    lastEx = InvalidException.wrap(ex);
-                }
-            }
-            i++;
-        }
-        throw lastEx;
-    }
-
     public static boolean sneakyInvoke(Action action) {
-        return sneakyInvoke(action, false);
+        return sneakyInvoke(action, 1);
     }
 
-    public static boolean sneakyInvoke(Action action, boolean quietly) {
-        try {
-            action.invoke();
-            return true;
-        } catch (Throwable e) {
-            if (!quietly) {
-                ExceptionUtils.rethrow(e);
+    public static boolean sneakyInvoke(Action action, int retryCount) {
+        require(action);
+
+        Throwable last = null;
+        for (int i = 0; i < retryCount; i++) {
+            try {
+                action.invoke();
+                return true;
+            } catch (Throwable e) {
+                if (last != null) {
+                    log.warn("sneakyInvoke retry={} error={} {}", i, e.getClass().getName(), e.getMessage());
+                }
+                last = e;
             }
-            log.warn("sneakyInvoke", e);
+        }
+        if (last != null) {
+            ExceptionUtils.rethrow(last);
         }
         return false;
     }
 
     public static <T> T sneakyInvoke(Func<T> action) {
-        return sneakyInvoke(action, false);
+        return sneakyInvoke(action, 1);
     }
 
-    public static <T> T sneakyInvoke(Func<T> action, boolean quietly) {
+    public static <T> T sneakyInvoke(Func<T> action, int retryCount) {
+        require(action);
+
+        Throwable last = null;
+        for (int i = 0; i < retryCount; i++) {
+            try {
+                return action.invoke();
+            } catch (Throwable e) {
+                if (last != null) {
+                    log.warn("sneakyInvoke retry={} error={} {}", i, e.getClass().getName(), e.getMessage());
+                }
+                last = e;
+            }
+        }
+        if (last != null) {
+            ExceptionUtils.rethrow(last);
+        }
+        return null;
+    }
+
+    public static boolean quietly(Action action) {
+        require(action);
+
         try {
-            return action.invoke();
+            action.invoke();
+            return true;
         } catch (Throwable e) {
-            if (!quietly) {
+            log.warn("quietly", e);
+        }
+        return false;
+    }
+
+    public static <T> T quietly(Func<T> action) {
+        return quietly(action, null);
+    }
+
+    public static <T> T quietly(Func<T> action, Func<T> defaultValue) {
+        require(action);
+
+        try {
+            T val = action.invoke();
+        } catch (Throwable e) {
+            log.warn("quietly", e);
+        }
+        if (defaultValue != null) {
+            try {
+                return defaultValue.invoke();
+            } catch (Throwable e) {
                 ExceptionUtils.rethrow(e);
             }
-            log.warn("sneakyInvoke", e);
         }
         return null;
     }
@@ -304,7 +334,7 @@ public final class Contract {
     }
 
     public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? p -> sneakyInvoke(p::close, true) : AutoCloseable::close);
+        return tryAs(obj, AutoCloseable.class, quietly ? p -> quietly(p::close) : AutoCloseable::close);
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {
