@@ -1,10 +1,15 @@
 package org.rx.core.exception;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.$;
 import org.rx.core.Strings;
 import org.springframework.core.NestedRuntimeException;
 
 public class InvalidException extends NestedRuntimeException {
+    public static void rethrow(Throwable cause) {
+        ExceptionUtils.rethrow(cause);
+    }
+
     public static InvalidException wrap(Throwable cause) {
         if (cause == null) {
             return null;

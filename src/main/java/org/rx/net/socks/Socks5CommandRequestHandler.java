@@ -5,7 +5,6 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -14,6 +13,8 @@ import org.rx.util.function.TripleFunc;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+
+import static org.rx.core.Contract.sneakyInvoke;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -47,13 +48,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (!f.isSuccess()) {
                 TripleFunc<SocketAddress, Upstream, Upstream> upstreamPreReconnect = socksProxyServer.getConfig().getUpstreamPreReconnect();
                 Upstream newUpstream;
-                try {
-                    if (upstreamPreReconnect != null && (newUpstream = upstreamPreReconnect.invoke(dstAddr, upstream)) != null) {
-                        connect(inbound, addrType, newUpstream, dstAddr);
-                        return;
-                    }
-                } catch (Throwable e) {
-                    throw InvalidException.wrap(e);
+                if (upstreamPreReconnect != null && (newUpstream = sneakyInvoke(() -> upstreamPreReconnect.invoke(dstAddr, upstream))) != null) {
+                    connect(inbound, addrType, newUpstream, dstAddr);
+                    return;
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
