@@ -291,7 +291,7 @@ public final class Contract {
         require(action);
 
         try {
-            T val = action.invoke();
+            return action.invoke();
         } catch (Throwable e) {
             log.warn("quietly", e);
         }
