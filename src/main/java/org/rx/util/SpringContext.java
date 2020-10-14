@@ -9,11 +9,11 @@ import java.util.Map;
 
 import static org.rx.core.Contract.require;
 
+/**
+ * BeanPostProcessor 注册bean时变更
+ */
 @Component
 public class SpringContext implements InitializingBean, ApplicationContextAware {
-    /**
-     * applicationContext.xml SpringContextHolder
-     */
     private static ApplicationContext applicationContext;
 
     public static ApplicationContext getApplicationContext() {

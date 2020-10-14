@@ -12,7 +12,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -27,14 +26,12 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
             if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
                 files.addAll(Arrays.toList(CONFIG.getErrorCodeFiles()));
             }
-
-            return quietly(() -> {
-                Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));
-                if (codes.isEmpty()) {
-                    log.warn("load code.yml fail");
-                }
-                return codes;
-            }, Collections::emptyMap);
+            //基础类不要quietly
+            Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));
+            if (codes.isEmpty()) {
+                log.warn("load code.yml fail");
+            }
+            return codes;
         }, Cache.WEAK_CACHE);
     }
 
