@@ -150,7 +150,7 @@ public class FluentWait {
         do {
             if (!tor.hasNext()) {
                 Throwables.throwIfUnchecked(e);
-                throw InvalidException.wrap(e);
+                throw InvalidException.sneaky(e);
             }
             ignoredException = tor.next();
         } while (!ignoredException.isInstance(e));

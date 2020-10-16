@@ -57,6 +57,8 @@ public class Reflects extends TypeUtils {
     }
     //endregion
 
+    public static final NQuery<String> COLLECTION_WRITE_METHOD_NAMES = NQuery.of("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
+            List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final NQuery<Method> OBJECT_METHODS = NQuery.of(Object.class.getMethods());
     private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
@@ -69,7 +71,7 @@ public class Reflects extends TypeUtils {
             lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
             setAccess(lookupConstructor);
         } catch (NoSuchMethodException e) {
-            throw InvalidException.wrap(e);
+            throw InvalidException.sneaky(e);
         }
 
         supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
@@ -129,8 +131,47 @@ public class Reflects extends TypeUtils {
             if (!throwOnEmpty) {
                 return null;
             }
-            throw InvalidException.wrap(e);
+            throw InvalidException.sneaky(e);
         }
+    }
+
+    public static <T> T newInstance(Class<T> type) {
+        return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
+    }
+
+    @SuppressWarnings(NON_WARNING)
+    @ErrorCode
+    @SneakyThrows
+    public static <T> T newInstance(Class<T> type, Object... args) {
+        require(type);
+        if (args == null) {
+            args = Arrays.EMPTY_OBJECT_ARRAY;
+        }
+
+        try {
+            return ConstructorUtils.invokeConstructor(type, args);
+        } catch (Exception e) {
+            log.warn("Not match any accessible constructors. {}", e.getMessage());
+            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+                Class[] paramTypes = constructor.getParameterTypes();
+                if (paramTypes.length != args.length) {
+                    continue;
+                }
+                boolean ok = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!isInstance(args[i], paramTypes[i])) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+                setAccess(constructor);
+                return (T) constructor.newInstance(args);
+            }
+        }
+        throw new ApplicationException(values(type.getName()));
     }
     //endregion
 
@@ -236,45 +277,6 @@ public class Reflects extends TypeUtils {
             setAccess(field);
         }
         return fields;
-    }
-
-    public static <T> T newInstance(Class<T> type) {
-        return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
-    }
-
-    @SuppressWarnings(NON_WARNING)
-    @ErrorCode
-    @SneakyThrows
-    public static <T> T newInstance(Class<T> type, Object... args) {
-        require(type);
-        if (args == null) {
-            args = Arrays.EMPTY_OBJECT_ARRAY;
-        }
-
-        try {
-            return ConstructorUtils.invokeConstructor(type, args);
-        } catch (Exception e) {
-            log.warn("Not match any accessible constructors. {}", e.getMessage());
-            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
-                Class[] paramTypes = constructor.getParameterTypes();
-                if (paramTypes.length != args.length) {
-                    continue;
-                }
-                boolean ok = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!isInstance(args[i], paramTypes[i])) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) {
-                    continue;
-                }
-                setAccess(constructor);
-                return (T) constructor.newInstance(args);
-            }
-        }
-        throw new ApplicationException(values(type.getName()));
     }
 
     private static void setAccess(AccessibleObject member) {

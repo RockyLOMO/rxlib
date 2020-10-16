@@ -203,8 +203,8 @@ public final class Sockets {
         LoopbackAddress = InetAddress.getLoopbackAddress();
         try {
             AnyAddress = InetAddress.getByName("0.0.0.0");
-        } catch (Exception ex) {
-            throw InvalidException.wrap(ex);
+        } catch (Exception e) {
+            throw InvalidException.sneaky(e);
         }
     }
 
