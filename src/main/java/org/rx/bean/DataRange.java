@@ -10,6 +10,7 @@ import static org.rx.core.Contract.require;
 @Data
 @NoArgsConstructor
 public class DataRange<T extends Comparable<T>> implements Serializable {
+    private static final long serialVersionUID = 2698228026798507997L;
     public T start;
     public T end;
 

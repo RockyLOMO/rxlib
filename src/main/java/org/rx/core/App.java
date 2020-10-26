@@ -228,13 +228,13 @@ public class App extends SystemUtils {
         return Base64.getDecoder().decode(data);
     }
 
-    public static String serializeToBase64(Object obj) {
+    public static <T extends Serializable> String serializeToBase64(T obj) {
         byte[] data = serialize(obj);
         return convertToBase64String(data);
     }
 
     @SneakyThrows
-    public static byte[] serialize(Object obj) {
+    public static <T extends Serializable> byte[] serialize(T obj) {
         require(obj);
 
         try (MemoryStream stream = new MemoryStream();
@@ -244,18 +244,18 @@ public class App extends SystemUtils {
         }
     }
 
-    public static Object deserializeFromBase64(String base64) {
+    public static <T extends Serializable> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64String(base64);
         return deserialize(data);
     }
 
     @SneakyThrows
-    public static Object deserialize(byte[] data) {
+    public static <T extends Serializable> T deserialize(byte[] data) {
         require(data);
 
         try (MemoryStream stream = new MemoryStream(data, 0, data.length);
              ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
-            return in.readObject();
+            return (T) in.readObject();
         }
     }
 

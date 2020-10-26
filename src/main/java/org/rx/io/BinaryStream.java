@@ -160,7 +160,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
         write(Bytes.getBytes(value + System.lineSeparator()));
     }
 
-    public <T> void writeObject(T value) {
+    public <T extends Serializable> void writeObject(T value) {
         byte[] data = App.serialize(value);
         writeInt(data.length);
         write(data);

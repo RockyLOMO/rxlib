@@ -10,6 +10,8 @@ import java.io.Serializable;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Tuple<T1, T2> implements Serializable {
+    private static final long serialVersionUID = 5110049327430282262L;
+
     public static <T1, T2> Tuple<T1, T2> of(T1 t1, T2 t2) {
         return new Tuple<>(t1, t2);
     }

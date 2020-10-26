@@ -19,6 +19,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @NoArgsConstructor
     @Data
     public static class DynamicConfig implements Serializable {
+        private static final long serialVersionUID = 435663699833833222L;
         private int variable = CPU_THREADS;
         private int minThreshold = 40, maxThreshold = 60;
         private int samplingTimes = 8;

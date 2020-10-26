@@ -8,11 +8,12 @@ import org.rx.net.BytesSegment;
 
 import java.io.*;
 import java.util.Arrays;
-import java.util.function.Supplier;
 
 import static org.rx.core.Contract.*;
 
-public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> {
+public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> implements Serializable {
+    private static final long serialVersionUID = 1171318600626020868L;
+
     public static final class BytesWriter extends ByteArrayOutputStream {
         private volatile int minPosition, length, maxLength = MAX_INT;
 
@@ -145,6 +146,23 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
 
     private boolean publiclyVisible;
 
+    private void writeObject(ObjectOutputStream out) throws IOException {
+        out.defaultWriteObject();
+        out.writeBoolean(publiclyVisible);
+        out.writeInt(writer.length);
+        out.write(writer.getBuffer(), 0, writer.length);
+    }
+
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        publiclyVisible = in.readBoolean();
+        int count = in.readInt();
+        byte[] buffer = new byte[count];
+        in.read(buffer);
+        writer = new BytesWriter(buffer, 0, count, true);
+        initReader(publiclyVisible);
+    }
+
     @Override
     public MemoryStream.BytesReader getReader() {
         checkRead();
@@ -190,8 +208,6 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
 
         return writer.getBuffer();
     }
-
-    private Supplier<BytesReader> x;
 
     public MemoryStream() {
         this(32, false);

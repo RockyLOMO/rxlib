@@ -9,6 +9,8 @@ import java.io.Serializable;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @EqualsAndHashCode
 public final class $<T> implements Serializable {
+    private static final long serialVersionUID = -1049524743720496118L;
+
     public static <T> $<T> $() {
         return $(null);
     }

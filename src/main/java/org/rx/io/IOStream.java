@@ -15,7 +15,9 @@ import static org.rx.core.Contract.*;
 
 @AllArgsConstructor
 @Getter
-public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable {
+public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
+    private static final long serialVersionUID = 3204673656139586437L;
+
     public static String readString(InputStream stream) {
         return readString(stream, Contract.UTF_8);
     }
@@ -61,8 +63,8 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         to.flush();
     }
 
-    protected TI reader;
-    protected TO writer;
+    protected transient TI reader;
+    protected transient TO writer;
 
     public boolean canRead() {
         return !isClosed() && available() > 0;
@@ -162,9 +164,13 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     }
 
     public void copyTo(IOStream to) {
-        checkNotClosed();
         require(to);
+        copyTo(to.writer);
+    }
 
-        copyTo(this.reader, to.writer);
+    public void copyTo(OutputStream to) {
+        checkNotClosed();
+
+        copyTo(this.reader, to);
     }
 }

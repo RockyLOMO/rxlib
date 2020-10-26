@@ -23,6 +23,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     @RequiredArgsConstructor
     @Getter
     public static class DiskMonitorBean implements Serializable {
+        private static final long serialVersionUID = 743624611466728938L;
         private final String name;
         private final long usedSpace, totalSpace;
 
@@ -42,6 +43,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     @RequiredArgsConstructor
     @Getter
     public static class MonitorBean implements Serializable {
+        private static final long serialVersionUID = -5980065718359999352L;
         private final int cpuThreads;
         private final double cpuLoad;
         private final int liveThreadCount;

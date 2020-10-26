@@ -17,6 +17,8 @@ import static org.rx.core.Contract.require;
 @EqualsAndHashCode
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class SUID implements Serializable {
+    private static final long serialVersionUID = -8613691951420514734L;
+
     public static SUID compute(String data) {
         return valueOf(newUUID(MD5Util.md5(data)));
     }

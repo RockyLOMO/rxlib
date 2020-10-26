@@ -4,6 +4,7 @@ import com.google.common.net.HttpHeaders;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.ArrayUtils;
 import org.rx.bean.DateTime;
+import org.rx.bean.StreamFile;
 import org.rx.bean.Tuple;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
@@ -73,11 +74,6 @@ public class Servlets extends ServletRequestUtils {
     @SneakyThrows
     public static void responseFile(String filePath) {
         require(filePath);
-        switch (filePath) {
-            case "info":
-            case "error":
-                filePath = String.format("%s/logs/%s", System.getProperty("catalina.home"), filePath);
-        }
 
         HttpServletResponse response = currentRequest().right;
         File file = new File(filePath);
@@ -88,6 +84,18 @@ public class Servlets extends ServletRequestUtils {
         try (FileInputStream in = new FileInputStream(file)) {
             IOStream.copyTo(in, response.getOutputStream());
         }
+    }
+
+    @SneakyThrows
+    public static void responseFile(StreamFile file) {
+        require(file);
+
+        HttpServletResponse response = currentRequest().right;
+        response.setCharacterEncoding(Contract.UTF_8);
+        response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
+        response.setContentLength((int) file.getLength());
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
+        file.getStream().copyTo(response.getOutputStream());
     }
 
     @SneakyThrows

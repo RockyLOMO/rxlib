@@ -35,6 +35,7 @@ public class Reflects extends TypeUtils {
     //region NestedTypes
     @RequiredArgsConstructor
     public static class PropertyNode implements Serializable {
+        private static final long serialVersionUID = 3680733077204898075L;
         public final String propertyName;
         public final Method setter;
         public final Method getter;

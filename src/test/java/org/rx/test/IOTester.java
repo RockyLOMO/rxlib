@@ -2,6 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
+import org.rx.core.App;
 import org.rx.core.Contract;
 import org.rx.io.BinaryStream;
 import org.rx.io.Files;
@@ -11,6 +12,7 @@ import org.rx.util.Helper;
 
 import java.io.FileInputStream;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
@@ -60,7 +62,7 @@ public class IOTester {
     }
 
     @Test
-    public void testStream() {
+    public void memoryStream() {
         MemoryStream stream = new MemoryStream(32, true);
         for (int i = 0; i < 5; i++) {
             stream.write(i);
@@ -74,6 +76,13 @@ public class IOTester {
 
         stream.setPosition(0);
         System.out.println(stream.read());
+
+        byte[] serialize = App.serialize(stream);
+        MemoryStream newStream = App.deserialize(serialize);
+        byte[] bytes = newStream.toArray();
+        for (int i = 0; i < 5; i++) {
+            assert bytes[i] == i;
+        }
     }
 
     @Test
