@@ -46,7 +46,7 @@
         <maven.test.skip>true</maven.test.skip>
         <java.version>1.8</java.version>
         <shallow>true</shallow>
-<!--        <gpg.skip>true</gpg.skip>-->
+        <gpg.skip>false</gpg.skip>
         <lombok.version>1.18.12</lombok.version>
         <slf4j-api.version>1.7.30</slf4j-api.version>
         <guava.version>29.0-jre</guava.version>
