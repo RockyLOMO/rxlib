@@ -139,11 +139,12 @@ public final class Tasks {
         future.v = scheduler.scheduleWithFixedDelay(() -> {
             try {
                 task.invoke();
-                future.v.cancel(true);
             } catch (Throwable e) {
                 log.warn("Task IGNORE", e);
+            } finally {
+                future.v.cancel(true);
             }
-        }, delay, delay, TimeUnit.MILLISECONDS);
+        }, delay, delay, TimeUnit.MILLISECONDS);//todo -1?
         return future.v;
     }
 

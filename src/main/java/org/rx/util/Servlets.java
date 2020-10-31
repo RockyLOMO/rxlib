@@ -2,13 +2,16 @@ package org.rx.util;
 
 import com.google.common.net.HttpHeaders;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.DateTime;
 import org.rx.bean.StreamFile;
 import org.rx.bean.Tuple;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
+import org.rx.core.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
 import org.springframework.util.MimeTypeUtils;
@@ -26,6 +29,7 @@ import java.util.Date;
 
 import static org.rx.core.Contract.*;
 
+@Slf4j
 public class Servlets extends ServletRequestUtils {
     private static ThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new ThreadLocal<>();
 
@@ -69,6 +73,18 @@ public class Servlets extends ServletRequestUtils {
             ip = ips[0];
         }
         return ip;
+    }
+
+    public static String requestIp(boolean throwOnEmpty) {
+        try {
+            return requestIp();
+        } catch (Exception e) {
+            if (throwOnEmpty) {
+                throw InvalidException.sneaky(e);
+            }
+            log.warn("requestIp", e);
+            return "0.0.0.0";
+        }
     }
 
     @SneakyThrows
