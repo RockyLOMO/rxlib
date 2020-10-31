@@ -119,8 +119,8 @@ public class SpringControllerInterceptor {
             }
             if (p instanceof String) {
                 String s = (String) p;
-                if (App.isBase64String(s)) {
-                    return "[Base64String]";
+                if (Strings.length(s) > 1024 * 512) {
+                    return "[BigString]";
                 }
             }
             return p;

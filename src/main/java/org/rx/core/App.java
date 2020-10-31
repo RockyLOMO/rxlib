@@ -204,14 +204,7 @@ public class App extends SystemUtils {
     //endregion
 
     //region Base64
-    public static boolean isBase64String(String base64String) {
-        if (Strings.isNullOrEmpty(base64String)) {
-            return false;
-        }
-
-        return org.apache.commons.codec.binary.Base64.isBase64(base64String);
-    }
-
+    //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
     @SneakyThrows
     public static String convertToBase64String(byte[] data) {
         require(data);

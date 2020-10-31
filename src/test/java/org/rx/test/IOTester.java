@@ -1,6 +1,5 @@
 package org.rx.test;
 
-import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Contract;
@@ -8,27 +7,10 @@ import org.rx.io.BinaryStream;
 import org.rx.io.Files;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.PersonBean;
-import org.rx.util.Helper;
 
-import java.io.FileInputStream;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
-import java.util.Map;
 
 public class IOTester {
-    @SneakyThrows
-    @Test
-    public void excel() {
-        String path = "D:/data3.xlsx";
-        Map<String, List<Object[]>> map = Helper.readExcel(new FileInputStream(path), false);
-        for (Map.Entry<String, List<Object[]>> entry : map.entrySet()) {
-            System.out.println(entry.getKey());
-//            System.out.println(toJsonString(entry.getValue()));
-            System.out.println();
-        }
-    }
-
     @Test
     public void testBinaryStream() {
         BinaryStream stream = new BinaryStream(new MemoryStream());

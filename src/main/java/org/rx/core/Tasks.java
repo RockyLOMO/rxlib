@@ -9,6 +9,7 @@ import org.rx.bean.SUID;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.sql.Time;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
@@ -85,11 +86,8 @@ public final class Tasks {
 //        return executor.submit((Callable<T>) t);
     }
 
-
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {
-        require((Object) timeArray);
-
-        return NQuery.of(timeArray).select(p -> scheduleDaily(task, p)).toList();
+        return NQuery.of(timeArray).select(p -> scheduleDaily(task, Time.valueOf(p))).toList();
     }
 
     /**
@@ -99,7 +97,7 @@ public final class Tasks {
      * @param time "HH:mm:ss"
      * @return Future
      */
-    public static Future<?> scheduleDaily(Action task, String time) {
+    public static Future<?> scheduleDaily(Action task, Time time) {
         require(task, time);
 
         long oneDay = 24 * 60 * 60 * 1000;
@@ -107,13 +105,6 @@ public final class Tasks {
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 
         return schedule(task, initDelay, oneDay, "scheduleDaily");
-    }
-
-    public static Future<?> scheduleOnceAt(Action task, Date time) {
-        require(task, time);
-
-        long initDelay = time.getTime() - System.currentTimeMillis();
-        return scheduleOnce(task, initDelay);
     }
 
     public static Future<?> scheduleUntil(Action task, Func<Boolean> checkFunc, long delay) {
@@ -134,21 +125,11 @@ public final class Tasks {
         return future.v;
     }
 
-    public static Future<?> schedule(Action task, long delay) {
-        return schedule(task, delay, delay, null);
-    }
+    public static Future<?> scheduleOnceAt(Action task, Date time) {
+        require(task, time);
 
-    public static Future<?> schedule(Action task, long initialDelay, long delay, String taskName) {
-        require(task);
-
-        return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
-            try {
-                task.invoke();
-            } catch (Throwable e) {
-                log.error("Task IGNORE", e);
-            }
-            return null;
-        }), initialDelay, delay, TimeUnit.MILLISECONDS);
+        long initDelay = time.getTime() - System.currentTimeMillis();
+        return scheduleOnce(task, initDelay);
     }
 
     public static Future<?> scheduleOnce(Action task, long delay) {
@@ -164,5 +145,22 @@ public final class Tasks {
             }
         }, delay, delay, TimeUnit.MILLISECONDS);
         return future.v;
+    }
+
+    public static Future<?> schedule(Action task, long delay) {
+        return schedule(task, delay, delay, null);
+    }
+
+    public static Future<?> schedule(Action task, long initialDelay, long delay, String taskName) {
+        require(task);
+
+        return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
+            try {
+                task.invoke();
+            } catch (Throwable e) {
+                log.error("Task IGNORE", e);
+            }
+            return null;
+        }), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
 }
