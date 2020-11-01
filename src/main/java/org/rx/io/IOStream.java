@@ -1,8 +1,10 @@
 package org.rx.io;
 
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.Contract;
@@ -13,8 +15,8 @@ import java.io.*;
 
 import static org.rx.core.Contract.*;
 
+@Slf4j
 @AllArgsConstructor
-@Getter
 public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
     private static final long serialVersionUID = 3204673656139586437L;
 
@@ -28,7 +30,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
 
         StringBuilder result = new StringBuilder();
         try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = new byte[CONFIG.getBufferSize()];
+            byte[] buffer = createBuffer();
             int read;
             while ((read = reader.read(buffer)) > 0) {
                 result.append(new String(buffer, 0, read, charset));
@@ -51,20 +53,83 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         }
     }
 
-    @SneakyThrows
-    public static void copyTo(InputStream from, OutputStream to) {
-        require(from, to);
-
-        byte[] buffer = new byte[CONFIG.getBufferSize() * 2];
-        int read;
-        while ((read = from.read(buffer, 0, buffer.length)) > 0) {
-            to.write(buffer, 0, read);
-        }
-        to.flush();
+    public static void copyTo(InputStream in, OutputStream out) {
+        copyTo(in, -1, out);
     }
 
+    @SneakyThrows
+    public static void copyTo(InputStream in, long count, OutputStream out) {
+        require(in, out);
+
+        byte[] buffer = createBuffer();
+        int read;
+        boolean fixCount = count != -1;
+        while ((read = in.read(buffer, 0, (int) Math.min(count, buffer.length))) > 0) {
+            out.write(buffer, 0, read);
+            if (fixCount && count > 0) {
+                count -= read;
+            }
+        }
+        out.flush();
+    }
+
+    @SneakyThrows
+    public static int readTo(byte[] buffer, int offset, int count, InputStream in) {
+        int total = 0, read;
+        while ((read = in.read(buffer, offset, count)) > 0) {
+            offset += read;
+            count -= read;
+            total += read;
+        }
+        return total;
+    }
+
+    public static byte[] createBuffer() {
+        return new byte[CONFIG.getBufferSize()];
+    }
+
+    public static byte[] toBytes(IOStream<?, ?> stream) {
+        long pos = stream.getPosition();
+        byte[] data = new byte[(int) (stream.getLength() - pos)];
+        stream.read(data);
+        stream.setPosition(pos);
+        return data;
+    }
+
+    @SneakyThrows
+    public static <T extends Serializable> IOStream<?, ?> serialize(T obj) {
+        require(obj);
+
+        HybridStream stream = new HybridStream();
+        ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
+        out.writeObject(obj);  //close 会关闭stream
+        out.flush();
+        stream.setPosition(0L);
+        return stream;
+    }
+
+    @SneakyThrows
+    public static <T extends Serializable> T deserialize(IOStream<?, ?> stream) {
+        require(stream);
+
+        ObjectInputStream in = new ObjectInputStream(stream.getReader());
+        return (T) in.readObject();
+    }
+
+    @Setter(AccessLevel.PROTECTED)
     protected transient TI reader;
+    @Setter(AccessLevel.PROTECTED)
     protected transient TO writer;
+
+    public TI getReader() {
+        require(reader);
+        return reader;
+    }
+
+    public TO getWriter() {
+        require(writer);
+        return writer;
+    }
 
     public boolean canRead() {
         return !isClosed() && available() > 0;
@@ -79,17 +144,17 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     }
 
     @ErrorCode
-    public int getPosition() {
+    public long getPosition() {
         throw new ApplicationException(values());
     }
 
     @ErrorCode
-    public void setPosition(int position) {
+    public void setPosition(long position) {
         throw new ApplicationException(values());
     }
 
     @ErrorCode
-    public int getLength() {
+    public long getLength() {
         throw new ApplicationException(values(this.getClass().getSimpleName()));
     }
 
@@ -98,22 +163,26 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     protected void freeObjects() {
         quietly(this::flush);
 
-        writer.close();
-        reader.close();
+        if (writer != null) {
+            writer.close();
+        }
+        if (reader != null) {
+            reader.close();
+        }
     }
 
     @SneakyThrows
-    public int available() {
+    public long available() {
         checkNotClosed();
 
-        return reader.available();
+        return getReader().available();
     }
 
     @SneakyThrows
     public int read() {
         checkNotClosed();
 
-        return reader.read();
+        return getReader().read();
     }
 
     public int read(byte[] data) {
@@ -129,14 +198,14 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         require(buffer);
         require(offset, offset >= 0);//ignore count 4 BytesSegment
 
-        return reader.read(buffer, offset, count);
+        return getReader().read(buffer, offset, count);
     }
 
     @SneakyThrows
     public void write(int b) {
         checkNotClosed();
 
-        writer.write(b);
+        getWriter().write(b);
     }
 
     public void write(byte[] data) {
@@ -152,7 +221,15 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         require(buffer);
         require(offset, offset >= 0);
 
-        writer.write(buffer, offset, count);
+        getWriter().write(buffer, offset, count);
+    }
+
+    public void write(IOStream<?, ?> in, long count) {
+        write(in.getReader(), count);
+    }
+
+    public void write(InputStream in, long count) {
+        copyTo(in, count, getWriter());
     }
 
     @SneakyThrows
@@ -160,17 +237,27 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     public void flush() {
         checkNotClosed();
 
-        writer.flush();
+        getWriter().flush();
     }
 
-    public void copyTo(IOStream to) {
-        require(to);
-        copyTo(to.writer);
+    public void copyTo(IOStream<?, ?> out) {
+        require(out);
+
+        copyTo(out.getWriter());
     }
 
-    public void copyTo(OutputStream to) {
+    //重置position
+    public void copyTo(OutputStream out) {
         checkNotClosed();
 
-        copyTo(this.reader, to);
+        if (!canSeek()) {
+            log.warn("{} can't seek, reset position ignore", this.getClass().getName());
+            copyTo(getReader(), out);
+            return;
+        }
+        long pos = getPosition();
+        setPosition(0L);
+        copyTo(getReader(), out);
+        setPosition(pos);
     }
 }

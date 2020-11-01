@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
 import org.rx.core.cache.ThreadCache;
+import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
 
@@ -222,39 +223,18 @@ public class App extends SystemUtils {
     }
 
     public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = serialize(obj);
+        byte[] data = IOStream.toBytes(IOStream.serialize(obj));
         return convertToBase64String(data);
-    }
-
-    @SneakyThrows
-    public static <T extends Serializable> byte[] serialize(T obj) {
-        require(obj);
-
-        try (MemoryStream stream = new MemoryStream();
-             ObjectOutputStream out = new ObjectOutputStream(stream.getWriter())) {
-            out.writeObject(obj);
-            return stream.toArray();
-        }
     }
 
     public static <T extends Serializable> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64String(base64);
-        return deserialize(data);
-    }
-
-    @SneakyThrows
-    public static <T extends Serializable> T deserialize(byte[] data) {
-        require(data);
-
-        try (MemoryStream stream = new MemoryStream(data, 0, data.length);
-             ObjectInputStream in = new ObjectInputStream(stream.getReader())) {
-            return (T) in.readObject();
-        }
+        return IOStream.deserialize(new MemoryStream(data, 0, data.length));
     }
 
     public static <T extends Serializable> T deepClone(T obj) {
-        byte[] data = serialize(obj);
-        return (T) deserialize(data);
+        IOStream<?, ?> serialize = IOStream.serialize(obj);
+        return IOStream.deserialize(serialize);
     }
     //endregion
 }

@@ -19,17 +19,17 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @Override
-    public int getPosition() {
+    public long getPosition() {
         return baseStream.getPosition();
     }
 
     @Override
-    public void setPosition(int position) {
+    public void setPosition(long position) {
         baseStream.setPosition(position);
     }
 
     @Override
-    public int getLength() {
+    public long getLength() {
         return baseStream.getLength();
     }
 
@@ -53,107 +53,108 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
 
     @SneakyThrows
     public boolean readBoolean() {
-        return reader.readBoolean();
+        return getReader().readBoolean();
     }
 
     @SneakyThrows
     public byte readByte() {
-        return reader.readByte();
+        return getReader().readByte();
     }
 
     @SneakyThrows
     public short readShort() {
-        return reader.readShort();
+        return getReader().readShort();
     }
 
     @SneakyThrows
     public int readInt() {
-        return reader.readInt();
+        return getReader().readInt();
     }
 
     @SneakyThrows
     public long readLong() {
-        return reader.readLong();
+        return getReader().readLong();
     }
 
     @SneakyThrows
     public float readFloat() {
-        return reader.readFloat();
+        return getReader().readFloat();
     }
 
     @SneakyThrows
     public double readDouble() {
-        return reader.readDouble();
+        return getReader().readDouble();
     }
 
     @SneakyThrows
     public char readChar() {
-        return reader.readChar();
+        return getReader().readChar();
     }
 
     @SneakyThrows
     public String readString() {
-        return reader.readUTF();
+        return getReader().readUTF();
     }
 
     @SneakyThrows
     public String readLine() {
         if (reader2 == null) {
-            reader2 = new BufferedReader(new InputStreamReader(reader));
+            reader2 = new BufferedReader(new InputStreamReader(getReader()));
         }
         return reader2.readLine();
     }
 
-    public <T> T readObject() {
-        int len = readInt();
-        byte[] data = new byte[len];
-        read(data);
-        return (T) App.deserialize(data);
+    public <T extends Serializable> T readObject() {
+        long len = readLong();
+        HybridStream serialize = new HybridStream();
+        serialize.write(this, len);
+        serialize.setPosition(0L);
+        return IOStream.deserialize(serialize);
     }
 
     @SneakyThrows
     public void writeBoolean(boolean value) {
-        writer.writeBoolean(value);
+        getWriter().writeBoolean(value);
     }
 
     @SneakyThrows
     public void writeByte(byte value) {
-        writer.writeByte(value);
+        getWriter().writeByte(value);
     }
 
     @SneakyThrows
     public void writeShort(short value) {
-        writer.writeShort(value);
+        getWriter().writeShort(value);
     }
 
     @SneakyThrows
     public void writeInt(int value) {
-        writer.writeInt(value);
+        getWriter().writeInt(value);
     }
 
     @SneakyThrows
     public void writeLong(long value) {
-        writer.writeLong(value);
+        getWriter().writeLong(value);
     }
 
     @SneakyThrows
     public void writeFloat(float value) {
-        writer.writeFloat(value);
+        getWriter().writeFloat(value);
     }
 
     @SneakyThrows
     public void writeDouble(double value) {
-        writer.writeDouble(value);
+        getWriter().writeDouble(value);
     }
 
     @SneakyThrows
     public void writeChar(char value) {
-        writer.writeChar(value);
+        getWriter().writeChar(value);
     }
 
     @SneakyThrows
     public void writeString(String value) {
-        writer.writeUTF(value);
+        getWriter().writeUTF(value);
     }
 
     public void writeLine(String value) {
@@ -161,8 +162,8 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     public <T extends Serializable> void writeObject(T value) {
-        byte[] data = App.serialize(value);
-        writeInt(data.length);
-        write(data);
+        IOStream<?, ?> serialize = IOStream.serialize(value);
+        writeLong(serialize.getLength());
+        serialize.copyTo(this);
     }
 }

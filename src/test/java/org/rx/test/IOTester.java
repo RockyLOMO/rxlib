@@ -1,13 +1,17 @@
 package org.rx.test;
 
+import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
+import org.rx.core.Arrays;
 import org.rx.core.Contract;
-import org.rx.io.BinaryStream;
-import org.rx.io.Files;
-import org.rx.io.MemoryStream;
+import org.rx.io.*;
 import org.rx.test.bean.PersonBean;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.RandomAccessFile;
 import java.nio.file.Path;
 
 public class IOTester {
@@ -44,27 +48,75 @@ public class IOTester {
     }
 
     @Test
+    public void hybridStream() {
+        HybridStream stream = new HybridStream(16);
+        testSeekStream(stream); // 12 len
+
+        byte[] bytes = "wanglezhi".getBytes();
+        stream.write(bytes);
+        assert stream.getPosition() == 12 + bytes.length && stream.getLength() == stream.getPosition();
+        byte[] data = new byte[(int) stream.getLength()];
+        stream.setPosition(0L);
+        stream.read(data);
+        System.out.println(new String(data));
+    }
+
+    @SneakyThrows
+    @Test
+    public void fileStream() {
+        FileStream stream = new FileStream();
+        testSeekStream(stream);
+
+        FileInputStream reader = stream.getReader();
+        FileOutputStream writer = stream.getWriter();
+
+        long len = stream.getLength();
+        writer.write("more..".getBytes());
+        assert stream.getLength() > len;
+
+        stream.setPosition(1L);
+        assert reader.available() == stream.getLength() - 1L;
+    }
+
+    @Test
     public void memoryStream() {
         MemoryStream stream = new MemoryStream(32, true);
-        for (int i = 0; i < 5; i++) {
+        testSeekStream(stream);
+
+        stream.setPosition(0L);
+        for (int i = 0; i < 20; i++) {
             stream.write(i);
         }
         System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
                 stream.getLength(), stream.getBuffer().length));
 
-        stream.write(new byte[30]);
-        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().length));
-
-        stream.setPosition(0);
+        stream.setPosition(0L);
         System.out.println(stream.read());
 
-        byte[] serialize = App.serialize(stream);
-        MemoryStream newStream = App.deserialize(serialize);
+        IOStream<?, ?> serializeStream = IOStream.serialize(stream);
+        MemoryStream newStream = IOStream.deserialize(serializeStream);
+        newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 20; i++) {
             assert bytes[i] == i;
         }
+    }
+
+    private void testSeekStream(IOStream stream) {
+        byte[] content = "hello world!".getBytes();
+        stream.write(content);
+        assert stream.getPosition() == content.length && stream.getLength() == content.length;
+        stream.setPosition(0L);
+        assert stream.available() == stream.getLength();
+        byte[] data = new byte[content.length];
+        int count = stream.read(data);
+        assert stream.getPosition() == count && stream.getLength() == data.length;
+        assert Arrays.equals(content, data);
+
+        long pos = stream.getPosition();
+        long len = stream.getLength();
+        IOStream newStream = App.deepClone(stream);
+        assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
     @Test

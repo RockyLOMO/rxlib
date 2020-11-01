@@ -4,9 +4,8 @@ import com.google.common.net.HttpHeaders;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.DateTime;
-import org.rx.bean.StreamFile;
+import org.rx.io.StreamFile;
 import org.rx.bean.Tuple;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
@@ -22,8 +21,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Date;
 
@@ -82,23 +79,8 @@ public class Servlets extends ServletRequestUtils {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
             }
-            log.warn("requestIp", e);
+            log.warn("requestIp {}", e.getMessage());
             return "0.0.0.0";
-        }
-    }
-
-    @SneakyThrows
-    public static void responseFile(String filePath) {
-        require(filePath);
-
-        HttpServletResponse response = currentRequest().right;
-        File file = new File(filePath);
-        response.setCharacterEncoding(Contract.UTF_8);
-        response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
-        response.setContentLength((int) file.length());
-        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
-        try (FileInputStream in = new FileInputStream(file)) {
-            IOStream.copyTo(in, response.getOutputStream());
         }
     }
 
@@ -110,7 +92,7 @@ public class Servlets extends ServletRequestUtils {
         response.setCharacterEncoding(Contract.UTF_8);
         response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
         response.setContentLength((int) file.getLength());
-        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", file.getName()));
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(file.getName())));
         file.getStream().copyTo(response.getOutputStream());
     }
 

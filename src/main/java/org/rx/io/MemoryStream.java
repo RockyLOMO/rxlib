@@ -148,18 +148,19 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
-        out.writeBoolean(publiclyVisible);
-        out.writeInt(writer.length);
-        out.write(writer.getBuffer(), 0, writer.length);
+        BytesWriter writer = getWriter();
+        out.writeInt(writer.getPosition());
+        out.writeInt(writer.getLength());
+        out.write(writer.getBuffer(), 0, writer.getLength());
     }
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
-        publiclyVisible = in.readBoolean();
-        int count = in.readInt();
-        byte[] buffer = new byte[count];
-        in.read(buffer);
-        writer = new BytesWriter(buffer, 0, count, true);
+        int pos = in.readInt();
+        int len = in.readInt();
+        byte[] buffer = new byte[len];
+        readTo(buffer, 0, len, in);
+        setWriter(new BytesWriter(buffer, pos, len, false));
         initReader(publiclyVisible);
     }
 
@@ -175,27 +176,27 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     }
 
     @Override
-    public int getPosition() {
-        return writer.getPosition();
+    public long getPosition() {
+        return getWriter().getPosition();
     }
 
     @Override
-    public void setPosition(int position) {
+    public void setPosition(long position) {
         checkNotClosed();
 
-        writer.setPosition(position);
+        getWriter().setPosition((int) position);
         checkRead();
     }
 
     @Override
-    public int getLength() {
-        return writer.getLength();
+    public long getLength() {
+        return getWriter().getLength();
     }
 
     public void setLength(int length) {
         checkNotClosed();
 
-        writer.setLength(length);
+        getWriter().setLength(length);
         checkRead();
     }
 
@@ -206,7 +207,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
             throw new ApplicationException(values());
         }
 
-        return writer.getBuffer();
+        return getWriter().getBuffer();
     }
 
     public MemoryStream() {
@@ -228,16 +229,18 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     }
 
     private void initReader(boolean publiclyVisible) {
-        super.reader = new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength());
+        BytesWriter writer = getWriter();
+        setReader(new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength()));
         this.publiclyVisible = publiclyVisible;
     }
 
     private void checkRead() {
-        reader.setBuffer(writer.getBuffer(), writer.getPosition(), writer.getLength(), writer.minPosition);
+        BytesWriter writer = getWriter();
+        super.getReader().setBuffer(writer.getBuffer(), writer.getPosition(), writer.getLength(), writer.minPosition);
     }
 
     @Override
-    public int available() {
+    public long available() {
         checkRead();
         return super.available();
     }
@@ -251,24 +254,17 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     @Override
     public int read(byte[] buffer, int offset, int count) {
         checkRead();
-        return super.read(buffer, offset, count);
+        int size = super.read(buffer, offset, count);
+        setPosition(getPosition() + size);
+        return size;
     }
 
     @Override
-    public void copyTo(IOStream to) {
-        require(to);
-
-        copyTo(to.getWriter());
-    }
-
-    public void copyTo(OutputStream to) {
+    public void copyTo(OutputStream out) {
         checkNotClosed();
-        require(to);
 
         checkRead();
-        int mark = reader.getPosition();
-        copyTo(reader, to);
-        reader.setPosition(mark);
+        super.copyTo(out);
     }
 
     @Override
@@ -283,19 +279,23 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         checkRead();
     }
 
-    public void writeTo(IOStream from) {
-        checkNotClosed();
-        require(from);
+    @Override
+    public void write(InputStream in, long count) {
+        super.write(in, count);
+        checkRead();
+    }
 
-        writeTo(from.getWriter());
+    public void writeTo(IOStream out) {
+        require(out);
+
+        writeTo(out.getWriter());
     }
 
     @SneakyThrows
-    public void writeTo(OutputStream from) {
+    public void writeTo(OutputStream out) {
         checkNotClosed();
-        require(from);
 
-        writer.writeTo(from);
+        getWriter().writeTo(out);
     }
 
     public boolean tryGetBuffer($<BytesSegment> out) {
@@ -304,13 +304,15 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         if (out == null || !publiclyVisible) {
             return false;
         }
-        out.v = new BytesSegment(writer.getBuffer(), getPosition(), getLength());
+        BytesWriter writer = getWriter();
+        out.v = new BytesSegment(writer.getBuffer(), writer.getPosition(), writer.getLength());
         return true;
     }
 
     public synchronized byte[] toArray() {
         checkNotClosed();
 
-        return Arrays.copyOf(writer.getBuffer(), writer.length);
+        BytesWriter writer = getWriter();
+        return Arrays.copyOf(writer.getBuffer(), writer.getLength());
     }
 }
