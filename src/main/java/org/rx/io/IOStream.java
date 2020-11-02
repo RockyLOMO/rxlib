@@ -64,9 +64,9 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         byte[] buffer = createBuffer();
         int read;
         boolean fixCount = count != -1;
-        while ((read = in.read(buffer, 0, (int) Math.min(count, buffer.length))) > 0) {
+        while ((!fixCount || count > 0) && (read = in.read(buffer, 0, buffer.length)) > 0) {
             out.write(buffer, 0, read);
-            if (fixCount && count > 0) {
+            if (fixCount) {
                 count -= read;
             }
         }

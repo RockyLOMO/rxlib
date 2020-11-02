@@ -2,14 +2,19 @@ package org.rx.io;
 
 import lombok.SneakyThrows;
 import org.rx.bean.SUID;
+import org.rx.bean.Tuple;
+import org.rx.core.exception.InvalidException;
 
 import java.io.*;
-import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.*;
 
-public class FileStream extends IOStream<FileInputStream, FileOutputStream> implements Serializable {
+public class FileStream extends IOStream<BufferedInputStream, BufferedOutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
+    public static final int BUFFER_SIZE_4K = 1024 * 4;
 
     @SneakyThrows
     public static File createTempFile() {
@@ -19,15 +24,21 @@ public class FileStream extends IOStream<FileInputStream, FileOutputStream> impl
         return temp;
     }
 
+    @SneakyThrows
+    public static BufferedRandomAccessFile createRandomAccessFile(File file, boolean largeFile) {
+        return new BufferedRandomAccessFile(file, "rwd", largeFile ? BufferedRandomAccessFile.BuffSz_ : BUFFER_SIZE_4K);
+    }
+
     private File file;
-    private boolean noDelay;
-    private transient RandomAccessFile randomAccessFile;
+    //todo java.nio.MappedByteBuffer
+    private transient BufferedRandomAccessFile randomAccessFile;
+    private transient Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>();
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
         long pos = getPosition();
         out.writeLong(pos);
-        byte[] buffer = new byte[CONFIG.getBufferSize()];
+        byte[] buffer = createBuffer();
         int read;
         while ((read = read(buffer, 0, buffer.length)) > 0) {
             out.write(buffer, 0, read);
@@ -38,10 +49,10 @@ public class FileStream extends IOStream<FileInputStream, FileOutputStream> impl
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
-        randomAccessFile = new RandomAccessFile(file, noDelay ? "rwd" : "rw");
+        randomAccessFile = createRandomAccessFile(file, false);
         long pos = in.readLong();
         setPosition(pos);
-        byte[] buffer = new byte[CONFIG.getBufferSize()];
+        byte[] buffer = createBuffer();
         int read;
         while ((read = in.read(buffer, 0, buffer.length)) > 0) {
             write(buffer, 0, read);
@@ -51,18 +62,18 @@ public class FileStream extends IOStream<FileInputStream, FileOutputStream> impl
 
     @SneakyThrows
     @Override
-    public FileInputStream getReader() {
+    public BufferedInputStream getReader() {
         if (reader == null) {
-            setReader(new FileInputStream(randomAccessFile.getFD()));
+            setReader(new BufferedInputStream(new FileInputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
         }
         return super.getReader();
     }
 
     @SneakyThrows
     @Override
-    public FileOutputStream getWriter() {
+    public BufferedOutputStream getWriter() {
         if (writer == null) {
-            super.setWriter(new FileOutputStream(randomAccessFile.getFD()));
+            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
         }
         return super.getWriter();
     }
@@ -108,10 +119,10 @@ public class FileStream extends IOStream<FileInputStream, FileOutputStream> impl
     }
 
     @SneakyThrows
-    public FileStream(File file, boolean noDelay) {
+    public FileStream(File file, boolean largeFile) {
         super(null, null);
         require(file);
-        this.randomAccessFile = new RandomAccessFile(this.file = file, (this.noDelay = noDelay) ? "rwd" : "rw");
+        this.randomAccessFile = createRandomAccessFile(this.file = file, largeFile);
     }
 
     @SneakyThrows
@@ -154,24 +165,26 @@ public class FileStream extends IOStream<FileInputStream, FileOutputStream> impl
     @SneakyThrows
     @Override
     public void flush() {
-        if (noDelay) {
-            return;
-        }
-        randomAccessFile.getChannel().force(false);
+        randomAccessFile.flush();
+//        randomAccessFile.getChannel().force(false);
     }
 
     @SneakyThrows
     public void lockRead(long position, long length) {
-        randomAccessFile.getChannel().lock(position, length, true);
+        locks.computeIfAbsent(Tuple.of(position, length), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, length, true)));
     }
 
     @SneakyThrows
     public void lockWrite(long position, long length) {
-        randomAccessFile.getChannel().lock(position, length, false);
+        locks.computeIfAbsent(Tuple.of(position, length), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, length, false)));
     }
 
     @SneakyThrows
     public void unlock(long position, long length) {
-        randomAccessFile.getChannel().map(FileChannel.MapMode.READ_WRITE, position, length);
+        FileLock lock = locks.remove(Tuple.of(position, length));
+        if (lock == null) {
+            throw new InvalidException("File position={} length={} not locked", position, length);
+        }
+        lock.release();
     }
 }
