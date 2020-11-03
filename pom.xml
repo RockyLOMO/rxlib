@@ -58,7 +58,7 @@
         <commons-io.version>2.8.0</commons-io.version>
         <cglib.version>3.3.0</cglib.version>
         <okhttp.version>4.8.1</okhttp.version>
-        <netty.version>4.1.51.Final</netty.version>
+        <netty.version>4.1.53.Final</netty.version>
         <snakeyaml.version>1.27</snakeyaml.version>
 
         <spring.version>5.2.4.RELEASE</spring.version>

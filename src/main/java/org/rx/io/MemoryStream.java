@@ -158,9 +158,10 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         in.defaultReadObject();
         int pos = in.readInt();
         int len = in.readInt();
-        byte[] buffer = new byte[len];
-        readTo(buffer, 0, len, in);
-        setWriter(new BytesWriter(buffer, pos, len, false));
+        BytesWriter writer = new BytesWriter(new byte[len], 0, len, false);
+        setWriter(writer);
+        copyTo(in, len, writer);
+        writer.setPosition(pos);
         initReader(publiclyVisible);
     }
 

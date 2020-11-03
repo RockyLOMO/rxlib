@@ -73,17 +73,6 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         out.flush();
     }
 
-    @SneakyThrows
-    public static int readTo(byte[] buffer, int offset, int count, InputStream in) {
-        int total = 0, read;
-        while ((read = in.read(buffer, offset, count)) > 0) {
-            offset += read;
-            count -= read;
-            total += read;
-        }
-        return total;
-    }
-
     public static byte[] createBuffer() {
         return new byte[CONFIG.getBufferSize()];
     }

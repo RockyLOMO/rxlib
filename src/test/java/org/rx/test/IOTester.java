@@ -83,7 +83,7 @@ public class IOTester {
         testSeekStream(stream);
 
         stream.setPosition(0L);
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 40; i++) {
             stream.write(i);
         }
         System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
@@ -96,7 +96,7 @@ public class IOTester {
         MemoryStream newStream = IOStream.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 40; i++) {
             assert bytes[i] == i;
         }
     }
