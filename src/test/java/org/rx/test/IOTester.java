@@ -64,17 +64,18 @@ public class IOTester {
         FileStream stream = new FileStream();
         testSeekStream(stream);
 
-        BufferedInputStream reader = stream.getReader();
-        BufferedOutputStream writer = stream.getWriter();
+        InputStream reader = stream.getReader();
+        OutputStream writer = stream.getWriter();
 
         long len = stream.getLength();
         writer.write("more..".getBytes());
         writer.flush();
+        stream.setPosition(0L);
+        System.out.println(IOStream.readString(reader));
         assert stream.getLength() > len;
 
-        //RandomAccessFile 可以
-//        stream.setPosition(1L);
-//        assert reader.available() == stream.getLength() - 1L;
+        stream.setPosition(1L);
+        assert reader.available() == stream.getLength() - 1L;
     }
 
     @Test

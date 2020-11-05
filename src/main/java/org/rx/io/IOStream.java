@@ -25,32 +25,28 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     }
 
     @SneakyThrows
-    public static String readString(InputStream stream, String charset) {
-        require(stream, charset);
+    public static String readString(InputStream in, String charset) {
+        require(in, charset);
 
         StringBuilder result = new StringBuilder();
-        try (DataInputStream reader = new DataInputStream(stream)) {
-            byte[] buffer = createBuffer();
-            int read;
-            while ((read = reader.read(buffer)) > 0) {
-                result.append(new String(buffer, 0, read, charset));
-            }
+        byte[] buffer = createBuffer();
+        int read;
+        while ((read = in.read(buffer)) > 0) {
+            result.append(new String(buffer, 0, read, charset));
         }
         return result.toString();
     }
 
-    public static void writeString(OutputStream stream, String value) {
-        writeString(stream, value, Contract.UTF_8);
+    public static void writeString(OutputStream out, String value) {
+        writeString(out, value, Contract.UTF_8);
     }
 
     @SneakyThrows
-    public static void writeString(OutputStream stream, String value, String charset) {
-        require(stream, charset);
+    public static void writeString(OutputStream out, String value, String charset) {
+        require(out, charset);
 
-        try (DataOutputStream writer = new DataOutputStream(stream)) {
-            byte[] data = value.getBytes(charset);
-            writer.write(data);
-        }
+        byte[] data = value.getBytes(charset);
+        out.write(data);
     }
 
     public static void copyTo(InputStream in, OutputStream out) {
@@ -64,7 +60,7 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
         byte[] buffer = createBuffer();
         int read;
         boolean fixCount = count != -1;
-        while ((!fixCount || count > 0) && (read = in.read(buffer, 0, buffer.length)) > 0) {
+        while ((!fixCount || count > 0) && (read = in.read(buffer, 0, buffer.length)) != -1) {
             out.write(buffer, 0, read);
             if (fixCount) {
                 count -= read;

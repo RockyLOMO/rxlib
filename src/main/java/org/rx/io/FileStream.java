@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Contract.*;
 
-public class FileStream extends IOStream<BufferedInputStream, BufferedOutputStream> implements Serializable {
+public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
     public static final int BUFFER_SIZE_4K = 1024 * 4;
 
@@ -36,44 +36,55 @@ public class FileStream extends IOStream<BufferedInputStream, BufferedOutputStre
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
-        long pos = getPosition();
-        out.writeLong(pos);
-        byte[] buffer = createBuffer();
-        int read;
-        while ((read = read(buffer, 0, buffer.length)) > 0) {
-            out.write(buffer, 0, read);
-        }
-        out.flush();
-        setPosition(pos);
+        out.writeLong(getPosition());
+        copyTo(out);
     }
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         randomAccessFile = createRandomAccessFile(file, false);
         long pos = in.readLong();
+        copyTo(in, this.getWriter());
         setPosition(pos);
-        byte[] buffer = createBuffer();
-        int read;
-        while ((read = in.read(buffer, 0, buffer.length)) > 0) {
-            write(buffer, 0, read);
-        }
-        flush();
     }
 
     @SneakyThrows
     @Override
-    public BufferedInputStream getReader() {
+    public InputStream getReader() {
         if (reader == null) {
-            setReader(new BufferedInputStream(new FileInputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
+//            setReader(new BufferedInputStream(new FileInputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
+            setReader(new InputStream() {
+                @Override
+                public int available() throws IOException {
+                    return (int) randomAccessFile.bytesRemaining();
+                }
+
+                @Override
+                public int read() throws IOException {
+                    return FileStream.this.read();
+                }
+            });
         }
         return super.getReader();
     }
 
     @SneakyThrows
     @Override
-    public BufferedOutputStream getWriter() {
+    public OutputStream getWriter() {
         if (writer == null) {
-            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
+            //RandomAccessFile 搭配
+//            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
+            setWriter(new OutputStream() {
+                @Override
+                public void write(int b) throws IOException {
+                    FileStream.this.write(b);
+                }
+
+                @Override
+                public void flush() throws IOException {
+                    FileStream.this.flush();
+                }
+            });
         }
         return super.getWriter();
     }
@@ -166,7 +177,6 @@ public class FileStream extends IOStream<BufferedInputStream, BufferedOutputStre
     @Override
     public void flush() {
         randomAccessFile.flush();
-//        randomAccessFile.getChannel().force(false);
     }
 
     @SneakyThrows
