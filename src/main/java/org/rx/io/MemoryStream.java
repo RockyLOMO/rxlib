@@ -3,6 +3,7 @@ package org.rx.io;
 import lombok.SneakyThrows;
 import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
 import org.rx.net.BytesSegment;
 
@@ -144,6 +145,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         }
     }
 
+    private String name;
     private boolean publiclyVisible;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -163,6 +165,14 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         copyTo(in, len, writer);
         writer.setPosition(pos);
         initReader(publiclyVisible);
+    }
+
+    @Override
+    public String getName() {
+        if (name == null) {
+            name = SUID.randomSUID().toString();
+        }
+        return name;
     }
 
     @Override
@@ -286,7 +296,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         checkRead();
     }
 
-    public void writeTo(IOStream out) {
+    public void writeTo(IOStream<?, ?> out) {
         require(out);
 
         writeTo(out.getWriter());

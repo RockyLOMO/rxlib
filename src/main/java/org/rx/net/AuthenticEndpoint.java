@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 @Getter
 @EqualsAndHashCode
 public class AuthenticEndpoint implements Serializable {
+    private static final long serialVersionUID = -8777400710799771803L;
     private final InetSocketAddress endpoint;
     private String username, password;
 

@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.rx.bean.DateTime;
-import org.rx.io.StreamFile;
 import org.rx.bean.Tuple;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
@@ -85,15 +84,15 @@ public class Servlets extends ServletRequestUtils {
     }
 
     @SneakyThrows
-    public static void responseFile(StreamFile file) {
-        require(file);
+    public static void responseFile(IOStream<?, ?> stream) {
+        require(stream);
 
         HttpServletResponse response = currentRequest().right;
         response.setCharacterEncoding(Contract.UTF_8);
         response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
-        response.setContentLength((int) file.getLength());
-        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(file.getName())));
-        file.getStream().copyTo(response.getOutputStream());
+        response.setContentLength((int) stream.getLength());
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(stream.getName())));
+        stream.copyTo(response.getOutputStream());
     }
 
     @SneakyThrows

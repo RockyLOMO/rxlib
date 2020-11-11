@@ -8,6 +8,7 @@ import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.PingClient;
+import org.rx.net.SftpClient;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
@@ -222,11 +223,6 @@ public class SocksTester {
     }
 
     @Test
-    public void ping() {
-        PingClient.test("x.f-li.cn:80", r -> log.info(toJsonString(r)));
-    }
-
-    @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
         Map<String, Object> map = (Map) HttpClient.parseQueryString(url);
@@ -236,6 +232,24 @@ public class SocksTester {
         map.put("ok", "1");
         System.out.println(HttpClient.buildQueryString(url, map));
         System.out.println(HttpClient.buildQueryString("http://f-li.cn/blog/1.html", map));
+    }
+
+    @Test
+    public void sftp() {
+        String aep = "jks:123456@mobile.f-li.cn:2222";
+        SftpClient client = new SftpClient(new AuthenticEndpoint(aep));
+        String p = "E:\\Photo\\养生\\f0.jpg";
+//        client.uploadFile(p,"/test/");
+//        client.downloadFile("/test/f0.jpg","F:\\test\\1.jpg");
+//        client.delete("/test/");
+        for (SftpClient.FileEntry lsEntry : client.listFiles("/", true)) {
+            System.out.println(toJsonString(lsEntry));
+        }
+    }
+
+    @Test
+    public void ping() {
+        PingClient.test("x.f-li.cn:80", r -> log.info(toJsonString(r)));
     }
 
     @Test

@@ -17,8 +17,28 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 @AllArgsConstructor
-public class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
+public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
     private static final long serialVersionUID = 3204673656139586437L;
+
+    public static IOStream<?, ?> wrap(String filePath) {
+        return wrap(new File(filePath));
+    }
+
+    public static IOStream<?, ?> wrap(File file) {
+        require(file);
+
+        return new FileStream(file);
+    }
+
+    public static IOStream<?, ?> wrap(String name, byte[] data) {
+        require(data);
+
+        HybridStream stream = new HybridStream();
+        stream.setName(name);
+        stream.write(data);
+        stream.setPosition(0L);
+        return stream;
+    }
 
     public static String readString(InputStream stream) {
         return readString(stream, Contract.UTF_8);
@@ -105,6 +125,8 @@ public class IOStream<TI extends InputStream, TO extends OutputStream> extends D
     protected transient TI reader;
     @Setter(AccessLevel.PROTECTED)
     protected transient TO writer;
+
+    public abstract String getName();
 
     public TI getReader() {
         require(reader);

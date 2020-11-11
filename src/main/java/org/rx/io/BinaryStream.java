@@ -8,10 +8,16 @@ import org.rx.net.Bytes;
 import java.io.*;
 
 public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
+    private static final long serialVersionUID = 7204373912624988890L;
     private boolean leaveOpen;
     @Getter
-    private IOStream baseStream;
-    private BufferedReader reader2;
+    private IOStream<?, ?> baseStream;
+    private transient BufferedReader reader2;
+
+    @Override
+    public String getName() {
+        return baseStream.getName();
+    }
 
     @Override
     public boolean canSeek() {
@@ -33,11 +39,11 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
         return baseStream.getLength();
     }
 
-    public BinaryStream(IOStream stream) {
+    public BinaryStream(IOStream<?, ?> stream) {
         this(stream, false);
     }
 
-    public BinaryStream(IOStream stream, boolean leaveOpen) {
+    public BinaryStream(IOStream<?, ?> stream, boolean leaveOpen) {
         super(new DataInputStream(stream.getReader()), new DataOutputStream(stream.getWriter()));
 
         baseStream = stream;

@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
@@ -11,8 +12,10 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     private final int maxMemorySize;
     private MemoryStream memoryStream = new MemoryStream();
     private FileStream fileStream;
+    @Setter
+    private String name;
 
-    private synchronized IOStream getStream() {
+    private synchronized IOStream<?, ?> getStream() {
         if (fileStream != null) {
             return fileStream;
         }
@@ -24,6 +27,14 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
             return fileStream;
         }
         return memoryStream;
+    }
+
+    @Override
+    public String getName() {
+        if (name == null) {
+            return getStream().getName();
+        }
+        return name;
     }
 
     @Override
@@ -101,7 +112,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
-    public void copyTo(IOStream out) {
+    public void copyTo(IOStream<?, ?> out) {
         getStream().copyTo(out);
     }
 

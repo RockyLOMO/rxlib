@@ -80,12 +80,12 @@ public final class TcpClientPool extends Disposable implements EventTarget<TcpCl
         this(CONFIG.getNetMinPoolSize(), CONFIG.getNetMaxPoolSize(), CONFIG.getNetTimeoutMillis());
     }
 
-    public TcpClientPool(int minSize, int maxSize, long timeout) {
+    public TcpClientPool(int minSize, int maxSize, int timeoutMillis) {
         GenericKeyedObjectPoolConfig<TcpClient> config = new GenericKeyedObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);
         config.setJmxEnabled(false);
-        config.setMaxWaitMillis(timeout);
+        config.setMaxWaitMillis(timeoutMillis);
         config.setMinIdlePerKey(minSize);
         config.setMaxIdlePerKey(maxSize);
         config.setMaxTotal(maxSize);

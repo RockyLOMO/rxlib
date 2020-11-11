@@ -48,6 +48,15 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         setPosition(pos);
     }
 
+    public String getPath() {
+        return file.getPath();
+    }
+
+    @Override
+    public String getName() {
+        return file.getName();
+    }
+
     @SneakyThrows
     @Override
     public InputStream getReader() {

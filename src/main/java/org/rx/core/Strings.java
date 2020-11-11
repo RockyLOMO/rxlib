@@ -161,10 +161,6 @@ public class Strings extends StringUtils {
         return input == null || input.length() == 0 || "null".equals(input);
     }
 
-    public static boolean isNullOrWhiteSpace(String input) {
-        return isNullOrEmpty(input) || input.trim().length() == 0;
-    }
-
     //region Nested
     public interface RegularExp {
         /**
