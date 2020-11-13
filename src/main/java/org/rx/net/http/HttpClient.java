@@ -11,7 +11,7 @@ import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
-import org.rx.io.MemoryStream;
+import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 
 import javax.net.ssl.SSLContext;
@@ -41,7 +41,7 @@ public class HttpClient {
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     static {
-//        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2");//SSLv2Hello
+//        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2Hello");
 //        System.setProperty("jsse.enableSNIExtension", "false");
     }
 
@@ -280,7 +280,7 @@ public class HttpClient {
         return handleString(invoke(url, HttpClient.GET_METHOD, null, null));
     }
 
-    public MemoryStream getStream(String url) {
+    public HybridStream getStream(String url) {
         require(url);
 
         return handleStream(invoke(url, HttpClient.GET_METHOD, null, null));
@@ -308,7 +308,7 @@ public class HttpClient {
         return handleString(invoke(url, HttpClient.POST_METHOD, JSON_TYPE, toJsonString(json)));
     }
 
-    public MemoryStream postStream(String url, Map<String, Object> formData) {
+    public HybridStream postStream(String url, Map<String, Object> formData) {
         require(url, formData);
 
         String dataString = HttpClient.buildQueryString("", formData);
@@ -365,8 +365,8 @@ public class HttpClient {
         return file;
     }
 
-    private MemoryStream handleStream(ResponseBody body) {
-        MemoryStream stream = new MemoryStream();
+    private HybridStream handleStream(ResponseBody body) {
+        HybridStream stream = new HybridStream();
         if (body == null) {
             return stream;
         }

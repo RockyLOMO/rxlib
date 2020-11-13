@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
@@ -145,6 +146,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         }
     }
 
+    @Setter
     private String name;
     private boolean publiclyVisible;
 

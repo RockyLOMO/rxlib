@@ -103,14 +103,16 @@ public class SftpClient extends Disposable {
     @SneakyThrows
     public void uploadFile(IOStream<?, ?> stream, String remotePath) {
         require(stream, remotePath);
-        if (Files.isDirectory(remotePath)) {
-            try {
-                channel.mkdir(remotePath);
-            } catch (Exception e) {
-                log.warn("mkdir fail, {}", e.getMessage());
-            }
-            remotePath += stream.getName();
+
+        if (!Files.isDirectory(remotePath)) {
+            remotePath = Files.getFullPath(remotePath);
         }
+        try {
+            channel.mkdir(remotePath);
+        } catch (Exception e) {
+            log.warn("mkdir fail, {}", e.getMessage());
+        }
+        remotePath += stream.getName();
 
         channel.put(stream.getReader(), remotePath);
     }

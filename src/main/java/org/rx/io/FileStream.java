@@ -18,9 +18,10 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     public static File createTempFile() {
-        File temp = File.createTempFile(FileStream.class.getSimpleName(), SUID.randomSUID().toString());
+        File temp = File.createTempFile(SUID.randomSUID().toString(), ".rfs");
         temp.setReadable(true);
         temp.setWritable(true);
+//        temp.deleteOnExit();
         return temp;
     }
 

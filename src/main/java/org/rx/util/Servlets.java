@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import com.google.common.net.HttpHeaders;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
@@ -27,14 +28,14 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class Servlets extends ServletRequestUtils {
-    private static ThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new ThreadLocal<>();
+    private static FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new FastThreadLocal<>();
 
     public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
         holder.set(Tuple.of(request, response));
     }
 
     public static Tuple<HttpServletRequest, HttpServletResponse> currentRequest() {
-        Tuple<HttpServletRequest, HttpServletResponse> tuple = holder.get();
+        Tuple<HttpServletRequest, HttpServletResponse> tuple = holder.getIfExists();
         if (tuple == null) {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
             tuple = Tuple.of(ra.getRequest(), ra.getResponse());
