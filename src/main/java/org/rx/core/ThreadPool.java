@@ -1,8 +1,10 @@
 package org.rx.core;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.netty.util.concurrent.FastThreadLocalThread;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
@@ -141,9 +143,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static ThreadFactory newThreadFactory(String nameFormat) {
-        return new ThreadFactoryBuilder().setDaemon(true)
+        return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
                 .setUncaughtExceptionHandler((thread, ex) -> log.error(thread.getName(), ex))
-                .setNameFormat(nameFormat).build();
+                .setDaemon(true).setNameFormat(nameFormat).build();
     }
 
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();

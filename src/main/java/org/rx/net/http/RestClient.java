@@ -1,5 +1,6 @@
 package org.rx.net.http;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
@@ -20,7 +21,7 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public final class RestClient {
-    static final ThreadLocal<Type> RESULT_TYPE = new ThreadLocal<>();
+    static final FastThreadLocal<Type> RESULT_TYPE = new FastThreadLocal<>();
 
     public static <T> T facade(Class<T> contract, String serverPrefixUrl, BiFunc<String, Boolean> checkResponse) {
         RequestMapping baseMapping = contract.getAnnotation(RequestMapping.class);

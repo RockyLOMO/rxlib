@@ -8,7 +8,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
-    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
+    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException, withInitial 不用FastThreadLocal
     private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
 
     @Override
