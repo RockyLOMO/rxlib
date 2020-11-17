@@ -38,6 +38,7 @@ public class Servlets extends ServletRequestUtils {
         Tuple<HttpServletRequest, HttpServletResponse> tuple = holder.getIfExists();
         if (tuple == null) {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
+            //response 注入有问题
             tuple = Tuple.of(ra.getRequest(), ra.getResponse());
         }
         return tuple;
@@ -84,13 +85,17 @@ public class Servlets extends ServletRequestUtils {
         }
     }
 
-    @SneakyThrows
     public static void responseFile(IOStream<?, ?> stream) {
+        responseFile(stream, MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
+    }
+
+    @SneakyThrows
+    public static void responseFile(IOStream<?, ?> stream, String contentType) {
         require(stream);
 
         HttpServletResponse response = currentRequest().right;
         response.setCharacterEncoding(Contract.UTF_8);
-        response.setContentType(MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
+        response.setContentType(contentType);
         response.setContentLength((int) stream.getLength());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(stream.getName())));
         stream.copyTo(response.getOutputStream());

@@ -1,5 +1,6 @@
 package org.rx.core.cache;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.core.Cache;
 import org.rx.util.function.BiFunc;
 
@@ -8,8 +9,13 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
-    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException, withInitial 不用FastThreadLocal
-    private final ThreadLocal<Map<TK, TV>> local = ThreadLocal.withInitial(ConcurrentHashMap::new);
+    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
+    private final FastThreadLocal<Map<TK, TV>> local = new FastThreadLocal<Map<TK, TV>>() {
+        @Override
+        protected Map<TK, TV> initialValue() throws Exception {
+            return new ConcurrentHashMap<>();
+        }
+    };
 
     @Override
     public long size() {
