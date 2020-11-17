@@ -1,5 +1,7 @@
 package org.rx.core;
 
+import org.rx.bean.MainArgs;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -64,8 +66,8 @@ public class ArgsUtils
      * @param args args
      * @return Args对象
      */
-    public static Args parse(String[] args)
+    public static MainArgs parse(String[] args)
     {
-        return new Args(getOperations(args), getOptions(args));
+        return new MainArgs(getOperations(args), getOptions(args));
     }
 }

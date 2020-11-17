@@ -21,6 +21,7 @@ public void threadPool() {
     //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
     //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
     //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
+    //FastThreadLocal 支持netty FastThreadLocal
     ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
             .statistics(config);
     for (int i = 0; i < 100; i++) {
@@ -54,6 +55,8 @@ public void threadPool() {
 * [Restful - 轻量级 连接池 RestClient](https://github.com/RockyLOMO/rxlib/wiki/%E8%BD%BB%E9%87%8F%E7%BA%A7-%E8%BF%9E%E6%8E%A5%E6%B1%A0-RestClient-%E5%AE%9E%E7%8E%B0---%E5%9F%BA%E4%BA%8Eokhttp)
 * [NQuery - lambda parallel stream](https://github.com/RockyLOMO/rxlib/wiki/NQuery---lambda-parallel-stream)
 * [SUID - Base64缩短的不丢精度的UUID](https://github.com/RockyLOMO/rxlib/wiki/ShortUUID---%E5%9F%BA%E4%BA%8EBase64%E7%BC%A9%E7%9F%AD)
+* BufferedRandomAccessFile
+* socks5 proxy
 
 ### shadowsocks (Only tested AES encryption, BELOW VERSION 2.13.13)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
@@ -70,6 +73,6 @@ public void threadPool() {
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.16.2</version>
+    <version>2.16.9</version>
 </dependency>
 ```
