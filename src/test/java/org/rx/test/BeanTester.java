@@ -140,6 +140,19 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
+    public void permille() {
+        Permille permille = Permille.valueOf("50%");
+        Permille permille1 = Permille.valueOf("500‰");
+        Permille permille2 = Permille.valueOf(0.5);
+        assert permille.equals(permille1) && permille1.equals(permille2);
+        System.out.println(permille1.toString());
+        System.out.println(permille1.toPermilleString());
+        System.out.println(permille1.toPermilleInt());
+        System.out.println(permille1.toPercentString());
+        System.out.println(permille1.toPercentInt());
+    }
+
+    @Test
     public void dateTime() {
         DateTime now = DateTime.now();
         DateTime utc = DateTime.utcNow();

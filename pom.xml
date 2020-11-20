@@ -62,7 +62,7 @@
         <netty.version>4.1.53.Final</netty.version>
         <jsch.version>0.1.55</jsch.version>
 
-        <spring.version>5.2.4.RELEASE</spring.version>
+        <spring.version>5.2.10.RELEASE</spring.version>
         <aspectj.version>1.9.5</aspectj.version>
     </properties>
 
