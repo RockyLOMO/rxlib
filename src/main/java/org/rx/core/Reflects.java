@@ -259,15 +259,23 @@ public class Reflects extends TypeUtils {
         return name.substring(0, 1).toLowerCase() + name.substring(1);
     }
 
+    public static <T, TT> T readField(TT instance, String name) {
+        return readField(instance.getClass(), instance, name);
+    }
+
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    public static <T> T readField(Class type, Object instance, String name) {
+    public static <T, TT> T readField(Class<? extends TT> type, TT instance, String name) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
         return (T) field.get(instance);
     }
 
+    public static <T, TT> void writeField(TT instance, String name, T value) {
+        writeField(instance.getClass(), instance, name, value);
+    }
+
     @SneakyThrows
-    public static <T> void writeField(Class type, Object instance, String name, T value) {
+    public static <T, TT> void writeField(Class<? extends TT> type, TT instance, String name, T value) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
         field.set(instance, changeType(value, field.getType()));
     }

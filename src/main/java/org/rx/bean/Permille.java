@@ -3,6 +3,7 @@ package org.rx.bean;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -11,8 +12,7 @@ import java.util.Objects;
 
 import static org.rx.core.Contract.require;
 
-@NoArgsConstructor
-@AllArgsConstructor
+@RequiredArgsConstructor
 public final class Permille implements Serializable, Comparable<Permille> {
     private static final long serialVersionUID = 6193780163058498447L;
     private static final String PERCENT_SYMBOL = "%", PERMILLE_SYMBOL = "‰";
@@ -46,7 +46,7 @@ public final class Permille implements Serializable, Comparable<Permille> {
     }
 
     @Getter
-    private BigDecimal value;
+    private final BigDecimal value;
 
     public double doubleValue() {
         return value.doubleValue();
