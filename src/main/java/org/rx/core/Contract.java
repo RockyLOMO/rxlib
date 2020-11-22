@@ -109,6 +109,23 @@ public final class Contract {
     public static Object[] values(Object... args) {
         return args;
     }
+
+    public static String description(AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
+    public static void sleep() {
+        sleep(CONFIG.getSleepMillis());
+    }
+
+    @SneakyThrows
+    public static void sleep(long millis) {
+        Thread.sleep(millis);
+    }
     //endregion
 
     //region yml
@@ -321,14 +338,6 @@ public final class Contract {
         return k.setLength(offset).append(SUID.compute(hex)).toString();
     }
 
-    public static String description(AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
-    }
-
     public static boolean tryClose(Object obj) {
         return tryClose(obj, true);
     }
@@ -359,13 +368,12 @@ public final class Contract {
         return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
     }
 
-    public static void sleep() {
-        sleep(CONFIG.getSleepMillis());
+    public static <T> T getBean(Class<T> type) {
+        return Container.getInstance().get(type);
     }
 
-    @SneakyThrows
-    public static void sleep(long millis) {
-        Thread.sleep(millis);
+    public static <T> void registerBean(Class<T> type, T instance) {
+        Container.getInstance().register(type, instance);
     }
     //endregion
 
