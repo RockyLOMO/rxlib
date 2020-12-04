@@ -1,11 +1,12 @@
 package org.rx.util.function;
 
+import java.io.Serializable;
 import java.util.function.Function;
 
 import static org.rx.core.Contract.sneakyInvoke;
 
 @FunctionalInterface
-public interface BiFunc<TP, TR> {
+public interface BiFunc<TP, TR> extends Serializable {
     TR invoke(TP param) throws Throwable;
 
     default Function<TP, TR> toFunction() {

@@ -260,6 +260,8 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void reflect() {
+        System.out.println(Reflects.resolve(PersonBean::getAge));
+
         assert Reflects.stackClass(0) == this.getClass();
         System.out.println(cacheKey("reflect"));
         System.out.println(cacheKey("reflect", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));

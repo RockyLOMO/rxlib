@@ -16,10 +16,13 @@ import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.BiFunc;
 
+import java.beans.Introspector;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
 import java.util.Date;
@@ -27,6 +30,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import static org.rx.core.Contract.*;
 
@@ -176,6 +180,23 @@ public class Reflects extends TypeUtils {
     }
     //endregion
 
+    public static <TP, TR> Tuple<String, String> resolve(BiFunc<TP, TR> func) {
+        SerializedLambda serializedLambda = invokeMethod(func, "writeReplace");
+        String implMethodName = serializedLambda.getImplMethodName();
+        if (implMethodName.startsWith("lambda$")) {
+            throw new IllegalArgumentException("BiFunc can not be LAMBDA EXPR, but only METHOD REFERENCE");
+        }
+        String fieldName;
+        if ((implMethodName.startsWith("get") && implMethodName.length() > 3)
+                || implMethodName.startsWith("is") && implMethodName.length() > 2) {
+            fieldName = propertyName(implMethodName);
+        } else {
+            throw new IllegalArgumentException(implMethodName + " is not a GETTER");
+        }
+        String declaredClass = serializedLambda.getImplClass().replace("/", ".");
+        return Tuple.of(declaredClass, fieldName);
+    }
+
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
     public static <T> T invokeDefaultMethod(Method method, Object instance, Object... args) {
@@ -199,16 +220,16 @@ public class Reflects extends TypeUtils {
         return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
     }
 
-    public static <T> T invokeMethod(Class type, String name, Object... args) {
+    public static <T, TT> T invokeMethod(Class<? extends TT> type, String name, Object... args) {
         return invokeMethod(type, null, name, args);
     }
 
-    public static <T> T invokeMethod(Object instance, String name, Object... args) {
+    public static <T, TT> T invokeMethod(TT instance, String name, Object... args) {
         return invokeMethod(instance.getClass(), instance, name, args);
     }
 
     @ErrorCode
-    public static <T> T invokeMethod(Class type, Object instance, String name, Object... args) {
+    public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
         Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
         if (method == null) {
@@ -219,7 +240,7 @@ public class Reflects extends TypeUtils {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    public static <T> T invokeMethod(Method method, Object instance, Object... args) {
+    public static <T, TT> T invokeMethod(Method method, TT instance, Object... args) {
         setAccess(method);
         return (T) method.invoke(instance, args);
     }
@@ -229,6 +250,7 @@ public class Reflects extends TypeUtils {
 //        return NQuery.of(args).select((p, i) -> changeType(p, parameterTypes[i])).toArray();
 //    }
 
+    //region fields
     public static NQuery<PropertyNode> getProperties(Class to) {
         return Cache.getOrSet(Tuple.of("getProperties", to), tType -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
@@ -253,6 +275,7 @@ public class Reflects extends TypeUtils {
             name = getterOrSetterName;
         }
 
+        //Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
         }
@@ -416,4 +439,5 @@ public class Reflects extends TypeUtils {
         }
         return (T) value;
     }
+    //endregion
 }
