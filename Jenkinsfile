@@ -1,12 +1,16 @@
 pipeline {
-  agent any
-  tools {
-    maven 'Default'
+  agent {
+    node {
+      label 'maven'
+    }
   }
+
   stages {
-    stage('Build') {
+    stage ('build') {
       steps {
-        sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true install'
+        container ('maven') {
+          sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true install'
+        }
       }
     }
   }
