@@ -1,4 +1,4 @@
-package org.rx.net.tcp;
+package org.rx.net.rpc;
 
 import org.rx.core.exception.InvalidException;
 

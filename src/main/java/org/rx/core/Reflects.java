@@ -282,6 +282,16 @@ public class Reflects extends TypeUtils {
         return name.substring(0, 1).toLowerCase() + name.substring(1);
     }
 
+    @SneakyThrows
+    public static <T> void copyPublicFields(T from, T to) {
+        for (Field field : getFields(to.getClass())) {
+            if (!Modifier.isPublic(field.getModifiers())) {
+                continue;
+            }
+            field.set(to, field.get(from));
+        }
+    }
+
     public static <T, TT> T readField(TT instance, String name) {
         return readField(instance.getClass(), instance, name);
     }

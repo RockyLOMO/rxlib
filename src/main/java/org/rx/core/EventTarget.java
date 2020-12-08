@@ -10,6 +10,7 @@ import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
@@ -125,5 +126,13 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             return;
         }
         event.accept((TSender) this, args);
+    }
+
+    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
+        return Tasks.run(() -> raiseEvent(eventName, args));
+    }
+
+    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
+        return Tasks.run(() -> raiseEvent(event, args));
     }
 }

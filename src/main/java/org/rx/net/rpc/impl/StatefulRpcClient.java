@@ -1,4 +1,4 @@
-package org.rx.net.tcp;
+package org.rx.net.rpc.impl;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -18,40 +18,33 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.*;
-import org.rx.core.ManualResetEvent;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
-import org.rx.net.tcp.packet.ErrorPacket;
-import org.rx.net.tcp.packet.HandshakePacket;
+import org.rx.net.rpc.RpcClient;
+import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.rpc.RpcServer;
+import org.rx.net.rpc.packet.ErrorPacket;
+import org.rx.net.rpc.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 
 import static org.rx.core.Contract.*;
 
 @Slf4j
-public class TcpClient extends Disposable implements ITcpClient, EventTarget<TcpClient> {
-    public interface EventNames {
-        String Error = "onError";
-        String Connected = "onConnected";
-        String Disconnected = "onDisconnected";
-        String Send = "onSend";
-        String Receive = "onReceive";
-    }
-
-    private class PacketClientHandler extends ChannelInboundHandlerAdapter {
+public class StatefulRpcClient extends Disposable implements RpcClient {
+    class Handler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             log.debug("clientActive {}", ctx.channel().remoteAddress());
 
-            ctx.writeAndFlush(handshake).addListener(p -> {
+            ctx.writeAndFlush(new HandshakePacket(Thread.NORM_PRIORITY)).addListener(p -> {
                 if (p.isSuccess()) {
                     //握手需要异步
-                    Tasks.run(() -> raiseEvent(onConnected, EventArgs.EMPTY));
+                    raiseEventAsync(onConnected, EventArgs.EMPTY);
                 }
             });
         }
@@ -69,14 +62,14 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
                 log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
-            Tasks.run(() -> raiseEvent(onReceive, new NEventArgs<>(pack)));
+            raiseEvent(onReceive, new NEventArgs<>(pack));
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.info("clientInactive {}", ctx.channel().remoteAddress());
 
-            raiseEvent(onDisconnected, EventArgs.EMPTY);
+            raiseEventAsync(onDisconnected, EventArgs.EMPTY);
             reconnect();
         }
 
@@ -100,12 +93,12 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         }
     }
 
-    public volatile BiConsumer<TcpClient, EventArgs> onConnected, onDisconnected;
-    public volatile BiConsumer<TcpClient, NEventArgs<Serializable>> onSend, onReceive;
-    public volatile BiConsumer<TcpClient, NEventArgs<Throwable>> onError;
+    public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
+    public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting;
+    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
+    public volatile BiConsumer<RpcClient, NEventArgs<Throwable>> onError;
     @Getter
-    private TcpConfig config;
-    private HandshakePacket handshake;
+    private final RpcClientConfig config;
     private Bootstrap bootstrap;
     private SslContext sslCtx;
     @Getter
@@ -114,39 +107,25 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
     @Getter
     @Setter
     private volatile boolean autoReconnect;
-    @Setter
-    private Function<InetSocketAddress, InetSocketAddress> preReconnect;
-    private volatile Future reconnectFuture;
+    private volatile Future<?> reconnectFuture;
     private volatile ChannelFuture reconnectChannelFuture;
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
     }
 
-    @Override
-    public ChannelId getId() {
-        require(isConnected());
-
-        return channel.id();
-    }
-
-    @Override
-    public String getGroupId() {
-        return handshake.getGroupId();
-    }
-
     protected boolean isShouldReconnect() {
         return autoReconnect && !isConnected();
     }
 
-    public TcpClient(TcpConfig config, HandshakePacket handshake) {
-        require(config, handshake);
+    public StatefulRpcClient(RpcClientConfig config) {
+        require(config);
 
         this.config = config;
-        this.handshake = handshake;
     }
 
-    protected TcpClient() {
+    protected StatefulRpcClient() {
+        this.config = null;
     }
 
     @Override
@@ -174,17 +153,17 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         bootstrap = Sockets.bootstrap(config.isTryEpoll(), null, config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
-                pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getEndpoint().getHostString(), config.getEndpoint().getPort()));
+                pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getServerEndpoint().getHostString(), config.getServerEndpoint().getPort()));
             }
             if (config.isEnableCompress()) {
                 pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(TcpConfig.class.getClassLoader())),
-                    new PacketClientHandler());
+                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+                    new Handler());
         }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
-        ChannelFuture future = bootstrap.connect(config.getEndpoint());
+        ChannelFuture future = bootstrap.connect(config.getServerEndpoint());
         if (!wait) {
             future.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
             return;
@@ -192,7 +171,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         ManualResetEvent connectWaiter = new ManualResetEvent();
         future.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("connect {} fail", config.getEndpoint(), f.cause());
+                log.error("connect {} fail", config.getServerEndpoint(), f.cause());
                 f.channel().close();
                 if (autoReconnect) {
                     reconnect(connectWaiter);
@@ -203,7 +182,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
             connectedTime = DateTime.now();
             connectWaiter.set();
         });
-        connectWaiter.waitOne(getConfig().getConnectTimeoutMillis());
+        connectWaiter.waitOne(config.getConnectTimeoutMillis());
         connectWaiter.reset();
         if (!autoReconnect && !isConnected()) {
             throw new InvalidException("Client connect fail");
@@ -219,11 +198,13 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
             return;
         }
         reconnectFuture = Tasks.scheduleUntil(() -> {
-            log.info("reconnect {} check..", config.getEndpoint());
+            log.info("reconnect {} check..", config.getServerEndpoint());
             if (!isShouldReconnect() || reconnectChannelFuture != null) {
                 return;
             }
-            InetSocketAddress ep = preReconnect != null ? preReconnect.apply(config.getEndpoint()) : config.getEndpoint();
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
+            raiseEvent(onReconnecting, args);
+            InetSocketAddress ep = args.getValue();
             reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.info("reconnect {} fail", ep);
@@ -234,7 +215,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
                 log.info("reconnect {} ok", ep);
                 channel = f.channel();
                 connectedTime = DateTime.now();
-                config.setEndpoint(ep);
+                config.setServerEndpoint(ep);
                 reconnectChannelFuture = null;
             });
         }, () -> {
@@ -249,6 +230,7 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
         }, CONFIG.getScheduleDelay());
     }
 
+    @Override
     public synchronized void send(Serializable pack) {
         require(pack);
         if (!isConnected()) {
@@ -261,16 +243,16 @@ public class TcpClient extends Disposable implements ITcpClient, EventTarget<Tcp
             return;
         }
         channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-        log.debug("clientWrite {} {}", getConfig().getEndpoint(), pack);
-    }
-
-    @Override
-    public <T> Attribute<T> attr(String name) {
-        return channel.attr(AttributeKey.valueOf(name));
+        log.debug("clientWrite {} {}", config.getServerEndpoint(), pack);
     }
 
     @Override
     public boolean hasAttr(String name) {
         return channel.hasAttr(AttributeKey.valueOf(name));
+    }
+
+    @Override
+    public <T> Attribute<T> attr(String name) {
+        return channel.attr(AttributeKey.valueOf(name));
     }
 }
