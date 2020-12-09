@@ -20,4 +20,5 @@ public class RpcClientConfig implements Serializable {
     private boolean enableSsl;
     private boolean enableCompress;
     private int eventVersion;
+    private boolean stateful = true;
 }

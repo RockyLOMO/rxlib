@@ -40,8 +40,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 //        super.channelActive(ctx);
             Channel channel = ctx.channel();
             log.debug("serverActive {}", channel.remoteAddress());
-            if (getClients().size() > config.getCapacity()) {
-                log.warn("Force close client, Not enough capacity");
+            if (clients.size() > config.getCapacity()) {
+                log.warn("Force close client, Not enough capacity {}/{}.", clients.size(), config.getCapacity());
                 Sockets.closeOnFlushed(channel);
                 return;
             }

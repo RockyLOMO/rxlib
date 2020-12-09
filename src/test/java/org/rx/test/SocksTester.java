@@ -41,8 +41,8 @@ public class SocksTester {
 
         String ep = "127.0.0.1:3307";
         List<UserManager> facadeGroupA = new ArrayList<>();
-        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep)));
-        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep)));
+        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), true));
+        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), true));
 
         for (UserManager facade : facadeGroupA) {
             assert facade.computeInt(1, 1) == 2;
@@ -137,6 +137,7 @@ public class SocksTester {
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(Sockets.parseEndpoint("127.0.0.1:3307"));
         config.setEventVersion(1);
+        config.setStateful(true);
         UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (po, client) -> {
             System.out.println("onHandshake: " + po.computeInt(1, 2));
         });
@@ -152,16 +153,16 @@ public class SocksTester {
         UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
         //注册事件（广播）
         attachEvent(facade1, "0x00");
-        sleep(1000);
+//        sleep(1000);
         //服务端触发事件，只有facade1注册会被广播到
         server.create(PersonBean.def);
-        sleep(1000);
+//        sleep(1000);
 
         attachEvent(facade2, "0x01");
-        sleep(1000);
+//        sleep(1000);
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
         server.create(PersonBean.def);
-        sleep(1000);
+//        sleep(1000);
 
 //        //客户端触发事件
         facade1.create(PersonBean.def);
@@ -181,7 +182,7 @@ public class SocksTester {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
         //没有事件订阅，无状态会自动使用连接池模式
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307");
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307", true);
         for (int i = 0; i < 50; i++) {
             facade.computeInt(1, i);
         }

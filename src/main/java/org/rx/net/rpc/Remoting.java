@@ -1,6 +1,5 @@
 package org.rx.net.rpc;
 
-import io.netty.util.Attribute;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +45,7 @@ public final class Remoting {
 
         static class EventBean {
             Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
-//            ManualResetEvent wait = new ManualResetEvent();
+            //            ManualResetEvent wait = new ManualResetEvent();
             Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
 
             EventContext context(UUID id) {
@@ -64,13 +63,14 @@ public final class Remoting {
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
     private static final Map<UUID, RpcClientPool> clientPools = new ConcurrentHashMap<>();
 
-    public static <T> T create(Class<T> contract, String endpoint) {
-        return create(contract, Sockets.parseEndpoint(endpoint));
+    public static <T> T create(Class<T> contract, String endpoint, boolean stateful) {
+        return create(contract, Sockets.parseEndpoint(endpoint), stateful);
     }
 
-    public static <T> T create(Class<T> contract, InetSocketAddress endpoint) {
+    public static <T> T create(Class<T> contract, InetSocketAddress endpoint, boolean stateful) {
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(endpoint);
+        config.setStateful(stateful);
         return create(contract, config, null);
     }
 
@@ -145,7 +145,6 @@ public final class Remoting {
                     RpcClientPool pool = clientPools.computeIfAbsent(tid, k -> new RpcClientPool(CONFIG.getNetMinPoolSize(), Math.max(2, CONFIG.getNetMaxPoolSize() / 2), facadeConfig));
                     init(sync.v = pool.borrow(facadeConfig.getServerEndpoint()), resultPack, p.getProxyObject(), isCompute);
                     if (onHandshake != null) {
-                        sync.v.setAutoReconnect(true);
                         onHandshake.accept((T) p.getProxyObject(), sync.v);
                         //onHandshake returnObject的情况
                         if (sync.v == null) {
@@ -191,9 +190,8 @@ public final class Remoting {
                     }
                 }
 
-                client.close();
-                Attribute<Boolean> attr = client.attr(RpcClientPool.Stateful);
-                if (!BooleanUtils.isTrue(attr.get())) {
+                if (!client.getConfig().isStateful()) {
+                    client.close();
                     sync.v = null;
                 }
             }

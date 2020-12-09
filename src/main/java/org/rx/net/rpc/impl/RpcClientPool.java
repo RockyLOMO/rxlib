@@ -100,21 +100,23 @@ public class RpcClientPool extends Disposable {
         return proxy(StatefulRpcClient.class, (m, p) -> {
             Reflects.copyPublicFields(p.getProxyObject(), client);
             if (Reflects.isCloseMethod(m)) {
-                Attribute<Boolean> attr = client.attr(Stateful);
-                if (BooleanUtils.isTrue(attr.get())) {
-                    if (!client.hasAttr(Invalidated)) {
-                        invalidate(client);
-                        client.attr(Invalidated).set(true);
-                    }
+//                Attribute<Boolean> attr = client.attr(Stateful);
+//                if (BooleanUtils.isTrue(attr.get())) {
+                if (client.getConfig().isStateful()) {
+//                    if (!client.hasAttr(Invalidated)) {
+//                        invalidate(client);
+//                        client.attr(Invalidated).set(true);
+//                    }
+                    client.close();
                     return null;
                 }
                 pool.returnObject(client.getConfig().getServerEndpoint(), client);
                 log.debug("Return RpcClient {}", client);
                 return null;
             }
-            if (client.isAutoReconnect() || "attachEvent".equals(m.getName())) {
-                client.attr(Stateful).set(true);
-            }
+//            if (client.isAutoReconnect() || "attachEvent".equals(m.getName())) {
+//                client.attr(Stateful).set(true);
+//            }
             return p.fastInvoke(client);
         });
     }
