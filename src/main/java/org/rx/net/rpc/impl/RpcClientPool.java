@@ -1,9 +1,7 @@
 package org.rx.net.rpc.impl;
 
-import io.netty.util.Attribute;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.pool2.BaseKeyedPooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
@@ -20,7 +18,7 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class RpcClientPool extends Disposable {
-    public static final String Stateful = "_Stateful", Invalidated = "_Invalidated";
+    public static final String Invalidated = "_Invalidated";
 
     class Factory extends BaseKeyedPooledObjectFactory<InetSocketAddress, StatefulRpcClient> {
         @Override
@@ -47,11 +45,7 @@ public class RpcClientPool extends Disposable {
 
         @Override
         public void destroyObject(InetSocketAddress key, PooledObject<StatefulRpcClient> p) throws Exception {
-            StatefulRpcClient client = p.getObject();
-            if (client.hasAttr(RpcClientPool.Stateful)) {
-                return;
-            }
-            client.close();
+            p.getObject().close();
         }
 
         @Override
@@ -100,8 +94,6 @@ public class RpcClientPool extends Disposable {
         return proxy(StatefulRpcClient.class, (m, p) -> {
             Reflects.copyPublicFields(p.getProxyObject(), client);
             if (Reflects.isCloseMethod(m)) {
-//                Attribute<Boolean> attr = client.attr(Stateful);
-//                if (BooleanUtils.isTrue(attr.get())) {
                 if (client.getConfig().isStateful()) {
 //                    if (!client.hasAttr(Invalidated)) {
 //                        invalidate(client);
@@ -114,9 +106,6 @@ public class RpcClientPool extends Disposable {
                 log.debug("Return RpcClient {}", client);
                 return null;
             }
-//            if (client.isAutoReconnect() || "attachEvent".equals(m.getName())) {
-//                client.attr(Stateful).set(true);
-//            }
             return p.fastInvoke(client);
         });
     }

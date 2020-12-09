@@ -122,6 +122,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         require(config);
 
         this.config = config;
+        autoReconnect = config.isStateful();
     }
 
     protected StatefulRpcClient() {
