@@ -54,16 +54,16 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     @RequiredArgsConstructor
     enum EventFlags implements NEnum<EventFlags> {
         None(0),
-        ThreadSafe(1),
-        Quietly(1 << 1),
-        DynamicAttach(1 << 2);
+        DynamicAttach(1),
+        ThreadSafe(1 << 1),
+        Quietly(1 << 2);
 
         @Getter
         private final int value;
     }
 
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.None.flags();
+        return EventFlags.DynamicAttach.flags();
     }
 
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event) {

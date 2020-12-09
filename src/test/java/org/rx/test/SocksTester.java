@@ -182,7 +182,7 @@ public class SocksTester {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
         //没有事件订阅，无状态会自动使用连接池模式
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307", true);
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307", false);
         for (int i = 0; i < 50; i++) {
             facade.computeInt(1, i);
         }
