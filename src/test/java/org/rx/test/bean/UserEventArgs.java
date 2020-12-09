@@ -14,5 +14,6 @@ public class UserEventArgs extends EventArgs {
     private final PersonBean user;
     @Setter
     private int flag;
-    private final List<String> resultList = new ArrayList<>();
+    @Setter
+    private List<String> statefulList = new ArrayList<>();
 }

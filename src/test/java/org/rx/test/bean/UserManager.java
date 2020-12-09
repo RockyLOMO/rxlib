@@ -17,11 +17,12 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
     }
 
     default void close() {
+        System.out.println("invoke default close then disconnect");
     }
 
-    void addUser(PersonBean person);
+    void create(PersonBean person);
 
     int computeInt(int x, int y);
 
-    void testError();
+    void triggerError();
 }

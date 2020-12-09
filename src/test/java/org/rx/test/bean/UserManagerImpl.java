@@ -1,7 +1,6 @@
 package org.rx.test.bean;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.FlagsEnum;
 import org.rx.core.exception.InvalidException;
 
 import java.util.function.BiConsumer;
@@ -10,23 +9,17 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class UserManagerImpl implements UserManager {
-    public volatile BiConsumer<UserManager, UserEventArgs> onAddUser;
+    public volatile BiConsumer<UserManager, UserEventArgs> onCreate;
 
     @Override
-    public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags();
-    }
-
-    @Override
-    public void addUser(PersonBean person) {
+    public void create(PersonBean person) {
         UserEventArgs e = new UserEventArgs(person);
-        raiseEvent(onAddUser, e);
+        raiseEvent(onCreate, e);
         if (e.isCancel()) {
-            log.info("addUser canceled");
+            log.info("create canceled");
             return;
         }
-        log.info("UserEventArgs.resultList {}", toJsonString(e.getResultList()));
-        log.info("addUser ok");
+        log.info("create ok & statefulList={}", toJsonString(e.getStatefulList()));
     }
 
     @Override
@@ -35,7 +28,7 @@ public class UserManagerImpl implements UserManager {
     }
 
     @Override
-    public void testError() {
-        throw new InvalidException("testError");
+    public void triggerError() {
+        throw new InvalidException("自定义异常描述");
     }
 }

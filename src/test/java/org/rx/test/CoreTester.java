@@ -148,14 +148,14 @@ public class CoreTester extends TestUtil {
         BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
 
-        mgr.onAddUser = a;
-        mgr.addUser(p);  //触发事件（a执行）
+        mgr.onCreate = a;
+        mgr.create(p);  //触发事件（a执行）
 
-        mgr.onAddUser = combine(mgr.onAddUser, b);
-        mgr.addUser(p); //触发事件（a, b执行）
+        mgr.onCreate = combine(mgr.onCreate, b);
+        mgr.create(p); //触发事件（a, b执行）
 
-        mgr.onAddUser = remove(mgr.onAddUser, b);
-        mgr.addUser(p); //触发事件（b执行）
+        mgr.onCreate = remove(mgr.onCreate, b);
+        mgr.create(p); //触发事件（b执行）
     }
 
     @SneakyThrows

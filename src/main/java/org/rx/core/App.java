@@ -12,6 +12,7 @@ import org.rx.io.MemoryStream;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -154,6 +155,10 @@ public class App extends SystemUtils {
         }.parse();
     }
 
+    public static UUID hash(Object... args) {
+        return hash(Strings.join(Strings.EMPTY, args));
+    }
+
     public static UUID hash(String key) {
         require(key);
 
@@ -161,16 +166,16 @@ public class App extends SystemUtils {
         return newUUID(guidBytes);
     }
 
-    public static UUID newComb(boolean sequentialAtEnd) {
+    public static UUID newComb() {
         return newComb(null, null);
     }
 
-    public static UUID newComb(String key, Date now) {
-        return newComb(key, now, false);
+    public static UUID newComb(String key, Timestamp timestamp) {
+        return newComb(key, timestamp, false);
     }
 
     //http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database
-    public static UUID newComb(String key, Date date, boolean sequentialAtEnd) {
+    public static UUID newComb(String key, Timestamp timestamp, boolean sequentialAtEnd) {
         byte[] guidBytes, msecsBytes;
         if (key != null) {
             guidBytes = MD5Util.md5(key);
@@ -178,12 +183,12 @@ public class App extends SystemUtils {
             guidBytes = new byte[16];
             ThreadLocalRandom.current().nextBytes(guidBytes);
         }
-        if (date != null) {
-            msecsBytes = ByteBuffer.allocate(8).putLong(date.getTime() - DateTime.BaseDate.getTime()).array();
+        if (timestamp != null) {
+            msecsBytes = ByteBuffer.allocate(8).putLong(timestamp.getTime()).array();
         } else {
-            msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime() - DateTime.BaseDate.getTime()).array();
+            msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime()).array();
         }
-        int copyCount = 6, copyOffset = msecsBytes.length - copyCount;
+        int copyCount = msecsBytes.length, copyOffset = msecsBytes.length - copyCount;
         if (sequentialAtEnd) {
             System.arraycopy(msecsBytes, copyOffset, guidBytes, guidBytes.length - copyCount, copyCount);
         } else {

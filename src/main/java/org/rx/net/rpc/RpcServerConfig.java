@@ -1,14 +1,20 @@
 package org.rx.net.rpc;
 
 import lombok.Data;
+import org.rx.bean.DataRange;
 import org.rx.net.MemoryMode;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.rx.core.Contract.CONFIG;
 
 @Data
 public class RpcServerConfig implements Serializable {
+    public static final int DISABLE_VERSION = -1;
+    public static final int LATEST_COMPUTE = 0;
+
     private static final long serialVersionUID = 8065323693541916068L;
     private boolean tryEpoll = true;
     private int listenPort;
@@ -18,4 +24,6 @@ public class RpcServerConfig implements Serializable {
     private boolean enableSsl;
     private boolean enableCompress;
     private int capacity = 10000;
+    private final List<Integer> eventBroadcastVersions = new ArrayList<>();
+    private int eventComputeVersion = LATEST_COMPUTE;
 }

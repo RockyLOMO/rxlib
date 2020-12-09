@@ -3,9 +3,7 @@ package org.rx.test;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
-import org.rx.core.Arrays;
-import org.rx.core.EventArgs;
-import org.rx.core.Tasks;
+import org.rx.bean.SUID;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.PingClient;
 import org.rx.net.SftpClient;
@@ -15,6 +13,8 @@ import org.rx.net.http.RestClient;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -22,7 +22,6 @@ import org.rx.test.bean.*;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,87 +32,60 @@ import static org.rx.core.Contract.toJsonString;
 
 @Slf4j
 public class SocksTester {
-    private Remoting.ServerBean serverBean;
-    private Remoting.ServerBean serverBean2;
+    private Remoting.ServerBean[] serverBeans = new Remoting.ServerBean[2];
 
-//    @Test
-//    public void apiRpc() {
-//        UserManagerImpl server = new UserManagerImpl();
-//        restartServer(server, 3307);
+    @Test
+    public void rpc_StatefulApi() {
+        UserManagerImpl server = new UserManagerImpl();
+        restartServer(server, 0);
+
+        String ep = "127.0.0.1:3307";
+        List<UserManager> facadeGroupA = new ArrayList<>();
+        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep)));
+        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep)));
+
+        for (UserManager facade : facadeGroupA) {
+            assert facade.computeInt(1, 1) == 2;
+        }
+        //重启server，客户端自动重连
+//        restartServer(server, 0);
+        for (UserManager facade : facadeGroupA) {
+            try {
+                facade.triggerError();
+            } catch (RemotingException e) {
+            }
+            assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
+        }
+        //自定义事件（广播）
+        String groupAEvent = "onAuth-A";
+        for (int i = 0; i < facadeGroupA.size(); i++) {
+            int x = i;
+            facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
+                System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
+                e.setFlag(e.getFlag() + 1);
+            });
+        }
+
+        UserEventArgs args = new UserEventArgs(PersonBean.def);
+        facadeGroupA.get(0).raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 1;
+        facadeGroupA.get(1).raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 2;
+
+        server.raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+
+        sleep(1000);
+        args.setFlag(8);
+        server.raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 9;
 //
-//        String ep = "127.0.0.1:3307";
-//        String groupA = "a", groupB = "b";
-//        List<UserManager> facadeGroupA = new ArrayList<>();
-//        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-//        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-//
-//        for (UserManager facade : facadeGroupA) {
-//            assert facade.computeInt(1, 1) == 2;
-//        }
-//        //重启server，客户端自动重连
-//        restartServer(server, 3307);
-//        for (UserManager facade : facadeGroupA) {
-//            try {
-//                facade.testError();
-//            } catch (RemotingException e) {
-//            }
-//            assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
-//        }
-//
-//        List<UserManager> facadeGroupB = new ArrayList<>();
-//        facadeGroupB.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-//        facadeGroupB.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-//
-//        for (UserManager facade : facadeGroupB) {
-//            assert facade.computeInt(1, 1) == 2;
-//            try {
-//                facade.testError();
-//            } catch (RemotingException e) {
-//
-//            }
-//            assert facade.computeInt(2, 2) == 4;
-//        }
-//
-//        //自定义事件（广播）
-//        String groupAEvent = "onAuth-A", groupBEvent = "onAuth-B";
-//        for (int i = 0; i < facadeGroupA.size(); i++) {
-//            int x = i;
-//            facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
-//                System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
-//                e.setFlag(e.getFlag() + 1);
-//            });
-//        }
-//        for (int i = 0; i < facadeGroupB.size(); i++) {
-//            int x = i;
-//            facadeGroupB.get(i).<UserEventArgs>attachEvent(groupBEvent, (s, e) -> {
-//                System.out.println(String.format("!!groupB - facade%s - %s[flag=%s]!!", x, groupBEvent, e.getFlag()));
-//                e.setFlag(e.getFlag() + 1);
-//            });
-//        }
-//
-//        UserEventArgs args = new UserEventArgs(PersonBean.def);
-//        facadeGroupA.get(0).raiseEvent(groupAEvent, args);  //客户端触发事件，不广播
-//        assert args.getFlag() == 1;
-//        facadeGroupA.get(1).raiseEvent(groupAEvent, args);
-//        assert args.getFlag() == 2;
-//
-//        server.raiseEvent(groupAEvent, args);
-//        assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
-//
-//        facadeGroupB.get(0).raiseEvent(groupBEvent, args);
-//        assert args.getFlag() == 4;
-//
-//        sleep(1000);
-//        args.setFlag(8);
-//        server.raiseEvent(groupBEvent, args);
-//        assert args.getFlag() == 9;
-//
-//        facadeGroupB.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
+//        facadeGroupA.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
 //        sleep(1000);
 //        args.setFlag(16);
-//        server.raiseEvent(groupBEvent, args);
+//        server.raiseEvent(groupAEvent, args);
 //        assert args.getFlag() == 17;
-//    }
+    }
 //
 //    @SneakyThrows
 //    private void epGroupReconnect() {
@@ -138,62 +110,77 @@ public class SocksTester {
 //        Tasks.scheduleOnce(() -> tcpServer2 = Remoting.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
 //        System.in.read();
 //    }
-//
-//    private void restartServer(UserManagerImpl server, int port) {
-//        if (tcpServer != null) {
-//            tcpServer.close();
-//        }
-//        tcpServer = Remoting.listen(server, port);
-//        System.out.println("restartServer on port " + port);
-//        sleep(2600);
-//    }
+
+    private void restartServer(UserManagerImpl server, int i) {
+        Remoting.ServerBean serverBean = serverBeans[i];
+        if (serverBean != null) {
+            serverBean.getServer().close();
+            sleep(8000);
+        }
+        RpcServerConfig serverConfig = new RpcServerConfig();
+        serverConfig.setListenPort(3307);
+        serverBeans[i] = Remoting.listen(server, serverConfig);
+        System.out.println("restartServer on port " + serverConfig.getListenPort());
+    }
 
     @Test
     public void rpc_StatefulImpl() {
         //服务端监听
+        RpcServerConfig serverConfig = new RpcServerConfig();
+        serverConfig.setListenPort(3307);
+        serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
+//        serverConfig.getEventBroadcastVersions().add(2);  //版本号一致才广播
         UserManagerImpl server = new UserManagerImpl();
-        Remoting.listen(server, 3307);
+        Remoting.listen(server, serverConfig);
 
         //客户端 facade
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(Sockets.parseEndpoint("127.0.0.1:3307"));
-        UserManagerImpl facade = Remoting.create(UserManagerImpl.class, config, (po, client) -> {
+        config.setEventVersion(1);
+        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (po, client) -> {
             System.out.println("onHandshake: " + po.computeInt(1, 2));
         });
-        assert facade.computeInt(1, 1) == 2; //服务端计算并返回
+        assert facade1.computeInt(1, 1) == 2; //服务端计算并返回
         try {
-            facade.testError(); //测试异常
+            facade1.triggerError(); //测试异常
         } catch (RemotingException e) {
 
         }
-        assert facade.computeInt(17, 1) == 18;
+        assert facade1.computeInt(17, 1) == 18;
 
+        config.setEventVersion(2);
+        UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
         //注册事件（广播）
-        facade.<UserEventArgs>attachEvent("onAddUser", (s, e) -> {
-            log.info("Event onAddUser with {} called", toJsonString(e));
-            e.getResultList().addAll(Arrays.toList("a", "b", "c"));
+        attachEvent(facade1, "0x00");
+        sleep(1000);
+        //服务端触发事件，只有facade1注册会被广播到
+        server.create(PersonBean.def);
+        sleep(1000);
+
+        attachEvent(facade2, "0x01");
+        sleep(1000);
+        //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
+        server.create(PersonBean.def);
+        sleep(1000);
+
+//        //客户端触发事件
+        facade1.create(PersonBean.def);
+        sleep(10000);
+    }
+
+    private void attachEvent(UserManagerImpl facade, String id) {
+        facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
+            log.info("facade{} onCreate -> {}", id, toJsonString(e));
+            e.getStatefulList().add(id + ":" + SUID.randomSUID());
             e.setCancel(false); //是否取消事件
         });
-        sleep(1000);
-
-        //服务端触发事件
-        server.addUser(PersonBean.def);
-        //客户端触发事件
-        facade.addUser(PersonBean.def);
-
-        //自定义事件
-        String eventName = "onCustom";
-        facade.attachEvent(eventName, (s, e) -> System.out.println(String.format("CustomEvent %s called", eventName)));
-        sleep(1000);
-        server.raiseEvent(eventName, EventArgs.EMPTY);
-        sleep(1000);
-        facade.raiseEvent(eventName, EventArgs.EMPTY);
     }
 
     @Test
     public void rpc_clientPool() {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
+        //没有事件订阅，无状态会自动使用连接池模式
         HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307");
         for (int i = 0; i < 50; i++) {
             facade.computeInt(1, i);

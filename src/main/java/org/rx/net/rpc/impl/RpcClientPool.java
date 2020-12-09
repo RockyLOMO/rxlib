@@ -9,8 +9,8 @@ import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
+import org.rx.core.App;
 import org.rx.core.Disposable;
-import org.rx.core.NQuery;
 import org.rx.core.Reflects;
 import org.rx.net.rpc.RpcClientConfig;
 
@@ -25,7 +25,7 @@ public class RpcClientPool extends Disposable {
     class Factory extends BaseKeyedPooledObjectFactory<InetSocketAddress, StatefulRpcClient> {
         @Override
         public StatefulRpcClient create(InetSocketAddress inetSocketAddress) {
-            RpcClientConfig config = new RpcClientConfig();
+            RpcClientConfig config = App.deepClone(template);
             config.setServerEndpoint(inetSocketAddress);
             config.setConnectTimeoutMillis((int) pool.getMaxWaitMillis());
             StatefulRpcClient client = new StatefulRpcClient(config);
@@ -66,18 +66,20 @@ public class RpcClientPool extends Disposable {
         }
     }
 
+    private final RpcClientConfig template;
     private final GenericKeyedObjectPool<InetSocketAddress, StatefulRpcClient> pool;
 
     public RpcClientPool() {
-        this(CONFIG.getNetMinPoolSize(), CONFIG.getNetMaxPoolSize(), CONFIG.getNetTimeoutMillis());
+        this(CONFIG.getNetMinPoolSize(), CONFIG.getNetMaxPoolSize(), new RpcClientConfig());
     }
 
-    public RpcClientPool(int minSize, int maxSize, int timeoutMillis) {
+    public RpcClientPool(int minSize, int maxSize, RpcClientConfig template) {
+        this.template = template;
         GenericKeyedObjectPoolConfig<StatefulRpcClient> config = new GenericKeyedObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);
         config.setJmxEnabled(false);
-        config.setMaxWaitMillis(timeoutMillis);
+        config.setMaxWaitMillis(template.getConnectTimeoutMillis());
         config.setMinIdlePerKey(minSize);
         config.setMaxIdlePerKey(maxSize);
         config.setMaxTotal(maxSize);
@@ -110,7 +112,7 @@ public class RpcClientPool extends Disposable {
                 log.debug("Return RpcClient {}", client);
                 return null;
             }
-            if (NQuery.of("setAutoReconnect", "attachEvent").contains(m.getName())) {
+            if (client.isAutoReconnect() || "attachEvent".equals(m.getName())) {
                 client.attr(Stateful).set(true);
             }
             return p.fastInvoke(client);

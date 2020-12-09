@@ -1,13 +1,14 @@
 package org.rx.net.rpc;
 
 import io.netty.util.Attribute;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import io.netty.util.concurrent.FastThreadLocal;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
+import org.rx.bean.DateTime;
 import org.rx.bean.InterceptProxy;
+import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
 import org.rx.net.rpc.impl.RpcClientPool;
 import org.rx.net.rpc.impl.StatefulRpcClient;
@@ -17,12 +18,15 @@ import org.rx.net.rpc.protocol.MethodPack;
 import org.rx.core.*;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.packet.ErrorPacket;
+import org.rx.util.BeanMapper;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
@@ -34,10 +38,23 @@ import static org.rx.core.Contract.*;
 public final class Remoting {
     @RequiredArgsConstructor
     public static class ServerBean {
-        static class EventBean {
-            Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
+        @NoArgsConstructor
+        @AllArgsConstructor
+        static class EventComputeContext {
+            final DateTime createTime = DateTime.now();
             volatile EventArgs computedArgs;
             volatile RpcServerClient computingClient;
+        }
+
+        static class EventBean {
+            Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
+            Map<UUID, EventComputeContext> contextMap = new ConcurrentHashMap<>();
+
+            EventComputeContext getComputeContext(UUID id) {
+                EventComputeContext context = contextMap.get(id);
+                require(context);
+                return context;
+            }
         }
 
         @Getter
@@ -46,7 +63,7 @@ public final class Remoting {
     }
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
-    private static final Lazy<RpcClientPool> clientPool = new Lazy<>(RpcClientPool::new);
+    private static final Map<UUID, RpcClientPool> clientPools = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, String endpoint) {
         return create(contract, Sockets.parseEndpoint(endpoint));
@@ -61,8 +78,8 @@ public final class Remoting {
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiConsumer<T, StatefulRpcClient> onHandshake) {
         require(contract, facadeConfig);
 
-        ManualResetEvent wait = new ManualResetEvent();
-        $<MethodPack> resultPack = $();
+        Tuple<ManualResetEvent, MethodPack> resultPack = Tuple.of(new ManualResetEvent(), null);
+        FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
@@ -79,32 +96,39 @@ public final class Remoting {
             Serializable pack = null;
             Object[] args = p.arguments;
             switch (m.getName()) {
-                case "attachEvent": {
-                    if (args.length != 3) {
-                        return invokeSuper(m, p);
+                case "attachEvent":
+                    switch (args.length) {
+                        case 2:
+                            return invokeSuper(m, p);
+                        case 3:
+                            setReturnValue(resultPack, invokeSuper(m, p));
+                            String eventName = (String) args[0];
+                            pack = new EventPack(eventName, EventFlag.SUBSCRIBE);
+                            log.info("clientSide event {} -> SUBSCRIBE", eventName);
+                            break;
                     }
-                    String eventName = (String) args[0];
-                    pack = new EventPack(eventName, EventFlag.SUBSCRIBE);
-                    log.info("clientSide event {} -> SUBSCRIBE", eventName);
-                }
-                break;
-                case "detachEvent": {
-                    if (args.length != 2) {
-                        return invokeSuper(m, p);
+                    break;
+                case "detachEvent":
+                    if (args.length == 2) {
+                        setReturnValue(resultPack, invokeSuper(m, p));
+                        String eventName = (String) args[0];
+                        pack = new EventPack(eventName, EventFlag.UNSUBSCRIBE);
+                        log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
                     }
-                    String eventName = (String) args[0];
-                    pack = new EventPack(eventName, EventFlag.UNSUBSCRIBE);
-                    log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
-                }
-                break;
+                    break;
                 case "raiseEvent":
-                    if (args.length != 2) {
-                        return invokeSuper(m, p);
+                    if (args.length == 2) {
+                        if (BooleanUtils.isTrue(isCompute.get())) {
+                            return invokeSuper(m, p);
+                        }
+                        isCompute.remove();
+
+                        setReturnValue(resultPack, invokeSuper(m, p));
+                        EventPack eventPack = new EventPack((String) args[0], EventFlag.PUBLISH);
+                        eventPack.eventArgs = (EventArgs) args[1];
+                        pack = eventPack;
+                        log.info("clientSide event {} -> PUBLISH", eventPack.eventName);
                     }
-                    EventPack eventPack = new EventPack((String) args[0], EventFlag.PUBLISH);
-                    eventPack.eventArgs = (EventArgs) args[1];
-                    pack = eventPack;
-                    log.info("clientSide event {} -> PUBLISH", eventPack.eventName);
                     break;
                 case "eventFlags":
                     if (args.length == 0) {
@@ -118,34 +142,44 @@ public final class Remoting {
             }
             synchronized (sync) {
                 if (sync.v == null) {
-                    init(sync.v = clientPool.getValue().borrow(facadeConfig.getServerEndpoint()), wait, resultPack);
+                    UUID tid = App.hash(contract.getSimpleName(), facadeConfig.getServerEndpoint(), facadeConfig.getEventVersion());
+                    RpcClientPool pool = clientPools.computeIfAbsent(tid, k -> new RpcClientPool(CONFIG.getNetMinPoolSize(), Math.max(2, CONFIG.getNetMaxPoolSize() / 2), facadeConfig));
+                    init(sync.v = pool.borrow(facadeConfig.getServerEndpoint()), resultPack, p.getProxyObject(), isCompute);
                     if (onHandshake != null) {
                         sync.v.setAutoReconnect(true);
                         onHandshake.accept((T) p.getProxyObject(), sync.v);
                         //onHandshake returnObject的情况
                         if (sync.v == null) {
-                            init(sync.v = clientPool.getValue().borrow(facadeConfig.getServerEndpoint()), wait, resultPack);
+                            init(sync.v = pool.borrow(facadeConfig.getServerEndpoint()), resultPack, p.getProxyObject(), isCompute);
                         }
                     }
                 }
                 StatefulRpcClient client = sync.v;
 
                 StringBuilder msg = new StringBuilder();
-                boolean debug = tryAs(pack, MethodPack.class, x -> {
-                    msg.appendLine("Rpc client %s.%s", contract.getSimpleName(), x.methodName);
-                    msg.appendLine("Request:\t%s", toJsonString(x.parameters));
-                });
+                MethodPack methodPack = as(pack, MethodPack.class);
+                boolean debug = methodPack != null;
+                if (debug) {
+                    msg.appendLine("Rpc client %s.%s", contract.getSimpleName(), methodPack.methodName);
+                    msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
+                }
                 try {
                     client.send(pack);
-                    if (pack instanceof MethodPack) {
-                        wait.waitOne(client.getConfig().getConnectTimeoutMillis());
-                        wait.reset();
-                    }
                     if (debug) {
-                        msg.appendLine("Response:\t%s", resultPack.v != null ? resultPack.v.errorMessage != null ? resultPack.v.errorMessage : toJsonString(resultPack.v.returnValue) : "null");
+                        resultPack.left.waitOne(client.getConfig().getConnectTimeoutMillis());
+                        resultPack.left.reset();
                     }
-                    if (resultPack.v != null && resultPack.v.errorMessage != null) {
-                        throw new RemotingException(resultPack.v.errorMessage);
+                    if (resultPack.right == null) {
+                        if (debug) {
+                            msg.appendLine("Response:\tNULL");
+                        }
+                    } else {
+                        if (resultPack.right.errorMessage != null) {
+                            throw new RemotingException(resultPack.right.errorMessage);
+                        }
+                        if (debug) {
+                            msg.appendLine("Response:\t%s", toJsonString(resultPack.right.returnValue));
+                        }
                     }
                 } catch (Exception e) {
                     if (debug) {
@@ -164,14 +198,14 @@ public final class Remoting {
                     sync.v = null;
                 }
             }
-            return resultPack.v != null ? resultPack.v.returnValue : null;
+            return resultPack.right != null ? resultPack.right.returnValue : null;
         });
     }
 
-    private static void init(StatefulRpcClient client, ManualResetEvent wait, $<MethodPack> resultPack) {
+    private static void init(StatefulRpcClient client, Tuple<ManualResetEvent, MethodPack> resultPack, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
         client.onError = (s, e) -> {
             e.setCancel(true);
-            wait.set();
+            resultPack.left.set();
         };
         client.onReceive = (s, e) -> {
             if (tryAs(e.getValue(), EventPack.class, x -> {
@@ -179,8 +213,10 @@ public final class Remoting {
                     case BROADCAST:
                     case COMPUTE_ARGS:
                         try {
-                            client.raiseEvent(x.eventName, x.eventArgs);
-                            log.info("clientSide event {} -> {} ok", x.eventName, x.flag);
+                            isCompute.set(true);
+                            EventTarget<?> target = (EventTarget<?>) proxyObject;
+                            target.raiseEvent(x.eventName, x.eventArgs);
+                            log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                         } catch (Exception ex) {
                             log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
                         } finally {
@@ -194,9 +230,16 @@ public final class Remoting {
                 return;  //import
             }
 
-            resultPack.v = (MethodPack) e.getValue();
-            wait.set();
+            resultPack.right = (MethodPack) e.getValue();
+            resultPack.left.set();
         };
+    }
+
+    private static void setReturnValue(Tuple<ManualResetEvent, MethodPack> resultPack, Object value) {
+        if (resultPack.right == null) {
+            resultPack.right = new MethodPack(null, null);
+        }
+        resultPack.right.returnValue = value;
     }
 
     @SneakyThrows
@@ -231,50 +274,64 @@ public final class Remoting {
                             EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
-                                    if (eventBean.computedArgs == null) {
-                                        RpcServerClient latestRndClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventPriority(), (p1, p2) -> {
-                                            int i = ThreadLocalRandom.current().nextInt(0, p2.count());
-                                            return p2.skip(i).first();
-                                        }).orderByDescending(x -> x.getHandshakePacket().getEventPriority()).firstOrDefault();
-                                        if (latestRndClient == null) {
-                                            log.warn("Event {} subscribe client is empty", p.eventName);
-                                            return;
+                                    ServerBean.EventComputeContext computeContext = new ServerBean.EventComputeContext(p.eventArgs, e.getClient());
+                                    eventBean.contextMap.put(p.id, computeContext);
+//                                    if (eventBean.computedArgs == null) {
+                                    computeContext.computedArgs = args;
+                                        if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
+                                            computeContext.computingClient = null;
+                                        } else {
+                                            RpcServerClient computingClient = null;
+                                            if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
+                                                computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
+                                                    int i = ThreadLocalRandom.current().nextInt(0, p2.count());
+                                                    return p2.skip(i).first();
+                                                }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
+                                            } else {
+                                                List<RpcServerClient> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
+                                                if (!list.isEmpty()) {
+                                                    computingClient = list.get(ThreadLocalRandom.current().nextInt(0, list.size()));
+                                                }
+                                            }
+                                            if (computingClient == null) {
+                                                log.warn("serverSide event {} subscribe empty", p.eventName);
+                                            } else {
+                                                computeContext.computingClient = computingClient;
+                                                EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
+                                                pack.eventArgs = args;
+                                                try {
+                                                    s.send(computingClient, pack);
+                                                    log.info("serverSide event {} {} -> COMPUTE_ARGS", pack.eventName, computingClient.getId());
+                                                    eventBean.wait(s.getConfig().getConnectTimeoutMillis());
+                                                } catch (Exception ex) {
+                                                    log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
+                                                }
+                                            }
                                         }
-
-                                        EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
-                                        pack.eventArgs = args;
-                                        s.send(latestRndClient, pack);
-                                        log.info("serverSide event {} -> client {} COMPUTE_ARGS", pack.eventName, latestRndClient.getId());
-                                        eventBean.computingClient = latestRndClient;
-                                        try {
-                                            eventBean.wait(s.getConfig().getConnectTimeoutMillis());
-                                        } catch (Exception ex) {
-                                            log.error("serverSide event {} -> client {}", pack.eventName, latestRndClient.getId(), ex);
-                                            eventBean.computedArgs = args;
-                                        }
-                                    }
+//                                    }
                                     broadcast(s, p, eventBean);
                                 }
                             }, false); //必须false
-                            log.info("serverSide event {} -> client {} SUBSCRIBE", p.eventName, e.getClient().getId());
+                            log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getId());
                             eventBean.subscribe.add(e.getClient());
                             break;
                         case UNSUBSCRIBE:
-                            log.info("serverSide event {} -> client {} UNSUBSCRIBE", p.eventName, e.getClient().getId());
+                            log.info("serverSide event {} {} -> UNSUBSCRIBE", p.eventName, e.getClient().getId());
                             eventBean.subscribe.remove(e.getClient());
                             break;
                         case PUBLISH:
                             synchronized (eventBean) {
-                                eventBean.computedArgs = p.eventArgs;
-                                eventBean.computingClient = e.getClient();
-                                log.info("serverSide event {} -> client {} PUBLISH", p.eventName, e.getClient().getId());
+                                eventBean.contextMap.put(p.id, new ServerBean.EventComputeContext(p.eventArgs, e.getClient()));
+                                log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getId());
                                 broadcast(s, p, eventBean);
                             }
                             break;
                         case COMPUTE_ARGS:
                             synchronized (eventBean) {
-                                eventBean.computedArgs = p.eventArgs;
-                                log.info("serverSide event {} -> client {} COMPUTE_ARGS", p.eventName, eventBean.computingClient.getId());
+                                ServerBean.EventComputeContext computeContext = eventBean.getComputeContext(p.id);
+                                //赋值原引用对象
+                                BeanMapper.getInstance().map(p.eventArgs, computeContext.computedArgs);
+                                log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, computeContext.computingClient.getId(), toJsonString(computeContext.computedArgs));
                                 eventBean.notifyAll();
                             }
                             break;
@@ -306,24 +363,27 @@ public final class Remoting {
     }
 
     private static void broadcast(RpcServer s, EventPack p, ServerBean.EventBean eventBean) {
-        synchronized (eventBean) {
-            try {
-                EventPack pack = new EventPack(p.eventName, EventFlag.BROADCAST);
-                pack.eventArgs = eventBean.computedArgs;
-                for (RpcServerClient client : eventBean.subscribe) {
-                    if (!s.isConnected(client)) {
-                        eventBean.subscribe.remove(client);
-                        continue;
-                    }
-                    if (client == eventBean.computingClient) {
-                        continue;
-                    }
-                    s.send(client, pack);
-                    log.info("serverSide event {} -> client {} BROADCAST", pack.eventName, client.getId());
-                }
-            } finally {
-                eventBean.computingClient = null;
+        ServerBean.EventComputeContext computeContext = eventBean.contextMap.remove(p.id);
+        if (computeContext == null) {
+            log.error("serverSide event {} discard broadcast {}", p.eventName, p.id);
+            return;
+        }
+        List<Integer> allow = s.getConfig().getEventBroadcastVersions();
+        EventPack pack = new EventPack(p.eventName, EventFlag.BROADCAST);
+        pack.eventArgs = computeContext.computedArgs;
+        tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
+        for (RpcServerClient client : eventBean.subscribe) {
+            if (!s.isConnected(client)) {
+                eventBean.subscribe.remove(client);
+                continue;
             }
+            if (client == computeContext.computingClient
+                    || (!allow.isEmpty() && !allow.contains(client.getHandshakePacket().getEventVersion()))) {
+                continue;
+            }
+
+            s.send(client, pack);
+            log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.getId());
         }
     }
 }

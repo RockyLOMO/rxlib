@@ -41,7 +41,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         public void channelActive(ChannelHandlerContext ctx) {
             log.debug("clientActive {}", ctx.channel().remoteAddress());
 
-            ctx.writeAndFlush(new HandshakePacket(Thread.NORM_PRIORITY)).addListener(p -> {
+            ctx.writeAndFlush(new HandshakePacket(config.getEventVersion())).addListener(p -> {
                 if (p.isSuccess()) {
                     //握手需要异步
                     raiseEventAsync(onConnected, EventArgs.EMPTY);
@@ -62,14 +62,14 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
-            raiseEvent(onReceive, new NEventArgs<>(pack));
+            raiseEventAsync(onReceive, new NEventArgs<>(pack));
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.info("clientInactive {}", ctx.channel().remoteAddress());
 
-            raiseEventAsync(onDisconnected, EventArgs.EMPTY);
+            raiseEvent(onDisconnected, EventArgs.EMPTY);
             reconnect();
         }
 
@@ -131,10 +131,13 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Override
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
-        Sockets.closeOnFlushed(channel, f -> {
-//            sleep(2000);  暂停会有ClosedChannelException
-            Sockets.closeBootstrap(bootstrap);
-        });
+//        Sockets.closeOnFlushed(channel, f -> {
+////            sleep(2000);  暂停会有ClosedChannelException
+//            Sockets.closeBootstrap(bootstrap);
+//        });
+
+        Sockets.closeOnFlushed(channel);
+        Sockets.closeBootstrap(bootstrap);
     }
 
     public void connect() {

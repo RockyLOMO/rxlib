@@ -10,6 +10,8 @@ import static org.rx.core.Contract.CONFIG;
 
 @Data
 public class RpcClientConfig implements Serializable {
+    public static final int DEFAULT_VERSION = 0;
+
     private static final long serialVersionUID = -4952694662640163676L;
     private boolean tryEpoll = true;
     private InetSocketAddress serverEndpoint;
@@ -17,4 +19,5 @@ public class RpcClientConfig implements Serializable {
     private int connectTimeoutMillis = CONFIG.getNetTimeoutMillis();
     private boolean enableSsl;
     private boolean enableCompress;
+    private int eventVersion;
 }

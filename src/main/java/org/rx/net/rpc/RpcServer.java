@@ -68,6 +68,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
             if (!isConnected(client) || tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
+                log.debug("Handshake: {}", toJsonString(client.getHandshakePacket()));
                 return;
             }
 
@@ -173,7 +174,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public String dump() {
         StringBuilder sb = new StringBuilder();
         int i = 1;
-        for (RpcServerClient client : NQuery.of(clients).orderByDescending(p -> p.getHandshakePacket().getEventPriority())) {
+        for (RpcServerClient client : NQuery.of(clients).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
             sb.append("\t%s:%s", client.getRemoteAddress(), client.getId());
             if (i++ % 3 == 0) {
                 sb.appendLine();
