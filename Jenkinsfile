@@ -2,7 +2,7 @@ pipeline {
     agent {
         kubernetes {
         //cloud 'kubernetes'
-        label 'maven-jdk-8'
+        label 'maven'
         yaml """
 apiVersion: v1
 kind: Pod
