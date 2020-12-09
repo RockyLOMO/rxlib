@@ -27,7 +27,7 @@ spec:
         stage ('build') {
             steps {
                 container ('maven') {
-                    sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true install'
+                    sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install'
                 }
             }
         }

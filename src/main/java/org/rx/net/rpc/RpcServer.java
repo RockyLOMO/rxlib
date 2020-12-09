@@ -205,4 +205,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         }
     }
+
+    public void closeClient(RpcServerClient client) {
+        Sockets.closeOnFlushed(client.channel);
+    }
 }
