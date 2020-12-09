@@ -6,7 +6,6 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
-import org.rx.bean.DateTime;
 import org.rx.bean.InterceptProxy;
 import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
@@ -40,18 +39,18 @@ public final class Remoting {
     public static class ServerBean {
         @NoArgsConstructor
         @AllArgsConstructor
-        static class EventComputeContext {
-            final DateTime createTime = DateTime.now();
+        static class EventContext {
             volatile EventArgs computedArgs;
             volatile RpcServerClient computingClient;
         }
 
         static class EventBean {
             Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
-            Map<UUID, EventComputeContext> contextMap = new ConcurrentHashMap<>();
+//            ManualResetEvent wait = new ManualResetEvent();
+            Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
 
-            EventComputeContext getComputeContext(UUID id) {
-                EventComputeContext context = contextMap.get(id);
+            EventContext context(UUID id) {
+                EventContext context = contextMap.get(id);
                 require(context);
                 return context;
             }
@@ -274,42 +273,45 @@ public final class Remoting {
                             EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
-                                    ServerBean.EventComputeContext computeContext = new ServerBean.EventComputeContext(p.eventArgs, e.getClient());
-                                    eventBean.contextMap.put(p.id, computeContext);
-//                                    if (eventBean.computedArgs == null) {
-                                    computeContext.computedArgs = args;
-                                        if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
-                                            computeContext.computingClient = null;
+                                    ServerBean.EventContext context = new ServerBean.EventContext();
+                                    context.computedArgs = args;
+                                    if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
+                                        context.computingClient = null;
+                                    } else {
+                                        RpcServerClient computingClient = null;
+                                        if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
+                                            computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
+                                                int i = ThreadLocalRandom.current().nextInt(0, p2.count());
+                                                return p2.skip(i).first();
+                                            }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
                                         } else {
-                                            RpcServerClient computingClient = null;
-                                            if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
-                                                computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
-                                                    int i = ThreadLocalRandom.current().nextInt(0, p2.count());
-                                                    return p2.skip(i).first();
-                                                }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
-                                            } else {
-                                                List<RpcServerClient> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
-                                                if (!list.isEmpty()) {
-                                                    computingClient = list.get(ThreadLocalRandom.current().nextInt(0, list.size()));
-                                                }
-                                            }
-                                            if (computingClient == null) {
-                                                log.warn("serverSide event {} subscribe empty", p.eventName);
-                                            } else {
-                                                computeContext.computingClient = computingClient;
-                                                EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
-                                                pack.eventArgs = args;
-                                                try {
-                                                    s.send(computingClient, pack);
-                                                    log.info("serverSide event {} {} -> COMPUTE_ARGS", pack.eventName, computingClient.getId());
-                                                    eventBean.wait(s.getConfig().getConnectTimeoutMillis());
-                                                } catch (Exception ex) {
-                                                    log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
-                                                }
+                                            List<RpcServerClient> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
+                                            if (!list.isEmpty()) {
+                                                computingClient = list.get(ThreadLocalRandom.current().nextInt(0, list.size()));
                                             }
                                         }
-//                                    }
-                                    broadcast(s, p, eventBean);
+                                        if (computingClient == null) {
+                                            log.warn("serverSide event {} subscribe empty", p.eventName);
+                                        } else {
+                                            context.computingClient = computingClient;
+                                            EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
+                                            pack.computeId = UUID.randomUUID();
+                                            pack.eventArgs = args;
+                                            eventBean.contextMap.put(pack.computeId, context);
+                                            try {
+                                                s.send(computingClient, pack);
+                                                log.info("serverSide event {} {} -> COMPUTE_ARGS", pack.eventName, computingClient.getId());
+                                                eventBean.wait(s.getConfig().getConnectTimeoutMillis());
+//                                                eventBean.wait.waitOne(s.getConfig().getConnectTimeoutMillis());
+//                                                eventBean.wait.reset();
+                                            } catch (Exception ex) {
+                                                log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
+                                            } finally {
+                                                eventBean.contextMap.remove(pack.computeId);
+                                            }
+                                        }
+                                    }
+                                    broadcast(s, p, eventBean, context);
                                 }
                             }, false); //必须false
                             log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getId());
@@ -321,18 +323,18 @@ public final class Remoting {
                             break;
                         case PUBLISH:
                             synchronized (eventBean) {
-                                eventBean.contextMap.put(p.id, new ServerBean.EventComputeContext(p.eventArgs, e.getClient()));
                                 log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getId());
-                                broadcast(s, p, eventBean);
+                                broadcast(s, p, eventBean, new ServerBean.EventContext(p.eventArgs, e.getClient()));
                             }
                             break;
                         case COMPUTE_ARGS:
                             synchronized (eventBean) {
-                                ServerBean.EventComputeContext computeContext = eventBean.getComputeContext(p.id);
+                                ServerBean.EventContext context = eventBean.context(p.computeId);
                                 //赋值原引用对象
-                                BeanMapper.getInstance().map(p.eventArgs, computeContext.computedArgs);
-                                log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, computeContext.computingClient.getId(), toJsonString(computeContext.computedArgs));
+                                BeanMapper.getInstance().map(p.eventArgs, context.computedArgs);
+                                log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, context.computingClient.getId(), toJsonString(context.computedArgs));
                                 eventBean.notifyAll();
+//                            eventBean.wait.set();
                             }
                             break;
                     }
@@ -362,22 +364,17 @@ public final class Remoting {
         });
     }
 
-    private static void broadcast(RpcServer s, EventPack p, ServerBean.EventBean eventBean) {
-        ServerBean.EventComputeContext computeContext = eventBean.contextMap.remove(p.id);
-        if (computeContext == null) {
-            log.error("serverSide event {} discard broadcast {}", p.eventName, p.id);
-            return;
-        }
+    private static void broadcast(RpcServer s, EventPack p, ServerBean.EventBean eventBean, ServerBean.EventContext context) {
         List<Integer> allow = s.getConfig().getEventBroadcastVersions();
         EventPack pack = new EventPack(p.eventName, EventFlag.BROADCAST);
-        pack.eventArgs = computeContext.computedArgs;
+        pack.eventArgs = context.computedArgs;
         tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
         for (RpcServerClient client : eventBean.subscribe) {
             if (!s.isConnected(client)) {
                 eventBean.subscribe.remove(client);
                 continue;
             }
-            if (client == computeContext.computingClient
+            if (client == context.computingClient
                     || (!allow.isEmpty() && !allow.contains(client.getHandshakePacket().getEventVersion()))) {
                 continue;
             }

@@ -79,12 +79,12 @@ public class SocksTester {
         args.setFlag(8);
         server.raiseEvent(groupAEvent, args);
         assert args.getFlag() == 9;
-//
-//        facadeGroupA.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-//        sleep(1000);
-//        args.setFlag(16);
-//        server.raiseEvent(groupAEvent, args);
-//        assert args.getFlag() == 17;
+
+        facadeGroupA.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
+        sleep(1000);
+        args.setFlag(16);
+        server.raiseEvent(groupAEvent, args);
+        assert args.getFlag() == 17;
     }
 //
 //    @SneakyThrows
@@ -165,7 +165,7 @@ public class SocksTester {
 
 //        //客户端触发事件
         facade1.create(PersonBean.def);
-        sleep(10000);
+        sleep(8000);
     }
 
     private void attachEvent(UserManagerImpl facade, String id) {
