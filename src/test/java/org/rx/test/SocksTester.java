@@ -89,7 +89,7 @@ public class SocksTester {
         UserManagerImpl server = new UserManagerImpl();
         restartServer(server, 0);
         String ep = "127.0.0.1:3307";
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), (p, c) -> {
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), null, c -> {
             c.onReconnecting = (s, e) -> {
                 InetSocketAddress next;
                 if (e.getValue().equals(Sockets.parseEndpoint(ep))) {
@@ -134,8 +134,8 @@ public class SocksTester {
 
         //客户端 facade
         RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
-        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (po, client) -> {
-            System.out.println("onHandshake: " + po.computeInt(1, 2));
+        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, p -> {
+            System.out.println("onHandshake: " + p.computeInt(1, 2));
         });
         assert facade1.computeInt(1, 1) == 2; //服务端计算并返回
         try {

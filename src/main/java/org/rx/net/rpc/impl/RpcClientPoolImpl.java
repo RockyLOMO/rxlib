@@ -60,11 +60,9 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
                 StatefulRpcClient client = p.getObject();
                 client.setAutoReconnect(false);
                 client.onError = null;
-                client.onSend = null;
-                client.onReceive = null;
-                client.onConnected = null;
-                client.onDisconnected = null;
-                client.onReconnecting = null;
+                client.onReceive = client.onSend = null;
+                client.onDisconnected = client.onConnected = null;
+                client.onReconnected = client.onReconnecting = null;
             }
         }, config);
     }

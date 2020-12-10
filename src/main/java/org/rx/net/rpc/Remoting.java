@@ -15,6 +15,7 @@ import org.rx.net.rpc.protocol.MethodPack;
 import org.rx.core.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.util.BeanMapper;
+import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -24,7 +25,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.BiConsumer;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Contract.*;
@@ -61,17 +61,22 @@ public final class Remoting {
     private static final Map<UUID, RpcClientPool> clientPools = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
-        return create(contract, facadeConfig, null);
+        return create(contract, facadeConfig, null, null);
     }
 
-    public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiConsumer<T, StatefulRpcClient> onHandshake) {
+    public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiAction<T> onInit) {
+        return create(contract, facadeConfig, onInit, null);
+    }
+
+    @SneakyThrows
+    public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiAction<T> onInit, BiAction<StatefulRpcClient> onInitClient) {
         require(contract, facadeConfig);
 
         Tuple<ManualResetEvent, MethodPack> resultPack = Tuple.of(new ManualResetEvent(), null);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         UUID pid = facadeConfig.hashValue();
-        return proxy(contract, (m, p) -> {
+        T facade = proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
             }
@@ -134,10 +139,17 @@ public final class Remoting {
                 RpcClientPool pool = clientPools.computeIfAbsent(pid, k -> RpcClientPool.createPool(facadeConfig));
                 if (sync.v == null) {
                     init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
-                    if (onHandshake != null) {
+                    if (onInit != null || onInitClient != null) {
+                        sync.v.onReconnected = (s, e) -> {
+                            if (onInit != null) {
+                                onInit.toConsumer().accept((T) p.getProxyObject());
+                            }
+                            if (onInitClient != null) {
+                                onInitClient.toConsumer().accept((StatefulRpcClient) s);
+                            }
+                        };
+                        sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
                         //onHandshake returnObject的情况
-                        onHandshake.accept((T) p.getProxyObject(), sync.v);
-                        sync.v.onReconnected = (s, e) -> onHandshake.accept((T) p.getProxyObject(), (StatefulRpcClient) s);
                         if (sync.v == null) {
                             init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
                         }
@@ -184,6 +196,10 @@ public final class Remoting {
             }
             return resultPack.right != null ? resultPack.right.returnValue : null;
         });
+        if (onInit != null) {
+            onInit.invoke(facade);
+        }
+        return facade;
     }
 
     private static void init(StatefulRpcClient client, Tuple<ManualResetEvent, MethodPack> resultPack, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
