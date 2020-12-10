@@ -30,6 +30,7 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.Contract.*;
@@ -239,11 +240,16 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     public synchronized void send(Serializable pack) {
         require(pack);
         if (!isConnected()) {
-//            while (reconnectFuture){
-//                reconnectFuture.
-//            }
-//            wait connect//
-            throw new InvalidException("Client has disconnected");
+            if (reconnectFuture != null) {
+                try {
+                    FluentWait.newInstance(8000).until(s -> isConnected());
+                } catch (TimeoutException e) {
+                    throw new InvalidException("Client has disconnected", e);
+                }
+            }
+            if (!isConnected()) {
+                throw new InvalidException("Client has disconnected");
+            }
         }
 
         NEventArgs<Serializable> args = new NEventArgs<>(pack);

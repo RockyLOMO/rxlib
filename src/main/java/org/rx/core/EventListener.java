@@ -56,6 +56,7 @@ public class EventListener {
 
         BiConsumer a = getMap(target).get(method);
         if (a == null) {
+            log.warn("Raise {}.{} fail, event not defined", target, method);
             return;
         }
         a.accept(target, args);
