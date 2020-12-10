@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
+import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.PingClient;
 import org.rx.net.SftpClient;
@@ -21,6 +22,7 @@ import org.rx.test.bean.*;
 
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,35 +81,33 @@ public class SocksTester {
             assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-//        sleep(1000);
-//        args.setFlag(8);
-//        server.raiseEvent(groupEvent, args);
-//        assert args.getFlag() == 9;
     }
-//
-//    @SneakyThrows
-//    private void epGroupReconnect() {
-//        UserManagerImpl server = new UserManagerImpl();
-//        restartServer(server, 3307);
-//        String ep = "127.0.0.1:3307";
-//        String groupA = "a", groupB = "b";
-//
-//        UserManager userManager = Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, (p) -> {
-//            InetSocketAddress r;
-//            if (p.equals(Sockets.parseEndpoint(ep))) {
-//                r = Sockets.parseEndpoint("127.0.0.1:3308");
-//            } else {
-//                r = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
-//            }
-//            log.debug("reconnect {}", r);
-//            return r;
-//        }, true);
-//        assert userManager.computeInt(1, 1) == 2;
-//        sleep(1000);
-//        tcpServer.close();  //关闭3307
-//        Tasks.scheduleOnce(() -> tcpServer2 = Remoting.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
-//        System.in.read();
-//    }
+
+    @SneakyThrows
+    @Test
+    public void rpc_Reconnect() {
+        UserManagerImpl server = new UserManagerImpl();
+        restartServer(server, 0);
+        String ep = "127.0.0.1:3307";
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), (p, c) -> {
+            c.onReconnecting = (s, e) -> {
+                InetSocketAddress next;
+                if (e.getValue().equals(Sockets.parseEndpoint(ep))) {
+                    next = Sockets.parseEndpoint("127.0.0.1:3308");
+                } else {
+                    next = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+                }
+                log.debug("reconnect {}", next);
+                e.setValue(next);
+            };
+            log.debug("init ok");
+        });
+        assert userManager.computeInt(1, 1) == 2;
+        sleep(1000);
+        serverBeans[0].getServer().close();  //关闭3307
+        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
+        System.in.read();
+    }
 
     private void restartServer(UserManagerImpl server, int i) {
         Remoting.ServerBean serverBean = serverBeans[i];
@@ -119,7 +119,7 @@ public class SocksTester {
         serverConfig.setListenPort(3307);
         serverBeans[i] = Remoting.listen(server, serverConfig);
         System.out.println("restartServer on port " + serverConfig.getListenPort());
-        sleep(6000);
+        sleep(4000);
     }
 
     @Test

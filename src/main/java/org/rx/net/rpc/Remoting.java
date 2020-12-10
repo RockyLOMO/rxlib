@@ -137,6 +137,7 @@ public final class Remoting {
                     if (onHandshake != null) {
                         //onHandshake returnObject的情况
                         onHandshake.accept((T) p.getProxyObject(), sync.v);
+                        sync.v.onReconnected = (s, e) -> onHandshake.accept((T) p.getProxyObject(), (StatefulRpcClient) s);
                         if (sync.v == null) {
                             init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
                         }
