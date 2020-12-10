@@ -76,7 +76,8 @@ public final class Remoting {
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         UUID pid = facadeConfig.hashValue();
-        T facade = proxy(contract, (m, p) -> {
+        //onInit由调用方触发可能spring还没起来的情况
+        return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
             }
@@ -196,10 +197,6 @@ public final class Remoting {
             }
             return resultPack.right != null ? resultPack.right.returnValue : null;
         });
-        if (onInit != null) {
-            onInit.invoke(facade);
-        }
-        return facade;
     }
 
     private static void init(StatefulRpcClient client, Tuple<ManualResetEvent, MethodPack> resultPack, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
