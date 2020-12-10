@@ -156,7 +156,7 @@ public class App extends SystemUtils {
     }
 
     public static UUID hash(Object... args) {
-        return hash(Strings.join(Strings.EMPTY, args));
+        return hash(Strings.joinWith(Strings.EMPTY, args));
     }
 
     public static UUID hash(String key) {

@@ -94,7 +94,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
-    public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting;
+    public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
     public volatile BiConsumer<RpcClient, NEventArgs<Throwable>> onError;
     @Getter
@@ -122,7 +122,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         require(config);
 
         this.config = config;
-        autoReconnect = config.isStateful();
+        autoReconnect = config.isAutoReconnect();
     }
 
     protected StatefulRpcClient() {
@@ -218,8 +218,9 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 }
                 log.info("reconnect {} ok", ep);
                 channel = f.channel();
-                connectedTime = DateTime.now();
                 config.setServerEndpoint(ep);
+                connectedTime = DateTime.now();
+                raiseEvent(onReconnected, args);
                 reconnectChannelFuture = null;
             });
         }, () -> {
@@ -238,6 +239,10 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     public synchronized void send(Serializable pack) {
         require(pack);
         if (!isConnected()) {
+//            while (reconnectFuture){
+//                reconnectFuture.
+//            }
+//            wait connect//
             throw new InvalidException("Client has disconnected");
         }
 

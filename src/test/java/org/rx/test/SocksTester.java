@@ -14,7 +14,6 @@ import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -40,16 +39,16 @@ public class SocksTester {
         restartServer(server, 0);
 
         String ep = "127.0.0.1:3307";
-        List<UserManager> facadeGroupA = new ArrayList<>();
-        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), true));
-        facadeGroupA.add(Remoting.create(UserManager.class, Sockets.parseEndpoint(ep), true));
+        List<UserManager> facadeGroup = new ArrayList<>();
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0)));
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0)));
 
-        for (UserManager facade : facadeGroupA) {
+        for (UserManager facade : facadeGroup) {
             assert facade.computeInt(1, 1) == 2;
         }
         //重启server，客户端自动重连
 //        restartServer(server, 0);
-        for (UserManager facade : facadeGroupA) {
+        for (UserManager facade : facadeGroup) {
             try {
                 facade.triggerError();
             } catch (RemotingException e) {
@@ -57,34 +56,33 @@ public class SocksTester {
             assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
         }
         //自定义事件（广播）
-        String groupAEvent = "onAuth-A";
-        for (int i = 0; i < facadeGroupA.size(); i++) {
+        String groupEvent = "onAuth";
+        for (int i = 0; i < facadeGroup.size(); i++) {
             int x = i;
-            facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
-                System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
+            facadeGroup.get(i).<UserEventArgs>attachEvent(groupEvent, (s, e) -> {
+                System.out.println(String.format("!!facade%s - args.flag=%s!!", x, e.getFlag()));
                 e.setFlag(e.getFlag() + 1);
             });
         }
 
-        UserEventArgs args = new UserEventArgs(PersonBean.def);
-        facadeGroupA.get(0).raiseEvent(groupAEvent, args);
-        assert args.getFlag() == 1;
-        facadeGroupA.get(1).raiseEvent(groupAEvent, args);
-        assert args.getFlag() == 2;
+        for (int i = 0; i < 10; i++) {
+            UserEventArgs args = new UserEventArgs(PersonBean.def);
+            facadeGroup.get(0).raiseEvent(groupEvent, args);
+            assert args.getFlag() == 1;
 
-        server.raiseEvent(groupAEvent, args);
-        assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+            args = new UserEventArgs(PersonBean.def);
+            args.setFlag(1);
+            facadeGroup.get(1).raiseEvent(groupEvent, args);
+            assert args.getFlag() == 2;
 
-        sleep(1000);
-        args.setFlag(8);
-        server.raiseEvent(groupAEvent, args);
-        assert args.getFlag() == 9;
-
-        facadeGroupA.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-        sleep(1000);
-        args.setFlag(16);
-        server.raiseEvent(groupAEvent, args);
-        assert args.getFlag() == 17;
+            server.raiseEvent(groupEvent, args);
+            assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+        }
+//        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
+//        sleep(1000);
+//        args.setFlag(8);
+//        server.raiseEvent(groupEvent, args);
+//        assert args.getFlag() == 9;
     }
 //
 //    @SneakyThrows
@@ -115,12 +113,13 @@ public class SocksTester {
         Remoting.ServerBean serverBean = serverBeans[i];
         if (serverBean != null) {
             serverBean.getServer().close();
-            sleep(8000);
+            sleep(6000);
         }
         RpcServerConfig serverConfig = new RpcServerConfig();
         serverConfig.setListenPort(3307);
         serverBeans[i] = Remoting.listen(server, serverConfig);
         System.out.println("restartServer on port " + serverConfig.getListenPort());
+        sleep(6000);
     }
 
     @Test
@@ -134,10 +133,7 @@ public class SocksTester {
         Remoting.listen(server, serverConfig);
 
         //客户端 facade
-        RpcClientConfig config = new RpcClientConfig();
-        config.setServerEndpoint(Sockets.parseEndpoint("127.0.0.1:3307"));
-        config.setEventVersion(1);
-        config.setStateful(true);
+        RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
         UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (po, client) -> {
             System.out.println("onHandshake: " + po.computeInt(1, 2));
         });
@@ -153,20 +149,16 @@ public class SocksTester {
         UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
         //注册事件（广播）
         attachEvent(facade1, "0x00");
-//        sleep(1000);
         //服务端触发事件，只有facade1注册会被广播到
         server.create(PersonBean.def);
-//        sleep(1000);
 
         attachEvent(facade2, "0x01");
-//        sleep(1000);
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
         server.create(PersonBean.def);
-//        sleep(1000);
 
-//        //客户端触发事件
+        //客户端触发事件
         facade1.create(PersonBean.def);
-        sleep(8000);
+        sleep(6000);
     }
 
     private void attachEvent(UserManagerImpl facade, String id) {
@@ -181,8 +173,8 @@ public class SocksTester {
     public void rpc_clientPool() {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
-        //没有事件订阅，无状态会自动使用连接池模式
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, "127.0.0.1:3307", false);
+        //没有事件订阅，无状态会使用连接池模式
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode("127.0.0.1:3307", 2));
         for (int i = 0; i < 50; i++) {
             facade.computeInt(1, i);
         }
