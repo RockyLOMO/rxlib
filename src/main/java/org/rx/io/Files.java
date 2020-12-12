@@ -15,6 +15,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Date;
 import java.util.List;
 
 import static org.rx.core.Contract.require;
@@ -113,9 +114,24 @@ public class Files extends FilenameUtils {
         return NQuery.of(FileUtils.listFiles(f, ff, df)).select(File::toPath);
     }
 
+    public static void deleteBefore(String dirPath, Date time) {
+        for (File file : FileUtils.listFiles(new File(dirPath), FileFilterUtils.ageFileFilter(time), FileFilterUtils.directoryFileFilter())) {
+            delete(file.getPath());
+        }
+    }
+
+    public static boolean delete(String path) {
+        return delete(path, false);
+    }
+
     @SneakyThrows
-    public static boolean delete(Path path) {
-        return FileUtils.deleteQuietly(path.toFile());
+    public static boolean delete(String path, boolean force) {
+        File p = new File(path);
+        if (force) {
+            FileUtils.forceDelete(p);
+            return true;
+        }
+        return FileUtils.deleteQuietly(p);
 //        return java.nio.file.Files.deleteIfExists(dirOrFile);  //java.nio.file.directorynotemptyexception
     }
 }
