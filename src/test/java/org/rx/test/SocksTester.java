@@ -220,15 +220,20 @@ public class SocksTester {
 
     @Test
     public void sftp() {
-        String aep = "jks:123456@mobile.f-li.cn:2222";
-        SftpClient client = new SftpClient(new AuthenticEndpoint(aep));
-        String p = "E:\\Photo\\养生\\f0.jpg";
+        SftpClient client = new SftpClient(new AuthenticEndpoint("rocky:@k8s.f-li.cn:22"));
+        for (SftpClient.FileEntry directory : client.listDirectories("/home/rocky/df/", true)) {
+            System.out.println(directory.getPath());
+        }
+        for (SftpClient.FileEntry directory : client.listFiles("/home/rocky/df/", true)) {
+            System.out.println(directory.getPath());
+        }
+//        String p = "E:\\Photo\\养生\\f0.jpg";
 //        client.uploadFile(p,"/test/");
 //        client.downloadFile("/test/f0.jpg","F:\\test\\1.jpg");
 //        client.delete("/test/");
-        for (SftpClient.FileEntry lsEntry : client.listFiles("/", true)) {
-            System.out.println(toJsonString(lsEntry));
-        }
+//        for (SftpClient.FileEntry lsEntry : client.listFiles("/", true)) {
+//            System.out.println(toJsonString(lsEntry));
+//        }
     }
 
     @Test

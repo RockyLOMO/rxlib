@@ -114,8 +114,8 @@ public class Files extends FilenameUtils {
         return NQuery.of(FileUtils.listFiles(f, ff, df)).select(File::toPath);
     }
 
-    public static void deleteBefore(String dirPath, Date time) {
-        for (File file : FileUtils.listFiles(new File(dirPath), FileFilterUtils.ageFileFilter(time), FileFilterUtils.directoryFileFilter())) {
+    public static void deleteBefore(String directoryPath, Date time) {
+        for (File file : FileUtils.listFiles(new File(directoryPath), FileFilterUtils.ageFileFilter(time), FileFilterUtils.directoryFileFilter())) {
             delete(file.getPath());
         }
     }

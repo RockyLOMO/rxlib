@@ -5,17 +5,14 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Arrays;
 import org.rx.core.Disposable;
-import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
 
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-import java.util.Vector;
+import java.util.*;
 
 import static org.rx.core.Contract.CONFIG;
 import static org.rx.core.Contract.require;
@@ -67,6 +64,8 @@ public class SftpClient extends Disposable {
         private final String filename;
         private final String longname;
     }
+
+    private static final List<String> skipDirectories = Arrays.toList(".", "..");
 
     private final JSch jsch = new JSch();
     private final Session session;
@@ -130,24 +129,47 @@ public class SftpClient extends Disposable {
         channel.get(remotePath, stream.getWriter());
     }
 
-    public List<FileEntry> listFiles(String remotePath, boolean recursive) {
+    public List<FileEntry> listDirectories(String remotePath, boolean recursive) {
         List<FileEntry> root = new ArrayList<>();
-        listFiles(root, recursive, Strings.EMPTY, remotePath);
+        listDirectories(root, recursive, remotePath);
         return root;
     }
 
     @SneakyThrows
-    private List<ChannelSftp.LsEntry> listFiles(List<FileEntry> root, boolean recursive, String parentDirectory, String directory) {
-        String parent = Files.concatPath(parentDirectory, directory);
+    private List<ChannelSftp.LsEntry> listDirectories(List<FileEntry> root, boolean recursive, String directory) {
         List<ChannelSftp.LsEntry> list = channel.ls(directory);
         for (ChannelSftp.LsEntry entry : list) {
+            if (skipDirectories.contains(entry.getFilename()) || !entry.getAttrs().isDir()) {
+                continue;
+            }
+            root.add(new FileEntry(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
+            if (recursive) {
+                listDirectories(root, recursive, Files.concatPath(directory, entry.getFilename()));
+            }
+        }
+        return list;
+    }
+
+    public List<FileEntry> listFiles(String remotePath, boolean recursive) {
+        List<FileEntry> root = new ArrayList<>();
+        listFiles(root, recursive, remotePath);
+        return root;
+    }
+
+    @SneakyThrows
+    private List<ChannelSftp.LsEntry> listFiles(List<FileEntry> root, boolean recursive, String directory) {
+        List<ChannelSftp.LsEntry> list = channel.ls(directory);
+        for (ChannelSftp.LsEntry entry : list) {
+            if (skipDirectories.contains(entry.getFilename())) {
+                continue;
+            }
             if (entry.getAttrs().isDir()) {
                 if (recursive) {
-                    listFiles(root, recursive, parent, entry.getFilename());
+                    listFiles(root, recursive, Files.concatPath(directory, entry.getFilename()));
                 }
                 continue;
             }
-            root.add(new FileEntry(Files.concatPath(parent, entry.getFilename()), entry.getFilename(), entry.getLongname()));
+            root.add(new FileEntry(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
         }
         return list;
     }
