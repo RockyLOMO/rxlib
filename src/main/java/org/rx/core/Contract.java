@@ -194,11 +194,13 @@ public final class Contract {
         Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml(new SafeConstructor());
         for (String yf : yamlFile) {
-            File file = new File(yf);
-            for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getClassLoader().getResourceAsStream(yf))) {
-                Map<String, Object> one = (Map<String, Object>) data;
-                fillDeep(one, result);
-            }
+            quietly(() -> {
+                File file = new File(yf);
+                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getClassLoader().getResourceAsStream(yf))) {
+                    Map<String, Object> one = (Map<String, Object>) data;
+                    fillDeep(one, result);
+                }
+            });
         }
         return result;
     }

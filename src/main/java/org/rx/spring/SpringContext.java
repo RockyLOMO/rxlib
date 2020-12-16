@@ -6,8 +6,7 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
-
-import static org.rx.core.Contract.require;
+import java.util.Objects;
 
 /**
  * BeanPostProcessor 注册bean时变更
@@ -17,7 +16,7 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     private static ApplicationContext applicationContext;
 
     public static ApplicationContext getApplicationContext() {
-        require(applicationContext);
+        Objects.requireNonNull(applicationContext);
         return applicationContext;
     }
 

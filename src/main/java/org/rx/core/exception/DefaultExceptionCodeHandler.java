@@ -3,7 +3,6 @@ package org.rx.core.exception;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.RxConfig;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 
@@ -12,8 +11,6 @@ import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.Contract.*;
@@ -22,14 +19,8 @@ import static org.rx.core.Contract.*;
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     protected Map<String, Object> getMessageSource() {
         return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
-            List<String> files = new ArrayList<>();
-            files.add("code.yml");
-            RxConfig config = App.getConfig();
-            if (!Arrays.isEmpty(config.getErrorCodeFiles())) {
-                files.addAll(Arrays.toList(config.getErrorCodeFiles()));
-            }
             //基础类不要quietly
-            Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));
+            Map<String, Object> codes = loadYaml("code.yml", "errorCode.yml");
             if (codes.isEmpty()) {
                 log.warn("load code.yml fail");
             }

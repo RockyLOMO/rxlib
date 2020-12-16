@@ -25,7 +25,6 @@ public class RxConfig {
     private int bufferSize = 512;
     private int scheduleDelay = 2000;
     private List<Class<?>> jsonSkipTypes;
-    private String[] errorCodeFiles = Arrays.EMPTY_STRING_ARRAY;
 
     @PostConstruct
     public void init() {
