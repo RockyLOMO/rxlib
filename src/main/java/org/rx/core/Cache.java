@@ -20,7 +20,7 @@ public interface Cache<TK, TV> {
     }
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, int expireMinutes) {
-        return getOrSet(key, supplier, expireMinutes, CONFIG.getDefaultCache());
+        return getOrSet(key, supplier, expireMinutes, App.getConfig().getDefaultCache());
     }
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, String cacheName) {
@@ -34,7 +34,7 @@ public interface Cache<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance() {
-        return getInstance(CONFIG.getDefaultCache());
+        return getInstance(App.getConfig().getDefaultCache());
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(String name) {
@@ -45,7 +45,7 @@ public interface Cache<TK, TV> {
                 case WEAK_CACHE:
                     return new WeakCache<>();
                 default:
-                    return new LocalCache<>(CONFIG.getCacheExpireMinutes());
+                    return new LocalCache<>(App.getConfig().getCacheExpireMinutes());
             }
         });
     }

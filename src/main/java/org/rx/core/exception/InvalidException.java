@@ -1,11 +1,14 @@
 package org.rx.core.exception;
 
+import lombok.Getter;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.$;
 import org.rx.core.Strings;
 import org.springframework.core.NestedRuntimeException;
 
 public class InvalidException extends NestedRuntimeException {
+    private static final long serialVersionUID = -4772342123911366087L;
+
     public static RuntimeException sneaky(Throwable cause) {
         ExceptionUtils.rethrow(cause);
         return wrap(cause);
@@ -19,6 +22,14 @@ public class InvalidException extends NestedRuntimeException {
             return (InvalidException) cause;
         }
         return new InvalidException(Strings.EMPTY, cause);
+    }
+
+    @Getter
+    protected ExceptionLevel level;
+
+    public InvalidException level(ExceptionLevel level) {
+        this.level = level;
+        return this;
     }
 
     public InvalidException(String format, Object... args) {

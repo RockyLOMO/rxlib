@@ -233,7 +233,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 reconnectFuture = null;
             }
             return ok;
-        }, CONFIG.getScheduleDelay());
+        }, App.getConfig().getScheduleDelay());
     }
 
     @Override

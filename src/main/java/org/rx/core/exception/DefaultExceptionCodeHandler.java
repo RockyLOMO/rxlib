@@ -3,6 +3,7 @@ package org.rx.core.exception;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.RxConfig;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 
@@ -23,8 +24,9 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
         return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
             List<String> files = new ArrayList<>();
             files.add("code.yml");
-            if (!Arrays.isEmpty(CONFIG.getErrorCodeFiles())) {
-                files.addAll(Arrays.toList(CONFIG.getErrorCodeFiles()));
+            RxConfig config = App.getConfig();
+            if (!Arrays.isEmpty(config.getErrorCodeFiles())) {
+                files.addAll(Arrays.toList(config.getErrorCodeFiles()));
             }
             //基础类不要quietly
             Map<String, Object> codes = loadYaml(NQuery.of(files).toArray(String.class));

@@ -13,8 +13,6 @@ import org.rx.core.Disposable;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcClientPool;
 
-import static org.rx.core.Contract.CONFIG;
-
 @Slf4j
 @RequiredArgsConstructor
 public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
@@ -27,7 +25,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         config.setTestOnBorrow(true);
         config.setJmxEnabled(false);
         config.setMaxWaitMillis(template.getConnectTimeoutMillis());
-        config.setMinIdle(CONFIG.getNetMinPoolSize());
+        config.setMinIdle(App.getConfig().getNetMinPoolSize());
         config.setMaxIdle(maxSize);
         config.setMaxTotal(maxSize);
         pool = new GenericObjectPool<>(new BasePooledObjectFactory<StatefulRpcClient>() {

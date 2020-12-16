@@ -1,14 +1,12 @@
 package org.rx.net.rpc;
 
 import lombok.Data;
-import org.rx.bean.DataRange;
+import org.rx.core.App;
 import org.rx.net.MemoryMode;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
-
-import static org.rx.core.Contract.CONFIG;
 
 @Data
 public class RpcServerConfig implements Serializable {
@@ -20,7 +18,7 @@ public class RpcServerConfig implements Serializable {
     private int listenPort;
     private int workThread;
     private MemoryMode memoryMode;
-    private int connectTimeoutMillis = CONFIG.getNetTimeoutMillis();
+    private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
     private boolean enableSsl;
     private boolean enableCompress;
     private int capacity = 10000;

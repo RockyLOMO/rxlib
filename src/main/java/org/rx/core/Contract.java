@@ -16,6 +16,7 @@ import org.rx.bean.InterceptProxy;
 import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.*;
 import org.yaml.snakeyaml.Yaml;
@@ -27,30 +28,15 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-//入口，注意循环引用
 @SuppressWarnings(Contract.NON_WARNING)
 @Slf4j
 public final class Contract {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
-    public static final RxConfig CONFIG;
-    private static final Set<Class> skipTypes = ConcurrentHashMap.newKeySet();
-
-    static {
-        CONFIG = isNull(readSetting("app", RxConfig.class), new RxConfig());
-        if (CONFIG.getBufferSize() <= 0) {
-            CONFIG.setBufferSize(512);
-        }
-        if (CONFIG.getNetMaxPoolSize() <= 0) {
-            CONFIG.setNetMaxPoolSize(Runtime.getRuntime().availableProcessors() * 2);
-        }
-        skipTypes.addAll(CONFIG.getJsonSkipTypesEx());
-    }
 
     //region basic
     @ErrorCode("arg")
@@ -110,16 +96,29 @@ public final class Contract {
         return args;
     }
 
+    public static void log(Throwable e) {
+        if (tryAs(e, InvalidException.class, p -> {
+            ExceptionLevel level = isNull(p.getLevel(), ExceptionLevel.SYSTEM);
+            switch (level) {
+                case IGNORE:
+                    log.warn("IGNORE Error: {}", e.getMessage());
+                    break;
+                default:
+                    log.error("{} Error", level, e);
+                    break;
+            }
+        })) {
+            return;
+        }
+        log.error("Error", e);
+    }
+
     public static String description(AnnotatedElement annotatedElement) {
         Description desc = annotatedElement.getAnnotation(Description.class);
         if (desc == null) {
             return null;
         }
         return desc.value();
-    }
-
-    public static void sleep() {
-        sleep(CONFIG.getSleepMillis());
     }
 
     @SneakyThrows
@@ -295,7 +294,7 @@ public final class Contract {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            log.warn("quietly", e);
+            log(e);
         }
         return false;
     }
@@ -310,7 +309,7 @@ public final class Contract {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            log.warn("quietly", e);
+            log(e);
         }
         if (defaultValue != null) {
             try {
@@ -455,31 +454,31 @@ public final class Contract {
                 jArr = NQuery.asList(src);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (p != null && NQuery.of(skipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
+                    if (p != null && NQuery.of(RxConfig.jSkipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
                 src = jArr;
             } else {
                 Object p = src;
-                if (NQuery.of(skipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
+                if (NQuery.of(RxConfig.jSkipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
                     src = skipResult.apply(p);
                 }
             }
             return JSON.toJSONString(src, SerializerFeature.DisableCircularReferenceDetect);  //gson map date not work
-        } catch (Exception ex) {
+        } catch (Exception e) {
             NQuery<Object> q;
             if (jArr != null) {
                 q = NQuery.of(jArr);
             } else {
                 q = NQuery.of(src);
             }
-            skipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            log.warn("toJsonString {}", NQuery.of(skipTypes).toJoinString(",", Class::getName), ex);
+            RxConfig.jSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            log.warn("toJsonString {}", NQuery.of(RxConfig.jSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
-            json.put("_error", ex.getMessage());
+            json.put("_error", e.getMessage());
             return json.toString();
         }
     }

@@ -5,16 +5,15 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
-import org.rx.core.Strings;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
 
 import java.nio.file.Paths;
 import java.util.*;
 
-import static org.rx.core.Contract.CONFIG;
 import static org.rx.core.Contract.require;
 
 /**
@@ -72,7 +71,7 @@ public class SftpClient extends Disposable {
     private final ChannelSftp channel;
 
     public SftpClient(AuthenticEndpoint endpoint) {
-        this(endpoint, CONFIG.getNetTimeoutMillis());
+        this(endpoint, App.getConfig().getNetTimeoutMillis());
     }
 
     @SneakyThrows

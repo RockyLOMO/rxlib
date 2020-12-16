@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx.spring;
 
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;

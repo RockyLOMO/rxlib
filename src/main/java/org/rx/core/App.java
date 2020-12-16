@@ -8,6 +8,7 @@ import org.rx.core.cache.ThreadCache;
 import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
+import org.rx.spring.SpringContext;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -24,6 +25,10 @@ public class App extends SystemUtils {
     static {
         log.debug("init {}", ThreadCache.class);
         System.setProperty("bootstrapPath", getBootstrapPath());
+    }
+
+    public static RxConfig getConfig() {
+        return isNull(SpringContext.getBean(RxConfig.class), new RxConfig());
     }
 
     //region Basic

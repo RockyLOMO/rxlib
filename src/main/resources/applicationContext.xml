@@ -3,7 +3,7 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
-    <bean id="springContext" class="org.rx.util.SpringContext"/>
+    <bean id="springContext" class="org.rx.spring.SpringContext"/>
     <bean id="validateAspect" class="org.rx.util.Validator"/>
     <bean id="controllerAspect" class="org.rx.util.SpringControllerInterceptor"/>
     <aop:config proxy-target-class="true">
@@ -15,12 +15,10 @@
                           expression="@annotation(org.rx.annotation.EnableValid) or @within(org.rx.annotation.EnableValid)"/>
             <aop:around pointcut-ref="vaPointcut" method="doAround"/>
         </aop:aspect>
+        <!--        <aop:aspect id="ca" ref="controllerAspect">-->
+        <!--            <aop:pointcut id="caPointcut"-->
+        <!--                          expression="execution(public * org.rx.*.controller..*.*(..)))"/>-->
+        <!--            <aop:around pointcut-ref="caPointcut" method="doAround"/>-->
+        <!--        </aop:aspect>-->
     </aop:config>
-<!--    <aop:config proxy-target-class="true">-->
-<!--        <aop:aspect id="ca" ref="controllerAspect">-->
-<!--            <aop:pointcut id="caPointcut"-->
-<!--                          expression="execution(public * org.rx.*.controller..*.*(..)))"/>-->
-<!--            <aop:around pointcut-ref="caPointcut" method="doAround"/>-->
-<!--        </aop:aspect>-->
-<!--    </aop:config>-->
 </beans>

@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.Contract;
@@ -90,7 +91,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public static byte[] createBuffer() {
-        return new byte[CONFIG.getBufferSize()];
+        return new byte[App.getConfig().getBufferSize()];
     }
 
     public static byte[] toBytes(IOStream<?, ?> stream) {

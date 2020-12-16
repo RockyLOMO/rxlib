@@ -9,7 +9,6 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.UUID;
 
-import static org.rx.core.Contract.CONFIG;
 import static org.rx.core.Contract.require;
 
 @Data
@@ -45,7 +44,7 @@ public class RpcClientConfig implements Serializable {
     private boolean tryEpoll = true;
     private InetSocketAddress serverEndpoint;
     private MemoryMode memoryMode;
-    private int connectTimeoutMillis = CONFIG.getNetTimeoutMillis();
+    private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
     private boolean enableSsl;
     private boolean enableCompress;
     private boolean autoReconnect;

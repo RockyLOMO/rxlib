@@ -9,8 +9,6 @@ app:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
     - org.springframework.ui.Model
+    - org.rx.io.IOStream
   #  errorCodeFiles:
   #    - errorCode.yml
-
-  test.version: 2
-app.test.version: 1
