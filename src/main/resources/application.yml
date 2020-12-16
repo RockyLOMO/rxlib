@@ -3,7 +3,6 @@ app:
   netTimeoutMillis: 16000
   netMinPoolSize: 2
   netMaxPoolSize: 0
-  cacheExpireMinutes: 4
   bufferSize: 512
   jsonSkipTypes:
     - javax.servlet.ServletRequest

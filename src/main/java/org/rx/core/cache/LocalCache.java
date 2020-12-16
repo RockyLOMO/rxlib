@@ -2,6 +2,7 @@ package org.rx.core.cache;
 
 import com.google.common.cache.CacheBuilder;
 import lombok.SneakyThrows;
+import org.rx.bean.RxConfig;
 import org.rx.core.Cache;
 import org.rx.util.function.BiFunc;
 
@@ -12,6 +13,10 @@ import static org.rx.core.Contract.*;
 
 public class LocalCache<TK, TV> implements Cache<TK, TV> {
     private final com.google.common.cache.Cache<TK, TV> cache;
+
+    public LocalCache() {
+        this(RxConfig.KEEPALIVE_MINUTES);
+    }
 
     public LocalCache(int expireMinutes) {
         cache = CacheBuilder.newBuilder().maximumSize(MAX_INT)

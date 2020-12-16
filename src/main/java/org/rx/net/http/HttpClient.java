@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import okhttp3.Authenticator;
 import org.apache.commons.io.IOUtils;
+import org.rx.bean.RxConfig;
 import org.rx.core.App;
 import org.rx.core.Contract;
 import org.rx.core.NQuery;
@@ -38,7 +39,7 @@ import static org.rx.core.Contract.*;
 public class HttpClient {
     public static final String GET_METHOD = "GET", POST_METHOD = "POST", HEAD_METHOD = "HEAD";
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
-    private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), App.getConfig().getCacheExpireMinutes(), TimeUnit.MINUTES);
+    private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), RxConfig.KEEPALIVE_MINUTES, TimeUnit.MINUTES);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     static {

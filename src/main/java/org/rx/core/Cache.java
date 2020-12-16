@@ -45,7 +45,7 @@ public interface Cache<TK, TV> {
                 case WEAK_CACHE:
                     return new WeakCache<>();
                 default:
-                    return new LocalCache<>(App.getConfig().getCacheExpireMinutes());
+                    return new LocalCache<>();
             }
         });
     }
