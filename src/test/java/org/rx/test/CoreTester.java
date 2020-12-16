@@ -24,6 +24,7 @@ import static org.rx.bean.$.$;
 import static org.rx.core.Contract.*;
 import static org.rx.core.Contract.toJsonString;
 
+
 @Slf4j
 public class CoreTester extends TestUtil {
     //region NQuery
@@ -222,6 +223,15 @@ public class CoreTester extends TestUtil {
             System.out.println(System.currentTimeMillis());
             return false;
         });
+    }
+
+    @Test
+    public void sneaky() {
+        $<Integer> o = $.$(0);
+        sneakyInvoke(() -> {
+            o.v++;
+            System.out.println(o.v);
+        }, 2);
     }
 
     @Test
