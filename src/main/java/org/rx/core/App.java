@@ -31,7 +31,9 @@ public class App extends SystemUtils {
         if (SpringContext.isInitiated()) {
             return SpringContext.getBean(RxConfig.class);
         }
-        return new RxConfig();
+        RxConfig config = isNull(readSetting("app", RxConfig.class), new RxConfig());
+        config.init();
+        return config;
     }
 
     //region Basic
