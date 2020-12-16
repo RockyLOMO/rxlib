@@ -28,7 +28,10 @@ public class App extends SystemUtils {
     }
 
     public static RxConfig getConfig() {
-        return isNull(SpringContext.getBean(RxConfig.class), new RxConfig());
+        if (SpringContext.isInitiated()) {
+            return SpringContext.getBean(RxConfig.class);
+        }
+        return new RxConfig();
     }
 
     //region Basic

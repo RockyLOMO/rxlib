@@ -15,6 +15,10 @@ import java.util.Objects;
 public class SpringContext implements InitializingBean, ApplicationContextAware {
     private static ApplicationContext applicationContext;
 
+    public static boolean isInitiated() {
+        return applicationContext != null;
+    }
+
     public static ApplicationContext getApplicationContext() {
         Objects.requireNonNull(applicationContext);
         return applicationContext;

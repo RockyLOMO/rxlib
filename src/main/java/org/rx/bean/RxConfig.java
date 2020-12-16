@@ -19,7 +19,7 @@ public class RxConfig {
 
     private String netUserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat";
     private int netTimeoutMillis = 16000;
-    private int netMinPoolSize = 2;
+    private int netMinPoolSize = 1;
     private int netMaxPoolSize;
     private String defaultCache = Cache.LRU_CACHE;
     private int bufferSize = 512;
