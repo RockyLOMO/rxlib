@@ -22,6 +22,8 @@ import static org.rx.core.Contract.*;
 
 @Slf4j
 public class App extends SystemUtils {
+    private static RxConfig config;
+
     static {
         log.debug("init {}", ThreadCache.class);
         System.setProperty("bootstrapPath", getBootstrapPath());
@@ -29,10 +31,12 @@ public class App extends SystemUtils {
 
     public static RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
-            return SpringContext.getBean(RxConfig.class);
+            config = SpringContext.getBean(RxConfig.class);
         }
-        RxConfig config = isNull(readSetting("app", RxConfig.class), new RxConfig());
-        config.init();
+        if (config == null) {
+            config = isNull(readSetting("app", RxConfig.class), new RxConfig());
+            config.init();
+        }
         return config;
     }
 
