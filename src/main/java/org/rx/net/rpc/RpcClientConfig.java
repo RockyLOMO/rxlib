@@ -58,6 +58,6 @@ public class RpcClientConfig implements Serializable {
     public UUID hashValue() {
         require(serverEndpoint);
 
-        return App.hash(serverEndpoint, enableSsl, enableCompress, eventVersion, isUsePool());
+        return App.hash(serverEndpoint, enableSsl, enableCompress, autoReconnect, eventVersion, isUsePool());
     }
 }
