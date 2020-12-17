@@ -154,7 +154,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+                    new ObjectDecoder(RpcServerConfig.MAX_OBJECT_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new Handler());
         }).option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());

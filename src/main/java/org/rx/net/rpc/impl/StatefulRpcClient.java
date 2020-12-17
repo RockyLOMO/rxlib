@@ -23,6 +23,7 @@ import org.rx.net.Sockets;
 import org.rx.net.rpc.RpcClient;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServer;
+import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.net.rpc.packet.HandshakePacket;
 
@@ -165,7 +166,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+                    new ObjectDecoder(RpcServerConfig.MAX_OBJECT_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new Handler());
         }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
         ChannelFuture future = bootstrap.connect(config.getServerEndpoint());
