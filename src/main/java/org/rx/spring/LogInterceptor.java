@@ -7,6 +7,7 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.core.App;
 import org.rx.core.EventTarget;
 import org.rx.core.Reflects;
 import org.rx.core.StringBuilder;
@@ -40,7 +41,7 @@ public class LogInterceptor implements EventTarget<LogInterceptor> {
             return joinPoint.proceed();
         }
 
-        StringBuilder msg = new StringBuilder();
+        StringBuilder msg = new StringBuilder(App.getConfig().getBufferSize());
         boolean hasError = false;
         ProceedEventArgs eventArgs = new ProceedEventArgs(Thread.currentThread(), joinPoint);
         try {
@@ -55,13 +56,14 @@ public class LogInterceptor implements EventTarget<LogInterceptor> {
                     p = joinPoint.getArgs()[0];
                     break;
             }
-            msg.append("Parameters:\t\t%s", toJsonString(p));
+            msg.append("Parameters:\t%s", toJsonString(p));
             Map<String, Object> map = metrics.getIfExists();
             if (map != null) {
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     msg.append("\t%s=%s", entry.getKey(), toJsonString(entry.getValue()));
                 }
             }
+            msg.appendLine();
             Object r = joinPoint.proceed();
             msg.append("ReturnValue:\t%s", toJsonString(r));
             long ms = watcher.elapsed(TimeUnit.MILLISECONDS);
@@ -88,7 +90,7 @@ public class LogInterceptor implements EventTarget<LogInterceptor> {
     }
 
     protected Object onException(ProceedEventArgs eventArgs, StringBuilder msg) throws Throwable {
-        msg.appendLine("Error:\t\t\t%s", eventArgs.getException().getMessage());
+        msg.appendLine("Error:\t\t%s", eventArgs.getException().getMessage());
         throw eventArgs.getException();
     }
 

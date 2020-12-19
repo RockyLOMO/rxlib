@@ -3,8 +3,8 @@ package org.rx.core;
 import static org.rx.core.Contract.isNull;
 
 public final class StringBuilder {
-    private java.lang.StringBuilder buffer;
-    private String prefix;
+    private final java.lang.StringBuilder buffer;
+    private String prefix = Strings.EMPTY;
 
     public java.lang.StringBuilder getBuffer() {
         return buffer;
@@ -28,12 +28,15 @@ public final class StringBuilder {
     }
 
     public StringBuilder() {
-        this(Strings.EMPTY);
+        this(32);
+    }
+
+    public StringBuilder(int capacity) {
+        buffer = new java.lang.StringBuilder(capacity);
     }
 
     public StringBuilder(String str) {
         buffer = new java.lang.StringBuilder(str);
-        prefix = Strings.EMPTY;
     }
 
     public int indexOf(String target) {
