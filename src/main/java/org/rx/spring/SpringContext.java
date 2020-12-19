@@ -1,5 +1,7 @@
 package org.rx.spring;
 
+import lombok.Setter;
+import org.rx.util.function.BiFunc;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -37,10 +39,6 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
         return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
     }
 
-    public static void metrics(String key, Object param) {
-        LogInterceptor.metrics.get().put(key, param);
-    }
-
     public void setApplicationContext(ApplicationContext applicationContext) {
         SpringContext.applicationContext = applicationContext;
     }
@@ -48,5 +46,12 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     @Override
     public void afterPropertiesSet() {
 
+    }
+
+    @Setter
+    static BiFunc<String, Object> exceptionReturnHandler;
+
+    public static void metrics(String key, Object param) {
+        LogInterceptor.metrics.get().put(key, param);
     }
 }

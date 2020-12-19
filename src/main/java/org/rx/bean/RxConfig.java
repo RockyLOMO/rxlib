@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ConfigurationProperties(prefix = "app")
 public class RxConfig {
     public static final int KEEPALIVE_MINUTES = 4;
-    public static final Set<Class<?>> jSkipTypes = ConcurrentHashMap.newKeySet();
+    public static final Set<Class<?>> jsonSkipSet = ConcurrentHashMap.newKeySet();
 
     private String netUserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat";
     private int netTimeoutMillis = 16000;
@@ -33,7 +33,7 @@ public class RxConfig {
             netMaxPoolSize = ThreadPool.CPU_THREADS;
         }
         if (jsonSkipTypes != null) {
-            jSkipTypes.addAll(jsonSkipTypes);
+            jsonSkipSet.addAll(jsonSkipTypes);
         }
     }
 }

@@ -456,14 +456,14 @@ public final class Contract {
                 jArr = NQuery.asList(src);
                 for (int i = 0; i < jArr.size(); i++) {
                     Object p = jArr.get(i);
-                    if (p != null && NQuery.of(RxConfig.jSkipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
+                    if (p != null && NQuery.of(RxConfig.jsonSkipSet).any(p2 -> Reflects.isInstance(p, p2))) {
                         jArr.set(i, skipResult.apply(p));
                     }
                 }
                 src = jArr;
             } else {
                 Object p = src;
-                if (NQuery.of(RxConfig.jSkipTypes).any(p2 -> Reflects.isInstance(p, p2))) {
+                if (NQuery.of(RxConfig.jsonSkipSet).any(p2 -> Reflects.isInstance(p, p2))) {
                     src = skipResult.apply(p);
                 }
             }
@@ -475,8 +475,8 @@ public final class Contract {
             } else {
                 q = NQuery.of(src);
             }
-            RxConfig.jSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            log.warn("toJsonString {}", NQuery.of(RxConfig.jSkipTypes).toJoinString(",", Class::getName), e);
+            RxConfig.jsonSkipSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            log.warn("toJsonString {}", NQuery.of(RxConfig.jsonSkipSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

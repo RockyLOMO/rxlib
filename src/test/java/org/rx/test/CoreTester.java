@@ -235,20 +235,6 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void weakCache() {
-        Cache<String, Object> cache = Cache.getInstance(Cache.WEAK_CACHE);
-        String k = "a";
-        cache.put(k, new Object());
-        assert cache.get(k) != null;
-        System.out.println(cache.size());
-
-        System.gc();
-
-        assert cache.get(k) == null;
-        System.out.println(cache.size());
-    }
-
-    @Test
     public void convert() {
         Reflects.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
 

@@ -24,7 +24,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
                 log.warn("load code.yml fail");
             }
             return codes;
-        }, Cache.WEAK_CACHE);
+        }, Cache.LOCAL_CACHE);
     }
 
     @SneakyThrows
@@ -75,7 +75,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
             Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
                 Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
-            }, Cache.WEAK_CACHE), Tuple.class);
+            }, Cache.LOCAL_CACHE), Tuple.class);
             if (caller == null) {
                 continue;
             }

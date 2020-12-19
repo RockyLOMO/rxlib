@@ -1,8 +1,8 @@
 package org.rx.core;
 
+import org.rx.bean.RxConfig;
 import org.rx.core.cache.LocalCache;
 import org.rx.core.cache.ThreadCache;
-import org.rx.core.cache.WeakCache;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
@@ -12,7 +12,7 @@ import static org.rx.core.Contract.*;
 public interface Cache<TK, TV> {
     int NON_EXPIRE_MINUTES = 0;
     String LRU_CACHE = "LruCache";
-    String WEAK_CACHE = "WeakCache";
+    String LOCAL_CACHE = "localCache";
     String THREAD_CACHE = "ThreadCache";
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier) {
@@ -42,8 +42,8 @@ public interface Cache<TK, TV> {
             switch (name) {
                 case THREAD_CACHE:
                     return new ThreadCache<>();
-                case WEAK_CACHE:
-                    return new WeakCache<>();
+                case LOCAL_CACHE:
+                    return new LocalCache<>(RxConfig.KEEPALIVE_MINUTES * 2);
                 default:
                     return new LocalCache<>();
             }

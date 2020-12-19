@@ -4,7 +4,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
-import org.rx.core.cache.ThreadCache;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.ExceptionLevel;
+import org.rx.core.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
@@ -16,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Predicate;
 
 import static java.lang.Math.pow;
 import static org.rx.core.Contract.*;
@@ -23,11 +26,7 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class App extends SystemUtils {
     private static RxConfig config;
-
-    static {
-        log.debug("init {}", ThreadCache.class);
-        System.setProperty("bootstrapPath", getBootstrapPath());
-    }
+    private static Predicate<Throwable> ignoreExceptionHandler;
 
     public static RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
@@ -38,6 +37,11 @@ public class App extends SystemUtils {
             config.init();
         }
         return config;
+    }
+
+    public static void setIgnoreExceptionHandler(Predicate<Throwable> ignoreExceptionHandler) {
+        App.ignoreExceptionHandler = ignoreExceptionHandler;
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log("Global", e));
     }
 
     //region Basic
@@ -52,6 +56,37 @@ public class App extends SystemUtils {
         }
         log.debug("bootstrapPath: {}", p);
         return p;
+    }
+
+    public static boolean isIgnoringException(Throwable e) {
+        if (ignoreExceptionHandler == null) {
+            return false;
+        }
+        return ignoreExceptionHandler.test(e);
+    }
+
+    public static String log(String key, Throwable e) {
+        if (isIgnoringException(e)) {
+            log.info("{} {}", key, e.getMessage());
+        } else {
+            InvalidException invalidException = as(e, InvalidException.class);
+            switch (isNull(invalidException.getLevel(), ExceptionLevel.SYSTEM)) {
+                case USER_OPERATION:
+                    log.warn("{} {}", key, e.getMessage());
+                    break;
+                case IGNORE:
+                    log.info("{} {}", key, e.getMessage());
+                    break;
+                default:
+                    log.error(key, e);
+                    break;
+            }
+        }
+        ApplicationException applicationException = as(e, ApplicationException.class);
+        if (applicationException == null) {
+            return isNull(e.getMessage(), ApplicationException.DEFAULT_MESSAGE);
+        }
+        return applicationException.getFriendlyMessage();
     }
 
     public static List<String> execShell(String workspace, String... shellStrings) {
