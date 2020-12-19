@@ -66,6 +66,7 @@ public class App extends SystemUtils {
     }
 
     public static String log(String key, Throwable e) {
+        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
         if (isIgnoringException(e)) {
             log.info("{} {}", key, e.getMessage());
         } else {

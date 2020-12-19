@@ -1,7 +1,7 @@
 package org.rx.spring;
 
 import lombok.Setter;
-import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -49,7 +49,7 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     }
 
     @Setter
-    static BiFunc<String, Object> exceptionReturnHandler;
+    static TripleFunc<Throwable, String, Object> exceptionReturnHandler;
 
     public static void metrics(String key, Object param) {
         LogInterceptor.metrics.get().put(key, param);

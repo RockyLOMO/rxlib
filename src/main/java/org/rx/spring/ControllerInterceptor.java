@@ -57,6 +57,6 @@ public class ControllerInterceptor extends LogInterceptor {
         if (SpringContext.exceptionReturnHandler == null) {
             return msg;
         }
-        return SpringContext.exceptionReturnHandler.invoke(msg);
+        return SpringContext.exceptionReturnHandler.invoke(e, msg);
     }
 }
