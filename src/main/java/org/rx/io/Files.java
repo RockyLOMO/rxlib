@@ -78,19 +78,19 @@ public class Files extends FilenameUtils {
 
     @SneakyThrows
     public static void createDirectory(String path) {
-        java.nio.file.Files.createDirectories(getDirectory(new File(path)).toPath());
+        java.nio.file.Files.createDirectories(new File(getFullPath(path)).toPath());
     }
 
-    private static File getDirectory(File path) {
-        if (path.isDirectory()) {
-            return path;
-        }
-        File parent = path.getParentFile();
-        if (parent == null) {
-            throw new InvalidException("%s parent path is null", path.getPath());
-        }
-        return parent;
-    }
+//    private static File getDirectory(File path) {
+//        if (path.isDirectory()) {
+//            return path;
+//        }
+//        File parent = path.getParentFile();
+//        if (parent == null) {
+//            throw new InvalidException("%s parent path is null", path.getPath());
+//        }
+//        return parent;
+//    }
 
     @SneakyThrows
     public static boolean isEmptyDirectory(String directoryPath) {
@@ -105,7 +105,7 @@ public class Files extends FilenameUtils {
 
     @SneakyThrows
     public static NQuery<File> listDirectories(String path, boolean recursive) {
-        File dir = getDirectory(new File(path));
+        File dir = new File(getFullPath(path));
         if (!recursive) {
             return NQuery.of(NQuery.toList(java.nio.file.Files.newDirectoryStream(dir.toPath(), java.nio.file.Files::isDirectory))).select(Path::toFile);
         }
@@ -114,7 +114,7 @@ public class Files extends FilenameUtils {
     }
 
     public static NQuery<File> listFiles(String path, boolean recursive) {
-        File p = getDirectory(new File(path));
+        File p = new File(getFullPath(path));
         IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
         return NQuery.of(FileUtils.listFiles(p, ff, df));
     }

@@ -207,6 +207,14 @@ public class SocksTester {
     }
 
     @Test
+    public void httpClient() {
+        HttpClient client = new HttpClient();
+        for (int i = 0; i < 10; i++) {
+            client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
+        }
+    }
+
+    @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
         Map<String, Object> map = (Map) HttpClient.parseQueryString(url);

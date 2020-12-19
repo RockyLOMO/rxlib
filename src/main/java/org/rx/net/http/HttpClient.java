@@ -265,7 +265,6 @@ public class HttpClient {
         }
         headers = builder.build();
         client = createClient(timeoutMillis, cookieJar, proxy);
-//        client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy));
     }
 
     private Request.Builder createRequest(String url) {
