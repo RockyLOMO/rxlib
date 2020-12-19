@@ -71,16 +71,18 @@ public class App extends SystemUtils {
             log.info("{} {}", key, e.getMessage());
         } else {
             InvalidException invalidException = as(e, InvalidException.class);
-            switch (isNull(invalidException.getLevel(), ExceptionLevel.SYSTEM)) {
-                case USER_OPERATION:
-                    log.warn("{} {}", key, e.getMessage());
-                    break;
-                case IGNORE:
-                    log.info("{} {}", key, e.getMessage());
-                    break;
-                default:
-                    log.error(key, e);
-                    break;
+            if (invalidException != null) {
+                switch (isNull(invalidException.getLevel(), ExceptionLevel.SYSTEM)) {
+                    case USER_OPERATION:
+                        log.warn("{} {}", key, e.getMessage());
+                        break;
+                    case IGNORE:
+                        log.info("{} {}", key, e.getMessage());
+                        break;
+                    default:
+                        log.error(key, e);
+                        break;
+                }
             }
         }
         ApplicationException applicationException = as(e, ApplicationException.class);
