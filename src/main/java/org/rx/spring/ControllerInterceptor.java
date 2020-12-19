@@ -21,7 +21,7 @@ import static org.rx.core.Contract.as;
 @ControllerAdvice
 @Aspect
 @Component
-public class ControllerInterceptor extends LogInterceptor {
+public class ControllerInterceptor extends BaseInterceptor {
     private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
     public ControllerInterceptor() {
