@@ -264,8 +264,8 @@ public class HttpClient {
             builder = builder.set(HttpHeaders.COOKIE, rawCookie);
         }
         headers = builder.build();
-//        client = createClient(timeoutMillis, cookieJar, proxy);
-        client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy));
+        client = createClient(timeoutMillis, cookieJar, proxy);
+//        client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy));
     }
 
     private Request.Builder createRequest(String url) {
@@ -361,10 +361,13 @@ public class HttpClient {
     @SneakyThrows
     private File handleFile(ResponseBody body, String filePath) {
         File file = new File(filePath);
-        if (body != null) {
-            try (FileOutputStream out = new FileOutputStream(file)) {
-                IOStream.copyTo(body.byteStream(), out);
-            }
+        if (body == null) {
+            return file;
+        }
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            IOStream.copyTo(body.byteStream(), out);
+        } finally {
+            body.close();
         }
         return file;
     }
@@ -374,8 +377,12 @@ public class HttpClient {
         if (body == null) {
             return stream;
         }
-        IOStream.copyTo(body.byteStream(), stream.getWriter());
-        stream.setPosition(0);
+        try {
+            IOStream.copyTo(body.byteStream(), stream.getWriter());
+            stream.setPosition(0);
+        } finally {
+            body.close();
+        }
         return stream;
     }
 
