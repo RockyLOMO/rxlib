@@ -207,6 +207,7 @@ public class HttpClient {
     }
     //endregion
 
+    //不是线程安全
     private final OkHttpClient client;
     private Headers headers;
     private Response response;
@@ -263,7 +264,7 @@ public class HttpClient {
             builder = builder.set(HttpHeaders.COOKIE, rawCookie);
         }
         headers = builder.build();
-        client = org.rx.core.Cache.getOrSet(cacheKey("HC", timeoutMillis, rawCookie, proxy), k -> createClient(timeoutMillis, cookieJar, proxy), org.rx.core.Cache.LOCAL_CACHE);
+        client = createClient(timeoutMillis, cookieJar, proxy);
     }
 
     private Request.Builder createRequest(String url) {
