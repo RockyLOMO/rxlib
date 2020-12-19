@@ -11,7 +11,6 @@ import org.rx.core.Disposable;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
 
-import java.nio.file.Paths;
 import java.util.*;
 
 import static org.rx.core.Contract.require;
@@ -116,7 +115,7 @@ public class SftpClient extends Disposable {
     }
 
     public void downloadFile(String remotePath, String localPath) {
-        Files.createDirectory(Paths.get(localPath));
+        Files.createDirectory(localPath);
 
         downloadFile(remotePath, IOStream.wrap(localPath));
     }

@@ -4,16 +4,15 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
     <bean id="springContext" class="org.rx.spring.SpringContext"/>
-    <bean id="validateAspect" class="org.rx.util.Validator"/>
-    <bean id="controllerAspect" class="org.rx.util.SpringControllerInterceptor"/>
+    <bean id="logInterceptor" class="org.rx.spring.LogInterceptor"/>
     <aop:config proxy-target-class="true">
-        <aop:aspect id="va" ref="validateAspect">
+        <aop:aspect ref="logInterceptor">
             <!--<aop:pointcut id="vaPointcut"-->
             <!--expression="execution(public * org.rx..*.*(..))-->
             <!--and !execution(* java.rx.validator.*(..))"/>-->
-            <aop:pointcut id="vaPointcut"
-                          expression="@annotation(org.rx.annotation.EnableValid) or @within(org.rx.annotation.EnableValid)"/>
-            <aop:around pointcut-ref="vaPointcut" method="doAround"/>
+            <aop:pointcut id="logPointcut"
+                          expression="@annotation(org.rx.annotation.EnableLogging) or @within(org.rx.annotation.EnableLogging)"/>
+            <aop:around pointcut-ref="logPointcut" method="doAround"/>
         </aop:aspect>
         <!--        <aop:aspect id="ca" ref="controllerAspect">-->
         <!--            <aop:pointcut id="caPointcut"-->

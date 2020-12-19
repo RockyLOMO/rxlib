@@ -21,7 +21,7 @@ import static org.rx.core.Contract.*;
 @Slf4j
 public class FileWatcher extends Disposable {
     @RequiredArgsConstructor
-    public enum ChangeKind implements NEnum {
+    public enum ChangeKind implements NEnum<ChangeKind> {
         Create(1), Modify(2), Delete(3);
 
         @Getter
@@ -32,7 +32,7 @@ public class FileWatcher extends Disposable {
     private String directoryPath;
     private WatchService service;
     private volatile boolean keepHandle;
-    private Future future;
+    private Future<?> future;
     private final List<Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>>> callback;
 
     @SneakyThrows
@@ -40,7 +40,7 @@ public class FileWatcher extends Disposable {
         this.directoryPath = directoryPath;
         callback = new CopyOnWriteArrayList<>();
 
-        Files.createDirectory(Files.path(directoryPath));
+        Files.createDirectory(directoryPath);
         service = FileSystems.getDefault().newWatchService();
         Paths.get(directoryPath).register(service, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE);
     }

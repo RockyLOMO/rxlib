@@ -121,11 +121,11 @@ public class IOTester {
 
     @Test
     public void listFiles() {
-        for (Path p : Files.listFiles(Files.path("/"), false)) {
+        for (File p : Files.listFiles("/", false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (Path p : Files.listFiles(Files.path("/"), true)) {
+        for (File p : Files.listFiles("/", true)) {
             System.out.println(p);
         }
     }
@@ -136,11 +136,11 @@ public class IOTester {
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (Path p : Files.listDirectories(Files.path("/"), false)) {
+        for (File p : Files.listDirectories("/", false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (Path p : Files.listDirectories(Files.path("/"), true)) {
+        for (File p : Files.listDirectories("/", true)) {
             System.out.println(p);
         }
     }

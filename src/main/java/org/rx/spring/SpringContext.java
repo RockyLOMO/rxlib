@@ -3,6 +3,8 @@ package org.rx.spring;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -12,6 +14,7 @@ import java.util.Objects;
  * BeanPostProcessor 注册bean时变更
  */
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class SpringContext implements InitializingBean, ApplicationContextAware {
     private static ApplicationContext applicationContext;
 
@@ -20,7 +23,7 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     }
 
     public static ApplicationContext getApplicationContext() {
-        Objects.requireNonNull(applicationContext);
+        Objects.requireNonNull(applicationContext, "applicationContext");
         return applicationContext;
     }
 
@@ -34,11 +37,16 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
         return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
     }
 
-    @Override
-    public void afterPropertiesSet() {
+    public static void metrics(String key, Object param) {
+        LogInterceptor.metrics.get().put(key, param);
     }
 
     public void setApplicationContext(ApplicationContext applicationContext) {
         SpringContext.applicationContext = applicationContext;
+    }
+
+    @Override
+    public void afterPropertiesSet() {
+
     }
 }

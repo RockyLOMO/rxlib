@@ -4,7 +4,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
@@ -136,6 +135,10 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
+    static {
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log.error(t.getName(), e));
+    }
+
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
@@ -144,7 +147,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static ThreadFactory newThreadFactory(String nameFormat) {
         return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-                .setUncaughtExceptionHandler((thread, ex) -> log.error(thread.getName(), ex))
+//                .setUncaughtExceptionHandler((thread, ex) -> log.error(thread.getName(), ex))
                 .setDaemon(true).setNameFormat(nameFormat).build();
     }
 

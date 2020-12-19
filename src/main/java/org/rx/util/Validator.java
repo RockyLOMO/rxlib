@@ -12,9 +12,10 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 
-import org.rx.annotation.EnableValid;
+//import org.rx.annotation.EnableValid;
 import org.rx.annotation.ValidRegex;
 import org.rx.core.StringBuilder;
+import org.rx.spring.LogInterceptor;
 
 import java.util.Set;
 import java.util.function.Supplier;
@@ -23,7 +24,7 @@ import java.util.regex.Pattern;
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
  */
-public class Validator extends SpringLogInterceptor {
+public class Validator  {
     public static class RegexValidator implements ConstraintValidator<ValidRegex, String> {
         private ValidRegex validRegex;
 
@@ -100,62 +101,62 @@ public class Validator extends SpringLogInterceptor {
         return retVal;
     }
 
-    /**
-     * Annotation expression只对method有效
-     *
-     * @param joinPoint
-     * @param msg
-     * @return
-     * @throws Throwable
-     */
-    @SneakyThrows
-    @Override
-    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
-        Class targetType = joinPoint.getTarget().getClass();
-        Signature signature = joinPoint.getSignature();
-        Executable member;
-        if (signature instanceof ConstructorSignature) {
-            member = ((ConstructorSignature) signature).getConstructor();
-        } else {
-            member = ((MethodSignature) signature).getMethod();
-        }
-
-        msg.setPrefix(String.format("[Valid] %s.%s ", targetType.getSimpleName(), signature.getName()));
-        EnableValid attr = member.getAnnotation(EnableValid.class);
-        if (attr == null) {
-            attr = (EnableValid) targetType.getAnnotation(EnableValid.class);
-            if (attr == null) {
-                msg.appendLine("skip validate..");
-                return joinPoint.proceed();
-            }
-        }
-
-        int flags = attr.value();
-        boolean validateValues = hasFlags(flags, EnableValid.ParameterValues);
-        if (hasFlags(flags, EnableValid.Method)) {
-            if (signature instanceof ConstructorSignature) {
-                ConstructorSignature cs = (ConstructorSignature) signature;
-                validateConstructor(cs.getConstructor(), joinPoint.getArgs(), validateValues);
-                return super.onProcess(joinPoint, msg);
-            }
-
-            MethodSignature ms = (MethodSignature) signature;
-            return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues, () -> super.onProcess(joinPoint, msg));
-        }
-
-        if (validateValues) {
-            for (Object parameterValue : joinPoint.getArgs()) {
-                validateBean(parameterValue);
-            }
-        }
-
-        msg.appendLine("validate ok..").setPrefix(null);
-        return super.onProcess(joinPoint, msg);
-    }
-
-    @Override
-    protected Object onException(Signature signature, Exception ex, StringBuilder msg) throws Throwable {
-        msg.appendLine("validate fail %s..", ex.getMessage());
-        throw ex;
-    }
+//    /**
+//     * Annotation expression只对method有效
+//     *
+//     * @param joinPoint
+//     * @param msg
+//     * @return
+//     * @throws Throwable
+//     */
+//    @SneakyThrows
+//    @Override
+//    protected Object onProcess(ProceedingJoinPoint joinPoint, StringBuilder msg) {
+//        Class targetType = joinPoint.getTarget().getClass();
+//        Signature signature = joinPoint.getSignature();
+//        Executable member;
+//        if (signature instanceof ConstructorSignature) {
+//            member = ((ConstructorSignature) signature).getConstructor();
+//        } else {
+//            member = ((MethodSignature) signature).getMethod();
+//        }
+//
+//        msg.setPrefix(String.format("[Valid] %s.%s ", targetType.getSimpleName(), signature.getName()));
+//        EnableValid attr = member.getAnnotation(EnableValid.class);
+//        if (attr == null) {
+//            attr = (EnableValid) targetType.getAnnotation(EnableValid.class);
+//            if (attr == null) {
+//                msg.appendLine("skip validate..");
+//                return joinPoint.proceed();
+//            }
+//        }
+//
+//        int flags = attr.value();
+//        boolean validateValues = hasFlags(flags, EnableValid.ParameterValues);
+//        if (hasFlags(flags, EnableValid.Method)) {
+//            if (signature instanceof ConstructorSignature) {
+//                ConstructorSignature cs = (ConstructorSignature) signature;
+//                validateConstructor(cs.getConstructor(), joinPoint.getArgs(), validateValues);
+//                return super.onProcess(joinPoint, msg);
+//            }
+//
+//            MethodSignature ms = (MethodSignature) signature;
+//            return validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), validateValues, () -> super.onProcess(joinPoint, msg));
+//        }
+//
+//        if (validateValues) {
+//            for (Object parameterValue : joinPoint.getArgs()) {
+//                validateBean(parameterValue);
+//            }
+//        }
+//
+//        msg.appendLine("validate ok..").setPrefix(null);
+//        return super.onProcess(joinPoint, msg);
+//    }
+//
+//    @Override
+//    protected Object onException(Signature signature, Exception ex, StringBuilder msg) throws Throwable {
+//        msg.appendLine("validate fail %s..", ex.getMessage());
+//        throw ex;
+//    }
 }
