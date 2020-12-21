@@ -431,11 +431,19 @@ public final class Contract {
         }
 
         try {
+            NQuery<Class<?>> skipSet = NQuery.of(RxConfig.jsonSkipSet);
             return JSON.toJSONString(src, new ValueFilter() {
                 @Override
                 public Object process(Object o, String k, Object v) {
-                    if (v != null && NQuery.of(RxConfig.jsonSkipSet).any(p -> Reflects.isInstance(v, p))) {
-                        return v.getClass().getName();
+                    if (v != null) {
+                        if (v.getClass().isArray() || v instanceof Iterable) {
+                            List<Object> list = NQuery.asList(v);
+                            list.replaceAll(fv -> skipSet.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
+                            return list;
+                        }
+                        if (skipSet.any(t -> Reflects.isInstance(v, t))) {
+                            return v.getClass().getName();
+                        }
                     }
                     return v;
                 }
