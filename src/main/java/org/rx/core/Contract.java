@@ -434,7 +434,7 @@ public final class Contract {
             return JSON.toJSONString(src, new ValueFilter() {
                 @Override
                 public Object process(Object o, String k, Object v) {
-                    if (NQuery.of(RxConfig.jsonSkipSet).any(p -> Reflects.isInstance(v, p))) {
+                    if (v != null && NQuery.of(RxConfig.jsonSkipSet).any(p -> Reflects.isInstance(v, p))) {
                         return v.getClass().getName();
                     }
                     return v;
