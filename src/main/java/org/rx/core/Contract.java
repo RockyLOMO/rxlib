@@ -16,8 +16,6 @@ import org.rx.bean.InterceptProxy;
 import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
-import org.rx.core.exception.ExceptionLevel;
-import org.rx.core.exception.InvalidException;
 import org.rx.util.function.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -96,23 +94,6 @@ public final class Contract {
         return args;
     }
 
-    public static void log(Throwable e) {
-        if (tryAs(e, InvalidException.class, p -> {
-            ExceptionLevel level = isNull(p.getLevel(), ExceptionLevel.SYSTEM);
-            switch (level) {
-                case IGNORE:
-                    log.warn("IGNORE Error: {}", e.getMessage());
-                    break;
-                default:
-                    log.error("{} Error", level, e);
-                    break;
-            }
-        })) {
-            return;
-        }
-        log.error("Error", e);
-    }
-
     public static String description(AnnotatedElement annotatedElement) {
         Description desc = annotatedElement.getAnnotation(Description.class);
         if (desc == null) {
@@ -127,7 +108,7 @@ public final class Contract {
     }
     //endregion
 
-    //region yml
+    //region more
     public static <T> T readSetting(String key) {
         return readSetting(key, null);
     }
@@ -237,6 +218,22 @@ public final class Contract {
         Yaml yaml = new Yaml();
         return yaml.dump(bean);
     }
+
+    public static String cacheKey(String methodName, Object... args) {
+        StringBuilder k = new StringBuilder(Reflects.stackClass(1).getSimpleName());
+        int offset = 10;
+        if (k.getLength() > offset) {
+            k.setLength(offset);
+        } else {
+            offset = k.getLength();
+        }
+        k.append(methodName).append(toJsonString(args));
+        if (k.getLength() <= 32) {
+            return k.toString();
+        }
+        String hex = k.substring(offset);
+        return k.setLength(offset).append(SUID.compute(hex)).toString();
+    }
     //endregion
 
     //region extend
@@ -296,7 +293,7 @@ public final class Contract {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            log(e);
+            App.log("quietly", e);
         }
         return false;
     }
@@ -311,7 +308,7 @@ public final class Contract {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            log(e);
+            App.log("quietly", e);
         }
         if (defaultValue != null) {
             try {
@@ -321,22 +318,6 @@ public final class Contract {
             }
         }
         return null;
-    }
-
-    public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder(Reflects.stackClass(1).getSimpleName());
-        int offset = 10;
-        if (k.getLength() > offset) {
-            k.setLength(offset);
-        } else {
-            offset = k.getLength();
-        }
-        k.append(methodName).append(toJsonString(args));
-        if (k.getLength() <= 32) {
-            return k.toString();
-        }
-        String hex = k.substring(offset);
-        return k.setLength(offset).append(SUID.compute(hex)).toString();
     }
 
     public static boolean tryClose(Object obj) {

@@ -45,21 +45,21 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         StringBuilder msg = new StringBuilder(App.getConfig().getBufferSize());
         boolean hasError = false;
         try {
-            msg.appendLine("Call %s.%s", signature.getDeclaringTypeName(), signature.getName());
+            msg.appendLine("Call %s", signature.getName());
             Stopwatch watcher = Stopwatch.createStarted();
-            msg.append("Parameters:\t%s", toArgsString(signature, joinPoint.getArgs()));
+            msg.appendLine("Parameters:\t%s", toArgsString(signature, joinPoint.getArgs()));
+            Object r = joinPoint.proceed();
+            long ms = watcher.elapsed(TimeUnit.MILLISECONDS);
+            msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", toArgsString(signature, r), ms);
+            eventArgs.setElapsedMillis(ms);
             Map<String, Object> map = metrics.getIfExists();
             if (map != null) {
+                msg.append("metrics: ");
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     msg.append("\t%s=%s", entry.getKey(), toArgsString(signature, entry.getValue()));
                 }
+                msg.appendLine();
             }
-            msg.appendLine();
-            Object r = joinPoint.proceed();
-            msg.append("ReturnValue:\t%s", toArgsString(signature, r));
-            long ms = watcher.elapsed(TimeUnit.MILLISECONDS);
-            msg.appendLine(String.format("\tElapsed=%sms", ms));
-            eventArgs.setElapsedMillis(ms);
             return r;
         } catch (Exception e) {
             try {

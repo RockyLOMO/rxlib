@@ -54,9 +54,9 @@ public class ControllerInterceptor extends BaseInterceptor {
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
         String msg = App.log(request.getRequestURL().toString(), e);
-        if (SpringContext.exceptionReturnHandler == null) {
+        if (SpringContext.controllerExceptionHandler == null) {
             return msg;
         }
-        return SpringContext.exceptionReturnHandler.invoke(e, msg);
+        return SpringContext.controllerExceptionHandler.invoke(e, msg);
     }
 }

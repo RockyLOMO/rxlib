@@ -136,7 +136,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
     static {
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log.error(t.getName(), e));
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log.error("Global", e));
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -147,7 +147,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static ThreadFactory newThreadFactory(String nameFormat) {
         return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-//                .setUncaughtExceptionHandler((thread, ex) -> log.error(thread.getName(), ex))
+//                .setUncaughtExceptionHandler((thread, e) -> log.error("THREAD", e))
                 .setDaemon(true).setNameFormat(nameFormat).build();
     }
 

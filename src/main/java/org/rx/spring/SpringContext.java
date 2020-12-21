@@ -49,7 +49,7 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     }
 
     @Setter
-    static TripleFunc<Throwable, String, Object> exceptionReturnHandler;
+    static TripleFunc<Throwable, String, Object> controllerExceptionHandler;
 
     public static void metrics(String key, Object param) {
         LogInterceptor.metrics.get().put(key, param);
