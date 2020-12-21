@@ -5,14 +5,13 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.$;
-import org.rx.bean.DateTime;
-import org.rx.bean.NEnum;
-import org.rx.bean.Tuple;
+import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
+import org.rx.io.IOStream;
+import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 
@@ -344,6 +343,9 @@ public class CoreTester extends TestUtil {
         for (Tuple<String, List<Float>> item : tupleList) {
             System.out.println(item);
         }
+
+        RxConfig.jsonSkipSet.add(IOStream.class);
+        System.out.println(toJsonString(Tuple.of(new MemoryStream(), false)));
     }
 
     @Test

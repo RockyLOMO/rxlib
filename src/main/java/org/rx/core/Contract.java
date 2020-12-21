@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
@@ -429,30 +430,20 @@ public final class Contract {
             return s;
         }
 
-        Function<Object, String> skipResult = p -> p.getClass().getName();
-        Class type = src.getClass();
-        List<Object> jArr = null;
         try {
-            if (type.isArray() || src instanceof Iterable) {
-                jArr = NQuery.asList(src);
-                for (int i = 0; i < jArr.size(); i++) {
-                    Object p = jArr.get(i);
-                    if (p != null && NQuery.of(RxConfig.jsonSkipSet).any(p2 -> Reflects.isInstance(p, p2))) {
-                        jArr.set(i, skipResult.apply(p));
+            return JSON.toJSONString(src, new ValueFilter() {
+                @Override
+                public Object process(Object o, String k, Object v) {
+                    if (NQuery.of(RxConfig.jsonSkipSet).any(p -> Reflects.isInstance(v, p))) {
+                        return v.getClass().getName();
                     }
+                    return v;
                 }
-                src = jArr;
-            } else {
-                Object p = src;
-                if (NQuery.of(RxConfig.jsonSkipSet).any(p2 -> Reflects.isInstance(p, p2))) {
-                    src = skipResult.apply(p);
-                }
-            }
-            return JSON.toJSONString(src, SerializerFeature.DisableCircularReferenceDetect);  //gson map date not work
+            }, SerializerFeature.DisableCircularReferenceDetect);
         } catch (Exception e) {
             NQuery<Object> q;
-            if (jArr != null) {
-                q = NQuery.of(jArr);
+            if (src.getClass().isArray() || src instanceof Iterable) {
+                q = NQuery.of(NQuery.asList(src));
             } else {
                 q = NQuery.of(src);
             }
