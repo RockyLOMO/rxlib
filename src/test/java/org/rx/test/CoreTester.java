@@ -345,7 +345,7 @@ public class CoreTester extends TestUtil {
         }
 
         RxConfig.jsonSkipSet.add(IOStream.class);
-        System.out.println(toJsonString(Tuple.of(new MemoryStream(), false)));
+        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12,false)), false)));
     }
 
     @Test
