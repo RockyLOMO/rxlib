@@ -7,7 +7,6 @@ import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -32,7 +31,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 @SuppressWarnings(Contract.NON_WARNING)
-@Slf4j
+//@Slf4j
 public final class Contract {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
@@ -252,7 +251,7 @@ public final class Contract {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    log.warn("sneakyInvoke retry={} error={} {}", i, e.getClass().getName(), e.getMessage());
+                    App.log(String.format("sneakyInvoke retry={}", i), e);
                 }
                 last = e;
             }
@@ -276,7 +275,7 @@ public final class Contract {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    log.warn("sneakyInvoke retry={} error={} {}", i, e.getClass().getName(), e.getMessage());
+                    App.log(String.format("sneakyInvoke retry={}", i), e);
                 }
                 last = e;
             }
@@ -456,7 +455,7 @@ public final class Contract {
                 q = NQuery.of(src);
             }
             RxConfig.jsonSkipSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            log.warn("toJsonString {}", NQuery.of(RxConfig.jsonSkipSet).toJoinString(",", Class::getName), e);
+            App.log(String.format("toJsonString %s", NQuery.of(RxConfig.jsonSkipSet).toJoinString(",", Class::getName)), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

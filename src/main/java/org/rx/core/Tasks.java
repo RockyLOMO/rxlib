@@ -36,10 +36,9 @@ public final class Tasks {
         @Override
         public T call() {
             try {
-                //后台线程异常
                 return callable.invoke();
             } catch (Throwable e) {
-                log.error("Task IGNORE", e);
+                raiseUncaughtException(e);
                 return null;
             }
         }
@@ -58,6 +57,15 @@ public final class Tasks {
     @Getter
     private static final ThreadPool executor = new ThreadPool();
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
+
+    public static void raiseUncaughtException(Throwable e) {
+        log.error("UncaughtException", e);
+        Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
+        if (handler == null) {
+            return;
+        }
+        handler.uncaughtException(Thread.currentThread(), e);
+    }
 
     public static CompletableFuture<Void> run(Action task) {
         return run(task, SUID.randomSUID().toString(), null);
@@ -112,15 +120,11 @@ public final class Tasks {
 
         $<Future<?>> future = $();
         future.v = schedule(() -> {
-            try {
-                if (checkFunc.invoke()) {
-                    future.v.cancel(true);
-                    return;
-                }
-                task.invoke();
-            } catch (Exception e) {
-                log.error("Task IGNORE", e);
+            if (checkFunc.invoke()) {
+                future.v.cancel(true);
+                return;
             }
+            task.invoke();
         }, delay);
         return future.v;
     }
@@ -140,7 +144,7 @@ public final class Tasks {
             try {
                 task.invoke();
             } catch (Throwable e) {
-                log.warn("Task IGNORE", e);
+                raiseUncaughtException(e);
             } finally {
                 future.v.cancel(true);
             }
@@ -156,11 +160,7 @@ public final class Tasks {
         require(task);
 
         return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
-            try {
-                task.invoke();
-            } catch (Throwable e) {
-                log.error("Task IGNORE", e);
-            }
+            task.invoke();
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
