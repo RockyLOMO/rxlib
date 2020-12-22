@@ -44,7 +44,7 @@ public class FluentWait {
     private String message;
     private List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
     private boolean throwOnFail = true;
-    private long retryMills = TIMEOUT_INFINITE;
+    private long retryMillis = TIMEOUT_INFINITE;
     private boolean retryFirstCall;
 
     private FluentWait() {
@@ -62,9 +62,9 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait retryMills(long retryMills) {
-        require(retryMills, retryMills >= TIMEOUT_INFINITE);
-        this.retryMills = retryMills;
+    public FluentWait retryMillis(long retryMillis) {
+        require(retryMillis, retryMillis >= TIMEOUT_INFINITE);
+        this.retryMillis = retryMillis;
         return this;
     }
 
@@ -111,7 +111,7 @@ public class FluentWait {
             retryFunc.test(state);
         }
 
-        int retryCount = retryMills == TIMEOUT_INFINITE ? TIMEOUT_INFINITE : (int) (interval > 0 ? Math.floor((double) retryMills / interval) : timeout);
+        int retryCount = retryMillis == TIMEOUT_INFINITE ? TIMEOUT_INFINITE : (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
         do {
             try {
                 lastResult = supplier.apply(state);
@@ -127,7 +127,7 @@ public class FluentWait {
 
             sleep();
 
-            if (retryMills > TIMEOUT_INFINITE && (retryCount == 0 || state.checkCount % retryCount == 0)) {
+            if (retryMillis > TIMEOUT_INFINITE && (retryCount == 0 || state.checkCount % retryCount == 0)) {
                 if (retryFunc != null && !retryFunc.test(state)) {
                     break;
                 }
