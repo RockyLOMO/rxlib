@@ -100,6 +100,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
             Sockets.closeOnFlushed(channel);
+            Tasks.raiseUncaughtException(cause);
         }
     }
 

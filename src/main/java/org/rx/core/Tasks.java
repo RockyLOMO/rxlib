@@ -59,9 +59,9 @@ public final class Tasks {
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
 
     public static void raiseUncaughtException(Throwable e) {
-        log.error("UncaughtException", e);
         Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
         if (handler == null) {
+            log.error("UncaughtException", e);
             return;
         }
         handler.uncaughtException(Thread.currentThread(), e);

@@ -92,6 +92,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
             Sockets.closeOnFlushed(ctx.channel());
+            Tasks.raiseUncaughtException(cause);
         }
     }
 
