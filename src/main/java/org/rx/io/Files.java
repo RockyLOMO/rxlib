@@ -45,7 +45,8 @@ public class Files extends FilenameUtils {
         if (ch == '/' || ch == '\\') {
             return path;
         }
-        return path + File.separatorChar;
+        char separatorChar = path.lastIndexOf('\\') != -1 ? '\\' : '/';
+        return path + separatorChar;
     }
 
     public static boolean isDirectory(String path) {
@@ -154,8 +155,10 @@ public class Files extends FilenameUtils {
         for (File file : FileUtils.listFiles(dir, FileFilterUtils.ageFileFilter(time), FileFilterUtils.directoryFileFilter())) {
             delete(file.getPath());
         }
-        if (isEmptyDirectory(directoryPath)) {
-            dir.delete();
+        for (File directory : listDirectories(directoryPath, true)) {
+            if (isEmptyDirectory(directory.getPath())) {
+                directory.delete();
+            }
         }
     }
 

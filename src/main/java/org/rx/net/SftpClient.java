@@ -13,6 +13,7 @@ import org.rx.io.IOStream;
 
 import java.util.*;
 
+import static org.rx.core.Contract.quietly;
 import static org.rx.core.Contract.require;
 
 /**
@@ -155,7 +156,7 @@ public class SftpClient extends Disposable {
     }
 
     @SneakyThrows
-    private List<ChannelSftp.LsEntry> listFiles(List<FileEntry> root, boolean recursive, String directory) {
+    private void listFiles(List<FileEntry> result, boolean recursive, String directory) {
         List<ChannelSftp.LsEntry> list = channel.ls(directory);
         for (ChannelSftp.LsEntry entry : list) {
             if (skipDirectories.contains(entry.getFilename())) {
@@ -163,13 +164,12 @@ public class SftpClient extends Disposable {
             }
             if (entry.getAttrs().isDir()) {
                 if (recursive) {
-                    listFiles(root, recursive, Files.concatPath(directory, entry.getFilename()));
+                    quietly(() -> listFiles(result, recursive, Files.concatPath(directory, entry.getFilename())));
                 }
                 continue;
             }
-            root.add(new FileEntry(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
+            result.add(new FileEntry(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
         }
-        return list;
     }
 
     @SneakyThrows

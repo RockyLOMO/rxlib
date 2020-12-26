@@ -3,6 +3,7 @@ package org.rx.test;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
@@ -228,6 +229,15 @@ public class SocksTester {
 
     @Test
     public void sftp() {
+//        SftpClient client = new SftpClient(new AuthenticEndpoint("jks:123456@mobile.f-li.cn:2222"));
+//        String dir = DateTime.now().toString("yyyyMMdd");
+//        for (SftpClient.FileEntry listDirectory : client.listDirectories("/", false)) {
+//            if (listDirectory.getFilename().equals(dir)) {
+//                continue;
+//            }
+//            client.delete(listDirectory.getPath());
+//        }
+
         SftpClient client = new SftpClient(new AuthenticEndpoint("rocky:@k8s.f-li.cn:22"));
         for (SftpClient.FileEntry directory : client.listDirectories("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
@@ -235,6 +245,7 @@ public class SocksTester {
         for (SftpClient.FileEntry directory : client.listFiles("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
         }
+
 //        String p = "E:\\Photo\\养生\\f0.jpg";
 //        client.uploadFile(p,"/test/");
 //        client.downloadFile("/test/f0.jpg","F:\\test\\1.jpg");
