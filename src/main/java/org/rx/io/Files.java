@@ -105,8 +105,8 @@ public class Files extends FilenameUtils {
     }
 
     @SneakyThrows
-    public static NQuery<File> listDirectories(String path, boolean recursive) {
-        File dir = new File(getFullPath(path));
+    public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {
+        File dir = new File(directoryPath);
         if (!recursive) {
             return NQuery.of(NQuery.toList(java.nio.file.Files.newDirectoryStream(dir.toPath(), java.nio.file.Files::isDirectory))).select(Path::toFile);
         }
@@ -114,10 +114,9 @@ public class Files extends FilenameUtils {
         return NQuery.of(FileUtils.listFilesAndDirs(dir, FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
     }
 
-    public static NQuery<File> listFiles(String path, boolean recursive) {
-        File p = new File(getFullPath(path));
+    public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
         IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
-        return NQuery.of(FileUtils.listFiles(p, ff, df));
+        return NQuery.of(FileUtils.listFiles(new File(directoryPath), ff, df));
     }
 
     @SneakyThrows

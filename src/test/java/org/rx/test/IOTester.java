@@ -132,15 +132,16 @@ public class IOTester {
 
     @Test
     public void listDirectories() {
-        Path path = Files.path("/a/1.txt");
+        String dirPath = "E:\\rdbc\\mysql-backup";
+        Path path = Files.path(dirPath);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (File p : Files.listDirectories("/", false)) {
+        for (File p : Files.listDirectories(dirPath, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listDirectories("/", true)) {
+        for (File p : Files.listDirectories(dirPath, true)) {
             System.out.println(p);
         }
     }
