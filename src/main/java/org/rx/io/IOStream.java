@@ -41,6 +41,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return stream;
     }
 
+    public static IOStream<?, ?> wrap(String name, InputStream in) {
+        HybridStream stream = new HybridStream();
+        stream.setName(name);
+        copyTo(in, stream.getWriter());
+        stream.setPosition(0L);
+        return stream;
+    }
+
     public static String readString(InputStream stream) {
         return readString(stream, Contract.UTF_8);
     }
