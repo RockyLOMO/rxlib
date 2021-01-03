@@ -5,11 +5,9 @@ import org.rx.core.App;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.UUID;
-
-import static org.rx.core.Contract.require;
 
 @Data
 public class RpcClientConfig implements Serializable {
@@ -42,6 +40,7 @@ public class RpcClientConfig implements Serializable {
 
     private static final long serialVersionUID = -4952694662640163676L;
     private boolean tryEpoll = true;
+    @NotNull
     private InetSocketAddress serverEndpoint;
     private MemoryMode memoryMode;
     private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
@@ -53,11 +52,5 @@ public class RpcClientConfig implements Serializable {
 
     public boolean isUsePool() {
         return maxPoolSize > NON_POOL_SIZE;
-    }
-
-    public UUID hashValue() {
-        require(serverEndpoint);
-
-        return App.hash(serverEndpoint, enableSsl, enableCompress, autoReconnect, eventVersion, isUsePool());
     }
 }

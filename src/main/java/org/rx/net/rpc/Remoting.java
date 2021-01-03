@@ -58,7 +58,7 @@ public final class Remoting {
     }
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
-    private static final Map<UUID, RpcClientPool> clientPools = new ConcurrentHashMap<>();
+    private static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
         return create(contract, facadeConfig, null, null);
@@ -75,7 +75,6 @@ public final class Remoting {
         Tuple<ManualResetEvent, MethodPack> resultPack = Tuple.of(new ManualResetEvent(), null);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
-        UUID pid = facadeConfig.hashValue();
         //onInit由调用方触发可能spring还没起来的情况
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
@@ -137,7 +136,7 @@ public final class Remoting {
                 pack = new MethodPack(m.getName(), args);
             }
             synchronized (sync) {
-                RpcClientPool pool = clientPools.computeIfAbsent(pid, k -> RpcClientPool.createPool(facadeConfig));
+                RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, RpcClientPool::createPool);
                 if (sync.v == null) {
                     init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
                     if (onInit != null || onInitClient != null) {
