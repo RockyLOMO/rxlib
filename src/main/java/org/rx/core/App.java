@@ -81,6 +81,7 @@ public class App extends SystemUtils {
                         break;
                     default:
                         log.error(key, e);
+                        Tasks.raiseUncaughtException(e);
                         break;
                 }
             }
@@ -90,45 +91,6 @@ public class App extends SystemUtils {
             return isNull(e.getMessage(), ApplicationException.DEFAULT_MESSAGE);
         }
         return applicationException.getFriendlyMessage();
-    }
-
-    public static List<String> execShell(String workspace, String... shellStrings) {
-        List<String> resultList = new ArrayList<>();
-        StringBuilder msg = new StringBuilder();
-        File dir = null;
-        if (workspace != null) {
-            msg.append(String.format("execShell workspace=%s\n", workspace));
-            dir = new File(workspace);
-        }
-        for (String shellString : shellStrings) {
-            msg.append(String.format("pre-execShell %s", shellString));
-            StringBuilder result = new StringBuilder();
-            try {
-                Process process;
-                if (IS_OS_WINDOWS) {
-                    process = Runtime.getRuntime().exec(shellString, null, dir);
-                } else {
-                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", shellString}, null, dir);
-                }
-                try (LineNumberReader input = new LineNumberReader(
-                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = input.readLine()) != null) {
-                        result.append(line).append("\n");
-                    }
-                }
-            } catch (Exception e) {
-                log.error("execShell", e);
-                result.append("ERROR: " + e.getMessage()).append("\n");
-            }
-            msg.append(String.format("\npost-execShell %s\n\n", result));
-            if (result.getLength() == 0) {
-                result.append("NULL");
-            }
-            resultList.add(result.toString());
-        }
-        log.info(msg.toString());
-        return resultList;
     }
 
     /**
