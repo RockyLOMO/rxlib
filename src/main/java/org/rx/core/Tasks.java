@@ -1,8 +1,10 @@
 package org.rx.core;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
@@ -57,14 +59,23 @@ public final class Tasks {
     @Getter
     private static final ThreadPool executor = new ThreadPool();
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
+    private static final FastThreadLocal<Boolean> raiseFlag = new FastThreadLocal<>();
 
     public static void raiseUncaughtException(Throwable e) {
-        Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
-        if (handler == null) {
-            log.error("UncaughtException", e);
+        if (BooleanUtils.isTrue(raiseFlag.getIfExists())) {
             return;
         }
-        handler.uncaughtException(Thread.currentThread(), e);
+        raiseFlag.set(Boolean.TRUE);
+        try {
+            Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
+            if (handler == null) {
+                log.error("UncaughtException", e);
+                return;
+            }
+            handler.uncaughtException(Thread.currentThread(), e);
+        } finally {
+            raiseFlag.remove();
+        }
     }
 
     public static CompletableFuture<Void> run(Action task) {
