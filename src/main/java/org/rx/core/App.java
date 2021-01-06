@@ -177,49 +177,38 @@ public class App extends SystemUtils {
         require(key);
 
         byte[] guidBytes = MD5Util.md5(key);
-        return newUUID(guidBytes);
+        return SUID.newUUID(guidBytes);
     }
 
-    public static UUID newComb() {
-        return newComb(null, null);
+    public static UUID combId() {
+        return combId(System.nanoTime(), null);
     }
 
-    public static UUID newComb(String key, Timestamp timestamp) {
-        return newComb(key, timestamp, false);
+    public static UUID combId(Timestamp timestamp, String key) {
+        return combId(timestamp.getTime(), key);
+    }
+
+    public static UUID combId(long timestamp, String key) {
+        return combId(timestamp, key, false);
     }
 
     //http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database
-    public static UUID newComb(String key, Timestamp timestamp, boolean sequentialAtEnd) {
-        byte[] guidBytes, msecsBytes;
+    public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
+        long id;
         if (key != null) {
-            guidBytes = MD5Util.md5(key);
+            id = ByteBuffer.wrap(MD5Util.md5(key)).getLong(4);
         } else {
-            guidBytes = new byte[16];
-            ThreadLocalRandom.current().nextBytes(guidBytes);
+            id = ThreadLocalRandom.current().nextLong();
         }
-        if (timestamp != null) {
-            msecsBytes = ByteBuffer.allocate(8).putLong(timestamp.getTime()).array();
-        } else {
-            msecsBytes = ByteBuffer.allocate(8).putLong(System.nanoTime()).array();
-        }
-        int copyCount = msecsBytes.length, copyOffset = msecsBytes.length - copyCount;
+        long mostSigBits, leastSigBits;
         if (sequentialAtEnd) {
-            System.arraycopy(msecsBytes, copyOffset, guidBytes, guidBytes.length - copyCount, copyCount);
+            mostSigBits = id;
+            leastSigBits = timestamp;
         } else {
-            System.arraycopy(msecsBytes, copyOffset, guidBytes, 0, copyCount);
+            mostSigBits = timestamp;
+            leastSigBits = id;
         }
-        return newUUID(guidBytes);
-    }
-
-    private static UUID newUUID(byte[] guidBytes) {
-        long msb = 0, lsb = 0;
-        for (int i = 0; i < 8; i++) {
-            msb = (msb << 8) | (guidBytes[i] & 0xff);
-        }
-        for (int i = 8; i < 16; i++) {
-            lsb = (lsb << 8) | (guidBytes[i] & 0xff);
-        }
-        return new UUID(msb, lsb);
+        return new UUID(mostSigBits, leastSigBits);
     }
     //endregion
 

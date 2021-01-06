@@ -1,9 +1,12 @@
 package org.rx.bean;
 
+import lombok.SneakyThrows;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
+import org.rx.util.function.BiFunc;
 
+import java.util.EnumMap;
 import java.util.EnumSet;
 
 import static org.rx.core.Contract.NON_WARNING;
@@ -109,5 +112,17 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
             }
         }
         return set;
+    }
+
+    @SuppressWarnings(NON_WARNING)
+    @SneakyThrows
+    public <V> EnumMap<T, V> toMap(BiFunc<T, V> compute) {
+        EnumMap<T, V> map = new EnumMap<>(type);
+        for (T constant : type.getEnumConstants()) {
+            if (has(constant)) {
+                map.put(constant, compute.invoke(constant));
+            }
+        }
+        return map;
     }
 }

@@ -52,7 +52,7 @@ public final class SUID implements Serializable {
         return new SUID(uuid);
     }
 
-    private static UUID newUUID(byte[] guidBytes) {
+    public static UUID newUUID(byte[] guidBytes) {
         long msb = 0, lsb = 0;
         for (int i = 0; i < 8; i++) {
             msb = (msb << 8) | (guidBytes[i] & 0xff);

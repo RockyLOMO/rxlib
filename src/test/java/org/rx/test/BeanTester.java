@@ -3,6 +3,7 @@ package org.rx.test;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
+import org.rx.core.App;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
@@ -12,9 +13,8 @@ import org.rx.util.BeanMapper;
 import org.rx.test.bean.TargetBean;
 import org.rx.util.BeanMapNullValueStrategy;
 
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
+import java.sql.Timestamp;
+import java.util.*;
 
 import static org.rx.core.Contract.eq;
 import static org.rx.core.Contract.toJsonString;
@@ -116,27 +116,37 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void suid() {
-        String d = "wyf520";
-        SUID suid = SUID.compute(d);
-        System.out.println(suid.toString());
+        Map<Integer, Long> map = new HashMap<>();
+        for (int i = 0; i < 10; i++) {
+            map.put(i, System.nanoTime());
+            System.out.println(App.combId(map.get(i), "" + i));
+        }
+        for (int i = 0; i < 10; i++) {
+            assert App.combId(map.get(i), "" + i).equals(App.combId(new Timestamp(map.get(i)), "" + i));
+        }
 
-        SUID valueOf = SUID.valueOf(suid.toString());
-        System.out.println(valueOf.toString());
 
-        assert suid.equals(valueOf);
-
-        Set<SUID> set = new HashSet<>();
-        int len = 100000;  //1530ms
-        invoke("suid", () -> {
-            for (int i = 0; i < len; i++) {
-                SUID suid1 = SUID.randomSUID();
-                System.out.println(suid1.toString());
-                set.add(suid1);
-
-                assert SUID.valueOf(suid1.toString()).equals(suid1);
-            }
-        });
-        assert set.size() == len;
+//        String d = "wyf520";
+//        SUID suid = SUID.compute(d);
+//        System.out.println(suid.toString());
+//
+//        SUID valueOf = SUID.valueOf(suid.toString());
+//        System.out.println(valueOf.toString());
+//
+//        assert suid.equals(valueOf);
+//
+//        Set<SUID> set = new HashSet<>();
+//        int len = 10000;  //1530ms
+//        invoke("suid", () -> {
+//            for (int i = 0; i < len; i++) {
+//                SUID suid1 = SUID.randomSUID();
+//                System.out.println(suid1.toString());
+//                set.add(suid1);
+//
+//                assert SUID.valueOf(suid1.toString()).equals(suid1);
+//            }
+//        });
+//        assert set.size() == len;
     }
 
     @Test
