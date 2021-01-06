@@ -136,7 +136,10 @@ public final class Remoting {
                 pack = new MethodPack(m.getName(), args);
             }
             synchronized (sync) {
-                RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, RpcClientPool::createPool);
+                RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
+                    log.info("RpcClientPool {}", toJsonString(k));
+                    return RpcClientPool.createPool(k);
+                });
                 if (sync.v == null) {
                     init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
                     if (onInit != null || onInitClient != null) {
