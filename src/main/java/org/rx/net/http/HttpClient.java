@@ -48,6 +48,10 @@ public class HttpClient {
     }
 
     //region StaticMembers
+    public static String godaddyDns(String ssoKey, String domain, String name) {
+        return godaddyDns(ssoKey, domain, name, getWanIp());
+    }
+
     public static String godaddyDns(String ssoKey, String domain, String name, String ip) {
         String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
         HttpClient client = new HttpClient();
@@ -58,6 +62,11 @@ public class HttpClient {
                 "    \"ttl\": 600\n" +
                 "  }\n" +
                 "]", ip));
+    }
+
+    public static String getWanIp() {
+        HttpClient client = new HttpClient();
+        return client.get("https://api.ipify.org");
     }
 
     public static void saveRawCookies(String url, String raw) {
