@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 
+//DataSize 和 Duration
 public class AppConfigConverters {
     @Component
     @ConfigurationPropertiesBinding
