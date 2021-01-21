@@ -4,7 +4,6 @@ import lombok.SneakyThrows;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
-import org.apache.commons.io.filefilter.IOFileFilter;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.StringBuilder;
@@ -12,6 +11,7 @@ import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
 
 import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -23,6 +23,51 @@ import java.util.stream.Stream;
 import static org.rx.core.Contract.require;
 
 public class Files extends FilenameUtils {
+    private static final CurdFile<File> curdFile = new LocalCurdFile();
+
+    public static void createDirectory(String path) {
+        curdFile.createDirectory(path);
+    }
+
+    public static void saveFile(String filePath, InputStream in) {
+        curdFile.saveFile(filePath, in);
+    }
+
+    public static void delete(String path) {
+        curdFile.delete(path);
+    }
+
+    public static boolean isDirectory(String path) {
+        return curdFile.isDirectory(path);
+    }
+
+    public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {
+        return curdFile.listDirectories(directoryPath, recursive);
+    }
+
+    public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
+        return curdFile.listFiles(directoryPath, recursive);
+    }
+
+    public static Path path(String root, String... paths) {
+        return Paths.get(root, paths);
+    }
+
+    @SneakyThrows
+    public static byte[] readAllBytes(Path filePath) {
+        return java.nio.file.Files.readAllBytes(filePath);
+    }
+
+    @SneakyThrows
+    public static List<String> readAllLines(Path filePath) {
+        return readAllLines(filePath, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static List<String> readAllLines(Path filePath, Charset charset) {
+        return java.nio.file.Files.readAllLines(filePath, charset);
+    }
+
     public static String concatPath(String root, String... paths) {
         require(root);
 
@@ -49,50 +94,6 @@ public class Files extends FilenameUtils {
         return path + separatorChar;
     }
 
-    public static boolean isDirectory(String path) {
-        if (Strings.isEmpty(path)) {
-            throw new IllegalArgumentException("path");
-        }
-
-        char ch = path.charAt(path.length() - 1);
-        return ch == '/' || ch == '\\' || Strings.isEmpty(getExtension(path));
-    }
-
-    public static Path path(String root, String... paths) {
-        return Paths.get(root, paths);
-    }
-
-    @SneakyThrows
-    public static byte[] readAllBytes(Path filePath) {
-        return java.nio.file.Files.readAllBytes(filePath);
-    }
-
-    @SneakyThrows
-    public static List<String> readAllLines(Path filePath) {
-        return readAllLines(filePath, StandardCharsets.UTF_8);
-    }
-
-    @SneakyThrows
-    public static List<String> readAllLines(Path filePath, Charset charset) {
-        return java.nio.file.Files.readAllLines(filePath, charset);
-    }
-
-    @SneakyThrows
-    public static void createDirectory(String path) {
-        java.nio.file.Files.createDirectories(new File(getFullPath(path)).toPath());
-    }
-
-//    private static File getDirectory(File path) {
-//        if (path.isDirectory()) {
-//            return path;
-//        }
-//        File parent = path.getParentFile();
-//        if (parent == null) {
-//            throw new InvalidException("%s parent path is null", path.getPath());
-//        }
-//        return parent;
-//    }
-
     @SneakyThrows
     public static boolean isEmptyDirectory(String directoryPath) {
         Path dir = Paths.get(directoryPath);
@@ -102,21 +103,6 @@ public class Files extends FilenameUtils {
         try (Stream<Path> entries = java.nio.file.Files.list(dir)) {
             return !entries.findFirst().isPresent();
         }
-    }
-
-    @SneakyThrows
-    public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {
-        File dir = new File(directoryPath);
-        if (!recursive) {
-            return NQuery.of(NQuery.toList(java.nio.file.Files.newDirectoryStream(dir.toPath(), java.nio.file.Files::isDirectory))).select(Path::toFile);
-        }
-        //FileUtils.listFiles() 有bug
-        return NQuery.of(FileUtils.listFilesAndDirs(dir, FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
-    }
-
-    public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
-        IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
-        return NQuery.of(FileUtils.listFiles(new File(directoryPath), ff, df));
     }
 
     @SneakyThrows
@@ -159,20 +145,5 @@ public class Files extends FilenameUtils {
                 directory.delete();
             }
         }
-    }
-
-    public static boolean delete(String path) {
-        return delete(path, false);
-    }
-
-    @SneakyThrows
-    public static boolean delete(String path, boolean force) {
-        File p = new File(path);
-        if (force) {
-            FileUtils.forceDelete(p);
-            return true;
-        }
-//        java.nio.file.Files.delete();  DirectoryNotEmptyException
-        return FileUtils.deleteQuietly(p);
     }
 }
