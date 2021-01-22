@@ -13,6 +13,8 @@ public interface CurdFile<T> {
 
     boolean isDirectory(String path);
 
+    boolean exists(String path);
+
     NQuery<T> listDirectories(String directoryPath, boolean recursive);
 
     NQuery<T> listFiles(String directoryPath, boolean recursive);

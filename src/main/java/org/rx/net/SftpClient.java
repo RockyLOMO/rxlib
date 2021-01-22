@@ -120,6 +120,17 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     }
 
     @Override
+    public boolean exists(String path) {
+        try {
+            channel.stat(path);
+            return true;
+        } catch (SftpException e) {
+            log.warn("exists", e);
+        }
+        return false;
+    }
+
+    @Override
     public NQuery<SftpFile> listDirectories(String remotePath, boolean recursive) {
         List<SftpFile> root = new ArrayList<>();
         listDirectories(root, recursive, remotePath);

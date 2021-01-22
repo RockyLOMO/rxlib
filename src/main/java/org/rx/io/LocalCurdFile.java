@@ -11,6 +11,7 @@ import org.rx.core.Strings;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
@@ -43,6 +44,11 @@ class LocalCurdFile implements CurdFile<File> {
 
         char ch = path.charAt(path.length() - 1);
         return ch == '/' || ch == '\\' || Strings.isEmpty(FilenameUtils.getExtension(path));
+    }
+
+    @Override
+    public boolean exists(String path) {
+        return java.nio.file.Files.exists(Paths.get(path));
     }
 
     @SneakyThrows

@@ -5,10 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.Tasks;
-import org.rx.net.AuthenticEndpoint;
-import org.rx.net.PingClient;
-import org.rx.net.SftpClient;
-import org.rx.net.Sockets;
+import org.rx.net.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
 import org.rx.net.rpc.RemotingException;
@@ -205,6 +202,7 @@ public class SocksTester {
 
     @Test
     public void httpClient() {
+        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         HttpClient client = new HttpClient();
         for (int i = 0; i < 10; i++) {
             client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
@@ -235,12 +233,14 @@ public class SocksTester {
 //        }
 
         SftpClient client = new SftpClient(new AuthenticEndpoint("rocky:@k8s.f-li.cn:22"));
-        for (SftpClient.FileEntry directory : client.listDirectories("/home/rocky/df/", true)) {
+        for (SftpFile directory : client.listDirectories("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
         }
-        for (SftpClient.FileEntry directory : client.listFiles("/home/rocky/df/", true)) {
-            System.out.println(directory.getPath());
+        for (SftpFile file : client.listFiles("/home/rocky/df/", true)) {
+            System.out.println(file.getPath());
         }
+        System.out.println(client.exists("/home/rocky/df/scpx.sh"));
+        System.out.println(client.exists("/home/rocky/df/scpx2.sh"));
 
 //        String p = "E:\\Photo\\养生\\f0.jpg";
 //        client.uploadFile(p,"/test/");
