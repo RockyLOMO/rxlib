@@ -241,6 +241,8 @@ public class SocksTester {
         }
         System.out.println(client.exists("/home/rocky/df/scpx.sh"));
         System.out.println(client.exists("/home/rocky/df/scpx2.sh"));
+        System.out.println(client.exists("/home/rocky/df/"));
+        System.out.println(client.exists("/home/rocky/df"));
 
 //        String p = "E:\\Photo\\养生\\f0.jpg";
 //        client.uploadFile(p,"/test/");

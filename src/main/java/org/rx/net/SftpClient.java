@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.exception.InvalidException;
 import org.rx.io.CurdFile;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
@@ -89,7 +90,11 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     @SneakyThrows
     @Override
     public void createDirectory(String remotePath) {
-        channel.mkdir(remotePath);
+        String dirPath = FilenameUtils.getFullPath(remotePath);
+        if (exists(dirPath)) {
+            return;
+        }
+        channel.mkdir(dirPath);
     }
 
     @Override
@@ -183,16 +188,14 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     public void uploadFile(IOStream<?, ?> stream, String remotePath) {
         require(stream, remotePath);
 
-        if (!Files.isDirectory(remotePath)) {
-            remotePath = Files.getFullPath(remotePath);
+        if (Files.isDirectory(remotePath)) {
+            if (Strings.isEmpty(stream.getName())) {
+                throw new InvalidException("stream name is empty");
+            }
+            remotePath = padDirectoryPath(remotePath) + stream.getName();
         }
-        try {
-            channel.mkdir(remotePath);
-        } catch (Exception e) {
-            log.warn("mkdir fail, {}", e.getMessage());
-        }
-        remotePath += stream.getName();
 
+        createDirectory(remotePath);
         channel.put(stream.getReader(), remotePath);
     }
 

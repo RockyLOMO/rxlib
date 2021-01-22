@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import lombok.Getter;
 import lombok.SneakyThrows;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -7,7 +8,6 @@ import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.StringBuilder;
-import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
 
 import java.io.File;
@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 import static org.rx.core.Contract.require;
 
 public class Files extends FilenameUtils {
+    @Getter
     private static final CurdFile<File> curdFile = new LocalCurdFile();
 
     public static void createDirectory(String path) {
@@ -71,27 +72,15 @@ public class Files extends FilenameUtils {
     public static String concatPath(String root, String... paths) {
         require(root);
 
-        StringBuilder p = new StringBuilder(checkDirectoryPath(root));
+        StringBuilder p = new StringBuilder(curdFile.padDirectoryPath(root));
         if (!Arrays.isEmpty(paths)) {
             int l = paths.length - 1;
             for (int i = 0; i < l; i++) {
-                p.append(checkDirectoryPath(paths[i]));
+                p.append(curdFile.padDirectoryPath(paths[i]));
             }
             p.append(paths[l]);
         }
         return p.toString();
-    }
-
-    private static String checkDirectoryPath(String path) {
-        if (Strings.isEmpty(path)) {
-            return Strings.EMPTY;
-        }
-        char ch = path.charAt(path.length() - 1);
-        if (ch == '/' || ch == '\\') {
-            return path;
-        }
-        char separatorChar = path.lastIndexOf('\\') != -1 ? '\\' : '/';
-        return path + separatorChar;
     }
 
     @SneakyThrows
