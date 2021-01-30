@@ -41,6 +41,7 @@ public class App extends SystemUtils {
 
     public static void setIgnoreExceptionHandler(Predicate<Throwable> ignoreExceptionHandler) {
         App.ignoreExceptionHandler = ignoreExceptionHandler;
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log("Global", e));
     }
 
     //region Basic
