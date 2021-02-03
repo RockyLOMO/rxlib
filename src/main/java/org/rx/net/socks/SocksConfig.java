@@ -15,7 +15,6 @@ import java.net.SocketAddress;
 @AllArgsConstructor
 public class SocksConfig implements Serializable {
     private int listenPort = 1080;
-    private int acceptors = 2;
     private int backlog = 128;
     private int connectTimeoutMillis = 3000;
     private int readTimeoutSeconds = 60;

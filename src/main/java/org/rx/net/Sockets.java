@@ -130,10 +130,11 @@ public final class Sockets {
     }
 
     public static ServerBootstrap serverBootstrap(boolean tryEpoll) {
-        return serverBootstrap(tryEpoll, 1, 0, null, null);
+        return serverBootstrap(tryEpoll, 0, null, null);
     }
 
-    public static ServerBootstrap serverBootstrap(boolean tryEpoll, int bossThreadAmount, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+    public static ServerBootstrap serverBootstrap(boolean tryEpoll, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+        int bossThreadAmount = 1; //等于bind的次数，默认1
         ServerBootstrap b = new ServerBootstrap()
                 .group(eventLoopGroup(tryEpoll, bossThreadAmount), eventLoopGroup(tryEpoll, workThreadAmount))
                 .channel(serverChannelClass(tryEpoll))

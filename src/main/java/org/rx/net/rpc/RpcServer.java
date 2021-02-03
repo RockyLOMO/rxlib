@@ -145,7 +145,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(config.isTryEpoll(), 1, config.getWorkThread(), config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.serverBootstrap(config.isTryEpoll(), config.getWorkThread(), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));
