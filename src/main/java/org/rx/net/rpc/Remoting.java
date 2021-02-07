@@ -8,6 +8,7 @@ import org.rx.bean.$;
 import org.rx.bean.InterceptProxy;
 import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
+import org.rx.net.Sockets;
 import org.rx.net.rpc.impl.StatefulRpcClient;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventPack;
@@ -164,7 +165,7 @@ public final class Remoting {
                 MethodPack methodPack = as(pack, MethodPack.class);
                 boolean debug = methodPack != null;
                 if (debug) {
-                    msg.appendLine("Rpc client %s.%s", contract.getSimpleName(), methodPack.methodName);
+                    msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, Sockets.toString(client.getLocalAddress()));
                     msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
                 }
                 try {
@@ -186,9 +187,7 @@ public final class Remoting {
                         }
                     }
                 } catch (Exception e) {
-                    if (debug) {
-                        msg.appendLine("Response:\t%s", e.getMessage());
-                    }
+                    msg.appendLine("Response:\t%s", e.getMessage());
                     throw e;
                 } finally {
                     log.info(msg.toString());
@@ -342,7 +341,7 @@ public final class Remoting {
 
                 MethodPack pack = (MethodPack) e.getValue();
                 StringBuilder msg = new StringBuilder();
-                msg.appendLine("Rpc server %s.%s", contractInstance.getClass().getSimpleName(), pack.methodName);
+                msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
                 msg.appendLine("Request:\t%s", toJsonString(pack.parameters));
                 try {
                     pack.returnValue = Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);

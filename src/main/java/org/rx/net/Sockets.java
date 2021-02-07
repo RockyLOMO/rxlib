@@ -76,6 +76,7 @@ public final class Sockets {
         closeOnFlushed(channel, null);
     }
 
+    //futureListener暂停会有ClosedChannelException
     public static void closeOnFlushed(Channel channel, ChannelFutureListener futureListener) {
         require(channel);
 

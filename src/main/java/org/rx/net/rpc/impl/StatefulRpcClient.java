@@ -29,6 +29,7 @@ import org.rx.net.rpc.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.Date;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
@@ -121,11 +122,19 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         return autoReconnect && !isConnected();
     }
 
+    public InetSocketAddress getLocalAddress() {
+        if (!isConnected()) {
+            return null;
+        }
+        return (InetSocketAddress) channel.localAddress();
+    }
+
     public StatefulRpcClient(RpcClientConfig config) {
         require(config);
 
         this.config = config;
         autoReconnect = config.isAutoReconnect();
+        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
     }
 
     protected StatefulRpcClient() {
@@ -135,11 +144,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Override
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
-//        Sockets.closeOnFlushed(channel, f -> {
-////            sleep(2000);  暂停会有ClosedChannelException
-//            Sockets.closeBootstrap(bootstrap);
-//        });
-
         Sockets.closeOnFlushed(channel);
         Sockets.closeBootstrap(bootstrap);
     }
