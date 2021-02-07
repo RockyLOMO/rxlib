@@ -191,9 +191,7 @@ public final class Remoting {
                     }
                     throw e;
                 } finally {
-                    if (debug) {
-                        log.debug(msg.toString());
-                    }
+                    log.info(msg.toString());
                     sync.v = pool.returnClient(client);
                 }
             }
@@ -355,7 +353,7 @@ public final class Remoting {
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                     msg.appendLine("Response:\t%s", pack.errorMessage);
                 }
-                log.debug(msg.toString());
+                log.info(msg.toString());
                 java.util.Arrays.fill(pack.parameters, null);
                 s.send(e.getClient(), pack);
             };

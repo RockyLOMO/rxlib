@@ -6,7 +6,7 @@
     <bean id="springContext" class="org.rx.spring.SpringContext"/>
     <bean id="logInterceptor" class="org.rx.spring.LogInterceptor"/>
     <bean id="controllerInterceptor" class="org.rx.spring.ControllerInterceptor"/>
-    <aop:config proxy-target-class="true">
+    <aop:config proxy-target-class="true" expose-proxy="true">
         <aop:aspect ref="logInterceptor">
             <!--<aop:pointcut id="vaPointcut"-->
             <!--expression="execution(public * org.rx..*.*(..))-->
