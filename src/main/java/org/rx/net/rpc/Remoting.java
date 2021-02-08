@@ -165,7 +165,7 @@ public final class Remoting {
                 MethodPack methodPack = as(pack, MethodPack.class);
                 boolean debug = methodPack != null;
                 if (debug) {
-                    msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, Sockets.toString(client.getLocalAddress()));
+                    msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
                     msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
                 }
                 try {

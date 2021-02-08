@@ -134,7 +134,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
         this.config = config;
         autoReconnect = config.isAutoReconnect();
-        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
+//        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
     }
 
     protected StatefulRpcClient() {
