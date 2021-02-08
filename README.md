@@ -1,4 +1,4 @@
-# rxlib-java
+# ℞lib-java
 A set of utilities for Java.
 
 * ThreadPool - optimum thread count
@@ -58,6 +58,15 @@ public void threadPool() {
 * BufferedRandomAccessFile
 * socks5 proxy
 
+### Maven
+```xml
+<dependency>
+    <groupId>com.github.rockylomo</groupId>
+    <artifactId>rxlib</artifactId>
+    <version>2.17.0</version>
+</dependency>
+```
+
 ### shadowsocks (Only tested AES encryption, BELOW VERSION 2.13.13)
     * A pure client for [shadowsocks](https://github.com/shadowsocks/shadowsocks).
     * Requirements
@@ -67,12 +76,3 @@ public void threadPool() {
         NioLocalServer server = new NioLocalServer(config);
         new Thread(server).start();
 
-### Maven
-
-```xml
-<dependency>
-    <groupId>com.github.rockylomo</groupId>
-    <artifactId>rxlib</artifactId>
-    <version>2.16.9</version>
-</dependency>
-```
