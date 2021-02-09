@@ -104,7 +104,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return "[BigString]";
                 }
             }
-            return App.skipTypesFilter.process(null, null, p);
+            return p;
         }).toList();
         return toJsonString(list.size() == 1 ? list.get(0) : list);
     }

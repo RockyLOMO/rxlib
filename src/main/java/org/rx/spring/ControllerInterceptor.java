@@ -29,7 +29,7 @@ public class ControllerInterceptor extends BaseInterceptor {
             if (p instanceof MultipartFile) {
                 return "[MultipartFile]";
             }
-            return p;
+            return App.skipTypesFilter.process(null, null, p);
         };
     }
 
