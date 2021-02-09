@@ -7,7 +7,7 @@ import org.rx.core.exception.ApplicationException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Contract.values;
+import static org.rx.core.App.values;
 
 public class Strings extends StringUtils {
     /**

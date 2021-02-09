@@ -15,8 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.as;
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.as;
+import static org.rx.core.App.toJsonString;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final FastThreadLocal<Map<String, Object>> metrics = new FastThreadLocal<Map<String, Object>>() {
@@ -104,7 +104,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return "[BigString]";
                 }
             }
-            return p;
+            return App.skipTypesFilter.process(null, null, p);
         }).toList();
         return toJsonString(list.size() == 1 ? list.get(0) : list);
     }

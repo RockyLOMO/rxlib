@@ -5,7 +5,7 @@ import org.rx.core.exception.InvalidException;
 
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.toJsonString;
 
 @Slf4j
 public class UserManagerImpl implements UserManager {

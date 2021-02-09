@@ -14,8 +14,8 @@ import org.rx.io.IOStream;
 import java.io.InputStream;
 import java.util.*;
 
-import static org.rx.core.Contract.quietly;
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.quietly;
+import static org.rx.core.App.require;
 
 /**
  * "cd remotePath                       Change remote directory to 'remotePath'\n"+

@@ -23,8 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.rx.core.Contract.sleep;
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.sleep;
+import static org.rx.core.App.toJsonString;
 
 @Slf4j
 public class SocksTester {

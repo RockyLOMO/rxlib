@@ -13,7 +13,7 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 /**
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/

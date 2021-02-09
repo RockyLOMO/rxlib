@@ -11,7 +11,7 @@ import org.rx.net.BytesSegment;
 import java.io.*;
 import java.util.Arrays;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> implements Serializable {
     private static final long serialVersionUID = 1171318600626020868L;

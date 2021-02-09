@@ -7,7 +7,7 @@ import org.rx.util.function.BiFunc;
 
 import java.util.*;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 public interface Cache<TK, TV> {
     int NON_EXPIRE_MINUTES = 0;

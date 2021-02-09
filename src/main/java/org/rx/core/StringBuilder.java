@@ -1,6 +1,6 @@
 package org.rx.core;
 
-import static org.rx.core.Contract.isNull;
+import static org.rx.core.App.isNull;
 
 public final class StringBuilder {
     private final java.lang.StringBuilder buffer;

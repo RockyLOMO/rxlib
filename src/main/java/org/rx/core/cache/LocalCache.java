@@ -9,7 +9,7 @@ import org.rx.util.function.BiFunc;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 public class LocalCache<TK, TV> implements Cache<TK, TV> {
     private final com.google.common.cache.Cache<TK, TV> cache;

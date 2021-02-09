@@ -15,14 +15,13 @@ import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 
+import javax.servlet.http.HttpServletResponse;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Contract.*;
-import static org.rx.core.Contract.toJsonString;
-
+import static org.rx.core.App.*;
 
 @Slf4j
 public class CoreTester extends TestUtil {
@@ -72,7 +71,7 @@ public class CoreTester extends TestUtil {
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
             System.out.println("groupKey: " + p);
             List<PersonBean> list = x.toList();
-            System.out.println("items: " + Contract.toJsonString(list));
+            System.out.println("items: " + toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
@@ -126,14 +125,14 @@ public class CoreTester extends TestUtil {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);
-        System.out.println(Contract.toJsonString(q));
+        System.out.println(toJsonString(q));
     }
 
     private void showResult(String n, NQuery q) {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);
-        System.out.println(Contract.toJsonString(q.toList()));
+        System.out.println(toJsonString(q.toList()));
     }
     //endregion
 
@@ -305,6 +304,10 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void json() {
+        Object[] args = new Object[]{"b", Tuple.of(proxy(HttpServletResponse.class, (m, i) -> i.fastInvokeSuper()), false)};
+        System.out.println(toJsonString(args));
+        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
+
         String str = "abc";
         assert str.equals(toJsonString(str));
         String jObj = toJsonString(PersonBean.def);
@@ -343,9 +346,6 @@ public class CoreTester extends TestUtil {
         for (Tuple<String, List<Float>> item : tupleList) {
             System.out.println(item);
         }
-
-        RxConfig.jsonSkipSet.add(IOStream.class);
-        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12,false)), false)));
     }
 
     @Test

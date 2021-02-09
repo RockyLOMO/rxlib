@@ -6,8 +6,8 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.rx.core.Contract.NON_WARNING;
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.App.require;
 
 /**
  * System.arraycopy();

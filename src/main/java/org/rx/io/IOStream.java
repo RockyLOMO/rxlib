@@ -8,13 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.Contract;
+import org.rx.core.App;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
 
 import java.io.*;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 @AllArgsConstructor
@@ -50,7 +50,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public static String readString(InputStream stream) {
-        return readString(stream, Contract.UTF_8);
+        return readString(stream, UTF_8);
     }
 
     @SneakyThrows
@@ -67,7 +67,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public static void writeString(OutputStream out, String value) {
-        writeString(out, value, Contract.UTF_8);
+        writeString(out, value, UTF_8);
     }
 
     @SneakyThrows

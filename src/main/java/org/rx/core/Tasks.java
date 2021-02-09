@@ -18,7 +18,7 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public final class Tasks {

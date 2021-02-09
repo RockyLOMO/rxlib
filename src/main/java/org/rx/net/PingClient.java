@@ -13,7 +13,7 @@ import java.net.Socket;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 @Slf4j
 public final class PingClient {

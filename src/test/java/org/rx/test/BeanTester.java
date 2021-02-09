@@ -16,8 +16,8 @@ import org.rx.util.BeanMapNullValueStrategy;
 import java.sql.Timestamp;
 import java.util.*;
 
-import static org.rx.core.Contract.eq;
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.eq;
+import static org.rx.core.App.toJsonString;
 
 public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class

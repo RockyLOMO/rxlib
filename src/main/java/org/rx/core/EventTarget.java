@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> {
     @Slf4j

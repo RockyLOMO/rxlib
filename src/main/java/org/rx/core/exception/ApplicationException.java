@@ -6,7 +6,7 @@ import org.rx.core.*;
 
 import java.util.UUID;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 /**
  * 根据Exception来读取errorCode.yml的错误信息

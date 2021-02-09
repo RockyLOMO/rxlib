@@ -2,7 +2,7 @@ package org.rx.util.function;
 
 import java.util.function.Predicate;
 
-import static org.rx.core.Contract.sneakyInvoke;
+import static org.rx.core.App.sneakyInvoke;
 
 @FunctionalInterface
 public interface PredicateFunc<T> {

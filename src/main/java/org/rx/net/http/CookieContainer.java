@@ -10,7 +10,7 @@ import org.rx.net.http.cookie.persistence.MemoryCookiePersistor;
 
 import java.util.*;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 public final class CookieContainer implements CookieJar {
     @Getter

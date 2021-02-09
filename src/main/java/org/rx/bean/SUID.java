@@ -12,7 +12,7 @@ import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.UUID;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 @EqualsAndHashCode
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)

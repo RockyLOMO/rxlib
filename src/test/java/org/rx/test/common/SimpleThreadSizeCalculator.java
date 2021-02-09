@@ -6,7 +6,7 @@ import org.rx.net.http.HttpClient;
 import java.math.BigDecimal;
 import java.util.concurrent.BlockingQueue;
 
-import static org.rx.core.Contract.MAX_INT;
+import static org.rx.core.App.MAX_INT;
 
 public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
     @Override

@@ -2,7 +2,7 @@ package org.rx.security;
 
 import lombok.SneakyThrows;
 import org.rx.core.App;
-import org.rx.core.Contract;
+import org.rx.core.App;
 
 import javax.crypto.Cipher;
 import java.security.*;
@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.*;
 
 public final class RSAUtil {
     private static final String SIGN_ALGORITHMS = "MD5withRSA";
@@ -67,7 +67,7 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initSign(priKey);
-        signature.update(getContentBytes(content, Contract.UTF_8));
+        signature.update(getContentBytes(content, UTF_8));
         return App.convertToBase64String(signature.sign());
     }
 
@@ -106,7 +106,7 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initVerify(pubKey);
-        signature.update(getContentBytes(content, Contract.UTF_8));
+        signature.update(getContentBytes(content, UTF_8));
         return signature.verify(App.convertFromBase64String(sign));
     }
 
@@ -163,7 +163,7 @@ public final class RSAUtil {
     public static void main(String[] args) {
         UUID id = UUID.randomUUID();
         String[] kp = RSAUtil.generateKeyPair();
-        System.out.println("id=" + id + ", kp=" + Contract.toJsonString(kp));
+        System.out.println("id=" + id + ", kp=" + toJsonString(kp));
 
         String publicKey = kp[0];
         String privateKey = kp[1];

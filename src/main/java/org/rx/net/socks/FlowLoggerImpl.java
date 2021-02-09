@@ -7,7 +7,7 @@ import org.rx.net.Sockets;
 
 import java.net.InetSocketAddress;
 
-import static org.rx.core.Contract.isNull;
+import static org.rx.core.App.isNull;
 
 @Slf4j
 public class FlowLoggerImpl implements FlowLogger {

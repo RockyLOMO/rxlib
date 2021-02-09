@@ -14,7 +14,7 @@
 //import java.net.InetSocketAddress;
 //import java.util.concurrent.ConcurrentLinkedQueue;
 //
-//import static org.rx.core.Contract.require;
+//import static org.rx.core.App.require;
 //
 //@Slf4j
 //public class TcpProxyServer extends Disposable {

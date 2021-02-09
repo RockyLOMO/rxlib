@@ -8,7 +8,7 @@ import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 public class Bytes {
     public static <E extends Enum<E>> EnumSet<E> toEnumSet(Class<E> enumClass, long vector) {

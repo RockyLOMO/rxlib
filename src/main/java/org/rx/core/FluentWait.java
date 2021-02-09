@@ -12,8 +12,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.rx.core.Contract.TIMEOUT_INFINITE;
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.TIMEOUT_INFINITE;
+import static org.rx.core.App.require;
 
 public class FluentWait {
     @Data
@@ -91,7 +91,7 @@ public class FluentWait {
 
     public FluentWait sleep() {
         if (interval > 0) {
-            Contract.sleep(interval);
+            App.sleep(interval);
         }
         return this;
     }

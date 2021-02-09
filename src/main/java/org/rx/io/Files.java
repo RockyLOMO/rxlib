@@ -20,7 +20,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 public class Files extends FilenameUtils {
     @Getter
