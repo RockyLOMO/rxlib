@@ -50,7 +50,7 @@ import static java.lang.Math.pow;
 public final class App extends SystemUtils {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
-    public static final ValueFilter skipTypesFilter = new ValueFilter() {
+    static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
         public Object process(Object o, String k, Object v) {
             if (v != null) {
@@ -194,7 +194,8 @@ public final class App extends SystemUtils {
         }
 
         try {
-            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
+//            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(skipTypesFilter.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Exception e) {
             NQuery<Object> q;
             if (src.getClass().isArray() || src instanceof Iterable) {

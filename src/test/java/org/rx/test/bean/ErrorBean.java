@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.rx.core.exception.InvalidException;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,6 +16,10 @@ public class ErrorBean {
     @Getter
     @Setter
     private String error;
+
+    public int getCode() {
+        throw new InvalidException("auto skip");
+    }
 
     private ErrorBean(int hint, String nullable) {
         error = "hint-" + nullable;

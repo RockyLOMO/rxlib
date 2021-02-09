@@ -304,7 +304,11 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void json() {
-        Object[] args = new Object[]{"b", Tuple.of(proxy(HttpServletResponse.class, (m, i) -> i.fastInvokeSuper()), false)};
+        Object[] args = new Object[]{"b", proxy(HttpServletResponse.class, (m, i) -> {
+            throw new InvalidException("auto skip");
+//            return null;
+        }), new ErrorBean()};
+        System.out.println(toJsonString(args));
         System.out.println(toJsonString(args));
         System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
 

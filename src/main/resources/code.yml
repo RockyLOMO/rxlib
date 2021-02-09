@@ -25,7 +25,7 @@ org:
         singleOrDefault: Require less than 1 element, current set has {0} elements
       Disposable:
         checkNotClosed: Cannot access a closed {0}
-      Contract:
+      App:
         require[arg]: Parameter is null
         require[args]: Parameters {0} have null value
         require[test]: Parameter {0} test failed
