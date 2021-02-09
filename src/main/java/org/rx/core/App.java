@@ -203,9 +203,9 @@ public final class App extends SystemUtils {
             } else {
                 q = NQuery.of(src);
             }
-            Set<Class<?>> jsonSkipTypeSet = App.getConfig().getJsonSkipTypeSet();
+            Set<Class<?>> jsonSkipTypeSet = getConfig().getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            App.log(String.format("toJsonString %s", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName)), e);
+            log(String.format("toJsonString %s", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName)), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
