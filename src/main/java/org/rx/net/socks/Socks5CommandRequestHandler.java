@@ -14,7 +14,7 @@ import org.rx.util.function.TripleFunc;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
-import static org.rx.core.Contract.sneakyInvoke;
+import static org.rx.core.App.sneakyInvoke;
 
 @Slf4j
 @RequiredArgsConstructor

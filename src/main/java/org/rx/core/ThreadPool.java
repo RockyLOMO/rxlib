@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
@@ -176,7 +176,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         decrementCounter = new AtomicInteger();
         incrementCounter = new AtomicInteger();
         ManagementMonitor monitor = ManagementMonitor.getInstance();
-        monitor.scheduled = combine(Contract.remove(monitor.scheduled, scheduled), scheduled = (s, e) -> {
+        monitor.scheduled = combine(App.remove(monitor.scheduled, scheduled), scheduled = (s, e) -> {
             String prefix = String.format("%sMonitor", poolName);
             int cpuLoad = e.getValue().getCpuLoadPercent();
             log.debug("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", prefix, getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),

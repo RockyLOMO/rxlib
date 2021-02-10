@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
-import org.rx.core.Contract;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
@@ -24,7 +23,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
 import java.util.Date;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class Servlets extends ServletRequestUtils {
@@ -94,7 +93,7 @@ public class Servlets extends ServletRequestUtils {
         require(stream);
 
         HttpServletResponse response = currentRequest().right;
-        response.setCharacterEncoding(Contract.UTF_8);
+        response.setCharacterEncoding(UTF_8);
         response.setContentType(contentType);
         response.setContentLength((int) stream.getLength());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(stream.getName())));

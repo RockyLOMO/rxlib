@@ -9,12 +9,13 @@ import okhttp3.Authenticator;
 import org.apache.commons.io.IOUtils;
 import org.rx.bean.RxConfig;
 import org.rx.core.App;
-import org.rx.core.Contract;
+import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.springframework.http.HttpMethod;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -33,11 +34,10 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class HttpClient {
-    public static final String GET_METHOD = "GET", POST_METHOD = "POST", HEAD_METHOD = "HEAD";
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
     private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), RxConfig.KEEPALIVE_MINUTES, TimeUnit.MINUTES);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -48,6 +48,27 @@ public class HttpClient {
     }
 
     //region StaticMembers
+    public static String godaddyDns(String ssoKey, String domain, String name) {
+        return godaddyDns(ssoKey, domain, name, getWanIp());
+    }
+
+    public static String godaddyDns(String ssoKey, String domain, String name, String ip) {
+        String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
+        HttpClient client = new HttpClient();
+        client.setRequestHeader("Authorization", "sso-key " + ssoKey);
+        return client.put(url, String.format("[\n" +
+                "  {\n" +
+                "    \"data\": \"%s\",\n" +
+                "    \"ttl\": 600\n" +
+                "  }\n" +
+                "]", ip));
+    }
+
+    public static String getWanIp() {
+        HttpClient client = new HttpClient();
+        return client.get("https://api.ipify.org");
+    }
+
     public static void saveRawCookies(String url, String raw) {
         require(url, raw);
 
@@ -96,9 +117,9 @@ public class HttpClient {
         String[] pairs = raw.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.UTF_8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), UTF_8) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.UTF_8).trim()
+                    ? URLDecoder.decode(pair.substring(idx + 1), UTF_8).trim()
                     : "";
             map.put(key, value);
         }
@@ -111,7 +132,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLEncoder.encode(str, Contract.UTF_8).replace("+", "%20");
+        return URLEncoder.encode(str, UTF_8).replace("+", "%20");
     }
 
     @SneakyThrows
@@ -120,7 +141,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLDecoder.decode(str, Contract.UTF_8).replace("%20", "+");
+        return URLDecoder.decode(str, UTF_8).replace("%20", "+");
     }
 
     @SneakyThrows
@@ -137,9 +158,9 @@ public class HttpClient {
         String[] pairs = url.split("&");
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), Contract.UTF_8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), UTF_8) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), Contract.UTF_8)
+                    ? URLDecoder.decode(pair.substring(idx + 1), UTF_8)
                     : null;
             params.put(key, value);
         }
@@ -272,7 +293,7 @@ public class HttpClient {
     }
 
     public Map<String, List<String>> head(String url) {
-        handleString(invoke(url, HttpClient.HEAD_METHOD, null, null));
+        handleString(invoke(url, HttpMethod.HEAD, null, null));
 
         return responseHeaders();
     }
@@ -280,19 +301,19 @@ public class HttpClient {
     public String get(String url) {
         require(url);
 
-        return handleString(invoke(url, HttpClient.GET_METHOD, null, null));
+        return handleString(invoke(url, HttpMethod.GET, null, null));
     }
 
     public HybridStream getStream(String url) {
         require(url);
 
-        return handleStream(invoke(url, HttpClient.GET_METHOD, null, null));
+        return handleStream(invoke(url, HttpMethod.GET, null, null));
     }
 
     public File getFile(String url, String filePath) {
         require(url, filePath);
 
-        return handleFile(invoke(url, HttpClient.GET_METHOD, null, null), filePath);
+        return handleFile(invoke(url, HttpMethod.GET, null, null), filePath);
     }
 
     public String post(String url, Map<String, Object> formData) {
@@ -302,13 +323,13 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleString(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString));
+        return handleString(invoke(url, HttpMethod.POST, FORM_TYPE, dataString));
     }
 
     public String post(String url, Object json) {
         require(url, json);
 
-        return handleString(invoke(url, HttpClient.POST_METHOD, JSON_TYPE, toJsonString(json)));
+        return handleString(invoke(url, HttpMethod.POST, JSON_TYPE, toJsonString(json)));
     }
 
     public HybridStream postStream(String url, Map<String, Object> formData) {
@@ -318,7 +339,7 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleStream(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString));
+        return handleStream(invoke(url, HttpMethod.POST, FORM_TYPE, dataString));
     }
 
     public File postFile(String url, Map<String, Object> formData, String filePath) {
@@ -328,23 +349,33 @@ public class HttpClient {
         if (!Strings.isNullOrEmpty(dataString)) {
             dataString = dataString.substring(1);
         }
-        return handleFile(invoke(url, HttpClient.POST_METHOD, FORM_TYPE, dataString), filePath);
+        return handleFile(invoke(url, HttpMethod.POST, FORM_TYPE, dataString), filePath);
     }
 
     public File postFile(String url, Object json, String filePath) {
         require(url, json, filePath);
 
-        return handleFile(invoke(url, HttpClient.POST_METHOD, JSON_TYPE, toJsonString(json)), filePath);
+        return handleFile(invoke(url, HttpMethod.POST, JSON_TYPE, toJsonString(json)), filePath);
+    }
+
+    public String put(String url, Object json) {
+        require(url, json);
+
+        return handleString(invoke(url, HttpMethod.PUT, JSON_TYPE, toJsonString(json)));
     }
 
     @SneakyThrows
-    private ResponseBody invoke(String url, String method, MediaType contentType, String content) {
+    private ResponseBody invoke(String url, HttpMethod method, MediaType contentType, String content) {
         Request.Builder request = createRequest(url);
         RequestBody requestBody;
         switch (method) {
-            case HttpClient.POST_METHOD:
+            case POST:
                 requestBody = RequestBody.create(content, contentType);
                 request = request.post(requestBody);
+                break;
+            case PUT:
+                requestBody = RequestBody.create(content, contentType);
+                request = request.put(requestBody);
                 break;
             default:
                 request = request.get();
@@ -403,7 +434,7 @@ public class HttpClient {
         log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(headers));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
-        if (!servletRequest.getMethod().equalsIgnoreCase(GET_METHOD)) {
+        if (!servletRequest.getMethod().equalsIgnoreCase(HttpMethod.GET.name())) {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
                 if (servletRequest.getContentType() != null) {

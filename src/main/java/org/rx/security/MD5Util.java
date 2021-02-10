@@ -7,7 +7,7 @@ import java.io.FileInputStream;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 public class MD5Util {
     private static final char[] hexDigits = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};

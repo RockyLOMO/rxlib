@@ -3,7 +3,7 @@ package org.rx.core;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.exception.ApplicationException;
 
-import static org.rx.core.Contract.values;
+import static org.rx.core.App.values;
 
 public abstract class Disposable implements AutoCloseable {
     private boolean closed;

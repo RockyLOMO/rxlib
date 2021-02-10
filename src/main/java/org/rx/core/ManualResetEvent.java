@@ -5,7 +5,7 @@ import org.rx.core.exception.InvalidException;
 
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Contract.TIMEOUT_INFINITE;
+import static org.rx.core.App.TIMEOUT_INFINITE;
 
 public final class ManualResetEvent {
     private final Object monitor = new Object();

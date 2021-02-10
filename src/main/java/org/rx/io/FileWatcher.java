@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class FileWatcher extends Disposable {

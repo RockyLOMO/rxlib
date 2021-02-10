@@ -9,8 +9,8 @@ import org.rx.util.function.BiFunc;
 import java.util.EnumMap;
 import java.util.EnumSet;
 
-import static org.rx.core.Contract.NON_WARNING;
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.App.require;
 
 public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     @SuppressWarnings(NON_WARNING)

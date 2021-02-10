@@ -4,12 +4,14 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
-import org.rx.core.Contract;
+import org.rx.core.App;
 import org.rx.io.*;
 import org.rx.test.bean.PersonBean;
 
 import java.io.*;
 import java.nio.file.Path;
+
+import static org.rx.core.App.toJsonString;
 
 public class IOTester {
     @Test
@@ -40,8 +42,8 @@ public class IOTester {
         stream.setPosition(0);
         PersonBean newBean = stream.readObject();
 
-        System.out.println(Contract.toJsonString(bean));
-        System.out.println(Contract.toJsonString(newBean));
+        System.out.println(toJsonString(bean));
+        System.out.println(toJsonString(newBean));
     }
 
     @Test

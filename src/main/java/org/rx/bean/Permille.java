@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 @RequiredArgsConstructor
 public final class Permille implements Serializable, Comparable<Permille> {

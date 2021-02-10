@@ -53,7 +53,7 @@ public class SocksProxyServer extends Disposable {
         if (flowLogger == null) {
             flowLogger = new FlowLoggerImpl();
         }
-        bootstrap = Sockets.serverBootstrap(true, config.getAcceptors(), 0, null, channel -> {
+        bootstrap = Sockets.serverBootstrap(true, 0, null, channel -> {
             //流量统计
             channel.pipeline().addLast(ProxyChannelManageHandler.class.getSimpleName(), new ProxyChannelManageHandler(3000, flowLogger));
             //超时处理

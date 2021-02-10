@@ -18,7 +18,7 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 public final class Tasks {
@@ -58,6 +58,7 @@ public final class Tasks {
 
     @Getter
     private static final ThreadPool executor = new ThreadPool();
+    //HashedWheelTimer
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
     private static final FastThreadLocal<Boolean> raiseFlag = new FastThreadLocal<>();
 

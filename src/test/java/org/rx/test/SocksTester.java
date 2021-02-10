@@ -5,10 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.Tasks;
-import org.rx.net.AuthenticEndpoint;
-import org.rx.net.PingClient;
-import org.rx.net.SftpClient;
-import org.rx.net.Sockets;
+import org.rx.net.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
 import org.rx.net.rpc.RemotingException;
@@ -24,9 +21,10 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.rx.core.Contract.sleep;
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.sleep;
+import static org.rx.core.App.toJsonString;
 
 @Slf4j
 public class SocksTester {
@@ -86,6 +84,7 @@ public class SocksTester {
         UserManagerImpl server = new UserManagerImpl();
         restartServer(server, 0);
         String ep = "127.0.0.1:3307";
+        AtomicBoolean ok = new AtomicBoolean(false);
         UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), null, c -> {
             c.onReconnecting = (s, e) -> {
                 InetSocketAddress next;
@@ -98,12 +97,26 @@ public class SocksTester {
                 e.setValue(next);
             };
             log.debug("init ok");
+            ok.set(true);
         });
         assert userManager.computeInt(1, 1) == 2;
         sleep(1000);
         serverBeans[0].getServer().close();  //关闭3307
-        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
-        System.in.read();
+        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 16000);  //16秒后开启3308端口实例，重连3308成功
+        int max = 10;
+        for (int i = 0; i < max; ) {
+            if (!ok.get()) {
+                sleep(1000);
+                continue;
+            }
+            if (i == 0) {
+                sleep(16000);
+                log.debug("sleep 16");
+            }
+            assert userManager.computeInt(i, 1) == i + 1;
+            i++;
+        }
+//        System.in.read();
     }
 
     private void restartServer(UserManagerImpl server, int i) {
@@ -205,6 +218,7 @@ public class SocksTester {
 
     @Test
     public void httpClient() {
+        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         HttpClient client = new HttpClient();
         for (int i = 0; i < 10; i++) {
             client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
@@ -235,12 +249,16 @@ public class SocksTester {
 //        }
 
         SftpClient client = new SftpClient(new AuthenticEndpoint("rocky:@k8s.f-li.cn:22"));
-        for (SftpClient.FileEntry directory : client.listDirectories("/home/rocky/df/", true)) {
+        for (SftpFile directory : client.listDirectories("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
         }
-        for (SftpClient.FileEntry directory : client.listFiles("/home/rocky/df/", true)) {
-            System.out.println(directory.getPath());
+        for (SftpFile file : client.listFiles("/home/rocky/df/", true)) {
+            System.out.println(file.getPath());
         }
+        System.out.println(client.exists("/home/rocky/df/scpx.sh"));
+        System.out.println(client.exists("/home/rocky/df/scpx2.sh"));
+        System.out.println(client.exists("/home/rocky/df/"));
+        System.out.println(client.exists("/home/rocky/df"));
 
 //        String p = "E:\\Photo\\养生\\f0.jpg";
 //        client.uploadFile(p,"/test/");

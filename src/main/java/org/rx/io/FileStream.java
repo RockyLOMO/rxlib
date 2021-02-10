@@ -10,7 +10,7 @@ import java.nio.channels.FileLock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;

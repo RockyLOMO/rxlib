@@ -16,8 +16,8 @@ import org.rx.util.BeanMapNullValueStrategy;
 import java.sql.Timestamp;
 import java.util.*;
 
-import static org.rx.core.Contract.eq;
-import static org.rx.core.Contract.toJsonString;
+import static org.rx.core.App.eq;
+import static org.rx.core.App.toJsonString;
 
 public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class
@@ -125,28 +125,27 @@ public class BeanTester extends TestUtil {
             assert App.combId(map.get(i), "" + i).equals(App.combId(new Timestamp(map.get(i)), "" + i));
         }
 
+        String d = "wyf520";
+        SUID suid = SUID.compute(d);
+        System.out.println(suid.toString());
 
-//        String d = "wyf520";
-//        SUID suid = SUID.compute(d);
-//        System.out.println(suid.toString());
-//
-//        SUID valueOf = SUID.valueOf(suid.toString());
-//        System.out.println(valueOf.toString());
-//
-//        assert suid.equals(valueOf);
-//
-//        Set<SUID> set = new HashSet<>();
-//        int len = 10000;  //1530ms
-//        invoke("suid", () -> {
-//            for (int i = 0; i < len; i++) {
-//                SUID suid1 = SUID.randomSUID();
-//                System.out.println(suid1.toString());
-//                set.add(suid1);
-//
-//                assert SUID.valueOf(suid1.toString()).equals(suid1);
-//            }
-//        });
-//        assert set.size() == len;
+        SUID valueOf = SUID.valueOf(suid.toString());
+        System.out.println(valueOf.toString());
+
+        assert suid.equals(valueOf);
+
+        Set<SUID> set = new HashSet<>();
+        int len = 10000;  //1530ms
+        invoke("suid", () -> {
+            for (int i = 0; i < len; i++) {
+                SUID suid1 = SUID.randomSUID();
+                System.out.println(suid1.toString());
+                set.add(suid1);
+
+                assert SUID.valueOf(suid1.toString()).equals(suid1);
+            }
+        });
+        assert set.size() == len;
     }
 
     @Test

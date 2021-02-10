@@ -8,8 +8,8 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.core.Contract.NON_WARNING;
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.App.require;
 
 @SuppressWarnings(NON_WARNING)
 @Slf4j

@@ -9,8 +9,8 @@ import org.rx.util.function.Func;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Contract.NON_WARNING;
-import static org.rx.core.Contract.sneakyInvoke;
+import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.App.sneakyInvoke;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Container {

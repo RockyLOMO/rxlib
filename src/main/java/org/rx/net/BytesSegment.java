@@ -4,7 +4,7 @@ import lombok.Getter;
 
 import java.util.function.Consumer;
 
-import static org.rx.core.Contract.require;
+import static org.rx.core.App.require;
 
 public final class BytesSegment implements AutoCloseable {
     public Consumer<BytesSegment> Closed;

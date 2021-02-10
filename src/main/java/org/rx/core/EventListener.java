@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.*;
+import static org.rx.core.App.*;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)

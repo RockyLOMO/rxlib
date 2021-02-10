@@ -12,8 +12,8 @@ import java.io.Serializable;
 import java.lang.management.*;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Contract.as;
-import static org.rx.core.Contract.cacheKey;
+import static org.rx.core.App.as;
+import static org.rx.core.App.cacheKey;
 
 public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     private static final double PERCENT = 100.0D, k = 1024, m = k * 1024, g = m * 1024, t = g * 1024;
