@@ -297,7 +297,7 @@ public final class Remoting {
                                             eventBean.contextMap.put(pack.computeId, context);
                                             try {
                                                 s.send(computingClient, pack);
-                                                log.info("serverSide event {} {} -> COMPUTE_ARGS", pack.eventName, computingClient.getId());
+                                                log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getId(), s.getConfig().getConnectTimeoutMillis());
                                                 eventBean.wait(s.getConfig().getConnectTimeoutMillis());
 //                                                eventBean.wait.waitOne(s.getConfig().getConnectTimeoutMillis());
 //                                                eventBean.wait.reset();
