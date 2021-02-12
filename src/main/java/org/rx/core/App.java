@@ -54,7 +54,8 @@ public final class App extends SystemUtils {
         @Override
         public Object process(Object o, String k, Object v) {
             if (v != null) {
-                NQuery<Class<?>> q = NQuery.of(getConfig().getJsonSkipTypeSet());
+                //import do not invoke getConfig()
+                NQuery<Class<?>> q = config == null ? NQuery.of() : NQuery.of(config.getJsonSkipTypeSet());
                 if (v.getClass().isArray() || v instanceof Iterable) {
                     List<Object> list = NQuery.asList(v);
                     list.replaceAll(fv -> q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
@@ -67,15 +68,15 @@ public final class App extends SystemUtils {
             return v;
         }
     };
-    private static RxConfig config;
+    private static volatile RxConfig config;
     private static Predicate<Throwable> ignoreExceptionHandler;
 
-    public static RxConfig getConfig() {
+    public static synchronized RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
             return SpringContext.getBean(RxConfig.class);
         }
         if (config == null) {
-            config = new RxConfig();
+            config = readSetting("app", RxConfig.class);
             config.init();
         }
         return config;
