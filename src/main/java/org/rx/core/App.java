@@ -58,7 +58,7 @@ public final class App extends SystemUtils {
                 NQuery<Class<?>> q = config == null ? NQuery.of() : NQuery.of(config.getJsonSkipTypeSet());
                 if (v.getClass().isArray() || v instanceof Iterable) {
                     List<Object> list = NQuery.asList(v);
-                    list.replaceAll(fv -> q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
+                    list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
                     return list;
                 }
                 if (q.any(t -> Reflects.isInstance(v, t))) {
