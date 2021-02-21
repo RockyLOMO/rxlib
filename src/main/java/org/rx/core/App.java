@@ -174,7 +174,12 @@ public final class App extends SystemUtils {
     //region more
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
-        return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
+        try {
+            return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
+        } catch (Exception e) {
+            SpringContext.metrics("fromJson", src);
+            throw e;
+        }
     }
 
     public static JSONObject toJsonObject(Object src) {
@@ -528,20 +533,23 @@ public final class App extends SystemUtils {
         if (isIgnoringException(e)) {
             log.info("{} {}", key, e.getMessage());
         } else {
+            boolean raiseUncaught = true;
             InvalidException invalidException = as(e, InvalidException.class);
             if (invalidException != null) {
                 switch (isNull(invalidException.getLevel(), ExceptionLevel.SYSTEM)) {
                     case USER_OPERATION:
+                        raiseUncaught = false;
                         log.warn("{} {}", key, e.getMessage());
                         break;
                     case IGNORE:
+                        raiseUncaught = false;
                         log.info("{} {}", key, e.getMessage());
                         break;
-                    default:
-                        log.error(key, e);
-                        Tasks.raiseUncaughtException(e);
-                        break;
                 }
+            }
+            if (raiseUncaught) {
+                log.error(key, e);
+                Tasks.raiseUncaughtException(e);
             }
         }
         ApplicationException applicationException = as(e, ApplicationException.class);
