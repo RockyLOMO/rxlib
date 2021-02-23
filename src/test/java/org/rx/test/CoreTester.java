@@ -244,6 +244,8 @@ public class CoreTester extends TestUtil {
         int integer = Reflects.changeType("1", Integer.class);
         assert integer == 1;
 
+        assert Reflects.changeType(10, long.class) instanceof Long;
+
         assert Reflects.changeType(1, boolean.class);
         assert Reflects.changeType(1, Boolean.class);
 

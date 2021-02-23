@@ -359,13 +359,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Object defaultValue(Class type) {
-        if (type.isPrimitive()) {
-            if (type.equals(boolean.class)) {
-                return false;
-            }
-            return changeType(0, type);
-        }
-        return null;
+        return changeType(null, type);
     }
 
     @ErrorCode("notSupported")
@@ -376,17 +370,17 @@ public class Reflects extends TypeUtils {
         require(toType);
 
         if (value == null) {
-            if (toType.isPrimitive()) {
-                if (boolean.class.equals(toType)) {
-                    value = false;
-                } else {
-                    value = 0;
-                }
-            } else {
+            if (!toType.isPrimitive()) {
                 return null;
             }
+            if (boolean.class.equals(toType)) {
+                value = false;
+            } else {
+                value = 0;
+            }
         }
-        if (Reflects.isInstance(value, toType)) {
+        //isInstance int to long ok
+        if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
             return (T) value;
         }
         NQuery<Class<?>> typeQuery = NQuery.of(supportTypes);
