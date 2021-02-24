@@ -74,6 +74,8 @@ public final class Tasks {
                 return;
             }
             handler.uncaughtException(Thread.currentThread(), e);
+        } catch (Throwable ie) {
+            log.error("UncaughtException", ie);
         } finally {
             raiseFlag.remove();
         }
