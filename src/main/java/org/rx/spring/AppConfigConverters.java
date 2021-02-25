@@ -1,7 +1,6 @@
 package org.rx.spring;
 
 import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
 import org.rx.core.Reflects;
 import org.rx.core.Strings;
 import org.rx.net.AuthenticEndpoint;
@@ -12,19 +11,9 @@ import org.springframework.stereotype.Component;
 import java.io.File;
 
 import static org.rx.core.App.toJsonArray;
-import static org.rx.core.App.toJsonObject;
 
 //DataSize 和 Duration
 public class AppConfigConverters {
-    @Component
-    @ConfigurationPropertiesBinding
-    public static class JSONObjectConverter implements Converter<String, JSONObject> {
-        @Override
-        public JSONObject convert(String s) {
-            return toJsonObject(s);
-        }
-    }
-
     @Component
     @ConfigurationPropertiesBinding
     public static class JSONArrayConverter implements Converter<String, JSONArray> {

@@ -5,6 +5,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.util.function.TripleFunc;
@@ -28,6 +29,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     public volatile BiConsumer<BaseInterceptor, ProceedEventArgs> onProcessing, onProceed;
     protected TripleFunc<Signature, Object, Object> argShortSelector;
+
+    @Override
+    public FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DynamicAttach.flags(EventFlags.Quietly);
+    }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
