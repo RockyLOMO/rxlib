@@ -153,17 +153,13 @@ public final class Tasks {
     public static Future<?> scheduleOnce(Action task, long delay) {
         require(task);
 
-        $<Future<?>> future = $();
-        future.v = scheduler.scheduleWithFixedDelay(() -> {
+        return scheduler.schedule(() -> {
             try {
                 task.invoke();
             } catch (Throwable e) {
                 raiseUncaughtException(e);
-            } finally {
-                future.v.cancel(true);
             }
-        }, delay, delay, TimeUnit.MILLISECONDS);//todo -1?
-        return future.v;
+        }, delay, TimeUnit.MILLISECONDS);
     }
 
     public static Future<?> schedule(Action task, long delay) {

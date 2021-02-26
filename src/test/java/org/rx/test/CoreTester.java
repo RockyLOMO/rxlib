@@ -1,6 +1,7 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
+import io.netty.util.Timeout;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -10,10 +11,10 @@ import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
-import org.rx.io.IOStream;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
+import org.rx.util.RedoTimer;
 
 import javax.servlet.http.HttpServletResponse;
 import java.util.*;
@@ -155,6 +156,30 @@ public class CoreTester extends TestUtil {
 
         mgr.onCreate = remove(mgr.onCreate, b);
         mgr.create(p); //触发事件（b执行）
+    }
+
+    @SneakyThrows
+    @Test
+    public void redo() {
+        log.info("start...");
+//        Tasks.scheduleOnce(() -> log.info("scheduleOnce"), 1000);
+
+        int max = 2;
+        RedoTimer monitor = new RedoTimer();
+        $<String> va = $.$("a");
+        $<String> vb = $.$("b");
+        Timeout timeout = monitor.setTimeout(p -> {
+            System.out.println( p.cancel());
+            va.v += va.v;
+            log.info(va.v);
+        }, 2000, max);
+        Timeout timeout1 = monitor.setTimeout(p -> {
+            vb.v += vb.v;
+            log.info(vb.v);
+            throw new InvalidException("x");
+        }, 1000, max);
+
+        System.in.read();
     }
 
     @SneakyThrows
