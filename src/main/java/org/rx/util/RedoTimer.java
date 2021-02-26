@@ -83,4 +83,14 @@ public class RedoTimer {
         redoTask.timeout = timer.newTimeout(redoTask, delayMillis, TimeUnit.MILLISECONDS);
         return redoTask;
     }
+
+    public Timeout runAndSetTimeout(BiAction<Timeout> task, long delayMillis) {
+        return setTimeout(task, delayMillis, 1);
+    }
+
+    public Timeout runAndSetTimeout(BiAction<Timeout> task, long delayMillis, int redoCount) {
+        RedoTask redoTask = new RedoTask(task, delayMillis, new AtomicInteger(redoCount + 1));
+        redoTask.timeout = timer.newTimeout(redoTask, 0, TimeUnit.MILLISECONDS);
+        return redoTask;
+    }
 }

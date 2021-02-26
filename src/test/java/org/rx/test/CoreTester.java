@@ -169,7 +169,7 @@ public class CoreTester extends TestUtil {
         $<String> va = $.$("a");
         $<String> vb = $.$("b");
         Timeout timeout = monitor.setTimeout(p -> {
-            System.out.println( p.cancel());
+            System.out.println(p.cancel());
             va.v += va.v;
             log.info(va.v);
         }, 2000, max);
@@ -177,7 +177,7 @@ public class CoreTester extends TestUtil {
             vb.v += vb.v;
             log.info(vb.v);
             throw new InvalidException("x");
-        }, 1000, max);
+        }, 2000, max);
 
         System.in.read();
     }

@@ -100,7 +100,6 @@ public class FluentWait {
         return until(supplier, null);
     }
 
-    //    @SneakyThrows
     public <T> T until(Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) throws TimeoutException {
         require(supplier);
 
