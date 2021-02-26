@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
+import org.rx.core.App;
 import org.rx.core.Tasks;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;
@@ -21,6 +22,10 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.rx.core.App.sleep;
@@ -179,15 +184,31 @@ public class SocksTester {
         });
     }
 
+    @SneakyThrows
     @Test
     public void rpc_clientPool() {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
+        int tcount = 50;
+        CountDownLatch latch = new CountDownLatch(tcount);
+//        ExecutorService executorService = Executors.newFixedThreadPool(48);
         //没有事件订阅，无状态会使用连接池模式
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode("127.0.0.1:3307", 2));
-        for (int i = 0; i < 50; i++) {
-            facade.computeInt(1, i);
+        int threadCount = 8;
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode("127.0.0.1:3307", threadCount));
+        for (int i = 0; i < tcount; i++) {
+            int finalI = i;
+//            executorService.submit(() -> {
+//                facade.computeInt(1, finalI);
+//                latch.countDown();
+//            });
+            Tasks.getExecutor().submit(() -> {
+                facade.computeInt(1, finalI);
+                App.sleep(1000);
+//                System.out.println(finalI);
+                latch.countDown();
+            });
         }
+        latch.await();
     }
 
 //    @SneakyThrows

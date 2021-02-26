@@ -31,8 +31,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         private final int queueCapacity;
         @Setter
         private ThreadPool executor;
-        private AtomicInteger counter = new AtomicInteger();
-        private ManualResetEvent waiter = new ManualResetEvent();
+        private final AtomicInteger counter = new AtomicInteger();
+        private final ManualResetEvent waiter = new ManualResetEvent();
 
         @Override
         public boolean isEmpty() {
@@ -67,7 +67,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             if (poolSize < executor.getMaximumPoolSize()) {
-                log.debug("New thread to execute");
+                log.debug("{}/{} New thread to execute", poolSize, executor.getMaximumPoolSize());
+                //临时解决线程hang问题
+                App.sleep(10);
                 return false;
             }
 
@@ -216,7 +218,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool() {
-        this(CPU_THREADS + 1, computeThreads(1, 2, 1), 4, CPU_THREADS * 64, "ThreadPool");
+        this(CPU_THREADS + 1, computeThreads(1, 2, 1), 4, CPU_THREADS * 64, "℞Thread");
     }
 
     /**
@@ -298,6 +300,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void execute(Runnable command) {
+        //        x:
+//        break x;
         submittedTaskCounter.incrementAndGet();
         super.execute(command);
     }
