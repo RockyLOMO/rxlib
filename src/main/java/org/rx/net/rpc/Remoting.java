@@ -133,10 +133,10 @@ public final class Remoting {
                     break;
             }
 
-            if (pack == null) {
-                pack = new MethodPack(m.getName(), args);
-            }
             synchronized (sync) {
+                if (pack == null) {
+                    pack = new MethodPack(m.getName(), args);
+                }
                 RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
                     log.info("RpcClientPool {}", toJsonString(k));
                     return RpcClientPool.createPool(k);
@@ -145,7 +145,7 @@ public final class Remoting {
                     init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
                     if (onInit != null || onInitClient != null) {
                         sync.v.onReconnected = (s, e) -> {
-                            // 清空?
+                            //todo 清空?
                             if (resultPack.right != null
 //                                    && resultPack.right.returnValue != null
 //                                    && !Reflects.isInstance(resultPack.right.returnValue, m.getReturnType())
@@ -200,8 +200,8 @@ public final class Remoting {
                     log.info(msg.toString());
                     sync.v = pool.returnClient(client);
                 }
+                return resultPack.right != null ? resultPack.right.returnValue : null;
             }
-            return resultPack.right != null ? resultPack.right.returnValue : null;
         });
     }
 
