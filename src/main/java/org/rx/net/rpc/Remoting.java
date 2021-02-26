@@ -26,12 +26,21 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
 @Slf4j
 public final class Remoting {
+    public static class ClientBean {
+        public final ManualResetEvent waiter = new ManualResetEvent();
+        public MethodPack pack;
+        public StatefulRpcClient client;
+    }
+
     @RequiredArgsConstructor
     public static class ServerBean {
         @NoArgsConstructor
@@ -60,6 +69,7 @@ public final class Remoting {
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
     private static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
+    private static final Map<UUID, ClientBean> clientBeans = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
         return create(contract, facadeConfig, null, null);
@@ -73,7 +83,6 @@ public final class Remoting {
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiAction<T> onInit, BiAction<StatefulRpcClient> onInitClient) {
         require(contract, facadeConfig);
 
-        Tuple<ManualResetEvent, MethodPack> resultPack = Tuple.of(new ManualResetEvent(), null);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         //onInit由调用方触发可能spring还没起来的情况
@@ -91,13 +100,14 @@ public final class Remoting {
 
             Serializable pack = null;
             Object[] args = p.arguments;
+            ClientBean clientBean = new ClientBean();
             switch (m.getName()) {
                 case "attachEvent":
                     switch (args.length) {
                         case 2:
                             return invokeSuper(m, p);
                         case 3:
-                            setReturnValue(resultPack, invokeSuper(m, p));
+                            setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
                             pack = new EventPack(eventName, EventFlag.SUBSCRIBE);
                             log.info("clientSide event {} -> SUBSCRIBE", eventName);
@@ -106,7 +116,7 @@ public final class Remoting {
                     break;
                 case "detachEvent":
                     if (args.length == 2) {
-                        setReturnValue(resultPack, invokeSuper(m, p));
+                        setReturnValue(clientBean, invokeSuper(m, p));
                         String eventName = (String) args[0];
                         pack = new EventPack(eventName, EventFlag.UNSUBSCRIBE);
                         log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
@@ -119,7 +129,7 @@ public final class Remoting {
                         }
                         isCompute.remove();
 
-                        setReturnValue(resultPack, invokeSuper(m, p));
+                        setReturnValue(clientBean, invokeSuper(m, p));
                         EventPack eventPack = new EventPack((String) args[0], EventFlag.PUBLISH);
                         eventPack.eventArgs = (EventArgs) args[1];
                         pack = eventPack;
@@ -133,82 +143,89 @@ public final class Remoting {
                     break;
             }
 
-            synchronized (sync) {
-                if (pack == null) {
-                    pack = new MethodPack(m.getName(), args);
-                }
-                RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
-                    log.info("RpcClientPool {}", toJsonString(k));
-                    return RpcClientPool.createPool(k);
-                });
-                if (sync.v == null) {
-                    init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
-                    if (onInit != null || onInitClient != null) {
-                        sync.v.onReconnected = (s, e) -> {
-                            //todo 清空?
-                            if (resultPack.right != null
-//                                    && resultPack.right.returnValue != null
-//                                    && !Reflects.isInstance(resultPack.right.returnValue, m.getReturnType())
-                            ) {
-                                resultPack.right.returnValue = null;
-                            }
-                            if (onInit != null) {
-                                onInit.toConsumer().accept((T) p.getProxyObject());
-                            }
-                            if (onInitClient != null) {
-                                onInitClient.toConsumer().accept((StatefulRpcClient) s);
-                            }
-                        };
-                        sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
-                        //onHandshake returnObject的情况
-                        if (sync.v == null) {
-                            init(sync.v = pool.borrowClient(), resultPack, p.getProxyObject(), isCompute);
+            if (pack == null) {
+                pack = clientBean.pack = new MethodPack(UUID.randomUUID(), m.getName(), args);
+                clientBeans.put(clientBean.pack.id, clientBean);
+            }
+            RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
+                log.info("RpcClientPool {}", toJsonString(k));
+                return RpcClientPool.createPool(k);
+            });
+            if (sync.v == null) {
+                init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                if (onInit != null || onInitClient != null) {
+                    sync.v.onReconnected = (s, e) -> {
+//                        //todo 清空?
+//                        if (resultPack.right != null
+////                                    && resultPack.right.returnValue != null
+////                                    && !Reflects.isInstance(resultPack.right.returnValue, m.getReturnType())
+//                        ) {
+//                            resultPack.right.returnValue = null;
+//                        }
+                        if (onInit != null) {
+                            onInit.toConsumer().accept((T) p.getProxyObject());
                         }
+                        if (onInitClient != null) {
+                            onInitClient.toConsumer().accept((StatefulRpcClient) s);
+                        }
+                    };
+                    sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
+                    //onHandshake returnObject的情况
+                    if (sync.v == null) {
+                        init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                     }
                 }
-                StatefulRpcClient client = sync.v;
+            }
+            StatefulRpcClient client = clientBean.client = sync.v;
 
-                StringBuilder msg = new StringBuilder();
-                MethodPack methodPack = as(pack, MethodPack.class);
-                boolean debug = methodPack != null;
+            StringBuilder msg = new StringBuilder();
+            MethodPack methodPack = as(pack, MethodPack.class);
+            boolean debug = methodPack != null;
+            if (debug) {
+                msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
+                msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
+            }
+            try {
+                client.send(pack);
                 if (debug) {
-                    msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
-                    msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
+                    try {
+                        clientBean.waiter.waitOne(client.getConfig().getConnectTimeoutMillis());
+                        clientBean.waiter.reset();
+                    } catch (TimeoutException e) {
+                        if (clientBean.pack.returnValue == null) {
+                            throw e;
+                        }
+                    }
                 }
-                try {
-                    client.send(pack);
+                if (clientBean.pack == null) {
                     if (debug) {
-                        resultPack.left.waitOne(client.getConfig().getConnectTimeoutMillis());
-                        resultPack.left.reset();
+                        msg.appendLine("Response:\tNULL");
                     }
-                    if (resultPack.right == null) {
-                        if (debug) {
-                            msg.appendLine("Response:\tNULL");
-                        }
-                    } else {
-                        if (resultPack.right.errorMessage != null) {
-                            throw new RemotingException(resultPack.right.errorMessage);
-                        }
-                        if (debug) {
-                            msg.appendLine("Response:\t%s", toJsonString(resultPack.right.returnValue));
-                        }
+                } else {
+                    if (clientBean.pack.errorMessage != null) {
+                        throw new RemotingException(clientBean.pack.errorMessage);
                     }
-                } catch (Exception e) {
-                    msg.appendLine("Response:\t%s", e.getMessage());
-                    throw e;
-                } finally {
-                    log.info(msg.toString());
+                    if (debug) {
+                        msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
+                    }
+                }
+            } catch (Exception e) {
+                msg.appendLine("Response:\t%s", e.getMessage());
+                throw e;
+            } finally {
+                log.info(msg.toString());
+                clientBeans.remove(clientBean.pack.id);
+                if (NQuery.of(clientBeans.values()).all(x -> x.client != client)) {
                     sync.v = pool.returnClient(client);
                 }
-                return resultPack.right != null ? resultPack.right.returnValue : null;
             }
+            return clientBean.pack != null ? clientBean.pack.returnValue : null;
         });
     }
 
-    private static void init(StatefulRpcClient client, Tuple<ManualResetEvent, MethodPack> resultPack, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
+    private static void init(StatefulRpcClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
         client.onError = (s, e) -> {
             e.setCancel(true);
-            resultPack.left.set();
         };
         client.onReceive = (s, e) -> {
             if (tryAs(e.getValue(), EventPack.class, x -> {
@@ -233,16 +250,20 @@ public final class Remoting {
                 return;  //import
             }
 
-            resultPack.right = (MethodPack) e.getValue();
-            resultPack.left.set();
+            MethodPack svrPack = (MethodPack) e.getValue();
+            log.debug("recv: {}", svrPack.returnValue);
+            ClientBean clientBean = clientBeans.get(svrPack.id);
+            require(clientBean);
+            clientBean.pack = svrPack;
+            clientBean.waiter.set();
         };
     }
 
-    private static void setReturnValue(Tuple<ManualResetEvent, MethodPack> resultPack, Object value) {
-        if (resultPack.right == null) {
-            resultPack.right = new MethodPack(null, null);
+    private static void setReturnValue(ClientBean clientBean, Object value) {
+        if (clientBean.pack == null) {
+            clientBean.pack = new MethodPack(UUID.randomUUID(), null, null);
         }
-        resultPack.right.returnValue = value;
+        clientBean.pack.returnValue = value;
     }
 
     @SneakyThrows

@@ -196,15 +196,15 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         checkNotClosed();
         require(client);
 
-        synchronized (client) {
-            RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
-            if (args.isCancel() || !isConnected(client)) {
-                log.warn("Client disconnected");
-                return;
-            }
-
-            client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+//        synchronized (client) {
+        RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
+        if (args.isCancel() || !isConnected(client)) {
+            log.warn("Client disconnected");
+            return;
         }
+
+        client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+//        }
     }
 
     public void closeClient(RpcServerClient client) {

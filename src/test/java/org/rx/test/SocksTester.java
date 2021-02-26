@@ -202,10 +202,13 @@ public class SocksTester {
 //                latch.countDown();
 //            });
             Tasks.getExecutor().submit(() -> {
-                facade.computeInt(1, finalI);
-                App.sleep(1000);
+                try {
+                    facade.computeInt(1, finalI);
+//                App.sleep(1000);
 //                System.out.println(finalI);
-                latch.countDown();
+                } finally {
+                    latch.countDown();
+                }
             });
         }
         latch.await();

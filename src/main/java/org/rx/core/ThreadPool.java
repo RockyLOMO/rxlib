@@ -68,8 +68,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (poolSize < executor.getMaximumPoolSize()) {
                 log.debug("{}/{} New thread to execute", poolSize, executor.getMaximumPoolSize());
-                //临时解决线程hang问题
-                App.sleep(10);
+                //todo 临时解决线程hang问题
+//                App.sleep(10);
                 return false;
             }
 

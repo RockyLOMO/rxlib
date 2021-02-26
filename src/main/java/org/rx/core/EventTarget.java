@@ -129,10 +129,12 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-        return Tasks.run(() -> raiseEvent(eventName, args));
+//        return Tasks.run(() -> raiseEvent(eventName, args));
+        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args));
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
-        return Tasks.run(() -> raiseEvent(event, args));
+//        return Tasks.run(() -> raiseEvent(event, args));
+        return CompletableFuture.runAsync(() -> raiseEvent(event, args));
     }
 }
