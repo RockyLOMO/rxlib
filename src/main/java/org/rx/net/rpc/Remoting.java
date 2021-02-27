@@ -159,13 +159,6 @@ public final class Remoting {
                     init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                     if (onInit != null || onInitClient != null) {
                         sync.v.onReconnected = (s, e) -> {
-//                        //todo 清空?
-//                        if (resultPack.right != null
-////                                    && resultPack.right.returnValue != null
-////                                    && !Reflects.isInstance(resultPack.right.returnValue, m.getReturnType())
-//                        ) {
-//                            resultPack.right.returnValue = null;
-//                        }
                             if (onInit != null) {
                                 onInit.toConsumer().accept((T) p.getProxyObject());
                             }

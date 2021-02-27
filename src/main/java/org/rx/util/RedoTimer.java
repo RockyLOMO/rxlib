@@ -90,7 +90,7 @@ public class RedoTimer {
 
     public Timeout runAndSetTimeout(BiAction<Timeout> task, long delayMillis, int redoCount) {
         RedoTask redoTask = new RedoTask(task, delayMillis, new AtomicInteger(redoCount + 1));
-        redoTask.timeout = timer.newTimeout(redoTask, 1, TimeUnit.MILLISECONDS);
+        redoTask.timeout = timer.newTimeout(redoTask, 10, TimeUnit.MILLISECONDS);
         return redoTask;
     }
 }
