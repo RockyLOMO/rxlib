@@ -5,6 +5,7 @@ import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import org.rx.core.Tasks;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiAction;
@@ -20,6 +21,7 @@ public class RedoTimer {
         private final AtomicInteger redoCount;
         private volatile boolean done;
         private volatile Timeout timeout;
+        private volatile Throwable lastError;
 
         @Override
         public void run(Timeout timeout) throws Exception {
@@ -27,18 +29,20 @@ public class RedoTimer {
                 throw new InvalidException("Timeout error");
             }
             if (done) {
+                if (lastError != null) {
+                    Tasks.raiseUncaughtException(lastError);
+                }
                 return;
             }
 
-            Throwable le = null;
             try {
                 task.invoke(this);
             } catch (Throwable e) {
-                le = e;
+                lastError = e;
             }
             if (done || redoCount.decrementAndGet() <= 0) {
-                if (le != null) {
-                    Tasks.raiseUncaughtException(le);
+                if (lastError != null) {
+                    Tasks.raiseUncaughtException(lastError);
                 }
                 return;
             }
@@ -88,9 +92,39 @@ public class RedoTimer {
         return setTimeout(task, delayMillis, 1);
     }
 
+    @SneakyThrows
     public Timeout runAndSetTimeout(BiAction<Timeout> task, long delayMillis, int redoCount) {
         RedoTask redoTask = new RedoTask(task, delayMillis, new AtomicInteger(redoCount + 1));
-        redoTask.timeout = timer.newTimeout(redoTask, 10, TimeUnit.MILLISECONDS);
+//        redoTask.timeout = timer.newTimeout(redoTask, 0, TimeUnit.MILLISECONDS);
+        redoTask.timeout = new Timeout() {
+            boolean cancel;
+
+            @Override
+            public Timer timer() {
+                return timer;
+            }
+
+            @Override
+            public TimerTask task() {
+                return redoTask;
+            }
+
+            @Override
+            public boolean isExpired() {
+                return false;
+            }
+
+            @Override
+            public boolean isCancelled() {
+                return cancel;
+            }
+
+            @Override
+            public boolean cancel() {
+                return cancel = true;
+            }
+        };
+        redoTask.run(redoTask.timeout);
         return redoTask;
     }
 }
