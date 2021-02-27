@@ -91,9 +91,11 @@ public final class Remoting {
                 return p.fastInvokeSuper();
             }
             if (Reflects.isCloseMethod(m)) {
-                if (sync.v != null) {
-                    sync.v.close();
-                    sync.v = null;
+                synchronized (sync) {
+                    if (sync.v != null) {
+                        sync.v.close();
+                        sync.v = null;
+                    }
                 }
                 return null;
             }
@@ -151,10 +153,12 @@ public final class Remoting {
                 log.info("RpcClientPool {}", toJsonString(k));
                 return RpcClientPool.createPool(k);
             });
-            if (sync.v == null) {
-                init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
-                if (onInit != null || onInitClient != null) {
-                    sync.v.onReconnected = (s, e) -> {
+
+            synchronized (sync) {
+                if (sync.v == null) {
+                    init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                    if (onInit != null || onInitClient != null) {
+                        sync.v.onReconnected = (s, e) -> {
 //                        //todo 清空?
 //                        if (resultPack.right != null
 ////                                    && resultPack.right.returnValue != null
@@ -162,17 +166,18 @@ public final class Remoting {
 //                        ) {
 //                            resultPack.right.returnValue = null;
 //                        }
-                        if (onInit != null) {
-                            onInit.toConsumer().accept((T) p.getProxyObject());
+                            if (onInit != null) {
+                                onInit.toConsumer().accept((T) p.getProxyObject());
+                            }
+                            if (onInitClient != null) {
+                                onInitClient.toConsumer().accept((StatefulRpcClient) s);
+                            }
+                        };
+                        sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
+                        //onHandshake returnObject的情况
+                        if (sync.v == null) {
+                            init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                         }
-                        if (onInitClient != null) {
-                            onInitClient.toConsumer().accept((StatefulRpcClient) s);
-                        }
-                    };
-                    sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
-                    //onHandshake returnObject的情况
-                    if (sync.v == null) {
-                        init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                     }
                 }
             }
@@ -215,8 +220,10 @@ public final class Remoting {
             } finally {
                 log.info(msg.toString());
                 clientBeans.remove(clientBean.pack.id);
-                if (NQuery.of(clientBeans.values()).all(x -> x.client != client)) {
-                    sync.v = pool.returnClient(client);
+                synchronized (sync) {
+                    if (NQuery.of(clientBeans.values()).all(x -> x.client != client)) {
+                        sync.v = pool.returnClient(client);
+                    }
                 }
             }
             return clientBean.pack != null ? clientBean.pack.returnValue : null;

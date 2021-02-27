@@ -189,7 +189,7 @@ public class SocksTester {
     public void rpc_clientPool() {
         Remoting.listen(HttpUserManager.INSTANCE, 3307);
 
-        int tcount = 50;
+        int tcount = 110;
         CountDownLatch latch = new CountDownLatch(tcount);
 //        ExecutorService executorService = Executors.newFixedThreadPool(48);
         //没有事件订阅，无状态会使用连接池模式
@@ -205,7 +205,7 @@ public class SocksTester {
                 try {
                     facade.computeInt(1, finalI);
 //                App.sleep(1000);
-//                System.out.println(finalI);
+                    System.out.println(finalI);
                 } finally {
                     latch.countDown();
                 }

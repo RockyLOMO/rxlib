@@ -168,12 +168,12 @@ public class CoreTester extends TestUtil {
         RedoTimer monitor = new RedoTimer();
         $<String> va = $.$("a");
         $<String> vb = $.$("b");
-        Timeout timeout = monitor.setTimeout(p -> {
+        Timeout timeout = monitor.runAndSetTimeout(p -> {
             System.out.println(p.cancel());
             va.v += va.v;
             log.info(va.v);
         }, 2000, max);
-        Timeout timeout1 = monitor.setTimeout(p -> {
+        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
             vb.v += vb.v;
             log.info(vb.v);
             throw new InvalidException("x");

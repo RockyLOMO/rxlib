@@ -98,7 +98,7 @@ public final class Sockets {
         boolean isEpoll = EpollSocketChannel.class.isAssignableFrom(channelClass);
         Bootstrap b = new Bootstrap()
                 .group(channel != null ? channel.eventLoop() :
-                        isEpoll ? new EpollEventLoopGroup() : new NioEventLoopGroup())
+                        isEpoll ? new EpollEventLoopGroup(ThreadPool.CPU_THREADS) : new NioEventLoopGroup(ThreadPool.CPU_THREADS))
                 .channel(channelClass)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
