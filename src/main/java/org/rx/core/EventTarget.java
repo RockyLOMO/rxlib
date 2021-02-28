@@ -10,8 +10,7 @@ import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Field;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
@@ -128,13 +127,18 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         event.accept((TSender) this, args);
     }
 
+    //Java 11 and ForkJoinPool.commonPool() class loading issue
+    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(ThreadPool.CPU_THREADS, ThreadPool.CPU_THREADS,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(), Tasks.getExecutor().getThreadFactory());
+
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
 //        return Tasks.run(() -> raiseEvent(eventName, args));
-        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args));
+        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args), threadPool);
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
 //        return Tasks.run(() -> raiseEvent(event, args));
-        return CompletableFuture.runAsync(() -> raiseEvent(event, args));
+        return CompletableFuture.runAsync(() -> raiseEvent(event, args), threadPool);
     }
 }
