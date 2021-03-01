@@ -8,6 +8,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.$;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
@@ -15,6 +16,7 @@ import org.rx.util.function.*;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -423,6 +425,18 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream().mapToDouble(selector).sum();
     }
 
+    public BigDecimal sumDecimal(BiFunc<T, BigDecimal> selector) {
+        $<BigDecimal> sumValue = $.$(BigDecimal.ZERO);
+        stream().forEach(p -> {
+            try {
+                sumValue.v = sumValue.v.add(selector.invoke(p));
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        });
+        return sumValue.v;
+    }
+
     @SuppressWarnings(NON_WARNING)
     public <TR> NQuery<TR> cast() {
         return (NQuery<TR>) this;
@@ -604,9 +618,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     @SneakyThrows
     public <TK, TR> Map<TK, TR> toMap(BiFunc<T, TK> keySelector, BiFunc<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
-        for (T item : iterable) {
-            result.put(keySelector.invoke(item), resultSelector.invoke(item));
-        }
+        stream().forEach(item -> {
+            try {
+                result.put(keySelector.invoke(item), resultSelector.invoke(item));
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        });
         return result;
     }
 }

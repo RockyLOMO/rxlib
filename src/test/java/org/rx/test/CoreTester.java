@@ -17,6 +17,7 @@ import org.rx.test.common.TestUtil;
 import org.rx.util.RedoTimer;
 
 import javax.servlet.http.HttpServletResponse;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -100,6 +101,7 @@ public class CoreTester extends TestUtil {
         showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
         showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
         showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
+        showResult("sum(p -> p.index)", NQuery.of(personSet).sumDecimal(p -> BigDecimal.valueOf(p.index)));
 
         showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
         NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));

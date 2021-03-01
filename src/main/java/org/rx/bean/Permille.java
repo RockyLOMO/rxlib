@@ -26,6 +26,10 @@ public final class Permille implements Serializable, Comparable<Permille> {
         return new Permille(new BigDecimal(val).divide(PERCENT, 3, RoundingMode.FLOOR));
     }
 
+    public static Permille valueOf(BigDecimal value) {
+        return new Permille(value);
+    }
+
     public static Permille valueOf(double doubleValue) {
         return valueOf(String.valueOf(doubleValue));
     }
