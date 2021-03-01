@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.App;
+import org.rx.core.EventTarget;
 import org.rx.core.Tasks;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;
@@ -22,14 +23,12 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
+import static org.rx.core.ThreadPool.computeThreads;
 
 @Slf4j
 public class SocksTester {
@@ -191,7 +190,11 @@ public class SocksTester {
 
         int tcount = 110;
         CountDownLatch latch = new CountDownLatch(tcount);
-//        ExecutorService executorService = Executors.newFixedThreadPool(48);
+        int tp = computeThreads(1, 2, 1);
+        ExecutorService executorService = new ThreadPoolExecutor(tp, tp,
+                60L, TimeUnit.SECONDS,
+                new LinkedTransferQueue<>());
+//        executorService = EventTarget.threadPool;
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
         HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode("127.0.0.1:3307", threadCount));
@@ -199,16 +202,22 @@ public class SocksTester {
             int finalI = i;
 //            executorService.submit(() -> {
 //                facade.computeInt(1, finalI);
+////                App.sleep(1000);
 //                latch.countDown();
 //            });
-            Tasks.getExecutor().submit(() -> {
-                try {
-                    facade.computeInt(1, finalI);
-//                App.sleep(1000);
-                    System.out.println(finalI);
-                } finally {
-                    latch.countDown();
-                }
+//            Tasks.getExecutor().submit(() -> {
+//                try {
+//                    facade.computeInt(1, finalI);
+//                    App.sleep(1000);
+//                    System.out.println(finalI);
+//                } finally {
+//                    latch.countDown();
+//                }
+//            });
+            Tasks.run(() -> {
+                facade.computeInt(1, finalI);
+                App.sleep(2000);
+                latch.countDown();
             });
         }
         latch.await();

@@ -4,6 +4,8 @@ app:
   netMinPoolSize: 2
   netMaxPoolSize: 0
   bufferSize: 512
+  keepaliveSeconds: 120
+  threadPoolCount: 4
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

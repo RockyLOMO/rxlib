@@ -43,7 +43,7 @@ public interface Cache<TK, TV> {
                 case THREAD_CACHE:
                     return new ThreadCache<>();
                 case LOCAL_CACHE:
-                    return new LocalCache<>(RxConfig.KEEPALIVE_MINUTES * 2);
+                    return new LocalCache<>(4);
                 default:
                     return new LocalCache<>();
             }

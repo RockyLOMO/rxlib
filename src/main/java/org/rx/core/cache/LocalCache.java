@@ -15,7 +15,7 @@ public class LocalCache<TK, TV> implements Cache<TK, TV> {
     private final com.google.common.cache.Cache<TK, TV> cache;
 
     public LocalCache() {
-        this(RxConfig.KEEPALIVE_MINUTES);
+        this(2);
     }
 
     public LocalCache(int expireMinutes) {

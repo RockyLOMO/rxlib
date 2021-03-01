@@ -128,17 +128,17 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     //Java 11 and ForkJoinPool.commonPool() class loading issue
-    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(ThreadPool.CPU_THREADS, ThreadPool.CPU_THREADS,
-            0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<>(), Tasks.getExecutor().getThreadFactory());
+//    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(ThreadPool.CPU_THREADS, ThreadPool.CPU_THREADS,
+//            0L, TimeUnit.MILLISECONDS,
+//            new LinkedTransferQueue<>(), Tasks.getExecutor().getThreadFactory());
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-//        return Tasks.run(() -> raiseEvent(eventName, args));
-        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args), threadPool);
+        return Tasks.run(() -> raiseEvent(eventName, args));
+//        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args), threadPool);
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
-//        return Tasks.run(() -> raiseEvent(event, args));
-        return CompletableFuture.runAsync(() -> raiseEvent(event, args), threadPool);
+        return Tasks.run(() -> raiseEvent(event, args));
+//        return CompletableFuture.runAsync(() -> raiseEvent(event, args), threadPool);
     }
 }

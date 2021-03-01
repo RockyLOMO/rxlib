@@ -56,11 +56,25 @@ public final class Tasks {
         }
     }
 
-    @Getter
-    private static final ThreadPool executor = new ThreadPool();
+    //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
+    private static final ThreadPool[] loadBalancing;
     //HashedWheelTimer
-    private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(executor.getCorePoolSize(), executor.getThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
+    private static final ScheduledExecutorService scheduler;
     private static final FastThreadLocal<Boolean> raiseFlag = new FastThreadLocal<>();
+
+    static {
+        int poolCount = App.getConfig().getThreadPoolCount();
+        int coreSize = Math.max(1, ThreadPool.CPU_THREADS / poolCount);
+        loadBalancing = new ThreadPool[poolCount];
+        for (int i = 0; i < poolCount; i++) {
+            loadBalancing[i] = new ThreadPool(coreSize);
+        }
+        scheduler = new ScheduledThreadPoolExecutor(1, loadBalancing[0].getThreadFactory());
+    }
+
+    public static ThreadPool getExecutor() {
+        return loadBalancing[ThreadLocalRandom.current().nextInt(0, loadBalancing.length)];
+    }
 
     public static void raiseUncaughtException(Throwable e) {
         if (BooleanUtils.isTrue(raiseFlag.getIfExists())) {
@@ -92,7 +106,7 @@ public final class Tasks {
             task.invoke();
             return null;
         });
-        return CompletableFuture.runAsync(t, executor);
+        return CompletableFuture.runAsync(t, getExecutor());
 //        executor.execute(t);
     }
 
@@ -104,7 +118,7 @@ public final class Tasks {
         require(task, taskName);
 
         Task<T> t = new Task<>(taskName, executeFlag, task);
-        return CompletableFuture.supplyAsync(t, executor);
+        return CompletableFuture.supplyAsync(t, getExecutor());
 //        return executor.submit((Callable<T>) t);
     }
 
