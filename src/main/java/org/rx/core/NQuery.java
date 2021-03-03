@@ -8,7 +8,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.$;
+import org.rx.bean.Money;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
@@ -16,7 +16,6 @@ import org.rx.util.function.*;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -425,16 +424,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream().mapToDouble(selector).sum();
     }
 
-    public BigDecimal sumDecimal(BiFunc<T, BigDecimal> selector) {
-        $<BigDecimal> sumValue = $.$(BigDecimal.ZERO);
+    public Money sumMoney(BiFunc<T, Money> selector) {
+        Money sumValue = new Money();
         stream().forEach(p -> {
             try {
-                sumValue.v = sumValue.v.add(selector.invoke(p));
+                sumValue.add(selector.invoke(p));
             } catch (Throwable e) {
                 throw InvalidException.sneaky(e);
             }
         });
-        return sumValue.v;
+        return sumValue;
     }
 
     @SuppressWarnings(NON_WARNING)
