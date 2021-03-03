@@ -1,10 +1,10 @@
 package org.rx.bean;
 
+import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.rx.core.StringBuilder;
-import org.rx.core.exception.InvalidException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -12,18 +12,12 @@ import java.text.DecimalFormat;
 
 import static org.rx.core.App.isNull;
 
+@AllArgsConstructor
 @EqualsAndHashCode(callSuper = false)
 public class Money extends Number implements Comparable<Money> {
     private static final long serialVersionUID = 6538774206304848828L;
 
-    public static final Money ZERO = new Money() {
-        private static final long serialVersionUID = -3787461053639581185L;
-
-        @Override
-        public boolean isReadOnly() {
-            return true;
-        }
-    };
+    public static final Money ZERO = valueOf(BigDecimal.ZERO);
 
     public static Money fromCent(Long cent) {
         return new Money(BigDecimal.valueOf(isNull(cent, 0L) / 100d));
@@ -57,16 +51,8 @@ public class Money extends Number implements Comparable<Money> {
     private int scale = 2;
     private RoundingMode mode = RoundingMode.DOWN;
 
-    public boolean isReadOnly() {
-        return scale == -1;
-    }
-
     public boolean isZero() {
         return value.compareTo(BigDecimal.ZERO) == 0;
-    }
-
-    public Money() {
-        this(BigDecimal.ZERO);
     }
 
     public Money(BigDecimal value) {
@@ -74,14 +60,15 @@ public class Money extends Number implements Comparable<Money> {
     }
 
     protected void before(BigDecimal value) {
-        if (isReadOnly()) {
-            throw new InvalidException("readOnly");
-        }
+    }
+
+    protected Money after(BigDecimal value) {
+        return new Money(value, scale, mode);
     }
 
     public Money add(Money money) {
         if (money == null) {
-            return this;
+            money = ZERO;
         }
         return add(money.value);
     }
@@ -94,18 +81,17 @@ public class Money extends Number implements Comparable<Money> {
         return add(BigDecimal.valueOf(value));
     }
 
-    public Money add(BigDecimal augend) {
-        if (augend == null) {
-            augend = BigDecimal.ZERO;
+    public Money add(BigDecimal val) {
+        if (val == null) {
+            val = BigDecimal.ZERO;
         }
-        before(augend);
-        value = value.add(augend).setScale(scale, mode);
-        return this;
+        before(val);
+        return after(this.value.add(val).setScale(scale, mode));
     }
 
     public Money subtract(Money money) {
         if (money == null) {
-            return this;
+            money = Money.ZERO;
         }
         return subtract(money.value);
     }
@@ -118,18 +104,17 @@ public class Money extends Number implements Comparable<Money> {
         return subtract(BigDecimal.valueOf(value));
     }
 
-    public Money subtract(BigDecimal subtrahend) {
-        if (subtrahend == null) {
-            subtrahend = BigDecimal.ZERO;
+    public Money subtract(BigDecimal val) {
+        if (val == null) {
+            val = BigDecimal.ZERO;
         }
-        before(subtrahend);
-        value = value.subtract(subtrahend).setScale(scale, mode);
-        return this;
+        before(val);
+        return after(this.value.subtract(val).setScale(scale, mode));
     }
 
     public Money multiply(Money money) {
         if (money == null) {
-            return this;
+            money = Money.ZERO;
         }
         return multiply(money.value);
     }
@@ -142,19 +127,17 @@ public class Money extends Number implements Comparable<Money> {
         return multiply(BigDecimal.valueOf(value));
     }
 
-    public Money multiply(BigDecimal multiplicand) {
-        if (multiplicand == null) {
-            value = BigDecimal.ZERO;
-            return this;
+    public Money multiply(BigDecimal val) {
+        if (val == null) {
+            val = BigDecimal.ZERO;
         }
-        before(multiplicand);
-        value = value.multiply(multiplicand).setScale(scale, mode);
-        return this;
+        before(val);
+        return after(this.value.multiply(val).setScale(scale, mode));
     }
 
     public Money divide(Money money) {
         if (money == null) {
-            return this;
+            money = Money.ZERO;
         }
         return divide(money.value);
     }
@@ -167,14 +150,12 @@ public class Money extends Number implements Comparable<Money> {
         return divide(BigDecimal.valueOf(value));
     }
 
-    public Money divide(BigDecimal divisor) {
-        if (divisor == null) {
-            value = BigDecimal.ZERO;
-            return this;
+    public Money divide(BigDecimal val) {
+        if (val == null) {
+            val = BigDecimal.ZERO;
         }
-        before(divisor);
-        value = value.divide(divisor, scale, mode);
-        return this;
+        before(val);
+        return after(this.value.divide(val, scale, mode));
     }
 
     public long toCent() {

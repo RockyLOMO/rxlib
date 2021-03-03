@@ -8,6 +8,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.$;
 import org.rx.bean.Money;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
@@ -425,15 +426,15 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
 
     public Money sumMoney(BiFunc<T, Money> selector) {
-        Money sumValue = new Money();
+        $<Money> sumValue = $.$(Money.ZERO);
         stream().forEach(p -> {
             try {
-                sumValue.add(selector.invoke(p));
+                sumValue.v = sumValue.v.add(selector.invoke(p));
             } catch (Throwable e) {
                 throw InvalidException.sneaky(e);
             }
         });
-        return sumValue;
+        return sumValue.v;
     }
 
     @SuppressWarnings(NON_WARNING)
