@@ -16,8 +16,7 @@ import org.rx.util.BeanMapNullValueStrategy;
 import java.sql.Timestamp;
 import java.util.*;
 
-import static org.rx.core.App.eq;
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.App.*;
 
 public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class
@@ -60,7 +59,7 @@ public class BeanTester extends TestUtil {
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.Boy);
-        f.setMoney(200L);
+        f.setMoneyCent(200L);
 
         //定义用法
         TargetBean result = PersonMapper.INSTANCE.toTarget(f);
@@ -81,7 +80,7 @@ public class BeanTester extends TestUtil {
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.Boy);
-        f.setMoney(200L);
+        f.setMoneyCent(200L);
         TargetBean t = new TargetBean();
         t.setKids(10L);
 
@@ -149,16 +148,29 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void permille() {
-        Permille permille = Permille.valueOf("50%");
-        Permille permille1 = Permille.valueOf("500‰");
-        Permille permille2 = Permille.valueOf(0.5);
+    public void decimal() {
+        Decimal permille = Decimal.valueOf("50%");
+        Decimal permille1 = Decimal.valueOf("500‰");
+        Decimal permille2 = Decimal.valueOf(0.5);
         assert permille.equals(permille1) && permille1.equals(permille2);
         System.out.println(permille1.toString());
         System.out.println(permille1.toPermilleString());
         System.out.println(permille1.toPermilleInt());
         System.out.println(permille1.toPercentString());
         System.out.println(permille1.toPercentInt());
+
+        Decimal cent = Decimal.fromCent(1L);
+        assert cent.compareTo(0.01) == 0;
+        assert cent.toCent() == 1;
+
+        cent = cent.add(1.1);
+        assert cent.compareTo(1.11) == 0;
+        assert cent.toCent() == 111;
+
+        String j = toJsonString(PersonBean.def);
+        System.out.println(j);
+        PersonBean d = fromJson(j, PersonBean.class);
+        System.out.println(d);
     }
 
     @Test

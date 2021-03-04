@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.rx.bean.DateTime;
+import org.rx.bean.Decimal;
 
 import java.util.Date;
 import java.util.UUID;
@@ -12,7 +13,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @Data
 public class PersonBean implements IPerson {
-    public static final PersonBean def = new PersonBean(1, 2, "王湵范", PersonGender.Girl, 6, DateTime.now(), 100L);
+    public static final PersonBean def = new PersonBean(1, 2, "王湵范", PersonGender.Girl,
+            6, DateTime.now(), 100L, Decimal.valueOf(1d));
 
     public int index;
     public int index2;
@@ -21,5 +23,6 @@ public class PersonBean implements IPerson {
     public PersonGender gender;
     public int age;
     public Date birth;
-    public Long money;
+    public Long moneyCent;
+    public Decimal money;
 }

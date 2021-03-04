@@ -57,16 +57,16 @@ public class CoreTester extends TestUtil {
         px.index2 = 41;
         personSet.add(px);
 
-        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.Boy, 6, DateTime.now(), 1L),
-                new PersonBean(28, 28, "tom", PersonGender.Boy, 6, DateTime.now(), 1L),
-                new PersonBean(29, 29, "lily", PersonGender.Girl, 8, DateTime.now(), 1L),
-                new PersonBean(30, 30, "cookie", PersonGender.Boy, 6, DateTime.now(), 1L)).leftJoin(
-                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.Boy, 5, DateTime.now(), 1L),
-                        new PersonBean(28, 28, "tom", PersonGender.Boy, 10, DateTime.now(), 1L),
-                        new PersonBean(29, 29, "jack", PersonGender.Boy, 1, DateTime.now(), 1L),
-                        new PersonBean(30, 30, "session", PersonGender.Boy, 25, DateTime.now(), 1L),
-                        new PersonBean(31, 31, "trump", PersonGender.Boy, 55, DateTime.now(), 1L),
-                        new PersonBean(32, 32, "jack", PersonGender.Boy, 55, DateTime.now(), 1L)), (p, x) -> p.name.equals(x.name), Tuple::of
+        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(28, 28, "tom", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(29, 29, "lily", PersonGender.Girl, 8, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(30, 30, "cookie", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d))).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.Boy, 5, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(28, 28, "tom", PersonGender.Boy, 10, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(29, 29, "jack", PersonGender.Boy, 1, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(30, 30, "session", PersonGender.Boy, 25, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(31, 31, "trump", PersonGender.Boy, 55, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(32, 32, "jack", PersonGender.Boy, 55, DateTime.now(), 1L, Decimal.valueOf(1d))), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
@@ -100,7 +100,7 @@ public class CoreTester extends TestUtil {
         showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
         showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
         showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
-        showResult("sumMoney(p -> p.index)", NQuery.of(personSet).sumMoney(p -> Money.valueOf((double) p.index)));
+        showResult("sumMoney(p -> p.index)", NQuery.of(personSet).sumDecimal(p -> Decimal.valueOf((double) p.index)));
 
         showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
         NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));

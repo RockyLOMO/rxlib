@@ -4,7 +4,6 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
-import org.rx.core.App;
 import org.rx.io.*;
 import org.rx.test.bean.PersonBean;
 
@@ -35,7 +34,7 @@ public class IOTester {
         PersonBean bean = new PersonBean();
         bean.setName("hello");
         bean.setAge(12);
-        bean.setMoney(250L);
+        bean.setMoneyCent(250L);
         stream.setPosition(0);
         stream.writeObject(bean);
 

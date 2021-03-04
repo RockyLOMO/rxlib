@@ -9,7 +9,7 @@ import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
-import org.rx.bean.Money;
+import org.rx.bean.Decimal;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
@@ -425,8 +425,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return stream().mapToDouble(selector).sum();
     }
 
-    public Money sumMoney(BiFunc<T, Money> selector) {
-        $<Money> sumValue = $.$(Money.ZERO);
+    public Decimal sumDecimal(BiFunc<T, Decimal> selector) {
+        $<Decimal> sumValue = $.$(Decimal.ZERO);
         stream().forEach(p -> {
             try {
                 sumValue.v = sumValue.v.add(selector.invoke(p));
