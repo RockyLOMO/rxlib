@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import org.apache.commons.lang3.BooleanUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
@@ -149,6 +150,9 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void decimal() {
+        Object x = false;
+        assert x instanceof Boolean && BooleanUtils.isTrue((Boolean) x);
+
         Decimal permille = Decimal.valueOf("50%");
         Decimal permille1 = Decimal.valueOf("500‰");
         Decimal permille2 = Decimal.valueOf(0.5);
