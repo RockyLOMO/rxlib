@@ -150,7 +150,7 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void decimal() {
-        Object x = false;
+        Object x = true;
         assert x instanceof Boolean && BooleanUtils.isTrue((Boolean) x);
 
         Decimal permille = Decimal.valueOf("50%");
@@ -165,6 +165,12 @@ public class BeanTester extends TestUtil {
 
         Decimal cent = Decimal.fromCent(1L);
         assert cent.compareTo(0.01) == 0;
+        assert cent.eq(0.01);
+        assert cent.ge(0.01);
+        assert cent.le(0.01);
+        assert cent.gt(-1);
+        assert cent.le(1);
+        assert cent.negate().eq(-0.01);
         assert cent.toCent() == 1;
 
         cent = cent.add(1.1);

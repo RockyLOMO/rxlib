@@ -210,12 +210,64 @@ public class Decimal extends Number implements Comparable<Decimal> {
         return after(this.value.divide(val, scale, mode));
     }
 
+    public Decimal max(double value) {
+        return max(Decimal.valueOf(value));
+    }
+
     public Decimal max(Decimal o) {
         return this.compareTo(o) >= 0 ? this : o;
     }
 
+    public Decimal min(double value) {
+        return min(Decimal.valueOf(value));
+    }
+
     public Decimal min(Decimal o) {
         return this.compareTo(o) <= 0 ? this : o;
+    }
+
+    public boolean gt(double value) {
+        return gt(Decimal.valueOf(value));
+    }
+
+    public boolean gt(Decimal o) {
+        return compareTo(o) > 0;
+    }
+
+    public boolean ge(double value) {
+        return ge(Decimal.valueOf(value));
+    }
+
+    public boolean ge(Decimal o) {
+        return compareTo(o) >= 0;
+    }
+
+    public boolean lt(double value) {
+        return lt(Decimal.valueOf(value));
+    }
+
+    public boolean lt(Decimal o) {
+        return compareTo(o) < 0;
+    }
+
+    public boolean le(double value) {
+        return le(Decimal.valueOf(value));
+    }
+
+    public boolean le(Decimal o) {
+        return compareTo(o) <= 0;
+    }
+
+    public boolean eq(double value) {
+        return eq(Decimal.valueOf(value));
+    }
+
+    public boolean eq(Decimal o) {
+        return compareTo(o) == 0;
+    }
+
+    public Decimal negate() {
+        return after(value.negate());
     }
 
     public long toCent() {
