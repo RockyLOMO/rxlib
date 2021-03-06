@@ -288,7 +288,7 @@ public final class App extends SystemUtils {
         for (String yf : yamlFile) {
             quietly(() -> {
                 File file = new File(yf);
-                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getClassLoader().getResourceAsStream(yf))) {
+                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getResource(yf))) {
                     Map<String, Object> one = (Map<String, Object>) data;
                     fillDeep(one, result);
                 }

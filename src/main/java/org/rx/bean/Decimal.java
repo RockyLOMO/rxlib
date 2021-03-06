@@ -45,7 +45,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
     private static final long serialVersionUID = 6538774206304848828L;
     static final String PERCENT_SYMBOL = "%", PERMILLE_SYMBOL = "‰";
-    static final BigDecimal PERCENT = new BigDecimal(100), PERMILLE = new BigDecimal(1000);
+    static final BigDecimal PERCENT_DIVISOR = new BigDecimal(100), PERMILLE_DIVISOR = new BigDecimal(1000);
     static final int DEFAULT_SCALE = 2;
     static final RoundingMode DEFAULT_MODE = RoundingMode.DOWN;
     public static final Decimal ZERO = valueOf(BigDecimal.ZERO);
@@ -55,7 +55,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public static Decimal fromPermilleInt(BigDecimal value) {
-        return valueOf(value, 3, DEFAULT_MODE).divide(PERMILLE);
+        return valueOf(value, 3, DEFAULT_MODE).divide(PERMILLE_DIVISOR);
     }
 
     public static Decimal fromPercentInt(Double value) {
@@ -63,11 +63,11 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public static Decimal fromPercentInt(BigDecimal value) {
-        return valueOf(value).divide(PERCENT);
+        return valueOf(value).divide(PERCENT_DIVISOR);
     }
 
     public static Decimal fromCent(Long cent) {
-        return valueOf(BigDecimal.valueOf(isNull(cent, 0L))).divide(PERCENT);
+        return valueOf(BigDecimal.valueOf(isNull(cent, 0L))).divide(PERCENT_DIVISOR);
     }
 
     public static Decimal valueOf(String expr) {
@@ -79,9 +79,9 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
         BigDecimal d = BigDecimal.ONE;
         if (expr.endsWith(PERCENT_SYMBOL)) {
-            d = PERCENT;
+            d = PERCENT_DIVISOR;
         } else if (expr.endsWith(PERMILLE_SYMBOL)) {
-            d = PERMILLE;
+            d = PERMILLE_DIVISOR;
         }
         if (!d.equals(BigDecimal.ONE)) {
             expr = expr.substring(0, expr.length() - 1);
@@ -102,10 +102,6 @@ public class Decimal extends Number implements Comparable<Decimal> {
             value = BigDecimal.ZERO;
         }
         return new Decimal(value, scale, mode);
-    }
-
-    public static BigDecimal max(BigDecimal a, BigDecimal b) {
-        return a.compareTo(b) >= 0 ? a : b;
     }
 
     @Getter
@@ -271,7 +267,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public long toCent() {
-        return multiply(PERCENT).value.longValue();//.longValueExact();有毒
+        return multiply(PERCENT_DIVISOR).value.longValue();//.longValueExact();有毒
     }
 
     //%.2f
@@ -303,7 +299,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public int toPermilleInt() {
-        return value.multiply(PERMILLE).setScale(0, mode).intValueExact();
+        return value.multiply(PERMILLE_DIVISOR).setScale(0, mode).intValueExact();
     }
 
     public String toPermilleString() {
@@ -311,11 +307,11 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public int toPercentInt() {
-        return value.multiply(PERCENT).setScale(0, mode).intValueExact();
+        return value.multiply(PERCENT_DIVISOR).setScale(0, mode).intValueExact();
     }
 
     public String toPercentString() {
-        return value.multiply(PERCENT).setScale(1, mode).stripTrailingZeros().toPlainString() + PERCENT_SYMBOL;
+        return value.multiply(PERCENT_DIVISOR).setScale(1, mode).stripTrailingZeros().toPlainString() + PERCENT_SYMBOL;
     }
 
     public int compareTo(double val) {

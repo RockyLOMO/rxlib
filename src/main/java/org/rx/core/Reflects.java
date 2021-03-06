@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import com.google.common.io.Resources;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -105,9 +106,19 @@ public class Reflects extends TypeUtils {
         return (Class<?>) SecurityManagerEx.instance.stackClass(2 + depth);
     }
 
+    public static InputStream getResource(String name) {
+        return getResource(name, null);
+    }
+
     @ErrorCode
-    public static InputStream getResource(Class owner, String name) {
-        InputStream resource = owner.getResourceAsStream(name);
+    public static InputStream getResource(String name, Class<?> owner) {
+        InputStream resource = null;
+        if (owner != null) {
+            resource = owner.getResourceAsStream(name);
+        }
+        if (resource == null) {
+            resource = getClassLoader().getResourceAsStream(name);
+        }
         if (resource == null) {
             throw new ApplicationException(values(owner, name));
         }
