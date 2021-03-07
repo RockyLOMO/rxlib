@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.google.common.io.Resources;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -19,7 +18,6 @@ import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
-import java.beans.Introspector;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.invoke.MethodHandles;
@@ -31,7 +29,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
 import static org.rx.core.App.*;
 
