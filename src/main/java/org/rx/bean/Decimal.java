@@ -50,20 +50,28 @@ public class Decimal extends Number implements Comparable<Decimal> {
     static final RoundingMode DEFAULT_MODE = RoundingMode.DOWN;
     public static final Decimal ZERO = valueOf(BigDecimal.ZERO);
 
-    public static Decimal fromPermilleInt(Double value) {
-        return fromPermilleInt(BigDecimal.valueOf(value == null ? 0 : value));
+    public static Decimal fromPermille(Double permille) {
+        return fromPermille(BigDecimal.valueOf(permille == null ? 0 : permille));
     }
 
-    public static Decimal fromPermilleInt(BigDecimal value) {
-        return valueOf(value, 3, DEFAULT_MODE).divide(PERMILLE_DIVISOR);
+    public static Decimal fromPermille(BigDecimal permille) {
+        return fromPermille(permille, 3);
     }
 
-    public static Decimal fromPercentInt(Double value) {
-        return fromPercentInt(BigDecimal.valueOf(value == null ? 0 : value));
+    public static Decimal fromPermille(BigDecimal permille, int scale) {
+        return valueOf(permille, scale, DEFAULT_MODE).divide(PERMILLE_DIVISOR);
     }
 
-    public static Decimal fromPercentInt(BigDecimal value) {
-        return valueOf(value).divide(PERCENT_DIVISOR);
+    public static Decimal fromPercent(Double percent) {
+        return fromPercent(BigDecimal.valueOf(percent == null ? 0 : percent));
+    }
+
+    public static Decimal fromPercent(BigDecimal percent) {
+        return fromPercent(percent, DEFAULT_SCALE);
+    }
+
+    public static Decimal fromPercent(BigDecimal percent, int scale) {
+        return valueOf(percent, scale, DEFAULT_MODE).divide(PERCENT_DIVISOR);
     }
 
     public static Decimal fromCent(Long cent) {
@@ -270,7 +278,6 @@ public class Decimal extends Number implements Comparable<Decimal> {
         return multiply(PERCENT_DIVISOR).value.longValue();//.longValueExact();有毒
     }
 
-    //%.2f
     @Override
     public String toString() {
         return toString(true);
@@ -287,7 +294,13 @@ public class Decimal extends Number implements Comparable<Decimal> {
             }
             pattern.append("#");
         }
-        return new DecimalFormat(pattern.toString()).format(value);
+        return toString(pattern.toString());
+    }
+
+    //%.2f %02d
+    //#,###.000  #.00  ##.00%
+    public String toString(String format) {
+        return new DecimalFormat(format).format(value);
     }
 
     public String toCurrencyString() {
