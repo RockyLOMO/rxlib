@@ -1,6 +1,8 @@
 package org.rx.spring;
 
 import lombok.Setter;
+import org.rx.core.NQuery;
+import org.rx.core.Strings;
 import org.rx.util.function.TripleFunc;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
@@ -37,6 +39,18 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
     public static <T> T getBean(Class<T> clazz) {
         Map<String, T> beanMaps = getApplicationContext().getBeansOfType(clazz);
         return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
+    }
+
+    public static String[] fromYamlArray(String yamlArray) {
+        if (Strings.isEmpty(yamlArray)) {
+            return new String[0];
+        }
+        return NQuery.of(Strings.split(yamlArray, "\n")).select(p -> {
+            if (p.startsWith("- ")) {
+                return p.substring(2);
+            }
+            return p;
+        }).toArray();
     }
 
     public void setApplicationContext(ApplicationContext applicationContext) {

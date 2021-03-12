@@ -1,8 +1,7 @@
 package org.rx.spring;
 
-import com.alibaba.fastjson.JSONArray;
+import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
-import org.rx.core.Strings;
 import org.rx.net.AuthenticEndpoint;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.core.convert.converter.Converter;
@@ -10,19 +9,14 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 
-import static org.rx.core.App.toJsonArray;
-
 //DataSize 和 Duration
 public class AppConfigConverters {
     @Component
     @ConfigurationPropertiesBinding
-    public static class JSONArrayConverter implements Converter<String, JSONArray> {
+    public static class DecimalConverter implements Converter<Object, Decimal> {
         @Override
-        public JSONArray convert(String s) {
-            if (Strings.isBlank(s)) {
-                return new JSONArray();
-            }
-            return toJsonArray(s);
+        public Decimal convert(Object s) {
+            return Decimal.valueOf(s.toString());
         }
     }
 

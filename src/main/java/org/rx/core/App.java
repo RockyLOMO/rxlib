@@ -7,7 +7,6 @@ import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import org.apache.commons.lang3.SystemUtils;
@@ -46,7 +45,6 @@ import java.util.function.Supplier;
 import static java.lang.Math.pow;
 
 @SuppressWarnings(App.NON_WARNING)
-@Slf4j
 public final class App extends SystemUtils {
     public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
@@ -504,16 +502,7 @@ public final class App extends SystemUtils {
 
     //region Basic
     public static String getBootstrapPath() {
-        String p = App.class.getClassLoader().getResource("").getFile();
-        if (IS_OS_WINDOWS) {
-            if (p.startsWith("file:/")) {
-                p = p.substring(6);
-            } else {
-                p = p.substring(1);
-            }
-        }
-        log.info("bootstrapPath: {}", p);
-        return p;
+        return new File("").getAbsolutePath();
     }
 
     public static void setIgnoreExceptionHandler(Predicate<Throwable> ignoreExceptionHandler) {
