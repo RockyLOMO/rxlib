@@ -189,7 +189,8 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
     public Decimal multiply(BigDecimal val) {
         if (val == null) {
-            val = BigDecimal.ZERO;
+//            val = BigDecimal.ZERO;
+            return Decimal.ZERO;
         }
         before(val);
         return after(this.value.multiply(val).setScale(scale, mode));
@@ -208,7 +209,8 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
     public Decimal divide(BigDecimal val) {
         if (val == null) {
-            val = BigDecimal.ZERO;
+//            val = BigDecimal.ZERO;
+            return Decimal.ZERO;
         }
         before(val);
         return after(this.value.divide(val, scale, mode));
