@@ -117,7 +117,8 @@ public class Reflects extends TypeUtils {
             resource = getClassLoader().getResourceAsStream(name);
         }
         if (resource == null) {
-            throw new ApplicationException(values(owner, name));
+            //ApplicationException recursive load
+            throw new InvalidException("Not found resource %s", name);
         }
         return resource;
     }
