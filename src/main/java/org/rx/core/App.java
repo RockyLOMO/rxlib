@@ -541,11 +541,7 @@ public final class App extends SystemUtils {
                 Tasks.raiseUncaughtException(e);
             }
         }
-        ApplicationException applicationException = as(e, ApplicationException.class);
-        if (applicationException == null) {
-            return isNull(e.getMessage(), ApplicationException.DEFAULT_MESSAGE);
-        }
-        return applicationException.getFriendlyMessage();
+        return ApplicationException.getMessage(e);
     }
 
     /**

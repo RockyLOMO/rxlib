@@ -15,11 +15,24 @@ import static org.rx.core.App.*;
  */
 @Getter
 public class ApplicationException extends InvalidException {
+    public static final String DEFAULT_MESSAGE = "网络繁忙，请稍后再试。";
+
     static {
         Container.getInstance().register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
     }
 
-    public static final String DEFAULT_MESSAGE = "网络繁忙，请稍后再试。";
+    public static String getMessage(Throwable e) {
+        if (e == null) {
+            return DEFAULT_MESSAGE;
+        }
+
+        ApplicationException applicationException = as(e, ApplicationException.class);
+        if (applicationException == null) {
+            return isNull(e.getMessage(), DEFAULT_MESSAGE);
+        }
+        return applicationException.getFriendlyMessage();
+    }
+
     private final UUID id = UUID.randomUUID();
     private final Object errorCode;
     private final Object[] codeValues;
