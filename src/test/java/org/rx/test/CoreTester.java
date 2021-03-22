@@ -15,6 +15,8 @@ import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.RedoTimer;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.servlet.http.HttpServletResponse;
 import java.util.*;
@@ -282,6 +284,12 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void reflect() {
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        Resource[] resource = resolver.getResources("classpath*:*");
+        for (Resource resource1 : resource) {
+            System.out.println(resource1);
+        }
+
         System.out.println(Reflects.resolve(PersonBean::getAge));
 
         assert Reflects.stackClass(0) == this.getClass();

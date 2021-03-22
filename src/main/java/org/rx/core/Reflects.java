@@ -17,6 +17,8 @@ import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
+import org.springframework.core.io.InputStreamSource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import java.io.InputStream;
 import java.io.Serializable;
@@ -103,24 +105,16 @@ public class Reflects extends TypeUtils {
         return (Class<?>) SecurityManagerEx.instance.stackClass(2 + depth);
     }
 
-    public static InputStream getResource(String name) {
-        return getResource(name, null);
+    @ErrorCode
+    public static InputStream getResource(String namePattern) {
+        return getResources(namePattern).first();
     }
 
-    @ErrorCode
-    public static InputStream getResource(String name, Class<?> owner) {
-        InputStream resource = null;
-        if (owner != null) {
-            resource = owner.getResourceAsStream(name);
-        }
-        if (resource == null) {
-            resource = getClassLoader().getResourceAsStream(name);
-        }
-        if (resource == null) {
-            //ApplicationException recursive load
-            throw new InvalidException("Not found resource %s", name);
-        }
-        return resource;
+    //class.getResourceAsStream classLoader.getResourceAsStream
+    @SneakyThrows
+    public static NQuery<InputStream> getResources(String namePattern) {
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        return NQuery.of(resolver.getResources("classpath*:" + namePattern)).select(InputStreamSource::getInputStream);
     }
 
     /**
