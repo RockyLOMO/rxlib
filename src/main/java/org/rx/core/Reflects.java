@@ -107,10 +107,14 @@ public class Reflects extends TypeUtils {
 
     @ErrorCode
     public static InputStream getResource(String namePattern) {
+        InputStream stream = getClassLoader().getResourceAsStream(namePattern);
+        if (stream != null) {
+            return stream;
+        }
         return getResources(namePattern).first();
     }
 
-    //class.getResourceAsStream classLoader.getResourceAsStream
+    //class.getResourceAsStream
     @SneakyThrows
     public static NQuery<InputStream> getResources(String namePattern) {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
