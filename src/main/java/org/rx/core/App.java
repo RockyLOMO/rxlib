@@ -175,8 +175,7 @@ public final class App extends SystemUtils {
         try {
             return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
         } catch (Exception e) {
-            SpringContext.metrics("fromJson", src);
-            throw e;
+            throw new InvalidException("fromJson %s", new Object[]{toJsonString(src)}, e);
         }
     }
 
