@@ -279,6 +279,9 @@ public class CoreTester extends TestUtil {
 
         assert Reflects.changeType(true, byte.class) == 1;
         assert Reflects.changeType(true, Byte.class) == 1;
+
+        System.out.println(Reflects.defaultValue(List.class));
+        System.out.println(Reflects.defaultValue(Map.class));
     }
 
     @SneakyThrows

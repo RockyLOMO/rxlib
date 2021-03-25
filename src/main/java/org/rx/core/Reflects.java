@@ -26,9 +26,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
@@ -378,6 +376,12 @@ public class Reflects extends TypeUtils {
 
         if (value == null) {
             if (!toType.isPrimitive()) {
+                if (Iterable.class.isAssignableFrom(toType)) {
+                    return (T) Collections.emptyList();
+                }
+                if (Map.class.isAssignableFrom(toType)) {
+                    return (T) Collections.emptyMap();
+                }
                 return null;
             }
             if (boolean.class.equals(toType)) {
