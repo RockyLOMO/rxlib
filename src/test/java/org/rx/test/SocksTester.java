@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.App;
-import org.rx.core.EventTarget;
 import org.rx.core.Tasks;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;
@@ -67,11 +66,11 @@ public class SocksTester {
         }
 
         for (int i = 0; i < 10; i++) {
-            UserEventArgs args = new UserEventArgs(PersonBean.def);
+            UserEventArgs args = new UserEventArgs(PersonBean.girl);
             facadeGroup.get(0).raiseEvent(groupEvent, args);
             assert args.getFlag() == 1;
 
-            args = new UserEventArgs(PersonBean.def);
+            args = new UserEventArgs(PersonBean.girl);
             args.setFlag(1);
             facadeGroup.get(1).raiseEvent(groupEvent, args);
             assert args.getFlag() == 2;
@@ -164,14 +163,14 @@ public class SocksTester {
         //注册事件（广播）
         attachEvent(facade1, "0x00");
         //服务端触发事件，只有facade1注册会被广播到
-        server.create(PersonBean.def);
+        server.create(PersonBean.girl);
 
         attachEvent(facade2, "0x01");
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
-        server.create(PersonBean.def);
+        server.create(PersonBean.girl);
 
         //客户端触发事件
-        facade1.create(PersonBean.def);
+        facade1.create(PersonBean.girl);
         sleep(6000);
     }
 

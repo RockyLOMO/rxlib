@@ -281,7 +281,7 @@ public final class App extends SystemUtils {
         require(yamlFile);
 
         Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml();
         for (String yf : yamlFile) {
             quietly(() -> {
                 File file = new File(yf);

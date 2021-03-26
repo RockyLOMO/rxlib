@@ -10,10 +10,7 @@ import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.DateTime;
-import org.rx.bean.NEnum;
-import org.rx.bean.SUID;
-import org.rx.bean.Tuple;
+import org.rx.bean.*;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
@@ -54,7 +51,7 @@ public class Reflects extends TypeUtils {
     static class SecurityManagerEx extends SecurityManager {
         static SecurityManagerEx instance = new SecurityManagerEx();
 
-        Class stackClass(int depth) {
+        Class<?> stackClass(int depth) {
             return getClassContext()[depth];
         }
     }
@@ -80,6 +77,7 @@ public class Reflects extends TypeUtils {
         supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
                 Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class));
         typeConverter = new CopyOnWriteArrayList<>();
+        registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
 //        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
@@ -100,16 +98,19 @@ public class Reflects extends TypeUtils {
 
     public static Class<?> stackClass(int depth) {
         //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
-        return (Class<?>) SecurityManagerEx.instance.stackClass(2 + depth);
+        return SecurityManagerEx.instance.stackClass(2 + depth);
     }
 
-    @ErrorCode
     public static InputStream getResource(String namePattern) {
         InputStream stream = getClassLoader().getResourceAsStream(namePattern);
         if (stream != null) {
             return stream;
         }
-        return getResources(namePattern).first();
+        InputStream in = getResources(namePattern).firstOrDefault();
+        if (in == null) {
+            throw new InvalidException("Resource %s not found", namePattern);
+        }
+        return in;
     }
 
     //class.getResourceAsStream
@@ -376,10 +377,10 @@ public class Reflects extends TypeUtils {
 
         if (value == null) {
             if (!toType.isPrimitive()) {
-                if (Iterable.class.isAssignableFrom(toType)) {
+                if (List.class.equals(toType)) {
                     return (T) Collections.emptyList();
                 }
-                if (Map.class.isAssignableFrom(toType)) {
+                if (Map.class.equals(toType)) {
                     return (T) Collections.emptyMap();
                 }
                 return null;

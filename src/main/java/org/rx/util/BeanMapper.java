@@ -108,7 +108,7 @@ public class BeanMapper {
 
         boolean skipNull = flags.has(BeanMapFlag.SkipNull);
         Class from = source.getClass(), to = target.getClass();
-        MapConfig config = getConfig(from, to);
+        MapConfig config = getConfig(source.getClass(), to);
         NQuery<Mapping> mappings = NQuery.of(method != null ? config.mappings.getOrDefault(method, empty) : empty);
         final NQuery<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
@@ -117,27 +117,22 @@ public class BeanMapper {
             copiedNames.add(propertyName);
             Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
             if (mapping != null) {
-                sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, target, skipNull, toProperties);
+                sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
             }
             return Reflects.changeType(sourceValue, targetType);
         });
 
-        final NQuery<Reflects.PropertyNode> fromProperties = Reflects.getProperties(from);
         for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
             copiedNames.add(mapping.target());
             Object sourceValue = null;
-            Reflects.PropertyNode propertyNode = fromProperties.firstOrDefault(p -> eq(mapping.source(), p.propertyName));
-            if (propertyNode != null) {
-                sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
-            }
-            propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, mapping.target()));
+            Reflects.PropertyNode propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, mapping.target()));
             if (propertyNode == null) {
                 log.warn("Target property {} not found", mapping.target());
                 continue;
             }
             Method targetMethod = propertyNode.setter;
             Class targetType = targetMethod.getParameterTypes()[0];
-            sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), target, skipNull, toProperties);
+            sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), source, target, skipNull, toProperties);
             Reflects.invokeMethod(targetMethod, target, Reflects.changeType(sourceValue, targetType));
         }
 
@@ -160,7 +155,7 @@ public class BeanMapper {
     }
 
     @SuppressWarnings(NON_WARNING)
-    private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
+    private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object source, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
                 || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore)))) {
             return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
@@ -180,6 +175,12 @@ public class BeanMapper {
         }
         if (mapping.converter() != BeanMapConverter.class) {
             sourceValue = Reflects.newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
+        }
+        if (!Strings.isEmpty(mapping.source())) {
+            Reflects.PropertyNode propertyNode = Reflects.getProperties(source.getClass()).firstOrDefault(p -> eq(mapping.source(), p.propertyName));
+            if (propertyNode != null) {
+                sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
+            }
         }
         return sourceValue;
     }

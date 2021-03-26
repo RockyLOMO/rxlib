@@ -7,7 +7,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Data
-public class TargetBean {
+public class GirlBean {
+    public int index;
     @NotNull
     private UUID id;
     @NotNull

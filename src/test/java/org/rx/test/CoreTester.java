@@ -19,6 +19,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -287,13 +288,12 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void reflect() {
-        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        Resource[] resource = resolver.getResources("classpath*:*");
-        for (Resource resource1 : resource) {
-            System.out.println(resource1);
+        for (InputStream resource : Reflects.getResources("C:\\Project\\rxlib\\src\\main\\resources\\code.yml")) {
+            System.out.println(resource);
         }
 
-        System.out.println(Reflects.resolve(PersonBean::getAge));
+        Tuple<String, String> resolve = Reflects.resolve(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
 
         assert Reflects.stackClass(0) == this.getClass();
         System.out.println(cacheKey("reflect"));
@@ -348,16 +348,15 @@ public class CoreTester extends TestUtil {
 //            return null;
         }), new ErrorBean()};
         System.out.println(toJsonString(args));
-        System.out.println(toJsonString(args));
         System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
 
         String str = "abc";
         assert str.equals(toJsonString(str));
-        String jObj = toJsonString(PersonBean.def);
+        String jObj = toJsonString(PersonBean.girl);
         System.out.println("encode jObj: " + jObj);
         System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
 //        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
-        List<PersonBean> arr = Arrays.toList(PersonBean.def, PersonBean.def);
+        List<PersonBean> arr = Arrays.toList(PersonBean.girl, PersonBean.girl);
         String jArr = toJsonString(arr);
         System.out.println("encode jArr: " + jArr);
         System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
@@ -394,17 +393,14 @@ public class CoreTester extends TestUtil {
     @Test
     public void appSetting() {
         System.out.println(App.getConfig());
-//        Map<String, Object> map = loadYaml("application.yml");
-//        System.out.println(map);
-//        Object v = readSetting("app.test.version");
-//        assert v.equals(1);
-//        v = readSetting("not");
-//        assert v == null;
-//
-//        v = readSetting("org.rx.test.CoreTester", null, loadYaml("code.yml"));
-//        assert v instanceof Map;
-//
-//        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("code.yml"));
-//        assert eq(v, "Exception Error Code value={0}");
+
+        Map<String, Object> map = loadYaml("application.yml");
+        System.out.println(map);
+
+        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("code.yml"));
+        assert v instanceof Map;
+
+        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("code.yml"));
+        assert eq(v, "Exception Error Code value={0}");
     }
 }

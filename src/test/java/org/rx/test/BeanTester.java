@@ -11,7 +11,7 @@ import org.rx.test.common.TestUtil;
 import org.rx.util.BeanMapConverter;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
-import org.rx.test.bean.TargetBean;
+import org.rx.test.bean.GirlBean;
 import org.rx.util.BeanMapNullValueStrategy;
 
 import java.sql.Timestamp;
@@ -36,17 +36,19 @@ public class BeanTester extends TestUtil {
             }
         }
 
-        @Mapping(target = "gender", ignore = true)
+        @Mapping(target = "index", source = "index2")
         @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
-        @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = BeanMapNullValueStrategy.SetToDefault)
+        @Mapping(target = "gender", ignore = true)
         @Mapping(target = "birth", converter = DateToIntConvert.class)
-        TargetBean toTarget(PersonBean source);
+        @Mapping(target = "kids", defaultValue = "1024", nullValueStrategy = BeanMapNullValueStrategy.SetToDefault)
+        @Mapping(target = "luckyNum", source = "index2")
+        GirlBean toTarget(PersonBean source);
 
         @Mapping(target = "gender", ignore = true)
         @Mapping(source = "name", target = "info", trim = true, format = "a%sb")
         @Mapping(target = "kids", nullValueStrategy = BeanMapNullValueStrategy.Ignore)
         @Mapping(target = "birth", converter = DateToIntConvert.class)
-        default TargetBean toTargetWith(PersonBean source, TargetBean target) {
+        default GirlBean toTargetWith(PersonBean source, GirlBean target) {
             target.setKids(10L);//自定义默认值，先执行默认方法再copy properties
             return target;
         }
@@ -54,23 +56,19 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void defineMapBean() {
-        PersonBean f = new PersonBean();
-        f.setIndex(2);
-        f.setName("王湵范");
-        f.setAge(6);
-        f.setBirth(new DateTime(2020, 2, 20));
-        f.setGender(PersonGender.Boy);
-        f.setMoneyCent(200L);
-
+        PersonBean source = PersonBean.boy;
         //定义用法
-        TargetBean result = PersonMapper.INSTANCE.toTarget(f);
-        System.out.println(toJsonString(f));
-        System.out.println(toJsonString(result));
+        GirlBean target = PersonMapper.INSTANCE.toTarget(source);
+        System.out.println(toJsonString(source));
+        System.out.println(toJsonString(target));
+        assert source.getIndex2() == target.getIndex();
+        assert source.getIndex2() == target.getLuckyNum();
+        assert source.getMoney().eq(target.getMoney().doubleValue());
 
-        result = new TargetBean();
-        PersonMapper.INSTANCE.toTargetWith(f, result);
-        System.out.println(toJsonString(f));
-        System.out.println(toJsonString(result));
+        target = new GirlBean();
+        PersonMapper.INSTANCE.toTargetWith(source, target);
+        System.out.println(toJsonString(source));
+        System.out.println(toJsonString(target));
     }
 
     @Test
@@ -82,7 +80,7 @@ public class BeanTester extends TestUtil {
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.Boy);
         f.setMoneyCent(200L);
-        TargetBean t = new TargetBean();
+        GirlBean t = new GirlBean();
         t.setKids(10L);
 
         //普通用法，属性名一致
@@ -177,7 +175,7 @@ public class BeanTester extends TestUtil {
         assert cent.compareTo(1.11) == 0;
         assert cent.toCent() == 111;
 
-        String j = toJsonString(PersonBean.def);
+        String j = toJsonString(PersonBean.girl);
         System.out.println(j);
         PersonBean d = fromJson(j, PersonBean.class);
         System.out.println(d);
