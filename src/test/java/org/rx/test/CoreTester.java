@@ -297,7 +297,7 @@ public class CoreTester extends TestUtil {
 
         assert Reflects.stackClass(0) == this.getClass();
         System.out.println(cacheKey("reflect"));
-        System.out.println(cacheKey("reflect", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(cacheKey("reflect:", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
         for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
             System.out.println(traceElement);

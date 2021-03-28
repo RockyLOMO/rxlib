@@ -46,7 +46,7 @@ import static java.lang.Math.pow;
 
 @SuppressWarnings(App.NON_WARNING)
 public final class App extends SystemUtils {
-    public static final String NON_WARNING = "all", UTF_8 = "UTF-8";
+    public static final String NON_WARNING = "all", UTF_8 = "UTF-8", CACHE_KEY_SUFFIX = ":";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -148,19 +148,13 @@ public final class App extends SystemUtils {
     }
 
     public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder(Reflects.stackClass(1).getSimpleName());
-        int offset = 10;
-        if (k.getLength() > offset) {
-            k.setLength(offset);
+        StringBuilder k = new StringBuilder();
+        if (Strings.endsWith(methodName, CACHE_KEY_SUFFIX)) {
+            k.append(methodName);
         } else {
-            offset = k.getLength();
+            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(CACHE_KEY_SUFFIX);
         }
-        k.append(methodName).append(toJsonString(args));
-        if (k.getLength() <= 32) {
-            return k.toString();
-        }
-        String hex = k.substring(offset);
-        return k.setLength(offset).append(SUID.compute(hex)).toString();
+        return k.append(SUID.compute(toJsonString(args))).toString();
     }
 
     @SneakyThrows
