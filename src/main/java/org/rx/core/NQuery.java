@@ -203,11 +203,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().map(p -> sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement()))));
     }
 
-    public <TR> NQuery<TR> selectMany(BiFunc<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
         return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p)))));
     }
 
-    public <TR> NQuery<TR> selectMany(BiFuncWithIndex<T, Collection<TR>> selector) {
+    public <TR> NQuery<TR> selectMany(BiFuncWithIndex<T, Iterable<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
         return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement())))));
     }
@@ -221,7 +221,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().filter(p -> sneakyInvoke(() -> predicate.invoke(p, counter.getAndIncrement()))));
     }
 
-    public <TI, TR> NQuery<TR> join(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
@@ -229,12 +229,12 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return join(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> joinMany(BiFunc<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return join(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     @SuppressWarnings(NON_WARNING)
-    public <TI, TR> NQuery<TR> leftJoin(Collection<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
             if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
                 return Stream.of(resultSelector.apply(p, null));
@@ -247,7 +247,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return leftJoin(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> leftJoinMany(BiFunc<T, Collection<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> NQuery<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return leftJoin(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
@@ -268,10 +268,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public NQuery<T> concat(Iterable<T> set) {
-        return concat(toList(set));
-    }
-
-    public NQuery<T> concat(Collection<T> set) {
         return me(Stream.concat(stream(), newStream(set)));
     }
 
@@ -279,28 +275,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().distinct());
     }
 
-    public NQuery<T> except(Iterable<T> set) {
-        return except(toList(set));
-    }
-
     @SuppressWarnings(NON_WARNING)
-    public NQuery<T> except(Collection<T> set) {
+    public NQuery<T> except(Iterable<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
     public NQuery<T> intersect(Iterable<T> set) {
-        return intersect(toList(set));
-    }
-
-    public NQuery<T> intersect(Collection<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
     public NQuery<T> union(Iterable<T> set) {
-        return union(toList(set));
-    }
-
-    public NQuery<T> union(Collection<T> set) {
         return concat(set);
     }
 
