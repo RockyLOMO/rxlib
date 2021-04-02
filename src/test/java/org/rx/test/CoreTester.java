@@ -4,6 +4,7 @@ import com.alibaba.fastjson.TypeReference;
 import io.netty.util.Timeout;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -20,6 +21,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -33,20 +35,52 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void runParallelNQuery() {
-        ManagementMonitor.getInstance().scheduled = (s, e) -> {
-            System.out.println(toJsonString(e.getValue()));
-        };
-
-        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-                .groupBy(p -> p > 5, (p, x) -> x.first())) {
-            System.out.println(integer.toString());
+        for (BigDecimal bigDecimal : NQuery.of(1, 2, 3, 4).where(p -> {
+            System.out.println("a:" + p);
+            return p > 2;
+        }).select(p -> {
+            System.out.println("b:" + p);
+            return new BigDecimal(p);
+        })) {
+            System.out.println(bigDecimal);
         }
-        System.in.read();
+//
+//        List<Integer > a = new ArrayList<>(),b = new ArrayList<>();
+//        a.add(1);
+//        b.add(1);
+        List<Integer> a = Collections.singletonList(1), b = Collections.singletonList(1);
+//        a.add(1);
+//        b.add(1);
+        System.out.println(a.equals(b));
+        Map<List<Integer>, String> x = new HashMap<>();
+        x.put(a, "woshimap");
+        System.out.println(x.get(b));
+
+        for (Integer integer : new Iterable<Integer>() {
+            @NotNull
+            @Override
+            public Iterator<Integer> iterator() {
+                System.out.println("wtf");
+                return Arrays.toList(1, 2, 3, 4).iterator();
+            }
+        }) {
+            System.out.println(integer);
+        }
+//        ManagementMonitor.getInstance().scheduled = (s, e) -> {
+//            System.out.println(toJsonString(e.getValue()));
+//        };
+//
+//        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+//                .groupBy(p -> p > 5, (p, x) -> x.first())) {
+//            System.out.println(integer.toString());
+//        }
+//        System.in.read();
     }
 
     @Test
     public void runNQuery() {
-        Set<PersonBean> personSet = new HashSet<>();
+        Collection<PersonBean> personSet = new HashSet<>();
+        personSet.add(PersonBean.girl);
         for (int i = 0; i < 5; i++) {
             PersonBean p = new PersonBean();
             p.index = i % 2 == 0 ? 2 : i;
@@ -55,10 +89,6 @@ public class CoreTester extends TestUtil {
             p.age = ThreadLocalRandom.current().nextInt(100);
             personSet.add(p);
         }
-        PersonBean px = new PersonBean();
-        px.index = 2;
-        px.index2 = 41;
-        personSet.add(px);
 
         showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
                 new PersonBean(28, 28, "tom", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
@@ -79,7 +109,7 @@ public class CoreTester extends TestUtil {
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> new Object[]{p.index, p.index2}, (p, x) -> {
+                NQuery.of(personSet).groupByMany(p -> Arrays.toList(p.index, p.index2), (p, x) -> {
                     System.out.println("groupKey: " + toJsonString(p));
                     List<PersonBean> list = x.toList();
                     System.out.println("items: " + toJsonString(list));
@@ -89,9 +119,9 @@ public class CoreTester extends TestUtil {
         showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
         showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
         showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByMany(p -> new Object[]{p.index2, p.index}));
+                NQuery.of(personSet).orderByMany(p -> Arrays.toList(p.index2, p.index)));
         showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByDescendingMany(p -> new Object[]{p.index2, p.index}));
+                NQuery.of(personSet).orderByDescendingMany(p -> Arrays.toList(p.index2, p.index)));
 
         showResult("select(p -> p.index).reverse()",
                 NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());

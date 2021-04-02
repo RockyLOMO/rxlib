@@ -5,12 +5,12 @@ import com.google.common.collect.Streams;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.SneakyThrows;
+import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
-import org.rx.bean.Tuple;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.*;
@@ -34,7 +34,7 @@ import static org.rx.core.App.*;
  * @param <T>
  */
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
+public final class NQuery<T> implements Iterable<T>, Serializable {
     //region staticMembers
     @SuppressWarnings(NON_WARNING)
     @ErrorCode("argError")
@@ -66,6 +66,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
 
     public static <T> List<T> toList(Iterator<T> iterator) {
         return IteratorUtils.toList(iterator);
+    }
+
+    public static <T> List<T> toList(Enumeration<T> enumeration) {
+        return EnumerationUtils.toList(enumeration);
     }
 
     public static <T> NQuery<T> of(T one) {
@@ -101,21 +105,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     //endregion
 
     //region Member
-    private Iterable<T> iterable;
-    private boolean isParallel;
-
-    @SneakyThrows
-    public NQuery<T> clone() {
-        return (NQuery<T>) super.clone();
-    }
+    private final Iterable<T> data;
+    private final boolean isParallel;
 
     public Stream<T> stream() {
-        return StreamSupport.stream(iterable.spliterator(), isParallel);
+        return StreamSupport.stream(data.spliterator(), isParallel);
     }
 
     @Override
     public Iterator<T> iterator() {
-        return iterable.iterator();
+        return data.iterator();
     }
 
     private <TR> List<TR> newList() {
@@ -153,8 +152,8 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         boolean isParallel = stream.isParallel();
         Spliterator<TR> spliterator = stream.spliterator();
         return me(StreamSupport.stream(new Spliterators.AbstractSpliterator<TR>(spliterator.estimateSize(), spliterator.characteristics()) {
-            AtomicBoolean breaker = new AtomicBoolean();
-            AtomicInteger counter = new AtomicInteger();
+            final AtomicBoolean breaker = new AtomicBoolean();
+            final AtomicInteger counter = new AtomicInteger();
 
             @SuppressWarnings(NON_WARNING)
             @Override
@@ -325,18 +324,17 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(stream().sorted(getComparator(keySelector).reversed()));
     }
 
-    public NQuery<T> orderByMany(BiFunc<T, Object[]> keySelector) {
+    public NQuery<T> orderByMany(BiFunc<T, List<Object>> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
     @SuppressWarnings(NON_WARNING)
-    public static <T> Comparator<T> getComparatorMany(BiFunc<T, Object[]> keySelector) {
+    public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector) {
         return (p1, p2) -> sneakyInvoke(() -> {
-            Object[] k1s = keySelector.invoke(p1);
-            Object[] k2s = keySelector.invoke(p2);
-            for (int i = 0; i < k1s.length; i++) {
-                Comparable c1 = as(k1s[i], Comparable.class);
-                Comparable c2 = as(k2s[i], Comparable.class);
+            List<Object> k1s = keySelector.invoke(p1), k2s = keySelector.invoke(p2);
+            for (int i = 0; i < k1s.size(); i++) {
+                Comparable c1 = as(k1s.get(i), Comparable.class);
+                Comparable c2 = as(k2s.get(i), Comparable.class);
                 if (c1 == null || c2 == null) {
                     continue;
                 }
@@ -350,7 +348,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         });
     }
 
-    public NQuery<T> orderByDescendingMany(BiFunc<T, Object[]> keySelector) {
+    public NQuery<T> orderByDescendingMany(BiFunc<T, List<Object>> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
@@ -360,8 +358,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
 
     public <TK, TR> NQuery<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
-        Map<TK, List<T>> map = newMap();
-        stream().forEach(t -> map.computeIfAbsent(sneakyInvoke(() -> keySelector.invoke(t)), p -> newList()).add(t));
+        Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
             result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
@@ -369,15 +366,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
         return me(result);
     }
 
-    public <TR> NQuery<TR> groupByMany(BiFunc<T, Object[]> keySelector, BiFunction<Object[], NQuery<T>, TR> resultSelector) {
-        Map<String, Tuple<Object[], List<T>>> map = newMap();
-        stream().forEach(t -> {
-            Object[] ks = sneakyInvoke(() -> keySelector.invoke(t));
-            map.computeIfAbsent(toJsonString(ks), p -> Tuple.of(ks, newList())).right.add(t);
-        });
+    public <TR> NQuery<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, NQuery<T>, TR> resultSelector) {
+//        Map<String, Tuple<Object[], List<T>>> map = newMap();
+//        stream().forEach(t -> {
+//            Object[] ks = sneakyInvoke(() -> keySelector.invoke(t));
+//            map.computeIfAbsent(toJsonString(ks), p -> Tuple.of(ks, newList())).right.add(t);
+//        });
+        Map<List<Object>, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();
-        for (Tuple<Object[], List<T>> entry : map.values()) {
-            result.add(resultSelector.apply(entry.left, of(entry.right)));
+        for (Map.Entry<List<Object>, List<T>> entry : map.entrySet()) {
+            result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
         }
         return me(result);
     }
@@ -388,6 +386,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
     }
 
     public int count() {
+        if (data instanceof Collection) {
+            return ((Collection<T>) data).size();
+        }
         return (int) stream().count();
     }
 
@@ -600,13 +601,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable, Cloneable {
 
     public List<T> toList() {
         List<T> result = newList();
-        Iterables.addAll(result, iterable);
+        Iterables.addAll(result, data);
         return result;
     }
 
     public Set<T> toSet() {
         Set<T> result = newSet();
-        Iterables.addAll(result, iterable);
+        Iterables.addAll(result, data);
         return result;
     }
 
