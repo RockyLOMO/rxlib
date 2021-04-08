@@ -23,6 +23,10 @@ import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
 import org.springframework.util.CollectionUtils;
 
+import javax.naming.Context;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.DirContext;
+import javax.naming.directory.InitialDirContext;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -208,6 +212,33 @@ public final class Sockets {
         } catch (Exception e) {
             throw InvalidException.sneaky(e);
         }
+    }
+
+    public static List<String> getDnsRecords(String domain, String[] types) {
+        return getDnsRecords(domain, types, "114.114.114.114", 10, 2);
+    }
+
+    @SneakyThrows
+    public static List<String> getDnsRecords(String domain, String[] types, String dnsServer, int timeoutSeconds, int retryCount) {
+        Hashtable<String, String> env = new Hashtable<>();
+        env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
+        //设置域名服务器
+        env.put(Context.PROVIDER_URL, "dns://" + dnsServer);
+        //连接时间
+        env.put("com.sun.jndi.dns.timeout.initial", String.valueOf(timeoutSeconds * 1000));
+        //连接次数
+        env.put("com.sun.jndi.dns.timeout.retries", String.valueOf(retryCount));
+        DirContext ctx = new InitialDirContext(env);
+        Enumeration<?> e = ctx.getAttributes(domain, types).getAll();
+        List<String> result = new ArrayList<>();
+        while (e.hasMoreElements()) {
+            Attribute attr = (Attribute) e.nextElement();
+            int size = attr.size();
+            for (int i = 0; i < size; i++) {
+                result.add((String) attr.get(i));
+            }
+        }
+        return result;
     }
 
     //InetAddress.getLocalHost(); 可能会返回127.0.0.1

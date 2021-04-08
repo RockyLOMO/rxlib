@@ -250,11 +250,14 @@ public class SocksTester {
 
     @Test
     public void httpClient() {
-        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-        HttpClient client = new HttpClient();
-        for (int i = 0; i < 10; i++) {
-            client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
-        }
+        List<String> dnsRecs = Sockets.getDnsRecords("cloud.f-li.cn", new String[]{"A"});
+        System.out.println(dnsRecs);
+
+//        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
+//        HttpClient client = new HttpClient();
+//        for (int i = 0; i < 10; i++) {
+//            client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
+//        }
     }
 
     @Test
