@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
 
+import javax.validation.constraints.NotNull;
 import java.util.Date;
 import java.util.UUID;
 
@@ -21,7 +22,9 @@ public class PersonBean implements IPerson {
     public int index;
     public int index2;
     public final UUID id = UUID.randomUUID();
+    @NotNull
     public String name;
+    @NotNull
     public PersonGender gender;
     public int age;
     public Date birth;

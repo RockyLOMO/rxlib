@@ -68,8 +68,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (poolSize < executor.getMaximumPoolSize()) {
                 log.debug("{}/{} New thread to execute", poolSize, executor.getMaximumPoolSize());
-                //todo 临时解决线程hang问题
-//                App.sleep(10);
                 return false;
             }
 
@@ -304,8 +302,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void execute(Runnable command) {
-        //        x:
-//        break x;
         submittedTaskCounter.incrementAndGet();
         super.execute(command);
     }
