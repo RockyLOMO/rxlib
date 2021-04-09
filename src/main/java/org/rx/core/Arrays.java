@@ -1,9 +1,11 @@
 package org.rx.core;
 
+import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 
 import static org.rx.core.App.NON_WARNING;
@@ -14,6 +16,10 @@ import static org.rx.core.App.require;
  * Arrays.copyOf();
  */
 public class Arrays extends ArrayUtils {
+    public static <T> List<T> toList(Enumeration<T> enumeration) {
+        return EnumerationUtils.toList(enumeration);
+    }
+
     @SuppressWarnings(NON_WARNING)
     public static <T> List<T> toList(T one) {
         require(one);

@@ -8,8 +8,10 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import org.rx.annotation.ValidRegex;
+import org.rx.core.NQuery;
 import org.rx.util.function.Func;
 
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -46,8 +48,15 @@ public class Validator {
      * @param bean
      */
     public static void validateBean(Object bean) {
-        for (ConstraintViolation<Object> violation : getValidator().validate(bean)) {
-            doThrow(violation);
+        List<Object> list = NQuery.asList(bean, false);
+        if (list.isEmpty()) {
+            list.add(bean);
+        }
+        javax.validation.Validator validator = getValidator();
+        for (Object b : list) {
+            for (ConstraintViolation<Object> violation : validator.validate(b)) {
+                doThrow(violation);
+            }
         }
     }
 

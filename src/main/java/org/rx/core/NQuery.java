@@ -5,7 +5,6 @@ import com.google.common.collect.Streams;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.SneakyThrows;
-import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
@@ -36,9 +35,13 @@ import static org.rx.core.App.*;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class NQuery<T> implements Iterable<T>, Serializable {
     //region staticMembers
+    public static <T> List<T> asList(Object arrayOrIterable) {
+        return asList(arrayOrIterable, true);
+    }
+
     @SuppressWarnings(NON_WARNING)
     @ErrorCode("argError")
-    public static <T> List<T> asList(Object arrayOrIterable) {
+    public static <T> List<T> asList(Object arrayOrIterable, boolean throwOnEmpty) {
         require(arrayOrIterable);
 
         Class type = arrayOrIterable.getClass();
@@ -46,8 +49,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             int length = Array.getLength(arrayOrIterable);
             List<T> list = new ArrayList<>(length);
             for (int i = 0; i < length; i++) {
-                Object item = Array.get(arrayOrIterable, i);
-                list.add((T) item);
+                list.add((T) Array.get(arrayOrIterable, i));
             }
             return list;
         }
@@ -57,19 +59,18 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             return toList(iterable);
         }
 
-        throw new ApplicationException("argError", values(type.getSimpleName()));
-    }
-
-    public static <T> List<T> toList(Iterable<T> iterable) {
-        return IterableUtils.toList(iterable);
+        if (throwOnEmpty) {
+            throw new ApplicationException("argError", values(type.getSimpleName()));
+        }
+        return new ArrayList<>();
     }
 
     public static <T> List<T> toList(Iterator<T> iterator) {
         return IteratorUtils.toList(iterator);
     }
 
-    public static <T> List<T> toList(Enumeration<T> enumeration) {
-        return EnumerationUtils.toList(enumeration);
+    public static <T> List<T> toList(Iterable<T> iterable) {
+        return IterableUtils.toList(iterable);
     }
 
     public static <T> NQuery<T> of(T one) {

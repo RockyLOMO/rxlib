@@ -7,6 +7,8 @@ import org.rx.util.Validator;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
+import java.util.Collections;
+import java.util.List;
 
 public class UtilTester {
     @Data
@@ -20,6 +22,9 @@ public class UtilTester {
     @Test
     public void validate() {
         TwoPerson tp = new TwoPerson();
-        Validator.validateBean(tp);
+//        Validator.validateBean(tp);
+
+        List<TwoPerson> list = Collections.singletonList(tp);
+        Validator.validateBean(list);
     }
 }
