@@ -62,7 +62,7 @@ public class Validator {
 
     private static void doThrow(ConstraintViolation<Object> violation) {
         String pn = violation.getPropertyPath().toString(), vm = violation.getMessage();
-        throw new ValidateException(pn, vm, String.format("%s.%s%s", violation.getRootBeanClass().getSimpleName(), pn, vm));
+        throw new ValidateException(pn, vm, String.format("%s.%s %s", violation.getRootBeanClass().getSimpleName(), pn, vm));
     }
 
     public static void validateConstructor(Constructor<?> member, Object instance, Object[] parameterValues) {

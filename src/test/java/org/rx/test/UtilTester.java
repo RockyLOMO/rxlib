@@ -34,7 +34,7 @@ public class UtilTester {
         TwoPerson tp = new TwoPerson();
 //        Validator.validateBean(tp);
 
-        Validator.validateMethod(TwoPerson.class.getMethod("renew", List.class), tp, new Object[]{Arrays.toList(tp.person)}, () -> "a");
+        Validator.validateMethod(TwoPerson.class.getMethod("renew", List.class), tp, new Object[]{null}, () -> "a");
 //        List<TwoPerson> list = Collections.singletonList(tp);
 //        Validator.validateBean(list);
     }
