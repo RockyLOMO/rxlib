@@ -8,8 +8,8 @@ import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.util.Validator;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
-import javax.validation.Valid;
 import java.lang.reflect.Executable;
 
 @Aspect
@@ -25,16 +25,17 @@ public class LogInterceptor extends BaseInterceptor {
             member = ((MethodSignature) signature).getMethod();
         }
 
-        Valid flag = member.getAnnotation(Valid.class);
+//        Valid会冲突
+        Validated flag = member.getAnnotation(Validated.class);
         if (flag == null) {
             return super.doAround(joinPoint);
         }
         if (signature instanceof ConstructorSignature) {
             ConstructorSignature cs = (ConstructorSignature) signature;
-            Validator.validateConstructor(cs.getConstructor(), joinPoint.getArgs(), true);
+            Validator.validateConstructor(cs.getConstructor(), joinPoint.getTarget(), joinPoint.getArgs());
             return super.doAround(joinPoint);
         }
         MethodSignature ms = (MethodSignature) signature;
-        return Validator.validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), true, () -> super.doAround(joinPoint));
+        return Validator.validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), () -> super.doAround(joinPoint));
     }
 }

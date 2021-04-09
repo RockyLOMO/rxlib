@@ -65,29 +65,22 @@ public class Validator {
         throw new ValidateException(pn, vm, String.format("%s.%s%s", violation.getRootBeanClass().getSimpleName(), pn, vm));
     }
 
-    public static void validateConstructor(Constructor<?> member, Object[] parameterValues, boolean validateValues) {
+    public static void validateConstructor(Constructor<?> member, Object instance, Object[] parameterValues) {
         ExecutableValidator executableValidator = getValidator().forExecutables();
         Set<ConstraintViolation<Object>> result = executableValidator.validateConstructorParameters(member, parameterValues);
         for (ConstraintViolation<Object> violation : result) {
             doThrow(violation);
         }
-        if (validateValues && parameterValues != null) {
-            for (Object parameterValue : parameterValues) {
-                validateBean(parameterValue);
-            }
-        }
+
+        executableValidator.validateConstructorReturnValue(member, instance);
     }
 
     @SneakyThrows
-    public static Object validateMethod(Method member, Object instance, Object[] parameterValues, boolean validateValues, Func<Object> proceed) {
+    public static Object validateMethod(Method member, Object instance, Object[] parameterValues, Func<Object> proceed) {
         ExecutableValidator executableValidator = getValidator().forExecutables();
+        //@Valid deep validateValues
         for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member, parameterValues)) {
             doThrow(violation);
-        }
-        if (validateValues && parameterValues != null) {
-            for (Object parameterValue : parameterValues) {
-                validateBean(parameterValue);
-            }
         }
 
         if (proceed == null) {
