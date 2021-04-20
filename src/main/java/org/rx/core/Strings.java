@@ -250,7 +250,7 @@ public class Strings extends StringUtils {
         /**
          * 验证由数字和26个英文字母或中文组成的字符串
          */
-        String NumbericOrLetterOrChinese = "^[A-Za-z0-9\\u4E00-\\u9FA5\\uF900-\\uFA2D]+$";
+        String NumericOrLetterOrChinese = "^[A-Za-z0-9\\u4E00-\\u9FA5\\uF900-\\uFA2D]+$";
         /**
          * 验证由26个英文字母组成的字符串
          */

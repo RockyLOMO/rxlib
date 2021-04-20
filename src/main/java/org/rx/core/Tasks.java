@@ -123,6 +123,38 @@ public final class Tasks {
 //        return executor.submit((Callable<T>) t);
     }
 
+    public CompletableFuture<?> anyOf(Action... tasks) {
+        if (Arrays.isEmpty(tasks)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.anyOf(NQuery.of(tasks).select(Tasks::run).toArray());
+    }
+
+    public <T> CompletableFuture<T> anyOf(Func<T>... tasks) {
+        if (Arrays.isEmpty(tasks)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return (CompletableFuture<T>) CompletableFuture.anyOf(NQuery.of(tasks).select(Tasks::run).toArray());
+    }
+
+    public CompletableFuture<?> allOf(Action... tasks) {
+        if (Arrays.isEmpty(tasks)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.allOf(NQuery.of(tasks).select(Tasks::run).toArray());
+    }
+
+    public <T> CompletableFuture<T> allOf(Func<T>... tasks) {
+        if (Arrays.isEmpty(tasks)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return (CompletableFuture<T>) CompletableFuture.allOf(NQuery.of(tasks).select(Tasks::run).toArray());
+    }
+
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {
         return NQuery.of(timeArray).select(p -> scheduleDaily(task, Time.valueOf(p))).toList();
     }
