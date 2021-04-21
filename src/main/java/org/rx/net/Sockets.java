@@ -215,6 +215,7 @@ public final class Sockets {
     }
 
     public static List<String> getDnsRecords(String domain, String[] types) {
+//        InetAddress.getByName(ddns).getHostAddress()
         return getDnsRecords(domain, types, "114.114.114.114", 10, 2);
     }
 

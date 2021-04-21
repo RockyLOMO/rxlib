@@ -127,8 +127,8 @@ public final class Tasks {
         if (Arrays.isEmpty(tasks)) {
             return CompletableFuture.completedFuture(null);
         }
-
-        return CompletableFuture.anyOf(NQuery.of(tasks).select(Tasks::run).toArray());
+        //Lambda method ref -> 对select的引用不明确
+        return CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
     public <T> CompletableFuture<T> anyOf(Func<T>... tasks) {
@@ -136,7 +136,7 @@ public final class Tasks {
             return CompletableFuture.completedFuture(null);
         }
 
-        return (CompletableFuture<T>) CompletableFuture.anyOf(NQuery.of(tasks).select(Tasks::run).toArray());
+        return (CompletableFuture<T>) CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
     public CompletableFuture<?> allOf(Action... tasks) {
@@ -144,7 +144,7 @@ public final class Tasks {
             return CompletableFuture.completedFuture(null);
         }
 
-        return CompletableFuture.allOf(NQuery.of(tasks).select(Tasks::run).toArray());
+        return CompletableFuture.allOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
     public <T> CompletableFuture<T> allOf(Func<T>... tasks) {
@@ -152,7 +152,7 @@ public final class Tasks {
             return CompletableFuture.completedFuture(null);
         }
 
-        return (CompletableFuture<T>) CompletableFuture.allOf(NQuery.of(tasks).select(Tasks::run).toArray());
+        return (CompletableFuture<T>) CompletableFuture.allOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {
