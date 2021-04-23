@@ -9,6 +9,7 @@ import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.SneakyThrows;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Description;
@@ -20,13 +21,11 @@ import org.rx.core.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.spring.SpringContext;
-import org.rx.util.function.Action;
-import org.rx.util.function.BiAction;
-import org.rx.util.function.Func;
-import org.rx.util.function.TripleFunc;
+import org.rx.util.function.*;
+import org.slf4j.helpers.MessageFormatter;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.*;
 import java.lang.reflect.AnnotatedElement;
@@ -193,7 +192,7 @@ public final class App extends SystemUtils {
         try {
 //            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
             return JSON.toJSONString(skipTypesFilter.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             NQuery<Object> q;
             if (src.getClass().isArray() || src instanceof Iterable) {
                 q = NQuery.of(NQuery.asList(src));
@@ -202,123 +201,13 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypeSet = getConfig().getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            log(String.format("toJsonString %s", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName)), e);
+            log("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
             json.put("_error", e.getMessage());
             return json.toString();
         }
-    }
-
-    public static <T> T readSetting(String key) {
-        return readSetting(key, null);
-    }
-
-    public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, loadYaml("application.yml"));
-    }
-
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
-        return readSetting(key, type, settings, false);
-    }
-
-    @ErrorCode("keyError")
-    @ErrorCode("partialKeyError")
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
-        require(key, settings);
-
-        Function<Object, T> func = p -> {
-            if (type == null) {
-                return (T) p;
-            }
-            Map<String, Object> map = as(p, Map.class);
-            if (map != null) {
-                return fromJson(map, type);
-            }
-            return Reflects.changeType(p, type);
-        };
-        Object val;
-        if ((val = settings.get(key)) != null) {
-            return func.apply(val);
-        }
-
-        StringBuilder kBuf = new StringBuilder();
-        String d = ".";
-        String[] splits = Strings.split(key, d);
-        int c = splits.length - 1;
-        for (int i = 0; i <= c; i++) {
-            if (kBuf.getLength() > 0) {
-                kBuf.append(d);
-            }
-            String k = kBuf.append(splits[i]).toString();
-            if ((val = settings.get(k)) == null) {
-                continue;
-            }
-            if (i == c) {
-                return func.apply(val);
-            }
-            if ((settings = as(val, Map.class)) == null) {
-                throw new ApplicationException("partialKeyError", values(k, type));
-            }
-            kBuf.setLength(0);
-        }
-
-        if (throwOnEmpty) {
-            throw new ApplicationException("keyError", values(key, type));
-        }
-        return null;
-    }
-
-    @SneakyThrows
-    public static Map<String, Object> loadYaml(String... yamlFile) {
-        require(yamlFile);
-
-        Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml();
-        for (String yf : yamlFile) {
-            quietly(() -> {
-                File file = new File(yf);
-                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getResource(yf))) {
-                    Map<String, Object> one = (Map<String, Object>) data;
-                    fillDeep(one, result);
-                }
-            });
-        }
-        return result;
-    }
-
-    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
-        if (one == null) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : one.entrySet()) {
-            Map<String, Object> nextOne;
-            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
-                all.put(entry.getKey(), entry.getValue());
-                continue;
-            }
-            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
-            if (nextAll == null) {
-                all.put(entry.getKey(), nextOne);
-                continue;
-            }
-            fillDeep(nextOne, nextAll);
-        }
-    }
-
-    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
-        require(yamlContent, beanType);
-
-        Yaml yaml = new Yaml();
-        return yaml.loadAs(yamlContent, beanType);
-    }
-
-    public static <T> String dumpYaml(T bean) {
-        require(bean);
-
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
     }
     //endregion
 
@@ -337,7 +226,7 @@ public final class App extends SystemUtils {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    App.log(String.format("sneakyInvoke retry={}", i), e);
+                    App.log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -361,7 +250,7 @@ public final class App extends SystemUtils {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    App.log(String.format("sneakyInvoke retry={}", i), e);
+                    App.log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -498,43 +387,187 @@ public final class App extends SystemUtils {
         return new File("").getAbsolutePath();
     }
 
+    public static <T> T readSetting(String key) {
+        return readSetting(key, null);
+    }
+
+    public static <T> T readSetting(String key, Class<T> type) {
+        return readSetting(key, type, loadYaml("application.yml"));
+    }
+
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
+        return readSetting(key, type, settings, false);
+    }
+
+    @ErrorCode("keyError")
+    @ErrorCode("partialKeyError")
+    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
+        require(key, settings);
+
+        Function<Object, T> func = p -> {
+            if (type == null) {
+                return (T) p;
+            }
+            Map<String, Object> map = as(p, Map.class);
+            if (map != null) {
+                return fromJson(map, type);
+            }
+            return Reflects.changeType(p, type);
+        };
+        Object val;
+        if ((val = settings.get(key)) != null) {
+            return func.apply(val);
+        }
+
+        StringBuilder kBuf = new StringBuilder();
+        String d = ".";
+        String[] splits = Strings.split(key, d);
+        int c = splits.length - 1;
+        for (int i = 0; i <= c; i++) {
+            if (kBuf.getLength() > 0) {
+                kBuf.append(d);
+            }
+            String k = kBuf.append(splits[i]).toString();
+            if ((val = settings.get(k)) == null) {
+                continue;
+            }
+            if (i == c) {
+                return func.apply(val);
+            }
+            if ((settings = as(val, Map.class)) == null) {
+                throw new ApplicationException("partialKeyError", values(k, type));
+            }
+            kBuf.setLength(0);
+        }
+
+        if (throwOnEmpty) {
+            throw new ApplicationException("keyError", values(key, type));
+        }
+        return null;
+    }
+
+    @SneakyThrows
+    public static Map<String, Object> loadYaml(String... yamlFile) {
+        require(yamlFile);
+
+        Map<String, Object> result = new HashMap<>();
+        Yaml yaml = new Yaml();
+        for (String yf : yamlFile) {
+            quietly(() -> {
+                File file = new File(yf);
+                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getResource(yf))) {
+                    Map<String, Object> one = (Map<String, Object>) data;
+                    fillDeep(one, result);
+                }
+            });
+        }
+        return result;
+    }
+
+    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
+        if (one == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : one.entrySet()) {
+            Map<String, Object> nextOne;
+            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
+                all.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
+            if (nextAll == null) {
+                all.put(entry.getKey(), nextOne);
+                continue;
+            }
+            fillDeep(nextOne, nextAll);
+        }
+    }
+
+    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
+        require(yamlContent, beanType);
+
+        Yaml yaml = new Yaml();
+        return yaml.loadAs(yamlContent, beanType);
+    }
+
+    public static <T> String dumpYaml(T bean) {
+        require(bean);
+
+        Yaml yaml = new Yaml();
+        return yaml.dump(bean);
+    }
+
     public static void setIgnoreExceptionHandler(Predicate<Throwable> ignoreExceptionHandler) {
         App.ignoreExceptionHandler = ignoreExceptionHandler;
         Thread.setDefaultUncaughtExceptionHandler((t, e) -> log("Global", e));
     }
 
     public static boolean isIgnoringException(Throwable e) {
-        if (ignoreExceptionHandler == null) {
+        if (e == null || ignoreExceptionHandler == null) {
             return false;
         }
         return ignoreExceptionHandler.test(e);
     }
 
-    public static String log(String key, Throwable e) {
+    public static String log(String format, Object... args) {
+        if (args == null) {
+            args = Arrays.EMPTY_OBJECT_ARRAY;
+        }
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
-        if (isIgnoringException(e)) {
-            log.info("{} {}", key, e.getMessage());
+        Throwable e = MessageFormatter.getThrowableCandidate(args);
+        boolean isIgnoring = e == null;
+        if (!isIgnoring && (isIgnoring = isIgnoringException(e))) {
+            format += "\t{}";
+            args[args.length - 1] = e.getMessage();
+        }
+        if (isIgnoring) {
+            log.info(format, args);
+            return ApplicationException.getMessage(e);
+        }
+
+        InvalidException invalidException = as(e, InvalidException.class);
+        if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
+            log.error(format, args);
+            Tasks.raiseUncaughtException(e);
         } else {
-            boolean raiseUncaught = true;
-            InvalidException invalidException = as(e, InvalidException.class);
-            if (invalidException != null) {
-                switch (isNull(invalidException.getLevel(), ExceptionLevel.SYSTEM)) {
-                    case USER_OPERATION:
-                        raiseUncaught = false;
-                        log.warn("{} {}", key, e.getMessage());
-                        break;
-                    case IGNORE:
-                        raiseUncaught = false;
-                        log.info("{} {}", key, e.getMessage());
-                        break;
-                }
-            }
-            if (raiseUncaught) {
-                log.error(key, e);
-                Tasks.raiseUncaughtException(e);
-            }
+            format += "\t{}";
+            args[args.length - 1] = e.getMessage();
+            log.warn(format, args);
         }
         return ApplicationException.getMessage(e);
+    }
+
+    @SneakyThrows
+    public static void log(ProceedEventArgs eventArgs, BiFunc<ProceedEventArgs, String> formatMessage) {
+        boolean doWrite = false;
+        switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
+            case WriteOnNull:
+                doWrite = eventArgs.getError() != null || eventArgs.getParameters() == null || eventArgs.getReturnValue() == null || Arrays.contains(eventArgs.getParameters(), null);
+                break;
+            case WriteOnError:
+                if (eventArgs.getError() != null) {
+                    doWrite = true;
+                }
+                break;
+            case Always:
+                doWrite = true;
+                break;
+        }
+        if (doWrite) {
+            List<String> whitelist = eventArgs.getLogTypeWhitelist();
+            if (!CollectionUtils.isEmpty(whitelist)) {
+                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().contains(p));
+            }
+        }
+        if (doWrite) {
+            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
+            String msg = formatMessage.invoke(eventArgs);
+            if (eventArgs.getError() != null) {
+                log.error(msg, eventArgs.getError());
+            } else {
+                log.info(msg);
+            }
+        }
     }
 
     /**

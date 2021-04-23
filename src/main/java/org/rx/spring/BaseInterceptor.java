@@ -2,11 +2,11 @@ package org.rx.spring;
 
 import com.google.common.base.Stopwatch;
 import io.netty.util.concurrent.FastThreadLocal;
-import org.apache.commons.collections4.CollectionUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
@@ -41,74 +41,48 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
-        ProceedEventArgs eventArgs = new ProceedEventArgs(joinPoint, joinPoint.getArgs());
+        ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs());
         raiseEvent(onProcessing, eventArgs);
         if (eventArgs.isCancel()) {
             return joinPoint.proceed();
         }
 
-        eventArgs.setLogStrategy(LogWriteStrategy.WriteOnError);
+        eventArgs.setLogStrategy(rxConfig.getLogStrategy());
+        eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {
             Stopwatch watcher = Stopwatch.createStarted();
             eventArgs.setReturnValue(joinPoint.proceed(eventArgs.getParameters()));
             eventArgs.setElapsedMillis(watcher.elapsed(TimeUnit.MILLISECONDS));
         } catch (Throwable e) {
-            eventArgs.setException(e);
+            eventArgs.setError(e);
             raiseEvent(onError, eventArgs);
-            if (eventArgs.getException() != null) {
-                throw eventArgs.getException();
+            if (eventArgs.getError() != null) {
+                throw eventArgs.getError();
             }
-            eventArgs.setException(e);
+            eventArgs.setError(e);
         } finally {
             raiseEvent(onProceed, eventArgs);
-            boolean doWrite = false;
-            switch (isNull(eventArgs.getLogStrategy(), LogWriteStrategy.WriteOnError)) {
-                case WriteOnError:
-                    if (eventArgs.getException() != null) {
-                        doWrite = true;
-                    }
-                    break;
-                case Always:
-                    doWrite = true;
-                    break;
-            }
-            if (doWrite) {
-                List<String> whitelist = rxConfig.getLogTypeWhitelist();
-                if (!CollectionUtils.isEmpty(whitelist)) {
-                    doWrite = NQuery.of(whitelist).any(p -> signature.getDeclaringTypeName().contains(p));
-                }
-            }
-            if (doWrite) {
-                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(signature.getDeclaringType());
-                String msg = formatMessage(signature, eventArgs);
-                if (eventArgs.getException() != null) {
-                    log.error(msg, eventArgs.getException());
+            App.log(eventArgs, e -> {
+                StringBuilder msg = new StringBuilder(App.getConfig().getBufferSize());
+                msg.appendLine("Call %s", signature.getName());
+                msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
+                if (eventArgs.getError() != null) {
+                    msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                 } else {
-                    log.info(msg);
+                    msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
                 }
-            }
+                Map<String, Object> map = metrics.getIfExists();
+                if (map != null) {
+                    msg.append("metrics: ");
+                    for (Map.Entry<String, Object> entry : map.entrySet()) {
+                        msg.append("\t%s=%s", entry.getKey(), jsonString(signature, entry.getValue()));
+                    }
+                    msg.appendLine();
+                }
+                return msg.toString();
+            });
         }
         return eventArgs.getReturnValue();
-    }
-
-    private String formatMessage(Signature signature, ProceedEventArgs eventArgs) {
-        StringBuilder msg = new StringBuilder(App.getConfig().getBufferSize());
-        msg.appendLine("Call %s", signature.getName());
-        msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
-        if (eventArgs.getException() != null) {
-            msg.appendLine("Error:\t%s", eventArgs.getException().getMessage());
-        } else {
-            msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
-        }
-        Map<String, Object> map = metrics.getIfExists();
-        if (map != null) {
-            msg.append("metrics: ");
-            for (Map.Entry<String, Object> entry : map.entrySet()) {
-                msg.append("\t%s=%s", entry.getKey(), jsonString(signature, entry.getValue()));
-            }
-            msg.appendLine();
-        }
-        return msg.toString();
     }
 
     private String jsonString(Signature signature, Object... args) {
@@ -137,7 +111,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return p;
         }).toList();
-        return quietly(() -> toJsonString(list.size() == 1 ? list.get(0) : list));
+        return toJsonString(list.size() == 1 ? list.get(0) : list);
     }
 
     protected final Object defaultValue(Signature signature) {
