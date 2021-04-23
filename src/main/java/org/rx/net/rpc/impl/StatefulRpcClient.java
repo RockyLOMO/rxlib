@@ -29,7 +29,6 @@ import org.rx.net.rpc.packet.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.Date;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
@@ -239,7 +238,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 reconnectFuture = null;
             }
             return ok;
-        }, App.getConfig().getScheduleDelay());
+        }, App.getConfig().getNetReconnectPeriod());
     }
 
     @Override

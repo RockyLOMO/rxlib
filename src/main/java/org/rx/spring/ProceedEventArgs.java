@@ -10,8 +10,11 @@ import org.rx.core.EventArgs;
 @Setter
 @RequiredArgsConstructor
 public class ProceedEventArgs extends EventArgs {
-    private final Thread thread;
     private final JoinPoint joinPoint;
+    private final Object[] parameters;
+    private LogWriteStrategy logStrategy;
+
+    private Object returnValue;
     private long elapsedMillis;
     private Throwable exception;
 }

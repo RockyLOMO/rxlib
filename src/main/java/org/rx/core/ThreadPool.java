@@ -157,7 +157,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Setter
     @Getter
     private String poolName;
-    private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorBean>> scheduled;
+    private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorInfo>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
 

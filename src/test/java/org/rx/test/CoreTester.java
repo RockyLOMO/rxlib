@@ -21,6 +21,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.lang.management.ThreadInfo;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
@@ -270,6 +271,19 @@ public class CoreTester extends TestUtil {
             });
         }
 
+        System.out.println("main thread done");
+        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void MXBean() {
+        Tasks.schedule(() -> {
+            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
+            for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
+                log.info("{}", thread.toString());
+            }
+        }, 2000);
         System.out.println("main thread done");
         System.in.read();
     }

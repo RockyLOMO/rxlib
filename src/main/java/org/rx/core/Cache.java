@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import org.rx.bean.RxConfig;
 import org.rx.core.cache.LocalCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.util.function.BiFunc;

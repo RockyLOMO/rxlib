@@ -123,7 +123,7 @@ public final class Tasks {
 //        return executor.submit((Callable<T>) t);
     }
 
-    public CompletableFuture<?> anyOf(Action... tasks) {
+    public static CompletableFuture<?> anyOf(Action... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return CompletableFuture.completedFuture(null);
         }
@@ -131,7 +131,7 @@ public final class Tasks {
         return CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
-    public <T> CompletableFuture<T> anyOf(Func<T>... tasks) {
+    public static <T> CompletableFuture<T> anyOf(Func<T>... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return CompletableFuture.completedFuture(null);
         }
@@ -139,7 +139,7 @@ public final class Tasks {
         return (CompletableFuture<T>) CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
-    public CompletableFuture<?> allOf(Action... tasks) {
+    public static CompletableFuture<?> allOf(Action... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return CompletableFuture.completedFuture(null);
         }
@@ -147,7 +147,7 @@ public final class Tasks {
         return CompletableFuture.allOf(NQuery.of(tasks).select(p -> run(p)).toArray());
     }
 
-    public <T> CompletableFuture<T> allOf(Func<T>... tasks) {
+    public static <T> CompletableFuture<T> allOf(Func<T>... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return CompletableFuture.completedFuture(null);
         }

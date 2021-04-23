@@ -3,7 +3,9 @@ package org.rx.bean;
 import lombok.Data;
 import org.rx.core.*;
 import org.rx.io.IOStream;
+import org.rx.spring.LogWriteStrategy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 import org.springframework.ui.Model;
 
@@ -16,16 +18,20 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Data
-@Component
+@Component("rxConfig")
 @ConfigurationProperties(prefix = "app")
+@RefreshScope
 public class RxConfig {
+    private LogWriteStrategy logWriteStrategy;
+    private List<String> logTypeWhitelist;
+
     private String netUserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat";
+    private int netReconnectPeriod = 2000;
     private int netTimeoutMillis = 16000;
-    private int netMinPoolSize = 1;
+    private int netMinPoolSize = 2;
     private int netMaxPoolSize;
     private String defaultCache = Cache.LRU_CACHE;
-    private int bufferSize = 512;
-    private int scheduleDelay = 2000;
+    private int bufferSize = 256;
     private int keepaliveSeconds = 120;
     private int threadPoolCount = 4;
     private List<Class<?>> jsonSkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class, Model.class, IOStream.class);
