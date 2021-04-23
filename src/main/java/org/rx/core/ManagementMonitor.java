@@ -187,7 +187,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         if (!threads.isThreadCpuTimeEnabled()) {
             threads.setThreadCpuTimeEnabled(true);
         }
-        NQuery<ThreadInfo> allThreads = NQuery.of(threads.dumpAllThreads(true, true, Integer.MAX_VALUE));
+        NQuery<ThreadInfo> allThreads = NQuery.of(threads.dumpAllThreads(true, true));
         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadInfo::getThreadId).toArray());
         long[] threadCpuTime = threads.getThreadCpuTime(tids);
 //        long[] threadUserTime = threads.getThreadUserTime(tids);
