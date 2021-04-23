@@ -43,6 +43,7 @@ public class UtilTester {
 ////        List<TwoPerson> list = Collections.singletonList(tp);
 ////        Validator.validateBean(list);
 
+        System.out.println(this.getClass().getMethod("validate").getReturnType().equals(Void.class));
         System.out.println(App.log("hello {}!", 1));
         System.out.println(App.log("hello {}!", 1, new InvalidException("a").level(ExceptionLevel.USER_OPERATION)));
     }

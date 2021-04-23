@@ -41,7 +41,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();
-        ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs());
+        MethodSignature methodSignature = as(signature, MethodSignature.class);
+        boolean isVoid = methodSignature == null || methodSignature.getReturnType().equals(void.class);
+        ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs(), isVoid);
         raiseEvent(onProcessing, eventArgs);
         if (eventArgs.isCancel()) {
             return joinPoint.proceed();
@@ -63,7 +65,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         } finally {
             raiseEvent(onProceed, eventArgs);
             App.log(eventArgs, e -> {
-                StringBuilder msg = new StringBuilder(App.getConfig().getBufferSize());
+                StringBuilder msg = new StringBuilder(rxConfig.getBufferSize());
                 msg.appendLine("Call %s", signature.getName());
                 msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
                 if (eventArgs.getError() != null) {
@@ -87,7 +89,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     private String jsonString(Signature signature, Object... args) {
         if (Arrays.isEmpty(args)) {
-            return "NULL";
+            return "{}";
         }
         List<Object> list = NQuery.of(args).select(p -> {
             if (argShortSelector != null) {

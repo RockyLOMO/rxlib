@@ -542,7 +542,9 @@ public final class App extends SystemUtils {
         boolean doWrite = false;
         switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
             case WriteOnNull:
-                doWrite = eventArgs.getError() != null || eventArgs.getParameters() == null || eventArgs.getReturnValue() == null || Arrays.contains(eventArgs.getParameters(), null);
+                doWrite = eventArgs.getError() != null || eventArgs.getParameters() == null
+                        || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
+                        || Arrays.contains(eventArgs.getParameters(), null);
                 break;
             case WriteOnError:
                 if (eventArgs.getError() != null) {
@@ -556,7 +558,7 @@ public final class App extends SystemUtils {
         if (doWrite) {
             List<String> whitelist = eventArgs.getLogTypeWhitelist();
             if (!CollectionUtils.isEmpty(whitelist)) {
-                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().contains(p));
+                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
             }
         }
         if (doWrite) {

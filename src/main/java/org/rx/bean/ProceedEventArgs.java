@@ -13,10 +13,11 @@ import java.util.List;
 public class ProceedEventArgs extends EventArgs {
     private final Class<?> declaringType;
     private final Object[] parameters;
-    private LogStrategy logStrategy;
-    private List<String> logTypeWhitelist;
-
+    private final boolean isVoid;
     private Object returnValue;
     private long elapsedMillis;
     private Throwable error;
+
+    private LogStrategy logStrategy;
+    private List<String> logTypeWhitelist;
 }
