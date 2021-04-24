@@ -459,7 +459,7 @@ public final class App extends SystemUtils {
             }
             File file = new File(p);
             return file.exists() ? Arrays.toList(new FileInputStream(file)) : Collections.emptyList();
-        }).select(p -> yaml.loadAll(p))) {
+        }).selectMany(p -> yaml.loadAll(p))) {
             Map<String, Object> one = (Map<String, Object>) data;
             fillDeep(one, result);
         }
