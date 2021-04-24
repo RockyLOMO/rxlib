@@ -19,9 +19,9 @@ import static org.rx.core.App.*;
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     protected Map<String, Object> getMessageSource() {
         return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
-            Map<String, Object> codes = loadYaml("code.yml", "errorCode.yml");
+            Map<String, Object> codes = loadYaml("errorCode.yml");
             if (codes.isEmpty()) {
-                log.warn("load code.yml fail");
+                log.warn("load errorCode.yml fail");
             }
             return codes;
         }, Cache.LOCAL_CACHE);

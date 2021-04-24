@@ -452,14 +452,16 @@ public final class App extends SystemUtils {
 
         Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml();
-        for (String yf : yamlFile) {
-            quietly(() -> {
-                File file = new File(yf);
-                for (Object data : yaml.loadAll(file.exists() ? new FileInputStream(file) : Reflects.getResource(yf))) {
-                    Map<String, Object> one = (Map<String, Object>) data;
-                    fillDeep(one, result);
-                }
-            });
+        for (Object data : NQuery.of(yamlFile).selectMany(p -> {
+            NQuery<InputStream> resources = Reflects.getResources(p);
+            if (resources.any()) {
+                return resources;
+            }
+            File file = new File(p);
+            return file.exists() ? Arrays.toList(new FileInputStream(file)) : Collections.emptyList();
+        }).select(p -> yaml.loadAll(p))) {
+            Map<String, Object> one = (Map<String, Object>) data;
+            fillDeep(one, result);
         }
         return result;
     }

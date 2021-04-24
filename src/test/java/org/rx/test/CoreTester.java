@@ -16,12 +16,9 @@ import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.RedoTimer;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
-import java.lang.management.ThreadInfo;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
@@ -332,7 +329,7 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void reflect() {
-        for (InputStream resource : Reflects.getResources("C:\\Project\\rxlib\\src\\main\\resources\\code.yml")) {
+        for (InputStream resource : Reflects.getResources("C:\\Project\\rxlib\\src\\main\\resources\\errorCode.yml")) {
             System.out.println(resource);
         }
 
@@ -441,10 +438,10 @@ public class CoreTester extends TestUtil {
         Map<String, Object> map = loadYaml("application.yml");
         System.out.println(map);
 
-        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("code.yml"));
+        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("errorCode.yml"));
         assert v instanceof Map;
 
-        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("code.yml"));
+        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("errorCode.yml"));
         assert eq(v, "Exception Error Code value={0}");
     }
 }
