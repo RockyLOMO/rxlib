@@ -6,6 +6,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
@@ -66,7 +67,8 @@ public final class App extends SystemUtils {
         }
     };
     private static volatile RxConfig config;
-    private static Predicate<Throwable> ignoreExceptionHandler;
+    @Setter
+    private static volatile Predicate<Throwable> ignoreExceptionHandler;
 
     public static synchronized RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
@@ -499,16 +501,11 @@ public final class App extends SystemUtils {
         return yaml.dump(bean);
     }
 
-    public static void setIgnoreExceptionHandler(Predicate<Throwable> ignoreExceptionHandler) {
-        App.ignoreExceptionHandler = ignoreExceptionHandler;
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log("Global", e));
-    }
-
     public static boolean isIgnoringException(Throwable e) {
-        if (e == null || ignoreExceptionHandler == null) {
+        if (e == null) {
             return false;
         }
-        return ignoreExceptionHandler.test(e);
+        return ignoreExceptionHandler != null && ignoreExceptionHandler.test(e);
     }
 
     public static String log(String format, Object... args) {

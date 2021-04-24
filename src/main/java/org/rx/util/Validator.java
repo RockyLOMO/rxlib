@@ -9,6 +9,7 @@ import java.lang.reflect.Method;
 
 import org.rx.annotation.ValidRegex;
 import org.rx.core.NQuery;
+import org.rx.spring.SpringContext;
 import org.rx.util.function.Func;
 
 import java.util.List;
@@ -39,7 +40,7 @@ public class Validator {
     }
 
     private static javax.validation.Validator getValidator() {
-        return Validation.buildDefaultValidatorFactory().getValidator();
+        return SpringContext.isInitiated() ? SpringContext.getBean(javax.validation.Validator.class) : Validation.buildDefaultValidatorFactory().getValidator();
     }
 
     /**

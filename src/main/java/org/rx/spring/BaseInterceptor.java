@@ -1,6 +1,5 @@
 package org.rx.spring;
 
-import com.google.common.base.Stopwatch;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
@@ -16,7 +15,6 @@ import javax.annotation.Resource;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
@@ -52,9 +50,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         eventArgs.setLogStrategy(rxConfig.getLogStrategy());
         eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {
-            Stopwatch watcher = Stopwatch.createStarted();
-            eventArgs.setReturnValue(joinPoint.proceed(eventArgs.getParameters()));
-            eventArgs.setElapsedMillis(watcher.elapsed(TimeUnit.MILLISECONDS));
+            eventArgs.proceed(e -> joinPoint.proceed(e.getParameters()));
         } catch (Throwable e) {
             eventArgs.setError(e);
             raiseEvent(onError, eventArgs);

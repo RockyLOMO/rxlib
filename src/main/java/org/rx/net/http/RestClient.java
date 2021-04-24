@@ -2,8 +2,10 @@ package org.rx.net.http;
 
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,35 +53,43 @@ public final class RestClient {
                 return data;
             };
 
-            Exception ex = null;
-            StringBuilder logMsg = new StringBuilder();
             String responseText = null;
+            ProceedEventArgs args = new ProceedEventArgs(contract, new Object[1], m.getReturnType().equals(void.class));
             HttpClient client = new HttpClient();
             try {
                 if (doPost) {
-                    logMsg.appendLine("POST: %s", reqUrl);
                     if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
-                        logMsg.appendLine("Request:\t%s", toJsonString(p.arguments[0]));
-                        responseText = client.post(reqUrl, p.arguments[0]);
+                        args.getParameters()[0] = p.arguments[0];
+                        responseText = args.proceed(e -> client.post(reqUrl, e.getParameters()[0]));
                     } else {
                         Map<String, Object> data = getFormData.invoke();
-                        logMsg.appendLine("Request:\t%s", toJsonString(data));
-                        responseText = client.post(reqUrl, data);
+                        args.getParameters()[0] = data;
+                        responseText = args.proceed(e -> client.post(reqUrl, data));
                     }
                 } else {
-                    logMsg.appendLine("GET: %s", reqUrl);
                     Map<String, Object> data = getFormData.invoke();
-                    logMsg.appendLine("Request:\t%s", toJsonString(data));
-                    responseText = client.get(HttpClient.buildQueryString(reqUrl, data));
+                    args.getParameters()[0] = data;
+                    responseText = args.proceed(e -> client.get(HttpClient.buildQueryString(reqUrl, data)));
+                }
+                if (checkResponse != null && !checkResponse.invoke(responseText)) {
+                    throw new InvalidException("Response status error");
                 }
             } catch (Exception e) {
-                ex = e;
+                args.setError(e);
+                throw new RestClientException(args.getTraceId().toString(), args.getError());
+            } finally {
+                App.log(args, e -> {
+                    StringBuilder msg = new StringBuilder();
+                    if (doPost) {
+                        msg.appendLine("POST: %s %s", args.getTraceId(), reqUrl);
+                    } else {
+                        msg.appendLine("GET: %s %s", args.getTraceId(), reqUrl);
+                    }
+                    msg.appendLine("Request:\t%s", toJsonString(e.getParameters()));
+                    msg.append("Response:\t%s", e.getReturnValue());
+                    return msg.toString();
+                });
             }
-            logMsg.append("Response:\t%s", responseText);
-            if (ex != null || (checkResponse != null && !checkResponse.invoke(responseText))) {
-                throw new RestClientException(logMsg.toString(), ex);
-            }
-            log.info(logMsg.toString());
             if (m.getReturnType().equals(Void.class)) {
                 return null;
             }

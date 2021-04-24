@@ -136,7 +136,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
     static {
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> log.error("Global", e));
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> App.log("Global", e));
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
