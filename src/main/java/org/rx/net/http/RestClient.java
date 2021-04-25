@@ -60,16 +60,16 @@ public final class RestClient {
                 if (doPost) {
                     if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
                         args.getParameters()[0] = p.arguments[0];
-                        responseText = args.proceed(e -> client.post(reqUrl, e.getParameters()[0]));
+                        responseText = args.proceed(() -> client.post(reqUrl, args.getParameters()[0]));
                     } else {
                         Map<String, Object> data = getFormData.invoke();
                         args.getParameters()[0] = data;
-                        responseText = args.proceed(e -> client.post(reqUrl, data));
+                        responseText = args.proceed(() -> client.post(reqUrl, data));
                     }
                 } else {
                     Map<String, Object> data = getFormData.invoke();
                     args.getParameters()[0] = data;
-                    responseText = args.proceed(e -> client.get(HttpClient.buildQueryString(reqUrl, data)));
+                    responseText = args.proceed(() -> client.get(HttpClient.buildQueryString(reqUrl, data)));
                 }
                 if (checkResponse != null && !checkResponse.invoke(responseText)) {
                     throw new InvalidException("Response status error");

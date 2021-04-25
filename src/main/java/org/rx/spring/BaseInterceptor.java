@@ -50,7 +50,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         eventArgs.setLogStrategy(rxConfig.getLogStrategy());
         eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {
-            eventArgs.proceed(e -> joinPoint.proceed(e.getParameters()));
+            eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
         } catch (Throwable e) {
             eventArgs.setError(e);
             raiseEvent(onError, eventArgs);

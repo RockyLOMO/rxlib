@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.InterceptProxy;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
 import org.rx.net.Sockets;
@@ -176,16 +177,11 @@ public final class Remoting {
             }
             StatefulRpcClient client = clientBean.client = sync.v;
 
-            StringBuilder msg = new StringBuilder();
             MethodPack methodPack = as(pack, MethodPack.class);
-            boolean debug = methodPack != null;
-            if (debug) {
-                msg.appendLine("Rpc client %s.%s & %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
-                msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
-            }
+            ProceedEventArgs eventArgs = methodPack != null ? new ProceedEventArgs(contract, methodPack.parameters, false) : null;
             try {
                 client.send(pack);
-                if (debug) {
+                if (eventArgs != null) {
                     try {
                         clientBean.waiter.waitOne(client.getConfig().getConnectTimeoutMillis());
                         clientBean.waiter.reset();
@@ -195,24 +191,33 @@ public final class Remoting {
                         }
                     }
                 }
-                if (clientBean.pack == null) {
-                    if (debug) {
-                        msg.appendLine("Response:\tNULL");
-                    }
-                } else {
-                    if (clientBean.pack.errorMessage != null) {
-                        throw new RemotingException(clientBean.pack.errorMessage);
-                    }
-                    if (debug) {
-                        msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
-                    }
+                if (clientBean.pack.errorMessage != null) {
+                    throw new RemotingException(clientBean.pack.errorMessage);
                 }
             } catch (Exception e) {
-                msg.appendLine("Response:\t%s", e.getMessage());
+                if (eventArgs != null) {
+                    eventArgs.setError(e);
+                }
                 throw e;
             } finally {
-                log.info(msg.toString());
-                clientBeans.remove(clientBean.pack.id);
+                if (eventArgs != null) {
+                    App.log(eventArgs, e -> {
+                        StringBuilder msg = new StringBuilder();
+                        msg.appendLine("Rpc client %s.%s @ %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
+                        msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
+                        if (e.getError() != null) {
+                            msg.appendLine("Response:\t%s", e.getError().getMessage());
+                        } else if (clientBean.pack == null) {
+                            msg.appendLine("Response:\tNULL");
+                        } else {
+                            msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
+                        }
+                        return msg.toString();
+                    });
+                }
+                if (clientBean.pack != null) {
+                    clientBeans.remove(clientBean.pack.id);
+                }
                 synchronized (sync) {
                     if (NQuery.of(clientBeans.values()).all(x -> x.client != client)) {
                         sync.v = pool.returnClient(client);
@@ -368,19 +373,26 @@ public final class Remoting {
                 }
 
                 MethodPack pack = (MethodPack) e.getValue();
-                StringBuilder msg = new StringBuilder();
-                msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
-                msg.appendLine("Request:\t%s", toJsonString(pack.parameters));
+                ProceedEventArgs args = new ProceedEventArgs(contractInstance.getClass(), pack.parameters, false);
                 try {
-                    pack.returnValue = Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
-                    msg.appendLine("Response:\t%s", toJsonString(pack.returnValue));
+                    pack.returnValue = quietly(() -> args.proceed(() -> Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)));
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
-                    log.error("Rpc", cause);
+                    args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
-                    msg.appendLine("Response:\t%s", pack.errorMessage);
+                } finally {
+                    App.log(args, ea -> {
+                        StringBuilder msg = new StringBuilder();
+                        msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
+                        msg.appendLine("Request:\t%s", toJsonString(ea.getParameters()));
+                        if (ea.getError() != null) {
+                            msg.appendLine("Response:\t%s", pack.errorMessage);
+                        } else {
+                            msg.appendLine("Response:\t%s", toJsonString(ea.getReturnValue()));
+                        }
+                        return msg.toString();
+                    });
                 }
-                log.info(msg.toString());
                 java.util.Arrays.fill(pack.parameters, null);
                 s.send(e.getClient(), pack);
             };

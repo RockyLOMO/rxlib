@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
-import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 
 import java.util.List;
 import java.util.UUID;
@@ -36,9 +36,9 @@ public class ProceedEventArgs extends EventArgs {
         return traceId;
     }
 
-    public <T> T proceed(BiFunc<ProceedEventArgs, T> proceed) throws Throwable {
+    public <T> T proceed(Func<T> proceed) throws Throwable {
         Stopwatch watcher = Stopwatch.createStarted();
-        T retVal = proceed.invoke(this);
+        T retVal = proceed.invoke();
         elapsedMillis = watcher.elapsed(TimeUnit.MILLISECONDS);
         returnValue = retVal;
         return retVal;
