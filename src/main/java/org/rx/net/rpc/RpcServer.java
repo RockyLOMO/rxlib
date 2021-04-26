@@ -85,22 +85,17 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel channel = ctx.channel();
-            log.error("serverCaught {}", channel.remoteAddress(), cause);
+            App.log("serverCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
             }
 
             RpcServerEventArgs<Throwable> args = new RpcServerEventArgs<>(client, cause);
-            try {
-                raiseEvent(onError, args);
-            } catch (Exception e) {
-                log.error("serverCaught", e);
-            }
+            quietly(() -> raiseEvent(onError, args));
             if (args.isCancel()) {
                 return;
             }
             Sockets.closeOnFlushed(channel);
-            Tasks.raiseUncaughtException(cause);
         }
     }
 

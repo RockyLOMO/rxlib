@@ -6,6 +6,7 @@ import io.netty.util.Timer;
 import io.netty.util.TimerTask;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.rx.core.App;
 import org.rx.core.Tasks;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiAction;
@@ -30,7 +31,7 @@ public class RedoTimer {
             }
             if (done) {
                 if (lastError != null) {
-                    Tasks.raiseUncaughtException(lastError);
+                    App.log("run", lastError);
                 }
                 return;
             }
@@ -42,7 +43,7 @@ public class RedoTimer {
             }
             if (done || redoCount.decrementAndGet() <= 0) {
                 if (lastError != null) {
-                    Tasks.raiseUncaughtException(lastError);
+                    App.log("run", lastError);
                 }
                 return;
             }

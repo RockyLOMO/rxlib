@@ -77,22 +77,17 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            log.error("clientCaught {}", ctx.channel().remoteAddress(), cause);
+            App.log("clientCaught {}", ctx.channel().remoteAddress(), cause);
             if (!ctx.channel().isActive()) {
                 return;
             }
 
             NEventArgs<Throwable> args = new NEventArgs<>(cause);
-            try {
-                raiseEvent(onError, args);
-            } catch (Exception e) {
-                log.error("clientCaught", e);
-            }
+            quietly(() -> raiseEvent(onError, args));
             if (args.isCancel()) {
                 return;
             }
             Sockets.closeOnFlushed(ctx.channel());
-            Tasks.raiseUncaughtException(cause);
         }
     }
 
