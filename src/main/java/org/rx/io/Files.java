@@ -8,7 +8,9 @@ import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.StringBuilder;
+import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
+import org.springframework.http.MediaType;
 
 import java.io.File;
 import java.io.InputStream;
@@ -134,5 +136,32 @@ public class Files extends FilenameUtils {
                 directory.delete();
             }
         }
+    }
+
+    //MimeTypeUtils
+    public static String getMediaTypeFromName(String fileName) {
+        String ext = getExtension(fileName);
+        if (Strings.isEmpty(ext)) {
+            return MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "png")) {
+            return MediaType.IMAGE_PNG_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "gif")) {
+            return MediaType.IMAGE_GIF_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "jpg") || Strings.equalsIgnoreCase(ext, "jpeg")) {
+            return MediaType.IMAGE_JPEG_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "pdf")) {
+            return MediaType.APPLICATION_PDF_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "txt")) {
+            return MediaType.TEXT_MARKDOWN_VALUE;
+        }
+        if (Strings.equalsIgnoreCase(ext, "md")) {
+            return MediaType.TEXT_PLAIN_VALUE;
+        }
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 }

@@ -322,6 +322,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         return true;
     }
 
+    @Override
     public synchronized byte[] toArray() {
         checkNotClosed();
 

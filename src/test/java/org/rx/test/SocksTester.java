@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.Tasks;
+import org.rx.io.IOStream;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
@@ -243,6 +244,14 @@ public class SocksTester {
     }
 
     @Test
+    public void dnsClient() {
+//        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
+
+        List<String> dnsRecs = Sockets.getDnsRecords("cloud.f-li.cn", new String[]{"A"});
+        System.out.println(dnsRecs);
+    }
+
+    @Test
     public void restClient() {
         HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
         System.out.println(facade.queryIp());
@@ -250,21 +259,17 @@ public class SocksTester {
 
     @Test
     public void httpClient() {
-        List<String> dnsRecs = Sockets.getDnsRecords("cloud.f-li.cn", new String[]{"A"});
-        System.out.println(dnsRecs);
-
-//        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-//        HttpClient client = new HttpClient();
-//        for (int i = 0; i < 10; i++) {
-//            client.getFile("https://gitee.com/rx-code/rxlib", "/1.html");
-//        }
+        HttpClient client = new HttpClient();
+//        System.out.println(client.get("https://gitee.com/rx-code/rxlib").toString());
+        System.out.println(IOStream.readString(client.get("https://f-li.cn").toStream().getReader()));
     }
 
     @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = (Map) HttpClient.parseQueryString(url);
-        System.out.println(toJsonString(map));
+        Map<String, Object> map = HttpClient.parseQueryString(url);
+        assert map.get("userId").equals("ft");
+        assert map.get("type").equals("1");
 
         map.put("userId", "newId");
         map.put("ok", "1");
@@ -306,7 +311,7 @@ public class SocksTester {
 
     @Test
     public void ping() {
-        PingClient.test("x.f-li.cn:80", r -> log.info(toJsonString(r)));
+        PingClient.test("cloud.f-li.cn:80", r -> log.info(toJsonString(r)));
     }
 
     @Test

@@ -1,16 +1,22 @@
 package org.rx.net.http;
 
-import com.google.common.net.HttpHeaders;
 import kotlin.Pair;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import okhttp3.Authenticator;
+import okio.BufferedSink;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.io.IOUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
-import org.rx.core.exception.InvalidException;
+import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.springframework.http.HttpMethod;
@@ -22,8 +28,7 @@ import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
 import java.security.SecureRandom;
@@ -36,6 +41,124 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class HttpClient {
+    interface RequestContent {
+        RequestContent NONE = new RequestContent() {
+            @Override
+            public RequestBody toBody() {
+                return RequestBody.create(FORM_TYPE, "");
+            }
+        };
+
+        RequestBody toBody();
+    }
+
+    @RequiredArgsConstructor
+    static class JsonContent implements RequestContent {
+        final Object json;
+
+        @Override
+        public RequestBody toBody() {
+            return RequestBody.create(JSON_TYPE, toJsonString(json));
+        }
+    }
+
+    @RequiredArgsConstructor
+    static class FormContent implements RequestContent {
+        final Map<String, Object> forms;
+        final Map<String, IOStream<?, ?>> files;
+
+        @Override
+        public RequestBody toBody() {
+            if (MapUtils.isEmpty(files)) {
+                String formString = buildQueryString(null, forms);
+                if (!Strings.isNullOrEmpty(formString)) {
+                    formString = formString.substring(1);
+                }
+                return RequestBody.create(FORM_TYPE, formString);
+            }
+            MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
+            if (!MapUtils.isEmpty(forms)) {
+                for (Map.Entry<String, Object> entry : forms.entrySet()) {
+                    if (entry.getValue() == null) {
+                        continue;
+                    }
+                    builder.addFormDataPart(entry.getKey(), entry.getValue().toString());
+                }
+            }
+            if (!MapUtils.isEmpty(files)) {
+                for (Map.Entry<String, IOStream<?, ?>> entry : files.entrySet()) {
+                    IOStream<?, ?> stream = entry.getValue();
+                    if (stream == null) {
+                        continue;
+                    }
+                    builder.addFormDataPart(entry.getKey(), stream.getName(), new RequestBody() {
+                        @Nullable
+                        @Override
+                        public MediaType contentType() {
+                            return MediaType.parse(Files.getMediaTypeFromName(stream.getName()));
+                        }
+
+                        @Override
+                        public void writeTo(@NotNull BufferedSink bufferedSink) throws IOException {
+                            stream.copyTo(bufferedSink.outputStream());
+                        }
+                    });
+                }
+            }
+            return builder.build();
+        }
+    }
+
+    @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
+    public static class ResponseContent {
+        @Getter
+        private final Response response;
+        private String string;
+        private HybridStream stream;
+
+        public String getResponseUrl() {
+            return response.request().url().toString();
+        }
+
+        public Headers getHeaders() {
+            return response.headers();
+        }
+
+        public synchronized HybridStream toStream() {
+            if (stream == null) {
+                stream = new HybridStream();
+                ResponseBody body = response.body();
+                if (body == null) {
+                    return stream;
+                }
+                try {
+                    IOStream.copyTo(body.byteStream(), stream.getWriter());
+                    stream.setPosition(0);
+                } finally {
+                    body.close();
+                }
+            }
+            return stream;
+        }
+
+        @SneakyThrows
+        @Override
+        public synchronized String toString() {
+            if (string == null) {
+                ResponseBody body = response.body();
+                if (body == null) {
+                    return string = "";
+                }
+                try {
+                    string = body.string();
+                } finally {
+                    body.close();
+                }
+            }
+            return string;
+        }
+    }
+
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
     private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), App.getConfig().getKeepaliveSeconds(), TimeUnit.SECONDS);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -53,18 +176,18 @@ public class HttpClient {
     public static String godaddyDns(String ssoKey, String domain, String name, String ip) {
         String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
         HttpClient client = new HttpClient();
-        client.setRequestHeader("Authorization", "sso-key " + ssoKey);
-        return client.put(url, String.format("[\n" +
+        client.getHeaders().add("Authorization", "sso-key " + ssoKey);
+        return client.putJson(url, String.format("[\n" +
                 "  {\n" +
                 "    \"data\": \"%s\",\n" +
                 "    \"ttl\": 600\n" +
                 "  }\n" +
-                "]", ip));
+                "]", ip)).toString();
     }
 
     public static String getWanIp() {
         HttpClient client = new HttpClient();
-        return client.get("https://api.ipify.org");
+        return client.get("https://api.ipify.org").toString();
     }
 
     public static void saveRawCookies(String url, String raw) {
@@ -97,9 +220,6 @@ public class HttpClient {
             if (domain != null) {
                 builder = builder.domain(domain);
             }
-//            if (httpUrl.isHttps()) {
-//                builder = builder.secure();
-//            }
             cookies.add(builder.path("/").name(pair.substring(0, i)).value(pair.substring(i + 1)).build());
         }
         return cookies;
@@ -143,8 +263,8 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public static Map<String, String> parseQueryString(String url) {
-        Map<String, String> params = new LinkedHashMap<>();
+    public static Map<String, Object> parseQueryString(String url) {
+        Map<String, Object> params = new LinkedHashMap<>();
         if (Strings.isEmpty(url)) {
             return params;
         }
@@ -173,14 +293,13 @@ public class HttpClient {
             return url;
         }
 
-        Map<String, Object> query = (Map) parseQueryString(url);
+        Map<String, Object> query = parseQueryString(url);
         query.putAll(params);
         int i = url.indexOf("?");
         if (i != -1) {
             url = url.substring(0, i);
         }
         StringBuilder sb = new StringBuilder(url);
-
         for (Map.Entry<String, Object> entry : query.entrySet()) {
             Object val = entry.getValue();
             if (val == null) {
@@ -228,202 +347,144 @@ public class HttpClient {
 
     //不是线程安全
     private final OkHttpClient client;
-    private Headers headers;
-    private Response response;
-
-    public String cookie(String rawCookie) {
-        String ua = headers.get(HttpHeaders.COOKIE);
-        setRequestHeader(HttpHeaders.COOKIE, rawCookie);
-        return ua;
-    }
-
-    public String userAgent(String userAgent) {
-        String ua = headers.get(HttpHeaders.USER_AGENT);
-        setRequestHeader(HttpHeaders.USER_AGENT, userAgent);
-        return ua;
-    }
-
-    public void setRequestHeader(String name, String value) {
-        setRequestHeaders(Collections.singletonMap(name, value));
-    }
-
-    public void setRequestHeaders(Map<String, String> headers) {
-        require(headers);
-
-        Headers.Builder builder = this.headers.newBuilder();
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            builder.set(entry.getKey(), entry.getValue());
-        }
-        this.headers = builder.build();
-    }
-
-    private Response getResponse() {
-        if (response == null) {
-            throw new InvalidException("No response");
-        }
-        return response;
-    }
-
-    public String responseUrl() {
-        return getResponse().request().url().toString();
-    }
-
-    public Map<String, List<String>> responseHeaders() {
-        return getResponse().headers().toMultimap();
-    }
+    @Getter
+    private final HttpHeaders headers = new HttpHeaders();
+    private ResponseContent responseContent;
 
     public HttpClient() {
         this(App.getConfig().getNetTimeoutMillis(), null, null);
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        Headers.Builder builder = new Headers.Builder().set(HttpHeaders.USER_AGENT, App.getConfig().getNetUserAgent());
+        headers.setUserAgent(App.getConfig().getNetUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
-            builder = builder.set(HttpHeaders.COOKIE, rawCookie);
+            headers.setCookie(rawCookie);
         }
-        headers = builder.build();
         client = createClient(timeoutMillis, cookieJar, proxy);
     }
 
     private Request.Builder createRequest(String url) {
-        return new Request.Builder().url(url).headers(headers);
-    }
-
-    public Map<String, List<String>> head(String url) {
-        handleString(invoke(url, HttpMethod.HEAD, null, null));
-
-        return responseHeaders();
-    }
-
-    public String get(String url) {
-        require(url);
-
-        return handleString(invoke(url, HttpMethod.GET, null, null));
-    }
-
-    public HybridStream getStream(String url) {
-        require(url);
-
-        return handleStream(invoke(url, HttpMethod.GET, null, null));
-    }
-
-    public File getFile(String url, String filePath) {
-        require(url, filePath);
-
-        return handleFile(invoke(url, HttpMethod.GET, null, null), filePath);
-    }
-
-    public String post(String url, Map<String, Object> formData) {
-        require(url, formData);
-
-        String dataString = HttpClient.buildQueryString("", formData);
-        if (!Strings.isNullOrEmpty(dataString)) {
-            dataString = dataString.substring(1);
+        Request.Builder builder = new Request.Builder().url(url);
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            for (String val : entry.getValue()) {
+                builder.addHeader(entry.getKey(), val);
+            }
         }
-        return handleString(invoke(url, HttpMethod.POST, FORM_TYPE, dataString));
-    }
-
-    public String post(String url, Object json) {
-        require(url, json);
-
-        return handleString(invoke(url, HttpMethod.POST, JSON_TYPE, toJsonString(json)));
-    }
-
-    public HybridStream postStream(String url, Map<String, Object> formData) {
-        require(url, formData);
-
-        String dataString = HttpClient.buildQueryString("", formData);
-        if (!Strings.isNullOrEmpty(dataString)) {
-            dataString = dataString.substring(1);
-        }
-        return handleStream(invoke(url, HttpMethod.POST, FORM_TYPE, dataString));
-    }
-
-    public File postFile(String url, Map<String, Object> formData, String filePath) {
-        require(url, formData, filePath);
-
-        String dataString = HttpClient.buildQueryString("", formData);
-        if (!Strings.isNullOrEmpty(dataString)) {
-            dataString = dataString.substring(1);
-        }
-        return handleFile(invoke(url, HttpMethod.POST, FORM_TYPE, dataString), filePath);
-    }
-
-    public File postFile(String url, Object json, String filePath) {
-        require(url, json, filePath);
-
-        return handleFile(invoke(url, HttpMethod.POST, JSON_TYPE, toJsonString(json)), filePath);
-    }
-
-    public String put(String url, Object json) {
-        require(url, json);
-
-        return handleString(invoke(url, HttpMethod.PUT, JSON_TYPE, toJsonString(json)));
+        return builder;
     }
 
     @SneakyThrows
-    private ResponseBody invoke(String url, HttpMethod method, MediaType contentType, String content) {
+    private ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
         Request.Builder request = createRequest(url);
-        RequestBody requestBody;
+        RequestBody requestBody = content.toBody();
         switch (method) {
             case POST:
-                requestBody = RequestBody.create(content, contentType);
                 request = request.post(requestBody);
                 break;
+            case HEAD:
+                request = request.head();
+                break;
             case PUT:
-                requestBody = RequestBody.create(content, contentType);
                 request = request.put(requestBody);
+                break;
+            case PATCH:
+                request = request.patch(requestBody);
+                break;
+            case DELETE:
+                request = request.delete(requestBody);
                 break;
             default:
                 request = request.get();
                 break;
         }
-        if (response != null) {
-            response.close();
+        if (responseContent != null) {
+            responseContent.response.close();
         }
-        response = client.newCall(request.build()).execute();
-        return response.body();
+        return responseContent = new ResponseContent(client.newCall(request.build()).execute());
     }
 
-    @SneakyThrows
-    private File handleFile(ResponseBody body, String filePath) {
-        File file = new File(filePath);
-        if (body == null) {
-            return file;
-        }
-        try (FileOutputStream out = new FileOutputStream(file)) {
-            IOStream.copyTo(body.byteStream(), out);
-        } finally {
-            body.close();
-        }
-        return file;
+    public ResponseContent head(String url) {
+        require(url);
+
+        return invoke(url, HttpMethod.HEAD, RequestContent.NONE);
     }
 
-    private HybridStream handleStream(ResponseBody body) {
-        HybridStream stream = new HybridStream();
-        if (body == null) {
-            return stream;
-        }
-        try {
-            IOStream.copyTo(body.byteStream(), stream.getWriter());
-            stream.setPosition(0);
-        } finally {
-            body.close();
-        }
-        return stream;
+    public ResponseContent get(String url) {
+        require(url);
+
+        return invoke(url, HttpMethod.GET, RequestContent.NONE);
     }
 
-    @SneakyThrows
-    private String handleString(ResponseBody body) {
-        return body == null ? "" : body.string();
+    public ResponseContent post(String url, Map<String, Object> forms) {
+        return post(url, forms, Collections.emptyMap());
+    }
+
+    public ResponseContent post(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+        require(url);
+
+        return invoke(url, HttpMethod.POST, new FormContent(forms, files));
+    }
+
+    public ResponseContent postJson(String url, Object json) {
+        require(url, json);
+
+        return invoke(url, HttpMethod.POST, new JsonContent(json));
+    }
+
+    public ResponseContent put(String url, Map<String, Object> forms) {
+        return put(url, forms, Collections.emptyMap());
+    }
+
+    public ResponseContent put(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+        require(url);
+
+        return invoke(url, HttpMethod.PUT, new FormContent(forms, files));
+    }
+
+    public ResponseContent putJson(String url, Object json) {
+        require(url, json);
+
+        return invoke(url, HttpMethod.PUT, new JsonContent(json));
+    }
+
+    public ResponseContent patch(String url, Map<String, Object> forms) {
+        return patch(url, forms, Collections.emptyMap());
+    }
+
+    public ResponseContent patch(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+        require(url);
+
+        return invoke(url, HttpMethod.PATCH, new FormContent(forms, files));
+    }
+
+    public ResponseContent patchJson(String url, Object json) {
+        require(url, json);
+
+        return invoke(url, HttpMethod.PATCH, new JsonContent(json));
+    }
+
+    public ResponseContent delete(String url, Map<String, Object> forms) {
+        return delete(url, forms, Collections.emptyMap());
+    }
+
+    public ResponseContent delete(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+        require(url);
+
+        return invoke(url, HttpMethod.DELETE, new FormContent(forms, files));
+    }
+
+    public ResponseContent deleteJson(String url, Object json) {
+        require(url, json);
+
+        return invoke(url, HttpMethod.DELETE, new JsonContent(json));
     }
 
     @SneakyThrows
     public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
-        Map<String, String> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, servletRequest::getHeader);
+        Map<String, List<String>> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, p -> Collections.list(servletRequest.getHeaders(p)));
         headers.remove("host");
-        setRequestHeaders(headers);
+        getHeaders().putAll(headers);
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {

@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 @Aspect
 @Component
 public class LogInterceptor extends BaseInterceptor {
+    //@within 对象级别
+    //@annotation 方法级别
     @Around("@annotation(org.rx.annotation.EnableLogging) || @within(org.rx.annotation.EnableLogging)")
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Signature signature = joinPoint.getSignature();

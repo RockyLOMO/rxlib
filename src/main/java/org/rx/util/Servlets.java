@@ -12,7 +12,7 @@ import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
-import org.springframework.util.MimeTypeUtils;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.ServletRequestUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -85,7 +85,7 @@ public class Servlets extends ServletRequestUtils {
     }
 
     public static void responseFile(IOStream<?, ?> stream) {
-        responseFile(stream, MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE);
+        responseFile(stream, MediaType.APPLICATION_OCTET_STREAM_VALUE);
     }
 
     @SneakyThrows

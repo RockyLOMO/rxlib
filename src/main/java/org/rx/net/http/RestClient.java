@@ -53,23 +53,23 @@ public final class RestClient {
                 return data;
             };
 
-            String responseText = null;
+            String responseText;
             ProceedEventArgs args = new ProceedEventArgs(contract, new Object[1], m.getReturnType().equals(void.class));
             HttpClient client = new HttpClient();
             try {
                 if (doPost) {
                     if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
                         args.getParameters()[0] = p.arguments[0];
-                        responseText = args.proceed(() -> client.post(reqUrl, args.getParameters()[0]));
+                        responseText = args.proceed(() -> client.postJson(reqUrl, args.getParameters()[0]).toString());
                     } else {
                         Map<String, Object> data = getFormData.invoke();
                         args.getParameters()[0] = data;
-                        responseText = args.proceed(() -> client.post(reqUrl, data));
+                        responseText = args.proceed(() -> client.post(reqUrl, data).toString());
                     }
                 } else {
                     Map<String, Object> data = getFormData.invoke();
                     args.getParameters()[0] = data;
-                    responseText = args.proceed(() -> client.get(HttpClient.buildQueryString(reqUrl, data)));
+                    responseText = args.proceed(() -> client.get(HttpClient.buildQueryString(reqUrl, data)).toString());
                 }
                 if (checkResponse != null && !checkResponse.invoke(responseText)) {
                     throw new InvalidException("Response status error");

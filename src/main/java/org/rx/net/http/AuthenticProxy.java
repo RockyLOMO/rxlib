@@ -9,14 +9,14 @@ import java.net.SocketAddress;
 
 @Getter
 public class AuthenticProxy extends Proxy {
-    private Authenticator authenticator;
+    private final Authenticator authenticator;
     @Setter
     private boolean directOnFail;
 
     public AuthenticProxy(Type type, SocketAddress sa, String username, String password) {
         super(type, sa);
         authenticator = (route, response) -> {
-            String name = "Proxy-Authorization";
+            String name = HttpHeaders.PROXY_AUTHORIZATION;
             if (directOnFail && response.request().header(name) != null) {
                 return null;
             }

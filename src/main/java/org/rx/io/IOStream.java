@@ -98,16 +98,16 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         out.flush();
     }
 
-    public static byte[] createBuffer() {
-        return new byte[App.getConfig().getBufferSize()];
+    public static File copyToFile(InputStream in, String filePath) {
+        File file = new File(filePath);
+        try (FileStream stream = new FileStream(file)) {
+            copyTo(in, stream.getWriter());
+        }
+        return file;
     }
 
-    public static byte[] toBytes(IOStream<?, ?> stream) {
-        long pos = stream.getPosition();
-        byte[] data = new byte[(int) (stream.getLength() - pos)];
-        stream.read(data);
-        stream.setPosition(pos);
-        return data;
+    public static byte[] createBuffer() {
+        return new byte[App.getConfig().getBufferSize()];
     }
 
     @SneakyThrows
@@ -263,7 +263,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     //重置position
-    public void copyTo(OutputStream out) {
+    public synchronized void copyTo(OutputStream out) {
         checkNotClosed();
 
         if (!canSeek()) {
@@ -275,5 +275,15 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         setPosition(0L);
         copyTo(getReader(), out);
         setPosition(pos);
+    }
+
+    public synchronized byte[] toArray() {
+        checkNotClosed();
+
+        long pos = getPosition();
+        byte[] data = new byte[(int) (getLength() - pos)];
+        read(data);
+        setPosition(pos);
+        return data;
     }
 }
