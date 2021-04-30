@@ -541,9 +541,9 @@ public final class App extends SystemUtils {
         boolean doWrite = false;
         switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
             case WriteOnNull:
-                doWrite = eventArgs.getError() != null || eventArgs.getParameters() == null
+                doWrite = eventArgs.getError() != null
                         || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
-                        || Arrays.contains(eventArgs.getParameters(), null);
+                        || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
                 break;
             case WriteOnError:
                 if (eventArgs.getError() != null) {
@@ -709,7 +709,7 @@ public final class App extends SystemUtils {
     }
 
     public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = IOStream.toBytes(IOStream.serialize(obj));
+        byte[] data = IOStream.serialize(obj).toArray();
         return convertToBase64String(data);
     }
 

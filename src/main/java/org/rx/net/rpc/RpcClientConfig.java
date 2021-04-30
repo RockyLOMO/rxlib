@@ -39,7 +39,6 @@ public class RpcClientConfig implements Serializable {
     }
 
     private static final long serialVersionUID = -4952694662640163676L;
-    private boolean tryEpoll = true;
     @NotNull
     private InetSocketAddress serverEndpoint;
     private MemoryMode memoryMode;

@@ -58,7 +58,7 @@ public final class Tasks {
     }
 
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final ThreadPool[] loadBalancing;
+    private static final ThreadPool[] replicas;
     //HashedWheelTimer
     private static final ScheduledExecutorService scheduler;
     private static final FastThreadLocal<Boolean> raiseFlag = new FastThreadLocal<>();
@@ -66,15 +66,15 @@ public final class Tasks {
     static {
         int poolCount = App.getConfig().getThreadPoolCount();
         int coreSize = Math.max(1, ThreadPool.CPU_THREADS / poolCount);
-        loadBalancing = new ThreadPool[poolCount];
+        replicas = new ThreadPool[poolCount];
         for (int i = 0; i < poolCount; i++) {
-            loadBalancing[i] = new ThreadPool(coreSize);
+            replicas[i] = new ThreadPool(coreSize);
         }
-        scheduler = new ScheduledThreadPoolExecutor(1, loadBalancing[0].getThreadFactory());
+        scheduler = new ScheduledThreadPoolExecutor(1, replicas[0].getThreadFactory());
     }
 
     public static ThreadPool getExecutor() {
-        return loadBalancing[ThreadLocalRandom.current().nextInt(0, loadBalancing.length)];
+        return replicas[ThreadLocalRandom.current().nextInt(0, replicas.length)];
     }
 
     public static void raiseUncaughtException(Throwable e) {

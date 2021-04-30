@@ -261,13 +261,14 @@ public class SocksTester {
     public void httpClient() {
         HttpClient client = new HttpClient();
 //        System.out.println(client.get("https://gitee.com/rx-code/rxlib").toString());
-        System.out.println(IOStream.readString(client.get("https://f-li.cn").toStream().getReader()));
+        System.out.println(IOStream.readString(client.get("https://f-li.cn").asStream().getReader()));
+        client.get("https://f-li.cn").asFile("d:\\1.html");
     }
 
     @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = HttpClient.parseQueryString(url);
+        Map<String, Object> map = (Map) HttpClient.parseQueryString(url);
         assert map.get("userId").equals("ft");
         assert map.get("type").equals("1");
 

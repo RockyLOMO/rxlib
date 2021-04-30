@@ -15,7 +15,6 @@ public class RpcServerConfig implements Serializable {
     public static final int LATEST_COMPUTE = 0;
 
     private static final long serialVersionUID = 8065323693541916068L;
-    private boolean tryEpoll = true;
     private int listenPort;
     private int workThread;
     private MemoryMode memoryMode;

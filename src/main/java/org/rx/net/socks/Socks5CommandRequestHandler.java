@@ -40,7 +40,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, Upstream upstream, SocketAddress dstAddr) {
-        Sockets.bootstrap(true, inbound.channel(), null, channel -> {
+        Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             //ProxyChannelManageHandler.get(inbound).getUsername()
             upstream.initChannel(channel);

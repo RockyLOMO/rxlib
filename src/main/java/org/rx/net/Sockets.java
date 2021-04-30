@@ -28,6 +28,7 @@ import javax.naming.directory.Attribute;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -35,6 +36,12 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
+    private static final Map<String, EventLoopGroup> shared = new ConcurrentHashMap<>();
+
+    public static EventLoopGroup sharedEventLoop(String groupName) {
+        return shared.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+    }
+
     public static void writeAndFlush(Channel channel, List<Object> packs) {
         require(channel);
 
@@ -93,17 +100,16 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap bootstrap(boolean tryEpoll) {
-        return bootstrap(tryEpoll, null, null, null);
+    public static Bootstrap bootstrap(String groupName) {
+        return bootstrap(sharedEventLoop(groupName), null, null);
     }
 
-    public static Bootstrap bootstrap(boolean tryEpoll, Channel channel, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        Class<? extends Channel> channelClass = channel != null ? channel.getClass() : channelClass(tryEpoll);
-        boolean isEpoll = EpollSocketChannel.class.isAssignableFrom(channelClass);
+    public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+        require(eventLoopGroup);
+
         Bootstrap b = new Bootstrap()
-                .group(channel != null ? channel.eventLoop() :
-                        isEpoll ? new EpollEventLoopGroup(ThreadPool.CPU_THREADS) : new NioEventLoopGroup(ThreadPool.CPU_THREADS))
-                .channel(channelClass)
+                .group(eventLoopGroup)
+                .channel(channelClass())
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.TCP_NODELAY, true)
@@ -123,26 +129,26 @@ public final class Sockets {
         return b;
     }
 
-    public static void closeBootstrap(Bootstrap bootstrap) {
-        if (bootstrap == null) {
-            return;
-        }
+//    public static void closeBootstrap(Bootstrap bootstrap) {
+//        if (bootstrap == null) {
+//            return;
+//        }
+//
+//        BootstrapConfig config = bootstrap.config();
+//        if (config.group() != null) {
+//            config.group().shutdownGracefully();
+//        }
+//    }
 
-        BootstrapConfig config = bootstrap.config();
-        if (config.group() != null) {
-            config.group().shutdownGracefully();
-        }
+    public static ServerBootstrap serverBootstrap() {
+        return serverBootstrap(0, null, null);
     }
 
-    public static ServerBootstrap serverBootstrap(boolean tryEpoll) {
-        return serverBootstrap(tryEpoll, 0, null, null);
-    }
-
-    public static ServerBootstrap serverBootstrap(boolean tryEpoll, int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
+    public static ServerBootstrap serverBootstrap(int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
         int bossThreadAmount = 1; //等于bind的次数，默认1
         ServerBootstrap b = new ServerBootstrap()
-                .group(eventLoopGroup(tryEpoll, bossThreadAmount), eventLoopGroup(tryEpoll, workThreadAmount))
-                .channel(serverChannelClass(tryEpoll))
+                .group(eventLoopGroup(bossThreadAmount), eventLoopGroup(workThreadAmount))
+                .channel(serverChannelClass())
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 //                    .option(ChannelOption.SO_REUSEADDR, true)
@@ -184,22 +190,18 @@ public final class Sockets {
         }
     }
 
-    private static Class<? extends SocketChannel> channelClass(boolean tryEpoll) {
-        return epoll(tryEpoll) ? EpollSocketChannel.class : NioSocketChannel.class;
+    private static Class<? extends SocketChannel> channelClass() {
+        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
-    private static Class<? extends ServerSocketChannel> serverChannelClass(boolean tryEpoll) {
-        return epoll(tryEpoll) ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+    private static Class<? extends ServerSocketChannel> serverChannelClass() {
+        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     }
 
-    private static EventLoopGroup eventLoopGroup(boolean tryEpoll, int threadAmount) {
-        Class<? extends EventLoopGroup> eventLoopGroupClass = epoll(tryEpoll) ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
+    private static EventLoopGroup eventLoopGroup(int threadAmount) {
+        Class<? extends EventLoopGroup> eventLoopGroupClass = Epoll.isAvailable() ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
         return Reflects.newInstance(eventLoopGroupClass, threadAmount);
 //        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
-    }
-
-    private static boolean epoll(boolean enable) {
-        return enable && Epoll.isAvailable();
     }
 
     //region Address

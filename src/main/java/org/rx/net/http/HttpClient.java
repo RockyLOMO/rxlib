@@ -28,6 +28,7 @@ import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
@@ -115,6 +116,7 @@ public class HttpClient {
         private final Response response;
         private String string;
         private HybridStream stream;
+        private File file;
 
         public String getResponseUrl() {
             return response.request().url().toString();
@@ -124,7 +126,22 @@ public class HttpClient {
             return response.headers();
         }
 
-        public synchronized HybridStream toStream() {
+        public synchronized File asFile(String filePath) {
+            if (file == null) {
+                ResponseBody body = response.body();
+                if (body == null) {
+                    return new File(filePath);
+                }
+                try {
+                    file = IOStream.copyToFile(body.byteStream(), filePath);
+                } finally {
+                    body.close();
+                }
+            }
+            return file;
+        }
+
+        public synchronized HybridStream asStream() {
             if (stream == null) {
                 stream = new HybridStream();
                 ResponseBody body = response.body();
@@ -142,8 +159,7 @@ public class HttpClient {
         }
 
         @SneakyThrows
-        @Override
-        public synchronized String toString() {
+        public synchronized String asString() {
             if (string == null) {
                 ResponseBody body = response.body();
                 if (body == null) {
@@ -182,12 +198,12 @@ public class HttpClient {
                 "    \"data\": \"%s\",\n" +
                 "    \"ttl\": 600\n" +
                 "  }\n" +
-                "]", ip)).toString();
+                "]", ip)).asString();
     }
 
     public static String getWanIp() {
         HttpClient client = new HttpClient();
-        return client.get("https://api.ipify.org").toString();
+        return client.get("https://api.ipify.org").asString();
     }
 
     public static void saveRawCookies(String url, String raw) {
@@ -263,8 +279,8 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public static Map<String, Object> parseQueryString(String url) {
-        Map<String, Object> params = new LinkedHashMap<>();
+    public static Map<String, String> parseQueryString(String url) {
+        Map<String, String> params = new LinkedHashMap<>();
         if (Strings.isEmpty(url)) {
             return params;
         }
@@ -293,7 +309,7 @@ public class HttpClient {
             return url;
         }
 
-        Map<String, Object> query = parseQueryString(url);
+        Map<String, Object> query = (Map) parseQueryString(url);
         query.putAll(params);
         int i = url.indexOf("?");
         if (i != -1) {

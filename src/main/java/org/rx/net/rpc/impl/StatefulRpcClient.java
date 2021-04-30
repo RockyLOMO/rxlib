@@ -139,7 +139,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     protected synchronized void freeObjects() {
         autoReconnect = false; //import
         Sockets.closeOnFlushed(channel);
-        Sockets.closeBootstrap(bootstrap);
+//        Sockets.closeBootstrap(bootstrap);
     }
 
     public void connect() {
@@ -155,7 +155,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         if (config.isEnableSsl()) {
             sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         }
-        bootstrap = Sockets.bootstrap(config.isTryEpoll(), null, config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.bootstrap(Sockets.sharedEventLoop(this.getClass().getSimpleName()), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getServerEndpoint().getHostString(), config.getServerEndpoint().getPort()));
