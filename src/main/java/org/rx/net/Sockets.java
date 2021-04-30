@@ -100,8 +100,8 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap bootstrap(String groupName) {
-        return bootstrap(sharedEventLoop(groupName), null, null);
+    public static Bootstrap bootstrap(String groupName, Consumer<SocketChannel> initChannel) {
+        return bootstrap(sharedEventLoop(groupName), null, initChannel);
     }
 
     public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, MemoryMode mode, Consumer<SocketChannel> initChannel) {
