@@ -536,8 +536,16 @@ public final class App extends SystemUtils {
         return ApplicationException.getMessage(e);
     }
 
+    public static void logApi(ProceedEventArgs eventArgs, String url) {
+        log(eventArgs, msg -> {
+            msg.appendLine("CallApi:\t%s %s", eventArgs.getTraceId(), url)
+                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
+                    .append("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+        });
+    }
+
     @SneakyThrows
-    public static void log(ProceedEventArgs eventArgs, BiFunc<ProceedEventArgs, String> formatMessage) {
+    public static void log(ProceedEventArgs eventArgs, BiAction<StringBuilder> formatMessage) {
         boolean doWrite = false;
         switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
             case WriteOnNull:
@@ -562,11 +570,12 @@ public final class App extends SystemUtils {
         }
         if (doWrite) {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            String msg = formatMessage.invoke(eventArgs);
+            StringBuilder msg = new StringBuilder(256);
+            formatMessage.invoke(msg);
             if (eventArgs.getError() != null) {
-                log.error(msg, eventArgs.getError());
+                log.error(msg.toString(), eventArgs.getError());
             } else {
-                log.info(msg);
+                log.info(msg.toString());
             }
         }
     }

@@ -7,8 +7,6 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.InterceptProxy;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.bean.Tuple;
-import org.rx.core.StringBuilder;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.impl.StatefulRpcClient;
 import org.rx.net.rpc.protocol.EventFlag;
@@ -28,8 +26,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -201,18 +197,16 @@ public final class Remoting {
                 throw e;
             } finally {
                 if (eventArgs != null) {
-                    App.log(eventArgs, e -> {
-                        StringBuilder msg = new StringBuilder();
+                    App.log(eventArgs, msg -> {
                         msg.appendLine("Rpc client %s.%s @ %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
                         msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
-                        if (e.getError() != null) {
-                            msg.appendLine("Response:\t%s", e.getError().getMessage());
+                        if (eventArgs.getError() != null) {
+                            msg.appendLine("Response:\t%s", eventArgs.getError().getMessage());
                         } else if (clientBean.pack == null) {
                             msg.appendLine("Response:\tNULL");
                         } else {
                             msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
                         }
-                        return msg.toString();
                     });
                 }
                 if (clientBean.pack != null) {
@@ -381,16 +375,14 @@ public final class Remoting {
                     args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
-                    App.log(args, ea -> {
-                        StringBuilder msg = new StringBuilder();
+                    App.log(args, msg -> {
                         msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
-                        msg.appendLine("Request:\t%s", toJsonString(ea.getParameters()));
-                        if (ea.getError() != null) {
+                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
+                        if (args.getError() != null) {
                             msg.appendLine("Response:\t%s", pack.errorMessage);
                         } else {
-                            msg.appendLine("Response:\t%s", toJsonString(ea.getReturnValue()));
+                            msg.appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
                         }
-                        return msg.toString();
                     });
                 }
                 java.util.Arrays.fill(pack.parameters, null);

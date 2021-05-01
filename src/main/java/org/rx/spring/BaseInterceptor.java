@@ -8,7 +8,6 @@ import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
-import org.rx.core.StringBuilder;
 import org.rx.util.function.TripleFunc;
 
 import javax.annotation.Resource;
@@ -60,9 +59,8 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             eventArgs.setError(e);
         } finally {
             raiseEvent(onProceed, eventArgs);
-            App.log(eventArgs, e -> {
-                StringBuilder msg = new StringBuilder(rxConfig.getBufferSize());
-                msg.appendLine("Call %s", signature.getName());
+            App.log(eventArgs, msg -> {
+                msg.appendLine("Call:\t%s", signature.getName());
                 msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
                 if (eventArgs.getError() != null) {
                     msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
@@ -77,7 +75,6 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     }
                     msg.appendLine();
                 }
-                return msg.toString();
             });
         }
         return eventArgs.getReturnValue();

@@ -4,7 +4,6 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
-import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
@@ -78,16 +77,14 @@ public final class RestClient {
                 args.setError(e);
                 throw new RestClientException(args.getTraceId().toString(), args.getError());
             } finally {
-                App.log(args, e -> {
-                    StringBuilder msg = new StringBuilder();
+                App.log(args, msg -> {
                     if (doPost) {
                         msg.appendLine("POST: %s %s", args.getTraceId(), reqUrl);
                     } else {
                         msg.appendLine("GET: %s %s", args.getTraceId(), reqUrl);
                     }
-                    msg.appendLine("Request:\t%s", toJsonString(e.getParameters()));
-                    msg.append("Response:\t%s", e.getReturnValue());
-                    return msg.toString();
+                    msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
+                    msg.append("Response:\t%s", args.getReturnValue());
                 });
             }
             if (m.getReturnType().equals(Void.class)) {
