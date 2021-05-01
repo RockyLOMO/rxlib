@@ -1,56 +1,154 @@
 package org.rx.net.http.tunnel;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.*;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
+import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.rx.net.Sockets;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.LinkedTransferQueue;
+import java.util.concurrent.TimeUnit;
 
+import static org.rx.core.App.quietly;
+
+@Slf4j
 public class Server {
     @RequiredArgsConstructor
-    static class SocksInfo {
-        private final String clientSocksId;
-        private final Channel channel;
-        private final LinkedBlockingQueue<IOStream<?, ?>> sendQueue = new LinkedBlockingQueue<>();
+    class SocksContext {
+        private final String appName;
+        private final String inboundSocksId;
+        private final LinkedBlockingQueue<IOStream<?, ?>> inboundQueue = new LinkedBlockingQueue<>();
+        private volatile boolean outboundReady;
+        private volatile Channel outboundChannel;
+        private final LinkedBlockingQueue<MultipartFile> outboundQueue = new LinkedBlockingQueue<>();
+
+        public boolean isBackendActive() {
+            return outboundReady && outboundChannel.isActive();
+        }
+
+        public void prepareBackend() {
+            synchronized (outboundQueue) {
+                MultipartFile stream;
+                while ((stream = outboundQueue.poll()) != null) {
+                    ByteBuf buf = toBuf(stream);
+                    try {
+                        outboundChannel.write(buf);
+                    } finally {
+                        buf.release();
+                    }
+                }
+                outboundChannel.flush();
+                outboundReady = true;
+            }
+        }
+
+        @SneakyThrows
+        private ByteBuf toBuf(MultipartFile stream) {
+            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer((int) stream.getSize());
+            buf.writeBytes(stream.getInputStream(), (int) stream.getSize());
+            return buf;
+        }
+
+        public void flushBackend(MultipartFile stream) {
+            synchronized (outboundQueue) {
+                if (!isBackendActive()) {
+                    outboundQueue.offer(stream);
+                    return;
+                }
+            }
+
+            ByteBuf buf = toBuf(stream);
+            try {
+                outboundChannel.writeAndFlush(buf);
+            } finally {
+                buf.release();
+            }
+        }
+
+        public void closeBackend() {
+            outboundReady = false;
+            Tasks.scheduleOnce(() -> {
+                Map<String, SocksContext> contextMap = holds.get(appName);
+                if (contextMap == null) {
+                    return;
+                }
+                contextMap.remove(inboundSocksId);
+            }, timeWaitSeconds * 1000L);
+        }
     }
 
-    class x {
+    @RequiredArgsConstructor
+    static class BackendHandler extends ChannelInboundHandlerAdapter {
+        private final SocksContext socksContext;
 
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) {
+            socksContext.prepareBackend();
+        }
+
+        @SneakyThrows
+        @Override
+        public void channelRead(ChannelHandlerContext outbound, Object msg) {
+            HybridStream stream = new HybridStream();
+            ByteBuf buf = (ByteBuf) msg;
+            try {
+                buf.readBytes(stream.getWriter(), buf.readableBytes());
+            } finally {
+                buf.release();
+            }
+            socksContext.inboundQueue.offer(stream);
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            socksContext.closeBackend();
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            log.error("BackendHandler {}", ctx.channel().remoteAddress(), cause);
+            Sockets.closeOnFlushed(ctx.channel());
+        }
     }
 
     public static final String GROUP_NAME = "TUNNEL";
 
-    private final Map<String, Map<String, SocksInfo>> holds = new ConcurrentHashMap<>();
+    private int timeWaitSeconds = 20;
+    private final Map<String, Map<String, SocksContext>> holds = new ConcurrentHashMap<>();
 
-    private SocksInfo getSocksInfo(DataPack pack) {
+    private SocksContext getSocksContext(SendPack pack) {
         return holds.computeIfAbsent(pack.getAppName(), k -> new ConcurrentHashMap<>())
-                .computeIfAbsent(pack.getSocksId(), k -> new SocksInfo(pack.getSocksId(), Sockets.bootstrap(GROUP_NAME, channel -> {
-            channel.pipeline().addLast();
-        }).connect(pack.getRemoteEndpoint()).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                return;
+                .computeIfAbsent(pack.getSocksId(), k -> {
+                    SocksContext socksContext = new SocksContext(pack.getAppName(), pack.getSocksId());
+                    socksContext.outboundChannel = Sockets.bootstrap(GROUP_NAME, channel -> channel.pipeline().addLast(new BackendHandler(socksContext))).connect(pack.getRemoteEndpoint()).channel();
+                    return socksContext;
+                });
+    }
+
+    public void frontendOffer(SendPack pack) {
+        getSocksContext(pack).flushBackend(pack.getBinary());
+    }
+
+    public ReceivePack frontendPoll(SendPack pack) {
+        ReceivePack receivePack = new ReceivePack(pack.getSocksId());
+        SocksContext socksContext = getSocksContext(pack);
+        socksContext.inboundQueue.drainTo(receivePack.getBinaries());
+        if (receivePack.getBinaries().isEmpty()) {
+            IOStream<?, ?> stream = quietly(() -> socksContext.inboundQueue.poll(timeWaitSeconds, TimeUnit.SECONDS));
+            if (stream != null) {
+                receivePack.getBinaries().add(stream);
+                socksContext.inboundQueue.drainTo(receivePack.getBinaries());
             }
-            holds.get
-        }).channel()));
-    }
-
-    public void offer(DataPack pack) {
-        SocksInfo socksInfo = ;
-        if (!socksInfo.channel.isActive()) {
-            socksInfo.sendQueue.offer(pack.getStream());
-            return;
         }
-//        PooledByteBufAllocator.DEFAULT.directBuffer();
-        socksInfo.channel.writeAndFlush(pack.getStream());
-    }
-
-    public DataPack poll(DataPack id) {
-        return null;
+        return receivePack;
     }
 }
