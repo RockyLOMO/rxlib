@@ -21,6 +21,7 @@ import org.rx.test.bean.*;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -244,6 +245,18 @@ public class SocksTester {
     }
 
     @Test
+    public void bytes() {
+        int a = 1;
+        long b = Integer.MAX_VALUE + 1L;
+        byte[] bytes = Bytes.getBytes(a);
+        System.out.println(Arrays.toString(bytes));
+        assert Bytes.getInt(bytes, 0) == a;
+        bytes = Bytes.getBytes(b);
+        System.out.println(Arrays.toString(bytes));
+        assert Bytes.getLong(bytes, 0) == b;
+    }
+
+    @Test
     public void dnsClient() {
 //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
 
@@ -311,11 +324,6 @@ public class SocksTester {
     }
 
     @Test
-    public void ping() {
-        PingClient.test("cloud.f-li.cn:80", r -> log.info(toJsonString(r)));
-    }
-
-    @Test
     public void authenticEndpoint() {
         String aep = "yf:123456@d.f-li.cn:1080";
         AuthenticEndpoint endpoint = new AuthenticEndpoint(aep);
@@ -323,5 +331,10 @@ public class SocksTester {
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
+    }
+
+    @Test
+    public void ping() {
+        PingClient.test("cloud.f-li.cn:80", r -> log.info(toJsonString(r)));
     }
 }

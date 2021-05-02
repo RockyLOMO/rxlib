@@ -19,6 +19,7 @@ import org.rx.core.Strings;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.rx.util.function.BiAction;
 import org.springframework.http.HttpMethod;
 
 import javax.net.ssl.SSLContext;
@@ -124,6 +125,19 @@ public class HttpClient {
 
         public Headers getHeaders() {
             return response.headers();
+        }
+
+        @SneakyThrows
+        public synchronized void handle(BiAction<InputStream> action) {
+            ResponseBody body = response.body();
+            if (body == null) {
+                return;
+            }
+            try {
+                action.invoke(body.byteStream());
+            } finally {
+                body.close();
+            }
         }
 
         public synchronized File asFile(String filePath) {

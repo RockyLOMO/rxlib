@@ -1,7 +1,9 @@
 package org.rx.net;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.*;
+import lombok.SneakyThrows;
 
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -11,6 +13,66 @@ import java.util.Set;
 import static org.rx.core.App.require;
 
 public class Bytes {
+    public static final int IntByteSize = 4;
+    public static final int LongByteSize = 8;
+
+    //region value
+    public static byte[] getBytes(int val) {
+        byte[] buffer = new byte[IntByteSize];
+        getBytes(val, buffer, 0);
+        return buffer;
+    }
+
+    public static void getBytes(int val, byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, IntByteSize);
+        buf.writerIndex(0);
+        buf.writeInt(val);
+    }
+
+    public static int getInt(byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, IntByteSize);
+        return buf.readInt();
+    }
+
+    public static byte[] getBytes(long val) {
+        byte[] buffer = new byte[LongByteSize];
+        getBytes(val, buffer, 0);
+        return buffer;
+    }
+
+    public static void getBytes(long val, byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, LongByteSize);
+        buf.writerIndex(0);
+        buf.writeLong(val);
+    }
+
+    public static long getLong(byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, LongByteSize);
+        return buf.readLong();
+    }
+    //endregion
+
+    @SneakyThrows
+    public static ByteBuf copyInputStream(InputStream in) {
+        return copyInputStream(in, in.available());
+    }
+
+    @SneakyThrows
+    public static ByteBuf copyInputStream(InputStream in, int length) {
+        ByteBuf buf = directBuffer(length);
+        buf.writeBytes(in, length);
+        return buf;
+    }
+
+    public static ByteBuf directBuffer(int initialCapacity) {
+        return directBuffer(initialCapacity, false);
+    }
+
+    public static ByteBuf directBuffer(int initialCapacity, boolean unpool) {
+        ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
+        return allocator.directBuffer(initialCapacity);
+    }
+
     public static <E extends Enum<E>> EnumSet<E> toEnumSet(Class<E> enumClass, long vector) {
         EnumSet<E> set = EnumSet.noneOf(enumClass);
         for (E e : enumClass.getEnumConstants()) {

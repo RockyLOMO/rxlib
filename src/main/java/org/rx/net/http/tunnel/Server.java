@@ -1,7 +1,6 @@
 package org.rx.net.http.tunnel;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -9,10 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Tasks;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.rx.net.Bytes;
 import org.rx.net.Sockets;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.InputStream;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -35,11 +34,12 @@ public class Server {
             return outboundReady && outboundChannel.isActive();
         }
 
+        @SneakyThrows
         public void prepareBackend() {
             synchronized (outboundQueue) {
                 MultipartFile stream;
                 while ((stream = outboundQueue.poll()) != null) {
-                    ByteBuf buf = toBuf(stream);
+                    ByteBuf buf = Bytes.copyInputStream(stream.getInputStream());
                     try {
                         outboundChannel.write(buf);
                     } finally {
@@ -52,12 +52,6 @@ public class Server {
         }
 
         @SneakyThrows
-        private ByteBuf toBuf(MultipartFile stream) {
-            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer((int) stream.getSize());
-            buf.writeBytes(stream.getInputStream(), (int) stream.getSize());
-            return buf;
-        }
-
         public void flushBackend(MultipartFile stream) {
             synchronized (outboundQueue) {
                 if (!isBackendActive()) {
@@ -66,7 +60,7 @@ public class Server {
                 }
             }
 
-            ByteBuf buf = toBuf(stream);
+            ByteBuf buf = Bytes.copyInputStream(stream.getInputStream());
             try {
                 outboundChannel.writeAndFlush(buf);
             } finally {
@@ -123,6 +117,7 @@ public class Server {
     public static final String GROUP_NAME = "TUNNEL";
 
     private int timeWaitSeconds = 20;
+    //appName,socksId
     private final Map<String, Map<String, SocksContext>> holds = new ConcurrentHashMap<>();
 
     private SocksContext getSocksContext(SendPack pack) {

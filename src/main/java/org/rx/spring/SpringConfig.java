@@ -3,6 +3,7 @@ package org.rx.spring;
 import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.http.tunnel.Server;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,11 @@ import java.io.File;
 @Configuration
 @EnableAspectJAutoProxy(proxyTargetClass = true)
 public class SpringConfig {
+    @Bean
+    public Server server() {
+        return new Server();
+    }
+
     @Bean
     public Validator validator() {
         return Validation.buildDefaultValidatorFactory().getValidator();
