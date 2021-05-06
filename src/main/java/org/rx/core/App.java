@@ -569,7 +569,8 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(256);
             formatMessage.invoke(msg);
             if (eventArgs.getError() != null) {
-                log.error(msg.toString(), eventArgs.getError());
+//                log.error(msg.toString(), eventArgs.getError());
+                log(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }

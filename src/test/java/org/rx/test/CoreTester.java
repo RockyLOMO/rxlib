@@ -438,10 +438,10 @@ public class CoreTester extends TestUtil {
         Map<String, Object> map = loadYaml("application.yml");
         System.out.println(map);
 
-        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("errorCode.yml"));
+        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("errorCode.yml"), false);
         assert v instanceof Map;
 
-        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("errorCode.yml"));
+        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("errorCode.yml"), false);
         assert eq(v, "Exception Error Code value={0}");
     }
 }
