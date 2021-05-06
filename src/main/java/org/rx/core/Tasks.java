@@ -3,13 +3,14 @@ package org.rx.core;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
+import org.slf4j.helpers.MessageFormatter;
 
 import java.sql.Time;
 import java.util.Date;
@@ -41,7 +42,7 @@ public final class Tasks {
             try {
                 return callable.invoke();
             } catch (Throwable e) {
-                raiseUncaughtException(e);
+                raiseUncaughtException("ExecuteFlag={}", flag, e);
                 return null;
             }
         }
@@ -57,11 +58,20 @@ public final class Tasks {
         }
     }
 
+    @RequiredArgsConstructor
+    @Getter
+    public static class UncaughtExceptionContext {
+        private final String format;
+        private final Object[] args;
+        @Setter
+        private boolean raised;
+    }
+
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final ThreadPool[] replicas;
     //HashedWheelTimer
     private static final ScheduledExecutorService scheduler;
-    private static final FastThreadLocal<Boolean> raiseFlag = new FastThreadLocal<>();
+    private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();
 
     static {
         int poolCount = App.getConfig().getThreadPoolCount();
@@ -77,15 +87,29 @@ public final class Tasks {
         return replicas[ThreadLocalRandom.current().nextInt(0, replicas.length)];
     }
 
-    public static void raiseUncaughtException(Throwable e) {
-        if (BooleanUtils.isTrue(raiseFlag.getIfExists())) {
+    public static UncaughtExceptionContext raisingContext() {
+        return raiseFlag.getIfExists();
+    }
+
+    public static void raiseUncaughtException(String format, Object... args) {
+        Throwable e = MessageFormatter.getThrowableCandidate(args);
+        if (e == null) {
+            log.warn("ThrowableCandidate is null");
             return;
         }
-        raiseFlag.set(Boolean.TRUE);
+        UncaughtExceptionContext context = raisingContext();
+        if (context == null) {
+            context = new UncaughtExceptionContext(format, args);
+        }
+        if (context.isRaised()) {
+            return;
+        }
+        context.setRaised(true);
+        raiseFlag.set(context);
         try {
             Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
             if (handler == null) {
-                log.error("UncaughtException", e);
+                log.error(context.getFormat(), context.getArgs());
                 return;
             }
             handler.uncaughtException(Thread.currentThread(), e);
@@ -204,7 +228,7 @@ public final class Tasks {
             try {
                 task.invoke();
             } catch (Throwable e) {
-                raiseUncaughtException(e);
+                raiseUncaughtException("scheduleOnce", e);
             }
         }, delay, TimeUnit.MILLISECONDS);
     }
