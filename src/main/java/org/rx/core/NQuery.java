@@ -5,6 +5,7 @@ import com.google.common.collect.Streams;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
@@ -32,6 +33,7 @@ import static org.rx.core.App.*;
  *
  * @param <T>
  */
+@Slf4j
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class NQuery<T> implements Iterable<T>, Serializable {
     //region staticMembers
@@ -339,7 +341,14 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_WARNING)
     public NQuery<T> reverse() {
-        return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
+        try {
+            return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
+        } catch (Exception e) {
+            log.warn("reverse fail, {}", e.getMessage());
+            List<T> list = toList();
+            Collections.reverse(list);
+            return me(list);
+        }
     }
 
     public <TK, TR> NQuery<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {

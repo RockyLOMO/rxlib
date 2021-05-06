@@ -394,11 +394,7 @@ public final class App extends SystemUtils {
     }
 
     public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, loadYaml("application.yml"));
-    }
-
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings) {
-        return readSetting(key, type, settings, false);
+        return readSetting(key, type, loadYaml("application.yml"), false);
     }
 
     @ErrorCode("keyError")
@@ -457,7 +453,7 @@ public final class App extends SystemUtils {
         for (Object data : NQuery.of(yamlFile).selectMany(p -> {
             NQuery<InputStream> resources = Reflects.getResources(p);
             if (resources.any()) {
-                return resources;
+                return resources.reverse();
             }
             File file = new File(p);
             return file.exists() ? Arrays.toList(new FileInputStream(file)) : Collections.emptyList();

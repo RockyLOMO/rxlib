@@ -32,7 +32,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     public void handle(ApplicationException e) {
         Class<?> codeType = e.getErrorCode().getClass();
         if (codeType.isEnum()) {
-            Map<String, Object> messageSource = as(readSetting(codeType.getName(), null, getMessageSource()), Map.class);
+            Map<String, Object> messageSource = as(readSetting(codeType.getName(), null, getMessageSource(), false), Map.class);
             if (messageSource == null) {
                 return;
             }
@@ -68,7 +68,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
         }
 
         for (StackTraceElement stack : e.getStacks()) {
-            Map<String, Object> messageSource = as(readSetting(stack.getClassName(), null, getMessageSource()), Map.class);
+            Map<String, Object> messageSource = as(readSetting(stack.getClassName(), null, getMessageSource(), false), Map.class);
             if (messageSource == null) {
                 continue;
             }
