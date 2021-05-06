@@ -91,33 +91,27 @@ public final class Tasks {
         return raiseFlag.getIfExists();
     }
 
-    public static void raiseUncaughtException(String format, Object... args) {
+    public static boolean raiseUncaughtException(String format, Object... args) {
         Throwable e = MessageFormatter.getThrowableCandidate(args);
         if (e == null) {
             log.warn("ThrowableCandidate is null");
-            return;
+            return false;
         }
-        UncaughtExceptionContext context = raisingContext();
-        if (context == null) {
-            context = new UncaughtExceptionContext(format, args);
-        }
+        UncaughtExceptionContext context = isNull(raisingContext(), new UncaughtExceptionContext(format, args));
         if (context.isRaised()) {
-            return;
+            return true;
         }
         context.setRaised(true);
         raiseFlag.set(context);
         try {
-            Thread.UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
-            if (handler == null) {
-                log.error(context.getFormat(), context.getArgs());
-                return;
-            }
+            Thread.UncaughtExceptionHandler handler = isNull(Thread.getDefaultUncaughtExceptionHandler(), (p, x) -> log.error(context.getFormat(), context.getArgs()));
             handler.uncaughtException(Thread.currentThread(), e);
         } catch (Throwable ie) {
             log.error("UncaughtException", ie);
         } finally {
             raiseFlag.remove();
         }
+        return true;
     }
 
     public static CompletableFuture<Void> run(Action task) {

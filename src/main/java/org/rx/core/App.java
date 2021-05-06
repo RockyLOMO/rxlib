@@ -522,8 +522,9 @@ public final class App extends SystemUtils {
 
         InvalidException invalidException = as(e, InvalidException.class);
         if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-//            log.error(format, args);
-            Tasks.raiseUncaughtException(format, args);
+            if (!Tasks.raiseUncaughtException(format, args)) {
+                log.error(format, args);
+            }
         } else {
             format += "\t{}";
             args[args.length - 1] = e.getMessage();
