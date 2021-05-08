@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
+import org.rx.core.NQuery;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
 import org.rx.test.bean.PersonBean;
@@ -36,6 +37,17 @@ public class UtilTester {
     @Test
     @SneakyThrows
     public void validate() {
+        NQuery<Integer> query = NQuery.of(Arrays.toList(1, 2, 3, 4), true);
+        NQuery.of(Arrays.toList( 1,2,3,4),true).takeWhile((p)->{
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println(Thread.currentThread().getId()+"="+p);
+            return true;
+        });
+
 //        TwoPerson tp = new TwoPerson();
 ////        Validator.validateBean(tp);
 //

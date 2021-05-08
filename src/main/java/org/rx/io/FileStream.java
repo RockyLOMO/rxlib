@@ -14,7 +14,7 @@ import static org.rx.core.App.*;
 
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
-    public static final int BUFFER_SIZE_4K = 1024 * 4;
+    static final int BUFFER_SIZE_8K = 1024 * 8;
 
     @SneakyThrows
     public static File createTempFile() {
@@ -27,7 +27,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     public static BufferedRandomAccessFile createRandomAccessFile(File file, boolean largeFile) {
-        return new BufferedRandomAccessFile(file, "rwd", largeFile ? BufferedRandomAccessFile.BuffSz_ : BUFFER_SIZE_4K);
+        return new BufferedRandomAccessFile(file, "rwd", largeFile ? BufferedRandomAccessFile.BuffSz_ : BUFFER_SIZE_8K);
     }
 
     private File file;

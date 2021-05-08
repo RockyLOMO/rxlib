@@ -118,6 +118,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     @Override
     public Iterator<T> iterator() {
         return data.iterator();
+//        return stream().iterator();
     }
 
     private <TR> List<TR> newList() {
@@ -185,16 +186,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
     //endregion
 
-    @SneakyThrows
-    public NQuery<T> each(PredicateFuncWithIndex<T> func) {
-        Iterator<T> tor = this.iterator();
-        int i = 0;
-        while (tor.hasNext()) {
-            if (!func.invoke(tor.next(), i++)) {
-                break;
-            }
-        }
-        return this;
+    @Override
+    public void forEach(Consumer<? super T> action) {
+        stream().forEach(action);
+    }
+
+    public void forEachOrdered(Consumer<? super T> action) {
+        stream().forEachOrdered(action);
     }
 
     public <TR> NQuery<TR> select(BiFunc<T, TR> selector) {
