@@ -148,14 +148,14 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream.collect(Collectors.toList()));
     }
 
-    private NQuery<T> me(EachFunc<T> func) {
-        return me(stream(), func);
-    }
-
-    private <TR> NQuery<TR> me(Stream<TR> stream, EachFunc<TR> func) {
+    private NQuery<T> me(EachFunc<T> func, String prevMethod) {
+        Stream<T> stream = stream();
         boolean isParallel = stream.isParallel();
-        Spliterator<TR> spliterator = stream.spliterator();
-        return me(StreamSupport.stream(new Spliterators.AbstractSpliterator<TR>(spliterator.estimateSize(), spliterator.characteristics()) {
+        if (isParallel) {
+            log.warn("Not supported parallel {}", prevMethod);
+        }
+        Spliterator<T> spliterator = stream.spliterator();
+        return me(StreamSupport.stream(new Spliterators.AbstractSpliterator<T>(spliterator.estimateSize(), spliterator.characteristics()) {
             final AtomicBoolean breaker = new AtomicBoolean();
             final AtomicInteger counter = new AtomicInteger();
 
@@ -537,7 +537,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
                 flags |= EachFunc.Accept;
             }
             return flags;
-        });
+        }, "skipWhile");
     }
 
     public NQuery<T> take(int count) {
@@ -557,7 +557,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             }
             flags |= EachFunc.Accept;
             return flags;
-        });
+        }, "takeWhile");
     }
 
     public String toJoinString(String delimiter, BiFunc<T, String> selector) {

@@ -37,14 +37,13 @@ public class UtilTester {
     @Test
     @SneakyThrows
     public void validate() {
-        NQuery<Integer> query = NQuery.of(Arrays.toList(1, 2, 3, 4), true);
-        NQuery.of(Arrays.toList( 1,2,3,4),true).takeWhile((p)->{
+        NQuery.of(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
             try {
                 Thread.sleep(200);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            System.out.println(Thread.currentThread().getId()+"="+p);
+            System.out.println(Thread.currentThread().getId() + "=" + p);
             return true;
         });
 
