@@ -9,17 +9,14 @@ import org.rx.net.http.tunnel.ReceivePack;
 import org.rx.net.http.tunnel.SendPack;
 import org.rx.net.http.tunnel.Server;
 import org.rx.util.BeanMapper;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.ServletOutputStream;
-import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 @RequiredArgsConstructor
-@RestController
-@Qualifier("apix")
+@RestController("apix")
 @RequestMapping("apix")
 public class ApiController {
     private final RxConfig rxConfig;
