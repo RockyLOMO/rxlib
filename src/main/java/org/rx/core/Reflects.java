@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -153,8 +154,7 @@ public class Reflects extends TypeUtils {
     @SuppressWarnings(NON_WARNING)
     @ErrorCode
     @SneakyThrows
-    public static <T> T newInstance(Class<T> type, Object... args) {
-        require(type);
+    public static <T> T newInstance(@NonNull Class<T> type, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
@@ -205,7 +205,7 @@ public class Reflects extends TypeUtils {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    public static <T> T invokeDefaultMethod(Method method, Object instance, Object... args) {
+    public static <T> T invokeDefaultMethod(@NonNull Method method, Object instance, Object... args) {
         require(method, method.isDefault());
 
         Class<?> declaringClass = method.getDeclaringClass();
@@ -267,9 +267,7 @@ public class Reflects extends TypeUtils {
         }, Cache.LOCAL_CACHE);
     }
 
-    public static String propertyName(String getterOrSetterName) {
-        require(getterOrSetterName);
-
+    public static String propertyName(@NonNull String getterOrSetterName) {
         String name;
         if (getterOrSetterName.startsWith(getProperty)) {
             name = getterOrSetterName.substring(getProperty.length());
@@ -345,9 +343,7 @@ public class Reflects extends TypeUtils {
         return tryConvert(val, toType, null);
     }
 
-    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType, T defaultVal) {
-        require(toType);
-
+    public static <T> Tuple<Boolean, T> tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
             return Tuple.of(true, Reflects.changeType(val, toType));
         } catch (Exception ex) {
@@ -355,9 +351,7 @@ public class Reflects extends TypeUtils {
         }
     }
 
-    public static <TS, TT> void registerConvert(Class<TS> baseFromType, Class<TT> toType, BiFunction<TS, Class<TT>, TT> converter) {
-        require(baseFromType, toType, converter);
-
+    public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
         typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
         if (!supportTypes.contains(baseFromType)) {
             supportTypes.add(baseFromType);
@@ -372,9 +366,7 @@ public class Reflects extends TypeUtils {
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)
     @ErrorCode(cause = ReflectiveOperationException.class)
-    public static <T> T changeType(Object value, Class<T> toType) {
-        require(toType);
-
+    public static <T> T changeType(Object value, @NonNull Class<T> toType) {
         if (value == null) {
             if (!toType.isPrimitive()) {
                 if (List.class.equals(toType)) {

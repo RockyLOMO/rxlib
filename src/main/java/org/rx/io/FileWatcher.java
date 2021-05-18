@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import org.rx.util.function.TripleAction;
 
 import java.nio.file.*;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
@@ -53,9 +55,7 @@ public class FileWatcher extends Disposable {
         service = null;
     }
 
-    public boolean tryPeek(TripleAction<ChangeKind, Path> onChange) {
-        require(onChange);
-
+    public boolean tryPeek(@NonNull TripleAction<ChangeKind, Path> onChange) {
         WatchKey key = service.poll();
         if (key == null) {
             return false;
@@ -94,8 +94,8 @@ public class FileWatcher extends Disposable {
         return callback(onChange, null);
     }
 
-    public FileWatcher callback(TripleAction<ChangeKind, Path> onChange, Predicate<Path> filter) {
-        require(keepHandle, onChange);
+    public FileWatcher callback(@NonNull TripleAction<ChangeKind, Path> onChange, Predicate<Path> filter) {
+        Objects.requireNonNull(keepHandle);
 
         callback.add(Tuple.of(onChange, filter));
         return this;

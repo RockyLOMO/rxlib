@@ -170,9 +170,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         log.warn("ignore setRejectedExecutionHandler");
     }
 
-    public synchronized ThreadPool statistics(DynamicConfig dynamicConfig) {
-        require(dynamicConfig);
-
+    public synchronized ThreadPool statistics(@NonNull DynamicConfig dynamicConfig) {
         decrementCounter = new AtomicInteger();
         incrementCounter = new AtomicInteger();
         ManagementMonitor monitor = ManagementMonitor.getInstance();

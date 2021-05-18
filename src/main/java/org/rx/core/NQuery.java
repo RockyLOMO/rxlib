@@ -4,6 +4,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IterableUtils;
@@ -43,9 +44,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_WARNING)
     @ErrorCode("argError")
-    public static <T> List<T> asList(Object arrayOrIterable, boolean throwOnEmpty) {
-        require(arrayOrIterable);
-
+    public static <T> List<T> asList(@NonNull Object arrayOrIterable, boolean throwOnEmpty) {
         Class type = arrayOrIterable.getClass();
         if (type.isArray()) {
             int length = Array.getLength(arrayOrIterable);
@@ -84,15 +83,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return of(Arrays.toList(set));
     }
 
-    public static <T> NQuery<T> of(Stream<T> stream) {
-        require(stream);
-
+    public static <T> NQuery<T> of(@NonNull Stream<T> stream) {
         return of(stream::iterator, stream.isParallel());
     }
 
-    public static <T> NQuery<T> of(Iterator<T> iterator) {
-        require(iterator);
-
+    public static <T> NQuery<T> of(@NonNull Iterator<T> iterator) {
         return of(() -> iterator);
     }
 
@@ -100,9 +95,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return of(iterable, false);
     }
 
-    public static <T> NQuery<T> of(Iterable<T> iterable, boolean isParallel) {
-        require(iterable);
-
+    public static <T> NQuery<T> of(@NonNull Iterable<T> iterable, boolean isParallel) {
         return new NQuery<>(iterable, isParallel);
     }
     //endregion

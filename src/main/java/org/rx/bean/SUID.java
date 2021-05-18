@@ -1,9 +1,6 @@
 package org.rx.bean;
 
-import lombok.AccessLevel;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.rx.core.StringBuilder;
 import org.rx.security.MD5Util;
 
@@ -11,8 +8,6 @@ import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.UUID;
-
-import static org.rx.core.App.require;
 
 @EqualsAndHashCode
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
@@ -23,9 +18,7 @@ public final class SUID implements Serializable {
         return valueOf(newUUID(MD5Util.md5(data)));
     }
 
-    public static SUID valueOf(String suid) {
-        require(suid);
-
+    public static SUID valueOf(@NonNull String suid) {
         switch (suid.length()) {
             case 22:
                 byte[] bytes = Base64.getUrlDecoder().decode(suid);

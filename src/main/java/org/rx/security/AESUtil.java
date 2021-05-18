@@ -1,5 +1,6 @@
 package org.rx.security;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.core.App;
 import org.rx.core.App;
@@ -30,33 +31,25 @@ public class AESUtil {
     }
 
     @SneakyThrows
-    public static String encryptToBase64(String data, String key) {
-        require(data, key);
-
+    public static String encryptToBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = encrypt(data.getBytes(UTF_8), key.getBytes(UTF_8));
         return App.convertToBase64String(valueByte);
     }
 
     @SneakyThrows
-    public static String decryptFromBase64(String data, String key) {
-        require(data, key);
-
+    public static String decryptFromBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(UTF_8));
         return new String(valueByte, UTF_8);
     }
 
     @SneakyThrows
-    public static String encryptWithKeyBase64(String data, String key) {
-        require(data, key);
-
+    public static String encryptWithKeyBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = encrypt(data.getBytes(UTF_8), App.convertFromBase64String(key));
         return App.convertToBase64String(valueByte);
     }
 
     @SneakyThrows
-    public static String decryptWithKeyBase64(String data, String key) {
-        require(data, key);
-
+    public static String decryptWithKeyBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
         return new String(valueByte, UTF_8);
     }
@@ -69,8 +62,7 @@ public class AESUtil {
      * @return
      */
     @SneakyThrows
-    public static byte[] encrypt(byte[] data, byte[] key) {
-        require(data, key);
+    public static byte[] encrypt(@NonNull byte[] data, @NonNull byte[] key) {
         require(key, key.length == 16);
 
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
@@ -89,8 +81,7 @@ public class AESUtil {
      * @return
      */
     @SneakyThrows
-    public static byte[] decrypt(byte[] data, byte[] key) {
-        require(data, key);
+    public static byte[] decrypt(@NonNull byte[] data, @NonNull byte[] key) {
         require(key, key.length == 16);
 
         SecretKeySpec secretKey = new SecretKeySpec(key, "AES");

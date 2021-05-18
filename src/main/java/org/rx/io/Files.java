@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -21,8 +22,6 @@ import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Stream;
-
-import static org.rx.core.App.require;
 
 public class Files extends FilenameUtils {
     @Getter
@@ -71,9 +70,7 @@ public class Files extends FilenameUtils {
         return java.nio.file.Files.readAllLines(filePath, charset);
     }
 
-    public static String concatPath(String root, String... paths) {
-        require(root);
-
+    public static String concatPath(@NonNull String root, String... paths) {
         StringBuilder p = new StringBuilder(curdFile.padDirectoryPath(root));
         if (!Arrays.isEmpty(paths)) {
             int l = paths.length - 1;

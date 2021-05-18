@@ -19,10 +19,7 @@ import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
@@ -54,7 +51,7 @@ public final class Remoting {
 
             EventContext context(UUID id) {
                 EventContext context = contextMap.get(id);
-                require(context);
+                Objects.requireNonNull(context);
                 return context;
             }
         }
@@ -77,9 +74,7 @@ public final class Remoting {
     }
 
     @SneakyThrows
-    public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiAction<T> onInit, BiAction<StatefulRpcClient> onInitClient) {
-        require(contract, facadeConfig);
-
+    public static <T> T create(@NonNull Class<T> contract, @NonNull RpcClientConfig facadeConfig, BiAction<T> onInit, BiAction<StatefulRpcClient> onInitClient) {
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         //onInit由调用方触发可能spring还没起来的情况
@@ -252,7 +247,7 @@ public final class Remoting {
             MethodPack svrPack = (MethodPack) e.getValue();
             log.debug("recv: {}", svrPack.returnValue);
             ClientBean clientBean = clientBeans.get(svrPack.id);
-            require(clientBean);
+            Objects.requireNonNull(clientBean);
             clientBean.pack = svrPack;
             clientBean.waiter.set();
         };
@@ -279,9 +274,7 @@ public final class Remoting {
         return listen(contractInstance, config);
     }
 
-    public static ServerBean listen(Object contractInstance, RpcServerConfig config) {
-        require(contractInstance, config);
-
+    public static ServerBean listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         return serverBeans.computeIfAbsent(contractInstance, k -> {
             ServerBean bean = new ServerBean(new RpcServer(config));
             bean.server.onClosed = (s, e) -> serverBeans.remove(contractInstance);

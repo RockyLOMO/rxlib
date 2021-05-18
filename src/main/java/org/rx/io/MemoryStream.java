@@ -1,14 +1,15 @@
 package org.rx.io;
 
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
-import org.rx.net.BytesSegment;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import static org.rx.core.App.*;
@@ -43,9 +44,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
             return buf;
         }
 
-        public synchronized void setBuffer(byte[] buffer) {
-            require(buffer);
-
+        public synchronized void setBuffer(@NonNull byte[] buffer) {
             buf = buffer;
         }
 
@@ -53,9 +52,8 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
             super(capacity);
         }
 
-        public BytesWriter(byte[] buffer, int offset, int count, boolean nonResizable) {
+        public BytesWriter(@NonNull byte[] buffer, int offset, int count, boolean nonResizable) {
             super(0);
-            require(buffer);
             require(offset, offset >= 0);
             if (nonResizable) {
                 require(count, offset + count <= buffer.length);
@@ -76,9 +74,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         }
 
         @Override
-        public synchronized void write(byte[] b, int off, int len) {
-            require(b);
-
+        public synchronized void write(@NonNull byte[] b, int off, int len) {
             beforeWrite(len);
             super.write(b, off, len);
             afterWrite();
@@ -95,9 +91,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         }
 
         @Override
-        public synchronized void writeTo(OutputStream out) throws IOException {
-            require(out);
-
+        public synchronized void writeTo(@NonNull OutputStream out) throws IOException {
             out.write(getBuffer(), minPosition, getLength());
         }
 
@@ -134,8 +128,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
             setBuffer(buffer, offset, count, offset);
         }
 
-        public synchronized void setBuffer(byte[] buffer, int offset, int count, int mark) {
-            require(buffer);
+        public synchronized void setBuffer(@NonNull byte[] buffer, int offset, int count, int mark) {
             require(offset, offset >= 0);
             //require(count, offset + count < buffer.length);
 
@@ -298,27 +291,26 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         checkRead();
     }
 
-    public void writeTo(IOStream<?, ?> out) {
-        require(out);
-
+    public void writeTo(@NonNull IOStream<?, ?> out) {
         writeTo(out.getWriter());
     }
 
     @SneakyThrows
-    public void writeTo(OutputStream out) {
+    public void writeTo(@NonNull OutputStream out) {
         checkNotClosed();
 
         getWriter().writeTo(out);
     }
 
-    public boolean tryGetBuffer($<BytesSegment> out) {
+    public boolean tryGetBuffer($<ByteBuffer> out) {
         checkNotClosed();
 
         if (out == null || !publiclyVisible) {
             return false;
         }
         BytesWriter writer = getWriter();
-        out.v = new BytesSegment(writer.getBuffer(), writer.getPosition(), writer.getLength());
+
+        out.v = ByteBuffer.wrap(writer.getBuffer(), writer.getPosition(), writer.getLength());
         return true;
     }
 

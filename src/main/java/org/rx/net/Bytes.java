@@ -10,8 +10,6 @@ import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
-import static org.rx.core.App.require;
-
 public class Bytes {
     public static final int IntByteSize = 4;
     public static final int LongByteSize = 8;
@@ -143,14 +141,10 @@ public class Bytes {
     }
 
     public static String readLine(byte[] buffer) {
-        require(buffer);
-
         return readLine(buffer, 0, buffer.length);
     }
 
     public static String readLine(byte[] buffer, int offset, int count) {
-        require(buffer);
-
         final byte line = '\n', line2 = '\r';
         for (int i = offset; i < Math.min(count, buffer.length); i++) {
             byte b = buffer[i];
@@ -162,8 +156,6 @@ public class Bytes {
     }
 
     public static byte[] getBytes(String str) {
-        require(str);
-
         return str.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -172,8 +164,6 @@ public class Bytes {
     }
 
     public static void reverse(byte[] array, int offset, int length) {
-        require(array);
-
         for (int i = offset; i < length / 2; i++) {
             byte temp = array[i];
             array[i] = array[array.length - i - 1];

@@ -2,6 +2,7 @@ package org.rx.bean;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.NonNull;
 
 import java.io.Serializable;
 
@@ -14,8 +15,7 @@ public class DataRange<T extends Comparable<T>> implements Serializable {
     public T start;
     public T end;
 
-    public DataRange(T start, T end) {
-        require(start, end);
+    public DataRange(@NonNull T start, @NonNull T end) {
         require(start, start.compareTo(end) <= 0);
 
         this.start = start;

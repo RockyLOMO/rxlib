@@ -2,12 +2,14 @@ package org.rx.core;
 
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
+import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 import org.slf4j.helpers.MessageFormatter;
@@ -22,6 +24,7 @@ import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
 //ExecutorCompletionService
+//Java 11 and ForkJoinPool.commonPool() class loading issue
 @Slf4j
 public final class Tasks {
     @RequiredArgsConstructor
@@ -118,9 +121,7 @@ public final class Tasks {
         return run(task, SUID.randomSUID().toString(), null);
     }
 
-    public static CompletableFuture<Void> run(Action task, String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        require(task, taskName);
-
+    public static CompletableFuture<Void> run(@NonNull Action task, @NonNull String taskName, ThreadPool.ExecuteFlag executeFlag) {
         Task<Void> t = new Task<>(taskName, executeFlag, () -> {
             task.invoke();
             return null;
@@ -133,44 +134,50 @@ public final class Tasks {
         return run(task, SUID.randomSUID().toString(), null);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task, String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        require(task, taskName);
-
+    public static <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull String taskName, ThreadPool.ExecuteFlag executeFlag) {
         Task<T> t = new Task<>(taskName, executeFlag, task);
         return CompletableFuture.supplyAsync(t, getExecutor());
 //        return executor.submit((Callable<T>) t);
     }
 
-    public static CompletableFuture<?> anyOf(Action... tasks) {
+    public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> anyOf(Action... tasks) {
         if (Arrays.isEmpty(tasks)) {
-            return CompletableFuture.completedFuture(null);
+            return nullReturn();
         }
         //Lambda method ref -> 对select的引用不明确
-        return CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
+        CompletableFuture<Void>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
+        return Tuple.of((CompletableFuture) CompletableFuture.anyOf(futures), futures);
     }
 
-    public static <T> CompletableFuture<T> anyOf(Func<T>... tasks) {
-        if (Arrays.isEmpty(tasks)) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        return (CompletableFuture<T>) CompletableFuture.anyOf(NQuery.of(tasks).select(p -> run(p)).toArray());
+    private static <T1, T2> Tuple<CompletableFuture<T1>, CompletableFuture<T2>[]> nullReturn() {
+        return Tuple.of(CompletableFuture.completedFuture(null), new CompletableFuture[0]);
     }
 
-    public static CompletableFuture<?> allOf(Action... tasks) {
+    public static <T> Tuple<CompletableFuture<T>, CompletableFuture<T>[]> anyOf(Func<T>... tasks) {
         if (Arrays.isEmpty(tasks)) {
-            return CompletableFuture.completedFuture(null);
+            return nullReturn();
         }
 
-        return CompletableFuture.allOf(NQuery.of(tasks).select(p -> run(p)).toArray());
+        CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
+        return Tuple.of((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
     }
 
-    public static <T> CompletableFuture<T> allOf(Func<T>... tasks) {
+    public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> allOf(Action... tasks) {
         if (Arrays.isEmpty(tasks)) {
-            return CompletableFuture.completedFuture(null);
+            return nullReturn();
         }
 
-        return (CompletableFuture<T>) CompletableFuture.allOf(NQuery.of(tasks).select(p -> run(p)).toArray());
+        CompletableFuture<Void>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
+        return Tuple.of(CompletableFuture.allOf(futures), futures);
+    }
+
+    public static <T> Tuple<CompletableFuture<Void>, CompletableFuture<T>[]> allOf(Func<T>... tasks) {
+        if (Arrays.isEmpty(tasks)) {
+            return nullReturn();
+        }
+
+        CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
+        return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {
@@ -184,9 +191,7 @@ public final class Tasks {
      * @param time "HH:mm:ss"
      * @return Future
      */
-    public static Future<?> scheduleDaily(Action task, Time time) {
-        require(task, time);
-
+    public static Future<?> scheduleDaily(@NonNull Action task, @NonNull Time time) {
         long oneDay = 24 * 60 * 60 * 1000;
         long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
@@ -194,9 +199,7 @@ public final class Tasks {
         return schedule(task, initDelay, oneDay, "scheduleDaily");
     }
 
-    public static Future<?> scheduleUntil(Action task, Func<Boolean> checkFunc, long delay) {
-        require(task, checkFunc);
-
+    public static Future<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> checkFunc, long delay) {
         $<Future<?>> future = $();
         future.v = schedule(() -> {
             if (checkFunc.invoke()) {
@@ -208,16 +211,12 @@ public final class Tasks {
         return future.v;
     }
 
-    public static Future<?> scheduleOnceAt(Action task, Date time) {
-        require(task, time);
-
+    public static Future<?> scheduleOnceAt(@NonNull Action task, @NonNull Date time) {
         long initDelay = time.getTime() - System.currentTimeMillis();
         return scheduleOnce(task, initDelay);
     }
 
-    public static Future<?> scheduleOnce(Action task, long delay) {
-        require(task);
-
+    public static Future<?> scheduleOnce(@NonNull Action task, long delay) {
         return scheduler.schedule(() -> {
             try {
                 task.invoke();
@@ -231,9 +230,7 @@ public final class Tasks {
         return schedule(task, delay, delay, null);
     }
 
-    public static Future<?> schedule(Action task, long initialDelay, long delay, String taskName) {
-        require(task);
-
+    public static Future<?> schedule(@NonNull Action task, long initialDelay, long delay, String taskName) {
         return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
             task.invoke();
             return null;

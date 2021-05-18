@@ -6,6 +6,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import net.sf.cglib.proxy.Enhancer;
@@ -83,22 +84,7 @@ public final class App extends SystemUtils {
 
     //region Contract
     //region basic
-    @ErrorCode("arg")
-    public static void require(Object arg) {
-        if (arg == null) {
-            throw new ApplicationException("arg", values());
-        }
-    }
-
-    //区分 require((Object) T[]); 和 require(arg, (Object) boolean);
-    @ErrorCode("args")
-    public static void require(Object arg, Object... args) {
-        require(arg);
-        if (args == null || NQuery.of(args).any(Objects::isNull)) {
-            throw new ApplicationException("args", values(toJsonString(args)));
-        }
-    }
-
+    //todo checkerframework
     @ErrorCode("test")
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
@@ -140,7 +126,7 @@ public final class App extends SystemUtils {
         return args;
     }
 
-    public static String description(AnnotatedElement annotatedElement) {
+    public static String description(@NonNull AnnotatedElement annotatedElement) {
         Description desc = annotatedElement.getAnnotation(Description.class);
         if (desc == null) {
             return null;
@@ -218,9 +204,7 @@ public final class App extends SystemUtils {
         return sneakyInvoke(action, 1);
     }
 
-    public static boolean sneakyInvoke(Action action, int retryCount) {
-        require(action);
-
+    public static boolean sneakyInvoke(@NonNull Action action, int retryCount) {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
@@ -243,9 +227,7 @@ public final class App extends SystemUtils {
         return sneakyInvoke(action, 1);
     }
 
-    public static <T> T sneakyInvoke(Func<T> action, int retryCount) {
-        require(action);
-
+    public static <T> T sneakyInvoke(@NonNull Func<T> action, int retryCount) {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
@@ -263,9 +245,7 @@ public final class App extends SystemUtils {
         return null;
     }
 
-    public static boolean quietly(Action action) {
-        require(action);
-
+    public static boolean quietly(@NonNull Action action) {
         try {
             action.invoke();
             return true;
@@ -279,9 +259,7 @@ public final class App extends SystemUtils {
         return quietly(action, null);
     }
 
-    public static <T> T quietly(Func<T> action, Func<T> defaultValue) {
-        require(action);
-
+    public static <T> T quietly(@NonNull Func<T> action, Func<T> defaultValue) {
         try {
             return action.invoke();
         } catch (Throwable e) {
@@ -321,17 +299,15 @@ public final class App extends SystemUtils {
         return true;
     }
 
-    public static <T> T proxy(Class<T> type, TripleFunc<Method, InterceptProxy, Object> func) {
-        require(type, func);
-
+    public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
         return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
     }
 
-    public static <T> T getBean(Class<T> type) {
+    public static <T> T getBean(@NonNull Class<T> type) {
         return Container.getInstance().get(type);
     }
 
-    public static <T> void registerBean(Class<T> type, T instance) {
+    public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
         Container.getInstance().register(type, instance);
     }
     //endregion
@@ -339,7 +315,7 @@ public final class App extends SystemUtils {
     //region delegate
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> BiConsumer<TSender, TArgs> combine(BiConsumer<TSender, TArgs> a, BiConsumer<TSender, TArgs> b) {
         if (a == null) {
-            require(b);
+            Objects.requireNonNull(b);
             return wrap(b);
         }
         EventTarget.Delegate<TSender, TArgs> aw = wrap(a);
@@ -386,7 +362,7 @@ public final class App extends SystemUtils {
 
     //region Basic
     public static String getBootstrapPath() {
-        return new File("").getAbsolutePath();
+        return new File(Strings.EMPTY).getAbsolutePath();
     }
 
     public static <T> T readSetting(String key) {
@@ -399,9 +375,7 @@ public final class App extends SystemUtils {
 
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
-    public static <T> T readSetting(String key, Class<T> type, Map<String, Object> settings, boolean throwOnEmpty) {
-        require(key, settings);
-
+    public static <T> T readSetting(@NonNull String key, Class<T> type, @NonNull Map<String, Object> settings, boolean throwOnEmpty) {
         Function<Object, T> func = p -> {
             if (type == null) {
                 return (T) p;
@@ -445,9 +419,7 @@ public final class App extends SystemUtils {
     }
 
     @SneakyThrows
-    public static Map<String, Object> loadYaml(String... yamlFile) {
-        require(yamlFile);
-
+    public static Map<String, Object> loadYaml(@NonNull String... yamlFile) {
         Map<String, Object> result = new HashMap<>();
         Yaml yaml = new Yaml();
         for (Object data : NQuery.of(yamlFile).selectMany(p -> {
@@ -483,16 +455,12 @@ public final class App extends SystemUtils {
         }
     }
 
-    public static <T> T loadYaml(String yamlContent, Class<T> beanType) {
-        require(yamlContent, beanType);
-
+    public static <T> T loadYaml(@NonNull String yamlContent, @NonNull Class<T> beanType) {
         Yaml yaml = new Yaml();
         return yaml.loadAs(yamlContent, beanType);
     }
 
-    public static <T> String dumpYaml(T bean) {
-        require(bean);
-
+    public static <T> String dumpYaml(@NonNull T bean) {
         Yaml yaml = new Yaml();
         return yaml.dump(bean);
     }
@@ -504,7 +472,7 @@ public final class App extends SystemUtils {
         return ignoreExceptionHandler != null && ignoreExceptionHandler.test(e);
     }
 
-    public static String log(String format, Object... args) {
+    public static String log(@NonNull String format, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
@@ -533,7 +501,7 @@ public final class App extends SystemUtils {
         return ApplicationException.getMessage(e);
     }
 
-    public static void logApi(ProceedEventArgs eventArgs, String url) {
+    public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {
         log(eventArgs, msg -> {
             msg.appendLine("CallApi:\t%s %s", eventArgs.getTraceId(), url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
@@ -542,7 +510,7 @@ public final class App extends SystemUtils {
     }
 
     @SneakyThrows
-    public static void log(ProceedEventArgs eventArgs, BiAction<StringBuilder> formatMessage) {
+    public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
         boolean doWrite = false;
         switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
             case WriteOnNull:
@@ -658,9 +626,7 @@ public final class App extends SystemUtils {
         return hash(Strings.joinWith(Strings.EMPTY, args));
     }
 
-    public static UUID hash(String key) {
-        require(key);
-
+    public static UUID hash(@NonNull String key) {
         byte[] guidBytes = MD5Util.md5(key);
         return SUID.newUUID(guidBytes);
     }
@@ -700,17 +666,13 @@ public final class App extends SystemUtils {
     //region Base64
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
     @SneakyThrows
-    public static String convertToBase64String(byte[] data) {
-        require(data);
-
+    public static String convertToBase64String(@NonNull byte[] data) {
         byte[] ret = Base64.getEncoder().encode(data);
         return new String(ret, StandardCharsets.UTF_8);
     }
 
     @SneakyThrows
-    public static byte[] convertFromBase64String(String base64) {
-        require(base64);
-
+    public static byte[] convertFromBase64String(@NonNull String base64) {
         byte[] data = base64.getBytes(StandardCharsets.UTF_8);
         return Base64.getDecoder().decode(data);
     }

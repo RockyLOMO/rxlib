@@ -1,11 +1,14 @@
 package org.rx.io;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
 
 import java.io.*;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +34,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     private File file;
-    //todo java.nio.MappedByteBuffer
     private transient BufferedRandomAccessFile randomAccessFile;
     private transient Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>();
 
@@ -140,9 +142,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @SneakyThrows
-    public FileStream(File file, boolean largeFile) {
+    public FileStream(@NonNull File file, boolean largeFile) {
         super(null, null);
-        require(file);
         this.randomAccessFile = createRandomAccessFile(this.file = file, largeFile);
     }
 
@@ -206,5 +207,21 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             throw new InvalidException("File position={} length={} not locked", position, length);
         }
         lock.release();
+    }
+
+    @SneakyThrows
+    public synchronized MappedByteBuffer mmap(long position, long length) {
+        return randomAccessFile.getChannel().map(FileChannel.MapMode.READ_WRITE, position, length);
+    }
+
+    // 在Windows上需要执行unmap(mmap); 否则报错
+    // Windows won't let us modify the file length while the file is mmapped
+    // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行
+
+    // A mapping, once established, is not dependent upon the file channel
+    // that was used to create it.  Closing the channel, in particular, has no
+    // effect upon the validity of the mapping.
+    public void unmap(MappedByteBuffer byteBuffer) {
+        release(byteBuffer);
     }
 }

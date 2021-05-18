@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.NonNull;
 import org.rx.core.cache.LocalCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.util.function.BiFunc;
@@ -26,9 +27,7 @@ public interface Cache<TK, TV> {
         return getOrSet(key, supplier, NON_EXPIRE_MINUTES, cacheName);
     }
 
-    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, int expireMinutes, String cacheName) {
-        require(key, supplier);
-
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> supplier, int expireMinutes, String cacheName) {
         return Cache.<TK, TV>getInstance(cacheName).get(key, supplier, expireMinutes);
     }
 

@@ -17,19 +17,17 @@ import java.util.regex.Pattern;
  * @author Hykilpikonna
  */
 @SuppressWarnings("WeakerAccess")
-public class ArgsUtils
-{
+public class ArgsUtils {
     /**
      * 从Main的args获取Operations
+     *
      * @param args args
      * @return 操作列表
      */
-    public static ArrayList<String> getOperations(String[] args)
-    {
+    public static ArrayList<String> getOperations(String[] args) {
         ArrayList<String> result = new ArrayList<>();
 
-        for (String arg : args)
-        {
+        for (String arg : args) {
             if (arg.startsWith("-")) break;
 
             result.add(arg);
@@ -42,17 +40,15 @@ public class ArgsUtils
 
     /**
      * 从Main的args获取Options
+     *
      * @param args args
      * @return 参数列表
      */
-    public static Map<String, String> getOptions(String[] args)
-    {
+    public static Map<String, String> getOptions(String[] args) {
         Map<String, String> result = new HashMap<>();
 
-        for (String arg : args)
-        {
-            if (arg.startsWith("-"))
-            {
+        for (String arg : args) {
+            if (arg.startsWith("-")) {
                 Matcher matcher = patternToFindOptions.matcher(arg);
                 if (matcher.find()) result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
             }
@@ -63,11 +59,11 @@ public class ArgsUtils
 
     /**
      * 从Main的args构造Args对象
+     *
      * @param args args
      * @return Args对象
      */
-    public static MainArgs parse(String[] args)
-    {
+    public static MainArgs parse(String[] args) {
         return new MainArgs(getOperations(args), getOptions(args));
     }
 }

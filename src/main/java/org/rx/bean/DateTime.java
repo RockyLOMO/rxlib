@@ -1,5 +1,6 @@
 package org.rx.bean;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
@@ -210,15 +211,11 @@ public final class DateTime extends Date {
         return new DateTime(super.getTime() + ticks);
     }
 
-    public DateTime add(Date value) {
-        require(value);
-
+    public DateTime add(@NonNull Date value) {
         return addTicks(value.getTime());
     }
 
-    public DateTime subtract(Date value) {
-        require(value);
-
+    public DateTime subtract(@NonNull Date value) {
         return new DateTime(super.getTime() - value.getTime());
     }
 
@@ -245,9 +242,7 @@ public final class DateTime extends Date {
         return toString(Formats.last());
     }
 
-    public String toString(String format) {
-        require(format);
-
+    public String toString(@NonNull String format) {
         return FastDateFormat.getInstance(format, getCalendar().getTimeZone()).format(this);
     }
 }

@@ -2,7 +2,6 @@ package org.rx.core;
 
 import com.google.common.base.Throwables;
 import lombok.*;
-import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.DateTime;
 import org.rx.core.exception.InvalidException;
 
@@ -110,9 +109,7 @@ public class FluentWait {
      * @return result
      * @throws TimeoutException timeout
      */
-    public <T> T until(Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) throws TimeoutException {
-        require(supplier);
-
+    public <T> T until(@NonNull Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) throws TimeoutException {
         Throwable lastException;
         T lastResult = null;
         UntilState state = new UntilState(DateTime.now().addMilliseconds((int) timeout));

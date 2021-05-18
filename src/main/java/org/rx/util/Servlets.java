@@ -2,6 +2,7 @@ package org.rx.util;
 
 import com.google.common.net.HttpHeaders;
 import io.netty.util.concurrent.FastThreadLocal;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
@@ -89,9 +90,7 @@ public class Servlets extends ServletRequestUtils {
     }
 
     @SneakyThrows
-    public static void responseFile(IOStream<?, ?> stream, String contentType) {
-        require(stream);
-
+    public static void responseFile(@NonNull IOStream<?, ?> stream, String contentType) {
         HttpServletResponse response = currentRequest().right;
         response.setCharacterEncoding(UTF_8);
         response.setContentType(contentType);
@@ -111,9 +110,7 @@ public class Servlets extends ServletRequestUtils {
         }
     }
 
-    public static String getCookie(String name) {
-        require(name);
-
+    public static String getCookie(@NonNull String name) {
         HttpServletRequest request = currentRequest().left;
         return quietly(() -> {
             if (ArrayUtils.isEmpty(request.getCookies())) {
@@ -127,9 +124,7 @@ public class Servlets extends ServletRequestUtils {
         setCookie(name, value);
     }
 
-    public static void setCookie(String name, String value, Date expire) {
-        require(name);
-
+    public static void setCookie(@NonNull String name, String value, Date expire) {
         Cookie cookie = new Cookie(name, HttpClient.encodeUrl(value));
         cookie.setPath("/");
 //        cookie.setSecure(true);
@@ -140,9 +135,7 @@ public class Servlets extends ServletRequestUtils {
         currentRequest().right.addCookie(cookie);
     }
 
-    public static void deleteCookie(String name) {
-        require(name);
-
+    public static void deleteCookie(@NonNull String name) {
         Cookie cookie = new Cookie(name, null);
         cookie.setPath("/");
 //        cookie.setSecure(true);

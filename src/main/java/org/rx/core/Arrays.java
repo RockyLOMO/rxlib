@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.NonNull;
 import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.lang3.ArrayUtils;
 
@@ -9,7 +10,6 @@ import java.util.Enumeration;
 import java.util.List;
 
 import static org.rx.core.App.NON_WARNING;
-import static org.rx.core.App.require;
 
 /**
  * System.arraycopy();
@@ -21,9 +21,7 @@ public class Arrays extends ArrayUtils {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public static <T> List<T> toList(T one) {
-        require(one);
-
+    public static <T> List<T> toList(@NonNull T one) {
         T[] arr = (T[]) Array.newInstance(one.getClass(), 1);
         arr[0] = one;
         return toList(arr);

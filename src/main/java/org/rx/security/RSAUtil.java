@@ -1,7 +1,7 @@
 package org.rx.security;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.core.App;
 import org.rx.core.App;
 
 import javax.crypto.Cipher;
@@ -32,9 +32,7 @@ public final class RSAUtil {
         return new String[]{pubKeyStr, priKeyStr};
     }
 
-    public static String sign(TreeMap<String, Object> map, String privateKey) {
-        require(map, privateKey);
-
+    public static String sign(@NonNull TreeMap<String, Object> map, @NonNull String privateKey) {
         StringBuilder content = new StringBuilder();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             if (entry.getValue() == null) {
@@ -58,9 +56,7 @@ public final class RSAUtil {
      * @return 返回签名信息
      */
     @SneakyThrows
-    public static String sign(String content, String privateKey, boolean isSHA1) {
-        require(content, privateKey);
-
+    public static String sign(@NonNull String content, @NonNull String privateKey, boolean isSHA1) {
         PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey));
         KeyFactory keyf = KeyFactory.getInstance("RSA");
         PrivateKey priKey = keyf.generatePrivate(keySpec);
@@ -71,9 +67,7 @@ public final class RSAUtil {
         return App.convertToBase64String(signature.sign());
     }
 
-    public static boolean verify(TreeMap<String, Object> map, String sign, String publicKey) {
-        require(map, sign, publicKey);
-
+    public static boolean verify(@NonNull TreeMap<String, Object> map, @NonNull String sign, @NonNull String publicKey) {
         StringBuilder content = new StringBuilder();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             if (entry.getValue() == null) {
@@ -98,9 +92,7 @@ public final class RSAUtil {
      * @return 是否验证通过。{@code True}表示通过
      */
     @SneakyThrows
-    public static boolean verify(String content, String sign, String publicKey, boolean isSHA1) {
-        require(content, sign, publicKey);
-
+    public static boolean verify(@NonNull String content, @NonNull String sign, @NonNull String publicKey, boolean isSHA1) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
 
@@ -132,9 +124,7 @@ public final class RSAUtil {
      * @param source 源数据
      */
     @SneakyThrows
-    public static String encrypt(String source, String publicKey) {
-        require(source, publicKey);
-
+    public static String encrypt(@NonNull String source, @NonNull String publicKey) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64String(publicKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
@@ -149,9 +139,7 @@ public final class RSAUtil {
      * @param cryptograph 密文
      */
     @SneakyThrows
-    public static String decrypt(String cryptograph, String privateKey) {
-        require(cryptograph, privateKey);
-
+    public static String decrypt(@NonNull String cryptograph, @NonNull String privateKey) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64String(privateKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);

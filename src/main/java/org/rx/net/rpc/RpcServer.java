@@ -11,6 +11,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -187,11 +188,9 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         send(getClient(id), pack);
     }
 
-    protected void send(RpcServerClient client, Serializable pack) {
+    protected void send(@NonNull RpcServerClient client, Serializable pack) {
         checkNotClosed();
-        require(client);
 
-//        synchronized (client) {
         RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
         if (args.isCancel() || !isConnected(client)) {
             log.warn("Client disconnected");
@@ -199,7 +198,6 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
 
         client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-//        }
     }
 
     public void closeClient(RpcServerClient client) {

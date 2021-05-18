@@ -1,5 +1,6 @@
 package org.rx.bean;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
@@ -10,13 +11,10 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 
 import static org.rx.core.App.NON_WARNING;
-import static org.rx.core.App.require;
 
 public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     @SuppressWarnings(NON_WARNING)
-    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, int flags) {
-        require(type);
-
+    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, int flags) {
         FlagsEnum<T> flagsEnum = null;
         for (T constant : type.getEnumConstants()) {
             if ((flags & constant.getValue()) != constant.getValue()) {
@@ -31,9 +29,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return flagsEnum;
     }
 
-    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, EnumSet<T> enumSet) {
-        require(type, enumSet);
-
+    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, @NonNull EnumSet<T> enumSet) {
         int flags = 0;
         for (T t : enumSet) {
             flags |= t.getValue();
@@ -41,9 +37,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return FlagsEnum.valueOf(type, flags);
     }
 
-    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(Class<T> type, String names) {
-        require(type, names);
-
+    public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, @NonNull String names) {
         return valueOf(type, EnumSet.copyOf(NQuery.of(Strings.split(names, ", "))
                 .join(Arrays.toList(type.getEnumConstants()), (p1, p2) -> p1.equals(p2.name()), (p1, p2) -> p2)
                 .toList()));
@@ -73,9 +67,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public FlagsEnum<T> add(T... nEnum) {
-        require(nEnum);
-
+    public FlagsEnum<T> add(@NonNull T... nEnum) {
         for (T t : nEnum) {
             flags |= t.getValue();
         }
@@ -83,9 +75,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public FlagsEnum<T> remove(T... nEnum) {
-        require(nEnum);
-
+    public FlagsEnum<T> remove(@NonNull T... nEnum) {
         for (T t : nEnum) {
             flags &= ~t.getValue();
         }
@@ -93,9 +83,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public boolean has(T... nEnum) {
-        require(nEnum);
-
+    public boolean has(@NonNull T... nEnum) {
         int val = 0;
         for (T t : nEnum) {
             val |= t.getValue();
@@ -116,7 +104,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    public <V> EnumMap<T, V> toMap(BiFunc<T, V> compute) {
+    public <V> EnumMap<T, V> toMap(@NonNull BiFunc<T, V> compute) {
         EnumMap<T, V> map = new EnumMap<>(type);
         for (T constant : type.getEnumConstants()) {
             if (has(constant)) {

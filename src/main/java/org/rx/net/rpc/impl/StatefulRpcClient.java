@@ -13,6 +13,7 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -123,9 +124,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         return (InetSocketAddress) channel.localAddress();
     }
 
-    public StatefulRpcClient(RpcClientConfig config) {
-        require(config);
-
+    public StatefulRpcClient(@NonNull RpcClientConfig config) {
         this.config = config;
         autoReconnect = config.isAutoReconnect();
 //        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
@@ -237,8 +236,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     @Override
-    public synchronized void send(Serializable pack) {
-        require(pack);
+    public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
             if (reconnectFuture != null) {
                 try {

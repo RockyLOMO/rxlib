@@ -1,10 +1,7 @@
 package org.rx.net.http;
 
 import kotlin.Pair;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import okhttp3.Authenticator;
@@ -220,9 +217,7 @@ public class HttpClient {
         return client.get("https://api.ipify.org").asString();
     }
 
-    public static void saveRawCookies(String url, String raw) {
-        require(url, raw);
-
+    public static void saveRawCookies(@NonNull String url, @NonNull String raw) {
         HttpUrl httpUrl = HttpUrl.get(url);
         COOKIE_CONTAINER.saveFromResponse(httpUrl, parseRawCookie(httpUrl, raw));
     }
@@ -236,9 +231,7 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public static List<Cookie> parseRawCookie(HttpUrl httpUrl, String raw) {
-        require(httpUrl, raw);
-
+    public static List<Cookie> parseRawCookie(@NonNull HttpUrl httpUrl, @NonNull String raw) {
         List<Cookie> cookies = new ArrayList<>();
         String domain = httpUrl.topPrivateDomain();
         for (String pair : raw.split(Pattern.quote("; "))) {
@@ -434,15 +427,11 @@ public class HttpClient {
         return responseContent = new ResponseContent(client.newCall(request.build()).execute());
     }
 
-    public ResponseContent head(String url) {
-        require(url);
-
+    public ResponseContent head(@NonNull String url) {
         return invoke(url, HttpMethod.HEAD, RequestContent.NONE);
     }
 
-    public ResponseContent get(String url) {
-        require(url);
-
+    public ResponseContent get(@NonNull String url) {
         return invoke(url, HttpMethod.GET, RequestContent.NONE);
     }
 
@@ -450,15 +439,11 @@ public class HttpClient {
         return post(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent post(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
-        require(url);
-
+    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
         return invoke(url, HttpMethod.POST, new FormContent(forms, files));
     }
 
-    public ResponseContent postJson(String url, Object json) {
-        require(url, json);
-
+    public ResponseContent postJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.POST, new JsonContent(json));
     }
 
@@ -466,15 +451,11 @@ public class HttpClient {
         return put(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent put(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
-        require(url);
-
+    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
         return invoke(url, HttpMethod.PUT, new FormContent(forms, files));
     }
 
-    public ResponseContent putJson(String url, Object json) {
-        require(url, json);
-
+    public ResponseContent putJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.PUT, new JsonContent(json));
     }
 
@@ -482,15 +463,11 @@ public class HttpClient {
         return patch(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent patch(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
-        require(url);
-
+    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
         return invoke(url, HttpMethod.PATCH, new FormContent(forms, files));
     }
 
-    public ResponseContent patchJson(String url, Object json) {
-        require(url, json);
-
+    public ResponseContent patchJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.PATCH, new JsonContent(json));
     }
 
@@ -498,15 +475,11 @@ public class HttpClient {
         return delete(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent delete(String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
-        require(url);
-
+    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
         return invoke(url, HttpMethod.DELETE, new FormContent(forms, files));
     }
 
-    public ResponseContent deleteJson(String url, Object json) {
-        require(url, json);
-
+    public ResponseContent deleteJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.DELETE, new JsonContent(json));
     }
 

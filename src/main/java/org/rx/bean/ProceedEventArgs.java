@@ -2,6 +2,7 @@ package org.rx.bean;
 
 import com.google.common.base.Stopwatch;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.core.App;
@@ -36,7 +37,7 @@ public class ProceedEventArgs extends EventArgs {
         return traceId;
     }
 
-    public <T> T proceed(Func<T> proceed) throws Throwable {
+    public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {
         Stopwatch watcher = Stopwatch.createStarted();
         T retVal = proceed.invoke();
         elapsedMillis = watcher.elapsed(TimeUnit.MILLISECONDS);

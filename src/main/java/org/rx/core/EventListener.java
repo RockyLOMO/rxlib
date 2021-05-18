@@ -4,6 +4,7 @@ import com.google.common.eventbus.EventBus;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
@@ -35,16 +36,12 @@ public class EventListener {
 
     @SuppressWarnings(NON_WARNING)
     public void attach(EventTarget target, String method, BiConsumer methodImpl, boolean combine) {
-        require(target, method, methodImpl);
-
         Map<String, BiConsumer> map = getMap(target);
         map.put(method, combine ? combine(map.get(method), methodImpl) : methodImpl);
     }
 
     @SuppressWarnings(NON_WARNING)
-    public void detach(EventTarget target, String method, BiConsumer methodImpl) {
-        require(target, method, methodImpl);
-
+    public void detach(@NonNull EventTarget target, @NonNull String method, @NonNull BiConsumer methodImpl) {
         Map<String, BiConsumer> map = getMap(target);
         map.put(method, remove(map.get(method), methodImpl));
     }
@@ -54,9 +51,7 @@ public class EventListener {
     }
 
     @SuppressWarnings(NON_WARNING)
-    public void raise(EventTarget target, String method, EventArgs args) {
-        require(target, method, args);
-
+    public void raise(@NonNull EventTarget target, @NonNull String method, @NonNull EventArgs args) {
         BiConsumer a = getMap(target).get(method);
         if (a == null) {
             log.warn("Raise {}.{} fail, event not defined", target, method);

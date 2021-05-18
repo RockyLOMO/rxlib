@@ -1,6 +1,7 @@
 package org.rx.core.exception;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import org.rx.core.*;
 
@@ -81,9 +82,8 @@ public class ApplicationException extends InvalidException {
         this((Object) errorCode, codeValues, cause);
     }
 
-    protected ApplicationException(Object errorCode, Object[] codeValues, Throwable cause) {
+    protected ApplicationException(@NonNull Object errorCode, Object[] codeValues, Throwable cause) {
         super(cause != null ? cause.getMessage() : null, cause);
-        require(errorCode);
         require(errorCode, NQuery.of(Enum.class, String.class).any(p -> Reflects.isInstance(errorCode, p)));
 
         this.errorCode = errorCode;

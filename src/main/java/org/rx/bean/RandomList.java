@@ -1,6 +1,7 @@
 package org.rx.bean;
 
 import lombok.AllArgsConstructor;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.NQuery;
 
@@ -137,7 +138,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public <T1> T1[] toArray(T1[] a) {
+    public <T1> T1[] toArray(@NonNull T1[] a) {
         System.arraycopy(toArray(), 0, a, 0, a.length);
         return a;
     }

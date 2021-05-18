@@ -1,13 +1,12 @@
 package org.rx.security;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
-
-import static org.rx.core.App.require;
 
 public class MD5Util {
     private static final char[] hexDigits = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
@@ -22,29 +21,21 @@ public class MD5Util {
         }
     }
 
-    public static byte[] md5(String data) {
-        require(data);
-
+    public static byte[] md5(@NonNull String data) {
         return md5(data.getBytes());
     }
 
     @SneakyThrows
-    public static byte[] md5(byte[] data) {
-        require(data);
-
+    public static byte[] md5(@NonNull byte[] data) {
         MessageDigest md = MessageDigest.getInstance("MD5");
         return md.digest(data);
     }
 
-    public static String md5Hex(String data) {
-        require(data);
-
+    public static String md5Hex(@NonNull String data) {
         return md5Hex(data.getBytes());
     }
 
-    public static String md5Hex(byte[] data) {
-        require(data);
-
+    public static String md5Hex(@NonNull byte[] data) {
         return toHexString(md5(data));
     }
 

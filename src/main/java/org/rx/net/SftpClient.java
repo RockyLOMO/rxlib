@@ -1,6 +1,7 @@
 package org.rx.net;
 
 import com.jcraft.jsch.*;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -15,7 +16,6 @@ import java.io.InputStream;
 import java.util.*;
 
 import static org.rx.core.App.quietly;
-import static org.rx.core.App.require;
 
 /**
  * "cd remotePath                       Change remote directory to 'remotePath'\n"+
@@ -68,9 +68,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     }
 
     @SneakyThrows
-    public SftpClient(AuthenticEndpoint endpoint, int timeoutMillis) {
-        require(endpoint);
-
+    public SftpClient(@NonNull AuthenticEndpoint endpoint, int timeoutMillis) {
         session = jsch.getSession(endpoint.getUsername(), endpoint.getEndpoint().getHostString(), endpoint.getEndpoint().getPort());
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");
@@ -185,9 +183,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     }
 
     @SneakyThrows
-    public void uploadFile(IOStream<?, ?> stream, String remotePath) {
-        require(stream, remotePath);
-
+    public void uploadFile(@NonNull IOStream<?, ?> stream, @NonNull String remotePath) {
         if (Files.isDirectory(remotePath)) {
             if (Strings.isEmpty(stream.getName())) {
                 throw new InvalidException("stream name is empty");
@@ -206,9 +202,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     }
 
     @SneakyThrows
-    public void downloadFile(String remotePath, IOStream<?, ?> stream) {
-        require(remotePath, stream);
-
+    public void downloadFile(@NonNull String remotePath, @NonNull IOStream<?, ?> stream) {
         channel.get(remotePath, stream.getWriter());
     }
 }

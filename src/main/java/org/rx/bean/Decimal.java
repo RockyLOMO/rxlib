@@ -7,8 +7,8 @@ import com.alibaba.fastjson.serializer.JSONSerializer;
 import com.alibaba.fastjson.serializer.ObjectSerializer;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
-import org.jetbrains.annotations.NotNull;
 import org.rx.core.StringBuilder;
 
 import java.io.IOException;
@@ -20,7 +20,6 @@ import java.text.NumberFormat;
 import java.util.Locale;
 
 import static org.rx.core.App.isNull;
-import static org.rx.core.App.require;
 
 @JSONType(serializer = Decimal.Serializer.class, deserializer = Decimal.Serializer.class)
 @EqualsAndHashCode(callSuper = false)
@@ -82,9 +81,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
         return valueOf(expr, DEFAULT_SCALE, DEFAULT_MODE);
     }
 
-    public static Decimal valueOf(String expr, int scale, RoundingMode mode) {
-        require(expr);
-
+    public static Decimal valueOf(@NonNull String expr, int scale, RoundingMode mode) {
         BigDecimal d = BigDecimal.ONE;
         if (expr.endsWith(PERCENT_SYMBOL)) {
             d = PERCENT_DIVISOR;
@@ -127,7 +124,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
         this(value, DEFAULT_SCALE, DEFAULT_MODE);
     }
 
-    public Decimal(BigDecimal value, int scale, RoundingMode mode) {
+    public Decimal(@NonNull BigDecimal value, int scale, RoundingMode mode) {
         this.value = value.setScale(this.scale = scale, this.mode = mode);
     }
 
@@ -334,7 +331,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     @Override
-    public int compareTo(@NotNull Decimal o) {
+    public int compareTo(@NonNull Decimal o) {
         return value.compareTo(o.value);
     }
 

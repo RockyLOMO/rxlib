@@ -2,6 +2,7 @@ package org.rx.net;
 
 import com.google.common.base.Stopwatch;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +13,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-
-import static org.rx.core.App.require;
 
 @Slf4j
 public final class PingClient {
@@ -40,8 +39,6 @@ public final class PingClient {
 
     @SneakyThrows
     public static boolean test(String endpoint, BiAction<Result> onOk) {
-        require(endpoint);
-
         Result result = new PingClient().ping(endpoint);
         boolean ok = result.getLossCount() == 0;
         if (ok && onOk != null) {
@@ -59,9 +56,7 @@ public final class PingClient {
         return ping(Sockets.parseEndpoint(endpoint), 4);
     }
 
-    public Result ping(InetSocketAddress endpoint, int times) {
-        require(endpoint);
-
+    public Result ping(@NonNull InetSocketAddress endpoint, int times) {
         long[] value = new long[times];
         for (int i = 0; i < value.length; i++) {
             Socket sock = new Socket();

@@ -34,8 +34,7 @@ public class BeanMapper {
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LogOnNotAllMapped.flags();
 
     @SuppressWarnings(NON_WARNING)
-    public <T> T define(Class<T> type) {
-        require(type);
+    public <T> T define(@NonNull Class<T> type) {
         require(type, type.isInterface());
 
         return (T) Enhancer.create(type, (MethodInterceptor) (o, method, args, methodProxy) -> {
@@ -100,8 +99,7 @@ public class BeanMapper {
     }
 
     @SuppressWarnings(NON_WARNING)
-    private <T> T map(Object source, T target, FlagsEnum<BeanMapFlag> flags, Method method) {
-        require(source, target);
+    private <T> T map(@NonNull Object source, @NonNull T target, FlagsEnum<BeanMapFlag> flags, Method method) {
         if (flags == null) {
             flags = this.flags;
         }

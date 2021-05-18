@@ -3,7 +3,6 @@ package org.rx.net;
 import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.bootstrap.BootstrapConfig;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.bootstrap.ServerBootstrapConfig;
 import io.netty.buffer.PooledByteBufAllocator;
@@ -17,6 +16,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
@@ -38,19 +38,8 @@ import static org.rx.core.App.*;
 public final class Sockets {
     private static final Map<String, EventLoopGroup> shared = new ConcurrentHashMap<>();
 
-    public static EventLoopGroup sharedEventLoop(String groupName) {
+    public static EventLoopGroup sharedEventLoop(@NonNull String groupName) {
         return shared.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
-    }
-
-    public static void writeAndFlush(Channel channel, List<Object> packs) {
-        require(channel);
-
-        channel.eventLoop().execute(() -> {
-            for (Object pack : packs) {
-                channel.write(pack);
-            }
-            channel.flush();
-        });
     }
 
     public static void dumpPipeline(String name, Channel channel) {
@@ -83,30 +72,27 @@ public final class Sockets {
         }
     }
 
-    public static void closeOnFlushed(Channel channel) {
-        closeOnFlushed(channel, null);
+    public static void writeAndFlush(@NonNull Channel channel, List<Object> packs) {
+        channel.eventLoop().execute(() -> {
+            for (Object pack : packs) {
+                channel.write(pack);
+            }
+            channel.flush();
+        });
     }
 
-    //futureListener暂停会有ClosedChannelException
-    public static void closeOnFlushed(Channel channel, ChannelFutureListener futureListener) {
-        require(channel);
-
+    public static void closeOnFlushed(@NonNull Channel channel) {
         if (!channel.isActive()) {
             return;
         }
-        ChannelFuture future = channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
-        if (futureListener != null) {
-            future.addListener(futureListener);
-        }
+        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public static Bootstrap bootstrap(String groupName, Consumer<SocketChannel> initChannel) {
         return bootstrap(sharedEventLoop(groupName), null, initChannel);
     }
 
-    public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        require(eventLoopGroup);
-
+    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, MemoryMode mode, Consumer<SocketChannel> initChannel) {
         Bootstrap b = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(channelClass())
@@ -128,17 +114,6 @@ public final class Sockets {
         }
         return b;
     }
-
-//    public static void closeBootstrap(Bootstrap bootstrap) {
-//        if (bootstrap == null) {
-//            return;
-//        }
-//
-//        BootstrapConfig config = bootstrap.config();
-//        if (config.group() != null) {
-//            config.group().shutdownGracefully();
-//        }
-//    }
 
     public static ServerBootstrap serverBootstrap() {
         return serverBootstrap(0, null, null);
@@ -205,16 +180,8 @@ public final class Sockets {
     }
 
     //region Address
-    public static final InetAddress LoopbackAddress, AnyAddress;
-
-    static {
-        LoopbackAddress = InetAddress.getLoopbackAddress();
-        try {
-            AnyAddress = InetAddress.getByName("0.0.0.0");
-        } catch (Exception e) {
-            throw InvalidException.sneaky(e);
-        }
-    }
+    public static final InetAddress LoopbackAddress = InetAddress.getLoopbackAddress(),
+            AnyAddress = quietly(() -> InetAddress.getByName("0.0.0.0"));
 
     public static List<String> getDnsRecords(String domain, String[] types) {
 //        InetAddress.getByName(ddns).getHostAddress()
@@ -285,9 +252,7 @@ public final class Sockets {
         return new InetSocketAddress(AnyAddress, port);
     }
 
-    public static InetSocketAddress parseEndpoint(String endpoint) {
-        require(endpoint);
-
+    public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
         String[] arr = Strings.split(endpoint, ":", 2);
         return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
     }
@@ -296,9 +261,7 @@ public final class Sockets {
         return newEndpoint(parseEndpoint(endpoint), port);
     }
 
-    public static InetSocketAddress newEndpoint(InetSocketAddress endpoint, int port) {
-        require(endpoint);
-
+    public static InetSocketAddress newEndpoint(@NonNull InetSocketAddress endpoint, int port) {
         return new InetSocketAddress(endpoint.getAddress(), port);
     }
 
@@ -307,7 +270,6 @@ public final class Sockets {
     }
 
     public static void closeOnFlushed(Socket socket) {
-        require(socket);
         if (socket.isClosed()) {
             return;
         }

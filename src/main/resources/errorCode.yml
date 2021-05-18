@@ -25,8 +25,6 @@ org:
       Disposable:
         checkNotClosed: Cannot access a closed {0}
       App:
-        require[arg]: Parameter is null
-        require[args]: Parameters {0} have null value
         require[test]: Parameter {0} test failed
         readSetting[keyError]: Not found key {0} with type {1}
         readSetting[partialKeyError]: Not found partial key {0} with type {1}

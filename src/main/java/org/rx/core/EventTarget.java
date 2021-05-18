@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -23,9 +24,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
 
         @SuppressWarnings(NON_WARNING)
         @Override
-        public void accept(TSender target, TArgs args) {
-            require(target, args);
-
+        public void accept(@NonNull TSender target, @NonNull TArgs args) {
             FlagsEnum<EventFlags> flags = target.eventFlags();
             if (flags.has(EventTarget.EventFlags.ThreadSafe)) {
                 synchronized (target) {
@@ -71,9 +70,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
-        require(eventName);
-
+    default <TArgs extends EventArgs> void attachEvent(@NonNull String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
@@ -87,9 +84,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    default <TArgs extends EventArgs> void detachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
-        require(eventName);
-
+    default <TArgs extends EventArgs> void detachEvent(@NonNull String eventName, BiConsumer<TSender, TArgs> event) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
@@ -103,9 +98,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
 
     @SuppressWarnings(NON_WARNING)
     @SneakyThrows
-    default <TArgs extends EventArgs> void raiseEvent(String eventName, TArgs args) {
-        require(eventName);
-
+    default <TArgs extends EventArgs> void raiseEvent(@NonNull String eventName, TArgs args) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
             if (!eventFlags().has(EventFlags.DynamicAttach)) {
@@ -118,27 +111,18 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     @SuppressWarnings(NON_WARNING)
-    default <TArgs extends EventArgs> void raiseEvent(BiConsumer<TSender, TArgs> event, TArgs args) {
-        require(args);
-
+    default <TArgs extends EventArgs> void raiseEvent(BiConsumer<TSender, TArgs> event, @NonNull TArgs args) {
         if (event == null) {
             return;
         }
         event.accept((TSender) this, args);
     }
 
-    //Java 11 and ForkJoinPool.commonPool() class loading issue
-//    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(ThreadPool.CPU_THREADS, ThreadPool.CPU_THREADS,
-//            0L, TimeUnit.MILLISECONDS,
-//            new LinkedTransferQueue<>(), Tasks.getExecutor().getThreadFactory());
-
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
         return Tasks.run(() -> raiseEvent(eventName, args));
-//        return CompletableFuture.runAsync(() -> raiseEvent(eventName, args), threadPool);
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
         return Tasks.run(() -> raiseEvent(event, args));
-//        return CompletableFuture.runAsync(() -> raiseEvent(event, args), threadPool);
     }
 }
