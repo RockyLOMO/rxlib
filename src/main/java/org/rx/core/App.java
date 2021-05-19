@@ -21,6 +21,7 @@ import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.IOStream;
+import org.rx.net.Bytes;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
 import org.rx.bean.ProceedEventArgs;
@@ -33,7 +34,6 @@ import java.io.*;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
@@ -47,7 +47,7 @@ import static java.lang.Math.pow;
 
 @SuppressWarnings(App.NON_WARNING)
 public final class App extends SystemUtils {
-    public static final String NON_WARNING = "all", UTF_8 = "UTF-8", CACHE_KEY_SUFFIX = ":";
+    public static final String NON_WARNING = "all", CACHE_KEY_SUFFIX = ":";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -647,7 +647,7 @@ public final class App extends SystemUtils {
     public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
         long id;
         if (key != null) {
-            id = ByteBuffer.wrap(MD5Util.md5(key)).getLong(4);
+            id = Bytes.getLong(MD5Util.md5(key), 4);
         } else {
             id = ThreadLocalRandom.current().nextLong();
         }

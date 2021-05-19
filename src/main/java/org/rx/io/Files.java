@@ -56,11 +56,6 @@ public class Files extends FilenameUtils {
     }
 
     @SneakyThrows
-    public static byte[] readAllBytes(Path filePath) {
-        return java.nio.file.Files.readAllBytes(filePath);
-    }
-
-    @SneakyThrows
     public static List<String> readAllLines(Path filePath) {
         return readAllLines(filePath, StandardCharsets.UTF_8);
     }

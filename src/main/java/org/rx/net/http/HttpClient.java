@@ -30,6 +30,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
@@ -258,9 +259,9 @@ public class HttpClient {
         String[] pairs = raw.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), UTF_8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), UTF_8).trim()
+                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim()
                     : "";
             map.put(key, value);
         }
@@ -273,7 +274,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLEncoder.encode(str, UTF_8).replace("+", "%20");
+        return URLEncoder.encode(str, StandardCharsets.UTF_8.name()).replace("+", "%20");
     }
 
     @SneakyThrows
@@ -282,7 +283,7 @@ public class HttpClient {
             return "";
         }
 
-        return URLDecoder.decode(str, UTF_8).replace("%20", "+");
+        return URLDecoder.decode(str, StandardCharsets.UTF_8.name()).replace("%20", "+");
     }
 
     @SneakyThrows
@@ -299,9 +300,9 @@ public class HttpClient {
         String[] pairs = url.split("&");
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), UTF_8) : pair;
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
             String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), UTF_8)
+                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name())
                     : null;
             params.put(key, value);
         }

@@ -22,6 +22,7 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import static org.rx.core.App.*;
@@ -92,7 +93,7 @@ public class Servlets extends ServletRequestUtils {
     @SneakyThrows
     public static void responseFile(@NonNull IOStream<?, ?> stream, String contentType) {
         HttpServletResponse response = currentRequest().right;
-        response.setCharacterEncoding(UTF_8);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(contentType);
         response.setContentLength((int) stream.getLength());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(stream.getName())));

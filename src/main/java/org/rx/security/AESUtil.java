@@ -3,16 +3,15 @@ package org.rx.security;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.core.App;
-import org.rx.core.App;
-
-import static org.rx.core.App.UTF_8;
-import static org.rx.core.App.require;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.SecureRandom;
+
+import static org.rx.core.App.require;
 
 public class AESUtil {
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
@@ -30,28 +29,24 @@ public class AESUtil {
         return App.convertToBase64String(generateKey());
     }
 
-    @SneakyThrows
     public static String encryptToBase64(@NonNull String data, @NonNull String key) {
-        byte[] valueByte = encrypt(data.getBytes(UTF_8), key.getBytes(UTF_8));
+        byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
         return App.convertToBase64String(valueByte);
     }
 
-    @SneakyThrows
     public static String decryptFromBase64(@NonNull String data, @NonNull String key) {
-        byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(UTF_8));
-        return new String(valueByte, UTF_8);
+        byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(StandardCharsets.UTF_8));
+        return new String(valueByte, StandardCharsets.UTF_8);
     }
 
-    @SneakyThrows
     public static String encryptWithKeyBase64(@NonNull String data, @NonNull String key) {
-        byte[] valueByte = encrypt(data.getBytes(UTF_8), App.convertFromBase64String(key));
+        byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), App.convertFromBase64String(key));
         return App.convertToBase64String(valueByte);
     }
 
-    @SneakyThrows
     public static String decryptWithKeyBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
-        return new String(valueByte, UTF_8);
+        return new String(valueByte, StandardCharsets.UTF_8);
     }
 
     /**

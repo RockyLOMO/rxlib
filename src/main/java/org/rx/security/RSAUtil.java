@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import org.rx.core.App;
 
 import javax.crypto.Cipher;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -63,7 +64,7 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initSign(priKey);
-        signature.update(getContentBytes(content, UTF_8));
+        signature.update(content.getBytes(StandardCharsets.UTF_8));
         return App.convertToBase64String(signature.sign());
     }
 
@@ -98,24 +99,8 @@ public final class RSAUtil {
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initVerify(pubKey);
-        signature.update(getContentBytes(content, UTF_8));
+        signature.update(content.getBytes(StandardCharsets.UTF_8));
         return signature.verify(App.convertFromBase64String(sign));
-    }
-
-    /**
-     * 使用给定的 charset 将此 String 编码到 byte 序列，并将结果存储到新的 byte 数组。
-     *
-     * @param content 字符串对象
-     * @param charset 编码方式
-     * @return 所得 byte 数组
-     */
-    @SneakyThrows
-    private static byte[] getContentBytes(String content, String charset) {
-        if (charset == null || "".equals(charset)) {
-            return content.getBytes();
-        }
-
-        return content.getBytes(charset);
     }
 
     /**

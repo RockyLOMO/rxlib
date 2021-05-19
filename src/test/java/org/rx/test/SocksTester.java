@@ -20,6 +20,7 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.test.bean.*;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -274,7 +275,7 @@ public class SocksTester {
     public void httpClient() {
         HttpClient client = new HttpClient();
 //        System.out.println(client.get("https://gitee.com/rx-code/rxlib").toString());
-        System.out.println(IOStream.readString(client.get("https://f-li.cn").asStream().getReader()));
+        System.out.println(IOStream.readString(client.get("https://f-li.cn").asStream().getReader(), StandardCharsets.UTF_8));
         client.get("https://f-li.cn").asFile("d:\\1.html");
     }
 

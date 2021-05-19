@@ -2,10 +2,9 @@ package org.rx.io;
 
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.rx.core.App;
-import org.rx.net.Bytes;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 
 public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     private static final long serialVersionUID = 7204373912624988890L;
@@ -164,7 +163,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     public void writeLine(String value) {
-        write(Bytes.getBytes(value + System.lineSeparator()));
+        write((value + System.lineSeparator()).getBytes(StandardCharsets.UTF_8));
     }
 
     public <T extends Serializable> void writeObject(T value) {

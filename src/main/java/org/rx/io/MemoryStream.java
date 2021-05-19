@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
@@ -7,9 +8,9 @@ import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
+import org.rx.net.Bytes;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import static org.rx.core.App.*;
@@ -302,15 +303,14 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
         getWriter().writeTo(out);
     }
 
-    public boolean tryGetBuffer($<ByteBuffer> out) {
+    public boolean tryGetBuffer($<ByteBuf> out) {
         checkNotClosed();
 
         if (out == null || !publiclyVisible) {
             return false;
         }
         BytesWriter writer = getWriter();
-
-        out.v = ByteBuffer.wrap(writer.getBuffer(), writer.getPosition(), writer.getLength());
+        out.v = Bytes.wrap(writer.getBuffer(), writer.getPosition(), writer.getLength());
         return true;
     }
 

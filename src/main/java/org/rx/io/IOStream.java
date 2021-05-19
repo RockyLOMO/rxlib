@@ -2,16 +2,19 @@ package org.rx.io;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
+import org.rx.net.Bytes;
 import sun.misc.Cleaner;
 import sun.nio.ch.DirectBuffer;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 
 import static org.rx.core.App.*;
@@ -45,38 +48,13 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return stream;
     }
 
-    public static String readString(InputStream stream) {
-        return readString(stream, UTF_8);
-    }
-
-    @SneakyThrows
-    public static String readString(@NonNull InputStream in, @NonNull String charset) {
-        StringBuilder result = new StringBuilder();
-        byte[] buffer = createBuffer();
-        int read;
-        while ((read = in.read(buffer)) > 0) {
-            result.append(new String(buffer, 0, read, charset));
-        }
-        return result.toString();
-    }
-
-    public static void writeString(OutputStream out, String value) {
-        writeString(out, value, UTF_8);
-    }
-
-    @SneakyThrows
-    public static void writeString(@NonNull OutputStream out, @NonNull String value, @NonNull String charset) {
-        byte[] data = value.getBytes(charset);
-        out.write(data);
-    }
-
     public static void copyTo(InputStream in, OutputStream out) {
         copyTo(in, -1, out);
     }
 
     @SneakyThrows
     public static void copyTo(@NonNull InputStream in, long count, @NonNull OutputStream out) {
-        byte[] buffer = createBuffer();
+        byte[] buffer = Bytes.arrayBuffer();
         int read;
         boolean fixCount = count != -1;
         while ((!fixCount || count > 0) && (read = in.read(buffer, 0, buffer.length)) != -1) {
@@ -88,16 +66,30 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         out.flush();
     }
 
+    @SneakyThrows
     public static File copyToFile(InputStream in, String filePath) {
         File file = new File(filePath);
-        try (FileStream stream = new FileStream(file)) {
-            copyTo(in, stream.getWriter());
-        }
+        Files.copy(in, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+//        try (FileStream stream = new FileStream(file)) {
+//            copyTo(in, stream.getWriter());
+//        }
         return file;
     }
 
-    public static byte[] createBuffer() {
-        return new byte[App.getConfig().getBufferSize()];
+    @SneakyThrows
+    public static String readString(@NonNull InputStream in, @NonNull Charset charset) {
+        StringBuilder result = new StringBuilder();
+        byte[] buffer = Bytes.arrayBuffer();
+        int read;
+        while ((read = in.read(buffer)) > 0) {
+            result.append(new String(buffer, 0, read, charset));
+        }
+        return result.toString();
+    }
+
+    @SneakyThrows
+    public static void writeString(@NonNull OutputStream out, @NonNull String value, @NonNull Charset charset) {
+        out.write(value.getBytes(charset));
     }
 
     @SneakyThrows

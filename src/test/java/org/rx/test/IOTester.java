@@ -8,6 +8,7 @@ import org.rx.io.*;
 import org.rx.test.bean.PersonBean;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static org.rx.core.App.toJsonString;
@@ -69,10 +70,10 @@ public class IOTester {
         OutputStream writer = stream.getWriter();
 
         long len = stream.getLength();
-        writer.write("more..".getBytes());
+        writer.write("王湵范more..".getBytes());
         writer.flush();
         stream.setPosition(0L);
-        System.out.println(IOStream.readString(reader));
+        System.out.println(IOStream.readString(reader, StandardCharsets.UTF_8));
         assert stream.getLength() > len;
 
         stream.setPosition(1L);

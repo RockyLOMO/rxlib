@@ -9,13 +9,18 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class TestUtil {
-    @SneakyThrows
+    private static final int LOOP_COUNT = 10000;
+
     public static void invoke(String name, Action action) {
-        int count = 10000;
+        invoke(name, action, LOOP_COUNT);
+    }
+
+    @SneakyThrows
+    public static void invoke(String name, Action action, int count) {
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (int i = 0; i < count; i++) {
             action.invoke();
         }
-        log.info("Invoke {} elapsed {}ms", name, stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        log.info("Invoke {} times={} elapsed={}ms", name, count, stopwatch.elapsed(TimeUnit.MILLISECONDS));
     }
 }

@@ -1,11 +1,12 @@
 package org.rx.bean;
 
+import io.netty.buffer.ByteBuf;
 import lombok.*;
 import org.rx.core.StringBuilder;
+import org.rx.net.Bytes;
 import org.rx.security.MD5Util;
 
 import java.io.Serializable;
-import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -21,8 +22,7 @@ public final class SUID implements Serializable {
     public static SUID valueOf(@NonNull String suid) {
         switch (suid.length()) {
             case 22:
-                byte[] bytes = Base64.getUrlDecoder().decode(suid);
-                return new SUID(newUUID(bytes));
+                return new SUID(newUUID(Base64.getUrlDecoder().decode(suid)));
             case 32:
             case 36:
                 if (suid.length() == 32) {
@@ -62,10 +62,10 @@ public final class SUID implements Serializable {
 
     public String getBase64String() {
         if (base64String == null) {
-            ByteBuffer byteBuffer = ByteBuffer.allocate(16)
-                    .putLong(uuid.getMostSignificantBits())
-                    .putLong(8, uuid.getLeastSignificantBits());
-            base64String = Base64.getUrlEncoder().withoutPadding().encodeToString(byteBuffer.array());
+            ByteBuf buf = Bytes.heapBuffer(16)
+                    .writeLong(uuid.getMostSignificantBits())
+                    .writeLong(uuid.getLeastSignificantBits());
+            base64String = Bytes.toString(Base64.getUrlEncoder().withoutPadding().encode(buf.nioBuffer()));
         }
         return base64String;
     }

@@ -133,16 +133,14 @@ public class BeanTester extends TestUtil {
         assert suid.equals(valueOf);
 
         Set<SUID> set = new HashSet<>();
-        int len = 10000;  //1530ms
+        int len = 100;  //1530ms
         invoke("suid", () -> {
-            for (int i = 0; i < len; i++) {
-                SUID suid1 = SUID.randomSUID();
-                System.out.println(suid1.toString());
-                set.add(suid1);
+            SUID suid1 = SUID.randomSUID();
+            System.out.println(suid1.toString());
+            set.add(suid1);
 
-                assert SUID.valueOf(suid1.toString()).equals(suid1);
-            }
-        });
+            assert SUID.valueOf(suid1.toString()).equals(suid1);
+        }, len);
         assert set.size() == len;
     }
 
