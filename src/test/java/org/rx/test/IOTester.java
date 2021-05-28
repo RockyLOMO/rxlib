@@ -1,6 +1,7 @@
 package org.rx.test;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
@@ -75,7 +76,7 @@ public class IOTester {
         OutputStream writer = stream.getWriter();
 
         long len = stream.getLength();
-        writer.write("王湵范more..".getBytes());
+        writer.write(content);
         writer.flush();
         stream.setPosition(0L);
         System.out.println(IOStream.readString(reader, StandardCharsets.UTF_8));
@@ -86,17 +87,19 @@ public class IOTester {
 
         stream.setPosition(0L);
         ByteBuf buf = Bytes.directBuffer(0);
-        buf.writeCharSequence("我爱你", StandardCharsets.UTF_8);
+        buf.writeBytes(content);
         stream.write(buf);
         assert stream.getPosition() == buf.writerIndex();
 
         stream.setPosition(0L);
-        ByteBuf rbuf = Bytes.heapBuffer(buf.writerIndex());
-        stream.read(rbuf);
-        System.out.println(rbuf.toString(StandardCharsets.UTF_8));
+        buf = Bytes.directBuffer(buf.writerIndex());
+        long read = stream.read(buf);
+        assert stream.getPosition() == read;
+        System.out.println(buf.toString(StandardCharsets.UTF_8));
 
-
-//        ByteBuf buf = stream.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L );
+        ByteBuffer.allocate(Integer.MAX_VALUE+1L);
+        Unpooled.wrappedBuffer()
+//        buf = stream.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
 //        ByteBuffer[] composite = stream.mmapRawComposite(buf);
 //        assert composite.length == 3;
 //        buf.release();
@@ -131,19 +134,6 @@ public class IOTester {
         });
     }
 
-    @SneakyThrows
-    @Test
-    public void fileNonBuf() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 0), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
-        TestUtil.invoke("fileNonBuf", () -> {
-            if (doWrite) {
-                fd.write(UUID.randomUUID().toString().getBytes());
-                return;
-            }
-            fd.read(UUID.randomUUID().toString().getBytes());
-        });
-    }
-
     @Test
     public void memoryStream() {
         MemoryStream stream = new MemoryStream(32, true);
@@ -168,8 +158,9 @@ public class IOTester {
         }
     }
 
+    final byte[] content = "Hello world, 王湵范!".getBytes();
+
     private void testSeekStream(IOStream<?, ?> stream) {
-        byte[] content = "hello world!".getBytes();
         stream.write(content);
         assert stream.getPosition() == content.length && stream.getLength() == content.length;
         stream.setPosition(0L);

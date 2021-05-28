@@ -22,7 +22,7 @@ public class Bytes {
         return Unpooled.wrappedBuffer(buffer);
     }
 
-    public static byte[] from(ByteBuf buf) {
+    public static byte[] getBytes(ByteBuf buf) {
         return ByteBufUtil.getBytes(buf, buf.readerIndex(), buf.readableBytes(), false);
     }
 

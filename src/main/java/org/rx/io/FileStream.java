@@ -31,6 +31,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     private File file;
+    private BufferedRandomAccessFile.FileMode fileMode;
     private transient BufferedRandomAccessFile randomAccessFile;
     private transient Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>();
 
@@ -105,13 +106,13 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    public long getPosition() {
+    public synchronized long getPosition() {
         return randomAccessFile.getFilePointer();
     }
 
     @SneakyThrows
     @Override
-    public void setPosition(long position) {
+    public synchronized void setPosition(long position) {
         randomAccessFile.seek(position);
     }
 
@@ -122,7 +123,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @SneakyThrows
-    public void setLength(long length) {
+    public synchronized void setLength(long length) {
         randomAccessFile.setLength(length);
     }
 
@@ -141,7 +142,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @SneakyThrows
     public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
         super(null, null);
-        this.randomAccessFile = new BufferedRandomAccessFile(this.file = file, mode, size);
+        this.randomAccessFile = new BufferedRandomAccessFile(this.file = file, this.fileMode = mode, size);
     }
 
     @SneakyThrows
@@ -170,16 +171,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @SneakyThrows
-    public int read(ByteBuf buf) {
-        ByteBuffer byteBuffer = buf.nioBuffer();
-        byteBuffer = ByteBuffer.allocateDirect(1);
-//        randomAccessFile.getChannel().position(getPosition());
-        int read = randomAccessFile.getChannel().read(byteBuffer);
-
-        return read;
-    }
-
-    @SneakyThrows
     @Override
     public void write(int b) {
         randomAccessFile.write(b);
@@ -189,14 +180,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Override
     public void write(byte[] buffer, int offset, int count) {
         randomAccessFile.write(buffer, offset, count);
-    }
-
-    @SneakyThrows
-    public void write(ByteBuf buf) {
-//        byte[] buffer = Bytes.from(buf);
-//        write(buffer, 0, buffer.length);
-        int write = randomAccessFile.getChannel().write(buf.nioBuffer());
-        setPosition(getPosition() + write);
     }
 
     @SneakyThrows
@@ -210,6 +193,53 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         randomAccessFile.sync();
     }
 
+    @SneakyThrows
+    public synchronized long read(ByteBuf buf) {
+        long pos = getPosition();
+        FileChannel ch = randomAccessFile.getChannel();
+        ch.position(pos);
+        long totalRead = 0;
+        int r;
+        ByteBuffer buffer = ByteBuffer.allocateDirect(BufferedRandomAccessFile.BufSize.SMALL_DATA.value);
+        while ((r = ch.read((ByteBuffer) buffer.clear())) > 0) {
+            buffer.flip();
+            buf.writeBytes(buffer);
+            totalRead += r;
+        }
+        setPosition(pos + totalRead);
+        return totalRead;
+    }
+
+    @SneakyThrows
+    public synchronized long write(ByteBuf buf) {
+        long pos = getPosition();
+        FileChannel ch = randomAccessFile.getChannel();
+        ch.position(pos);
+        long w;
+        switch (buf.nioBufferCount()) {
+            case 0:
+                w = ch.write(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                break;
+            case 1:
+                w = ch.write(buf.nioBuffer());
+                break;
+            default:
+                w = ch.write(buf.nioBuffers());
+                break;
+        }
+        setPosition(pos + w);
+
+        switch (fileMode) {
+            case READ_WRITE_AND_SYNC_CONTENT:
+                ch.force(false);
+                break;
+            case READ_WRITE_AND_SYNC_ALL:
+                ch.force(true);
+                break;
+        }
+        return w;
+    }
+
     public ByteBuf mmap(FileChannel.MapMode mode) {
         return mmap(mode, getPosition(), getLength());
     }
@@ -219,14 +249,16 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (mode == null) {
             mode = FileChannel.MapMode.READ_WRITE;
         }
+
         long len = length - position;
         long max = Integer.MAX_VALUE;
         ByteBuffer[] composite = new ByteBuffer[(int) Math.floorDiv(len, max) + 1];
+
         for (int i = 0; i < composite.length; i++) {
             composite[i] = randomAccessFile.getChannel().map(mode, 0, Math.min(max, len));
             len -= max;
         }
-        ByteBuf buf = Unpooled.wrappedBuffer(composite);
+        ByteBuf buf = Unpooled.wrappedBuffer(composite[0]);
 
         weakRef.put(buf, composite);
         return proxy(ByteBuf.class, (m, p) -> {
