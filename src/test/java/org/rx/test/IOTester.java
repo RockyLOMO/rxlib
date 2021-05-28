@@ -1,15 +1,20 @@
 package org.rx.test;
 
+import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.io.*;
 import org.rx.test.bean.PersonBean;
+import org.rx.test.common.TestUtil;
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.UUID;
 
 import static org.rx.core.App.toJsonString;
 
@@ -78,6 +83,65 @@ public class IOTester {
 
         stream.setPosition(1L);
         assert reader.available() == stream.getLength() - 1L;
+
+        stream.setPosition(0L);
+        ByteBuf buf = Bytes.directBuffer(0);
+        buf.writeCharSequence("我爱你", StandardCharsets.UTF_8);
+        stream.write(buf);
+        assert stream.getPosition() == buf.writerIndex();
+
+        stream.setPosition(0L);
+        ByteBuf rbuf = Bytes.heapBuffer(buf.writerIndex());
+        stream.read(rbuf);
+        System.out.println(rbuf.toString(StandardCharsets.UTF_8));
+
+
+//        ByteBuf buf = stream.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L );
+//        ByteBuffer[] composite = stream.mmapRawComposite(buf);
+//        assert composite.length == 3;
+//        buf.release();
+    }
+
+    final boolean doWrite = true;
+    final String nameFormat = "C:\\download\\%s.txt";
+
+    @SneakyThrows
+    @Test
+    public void fileBuf64K() {
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 64), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        TestUtil.invoke("fileBuf64K", () -> {
+            if (doWrite) {
+                fd.write(UUID.randomUUID().toString().getBytes());
+                return;
+            }
+            fd.read(UUID.randomUUID().toString().getBytes());
+        });
+    }
+
+    @SneakyThrows
+    @Test
+    public void fileBuf4K() {
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 4), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        TestUtil.invoke("fileBuf4K", () -> {
+            if (doWrite) {
+                fd.write(UUID.randomUUID().toString().getBytes());
+                return;
+            }
+            fd.read(UUID.randomUUID().toString().getBytes());
+        });
+    }
+
+    @SneakyThrows
+    @Test
+    public void fileNonBuf() {
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 0), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
+        TestUtil.invoke("fileNonBuf", () -> {
+            if (doWrite) {
+                fd.write(UUID.randomUUID().toString().getBytes());
+                return;
+            }
+            fd.read(UUID.randomUUID().toString().getBytes());
+        });
     }
 
     @Test
@@ -89,8 +153,8 @@ public class IOTester {
         for (int i = 0; i < 40; i++) {
             stream.write(i);
         }
-        System.out.println(String.format("Position=%s, Length=%s, Capacity=%s", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().length));
+        System.out.printf("Position=%s, Length=%s, Capacity=%s%n", stream.getPosition(),
+                stream.getLength(), stream.getBuffer().length);
 
         stream.setPosition(0L);
         System.out.println(stream.read());
@@ -104,7 +168,7 @@ public class IOTester {
         }
     }
 
-    private void testSeekStream(IOStream stream) {
+    private void testSeekStream(IOStream<?, ?> stream) {
         byte[] content = "hello world!".getBytes();
         stream.write(content);
         assert stream.getPosition() == content.length && stream.getLength() == content.length;
@@ -117,7 +181,7 @@ public class IOTester {
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream newStream = App.deepClone(stream);
+        IOStream<?, ?> newStream = App.deepClone(stream);
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 

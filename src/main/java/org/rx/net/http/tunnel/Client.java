@@ -5,7 +5,7 @@ import io.netty.channel.Channel;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Tasks;
 import org.rx.io.IOStream;
-import org.rx.net.Bytes;
+import org.rx.io.Bytes;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;

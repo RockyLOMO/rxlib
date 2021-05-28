@@ -2,10 +2,7 @@ package org.rx.core;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.NonNull;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
@@ -27,6 +24,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
 /**
@@ -141,20 +139,19 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream.collect(Collectors.toList()));
     }
 
+    @SneakyThrows
     private NQuery<T> me(EachFunc<T> func, String prevMethod) {
-        Stream<T> stream = stream();
-        boolean isParallel = stream.isParallel();
         if (isParallel) {
             log.warn("Not supported parallel {}", prevMethod);
         }
-        Spliterator<T> spliterator = stream.spliterator();
-        return me(StreamSupport.stream(new Spliterators.AbstractSpliterator<T>(spliterator.estimateSize(), spliterator.characteristics()) {
+
+        Spliterator<T> spliterator = data.spliterator();
+        Stream<T> r = StreamSupport.stream(new Spliterators.AbstractSpliterator<T>(spliterator.estimateSize(), spliterator.characteristics()) {
             final AtomicBoolean breaker = new AtomicBoolean();
             final AtomicInteger counter = new AtomicInteger();
 
-            @SuppressWarnings(NON_WARNING)
             @Override
-            public boolean tryAdvance(Consumer action) {
+            public boolean tryAdvance(Consumer<? super T> action) {
                 return spliterator.tryAdvance(p -> {
                     int flags = func.each(p, counter.getAndIncrement());
                     if ((flags & EachFunc.Accept) == EachFunc.Accept) {
@@ -165,17 +162,18 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
                     }
                 }) && !breaker.get();
             }
-        }, isParallel));
+        }, isParallel);
+        return me(r);
     }
 
     @FunctionalInterface
-    private interface EachFunc<T> {
+    interface EachFunc<T> {
         int None = 0;
         int Accept = 1;
         int Break = 1 << 1;
         int All = Accept | Break;
 
-        int each(T t, int index);
+        int each(T item, int index);
     }
     //endregion
 
@@ -412,7 +410,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public Decimal sumDecimal(BiFunc<T, Decimal> selector) {
-        $<Decimal> sumValue = $.$(Decimal.ZERO);
+        $<Decimal> sumValue = $(Decimal.ZERO);
         stream().forEach(p -> {
             try {
                 sumValue.v = sumValue.v.add(selector.invoke(p));

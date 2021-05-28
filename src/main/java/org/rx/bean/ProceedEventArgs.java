@@ -1,6 +1,7 @@
 package org.rx.bean;
 
 import com.google.common.base.Stopwatch;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -16,10 +17,16 @@ import java.util.concurrent.TimeUnit;
 @Getter
 @RequiredArgsConstructor
 public class ProceedEventArgs extends EventArgs {
+    FastThreadLocal<UUID> traceIdLocal = new FastThreadLocal<UUID>() {
+        @Override
+        protected UUID initialValue() throws Exception {
+            return App.combId();
+        }
+    };
+
     private final Class<?> declaringType;
     private final Object[] parameters;
     private final boolean isVoid;
-    private UUID traceId;
 
     private Object returnValue;
     private long elapsedMillis = -1;
@@ -31,10 +38,7 @@ public class ProceedEventArgs extends EventArgs {
     private List<String> logTypeWhitelist;
 
     public UUID getTraceId() {
-        if (traceId == null) {
-            traceId = App.combId();
-        }
-        return traceId;
+        return traceIdLocal.get();
     }
 
     public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {

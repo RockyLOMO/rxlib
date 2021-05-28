@@ -24,10 +24,10 @@ import static org.rx.core.App.*;
 public class FileWatcher extends Disposable {
     @RequiredArgsConstructor
     public enum ChangeKind implements NEnum<ChangeKind> {
-        Create(1), Modify(2), Delete(3);
+        CREATE(1), MODIFY(2), DELETE(3);
 
         @Getter
-        private final int value;
+        final int value;
     }
 
     @Getter
@@ -110,11 +110,11 @@ public class FileWatcher extends Disposable {
         }
         ChangeKind changeKind;
         if ($event.kind().equals(StandardWatchEventKinds.ENTRY_CREATE)) {
-            changeKind = ChangeKind.Create;
+            changeKind = ChangeKind.CREATE;
         } else if ($event.kind().equals(StandardWatchEventKinds.ENTRY_MODIFY)) {
-            changeKind = ChangeKind.Modify;
+            changeKind = ChangeKind.MODIFY;
         } else {
-            changeKind = ChangeKind.Delete;
+            changeKind = ChangeKind.DELETE;
         }
         tuple.left.invoke(changeKind, absolutePath);
     }

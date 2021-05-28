@@ -18,6 +18,7 @@ import javax.validation.constraints.NotNull;
 import java.text.MessageFormat;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ForkJoinPool;
 
 public class UtilTester {
     @Data
@@ -43,7 +44,7 @@ public class UtilTester {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            System.out.println(Thread.currentThread().getId() + "=" + p);
+            System.out.println(Thread.currentThread().getName() + "=" + p);
             return true;
         });
 

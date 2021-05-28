@@ -1,4 +1,4 @@
-package org.rx.net;
+package org.rx.io;
 
 import io.netty.buffer.*;
 import lombok.SneakyThrows;
@@ -12,16 +12,18 @@ import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
+//ByteBufUtil.prettyHexDump()
 public class Bytes {
-    public static final int IntByteSize = 4;
-    public static final int LongByteSize = 8;
-
     public static ByteBuf wrap(byte[] buffer, int offset, int length) {
         return Unpooled.wrappedBuffer(buffer, offset, length);
     }
 
     public static ByteBuf wrap(ByteBuffer buffer) {
         return Unpooled.wrappedBuffer(buffer);
+    }
+
+    public static byte[] from(ByteBuf buf) {
+        return ByteBufUtil.getBytes(buf, buf.readerIndex(), buf.readableBytes(), false);
     }
 
     public static byte[] arrayBuffer() {
@@ -58,87 +60,6 @@ public class Bytes {
         return buf;
     }
 
-    //region value
-    public static String toString(ByteBuffer buffer) {
-        return wrap(buffer).toString(StandardCharsets.UTF_8);
-    }
-
-    public static String toString(byte[] buffer, int offset, int count) {
-        return new String(buffer, offset, count, StandardCharsets.UTF_8);
-    }
-
-    public static String readLine(byte[] buffer) {
-        return readLine(buffer, 0, buffer.length);
-    }
-
-    public static String readLine(byte[] buffer, int offset, int count) {
-        final byte line = '\n', line2 = '\r';
-        for (int i = offset; i < Math.min(count, buffer.length); i++) {
-            byte b = buffer[i];
-            if (b == line || b == line2) {
-                return toString(buffer, offset, i);
-            }
-        }
-        return null;
-    }
-
-    public static byte[] getBytes(int val) {
-        byte[] buffer = new byte[IntByteSize];
-        getBytes(val, buffer, 0);
-        return buffer;
-    }
-
-    public static void getBytes(int val, byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, IntByteSize);
-        buf.writerIndex(0);
-        buf.writeInt(val);
-    }
-
-    public static int getInt(byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, IntByteSize);
-        return buf.readInt();
-    }
-
-    public static byte[] getBytes(long val) {
-        byte[] buffer = new byte[LongByteSize];
-        getBytes(val, buffer, 0);
-        return buffer;
-    }
-
-    public static void getBytes(long val, byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, LongByteSize);
-        buf.writerIndex(0);
-        buf.writeLong(val);
-    }
-
-    public static long getLong(byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, LongByteSize);
-        return buf.readLong();
-    }
-    //endregion
-
-    public static <E extends Enum<E>> EnumSet<E> toEnumSet(Class<E> enumClass, long vector) {
-        EnumSet<E> set = EnumSet.noneOf(enumClass);
-        for (E e : enumClass.getEnumConstants()) {
-            final long mask = 1 << e.ordinal();
-            if ((mask & vector) != 0) {
-                set.add(e);
-            }
-        }
-        return set;
-    }
-
-    public static <E extends Enum<E>> int toInt(Set<E> set) {
-        int vector = 0;
-        for (E e : set) {
-            if (e.ordinal() >= Integer.SIZE) {
-                throw new IllegalArgumentException("The enum set is too large to fit in a bit vector: " + set);
-            }
-            vector |= 1L << e.ordinal();
-        }
-        return vector;
-    }
-
     public static int findText(ByteBuf byteBuf, String str) {
         byte[] text = str.getBytes();
         int matchIndex = 0;
@@ -173,17 +94,62 @@ public class Bytes {
         return byteBuf;
     }
 
-    public static String dumpBytes(byte[] buffer) {
-        StringBuilder sb = new StringBuilder(buffer.length * 2);
-        for (byte b : buffer)
-            sb.append(String.format("%x", b & 0xff));
-        return sb.toString();
+    //region heap
+    public static String readLine(byte[] buffer) {
+        return readLine(buffer, 0, buffer.length);
     }
 
-    public static byte[] randomBytes(int size) {
-        byte[] bytes = new byte[size];
-        new SecureRandom().nextBytes(bytes);
-        return bytes;
+    public static String readLine(byte[] buffer, int offset, int count) {
+        final byte line = '\n', line2 = '\r';
+        for (int i = offset; i < Math.min(count, buffer.length); i++) {
+            byte b = buffer[i];
+            if (b == line || b == line2) {
+                return toString(buffer, offset, i);
+            }
+        }
+        return null;
+    }
+
+    public static String toString(ByteBuffer buffer) {
+        return wrap(buffer).toString(StandardCharsets.UTF_8);
+    }
+
+    public static String toString(byte[] buffer, int offset, int count) {
+        return new String(buffer, offset, count, StandardCharsets.UTF_8);
+    }
+
+    public static byte[] getBytes(int val) {
+        byte[] buffer = new byte[Integer.BYTES];
+        getBytes(val, buffer, 0);
+        return buffer;
+    }
+
+    public static void getBytes(int val, byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Integer.BYTES);
+        buf.writerIndex(0);
+        buf.writeInt(val);
+    }
+
+    public static int getInt(byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Integer.BYTES);
+        return buf.readInt();
+    }
+
+    public static byte[] getBytes(long val) {
+        byte[] buffer = new byte[Long.BYTES];
+        getBytes(val, buffer, 0);
+        return buffer;
+    }
+
+    public static void getBytes(long val, byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Long.BYTES);
+        buf.writerIndex(0);
+        buf.writeLong(val);
+    }
+
+    public static long getLong(byte[] buffer, int offset) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Long.BYTES);
+        return buf.readLong();
     }
 
     public static void reverse(byte[] array, int offset, int length) {
@@ -193,4 +159,35 @@ public class Bytes {
             array[array.length - i - 1] = temp;
         }
     }
+
+    public static byte[] randomBytes(int size) {
+        byte[] bytes = new byte[size];
+        new SecureRandom().nextBytes(bytes);
+        return bytes;
+    }
+    //endregion
+
+    //region value
+    public static <E extends Enum<E>> int toEnumVector(Set<E> set) {
+        int vector = 0;
+        for (E e : set) {
+            if (e.ordinal() >= Integer.SIZE) {
+                throw new IllegalArgumentException("The enum set is too large to fit in a bit vector: " + set);
+            }
+            vector |= 1L << e.ordinal();
+        }
+        return vector;
+    }
+
+    public static <E extends Enum<E>> EnumSet<E> fromEnumVector(Class<E> enumClass, int vector) {
+        EnumSet<E> set = EnumSet.noneOf(enumClass);
+        for (E e : enumClass.getEnumConstants()) {
+            int mask = 1 << e.ordinal();
+            if ((mask & vector) != 0) {
+                set.add(e);
+            }
+        }
+        return set;
+    }
+    //endregion
 }

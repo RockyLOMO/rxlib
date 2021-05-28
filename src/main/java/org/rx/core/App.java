@@ -20,8 +20,9 @@ import org.rx.bean.*;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
+import org.rx.io.FileStream;
 import org.rx.io.IOStream;
-import org.rx.net.Bytes;
+import org.rx.io.Bytes;
 import org.rx.security.MD5Util;
 import org.rx.io.MemoryStream;
 import org.rx.bean.ProceedEventArgs;
@@ -428,7 +429,7 @@ public final class App extends SystemUtils {
                 return resources.reverse();
             }
             File file = new File(p);
-            return file.exists() ? Arrays.toList(new FileInputStream(file)) : Collections.emptyList();
+            return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
         }).selectMany(p -> yaml.loadAll(p))) {
             Map<String, Object> one = (Map<String, Object>) data;
             fillDeep(one, result);

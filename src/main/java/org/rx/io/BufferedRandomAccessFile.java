@@ -1,5 +1,7 @@
 package org.rx.io;
 
+import lombok.RequiredArgsConstructor;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -17,7 +19,24 @@ import java.io.RandomAccessFile;
  * superclass.
  */
 public class BufferedRandomAccessFile extends RandomAccessFile {
-    public static final int BuffSz_ = (1 << 16); // 64K buffer
+    @RequiredArgsConstructor
+    public enum FileMode {
+        READ_ONLY("r"),
+        READ_WRITE("rw"),
+        READ_WRITE_AND_SYNC_CONTENT("rwd"),
+        READ_WRITE_AND_SYNC_ALL("rws");
+
+        final String value;
+    }
+
+    @RequiredArgsConstructor
+    public enum BufSize {
+        NON_BUF(0),
+        SMALL_DATA(1024 * 4),
+        LARGE_DATA(1 << 16);// 64K buffer
+
+        final int value;
+    }
 
     private String path_;
 
@@ -93,14 +112,10 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
      * in mode <code>mode</code>, which should be "r" for reading only, or
      * "rw" for reading and writing.
      */
-    public BufferedRandomAccessFile(File file, String mode) throws IOException {
-        this(file, mode, 0);
-    }
-
-    public BufferedRandomAccessFile(File file, String mode, int size) throws IOException {
-        super(file, mode);
+    public BufferedRandomAccessFile(File file, FileMode mode, BufSize size) throws IOException {
+        super(file, mode.value);
         path_ = file.getAbsolutePath();
-        this.init(size, mode);
+        this.init(size.value, mode.value);
     }
 
     /**
@@ -108,14 +123,10 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
      * <code>name</code> in mode <code>mode</code>, which should be "r" for
      * reading only, or "rw" for reading and writing.
      */
-    public BufferedRandomAccessFile(String name, String mode) throws IOException {
-        this(name, mode, 0);
-    }
-
-    public BufferedRandomAccessFile(String name, String mode, int size) throws IOException {
-        super(name, mode);
+    public BufferedRandomAccessFile(String name, FileMode mode, BufSize size) throws IOException {
+        super(name, mode.value);
         path_ = name;
-        this.init(size, mode);
+        this.init(size.value, mode.value);
     }
 
     private void init(int size, String mode) throws IOException {

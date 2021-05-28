@@ -351,7 +351,7 @@ public class HttpClient {
                 return new X509Certificate[0];
             }
         };
-        SSLContext sslContext = SSLContext.getInstance("SSL");
+        SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL)

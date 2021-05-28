@@ -3,7 +3,7 @@ package org.rx.bean;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import org.rx.core.StringBuilder;
-import org.rx.net.Bytes;
+import org.rx.io.Bytes;
 import org.rx.security.MD5Util;
 
 import java.io.Serializable;

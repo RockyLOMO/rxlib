@@ -8,7 +8,6 @@ import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
-import org.rx.net.Bytes;
 
 import java.io.*;
 import java.util.Arrays;

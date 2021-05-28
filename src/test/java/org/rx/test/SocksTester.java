@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.Tasks;
+import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;

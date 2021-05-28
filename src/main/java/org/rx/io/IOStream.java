@@ -6,7 +6,6 @@ import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
-import org.rx.net.Bytes;
 import sun.misc.Cleaner;
 import sun.nio.ch.DirectBuffer;
 
@@ -69,10 +68,8 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     @SneakyThrows
     public static File copyToFile(InputStream in, String filePath) {
         File file = new File(filePath);
+        //nio
         Files.copy(in, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-//        try (FileStream stream = new FileStream(file)) {
-//            copyTo(in, stream.getWriter());
-//        }
         return file;
     }
 
