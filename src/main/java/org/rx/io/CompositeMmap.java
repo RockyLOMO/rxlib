@@ -1,27 +1,13 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.util.ByteProcessor;
-import lombok.RequiredArgsConstructor;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
-import org.rx.core.Arrays;
-import org.rx.core.NQuery;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.GatheringByteChannel;
-import java.nio.channels.ScatteringByteChannel;
-import java.nio.charset.Charset;
 
 class CompositeMmap {
-    static final Tuple<MappedByteBuffer, DataRange<Long>>[] EMPTY = new Tuple[0];
     final Tuple<MappedByteBuffer, DataRange<Long>>[] composite;
 
     CompositeMmap(MappedByteBuffer[] buffers) {
@@ -34,41 +20,46 @@ class CompositeMmap {
         }
     }
 
-    Tuple<MappedByteBuffer, DataRange<Long>>[] sub(long pos, long len) {
-        NQuery.of(composite).where(p -> p.r)
+    public void read(long position, ByteBuf byteBuf, long count) {
 
-        int i = (int) Math.floorDiv(pos, Integer.MAX_VALUE);
-        if (i >= composite.length) {
-            throw new IndexOutOfBoundsException(String.format("Position %s overflow", pos));
-        }
-        int c = (int) Math.floorDiv(len, Integer.MAX_VALUE) + 1;
-        if (c == 0) {
-            throw new IndexOutOfBoundsException(String.format("Position %s overflow", pos));
-        }
-        return Arrays.subarray(composite, i, i + c);
     }
 
-    public void write(long pos, ByteBuf buf) {
+    public void write(long position, ByteBuf byteBuf) {
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : composite) {
             DataRange<Long> range = tuple.right;
-            if (!range.has(pos)) {
+            if (!range.has(position)) {
                 continue;
             }
+
             MappedByteBuffer buffer = tuple.left;
-            int p = (int) (pos - range.start);
-            buffer.position(buffer.reset().position() + p);
-            if(buffer.remaining()>=buf.readableBytes())
-        }
-
-
-        Tuple<MappedByteBuffer, DataRange<Long>>[] sub = sub(pos, pos + buf.writerIndex());
-        if (sub.length == 1) {
-
-        }
-
-
-        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : sub) {
-            tuple.right.has()
+            int pos = (int) (position - range.start);
+            buffer.position(buffer.reset().position() + pos);
+            int len = byteBuf.readableBytes(), limit = buffer.remaining();
+            ByteBuf buf = byteBuf;
+            int readLen;
+            if (limit < len) {
+                readLen = limit;
+                buf = buf.slice(buf.readerIndex(), readLen);
+            } else {
+                readLen = len;
+            }
+            switch (buf.nioBufferCount()) {
+                case 0:
+                    buffer.put(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                    break;
+                case 1:
+                    buffer.put(buf.nioBuffer());
+                    break;
+                default:
+                    for (ByteBuffer byteBuffer : buf.nioBuffers()) {
+                        buffer.put(byteBuffer);
+                    }
+                    break;
+            }
+            byteBuf.readerIndex(byteBuf.readerIndex() + readLen);
+            if (!byteBuf.isReadable()) {
+                return;
+            }
         }
     }
 }

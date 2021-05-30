@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.TripleFunc;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -193,17 +194,29 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         randomAccessFile.sync();
     }
 
+    public long read(ByteBuf buf) {
+        return read(buf, buf.writableBytes());
+    }
+
     @SneakyThrows
-    public synchronized long read(ByteBuf buf) {
+    public synchronized long read(ByteBuf buf, int count) {
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
         long totalRead = 0;
         int r;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(BufferedRandomAccessFile.BufSize.SMALL_DATA.value);
-        while ((r = ch.read((ByteBuffer) buffer.clear())) > 0) {
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(count, BufferedRandomAccessFile.BufSize.SMALL_DATA.value));
+        TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
+            b.clear();
+            if (c < b.limit()) {
+                b.limit(c);
+            }
+            return b;
+        };
+        while ((r = ch.read(resetFunc.invoke(buffer, count))) > 0) {
             buffer.flip();
             buf.writeBytes(buffer);
+            count -= r;
             totalRead += r;
         }
         setPosition(pos + totalRead);
