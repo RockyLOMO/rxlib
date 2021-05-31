@@ -1,9 +1,10 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.bean.BiTuple;
+import org.rx.bean.DataRange;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
@@ -11,6 +12,7 @@ import org.rx.util.function.TripleFunc;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.util.*;
@@ -20,7 +22,6 @@ import static org.rx.core.App.*;
 
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
-    static final Map<ByteBuf, ByteBuffer[]> weakRef = Collections.synchronizedMap(new WeakHashMap<>());
 
     @SneakyThrows
     public static File createTempFile() {
@@ -33,8 +34,9 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private File file;
     private BufferedRandomAccessFile.FileMode fileMode;
-    private transient BufferedRandomAccessFile randomAccessFile;
-    private transient Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>();
+    transient BufferedRandomAccessFile randomAccessFile;
+    transient final Map<BiTuple<FileChannel.MapMode, Long, Long>, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
+    transient final Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>(0);
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
@@ -44,7 +46,10 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
-        randomAccessFile = new BufferedRandomAccessFile(file, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        if (fileMode == BufferedRandomAccessFile.FileMode.READ_ONLY) {
+            fileMode = BufferedRandomAccessFile.FileMode.READ_WRITE;
+        }
+        randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
         long pos = in.readLong();
         copyTo(in, this.getWriter());
         setPosition(pos);
@@ -203,8 +208,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
+
         long totalRead = 0;
-        int r;
         ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(count, BufferedRandomAccessFile.BufSize.SMALL_DATA.value));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
@@ -213,6 +218,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             }
             return b;
         };
+        int r;
         while ((r = ch.read(resetFunc.invoke(buffer, count))) > 0) {
             buffer.flip();
             buf.writeBytes(buffer);
@@ -223,11 +229,21 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return totalRead;
     }
 
+    public long write(ByteBuf byteBuf) {
+        return write(byteBuf, byteBuf.readableBytes());
+    }
+
     @SneakyThrows
-    public synchronized long write(ByteBuf buf) {
+    public synchronized long write(ByteBuf byteBuf, int count) {
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
+
+        int rIndex = byteBuf.readerIndex(), rEndIndex = rIndex + count;
+        ByteBuf buf = byteBuf;
+        if (buf.readableBytes() != count) {
+            buf = buf.slice(rIndex, rEndIndex);
+        }
         long w;
         switch (buf.nioBufferCount()) {
             case 0:
@@ -240,8 +256,9 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 w = ch.write(buf.nioBuffers());
                 break;
         }
-        setPosition(pos + w);
 
+        byteBuf.readerIndex(rEndIndex);
+        setPosition(pos + w);
         switch (fileMode) {
             case READ_WRITE_AND_SYNC_CONTENT:
                 ch.force(false);
@@ -253,53 +270,28 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return w;
     }
 
-    public ByteBuf mmap(FileChannel.MapMode mode) {
+    public CompositeMmap mmap(FileChannel.MapMode mode) {
         return mmap(mode, getPosition(), getLength());
     }
 
     @SneakyThrows
-    public synchronized ByteBuf mmap(FileChannel.MapMode mode, long position, long length) {
+    public CompositeMmap mmap(FileChannel.MapMode mode, long position, long length) {
         if (mode == null) {
             mode = FileChannel.MapMode.READ_WRITE;
         }
-
-        long len = length - position;
-        long max = Integer.MAX_VALUE;
-        ByteBuffer[] composite = new ByteBuffer[(int) Math.floorDiv(len, max) + 1];
-
-        for (int i = 0; i < composite.length; i++) {
-            composite[i] = randomAccessFile.getChannel().map(mode, 0, Math.min(max, len));
-            len -= max;
-        }
-        ByteBuf buf = Unpooled.wrappedBuffer(composite[0]);
-
-        weakRef.put(buf, composite);
-        return proxy(ByteBuf.class, (m, p) -> {
-            Object r = p.fastInvoke(buf);
-            if (m.getName().equals("release")) {
-                unmap(buf);
-            }
-            return r;
-        });
+        return mmaps.computeIfAbsent(BiTuple.of(mode, position, length), k -> new CompositeMmap(this, k));
     }
 
-    public ByteBuffer[] mmapRawComposite(@NonNull ByteBuf buf) {
-        ByteBuffer[] buffers = weakRef.get(buf);
-        Objects.requireNonNull(buffers);
-        return buffers;
-    }
-
-    // Windows won't let us modify the file length while the file is mmapped
-    // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (在Windows上需要执行unmap(mmap))
-    // A mapping, once established, is not dependent upon the file channel that was used to create it.  Closing the channel, in particular, has no effect upon the validity of the mapping.
-    public void unmap(@NonNull ByteBuf buf) {
-        ByteBuffer[] buffers = weakRef.remove(buf);
-        if (buffers == null) {
+    // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows需要先执行unmap())
+    // A mapping, once established, is not dependent upon the file channel that was used to create it. Closing the channel, in particular, has no effect upon the validity of the mapping.
+    public void unmap(@NonNull CompositeMmap buf) {
+        CompositeMmap compositeMmap = mmaps.remove(buf.key);
+        if (compositeMmap == null) {
             return;
         }
 
-        for (ByteBuffer buffer : buffers) {
-            release(buffer);
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : compositeMmap.buffers) {
+            release(tuple.left);
         }
     }
 

@@ -88,8 +88,9 @@ public class IOTester {
         stream.setPosition(0L);
         ByteBuf buf = Bytes.directBuffer(0);
         buf.writeBytes(content);
-        stream.write(buf);
-        assert stream.getPosition() == buf.writerIndex();
+        long write = stream.write(buf);
+        assert buf.readerIndex() == stream.getPosition();
+        assert stream.getPosition() == write && write == buf.writerIndex();
 
         stream.setPosition(0L);
         buf = Bytes.directBuffer(buf.writerIndex());
@@ -97,12 +98,32 @@ public class IOTester {
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));
 
-        ByteBuffer.allocate(Integer.MAX_VALUE+1L);
-        Unpooled.wrappedBuffer()
-//        buf = stream.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
-//        ByteBuffer[] composite = stream.mmapRawComposite(buf);
-//        assert composite.length == 3;
-//        buf.release();
+        FileStream fs = new FileStream(String.format(nameFormat, "mmap"));
+        CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
+
+        testMmap(mmap, 1);
+        testMmap(mmap, Integer.MAX_VALUE + 1L);
+        testMmap(mmap, mmap.length() - 12);
+
+//        fs.setLength(Integer.MAX_VALUE);
+
+        mmap.close();
+    }
+
+    private void testMmap(CompositeMmap mmap, long position) {
+        ByteBuf buf = Bytes.directBuffer(0);
+        buf.writeLong(1024);
+        buf.writeInt(512);
+        int write = mmap.write(position, buf);
+        assert buf.readerIndex() == buf.writerIndex();
+        assert write == buf.writerIndex();
+
+        buf = Bytes.directBuffer(0);
+        buf.capacity(12);
+        int read = mmap.read(position, buf);
+        assert buf.capacity() == read;
+        assert buf.readLong() == 1024;
+        assert buf.readInt() == 512;
     }
 
     final boolean doWrite = true;

@@ -1,65 +1,138 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
+import lombok.SneakyThrows;
+import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
+import org.rx.core.Disposable;
+import org.rx.core.Lazy;
+import org.rx.core.NQuery;
 
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 
-class CompositeMmap {
-    final Tuple<MappedByteBuffer, DataRange<Long>>[] composite;
+public class CompositeMmap extends Disposable {
+    final FileStream owner;
+    final BiTuple<FileChannel.MapMode, Long, Long> key;
+    final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
 
-    CompositeMmap(MappedByteBuffer[] buffers) {
-        composite = new Tuple[buffers.length];
+    public long position() {
+        return key.middle;
+    }
+
+    public long length() {
+        return key.right;
+    }
+
+    public MappedByteBuffer[] buffers() {
+        return NQuery.of(buffers).select(p -> p.left).toArray();
+    }
+
+    @SneakyThrows
+    CompositeMmap(FileStream owner, BiTuple<FileChannel.MapMode, Long, Long> key) {
+        this.owner = owner;
+        this.key = key;
+
+        long totalCount = key.right - key.middle;
+        long max = Integer.MAX_VALUE;
+        buffers = new Tuple[(int) Math.floorDiv(totalCount, max) + 1];
         long prev = 0;
         for (int i = 0; i < buffers.length; i++) {
-            MappedByteBuffer p = buffers[i];
-            long len = p.remaining();
-            composite[i] = Tuple.of((MappedByteBuffer) p.mark(), new DataRange<>(prev, prev = (prev + len)));
+            long count = Math.min(max, totalCount);
+            DataRange<Long> range = new DataRange<>(prev, prev = (prev + count));
+            buffers[i] = Tuple.of((MappedByteBuffer) owner.randomAccessFile.getChannel().map(key.left, range.start, count).mark(), range);
+            totalCount -= count;
         }
     }
 
-    public void read(long position, ByteBuf byteBuf, long count) {
-
+    @Override
+    protected synchronized void freeObjects() {
+        owner.unmap(this);
     }
 
-    public void write(long position, ByteBuf byteBuf) {
-        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : composite) {
+    public int read(long position, ByteBuf byteBuf) {
+        return read(position, byteBuf, byteBuf.writableBytes());
+    }
+
+    public synchronized int read(long position, ByteBuf byteBuf, int readCount) {
+        checkNotClosed();
+
+        int writerIndex = byteBuf.writerIndex();
+        int finalReadCount = readCount;
+        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, BufferedRandomAccessFile.BufSize.SMALL_DATA.value)]);
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
                 continue;
             }
 
-            MappedByteBuffer buffer = tuple.left;
+            MappedByteBuffer mbuf = tuple.left;
             int pos = (int) (position - range.start);
-            buffer.position(buffer.reset().position() + pos);
-            int len = byteBuf.readableBytes(), limit = buffer.remaining();
+            mbuf.position(mbuf.reset().position() + pos);
+            int count = readCount, limit = mbuf.remaining();
+            if (limit < count) {
+                count = limit;
+            }
+            int read = Math.min(count, buffer.getValue().length);
+            mbuf.get(buffer.getValue(), 0, read);
+            byteBuf.writeBytes(buffer.getValue(), 0, read);
+
+            position += count;
+            readCount -= count;
+            if (readCount == 0) {
+                break;
+            }
+        }
+        return byteBuf.writerIndex() - writerIndex;
+    }
+
+    public int write(long position, ByteBuf byteBuf) {
+        return write(position, byteBuf, byteBuf.readableBytes());
+    }
+
+    public synchronized int write(long position, ByteBuf byteBuf, int writeCount) {
+        checkNotClosed();
+
+        int readerIndex = byteBuf.readerIndex();
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
+            DataRange<Long> range = tuple.right;
+            if (!range.has(position)) {
+                continue;
+            }
+
+            MappedByteBuffer mbuf = tuple.left;
+            int pos = (int) (position - range.start);
+            mbuf.position(mbuf.reset().position() + pos);
+            int count = writeCount, limit = mbuf.remaining();
+            int rIndex = byteBuf.readerIndex(), rEndIndex = rIndex + count;
             ByteBuf buf = byteBuf;
-            int readLen;
-            if (limit < len) {
-                readLen = limit;
-                buf = buf.slice(buf.readerIndex(), readLen);
-            } else {
-                readLen = len;
+            if (limit < count) {
+                rEndIndex = rIndex + (count = limit);
+                buf = buf.slice(rIndex, rEndIndex);
             }
             switch (buf.nioBufferCount()) {
                 case 0:
-                    buffer.put(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                    mbuf.put(ByteBuffer.wrap(Bytes.getBytes(buf)));
                     break;
                 case 1:
-                    buffer.put(buf.nioBuffer());
+                    mbuf.put(buf.nioBuffer());
                     break;
                 default:
                     for (ByteBuffer byteBuffer : buf.nioBuffers()) {
-                        buffer.put(byteBuffer);
+                        mbuf.put(byteBuffer);
                     }
                     break;
             }
-            byteBuf.readerIndex(byteBuf.readerIndex() + readLen);
-            if (!byteBuf.isReadable()) {
-                return;
+            byteBuf.readerIndex(rEndIndex);
+
+            position += count;
+            writeCount -= count;
+            if (writeCount == 0) {
+                break;
             }
         }
+        return byteBuf.readerIndex() - readerIndex;
     }
 }

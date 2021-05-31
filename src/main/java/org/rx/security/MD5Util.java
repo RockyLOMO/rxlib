@@ -1,12 +1,12 @@
 package org.rx.security;
 
-import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.io.CompositeMmap;
 import org.rx.io.FileStream;
 
 import java.io.File;
-import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 
@@ -15,17 +15,14 @@ public class MD5Util {
 
     @SneakyThrows
     public static byte[] md5(File file) {
-        try (FileStream fs = new FileStream(file)) {
+        try (FileStream fs = new FileStream(file);
+             CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_ONLY, 0, file.length())
+        ) {
             MessageDigest md = MessageDigest.getInstance("MD5");
-            ByteBuf buf = fs.mmap(FileChannel.MapMode.READ_ONLY, 0, file.length());
-            try {
-                for (ByteBuffer byteBuffer : fs.mmapRawComposite(buf)) {
-                    md.update(byteBuffer);
-                }
-                return md.digest();
-            } finally {
-                buf.release();
+            for (MappedByteBuffer byteBuffer : mmap.buffers()) {
+                md.update(byteBuffer);
             }
+            return md.digest();
         }
     }
 
