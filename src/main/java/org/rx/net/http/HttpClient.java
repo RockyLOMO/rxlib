@@ -7,7 +7,6 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
-import org.apache.commons.io.IOUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rx.core.App;
@@ -145,7 +144,8 @@ public class HttpClient {
                     return new File(filePath);
                 }
                 try {
-                    file = IOStream.copyToFile(body.byteStream(), filePath);
+                    Files.saveFile(filePath, body.byteStream());
+                    file = new File(filePath);
                 } finally {
                     body.close();
                 }
@@ -501,9 +501,9 @@ public class HttpClient {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
                 if (servletRequest.getContentType() != null) {
-                    requestBody = RequestBody.create(IOUtils.toByteArray(inStream), MediaType.parse(servletRequest.getContentType()));
+                    requestBody = RequestBody.create(IOStream.wrap("", inStream).toArray(), MediaType.parse(servletRequest.getContentType()));
                 } else {
-                    requestBody = RequestBody.create(IOUtils.toByteArray(inStream));
+                    requestBody = RequestBody.create(IOStream.wrap("", inStream).toArray());
                 }
             }
         }
@@ -522,7 +522,7 @@ public class HttpClient {
             servletResponse.setContentLength((int) responseBody.contentLength());
             InputStream in = responseBody.byteStream();
             ServletOutputStream out = servletResponse.getOutputStream();
-            IOUtils.copy(in, out);
+            IOStream.copyTo(in, out);
         }
     }
 }

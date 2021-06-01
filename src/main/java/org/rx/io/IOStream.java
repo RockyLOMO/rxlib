@@ -12,8 +12,6 @@ import sun.nio.ch.DirectBuffer;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 
 import static org.rx.core.App.*;
@@ -31,7 +29,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return new FileStream(file);
     }
 
-    public static IOStream<?, ?> wrap(String name, @NonNull byte[] data) {
+    public static IOStream<?, ?> wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
         stream.setName(name);
         stream.write(data);
@@ -63,14 +61,6 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
             }
         }
         out.flush();
-    }
-
-    @SneakyThrows
-    public static File copyToFile(InputStream in, String filePath) {
-        File file = new File(filePath);
-        //nio
-        Files.copy(in, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        return file;
     }
 
     @SneakyThrows
@@ -161,15 +151,10 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected synchronized void freeObjects() {
         quietly(this::flush);
-
-        if (writer != null) {
-            writer.close();
-        }
-        if (reader != null) {
-            reader.close();
-        }
+        tryClose(writer);
+        tryClose(reader);
     }
 
     @SneakyThrows
@@ -195,7 +180,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     @SneakyThrows
     public int read(@NonNull byte[] buffer, int offset, int count) {
         checkNotClosed();
-        require(offset, offset >= 0);//ignore count 4 BytesSegment
+        require(offset, offset >= 0);
 
         return getReader().read(buffer, offset, count);
     }

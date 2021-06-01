@@ -2,13 +2,13 @@ package org.rx.io;
 
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RxConfig;
 
 import java.io.*;
 
 @Slf4j
 public final class HybridStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
-    private static final int DEFAULT_MEMORY_SIZE = 1024 * 1024 * 4;
     private final int maxMemorySize;
     private MemoryStream memoryStream = new MemoryStream();
     private FileStream fileStream;
@@ -68,7 +68,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public HybridStream() {
-        this(DEFAULT_MEMORY_SIZE);
+        this(RxConfig.MAX_HEAP_BUF_SIZE);
     }
 
     public HybridStream(int maxMemorySize) {

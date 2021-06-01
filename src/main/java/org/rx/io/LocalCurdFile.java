@@ -10,8 +10,10 @@ import org.rx.core.Strings;
 
 import java.io.File;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
@@ -21,11 +23,11 @@ class LocalCurdFile implements CurdFile<File> {
         java.nio.file.Files.createDirectories(new File(FilenameUtils.getFullPath(path)).toPath());
     }
 
+    @SneakyThrows
     @Override
     public void saveFile(String filePath, InputStream in) {
-        try (FileStream fileStream = new FileStream(filePath)) {
-            IOStream.copyTo(in, fileStream.getWriter());
-        }
+        //nio
+        Files.copy(in, Paths.get(filePath), StandardCopyOption.REPLACE_EXISTING);
     }
 
     @SneakyThrows

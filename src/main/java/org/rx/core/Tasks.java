@@ -1,10 +1,7 @@
 package org.rx.core;
 
 import io.netty.util.concurrent.FastThreadLocal;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
@@ -178,6 +175,14 @@ public final class Tasks {
 
         CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
         return Tuple.of(CompletableFuture.allOf(futures), futures);
+    }
+
+    @SneakyThrows
+    public static <T> T await(Future<T> future) {
+        if (future instanceof CompletableFuture) {
+            return ((CompletableFuture<T>) future).join();
+        }
+        return future.get();
     }
 
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {

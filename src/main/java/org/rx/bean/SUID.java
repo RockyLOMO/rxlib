@@ -62,7 +62,7 @@ public final class SUID implements Serializable {
 
     public String getBase64String() {
         if (base64String == null) {
-            ByteBuf buf = Bytes.heapBuffer(16)
+            ByteBuf buf = Bytes.heapBuffer(16, false)
                     .writeLong(uuid.getMostSignificantBits())
                     .writeLong(uuid.getLeastSignificantBits());
             base64String = Bytes.toString(Base64.getUrlEncoder().withoutPadding().encode(buf.nioBuffer()));

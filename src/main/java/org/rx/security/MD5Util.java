@@ -2,12 +2,10 @@ package org.rx.security;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.io.CompositeMmap;
+import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 
 import java.io.File;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 
 public class MD5Util {
@@ -15,12 +13,12 @@ public class MD5Util {
 
     @SneakyThrows
     public static byte[] md5(File file) {
-        try (FileStream fs = new FileStream(file);
-             CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_ONLY, 0, file.length())
-        ) {
+        try (FileStream fs = new FileStream(file)) {
             MessageDigest md = MessageDigest.getInstance("MD5");
-            for (MappedByteBuffer byteBuffer : mmap.buffers()) {
-                md.update(byteBuffer);
+            byte[] buf = Bytes.arrayBuffer();
+            int read;
+            while ((read = fs.read(buf)) > 0) {
+                md.update(buf, 0, read);
             }
             return md.digest();
         }

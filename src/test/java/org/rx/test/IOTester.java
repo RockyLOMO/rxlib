@@ -86,14 +86,14 @@ public class IOTester {
         assert reader.available() == stream.getLength() - 1L;
 
         stream.setPosition(0L);
-        ByteBuf buf = Bytes.directBuffer(0);
+        ByteBuf buf = Bytes.directBuffer();
         buf.writeBytes(content);
         long write = stream.write(buf);
         assert buf.readerIndex() == stream.getPosition();
         assert stream.getPosition() == write && write == buf.writerIndex();
 
         stream.setPosition(0L);
-        buf = Bytes.directBuffer(buf.writerIndex());
+        buf = Bytes.directBuffer(buf.writerIndex(), false);
         long read = stream.read(buf);
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));
@@ -111,14 +111,14 @@ public class IOTester {
     }
 
     private void testMmap(CompositeMmap mmap, long position) {
-        ByteBuf buf = Bytes.directBuffer(0);
+        ByteBuf buf = Bytes.directBuffer();
         buf.writeLong(1024);
         buf.writeInt(512);
         int write = mmap.write(position, buf);
         assert buf.readerIndex() == buf.writerIndex();
         assert write == buf.writerIndex();
 
-        buf = Bytes.directBuffer(0);
+        buf = Bytes.directBuffer();
         buf.capacity(12);
         int read = mmap.read(position, buf);
         assert buf.capacity() == read;

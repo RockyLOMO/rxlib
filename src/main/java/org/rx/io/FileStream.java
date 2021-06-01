@@ -153,9 +153,17 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    protected void freeObjects() {
-        quietly(super::freeObjects);
+    protected synchronized void freeObjects() {
+        quietly(() -> {
+            super.freeObjects();
+            for (CompositeMmap compositeMmap : mmaps.values()) {
+                compositeMmap.close();
+            }
+        });
         randomAccessFile.close();
+        for (FileLock value : locks.values()) {
+            value.release();
+        }
     }
 
     @SneakyThrows

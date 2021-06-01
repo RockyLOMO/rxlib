@@ -2,7 +2,7 @@ package org.rx.io;
 
 import io.netty.buffer.*;
 import lombok.SneakyThrows;
-import org.rx.core.App;
+import org.rx.bean.RxConfig;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -27,20 +27,20 @@ public class Bytes {
     }
 
     public static byte[] arrayBuffer() {
-        return new byte[App.getConfig().getBufferSize()];
+        return new byte[RxConfig.HEAP_BUF_SIZE];
     }
 
-    public static ByteBuf heapBuffer(int initialCapacity) {
-        return heapBuffer(initialCapacity, true);
+    public static ByteBuf heapBuffer() {
+        return heapBuffer(RxConfig.HEAP_BUF_SIZE, true);
     }
 
     public static ByteBuf heapBuffer(int initialCapacity, boolean unpool) {
         ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
-        return allocator.heapBuffer(initialCapacity);
+        return allocator.heapBuffer(initialCapacity, RxConfig.MAX_HEAP_BUF_SIZE);
     }
 
-    public static ByteBuf directBuffer(int initialCapacity) {
-        return directBuffer(initialCapacity, false);
+    public static ByteBuf directBuffer() {
+        return directBuffer(BufferedRandomAccessFile.BufSize.SMALL_DATA.value, false);
     }
 
     public static ByteBuf directBuffer(int initialCapacity, boolean unpool) {
@@ -55,7 +55,7 @@ public class Bytes {
 
     @SneakyThrows
     public static ByteBuf copyInputStream(InputStream in, int length) {
-        ByteBuf buf = directBuffer(length);
+        ByteBuf buf = directBuffer(length, false);
         buf.writeBytes(in, length);
         return buf;
     }

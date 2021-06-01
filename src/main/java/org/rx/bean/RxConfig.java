@@ -21,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @ConfigurationProperties(prefix = "app")
 @RefreshScope
 public class RxConfig {
+    public static final int HEAP_BUF_SIZE = 256;
+    public static final int MAX_HEAP_BUF_SIZE = 1024 * 1024 * 16;
+
     private LogStrategy logStrategy;
     private List<String> logTypeWhitelist;
 
@@ -30,7 +33,6 @@ public class RxConfig {
     private int netMinPoolSize = 2;
     private int netMaxPoolSize;
     private String defaultCache = Cache.LRU_CACHE;
-    private int bufferSize = 256;
     private int keepaliveSeconds = 120;
     private int threadPoolCount = 4;
     private List<Class<?>> jsonSkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class, Model.class, IOStream.class);
@@ -41,7 +43,6 @@ public class RxConfig {
         if (netMaxPoolSize <= 0) {
             netMaxPoolSize = ThreadPool.CPU_THREADS;
         }
-        bufferSize = Math.max(bufferSize, 256);
         threadPoolCount = Math.max(threadPoolCount, 4);
         if (jsonSkipTypes != null) {
             jsonSkipTypeSet.addAll(jsonSkipTypes);
