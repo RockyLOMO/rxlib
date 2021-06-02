@@ -10,7 +10,7 @@ import java.util.List;
 
 @Data
 public class RpcServerConfig implements Serializable {
-    public static final int MAX_OBJECT_SIZE = 1048576 * 4;
+    public static final int HEARTBEAT_TIMEOUT = 30;
     public static final int DISABLE_VERSION = -1;
     public static final int LATEST_COMPUTE = 0;
 

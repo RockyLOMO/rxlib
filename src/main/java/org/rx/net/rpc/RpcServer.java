@@ -10,16 +10,21 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.packet.HandshakePacket;
+import org.rx.net.rpc.packet.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -64,12 +69,19 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
-                log.warn("Packet discard");
+                log.warn("serverRead discard");
                 Sockets.closeOnFlushed(channel);
                 return;
             }
             if (!isConnected(client) || tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
                 log.debug("Handshake: {}", toJsonString(client.getHandshakePacket()));
+                return;
+            }
+            if (tryAs(pack, PingMessage.class, p -> {
+                p.setReplyTimestamp(System.currentTimeMillis());
+                ctx.writeAndFlush(p);
+            })) {
+                log.debug("serverHeartbeat reply {}", channel.remoteAddress());
                 return;
             }
 
@@ -81,6 +93,18 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
             clients.remove(client);
             raiseEventAsync(onDisconnected, new RpcServerEventArgs<>(client, null));
+        }
+
+        @Override
+        public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+            Channel channel = ctx.channel();
+            if (evt instanceof IdleStateEvent) {
+                IdleStateEvent e = (IdleStateEvent) evt;
+                if (e.state() == IdleState.READER_IDLE) {
+                    log.warn("serverHeartbeat lose {}", channel.remoteAddress());
+                    ctx.close();
+                }
+            }
         }
 
         @Override
@@ -143,6 +167,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
         bootstrap = Sockets.serverBootstrap(config.getWorkThread(), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
+            pipeline.addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));
             }
@@ -151,7 +176,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(RpcServerConfig.MAX_OBJECT_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new Handler());
         }).option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
@@ -192,6 +217,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         checkNotClosed();
 
         RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
+        raiseEvent(onSend, args);
         if (args.isCancel() || !isConnected(client)) {
             log.warn("Client disconnected");
             return;

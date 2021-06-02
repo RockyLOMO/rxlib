@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import io.netty.buffer.ByteBufUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,8 @@ import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
+import org.rx.io.Bytes;
+import org.rx.security.MD5Util;
 import org.rx.test.bean.PersonBean;
 import org.rx.util.Validator;
 import org.slf4j.helpers.MessageFormatter;
@@ -59,5 +62,10 @@ public class UtilTester {
 
         System.out.println("log:" + App.log("hello {}!", 1));
         System.out.println("log:" + App.log("hello {}!", 1, new InvalidException("a").level(ExceptionLevel.USER_OPERATION)));
+    }
+
+    @Test
+    public void security() {
+
     }
 }

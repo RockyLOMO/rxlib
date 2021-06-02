@@ -10,6 +10,9 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
@@ -18,6 +21,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -27,6 +31,7 @@ import org.rx.net.rpc.RpcServer;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.net.rpc.packet.HandshakePacket;
+import org.rx.net.rpc.packet.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -62,9 +67,13 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
-                log.debug("channelRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
+                log.debug("clientRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
+            if (tryAs(pack, PingMessage.class, p -> log.debug("clientHeartbeat reply {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
+                return;
+            }
+
             raiseEventAsync(onReceive, new NEventArgs<>(pack));
         }
 
@@ -74,6 +83,23 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
             reconnect();
+        }
+
+        @Override
+        public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+            if (evt instanceof IdleStateEvent) {
+                IdleStateEvent e = (IdleStateEvent) evt;
+                switch (e.state()) {
+                    case READER_IDLE:
+                        log.warn("clientHeartbeat lose {}", channel.remoteAddress());
+                        ctx.close();
+                        break;
+                    case WRITER_IDLE:
+                        log.debug("clientHeartbeat ping {}", channel.remoteAddress());
+                        ctx.writeAndFlush(new PingMessage());
+                        break;
+                }
+            }
         }
 
         @Override
@@ -156,6 +182,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
         bootstrap = Sockets.bootstrap(Sockets.sharedEventLoop(this.getClass().getSimpleName()), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
+            pipeline.addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getServerEndpoint().getHostString(), config.getServerEndpoint().getPort()));
             }
@@ -164,7 +191,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
-                    new ObjectDecoder(RpcServerConfig.MAX_OBJECT_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new Handler());
         }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
         ChannelFuture future = bootstrap.connect(config.getServerEndpoint());

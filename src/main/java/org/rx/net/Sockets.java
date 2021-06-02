@@ -17,6 +17,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
@@ -36,7 +37,7 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
-    private static final Map<String, EventLoopGroup> shared = new ConcurrentHashMap<>();
+    static final Map<String, EventLoopGroup> shared = new ConcurrentHashMap<>();
 
     public static EventLoopGroup sharedEventLoop(@NonNull String groupName) {
         return shared.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
@@ -327,14 +328,10 @@ public final class Sockets {
         System.clearProperty("http.nonProxyHosts");
     }
 
+    @RequiredArgsConstructor
     static class UserAuthenticator extends Authenticator {
-        private String userName;
-        private String password;
-
-        public UserAuthenticator(String userName, String password) {
-            this.userName = userName;
-            this.password = password;
-        }
+        final String userName;
+        final String password;
 
         @Override
         protected PasswordAuthentication getPasswordAuthentication() {

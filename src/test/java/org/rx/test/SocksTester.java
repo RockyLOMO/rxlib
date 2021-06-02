@@ -31,11 +31,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
-import static org.rx.core.ThreadPool.computeThreads;
 
 @Slf4j
 public class SocksTester {
-    private Remoting.ServerBean[] serverBeans = new Remoting.ServerBean[2];
+    final InetSocketAddress serverEndpoint = Sockets.parseEndpoint("127.0.0.1:3307");
+    final Remoting.ServerBean[] serverBeans = new Remoting.ServerBean[2];
 
     @Test
     public void rpc_StatefulApi() {
@@ -85,47 +85,6 @@ public class SocksTester {
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
     }
 
-    @SneakyThrows
-    @Test
-    public void rpc_Reconnect() {
-        UserManagerImpl server = new UserManagerImpl();
-        restartServer(server, 0);
-        String ep = "127.0.0.1:3307";
-        AtomicBoolean ok = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), null, c -> {
-            c.onReconnecting = (s, e) -> {
-                InetSocketAddress next;
-                if (e.getValue().equals(Sockets.parseEndpoint(ep))) {
-                    next = Sockets.parseEndpoint("127.0.0.1:3308");
-                } else {
-                    next = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
-                }
-                log.debug("reconnect {}", next);
-                e.setValue(next);
-            };
-            log.debug("init ok");
-            ok.set(true);
-        });
-        assert userManager.computeInt(1, 1) == 2;
-        sleep(1000);
-        serverBeans[0].getServer().close();  //关闭3307
-        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 16000);  //16秒后开启3308端口实例，重连3308成功
-        int max = 10;
-        for (int i = 0; i < max; ) {
-            if (!ok.get()) {
-                sleep(1000);
-                continue;
-            }
-            if (i == 0) {
-                sleep(16000);
-                log.debug("sleep 16");
-            }
-            assert userManager.computeInt(i, 1) == i + 1;
-            i++;
-        }
-//        System.in.read();
-    }
-
     private void restartServer(UserManagerImpl server, int i) {
         Remoting.ServerBean serverBean = serverBeans[i];
         if (serverBean != null) {
@@ -133,7 +92,7 @@ public class SocksTester {
             sleep(6000);
         }
         RpcServerConfig serverConfig = new RpcServerConfig();
-        serverConfig.setListenPort(3307);
+        serverConfig.setListenPort(serverEndpoint.getPort());
         serverBeans[i] = Remoting.listen(server, serverConfig);
         System.out.println("restartServer on port " + serverConfig.getListenPort());
         sleep(4000);
@@ -188,42 +147,65 @@ public class SocksTester {
 
     @SneakyThrows
     @Test
+    public void rpc_Reconnect() {
+        UserManagerImpl server = new UserManagerImpl();
+        restartServer(server, 0);
+        String ep = "127.0.0.1:3307";
+        AtomicBoolean ok = new AtomicBoolean(false);
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), null, c -> {
+            c.onReconnecting = (s, e) -> {
+                InetSocketAddress next;
+                if (e.getValue().equals(Sockets.parseEndpoint(ep))) {
+                    next = Sockets.parseEndpoint("127.0.0.1:3308");
+                } else {
+                    next = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+                }
+                log.debug("reconnect {}", next);
+                e.setValue(next);
+            };
+            log.debug("init ok");
+            ok.set(true);
+        });
+        assert userManager.computeInt(1, 1) == 2;
+        sleep(1000);
+        serverBeans[0].getServer().close();  //关闭3307
+        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 16000);  //16秒后开启3308端口实例，重连3308成功
+        int max = 10;
+        for (int i = 0; i < max; ) {
+            if (!ok.get()) {
+                sleep(1000);
+                continue;
+            }
+            if (i == 0) {
+                sleep(16000);
+                log.debug("sleep 16");
+            }
+            assert userManager.computeInt(i, 1) == i + 1;
+            i++;
+        }
+//        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
     public void rpc_clientPool() {
-        Remoting.listen(HttpUserManager.INSTANCE, 3307);
+        Remoting.listen(HttpUserManager.INSTANCE, serverEndpoint.getPort());
 
         int tcount = 110;
         CountDownLatch latch = new CountDownLatch(tcount);
-        int tp = computeThreads(1, 2, 1);
-        ExecutorService executorService = new ThreadPoolExecutor(tp, tp,
-                60L, TimeUnit.SECONDS,
-                new LinkedTransferQueue<>());
-//        executorService = EventTarget.threadPool;
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode("127.0.0.1:3307", threadCount));
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(serverEndpoint, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
-//            executorService.submit(() -> {
-//                facade.computeInt(1, finalI);
-////                App.sleep(1000);
-//                latch.countDown();
-//            });
-//            Tasks.getExecutor().submit(() -> {
-//                try {
-//                    facade.computeInt(1, finalI);
-//                    App.sleep(1000);
-//                    System.out.println(finalI);
-//                } finally {
-//                    latch.countDown();
-//                }
-//            });
             Tasks.run(() -> {
                 facade.computeInt(1, finalI);
-                App.sleep(2000);
+                App.sleep(1000);
                 latch.countDown();
             });
         }
         latch.await();
+//        System.in.read();
     }
 
 //    @SneakyThrows

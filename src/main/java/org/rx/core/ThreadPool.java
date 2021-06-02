@@ -218,7 +218,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool(int coreSize) {
-        this(coreSize, computeThreads(1, 2, 1), 2, CPU_THREADS * 64, "℞Thread");
+        this(coreSize, computeThreads(1, 2, 1), 30, CPU_THREADS * 32, "℞Thread");
     }
 
     /**
