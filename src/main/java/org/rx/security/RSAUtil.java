@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import static org.rx.core.App.*;
 
+//非对称加密
 public final class RSAUtil {
     private static final String SIGN_ALGORITHMS = "MD5withRSA";
     private static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";

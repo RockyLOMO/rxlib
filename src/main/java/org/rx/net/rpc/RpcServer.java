@@ -80,8 +80,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             if (tryAs(pack, PingMessage.class, p -> {
                 p.setReplyTimestamp(System.currentTimeMillis());
                 ctx.writeAndFlush(p);
+                log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
-                log.debug("serverHeartbeat reply {}", channel.remoteAddress());
                 return;
             }
 
@@ -101,7 +101,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             if (evt instanceof IdleStateEvent) {
                 IdleStateEvent e = (IdleStateEvent) evt;
                 if (e.state() == IdleState.READER_IDLE) {
-                    log.warn("serverHeartbeat lose {}", channel.remoteAddress());
+                    log.warn("serverHeartbeat loss {}", channel.remoteAddress());
                     ctx.close();
                 }
             }
@@ -167,6 +167,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
         bootstrap = Sockets.serverBootstrap(config.getWorkThread(), config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
+            //tcp keepalive OS层面，IdleStateHandler应用层面
             pipeline.addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));

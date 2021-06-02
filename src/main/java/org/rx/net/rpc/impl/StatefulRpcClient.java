@@ -70,7 +70,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.debug("clientRead discard {} {}", ctx.channel().remoteAddress(), msg.getClass());
                 return;
             }
-            if (tryAs(pack, PingMessage.class, p -> log.debug("clientHeartbeat reply {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
+            if (tryAs(pack, PingMessage.class, p -> log.debug("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
                 return;
             }
 
@@ -91,7 +91,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 IdleStateEvent e = (IdleStateEvent) evt;
                 switch (e.state()) {
                     case READER_IDLE:
-                        log.warn("clientHeartbeat lose {}", channel.remoteAddress());
+                        log.warn("clientHeartbeat loss {}", channel.remoteAddress());
                         ctx.close();
                         break;
                     case WRITER_IDLE:

@@ -13,6 +13,7 @@ import java.security.SecureRandom;
 
 import static org.rx.core.App.require;
 
+//对称加密
 public class AESUtil {
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
 
