@@ -1,4 +1,4 @@
-//package org.rx.socks.tcp;
+//package org.rx.net.socks;
 //
 //import io.netty.bootstrap.Bootstrap;
 //import io.netty.bootstrap.ServerBootstrap;
@@ -7,8 +7,7 @@
 //import lombok.SneakyThrows;
 //import lombok.extern.slf4j.Slf4j;
 //import org.rx.core.Disposable;
-//import org.rx.socks.MemoryMode;
-//import org.rx.socks.Sockets;
+//import org.rx.net.Sockets;
 //import org.rx.util.function.BiFunc;
 //
 //import java.net.InetSocketAddress;
@@ -17,7 +16,7 @@
 //import static org.rx.core.App.require;
 //
 //@Slf4j
-//public class TcpProxyServer extends Disposable {
+//public class SslDirectServer extends Disposable {
 //    private class FrontendHandler extends ChannelInboundHandlerAdapter {
 //        @RequiredArgsConstructor
 //        private class BackendHandler extends ChannelInboundHandlerAdapter {
@@ -103,11 +102,11 @@
 //        }
 //    }
 //
-//    private ServerBootstrap serverBootstrap;
+//    final ServerBootstrap serverBootstrap;
 //    private MemoryMode memoryMode;
-//    private BiFunc<InetSocketAddress, InetSocketAddress> proxyRule;
+//    final BiFunc<InetSocketAddress, InetSocketAddress> proxyRule;
 //
-//    public TcpProxyServer(int port, MemoryMode memoryMode, BiFunc<InetSocketAddress, InetSocketAddress> proxyRule) {
+//    public SslDirectServer(int port,  BiFunc<InetSocketAddress, InetSocketAddress> proxyRule) {
 //        require(proxyRule);
 //
 //        serverBootstrap = Sockets.serverBootstrap(1, Runtime.getRuntime().availableProcessors(), memoryMode, s -> s.pipeline().addLast(new FrontendHandler()));

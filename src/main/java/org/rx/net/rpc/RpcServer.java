@@ -22,15 +22,16 @@ import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
+import org.rx.net.ChannelClientHandler;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.rpc.packet.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
@@ -38,27 +39,27 @@ import static org.rx.core.App.*;
 @Slf4j
 @RequiredArgsConstructor
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
-    class Handler extends ChannelInboundHandlerAdapter {
+    class ClientHandler extends ChannelClientHandler {
         private RpcServerClient client;
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
-//        super.channelActive(ctx);
+            super.channelActive(ctx);
             Channel channel = ctx.channel();
             log.debug("serverActive {}", channel.remoteAddress());
             if (clients.size() > config.getCapacity()) {
                 log.warn("Force close client, Not enough capacity {}/{}.", clients.size(), config.getCapacity());
-                Sockets.closeOnFlushed(channel);
+                close();
                 return;
             }
 
-            clients.add(client = new RpcServerClient(channel.id(), (InetSocketAddress) channel.remoteAddress()));
-            client.channel = channel;
+            client = new RpcServerClient(channel.id(), (InetSocketAddress) channel.remoteAddress());
+            clients.put(channel.id(), this);
             RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, null);
             raiseEvent(onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
-                Sockets.closeOnFlushed(channel);
+                close();
             }
         }
 
@@ -70,10 +71,10 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
                 log.warn("serverRead discard");
-                Sockets.closeOnFlushed(channel);
+                close();
                 return;
             }
-            if (!isConnected(client) || tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
+            if (!RpcServer.this.isConnected(client) || tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
                 log.debug("Handshake: {}", toJsonString(client.getHandshakePacket()));
                 return;
             }
@@ -91,7 +92,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
-            clients.remove(client);
+            clients.remove(client.getId());
             raiseEventAsync(onDisconnected, new RpcServerEventArgs<>(client, null));
         }
 
@@ -120,7 +121,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             if (args.isCancel()) {
                 return;
             }
-            Sockets.closeOnFlushed(channel);
+            close();
         }
     }
 
@@ -133,18 +134,26 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     private ServerBootstrap bootstrap;
     private SslContext sslCtx;
     private volatile Channel serverChannel;
-    private final List<RpcServerClient> clients = new CopyOnWriteArrayList<>();
+    private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
 
     public List<RpcServerClient> getClients() {
-        return Collections.unmodifiableList(clients);
+        return NQuery.of(clients.values()).select(p -> p.client).toList();
     }
 
     public RpcServerClient getClient(ChannelId id) {
         checkNotClosed();
 
-        return NQuery.of(clients).single(p -> eq(p.getId(), id));
+        return getHandler(id).client;
+    }
+
+    protected ClientHandler getHandler(ChannelId id) {
+        ClientHandler handler = clients.get(id);
+        if (handler == null) {
+            throw new InvalidException("Client not found");
+        }
+        return handler;
     }
 
     @Override
@@ -165,20 +174,19 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(config.getWorkThread(), config.getMemoryMode(), channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
+        bootstrap = Sockets.serverBootstrap(RpcServerConfig.GROUP_NAME, config.getMemoryMode(), channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
-            pipeline.addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
+            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             if (sslCtx != null) {
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));
             }
             if (config.isEnableCompress()) {
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-                pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP),
+                        ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
-                    new Handler());
+                    new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
         InetSocketAddress endpoint = Sockets.getAnyEndpoint(config.getListenPort());
@@ -197,7 +205,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public String dump() {
         StringBuilder sb = new StringBuilder();
         int i = 1;
-        for (RpcServerClient client : NQuery.of(clients).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
+        for (RpcServerClient client : NQuery.of(clients.values()).select(p -> p.client).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
             sb.append("\t%s:%s", client.getRemoteAddress(), client.getId());
             if (i++ % 3 == 0) {
                 sb.appendLine();
@@ -207,7 +215,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     }
 
     protected boolean isConnected(RpcServerClient client) {
-        return isStarted && client.channel.isActive();
+        return isStarted && getHandler(client.getId()).isConnected();
     }
 
     public void send(ChannelId id, Serializable pack) {
@@ -224,10 +232,10 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             return;
         }
 
-        client.channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        getHandler(client.getId()).writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
     public void closeClient(RpcServerClient client) {
-        Sockets.closeOnFlushed(client.channel);
+        getHandler(client.getId()).close();
     }
 }

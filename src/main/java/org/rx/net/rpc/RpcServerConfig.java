@@ -10,13 +10,13 @@ import java.util.List;
 
 @Data
 public class RpcServerConfig implements Serializable {
+    public static final String GROUP_NAME = "℞Rpc";
     public static final int HEARTBEAT_TIMEOUT = 30;
     public static final int DISABLE_VERSION = -1;
     public static final int LATEST_COMPUTE = 0;
 
     private static final long serialVersionUID = 8065323693541916068L;
     private int listenPort;
-    private int workThread;
     private MemoryMode memoryMode;
     private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
     private boolean enableSsl;

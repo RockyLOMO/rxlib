@@ -1,16 +1,17 @@
 package org.rx.net;
 
+import io.netty.util.NetUtil;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 @Getter
 public enum MemoryMode {
-    Low(128, 16 * 1024, 16 * 1024, 64 * 1024, 128 * 1024),
-    Medium(512, 64 * 1024, 64 * 1024, 512 * 1024, 1024 * 1024),
-    High(1024, 128 * 1024, 128 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024);
+    LOW(NetUtil.SOMAXCONN, 1024 * 64, 1024 * 32, 1024 * 64),
+    MEDIUM(NetUtil.SOMAXCONN * 4, 1024 * 64 * 4, 1024 * 32 * 4, 1024 * 64 * 4),
+    HIGH(NetUtil.SOMAXCONN * 8, 1024 * 64 * 8, 1024 * 32 * 8, 1024 * 64 * 8);
 
     private final int backlog;
-    private final int sendBuf, receiveBuf;
-    private final int lowWaterMark, highWaterMark;
+    private final int receiveBufMaximum;
+    private final int sendBufLowWaterMark, sendBufHighWaterMark;
 }

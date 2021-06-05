@@ -1,6 +1,5 @@
 package org.rx.net.rpc;
 
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelId;
 import lombok.*;
 import org.rx.bean.DateTime;
@@ -22,6 +21,4 @@ public class RpcServerClient implements Serializable {
     @Getter
     @Setter
     private HandshakePacket handshakePacket;
-
-    transient Channel channel;
 }

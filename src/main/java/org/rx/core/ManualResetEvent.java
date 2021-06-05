@@ -8,7 +8,8 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.App.TIMEOUT_INFINITE;
 
 public final class ManualResetEvent {
-    private final Object monitor = new Object();
+    //    private final Object monitor = new Object();
+    private final Object monitor = this;
     private volatile boolean open;
 
     public ManualResetEvent() {
@@ -44,7 +45,7 @@ public final class ManualResetEvent {
         }
     }
 
-    public void set() {//open start
+    public void set() {
         synchronized (monitor) {
             open = true;
             monitor.notifyAll();

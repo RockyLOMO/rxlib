@@ -4,7 +4,6 @@ import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.bootstrap.ServerBootstrapConfig;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -22,6 +21,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.BiAction;
 import org.springframework.util.CollectionUtils;
 
 import javax.naming.Context;
@@ -30,17 +30,116 @@ import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
-    static final Map<String, EventLoopGroup> shared = new ConcurrentHashMap<>();
+    static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
 
-    public static EventLoopGroup sharedEventLoop(@NonNull String groupName) {
-        return shared.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+    private static EventLoopGroup reactorEventLoop(@NonNull String groupName) {
+        return reactors.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+    }
+
+    private static EventLoopGroup bindEventLoop(int threadAmount) {
+        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
+//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
+    }
+
+    private static Class<? extends SocketChannel> channelClass() {
+        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
+    }
+
+    private static Class<? extends ServerSocketChannel> serverChannelClass() {
+        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
+    }
+
+    public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
+        return serverBootstrap(Strings.EMPTY, MemoryMode.LOW, initChannel);
+    }
+
+    public static ServerBootstrap serverBootstrap(@NonNull String groupName, MemoryMode mode, BiAction<SocketChannel> initChannel) {
+        if (mode == null) {
+            mode = MemoryMode.LOW;
+        }
+
+        int bossThreadAmount = 1; //等于bind的次数，默认1
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
+        WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
+        ServerBootstrap b = new ServerBootstrap()
+                .group(bindEventLoop(bossThreadAmount), reactorEventLoop(groupName))
+                .channel(serverChannelClass())
+                .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
+//                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
+                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+        //netty日志
+        b.handler(new LoggingHandler(LogLevel.INFO));
+        if (initChannel != null) {
+            b.childHandler(new ChannelInitializer<SocketChannel>() {
+                @SneakyThrows
+                @Override
+                protected void initChannel(SocketChannel socketChannel) {
+                    initChannel.invoke(socketChannel);
+                }
+            });
+        }
+        return b;
+    }
+
+    public static void closeBootstrap(ServerBootstrap bootstrap) {
+        if (bootstrap == null) {
+            return;
+        }
+
+        EventLoopGroup bossGroup = bootstrap.config().group();
+        if (bossGroup != null) {
+            bossGroup.shutdownGracefully();
+        }
+    }
+
+    public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
+        return bootstrap(Strings.EMPTY, MemoryMode.LOW, initChannel);
+    }
+
+    public static Bootstrap bootstrap(@NonNull String groupName, MemoryMode mode, BiAction<SocketChannel> initChannel) {
+        return bootstrap(reactorEventLoop(groupName), mode, initChannel);
+    }
+
+    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, MemoryMode mode, BiAction<SocketChannel> initChannel) {
+        if (mode == null) {
+            mode = MemoryMode.LOW;
+        }
+
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
+        WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
+        Bootstrap b = new Bootstrap()
+                .group(eventLoopGroup)
+                .channel(channelClass())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+        if (initChannel != null) {
+            b.handler(new ChannelInitializer<SocketChannel>() {
+                @SneakyThrows
+                @Override
+                protected void initChannel(SocketChannel socketChannel) {
+                    initChannel.invoke(socketChannel);
+                }
+            });
+        }
+        return b;
     }
 
     public static void dumpPipeline(String name, Channel channel) {
@@ -89,100 +188,9 @@ public final class Sockets {
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
-    public static Bootstrap bootstrap(String groupName, Consumer<SocketChannel> initChannel) {
-        return bootstrap(sharedEventLoop(groupName), null, initChannel);
-    }
-
-    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        Bootstrap b = new Bootstrap()
-                .group(eventLoopGroup)
-                .channel(channelClass())
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
-                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_KEEPALIVE, true);
-        if (mode != null) {
-            b.option(ChannelOption.SO_SNDBUF, mode.getSendBuf())
-                    .option(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-        }
-        if (initChannel != null) {
-            b.handler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                protected void initChannel(SocketChannel socketChannel) throws Exception {
-                    initChannel.accept(socketChannel);
-                }
-            });
-        }
-        return b;
-    }
-
-    public static ServerBootstrap serverBootstrap() {
-        return serverBootstrap(0, null, null);
-    }
-
-    public static ServerBootstrap serverBootstrap(int workThreadAmount, MemoryMode mode, Consumer<SocketChannel> initChannel) {
-        int bossThreadAmount = 1; //等于bind的次数，默认1
-        ServerBootstrap b = new ServerBootstrap()
-                .group(eventLoopGroup(bossThreadAmount), eventLoopGroup(workThreadAmount))
-                .channel(serverChannelClass())
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
-                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-//                    .option(ChannelOption.SO_REUSEADDR, true)
-                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childOption(ChannelOption.SO_KEEPALIVE, true);
-        if (mode != null) {
-            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(mode.getLowWaterMark(), mode.getHighWaterMark()))
-                    .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
-                    .childOption(ChannelOption.SO_SNDBUF, mode.getSendBuf())
-                    .childOption(ChannelOption.SO_RCVBUF, mode.getReceiveBuf());
-        }
-        //netty日志
-        b.handler(new LoggingHandler(LogLevel.INFO));
-        if (initChannel != null) {
-            b.childHandler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                protected void initChannel(SocketChannel socketChannel) throws Exception {
-                    initChannel.accept(socketChannel);
-                }
-            });
-        }
-        return b;
-    }
-
-    public static void closeBootstrap(ServerBootstrap bootstrap) {
-        if (bootstrap == null) {
-            return;
-        }
-
-        ServerBootstrapConfig config = bootstrap.config();
-        EventLoopGroup bossGroup = config.group();
-        if (bossGroup != null) {
-            bossGroup.shutdownGracefully();
-        }
-        EventLoopGroup workerGroup = config.childGroup();
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-        }
-    }
-
-    private static Class<? extends SocketChannel> channelClass() {
-        return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
-    }
-
-    private static Class<? extends ServerSocketChannel> serverChannelClass() {
-        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
-    }
-
-    private static EventLoopGroup eventLoopGroup(int threadAmount) {
-        Class<? extends EventLoopGroup> eventLoopGroupClass = Epoll.isAvailable() ? EpollEventLoopGroup.class : NioEventLoopGroup.class;
-        return Reflects.newInstance(eventLoopGroupClass, threadAmount);
-//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
-    }
-
     //region Address
-    public static final InetAddress LoopbackAddress = InetAddress.getLoopbackAddress(),
-            AnyAddress = quietly(() -> InetAddress.getByName("0.0.0.0"));
+    public static final InetAddress LOOPBACK_ADDRESS = InetAddress.getLoopbackAddress(),
+            ANY_ADDRESS = quietly(() -> InetAddress.getByName("0.0.0.0"));
 
     public static List<String> getDnsRecords(String domain, String[] types) {
 //        InetAddress.getByName(ddns).getHostAddress()
@@ -250,7 +258,7 @@ public final class Sockets {
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
-        return new InetSocketAddress(AnyAddress, port);
+        return new InetSocketAddress(ANY_ADDRESS, port);
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {

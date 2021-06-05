@@ -290,7 +290,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
             Comparable c2 = as(keySelector.invoke(p2), Comparable.class);
             if (c1 == null || c2 == null) {
-                return 0;
+                return c1 == null ? (c2 == null ? 0 : 1) : -1;
             }
             return c1.compareTo(c2);
         });

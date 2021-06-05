@@ -14,7 +14,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
+import org.rx.core.Strings;
 import org.rx.core.exception.InvalidException;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.DirectUpstream;
 
@@ -53,7 +55,7 @@ public class SocksProxyServer extends Disposable {
         if (flowLogger == null) {
             flowLogger = new FlowLoggerImpl();
         }
-        bootstrap = Sockets.serverBootstrap(0, null, channel -> {
+        bootstrap = Sockets.serverBootstrap(channel -> {
             //流量统计
             channel.pipeline().addLast(ProxyChannelManageHandler.class.getSimpleName(), new ProxyChannelManageHandler(3000, flowLogger));
             //超时处理

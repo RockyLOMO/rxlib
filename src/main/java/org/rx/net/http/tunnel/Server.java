@@ -114,8 +114,6 @@ public class Server {
         }
     }
 
-    public static final String GROUP_NAME = "TUNNEL";
-
     private int timeWaitSeconds = 20;
     //appName,socksId
     private final Map<String, Map<String, SocksContext>> holds = new ConcurrentHashMap<>();
@@ -124,7 +122,7 @@ public class Server {
         return holds.computeIfAbsent(pack.getAppName(), k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(pack.getSocksId(), k -> {
                     SocksContext socksContext = new SocksContext(pack.getAppName(), pack.getSocksId());
-                    socksContext.outboundChannel = Sockets.bootstrap(GROUP_NAME, channel -> channel.pipeline().addLast(new BackendHandler(socksContext))).connect(pack.getRemoteEndpoint()).channel();
+                    socksContext.outboundChannel = Sockets.bootstrap(channel -> channel.pipeline().addLast(new BackendHandler(socksContext))).connect(pack.getRemoteEndpoint()).channel();
                     return socksContext;
                 });
     }
