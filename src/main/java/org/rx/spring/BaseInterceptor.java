@@ -33,7 +33,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags(EventFlags.Quietly);
+        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
     }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {

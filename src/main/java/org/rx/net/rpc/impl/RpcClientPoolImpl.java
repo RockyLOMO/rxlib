@@ -85,7 +85,8 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         checkNotClosed();
 
         log.debug("Return RpcClient {}", client);
-        pool.returnObject(client);
+        pool.returnObject(client); //调用多次同一对象会hang
+//        log.debug("Return RpcClient {} ok", client);
         return null;
     }
 }

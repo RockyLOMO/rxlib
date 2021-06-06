@@ -18,7 +18,7 @@ public abstract class ChannelClientHandler extends ChannelInboundHandlerAdapter 
 
     public Channel channel() {
         if (!isConnected()) {
-            throw new InvalidException("Client disconnected");
+            throw new InvalidException("Client not active");
         }
         return context.channel();
     }

@@ -4,8 +4,7 @@ app:
   netTimeoutMillis: 16000
   netMinPoolSize: 2
   netMaxPoolSize: 0
-  keepaliveSeconds: 120
-  threadPoolCount: 4
+  netKeepaliveSeconds: 120
   defaultCache: LruCache
   jsonSkipTypes:
     - javax.servlet.ServletRequest

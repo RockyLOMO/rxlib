@@ -132,9 +132,16 @@ public final class Remoting {
                     }
                     break;
                 case "eventFlags":
+                case "scheduler":
                     if (args.length == 0) {
                         return invokeSuper(m, p);
                     }
+                    else {
+                        System.out.println("xxxx4");
+                    }
+                    break;
+                case "raiseEventAsync":
+                    System.out.println("xxx5");
                     break;
             }
 
@@ -205,11 +212,11 @@ public final class Remoting {
                         }
                     });
                 }
-                if (clientBean.pack != null) {
-                    clientBeans.remove(clientBean.pack.id);
-                }
                 synchronized (sync) {
-                    if (NQuery.of(clientBeans.values()).all(x -> x.client != client)) {
+                    if (clientBean.pack != null) {
+                        clientBeans.remove(clientBean.pack.id);
+                    }
+                    if (!NQuery.of(clientBeans.values()).any(x -> x.client == client)) {
                         sync.v = pool.returnClient(client);
                     }
                 }
@@ -223,6 +230,7 @@ public final class Remoting {
             e.setCancel(true);
         };
         client.onReceive = (s, e) -> {
+            System.out.println("recvx");
             if (tryAs(e.getValue(), EventPack.class, x -> {
                 switch (x.flag) {
                     case BROADCAST:

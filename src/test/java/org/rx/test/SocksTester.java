@@ -191,7 +191,7 @@ public class SocksTester {
     public void rpc_clientPool() {
         Remoting.listen(HttpUserManager.INSTANCE, serverEndpoint.getPort());
 
-        int tcount = 110;
+        int tcount = 50;
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;

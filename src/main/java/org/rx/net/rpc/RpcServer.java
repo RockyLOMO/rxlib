@@ -31,6 +31,7 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
@@ -80,7 +81,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             }
             if (tryAs(pack, PingMessage.class, p -> {
                 p.setReplyTimestamp(System.currentTimeMillis());
-                ctx.writeAndFlush(p);
+                writeAndFlush(p);
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
@@ -125,6 +126,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
     }
 
+    private static final TaskScheduler scheduler = new TaskScheduler("RpcServer");
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Serializable>> onConnected, onDisconnected, onSend, onReceive;
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Throwable>> onError;
     public volatile BiConsumer<RpcServer, EventArgs> onClosed;
@@ -137,6 +139,17 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
+
+    @Override
+    public @NonNull TaskScheduler scheduler() {
+        return scheduler;
+    }
+
+    @Override
+    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
+        System.out.println("xxx");
+        return scheduler().run(() -> raiseEvent(event, args), "RpcClientEvent", RunFlag.PRIORITY);
+    }
 
     public List<RpcServerClient> getClients() {
         return NQuery.of(clients.values()).select(p -> p.client).toList();
@@ -232,7 +245,9 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             return;
         }
 
-        getHandler(client.getId()).writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        ClientHandler handler = getHandler(client.getId());
+        handler.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        log.debug("serverWrite {} {}", handler.channel().remoteAddress(), pack.getClass());
     }
 
     public void closeClient(RpcServerClient client) {

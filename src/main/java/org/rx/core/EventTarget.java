@@ -17,6 +17,17 @@ import java.util.function.BiConsumer;
 import static org.rx.core.App.*;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> {
+    @RequiredArgsConstructor
+    enum EventFlags implements NEnum<EventFlags> {
+        NONE(0),
+        DYNAMIC_ATTACH(1),
+        THREAD_SAFE(1 << 1),
+        QUIETLY(1 << 2);
+
+        @Getter
+        private final int value;
+    }
+
     @Slf4j
     class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements BiConsumer<TSender, TArgs> {
         @Getter
@@ -26,7 +37,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         @Override
         public void accept(@NonNull TSender target, @NonNull TArgs args) {
             FlagsEnum<EventFlags> flags = target.eventFlags();
-            if (flags.has(EventTarget.EventFlags.ThreadSafe)) {
+            if (flags.has(EventTarget.EventFlags.THREAD_SAFE)) {
                 synchronized (target) {
                     innerRaise(target, args, flags);
                 }
@@ -40,7 +51,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
                 try {
                     biConsumer.accept(target, args);
                 } catch (Exception e) {
-                    if (!flags.has(EventTarget.EventFlags.Quietly)) {
+                    if (!flags.has(EventTarget.EventFlags.QUIETLY)) {
                         throw e;
                     }
                     log.warn("innerRaise", e);
@@ -49,19 +60,13 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
         }
     }
 
-    @RequiredArgsConstructor
-    enum EventFlags implements NEnum<EventFlags> {
-        None(0),
-        DynamicAttach(1),
-        ThreadSafe(1 << 1),
-        Quietly(1 << 2);
-
-        @Getter
-        private final int value;
+    default FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DYNAMIC_ATTACH.flags();
     }
 
-    default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags();
+    @NonNull
+    default TaskScheduler scheduler() {
+        return Tasks.pool();
     }
 
     default <TArgs extends EventArgs> void attachEvent(String eventName, BiConsumer<TSender, TArgs> event) {
@@ -73,7 +78,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     default <TArgs extends EventArgs> void attachEvent(@NonNull String eventName, BiConsumer<TSender, TArgs> event, boolean combine) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
-            if (!eventFlags().has(EventFlags.DynamicAttach)) {
+            if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().attach(this, eventName, event, combine);
@@ -87,7 +92,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     default <TArgs extends EventArgs> void detachEvent(@NonNull String eventName, BiConsumer<TSender, TArgs> event) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
-            if (!eventFlags().has(EventFlags.DynamicAttach)) {
+            if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().detach(this, eventName, event);
@@ -101,7 +106,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     default <TArgs extends EventArgs> void raiseEvent(@NonNull String eventName, TArgs args) {
         Field field = Reflects.getFields(this.getClass()).firstOrDefault(p -> p.getName().equals(eventName));
         if (field == null) {
-            if (!eventFlags().has(EventFlags.DynamicAttach)) {
+            if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
             EventListener.getInstance().raise(this, eventName, args);
@@ -119,10 +124,10 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-        return Tasks.run(() -> raiseEvent(eventName, args));
+        return scheduler().run(() -> raiseEvent(eventName, args));
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
-        return Tasks.run(() -> raiseEvent(event, args));
+        return scheduler().run(() -> raiseEvent(event, args));
     }
 }

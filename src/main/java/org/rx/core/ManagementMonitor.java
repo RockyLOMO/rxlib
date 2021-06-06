@@ -150,7 +150,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags(EventFlags.Quietly);
+        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
     }
 
     private ManagementMonitor() {

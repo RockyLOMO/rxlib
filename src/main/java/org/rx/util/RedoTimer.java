@@ -77,7 +77,7 @@ public class RedoTimer {
         }
     }
 
-    private final HashedWheelTimer timer = new HashedWheelTimer(Tasks.getExecutor().getThreadFactory());
+    private final HashedWheelTimer timer = new HashedWheelTimer(Tasks.pool().getThreadFactory());
 
     public Timeout setTimeout(BiAction<Timeout> task, long delayMillis) {
         return setTimeout(task, delayMillis, 1);

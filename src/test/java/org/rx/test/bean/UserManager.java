@@ -13,7 +13,7 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
 
     @Override
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags();
+        return EventFlags.DYNAMIC_ATTACH.flags();
     }
 
     default void close() {

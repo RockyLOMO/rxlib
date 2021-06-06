@@ -5,7 +5,6 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.bean.DateTime;
-import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -15,7 +14,6 @@ import java.sql.Time;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.function.Supplier;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -25,40 +23,6 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Tasks {
     @RequiredArgsConstructor
-    private static class Task<T> implements ThreadPool.NamedRunnable, Callable<T>, Supplier<T> {
-        @Getter
-        private final String name;
-        @Getter
-        private final ThreadPool.ExecuteFlag flag;
-        private final Func<T> callable;
-
-        @Override
-        public T get() {
-            return call();
-        }
-
-        @Override
-        public T call() {
-            try {
-                return callable.invoke();
-            } catch (Throwable e) {
-                raiseUncaughtException("ExecuteFlag={}", flag, e);
-                return null;
-            }
-        }
-
-        @Override
-        public void run() {
-            call();
-        }
-
-        @Override
-        public String toString() {
-            return String.format("Task-%s[%s]", name, getFlag());
-        }
-    }
-
-    @RequiredArgsConstructor
     @Getter
     public static class UncaughtExceptionContext {
         private final String format;
@@ -67,24 +31,24 @@ public final class Tasks {
         private boolean raised;
     }
 
+    private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final ThreadPool[] replicas;
+    private static final List<TaskScheduler> replicas;
     //HashedWheelTimer
     private static final ScheduledExecutorService scheduler;
     private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();
 
     static {
-        int poolCount = App.getConfig().getThreadPoolCount();
-        int coreSize = Math.max(1, ThreadPool.CPU_THREADS / poolCount);
-        replicas = new ThreadPool[poolCount];
-        for (int i = 0; i < poolCount; i++) {
-            replicas[i] = new ThreadPool(coreSize);
+        int coreSize = Math.max(1, ThreadPool.CPU_THREADS / POOL_COUNT);
+        replicas = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < POOL_COUNT; i++) {
+            replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
         }
-        scheduler = new ScheduledThreadPoolExecutor(1, replicas[0].getThreadFactory());
+        scheduler = new ScheduledThreadPoolExecutor(1, replicas.get(0).getThreadFactory());
     }
 
-    public static ThreadPool getExecutor() {
-        return replicas[ThreadLocalRandom.current().nextInt(0, replicas.length)];
+    public static TaskScheduler pool() {
+        return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
     }
 
     public static UncaughtExceptionContext raisingContext() {
@@ -114,27 +78,28 @@ public final class Tasks {
         return true;
     }
 
-    public static CompletableFuture<Void> run(Action task) {
-        return run(task, SUID.randomSUID().toString(), null);
+    @SneakyThrows
+    public static <T> T await(Future<T> future) {
+        if (future instanceof CompletableFuture) {
+            return ((CompletableFuture<T>) future).join();
+        }
+        return future.get();
     }
 
-    public static CompletableFuture<Void> run(@NonNull Action task, @NonNull String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        Task<Void> t = new Task<>(taskName, executeFlag, () -> {
-            task.invoke();
-            return null;
-        });
-        return CompletableFuture.runAsync(t, getExecutor());
-//        executor.execute(t);
+    public static CompletableFuture<Void> run(Action task) {
+        return pool().run(task);
+    }
+
+    public static CompletableFuture<Void> run(Action task, String taskName, RunFlag runFlag) {
+        return pool().run(task, taskName, runFlag);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, SUID.randomSUID().toString(), null);
+        return pool().run(task);
     }
 
-    public static <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull String taskName, ThreadPool.ExecuteFlag executeFlag) {
-        Task<T> t = new Task<>(taskName, executeFlag, task);
-        return CompletableFuture.supplyAsync(t, getExecutor());
-//        return executor.submit((Callable<T>) t);
+    public static <T> CompletableFuture<T> run(Func<T> task, String taskName, RunFlag runFlag) {
+        return pool().run(task, taskName, runFlag);
     }
 
     public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> anyOf(Action... tasks) {
@@ -175,14 +140,6 @@ public final class Tasks {
 
         CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
         return Tuple.of(CompletableFuture.allOf(futures), futures);
-    }
-
-    @SneakyThrows
-    public static <T> T await(Future<T> future) {
-        if (future instanceof CompletableFuture) {
-            return ((CompletableFuture<T>) future).join();
-        }
-        return future.get();
     }
 
     public static List<? extends Future<?>> scheduleDaily(Action task, String... timeArray) {
@@ -236,7 +193,7 @@ public final class Tasks {
     }
 
     public static Future<?> schedule(@NonNull Action task, long initialDelay, long delay, String taskName) {
-        return scheduler.scheduleWithFixedDelay(new Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
+        return scheduler.scheduleWithFixedDelay(new TaskScheduler.Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
             task.invoke();
             return null;
         }), initialDelay, delay, TimeUnit.MILLISECONDS);

@@ -220,7 +220,7 @@ public class CoreTester extends TestUtil {
         ThreadPool.DynamicConfig config = new ThreadPool.DynamicConfig();
         config.setMinThreshold(40);
         config.setMaxThreshold(60);
-        Tasks.getExecutor().statistics(config);
+        Tasks.pool().statistics(config);
 
         for (int i = 0; i < 6; i++) {
             int x = i;
@@ -230,7 +230,7 @@ public class CoreTester extends TestUtil {
             Tasks.run(() -> {
                 log.info("Exec: " + x);
                 sleep(2000);
-            }, "myTaskId", ThreadPool.ExecuteFlag.Parallel)
+            }, "myTaskId", RunFlag.CONCURRENT)
                     .whenCompleteAsync((r, e) -> log.info("Done: " + x));
         }
 
@@ -257,7 +257,7 @@ public class CoreTester extends TestUtil {
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //FastThreadLocal 支持netty FastThreadLocal
-        ExecutorService pool = new ThreadPool(1, 1, 1, 8, "RxPool")
+        ExecutorService pool = new ThreadPool(1, 1, 1, 8, "")
                 .statistics(config);
         for (int i = 0; i < 100; i++) {
             int n = i;

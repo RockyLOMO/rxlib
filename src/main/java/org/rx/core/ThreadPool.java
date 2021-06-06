@@ -30,7 +30,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private final int queueCapacity;
         @Setter
-        private ThreadPool executor;
+        private ThreadPool pool;
         private final AtomicInteger counter = new AtomicInteger();
         private final ManualResetEvent waiter = new ManualResetEvent();
 
@@ -44,10 +44,24 @@ public class ThreadPool extends ThreadPoolExecutor {
             return counter.get();
         }
 
+        @SneakyThrows
         @Override
         public boolean offer(T t) {
-            int poolSize = executor.getPoolSize();
-            if (poolSize == executor.getMaximumPoolSize()) {
+            NamedRunnable p = pool.tryAs((Runnable) t, false);
+            if (p != null && p.getFlag() != null) {
+                switch (p.getFlag()) {
+                    case TRANSFER:
+                        log.debug("Transfer to thread");
+                        transfer(t);
+                        return true;
+                    case PRIORITY:
+                        pool.setMaximumPoolSize(pool.getMaximumPoolSize() + 2);
+                        return false;
+                }
+            }
+
+            int poolSize = pool.getPoolSize();
+            if (poolSize == pool.getMaximumPoolSize()) {
                 if (counter.incrementAndGet() > queueCapacity) {
                     do {
                         log.debug("Queue is full & Wait poll");
@@ -60,14 +74,14 @@ public class ThreadPool extends ThreadPoolExecutor {
                 return super.offer(t);
             }
 
-            if (executor.getSubmittedTaskCount() < poolSize) {
+            if (pool.getSubmittedTaskCount() < poolSize) {
                 log.debug("Idle thread to execute");
                 counter.incrementAndGet();
                 return super.offer(t);
             }
 
-            if (poolSize < executor.getMaximumPoolSize()) {
-                log.debug("{}/{} New thread to execute", poolSize, executor.getMaximumPoolSize());
+            if (poolSize < pool.getMaximumPoolSize()) {
+                log.debug("{}/{} New thread to execute", poolSize, pool.getMaximumPoolSize());
                 return false;
             }
 
@@ -122,18 +136,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     public interface NamedRunnable extends Runnable {
         String getName();
 
-        default ExecuteFlag getFlag() {
-            return ExecuteFlag.Parallel;
+        default RunFlag getFlag() {
+            return RunFlag.CONCURRENT;
         }
     }
 
-    public enum ExecuteFlag {
-        Parallel,
-        Synchronous,
-        Single;
-    }
-
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
+    private static final String POOL_NAME_PREFIX = "℞Threads-";
 
     static {
         Thread.setDefaultUncaughtExceptionHandler((t, e) -> App.log("Global", e));
@@ -151,12 +160,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                 .setDaemon(true).setNameFormat(nameFormat).build();
     }
 
+    @Getter
+    private final String poolName;
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ReentrantLock> syncRoot = new ConcurrentHashMap<>();
-    @Setter
-    @Getter
-    private String poolName;
+    private final ConcurrentHashMap<String, ReentrantLock> syncRoot = new ConcurrentHashMap<>(0);
+    private final Lazy<ExecutorService> priority = new Lazy<>(() -> Executors.newCachedThreadPool(getThreadFactory()));
     private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorInfo>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
@@ -175,7 +184,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         incrementCounter = new AtomicInteger();
         ManagementMonitor monitor = ManagementMonitor.getInstance();
         monitor.scheduled = combine(App.remove(monitor.scheduled, scheduled), scheduled = (s, e) -> {
-            String prefix = String.format("%sMonitor", poolName);
+            String prefix = String.format("%s%sMonitor", POOL_NAME_PREFIX, poolName);
             int cpuLoad = e.getValue().getCpuLoadPercent();
             log.debug("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", prefix, getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),
                     cpuLoad, dynamicConfig.getMinThreshold(), dynamicConfig.getMaxThreshold());
@@ -213,12 +222,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         return this;
     }
 
-    public ThreadPool() {
-        this(CPU_THREADS + 1);
-    }
-
-    public ThreadPool(int coreSize) {
-        this(coreSize, computeThreads(1, 2, 1), 30, CPU_THREADS * 32, "℞Thread");
+    public ThreadPool(int coreThreads, String poolName) {
+        this(coreThreads, computeThreads(1, 2, 1), 30, CPU_THREADS * 32, poolName);
     }
 
     /**
@@ -228,38 +233,43 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param maxThreads       最大线程数
      * @param keepAliveMinutes 超出最小线程数的最大线程数存活时间
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
-     * @param poolName         线程池名称
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, String poolName) {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
-                newThreadFactory(String.format("%s-%%d", poolName)), (r, executor) -> {
+                newThreadFactory(String.format("%s%s-%%d", POOL_NAME_PREFIX, poolName)), (r, executor) -> {
                     if (executor.isShutdown()) {
                         throw new InvalidException("Executor %s is shutdown", poolName);
                     }
                     log.debug("Block caller thread Until offer");
                     executor.getQueue().offer(r);
                 });
-        ((ThreadQueue<Runnable>) getQueue()).setExecutor(this);
+        ((ThreadQueue<Runnable>) getQueue()).setPool(this);
         this.poolName = poolName;
     }
 
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        NamedRunnable p = tryAs(r);
+        NamedRunnable p = tryAs(r, true);
         if (p != null) {
-            if (p.getFlag() == null || p.getFlag() == ExecuteFlag.Parallel) {
+            if (p.getFlag() == null) {
                 return;
+            }
+            switch (p.getFlag()) {
+                case CONCURRENT:
+                case TRANSFER:
+                case PRIORITY:
+                    return;
             }
             ReentrantLock locker = syncRoot.computeIfAbsent(p.getName(), k -> new ReentrantLock());
             switch (p.getFlag()) {
-                case Single:
+                case SINGLE:
                     if (!locker.tryLock()) {
-                        throw new InterruptedException(String.format("SingleExecute %s locked by other thread", p.getName()));
+                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", p.getName()));
                     }
                     log.debug("{} {} tryLock", p.getFlag(), p.getName());
                     break;
-                case Synchronous:
+                case SYNCHRONIZED:
                     locker.lock();
                     log.debug("{} {} lock", p.getFlag(), p.getName());
                     break;
@@ -269,8 +279,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         super.beforeExecute(t, r);
     }
 
-    private NamedRunnable tryAs(Runnable command) {
-        Runnable r = funcMap.remove(command);
+    private NamedRunnable tryAs(Runnable command, boolean remove) {
+        Runnable r = remove ? funcMap.remove(command) : funcMap.get(command);
         if (r != null) {
             return as(r, NamedRunnable.class);
         }
@@ -284,7 +294,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
-        NamedRunnable p = tryAs(r);
+        NamedRunnable p = tryAs(r, true);
         if (p != null) {
             //todo when remove
             ReentrantLock locker = syncRoot.get(p.getName());
@@ -300,6 +310,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void execute(Runnable command) {
+        N
+
         submittedTaskCounter.incrementAndGet();
         super.execute(command);
     }

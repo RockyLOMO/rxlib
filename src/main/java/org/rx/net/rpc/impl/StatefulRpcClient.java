@@ -36,6 +36,7 @@ import org.rx.net.rpc.packet.PingMessage;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
@@ -47,10 +48,11 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     class ClientHandler extends ChannelClientHandler {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
+            super.channelActive(ctx);
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            ctx.writeAndFlush(new HandshakePacket(config.getEventVersion())).addListener(p -> {
+            writeAndFlush(new HandshakePacket(config.getEventVersion())).addListener(p -> {
                 if (p.isSuccess()) {
                     //握手需要异步
                     raiseEventAsync(onConnected, EventArgs.EMPTY);
@@ -76,6 +78,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
+            System.out.println("sn:" + scheduler().getPoolName());
             raiseEventAsync(onReceive, new NEventArgs<>(pack));
         }
 
@@ -100,7 +103,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         break;
                     case WRITER_IDLE:
                         log.debug("clientHeartbeat ping {}", channel.remoteAddress());
-                        ctx.writeAndFlush(new PingMessage());
+                        writeAndFlush(new PingMessage());
                         break;
                 }
             }
@@ -134,12 +137,17 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Getter
     private Date connectedTime;
     private volatile Channel channel;
-    private final ClientHandler handler = new ClientHandler();
     @Getter
     @Setter
     private volatile boolean autoReconnect;
     private volatile Future<?> reconnectFuture;
     private volatile ChannelFuture reconnectChannelFuture;
+
+//    @Override
+//    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcClient, TArgs> event, TArgs args) {
+//        System.out.println("xxx");
+//        return scheduler().run(() -> raiseEvent(event, args), "RpcClientEvent", RunFlag.PRIORITY);
+//    }
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
@@ -265,9 +273,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }, App.getConfig().getNetReconnectPeriod());
     }
 
-    //not synchronized
     @Override
-    public void send(@NonNull Serializable pack) {
+    public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
             if (reconnectFuture != null) {
                 try {

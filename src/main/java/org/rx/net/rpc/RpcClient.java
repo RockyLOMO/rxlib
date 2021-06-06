@@ -10,7 +10,7 @@ import java.util.Date;
 public interface RpcClient extends EventTarget<RpcClient> {
     @Override
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DynamicAttach.flags(EventFlags.ThreadSafe);
+        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.THREAD_SAFE);
     }
 
     RpcClientConfig getConfig();
