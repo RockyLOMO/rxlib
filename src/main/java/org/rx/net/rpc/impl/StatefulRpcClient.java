@@ -36,7 +36,6 @@ import org.rx.net.rpc.packet.PingMessage;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
@@ -78,7 +77,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
-            System.out.println("sn:" + scheduler().getPoolName());
             raiseEventAsync(onReceive, new NEventArgs<>(pack));
         }
 
@@ -143,11 +141,10 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private volatile Future<?> reconnectFuture;
     private volatile ChannelFuture reconnectChannelFuture;
 
-//    @Override
-//    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcClient, TArgs> event, TArgs args) {
-//        System.out.println("xxx");
-//        return scheduler().run(() -> raiseEvent(event, args), "RpcClientEvent", RunFlag.PRIORITY);
-//    }
+    @Override
+    public @NonNull TaskScheduler scheduler() {
+        return RpcServer.SCHEDULER;
+    }
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
@@ -294,9 +291,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             return;
         }
 
-//        ClientHandler handler = (ClientHandler) channel.pipeline().last();
-//        System.out.println("check:" + (handler.channel() == channel));
-        channel.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        ClientHandler handler = (ClientHandler) channel.pipeline().last();
+        handler.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         log.debug("clientWrite {} {}", config.getServerEndpoint(), pack);
     }
 

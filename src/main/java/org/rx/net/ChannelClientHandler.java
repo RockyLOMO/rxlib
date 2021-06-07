@@ -10,33 +10,33 @@ import org.rx.core.exception.InvalidException;
 
 @Slf4j
 public abstract class ChannelClientHandler extends ChannelInboundHandlerAdapter implements AutoCloseable {
-    private volatile ChannelHandlerContext context;
+    private volatile ChannelHandlerContext ctx;
 
     public boolean isConnected() {
-        return context != null && context.channel().isActive();
+        return ctx != null && ctx.channel().isActive();
     }
 
     public Channel channel() {
         if (!isConnected()) {
             throw new InvalidException("Client not active");
         }
-        return context.channel();
+        return ctx.channel();
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
 //        super.channelActive(ctx);
-        this.context = ctx;
+        this.ctx = ctx;
     }
 
     public ChannelFuture write(Object msg) {
         checkWritable();
-        return context.write(msg);
+        return ctx.write(msg);
     }
 
     public ChannelFuture writeAndFlush(Object msg) {
         checkWritable();
-        return context.writeAndFlush(msg);
+        return ctx.writeAndFlush(msg);
     }
 
     @SneakyThrows
@@ -65,6 +65,6 @@ public abstract class ChannelClientHandler extends ChannelInboundHandlerAdapter 
             return;
         }
 
-        Sockets.closeOnFlushed(context.channel());
+        Sockets.closeOnFlushed(ctx.channel());
     }
 }

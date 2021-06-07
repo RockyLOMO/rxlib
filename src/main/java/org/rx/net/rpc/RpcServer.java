@@ -126,7 +126,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
     }
 
-    private static final TaskScheduler scheduler = new TaskScheduler("RpcServer");
+    public static final TaskScheduler SCHEDULER = new TaskScheduler("Rpc");
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Serializable>> onConnected, onDisconnected, onSend, onReceive;
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Throwable>> onError;
     public volatile BiConsumer<RpcServer, EventArgs> onClosed;
@@ -142,13 +142,13 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
     @Override
     public @NonNull TaskScheduler scheduler() {
-        return scheduler;
+        return SCHEDULER;
     }
 
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
-        System.out.println("xxx");
-        return scheduler().run(() -> raiseEvent(event, args), "RpcClientEvent", RunFlag.PRIORITY);
+        TaskScheduler scheduler = scheduler();
+        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getCounter().next()), RunFlag.PRIORITY);
     }
 
     public List<RpcServerClient> getClients() {

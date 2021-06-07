@@ -118,6 +118,7 @@ public final class Remoting {
                     }
                     break;
                 case "raiseEvent":
+                case "raiseEventAsync":
                     if (args.length == 2) {
                         if (BooleanUtils.isTrue(isCompute.get())) {
                             return invokeSuper(m, p);
@@ -136,12 +137,6 @@ public final class Remoting {
                     if (args.length == 0) {
                         return invokeSuper(m, p);
                     }
-                    else {
-                        System.out.println("xxxx4");
-                    }
-                    break;
-                case "raiseEventAsync":
-                    System.out.println("xxx5");
                     break;
             }
 
@@ -230,7 +225,6 @@ public final class Remoting {
             e.setCancel(true);
         };
         client.onReceive = (s, e) -> {
-            System.out.println("recvx");
             if (tryAs(e.getValue(), EventPack.class, x -> {
                 switch (x.flag) {
                     case BROADCAST:

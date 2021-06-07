@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
@@ -51,7 +52,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (p != null && p.getFlag() != null) {
                 switch (p.getFlag()) {
                     case TRANSFER:
-                        log.debug("Transfer to thread");
+                        log.debug("Block caller thread until queue take");
                         transfer(t);
                         return true;
                     case PRIORITY:
@@ -164,8 +165,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     private final String poolName;
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ReentrantLock> syncRoot = new ConcurrentHashMap<>(0);
-    private final Lazy<ExecutorService> priority = new Lazy<>(() -> Executors.newCachedThreadPool(getThreadFactory()));
+    private final ConcurrentHashMap<String, Tuple<ReentrantLock, AtomicInteger>> syncRoot = new ConcurrentHashMap<>(0);
     private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorInfo>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
@@ -238,9 +238,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
                 newThreadFactory(String.format("%s%s-%%d", POOL_NAME_PREFIX, poolName)), (r, executor) -> {
                     if (executor.isShutdown()) {
-                        throw new InvalidException("Executor %s is shutdown", poolName);
+                        throw new InvalidException("ThreadPool %s is shutdown", poolName);
                     }
-                    log.debug("Block caller thread Until offer");
+                    log.debug("Block caller thread until queue offer");
                     executor.getQueue().offer(r);
                 });
         ((ThreadQueue<Runnable>) getQueue()).setPool(this);
@@ -256,27 +256,30 @@ public class ThreadPool extends ThreadPoolExecutor {
                 return;
             }
             switch (p.getFlag()) {
-                case CONCURRENT:
-                case TRANSFER:
-                case PRIORITY:
-                    return;
-            }
-            ReentrantLock locker = syncRoot.computeIfAbsent(p.getName(), k -> new ReentrantLock());
-            switch (p.getFlag()) {
-                case SINGLE:
-                    if (!locker.tryLock()) {
+                case SINGLE: {
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.getName());
+                    if (!locker.left.tryLock()) {
                         throw new InterruptedException(String.format("SingleScope %s locked by other thread", p.getName()));
                     }
+                    locker.right.incrementAndGet();
                     log.debug("{} {} tryLock", p.getFlag(), p.getName());
-                    break;
-                case SYNCHRONIZED:
-                    locker.lock();
+                }
+                break;
+                case SYNCHRONIZED: {
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.getName());
+                    locker.right.incrementAndGet();
+                    locker.left.lock();
                     log.debug("{} {} lock", p.getFlag(), p.getName());
-                    break;
+                }
+                break;
             }
         }
 
         super.beforeExecute(t, r);
+    }
+
+    private Tuple<ReentrantLock, AtomicInteger> getLocker(String name) {
+        return syncRoot.computeIfAbsent(name, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
     }
 
     private NamedRunnable tryAs(Runnable command, boolean remove) {
@@ -296,11 +299,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     protected void afterExecute(Runnable r, Throwable t) {
         NamedRunnable p = tryAs(r, true);
         if (p != null) {
-            //todo when remove
-            ReentrantLock locker = syncRoot.get(p.getName());
+            Tuple<ReentrantLock, AtomicInteger> locker = syncRoot.get(p.getName());
             if (locker != null) {
                 log.debug("{} {} unlock", p.getFlag(), p.getName());
-                locker.unlock();
+                locker.left.unlock();
+                if (locker.right.decrementAndGet() <= 0) {
+                    syncRoot.remove(p.getName());
+                }
             }
         }
 
@@ -310,20 +315,18 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void execute(Runnable command) {
-        N
-
         submittedTaskCounter.incrementAndGet();
         super.execute(command);
     }
 
     public void offer(Runnable command) {
-        log.debug("Block caller thread Until put");
+        log.debug("Block caller thread until queue offer");
         getQueue().offer(command);
     }
 
     @SneakyThrows
     public void transfer(Runnable command) {
-        log.debug("Block caller thread Until consume");
+        log.debug("Block caller thread until queue take");
         ((ThreadQueue<Runnable>) getQueue()).transfer(command);
     }
 }
