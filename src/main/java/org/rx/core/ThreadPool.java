@@ -8,6 +8,7 @@ import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
 
 import java.io.Serializable;
+import java.lang.reflect.Field;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -291,7 +292,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         if ((r = command) instanceof CompletableFuture.AsynchronousCompletionTask) {
             Object fn = Reflects.readField(r.getClass(), r, "fn");
             if (fn == null) {
-                log.warn("tryAs fail {}", r);
+                Field field = Reflects.getFields(r.getClass()).firstOrDefault(p -> Runnable.class.isAssignableFrom(p.getType()));
+                log.warn("tryAs fail {} {}", r, field);
             } else {
                 funcMap.put(command, (Runnable) fn);
             }
