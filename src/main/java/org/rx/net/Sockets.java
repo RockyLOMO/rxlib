@@ -4,6 +4,7 @@ import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.bootstrap.ServerBootstrapConfig;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -37,14 +38,14 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
+    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
 
     private static EventLoopGroup reactorEventLoop(@NonNull String groupName) {
         return reactors.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
-    private static EventLoopGroup bindEventLoop(int threadAmount) {
-        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
-//        return Reflects.newInstance(eventLoopGroupClass, threadAmount, Tasks.getExecutor());
+    private static EventLoopGroup newEventLoop(int threadAmount) {
+        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount, scheduler) : new NioEventLoopGroup(threadAmount, scheduler);
     }
 
     private static Class<? extends SocketChannel> channelClass() {
@@ -56,10 +57,10 @@ public final class Sockets {
     }
 
     public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
-        return serverBootstrap(Strings.EMPTY, MemoryMode.LOW, initChannel);
+        return serverBootstrap(MemoryMode.LOW, initChannel);
     }
 
-    public static ServerBootstrap serverBootstrap(@NonNull String groupName, MemoryMode mode, BiAction<SocketChannel> initChannel) {
+    public static ServerBootstrap serverBootstrap(MemoryMode mode, BiAction<SocketChannel> initChannel) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
@@ -68,7 +69,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
         WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
         ServerBootstrap b = new ServerBootstrap()
-                .group(bindEventLoop(bossThreadAmount), reactorEventLoop(groupName))
+                .group(newEventLoop(bossThreadAmount), newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -100,9 +101,14 @@ public final class Sockets {
             return;
         }
 
-        EventLoopGroup bossGroup = bootstrap.config().group();
-        if (bossGroup != null) {
-            bossGroup.shutdownGracefully();
+        ServerBootstrapConfig config = bootstrap.config();
+        EventLoopGroup group = config.group();
+        if (group != null) {
+            group.shutdownGracefully();
+        }
+        group = config.childGroup();
+        if (group != null) {
+            group.shutdownGracefully();
         }
     }
 

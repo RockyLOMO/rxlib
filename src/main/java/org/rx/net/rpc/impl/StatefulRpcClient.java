@@ -25,10 +25,7 @@ import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.ChannelClientHandler;
 import org.rx.net.Sockets;
-import org.rx.net.rpc.RpcClient;
-import org.rx.net.rpc.RpcClientConfig;
-import org.rx.net.rpc.RpcServer;
-import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.rpc.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.rpc.packet.PingMessage;
@@ -142,7 +139,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private volatile ChannelFuture reconnectChannelFuture;
 
     @Override
-    public @NonNull TaskScheduler scheduler() {
+    public @NonNull TaskScheduler asyncScheduler() {
         return RpcServer.SCHEDULER;
     }
 
@@ -275,13 +272,13 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         if (!isConnected()) {
             if (reconnectFuture != null) {
                 try {
-                    FluentWait.newInstance(8000).until(s -> isConnected());
+                    FluentWait.newInstance(10000).until(s -> isConnected());
                 } catch (TimeoutException e) {
-                    throw new InvalidException("Client has disconnected", e);
+                    throw new ClientDisconnectedException(e);
                 }
             }
             if (!isConnected()) {
-                throw new InvalidException("Client has disconnected");
+                throw new ClientDisconnectedException();
             }
         }
 

@@ -65,7 +65,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     @NonNull
-    default TaskScheduler scheduler() {
+    default TaskScheduler asyncScheduler() {
         return Tasks.pool();
     }
 
@@ -124,10 +124,10 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-        return scheduler().run(() -> raiseEvent(eventName, args));
+        return asyncScheduler().run(() -> raiseEvent(eventName, args));
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<TSender, TArgs> event, TArgs args) {
-        return scheduler().run(() -> raiseEvent(event, args));
+        return asyncScheduler().run(() -> raiseEvent(event, args));
     }
 }

@@ -11,7 +11,7 @@ import java.util.List;
 @Data
 public class RpcServerConfig implements Serializable {
     public static final String GROUP_NAME = "℞Rpc";
-    public static final int HEARTBEAT_TIMEOUT = 30;
+    public static final int HEARTBEAT_TIMEOUT = 60;
     public static final int DISABLE_VERSION = -1;
     public static final int LATEST_COMPUTE = 0;
 

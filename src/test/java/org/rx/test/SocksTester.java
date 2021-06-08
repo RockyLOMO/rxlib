@@ -11,8 +11,8 @@ import org.rx.io.IOStream;
 import org.rx.net.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
-import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.Remoting;
+import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.SocksConfig;
@@ -22,10 +22,7 @@ import org.rx.test.bean.*;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -34,13 +31,15 @@ import static org.rx.core.App.toJsonString;
 
 @Slf4j
 public class SocksTester {
-    final InetSocketAddress serverEndpoint = Sockets.parseEndpoint("127.0.0.1:3307");
-    final Remoting.ServerBean[] serverBeans = new Remoting.ServerBean[2];
+    final InetSocketAddress endpoint0 = Sockets.parseEndpoint("127.0.0.1:3307");
+    final InetSocketAddress endpoint1 = Sockets.parseEndpoint("127.0.0.1:3308");
+    final Map<Object, Remoting.ServerBean> serverHost = new ConcurrentHashMap<>();
+    final long startDelay = 4000;
 
     @Test
     public void rpc_StatefulApi() {
-        UserManagerImpl server = new UserManagerImpl();
-        restartServer(server, 0);
+        UserManagerImpl svcImpl = new UserManagerImpl();
+        startServer(svcImpl, endpoint0);
 
         String ep = "127.0.0.1:3307";
         List<UserManager> facadeGroup = new ArrayList<>();
@@ -79,23 +78,10 @@ public class SocksTester {
             facadeGroup.get(1).raiseEvent(groupEvent, args);
             assert args.getFlag() == 2;
 
-            server.raiseEvent(groupEvent, args);
+            svcImpl.raiseEvent(groupEvent, args);
             assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-    }
-
-    private void restartServer(UserManagerImpl server, int i) {
-        Remoting.ServerBean serverBean = serverBeans[i];
-        if (serverBean != null) {
-            serverBean.getServer().close();
-            sleep(6000);
-        }
-        RpcServerConfig serverConfig = new RpcServerConfig();
-        serverConfig.setListenPort(serverEndpoint.getPort());
-        serverBeans[i] = Remoting.listen(server, serverConfig);
-        System.out.println("restartServer on port " + serverConfig.getListenPort());
-        sleep(4000);
     }
 
     @Test
@@ -145,57 +131,66 @@ public class SocksTester {
         });
     }
 
-    @SneakyThrows
     @Test
     public void rpc_Reconnect() {
-        UserManagerImpl server = new UserManagerImpl();
-        restartServer(server, 0);
-        String ep = "127.0.0.1:3307";
-        AtomicBoolean ok = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0), null, c -> {
+        UserManagerImpl svcImpl = new UserManagerImpl();
+        startServer(svcImpl, endpoint0);
+        AtomicBoolean connected = new AtomicBoolean(false);
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), null, c -> {
             c.onReconnecting = (s, e) -> {
                 InetSocketAddress next;
-                if (e.getValue().equals(Sockets.parseEndpoint(ep))) {
-                    next = Sockets.parseEndpoint("127.0.0.1:3308");
+                if (e.getValue().equals(endpoint0)) {
+                    next = endpoint1;
                 } else {
-                    next = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+                    next = endpoint0;  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
                 }
                 log.debug("reconnect {}", next);
                 e.setValue(next);
             };
             log.debug("init ok");
-            ok.set(true);
+            connected.set(true);
         });
         assert userManager.computeInt(1, 1) == 2;
-        sleep(1000);
-        serverBeans[0].getServer().close();  //关闭3307
-        Tasks.scheduleOnce(() -> Remoting.listen(server, 3308), 16000);  //16秒后开启3308端口实例，重连3308成功
+        restartServer(svcImpl, endpoint1, 10000); //15秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
-            if (!ok.get()) {
+            if (!connected.get()) {
                 sleep(1000);
                 continue;
             }
             if (i == 0) {
-                sleep(16000);
-                log.debug("sleep 16");
+                sleep(5000);
+                log.debug("sleep 5");
             }
             assert userManager.computeInt(i, 1) == i + 1;
             i++;
         }
-//        System.in.read();
+    }
+
+    <T> void startServer(T svcImpl, InetSocketAddress ep) {
+        serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, ep.getPort()));
+        System.out.println("Start server on port " + ep.getPort());
+        sleep(startDelay);
+    }
+
+    <T> void restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
+        Remoting.ServerBean bean = serverHost.remove(svcImpl);
+        Objects.requireNonNull(bean);
+        bean.getServer().close();
+        System.out.println("Close server on port " + bean.getServer().getConfig().getListenPort());
+        Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);
     }
 
     @SneakyThrows
     @Test
     public void rpc_clientPool() {
-        Remoting.listen(HttpUserManager.INSTANCE, serverEndpoint.getPort());
+        Remoting.listen(HttpUserManager.INSTANCE, endpoint0.getPort());
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(serverEndpoint, threadCount));
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint0, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {

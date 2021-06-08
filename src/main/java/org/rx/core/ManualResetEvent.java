@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.core.exception.InvalidException;
 
@@ -11,6 +12,8 @@ public final class ManualResetEvent {
     //        private final Object monitor = new Object();
     private final Object monitor = this;
     private volatile boolean open;
+    @Getter
+    private volatile int holdCount;
 
     public ManualResetEvent() {
         this(false);
@@ -30,10 +33,13 @@ public final class ManualResetEvent {
         synchronized (monitor) {
             while (!open) {
                 try {
+                    holdCount++;
                     monitor.wait(timeout);
                 } catch (InterruptedException e) {
                     //ignore
                     throw InvalidException.sneaky(e);
+                } finally {
+                    holdCount--;
                 }
                 if (timeout > 0) {
                     if (!open) {
@@ -49,6 +55,7 @@ public final class ManualResetEvent {
         synchronized (monitor) {
             open = true;
             monitor.notifyAll();
+            holdCount = 0;
         }
     }
 

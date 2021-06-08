@@ -2,14 +2,14 @@ package org.rx.bean;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class IntCounter {
+public class IncrementGenerator {
     private final AtomicInteger counter;
 
-    public IntCounter() {
+    public IncrementGenerator() {
         this(0);
     }
 
-    public IntCounter(int initValue) {
+    public IncrementGenerator(int initValue) {
         counter = new AtomicInteger(initValue);
     }
 

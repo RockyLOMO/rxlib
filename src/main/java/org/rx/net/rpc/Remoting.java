@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
+import org.rx.bean.IncrementGenerator;
 import org.rx.bean.InterceptProxy;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.net.Sockets;
@@ -31,9 +32,8 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Remoting {
     public static class ClientBean {
-        public final ManualResetEvent waiter = new ManualResetEvent();
-        public MethodPack pack;
-        public StatefulRpcClient client;
+        final ManualResetEvent waiter = new ManualResetEvent();
+        MethodPack pack;
     }
 
     @RequiredArgsConstructor
@@ -64,7 +64,8 @@ public final class Remoting {
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
     private static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
-    private static final Map<UUID, ClientBean> clientBeans = new ConcurrentHashMap<>();
+    private static final IncrementGenerator idGenerator = new IncrementGenerator();
+    private static final Map<StatefulRpcClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
         return create(contract, facadeConfig, null, null);
@@ -133,7 +134,7 @@ public final class Remoting {
                     }
                     break;
                 case "eventFlags":
-                case "scheduler":
+                case "asyncScheduler":
                     if (args.length == 0) {
                         return invokeSuper(m, p);
                     }
@@ -141,8 +142,7 @@ public final class Remoting {
             }
 
             if (pack == null) {
-                pack = clientBean.pack = new MethodPack(UUID.randomUUID(), m.getName(), args);
-                clientBeans.put(clientBean.pack.id, clientBean);
+                pack = clientBean.pack = new MethodPack(idGenerator.next(), m.getName(), args);
             }
             RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
                 log.info("RpcClientPool {}", toJsonString(k));
@@ -152,15 +152,28 @@ public final class Remoting {
             synchronized (sync) {
                 if (sync.v == null) {
                     init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                    sync.v.onReconnected = (s, e) -> {
+                        if (onInit != null) {
+                            onInit.toConsumer().accept((T) p.getProxyObject());
+                        }
+                        if (onInitClient != null) {
+                            onInitClient.toConsumer().accept((StatefulRpcClient) s);
+                        }
+                        s.asyncScheduler().run(() -> {
+                            for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
+                                if (value.waiter.getHoldCount() == 0) {
+                                    continue;
+                                }
+                                log.debug("clientSide resent pack[{}]", value.pack.id);
+                                try {
+                                    s.send(value.pack);
+                                } catch (ClientDisconnectedException ex) {
+                                    log.debug("clientSide resent pack[{}] fail", value.pack.id);
+                                }
+                            }
+                        });
+                    };
                     if (onInit != null || onInitClient != null) {
-                        sync.v.onReconnected = (s, e) -> {
-                            if (onInit != null) {
-                                onInit.toConsumer().accept((T) p.getProxyObject());
-                            }
-                            if (onInitClient != null) {
-                                onInitClient.toConsumer().accept((StatefulRpcClient) s);
-                            }
-                        };
                         sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
                         //onHandshake returnObject的情况
                         if (sync.v == null) {
@@ -169,13 +182,16 @@ public final class Remoting {
                     }
                 }
             }
-            StatefulRpcClient client = clientBean.client = sync.v;
+            StatefulRpcClient client = sync.v;
+            Map<Integer, ClientBean> waitBeans = null;
 
             MethodPack methodPack = as(pack, MethodPack.class);
             ProceedEventArgs eventArgs = methodPack != null ? new ProceedEventArgs(contract, methodPack.parameters, false) : null;
             try {
                 client.send(pack);
                 if (eventArgs != null) {
+                    waitBeans = getClientBeans(client);
+                    waitBeans.put(clientBean.pack.id, clientBean);
                     try {
                         clientBean.waiter.waitOne(client.getConfig().getConnectTimeoutMillis());
                         clientBean.waiter.reset();
@@ -187,6 +203,21 @@ public final class Remoting {
                 }
                 if (clientBean.pack.errorMessage != null) {
                     throw new RemotingException(clientBean.pack.errorMessage);
+                }
+            } catch (ClientDisconnectedException e) {
+                if (eventArgs == null) {
+                    throw e;
+                }
+                waitBeans = getClientBeans(client);
+                waitBeans.put(clientBean.pack.id, clientBean);
+                try {
+                    clientBean.waiter.waitOne(client.getConfig().getConnectTimeoutMillis());
+                    clientBean.waiter.reset();
+                } catch (TimeoutException ie) {
+                    if (clientBean.pack.returnValue == null) {
+                        eventArgs.setError(e);
+                        throw e;
+                    }
                 }
             } catch (Exception e) {
                 if (eventArgs != null) {
@@ -208,11 +239,11 @@ public final class Remoting {
                     });
                 }
                 synchronized (sync) {
-                    if (clientBean.pack != null) {
-                        clientBeans.remove(clientBean.pack.id);
-                    }
-                    if (!NQuery.of(clientBeans.values()).any(x -> x.client == client)) {
-                        sync.v = pool.returnClient(client);
+                    if (waitBeans != null) {
+                        waitBeans.remove(clientBean.pack.id);
+                        if (waitBeans.isEmpty()) {
+                            sync.v = pool.returnClient(client);
+                        }
                     }
                 }
             }
@@ -221,9 +252,7 @@ public final class Remoting {
     }
 
     private static void init(StatefulRpcClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
-        client.onError = (s, e) -> {
-            e.setCancel(true);
-        };
+        client.onError = (s, e) -> e.setCancel(true);
         client.onReceive = (s, e) -> {
             if (tryAs(e.getValue(), EventPack.class, x -> {
                 switch (x.flag) {
@@ -248,17 +277,24 @@ public final class Remoting {
             }
 
             MethodPack svrPack = (MethodPack) e.getValue();
-            log.debug("recv: {}", svrPack.returnValue);
-            ClientBean clientBean = clientBeans.get(svrPack.id);
-            Objects.requireNonNull(clientBean);
+//            log.debug("recv: {}", svrPack.returnValue);
+            ClientBean clientBean = getClientBeans(client).get(svrPack.id);
+            if (clientBean == null) {
+                log.debug("clientSide callback pack[{}] fail", svrPack.id);
+                return;
+            }
             clientBean.pack = svrPack;
             clientBean.waiter.set();
         };
     }
 
+    private static Map<Integer, ClientBean> getClientBeans(StatefulRpcClient client) {
+        return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<>());
+    }
+
     private static void setReturnValue(ClientBean clientBean, Object value) {
         if (clientBean.pack == null) {
-            clientBean.pack = new MethodPack(UUID.randomUUID(), null, null);
+            clientBean.pack = new MethodPack(idGenerator.next(), null, null);
         }
         clientBean.pack.returnValue = value;
     }

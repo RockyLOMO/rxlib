@@ -141,14 +141,14 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     private volatile boolean isStarted;
 
     @Override
-    public @NonNull TaskScheduler scheduler() {
+    public @NonNull TaskScheduler asyncScheduler() {
         return SCHEDULER;
     }
 
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
-        TaskScheduler scheduler = scheduler();
-        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getCounter().next()), RunFlag.PRIORITY);
+        TaskScheduler scheduler = asyncScheduler();
+        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getGenerator().next()), RunFlag.PRIORITY);
     }
 
     public List<RpcServerClient> getClients() {
@@ -187,7 +187,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         }
-        bootstrap = Sockets.serverBootstrap(RpcServerConfig.GROUP_NAME, config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.serverBootstrap(config.getMemoryMode(), channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             if (sslCtx != null) {
