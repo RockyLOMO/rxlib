@@ -9,11 +9,10 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.App.TIMEOUT_INFINITE;
 
 public final class ManualResetEvent {
-    //        private final Object monitor = new Object();
     private final Object monitor = this;
     private volatile boolean open;
     @Getter
-    private volatile int holdCount;
+    private int holdCount;
 
     public ManualResetEvent() {
         this(false);
