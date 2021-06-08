@@ -164,11 +164,11 @@ public final class Remoting {
                                 if (value.waiter.getHoldCount() == 0) {
                                     continue;
                                 }
-                                log.debug("clientSide resent pack[{}]", value.pack.id);
+                                log.info("clientSide resent pack[{}]", value.pack.id);
                                 try {
                                     s.send(value.pack);
                                 } catch (ClientDisconnectedException ex) {
-                                    log.debug("clientSide resent pack[{}] fail", value.pack.id);
+                                    log.warn("clientSide resent pack[{}] fail", value.pack.id);
                                 }
                             }
                         });
@@ -280,7 +280,7 @@ public final class Remoting {
 //            log.debug("recv: {}", svrPack.returnValue);
             ClientBean clientBean = getClientBeans(client).get(svrPack.id);
             if (clientBean == null) {
-                log.debug("clientSide callback pack[{}] fail", svrPack.id);
+                log.warn("clientSide callback pack[{}] fail", svrPack.id);
                 return;
             }
             clientBean.pack = svrPack;

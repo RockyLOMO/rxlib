@@ -50,7 +50,7 @@ public class SocksTester {
             assert facade.computeInt(1, 1) == 2;
         }
         //重启server，客户端自动重连
-//        restartServer(server, 0);
+        restartServer(svcImpl, endpoint0, startDelay);
         for (UserManager facade : facadeGroup) {
             try {
                 facade.triggerError();
@@ -151,7 +151,7 @@ public class SocksTester {
             connected.set(true);
         });
         assert userManager.computeInt(1, 1) == 2;
-        restartServer(svcImpl, endpoint1, 10000); //15秒后开启3308端口实例，重连3308成功
+        restartServer(svcImpl, endpoint1, 10000); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
             if (!connected.get()) {

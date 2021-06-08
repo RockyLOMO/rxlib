@@ -49,7 +49,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
-            NamedRunnable p = pool.tryAs((Runnable) t, false);
+            NamedRunnable p = pool.getAs((Runnable) t, false);
             if (p != null && p.getFlag() != null) {
                 switch (p.getFlag()) {
                     case TRANSFER:
@@ -251,11 +251,21 @@ public class ThreadPool extends ThreadPoolExecutor {
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        NamedRunnable p = tryAs(r, true);
-        if (p != null) {
-            if (p.getFlag() == null) {
-                return;
+        NamedRunnable p = null;
+        if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
+            Object fn = Reflects.readField(r.getClass(), r, "fn");
+            if (fn == null) {
+                Field field = Reflects.getFields(r.getClass()).firstOrDefault(x -> Runnable.class.isAssignableFrom(x.getType()));
+                log.warn("{}.fn is null, field={}", r, field);
+            } else {
+                funcMap.put(r, (Runnable) fn);
             }
+            p = as(fn, NamedRunnable.class);
+        }
+        if (p == null) {
+            p = as(r, NamedRunnable.class);
+        }
+        if (p != null && p.getFlag() != null) {
             switch (p.getFlag()) {
                 case SINGLE: {
                     Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.getName());
@@ -283,27 +293,14 @@ public class ThreadPool extends ThreadPoolExecutor {
         return syncRoot.computeIfAbsent(name, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
     }
 
-    private NamedRunnable tryAs(Runnable command, boolean remove) {
+    private NamedRunnable getAs(Runnable command, boolean remove) {
         Runnable r = remove ? funcMap.remove(command) : funcMap.get(command);
-        if (r != null) {
-            return as(r, NamedRunnable.class);
-        }
-
-        if ((r = command) instanceof CompletableFuture.AsynchronousCompletionTask) {
-            Object fn = Reflects.readField(r.getClass(), r, "fn");
-            if (fn == null) {
-                Field field = Reflects.getFields(r.getClass()).firstOrDefault(p -> Runnable.class.isAssignableFrom(p.getType()));
-                log.warn("tryAs fail {} {}", r, field);
-            } else {
-                funcMap.put(command, (Runnable) fn);
-            }
-        }
         return as(r, NamedRunnable.class);
     }
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
-        NamedRunnable p = tryAs(r, true);
+        NamedRunnable p = getAs(r, true);
         if (p != null) {
             Tuple<ReentrantLock, AtomicInteger> locker = syncRoot.get(p.getName());
             if (locker != null) {

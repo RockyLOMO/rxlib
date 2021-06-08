@@ -92,7 +92,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
-            log.debug("serverInactive {}", ctx.channel().remoteAddress());
+            log.info("serverInactive {}", ctx.channel().remoteAddress());
             clients.remove(client.getId());
             raiseEventAsync(onDisconnected, new RpcServerEventArgs<>(client, null));
         }

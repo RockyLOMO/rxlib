@@ -70,7 +70,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.debug("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
                 return;
             }
-            if (tryAs(pack, PingMessage.class, p -> log.debug("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
+            if (tryAs(pack, PingMessage.class, p -> log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
                 return;
             }
 
@@ -243,7 +243,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             InetSocketAddress ep = args.getValue();
             reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.info("reconnect {} fail", ep);
+                    log.warn("reconnect {} fail", ep);
                     f.channel().close();
                     reconnectChannelFuture = null;
                     return;
@@ -272,7 +272,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         if (!isConnected()) {
             if (reconnectFuture != null) {
                 try {
-                    FluentWait.newInstance(10000).until(s -> isConnected());
+                    FluentWait.newInstance(8000).until(s -> isConnected());
                 } catch (TimeoutException e) {
                     throw new ClientDisconnectedException(e);
                 }
