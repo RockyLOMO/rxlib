@@ -289,8 +289,12 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         if ((r = command) instanceof CompletableFuture.AsynchronousCompletionTask) {
-            r = Reflects.readField(r.getClass(), r, "fn");
-            funcMap.put(command, r);
+            Runnable fn = Reflects.readField(r.getClass(), r, "fn");
+            if (fn == null) {
+                log.warn("tryAs fail {}", r);
+            } else {
+                funcMap.put(command, fn);
+            }
         }
         return as(r, NamedRunnable.class);
     }
