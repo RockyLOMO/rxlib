@@ -1,22 +1,17 @@
 package org.rx.bean;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 
+@NoArgsConstructor
+@AllArgsConstructor
 public class IncrementGenerator {
-    private final AtomicInteger counter;
-
-    public IncrementGenerator() {
-        this(0);
-    }
-
-    public IncrementGenerator(int initValue) {
-        counter = new AtomicInteger(initValue);
-    }
+    private volatile int val;
 
     public synchronized int next() {
-        int i = counter.incrementAndGet();
+        int i = ++val;
         if (i == Integer.MAX_VALUE) {
-            counter.set(0);
+            val = 0;
         }
         return i;
     }

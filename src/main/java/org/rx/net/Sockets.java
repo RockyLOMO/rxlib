@@ -38,14 +38,14 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
-    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
+//    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
 
     private static EventLoopGroup reactorEventLoop(@NonNull String groupName) {
         return reactors.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
     private static EventLoopGroup newEventLoop(int threadAmount) {
-        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount, scheduler) : new NioEventLoopGroup(threadAmount, scheduler);
+        return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
 
     private static Class<? extends SocketChannel> channelClass() {
