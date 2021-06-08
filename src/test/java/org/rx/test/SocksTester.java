@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.SUID;
 import org.rx.core.App;
+import org.rx.core.EventArgs;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
@@ -35,6 +36,7 @@ public class SocksTester {
     final InetSocketAddress endpoint1 = Sockets.parseEndpoint("127.0.0.1:3308");
     final Map<Object, Remoting.ServerBean> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
+    final String eventName = "onCallback";
 
     @Test
     public void rpc_StatefulApi() {
@@ -136,7 +138,12 @@ public class SocksTester {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint0);
         AtomicBoolean connected = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), null, c -> {
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), p -> {
+            p.attachEvent(eventName, (s, e) -> {
+                System.out.println("attachEvent callback");
+            }, false);
+            System.out.println("attachEvent done");
+        }, c -> {
             c.onReconnecting = (s, e) -> {
                 InetSocketAddress next;
                 if (e.getValue().equals(endpoint0)) {
@@ -151,7 +158,8 @@ public class SocksTester {
             connected.set(true);
         });
         assert userManager.computeInt(1, 1) == 2;
-        restartServer(svcImpl, endpoint1, 10000); //10秒后开启3308端口实例，重连3308成功
+        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        restartServer(svcImpl, endpoint1, 8000); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
             if (!connected.get()) {
@@ -165,6 +173,8 @@ public class SocksTester {
             assert userManager.computeInt(i, 1) == i + 1;
             i++;
         }
+        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.raiseEvent(eventName, EventArgs.EMPTY);
     }
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
@@ -176,6 +186,7 @@ public class SocksTester {
     <T> void restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
         Remoting.ServerBean bean = serverHost.remove(svcImpl);
         Objects.requireNonNull(bean);
+        sleep(startDelay);
         bean.getServer().close();
         System.out.println("Close server on port " + bean.getServer().getConfig().getListenPort());
         Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);

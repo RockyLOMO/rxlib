@@ -164,7 +164,7 @@ public final class Remoting {
                                 if (value.waiter.getHoldCount() == 0) {
                                     continue;
                                 }
-                                log.info("clientSide resent pack[{}]", value.pack.id);
+                                log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
                                 try {
                                     s.send(value.pack);
                                 } catch (ClientDisconnectedException ex) {

@@ -22,7 +22,7 @@ import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
-import org.rx.net.ChannelClientHandler;
+import org.rx.net.DuplexHandler;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.rpc.packet.PingMessage;
@@ -40,17 +40,29 @@ import static org.rx.core.App.*;
 @Slf4j
 @RequiredArgsConstructor
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
-    class ClientHandler extends ChannelClientHandler {
+    class ClientHandler extends DuplexHandler {
         private RpcServerClient client;
+        private Channel channel;
+
+        public boolean isConnected() {
+            return channel != null && channel.isActive();
+        }
+
+        public ChannelHandlerContext context() {
+            if (!isConnected()) {
+                throw new ClientDisconnectedException();
+            }
+            return channel.pipeline().lastContext();
+        }
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
-            super.channelActive(ctx);
-            Channel channel = ctx.channel();
+//            super.channelActive(ctx);
+            channel = ctx.channel();
             log.debug("serverActive {}", channel.remoteAddress());
             if (clients.size() > config.getCapacity()) {
                 log.warn("Force close client, Not enough capacity {}/{}.", clients.size(), config.getCapacity());
-                close();
+                Sockets.closeOnFlushed(channel);
                 return;
             }
 
@@ -60,19 +72,19 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             raiseEvent(onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
-                close();
+                Sockets.closeOnFlushed(channel);
             }
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-            Channel channel = ctx.channel();
+//            Channel channel = ctx.channel();
             log.debug("serverRead {} {}", channel.remoteAddress(), msg.getClass());
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
                 log.warn("serverRead discard");
-                close();
+                Sockets.closeOnFlushed(channel);
                 return;
             }
             if (!RpcServer.this.isConnected(client) || tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
@@ -81,7 +93,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             }
             if (tryAs(pack, PingMessage.class, p -> {
                 p.setReplyTimestamp(System.currentTimeMillis());
-                writeAndFlush(p);
+                writeAndFlush(context(), p);
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
@@ -99,7 +111,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
-            Channel channel = ctx.channel();
+//            Channel channel = ctx.channel();
             if (evt instanceof IdleStateEvent) {
                 IdleStateEvent e = (IdleStateEvent) evt;
                 if (e.state() == IdleState.READER_IDLE) {
@@ -111,7 +123,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            Channel channel = ctx.channel();
+//            Channel channel = ctx.channel();
             App.log("serverCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
@@ -122,7 +134,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             if (args.isCancel()) {
                 return;
             }
-            close();
+            Sockets.closeOnFlushed(channel);
         }
     }
 
@@ -246,11 +258,11 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
 
         ClientHandler handler = getHandler(client.getId());
-        handler.writeAndFlush(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-        log.debug("serverWrite {} {}", handler.channel().remoteAddress(), pack.getClass());
+        handler.writeAndFlush(handler.context(), pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        log.debug("serverWrite {} {}", handler.channel.remoteAddress(), pack.getClass());
     }
 
     public void closeClient(RpcServerClient client) {
-        getHandler(client.getId()).close();
+        Sockets.closeOnFlushed(getHandler(client.getId()).channel);
     }
 }
