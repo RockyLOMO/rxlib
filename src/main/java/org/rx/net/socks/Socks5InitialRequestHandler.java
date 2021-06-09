@@ -12,10 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5InitialRequest> {
-    private final SocksProxyServer socksProxyServer;
+    final SocksProxyServer server;
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5InitialRequest msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5InitialRequest msg) {
         ChannelPipeline pipeline = ctx.pipeline();
         pipeline.remove(Socks5InitialRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
@@ -27,6 +27,6 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
             ctx.writeAndFlush(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        ctx.writeAndFlush(new DefaultSocks5InitialResponse(socksProxyServer.isAuth() ? Socks5AuthMethod.PASSWORD : Socks5AuthMethod.NO_AUTH));
+        ctx.writeAndFlush(new DefaultSocks5InitialResponse(server.isAuthEnabled() ? Socks5AuthMethod.PASSWORD : Socks5AuthMethod.NO_AUTH));
     }
 }

@@ -11,10 +11,10 @@ import org.rx.net.Sockets;
 @Slf4j
 @RequiredArgsConstructor
 public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
-    private final ChannelHandlerContext inbound;
+    final ChannelHandlerContext inbound;
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (!inbound.channel().isActive()) {
             return;
         }
@@ -25,7 +25,7 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    public void channelInactive(ChannelHandlerContext ctx) {
         Sockets.closeOnFlushed(inbound.channel());
     }
 

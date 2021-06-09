@@ -5,25 +5,20 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
-import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.util.function.BiFunc;
-import org.rx.util.function.TripleFunc;
 
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-
-import static org.rx.core.App.sneakyInvoke;
 
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
-    private final SocksProxyServer socksProxyServer;
+    final SocksProxyServer server;
 
     @SneakyThrows
     @Override
-    protected void channelRead0(final ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) throws Exception {
+    protected void channelRead0(final ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
@@ -34,28 +29,29 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             return;
         }
         InetSocketAddress dstAddr = InetSocketAddress.createUnresolved(msg.dstAddr(), msg.dstPort());
-        BiFunc<SocketAddress, Upstream> upstreamSupplier = socksProxyServer.getConfig().getUpstreamSupplier();
-        Upstream upstream = upstreamSupplier == null ? new DirectUpstream() : upstreamSupplier.invoke(dstAddr);
-        connect(inbound, msg.dstAddrType(), upstream, dstAddr);
+        Upstream upstream = server.router.invoke(dstAddr);
+        ReconnectingEventArgs e = new ReconnectingEventArgs(dstAddr, upstream);
+        connect(inbound, msg.dstAddrType(), e);
     }
 
-    private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, Upstream upstream, SocketAddress dstAddr) {
-        Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
+    private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, ReconnectingEventArgs e) {
+        Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
-            //ProxyChannelManageHandler.get(inbound).getUsername()
-            upstream.initChannel(channel);
-        }).connect(dstAddr).addListener((ChannelFutureListener) f -> {
+            e.getUpstream().initChannel(channel);
+        }).connect(e.getRemoteAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                TripleFunc<SocketAddress, Upstream, Upstream> upstreamPreReconnect = socksProxyServer.getConfig().getUpstreamPreReconnect();
-                Upstream newUpstream;
-                if (upstreamPreReconnect != null && (newUpstream = sneakyInvoke(() -> upstreamPreReconnect.invoke(dstAddr, upstream))) != null) {
-                    connect(inbound, addrType, newUpstream, dstAddr);
-                    return;
+                if (server.onReconnecting != null) {
+                    server.raiseEvent(server.onReconnecting, e);
+                    if (!e.isCancel() && e.isChanged()) {
+                        e.reset();
+                        connect(inbound, addrType, e);
+                        return;
+                    }
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
-            log.trace("socks5 connect to backend {}", dstAddr);
+            log.trace("socks5 connect to backend {}", e.getRemoteAddress());
             Channel outbound = f.channel();
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));
             inbound.pipeline().addLast("to-upstream", new ForwardingFrontendHandler(outbound));

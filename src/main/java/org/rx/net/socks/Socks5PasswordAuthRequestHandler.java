@@ -14,21 +14,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5PasswordAuthRequest> {
-    private final SocksProxyServer socksProxyServer;
+    final SocksProxyServer server;
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5PasswordAuthRequest msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5PasswordAuthRequest msg) {
         ChannelPipeline pipeline = ctx.pipeline();
         pipeline.remove(Socks5PasswordAuthRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
         log.debug("socks5 auth {}:{}", msg.username(), msg.password());
 
-        if (socksProxyServer.getAuthenticator() == null || !socksProxyServer.getAuthenticator().auth(msg.username(), msg.password())) {
-            ProxyChannelManageHandler.username(ctx, "unauthorized");
+        if (server.getAuthenticator() == null || !server.getAuthenticator().auth(msg.username(), msg.password())) {
+            ProxyChannelManageHandler.get(ctx).setUsername("unauthorized");
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        ProxyChannelManageHandler.username(ctx, msg.username());
+        ProxyChannelManageHandler.get(ctx).setUsername(msg.username());
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.SUCCESS));
     }
 }

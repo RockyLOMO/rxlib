@@ -2,7 +2,9 @@ package org.rx.net.socks;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.traffic.ChannelTrafficShapingHandler;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.Setter;
 import org.rx.bean.DateTime;
 
 public class ProxyChannelManageHandler extends ChannelTrafficShapingHandler {
@@ -10,17 +12,14 @@ public class ProxyChannelManageHandler extends ChannelTrafficShapingHandler {
         return (ProxyChannelManageHandler) ctx.pipeline().get(ProxyChannelManageHandler.class.getSimpleName());
     }
 
-    public static void username(ChannelHandlerContext ctx, String username) {
-        get(ctx).username = username;
-    }
-
+    @Getter
+    @Setter(AccessLevel.PROTECTED)
+    private String username = "anonymous";
     @Getter
     private DateTime beginTime;
     @Getter
     private DateTime endTime;
-    @Getter
-    private String username = "anonymous";
-    private FlowLogger flowLogger;
+    final FlowLogger flowLogger;
 
     public ProxyChannelManageHandler(long checkInterval, FlowLogger flowLogger) {
         super(checkInterval);

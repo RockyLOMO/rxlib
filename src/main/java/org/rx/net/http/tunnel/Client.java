@@ -54,11 +54,12 @@ public class Client {
 
     public Client(String serverUrl, int listenPort) {
         this.serverUrl = serverUrl;
-        SocksConfig config = new SocksConfig();
-        config.setListenPort(listenPort);
-        config.setUpstreamSupplier(null);
-        config.setUpstreamPreReconnect(null);
-        proxyServer = new SocksProxyServer(config);
+//        SocksConfig config = new SocksConfig();
+//        config.setListenPort(listenPort);
+//        config.setUpstreamSupplier(null);
+//        config.setUpstreamPreReconnect(null);
+//        proxyServer = new SocksProxyServer(config);
+        proxyServer = null;
     }
 //
 //    public void xxxx() {

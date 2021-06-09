@@ -3,12 +3,7 @@ package org.rx.net.socks;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.handler.codec.compression.ZlibCodecFactory;
-import io.netty.handler.codec.compression.ZlibWrapper;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.handler.ssl.util.SelfSignedCertificate;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -22,7 +17,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Slf4j
-public class SslDirectServer extends Disposable {
+public final class SslDirectServer extends Disposable {
     class FrontendHandler extends ChannelInboundHandlerAdapter {
         @RequiredArgsConstructor
         class BackendHandler extends ChannelInboundHandlerAdapter {
@@ -62,22 +57,19 @@ public class SslDirectServer extends Disposable {
         @SneakyThrows
         @Override
         public void channelActive(ChannelHandlerContext inbound) {
-            InetSocketAddress proxyEndpoint = proxyRule.invoke((InetSocketAddress) inbound.channel().remoteAddress());
+            InetSocketAddress proxyEndpoint = router.invoke((InetSocketAddress) inbound.channel().remoteAddress());
             log.debug("connect to backend {}", proxyEndpoint);
             Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
                 ChannelPipeline pipeline = channel.pipeline();
-                if (config.getEnableFlags() != null && config.getEnableFlags().has(SslDirectConfig.EnableFlags.BACKEND)) {
-                    if (config.isEnableSsl()) {
-                        SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-                        pipeline.addLast(sslCtx.newHandler(channel.alloc(), proxyEndpoint.getHostString(), proxyEndpoint.getPort()));
-                    }
-                    if (config.isEnableCompress()) {
-                        pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-                    }
-                }
+                SslUtil.addBackendHandler(channel, config.getTransportFlags(), proxyEndpoint, false);
                 pipeline.addLast(new BackendHandler(inbound));
             });
-            outbound = bootstrap.connect(proxyEndpoint).channel();
+            outbound = bootstrap.connect(proxyEndpoint).addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    log.error("Connect to backend {} fail", proxyEndpoint, f.cause());
+                    Sockets.closeOnFlushed(inbound.channel());
+                }
+            }).channel();
         }
 
         @Override
@@ -113,30 +105,26 @@ public class SslDirectServer extends Disposable {
         }
     }
 
+    @Getter
     final SslDirectConfig config;
     final ServerBootstrap serverBootstrap;
-    final BiFunc<InetSocketAddress, InetSocketAddress> proxyRule;
+    final BiFunc<InetSocketAddress, InetSocketAddress> router;
 
-    public SslDirectServer(@NonNull SslDirectConfig config, @NonNull BiFunc<InetSocketAddress, InetSocketAddress> proxyRule) {
+    public SslDirectServer(@NonNull SslDirectConfig config, @NonNull BiFunc<InetSocketAddress, InetSocketAddress> router) {
         this.config = config;
         serverBootstrap = Sockets.serverBootstrap(channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-            if (config.getEnableFlags() != null && config.getEnableFlags().has(SslDirectConfig.EnableFlags.FRONTEND)) {
-                if (config.isEnableSsl()) {
-                    SelfSignedCertificate ssc = new SelfSignedCertificate();
-                    SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-                    pipeline.addLast(sslCtx.newHandler(channel.alloc()));
-                }
-                if (config.isEnableCompress()) {
-                    pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP),
-                            ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-                }
-            }
+            SslUtil.appendFrontendHandler(channel, config.getTransportFlags());
             pipeline.addLast(new FrontendHandler());
         });
-        serverBootstrap.bind(config.getListenPort());
-        log.debug("DirectProxy Listened on port {}..", config.getListenPort());
-        this.proxyRule = proxyRule;
+        serverBootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess()) {
+                log.error("Listen on port {} fail", config.getListenPort(), f.cause());
+                return;
+            }
+            log.debug("Listened on port {}..", config.getListenPort());
+        });
+        this.router = router;
     }
 
     @Override

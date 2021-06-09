@@ -3,82 +3,81 @@ package org.rx.net.socks;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
 import io.netty.handler.timeout.IdleStateHandler;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
-import org.rx.core.Strings;
-import org.rx.core.exception.InvalidException;
-import org.rx.net.MemoryMode;
+import org.rx.core.EventTarget;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.util.function.BiFunc;
+
+import java.net.SocketAddress;
+import java.util.function.BiConsumer;
 
 //thanks https://github.com/hsupu/netty-socks
 @Slf4j
 @RequiredArgsConstructor
-public class SocksProxyServer extends Disposable {
-    @Getter
-    private final SocksConfig config;
-    @Getter(AccessLevel.PROTECTED)
-    @Setter
-    private Authenticator authenticator;
-    @Setter
-    private FlowLogger flowLogger;
-    private ServerBootstrap bootstrap;
-    @Getter
-    private volatile boolean isStarted;
+public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
+    public volatile BiConsumer<SocksProxyServer, ReconnectingEventArgs> onReconnecting;
 
-    public boolean isAuth() {
+    @Getter
+    final SocksConfig config;
+    final ServerBootstrap bootstrap;
+    @Getter(AccessLevel.PROTECTED)
+    final Authenticator authenticator;
+    final BiFunc<SocketAddress, Upstream> router;
+
+    public boolean isAuthEnabled() {
         return authenticator != null;
+    }
+
+    public SocksProxyServer(SocksConfig config) {
+        this(config, null, null);
+    }
+
+    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<SocketAddress, Upstream> router) {
+        if (router == null) {
+            router = endpoint -> new DirectUpstream();
+        }
+
+        this.config = config;
+        this.authenticator = authenticator;
+        this.router = router;
+        bootstrap = Sockets.serverBootstrap(channel -> {
+            ChannelPipeline pipeline = channel.pipeline();
+            //流量统计
+            pipeline.addLast(ProxyChannelManageHandler.class.getSimpleName(), new ProxyChannelManageHandler(config.getTrafficShapingInterval(), new FlowLoggerImpl()));
+            //超时处理
+            pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
+                    new ProxyChannelIdleHandler());
+//            SocksPortUnificationServerHandler
+            SslUtil.appendFrontendHandler(channel, config.getTransportFlags());
+            pipeline.addLast(Socks5ServerEncoder.DEFAULT)
+                    .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
+                    .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));
+            if (isAuthEnabled()) {
+                pipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
+                        .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), new Socks5PasswordAuthRequestHandler(SocksProxyServer.this));
+            }
+            pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
+                    .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
+        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
+        bootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess()) {
+                log.error("Listen on port {} fail", config.getListenPort(), f.cause());
+            }
+        });
     }
 
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
-    }
-
-    public synchronized void start() {
-        if (isStarted) {
-            throw new InvalidException("Server has started");
-        }
-
-        if (config.getUpstreamSupplier() == null) {
-            config.setUpstreamSupplier(endpoint -> new DirectUpstream());
-        }
-        if (flowLogger == null) {
-            flowLogger = new FlowLoggerImpl();
-        }
-        bootstrap = Sockets.serverBootstrap(channel -> {
-            //流量统计
-            channel.pipeline().addLast(ProxyChannelManageHandler.class.getSimpleName(), new ProxyChannelManageHandler(3000, flowLogger));
-            //超时处理
-            channel.pipeline().addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0))
-                    .addLast(new ProxyChannelIdleHandler());
-//            SocksPortUnificationServerHandler
-            channel.pipeline().addLast(Socks5ServerEncoder.DEFAULT)
-                    .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
-                    .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));
-            if (isAuth()) {
-                channel.pipeline().addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
-                        .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), new Socks5PasswordAuthRequestHandler(SocksProxyServer.this));
-            }
-            channel.pipeline().addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
-                    .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
-        }).option(ChannelOption.SO_BACKLOG, config.getBacklog())
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
-        bootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                log.error("Listened on port {} fail..", config.getListenPort(), f.cause());
-                isStarted = false;
-            }
-        });
-        isStarted = true;
     }
 }

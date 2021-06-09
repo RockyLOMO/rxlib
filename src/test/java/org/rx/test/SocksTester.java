@@ -16,10 +16,7 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.socks.SocksConfig;
-import org.rx.net.socks.SocksProxyServer;
-import org.rx.net.socks.SslDirectConfig;
-import org.rx.net.socks.SslDirectServer;
+import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.test.bean.*;
 
@@ -222,10 +219,10 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void directProxy() {
-        SslDirectConfig frontConf = new SslDirectConfig(3307, SslDirectConfig.EnableFlags.BACKEND.flags(), true, true);
+        SslDirectConfig frontConf = new SslDirectConfig(3307, TransportFlags.BACKEND_ALL.flags());
         SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
 
-        SslDirectConfig backConf = new SslDirectConfig(3308, SslDirectConfig.EnableFlags.FRONTEND.flags(), true, true);
+        SslDirectConfig backConf = new SslDirectConfig(3308, TransportFlags.FRONTEND_ALL.flags());
         SslDirectServer backSvr = new SslDirectServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
         System.in.read();
     }
@@ -233,12 +230,14 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        SocksConfig config = new SocksConfig();
-        config.setListenPort(1081);
-        config.setUpstreamSupplier(addr -> new Socks5Upstream(new AuthenticEndpoint("127.0.0.1:1080")));
-        SocksProxyServer ss = new SocksProxyServer(config);
-        ss.setAuthenticator((username, password) -> username.equals("ss"));
-        ss.start();
+        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_COMPRESS.flags());
+        frontConf.setConnectTimeoutMillis(60000);
+        SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
+                addr -> new Socks5Upstream(frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
+
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_COMPRESS.flags());
+        backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
+        SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
         System.in.read();
     }
