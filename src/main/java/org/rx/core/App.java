@@ -43,6 +43,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static java.lang.Math.pow;
 
@@ -50,6 +52,7 @@ import static java.lang.Math.pow;
 public final class App extends SystemUtils {
     public static final String NON_WARNING = "all", CACHE_KEY_SUFFIX = ":";
     public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
+    static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
         public Object process(Object o, String k, Object v) {
@@ -84,55 +87,8 @@ public final class App extends SystemUtils {
     }
 
     //region Contract
-    //region basic
-    //todo checkerframework
-    @ErrorCode("test")
-    public static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
-    public static <T> T as(Object obj, Class<T> type) {
-        if (!Reflects.isInstance(obj, type)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> boolean eq(T t1, T t2) {
-        if (t1 == null) {
-            return t2 == null;
-        }
-        return t1.equals(t2);
-    }
-
-    public static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
-    }
-
-    public static <T> T isNull(T value, Supplier<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.get();
-            }
-        }
-        return value;
-    }
-
-    public static Object[] values(Object... args) {
-        return args;
-    }
-
-    public static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
+    public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
+        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
     }
 
     public static String cacheKey(String methodName, Object... args) {
@@ -145,13 +101,28 @@ public final class App extends SystemUtils {
         return k.append(SUID.compute(toJsonString(args))).toString();
     }
 
+    public static String description(@NonNull AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
     @SneakyThrows
     public static void sleep(long millis) {
         Thread.sleep(millis);
     }
-    //endregion
 
-    //region more
+    public static <T> T getBean(@NonNull Class<T> type) {
+        return Container.getInstance().get(type);
+    }
+
+    public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
+        Container.getInstance().register(type, instance);
+    }
+
+    //region json
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
         try {
@@ -276,14 +247,6 @@ public final class App extends SystemUtils {
         return null;
     }
 
-    public static boolean tryClose(Object obj) {
-        return tryClose(obj, true);
-    }
-
-    public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? p -> quietly(p::close) : AutoCloseable::close);
-    }
-
     public static <T> boolean tryAs(Object obj, Class<T> type) {
         return tryAs(obj, type, null);
     }
@@ -300,16 +263,54 @@ public final class App extends SystemUtils {
         return true;
     }
 
-    public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
-        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
+    public static boolean tryClose(Object obj) {
+        return tryClose(obj, true);
     }
 
-    public static <T> T getBean(@NonNull Class<T> type) {
-        return Container.getInstance().get(type);
+    public static boolean tryClose(Object obj, boolean quietly) {
+        return tryAs(obj, AutoCloseable.class, quietly ? p -> quietly(p::close) : AutoCloseable::close);
     }
 
-    public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
-        Container.getInstance().register(type, instance);
+    //todo checkerframework
+    @ErrorCode("test")
+    public static void require(Object arg, boolean testResult) {
+        if (!testResult) {
+            throw new ApplicationException("test", values(arg));
+        }
+    }
+
+    public static <T> T as(Object obj, Class<T> type) {
+        if (!Reflects.isInstance(obj, type)) {
+            return null;
+        }
+        return (T) obj;
+    }
+
+    public static <T> boolean eq(T t1, T t2) {
+        if (t1 == null) {
+            return t2 == null;
+        }
+        return t1.equals(t2);
+    }
+
+    public static <T> T isNull(T value, T defaultVal) {
+        if (value == null) {
+            return defaultVal;
+        }
+        return value;
+    }
+
+    public static <T> T isNull(T value, Supplier<T> supplier) {
+        if (value == null) {
+            if (supplier != null) {
+                value = supplier.get();
+            }
+        }
+        return value;
+    }
+
+    public static Object[] values(Object... args) {
+        return args;
     }
     //endregion
 
@@ -362,6 +363,34 @@ public final class App extends SystemUtils {
     //endregion
 
     //region Basic
+    public static List<String> argsOperations(String[] args) {
+        List<String> result = new ArrayList<>();
+        for (String arg : args) {
+            if (arg.startsWith("-")) {
+                break;
+            }
+            result.add(arg);
+        }
+        return result;
+    }
+
+    public static Map<String, String> argsOptions(String[] args) {
+        Map<String, String> result = new HashMap<>();
+        for (String arg : args) {
+            if (arg.startsWith("-")) {
+                Matcher matcher = patternToFindOptions.matcher(arg);
+                if (matcher.find()) {
+                    result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
+                }
+            }
+        }
+        return result;
+    }
+
+    public static MainArgs parseArgs(String[] args) {
+        return new MainArgs(argsOperations(args), argsOptions(args));
+    }
+
     public static String getBootstrapPath() {
         return new File(Strings.EMPTY).getAbsolutePath();
     }

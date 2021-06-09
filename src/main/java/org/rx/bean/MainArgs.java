@@ -1,15 +1,15 @@
 package org.rx.bean;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @SuppressWarnings("WeakerAccess")
+@RequiredArgsConstructor
 @Data
-@AllArgsConstructor
-public class MainArgs {
-    private ArrayList<String> operations;
-    private Map<String, String> options;
+public final class MainArgs {
+    final List<String> operations;
+    final Map<String, String> options;
 }

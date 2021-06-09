@@ -19,7 +19,7 @@ public class FlowLoggerImpl implements FlowLogger {
         long readByte = trafficShapingHandler.trafficCounter().cumulativeReadBytes();
         long writeByte = trafficShapingHandler.trafficCounter().cumulativeWrittenBytes();
 
-        log.info("User={} elapsed={}s\tlocal={}:{} remote={}\treadBytes={} writeBytes={}",
+        log.info("user={} elapsed={}s\tlocal={}:{} remote={}\treadBytes={} writeBytes={}",
                 trafficShapingHandler.getUsername(),
                 isNull(trafficShapingHandler.getEndTime(), DateTime.now()).subtract(trafficShapingHandler.getBeginTime()).getTotalSeconds(),
                 Sockets.getLocalAddress(), localAddress.getPort(), remoteAddress,

@@ -3,7 +3,7 @@ package org.rx;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.Tuple;
-import org.rx.core.ArgsUtils;
+import org.rx.core.App;
 import org.rx.core.Reflects;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.SocksConfig;
@@ -17,8 +17,10 @@ import static org.rx.core.App.eq;
 
 @Slf4j
 public final class Main {
+    //java -jar rxlib-2.17.3-SNAPSHOT.jar -shadowMode=1 -port=9900 -connectTimeout=120000 -shadowUser=youfanX:5PXx$^JNMgvn3P658@f-li.cn:9900
+    //java -jar rxlib-2.17.3-SNAPSHOT.jar -port=9900 -connectTimeout=120000 -shadowServer=youfanX:5PXx$^JNMgvn3P658@103.79.76.126:9900
     public static void main(String[] args) {
-        Map<String, String> options = ArgsUtils.getOptions(args);
+        Map<String, String> options = App.argsOptions(args);
         Tuple<Boolean, Integer> port = Reflects.tryConvert(options.get("port"), Integer.class);
         if (port.right == null) {
             log.info("Invalid port arg");
