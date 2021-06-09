@@ -14,6 +14,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.util.function.BiFunc;
 import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -83,6 +84,7 @@ public class Reflects extends TypeUtils {
 //        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
         registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
+        registerConvert(String.class, AuthenticEndpoint.class, (sv, tt) -> new AuthenticEndpoint(sv));
     }
 
     //region class
@@ -345,7 +347,7 @@ public class Reflects extends TypeUtils {
 
     public static <T> Tuple<Boolean, T> tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
-            return Tuple.of(true, Reflects.changeType(val, toType));
+            return Tuple.of(true, isNull(Reflects.changeType(val, toType), defaultVal));
         } catch (Exception ex) {
             return Tuple.of(false, defaultVal);
         }

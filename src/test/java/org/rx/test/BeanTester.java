@@ -113,6 +113,14 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
+    public void snowFlake() {
+        SnowFlake snowFlake = new SnowFlake(2, 3);
+        for (int i = 0; i < (1 << 12); i++) {
+            System.out.println(snowFlake.nextId());
+        }
+    }
+
+    @Test
     public void suid() {
         Map<Integer, Long> map = new HashMap<>();
         for (int i = 0; i < 10; i++) {

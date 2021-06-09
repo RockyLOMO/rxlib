@@ -11,8 +11,8 @@ import java.io.Serializable;
 public class SocksConfig implements Serializable {
     private final int listenPort;
     private final FlagsEnum<TransportFlags> transportFlags;
-    private int connectTimeoutMillis = 10000;
+    private int connectTimeoutMillis = 20000;
     private int trafficShapingInterval = 5000;
-    private int readTimeoutSeconds = 120;
-    private int writeTimeoutSeconds = 120;
+    private int readTimeoutSeconds;
+    private int writeTimeoutSeconds;
 }

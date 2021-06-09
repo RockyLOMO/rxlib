@@ -23,7 +23,6 @@ import java.util.function.BiConsumer;
 
 //thanks https://github.com/hsupu/netty-socks
 @Slf4j
-@RequiredArgsConstructor
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public volatile BiConsumer<SocksProxyServer, ReconnectingEventArgs> onReconnecting;
 
