@@ -18,6 +18,8 @@ import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.SslDirectConfig;
+import org.rx.net.socks.SslDirectServer;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.test.bean.*;
 
@@ -159,6 +161,9 @@ public class SocksTester {
         });
         assert userManager.computeInt(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
+
+//        userManager.close();
+
         restartServer(svcImpl, endpoint1, 8000); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
@@ -214,16 +219,20 @@ public class SocksTester {
 //        System.in.read();
     }
 
-//    @SneakyThrows
-//    @Test
-//    public void proxyServer() {
-//        TcpProxyServer server = new TcpProxyServer(3307, null, p -> Sockets.parseEndpoint("rm-bp1utr02m6tp303p9.mysql.rds.aliyuncs.com:3306"));
-//        System.in.read();
-//    }
+    @SneakyThrows
+    @Test
+    public void directProxy() {
+        SslDirectConfig frontConf = new SslDirectConfig(3307, SslDirectConfig.EnableFlags.BACKEND.flags(), true, true);
+        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
+
+        SslDirectConfig backConf = new SslDirectConfig(3308, SslDirectConfig.EnableFlags.FRONTEND.flags(), true, true);
+        SslDirectServer backSvr = new SslDirectServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
+        System.in.read();
+    }
 
     @SneakyThrows
     @Test
-    public void socks5() {
+    public void socks5Proxy() {
         SocksConfig config = new SocksConfig();
         config.setListenPort(1081);
         config.setUpstreamSupplier(addr -> new Socks5Upstream(new AuthenticEndpoint("127.0.0.1:1080")));

@@ -127,7 +127,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Getter
     private final RpcClientConfig config;
     private Bootstrap bootstrap;
-    private SslContext sslCtx;
     @Getter
     private Date connectedTime;
     private volatile Channel channel;
@@ -184,12 +183,10 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             throw new InvalidException("Client has connected");
         }
 
-        if (config.isEnableSsl()) {
-            sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        }
         bootstrap = Sockets.bootstrap(RpcServerConfig.GROUP_NAME, config.getMemoryMode(), channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
-            if (sslCtx != null) {
+            if (config.isEnableSsl()) {
+                SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
                 pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getServerEndpoint().getHostString(), config.getServerEndpoint().getPort()));
             }
             if (config.isEnableCompress()) {
@@ -218,8 +215,12 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             connectedTime = DateTime.now();
             connectWaiter.set();
         });
-        connectWaiter.waitOne(config.getConnectTimeoutMillis());
-        connectWaiter.reset();
+        try {
+            connectWaiter.waitOne(config.getConnectTimeoutMillis());
+            connectWaiter.reset();
+        } catch (TimeoutException e) {
+            throw new InvalidException("Client connect fail", e);
+        }
         if (!autoReconnect && !isConnected()) {
             throw new InvalidException("Client connect fail");
         }

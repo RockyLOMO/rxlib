@@ -146,7 +146,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Getter
     private final RpcServerConfig config;
     private ServerBootstrap bootstrap;
-    private SslContext sslCtx;
+    //    private SslContext sslCtx;
     private volatile Channel serverChannel;
     private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
@@ -195,14 +195,12 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             throw new InvalidException("Server has started");
         }
 
-        if (config.isEnableSsl()) {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
-            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-        }
         bootstrap = Sockets.serverBootstrap(config.getMemoryMode(), channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
-            if (sslCtx != null) {
+            if (config.isEnableSsl()) {
+                SelfSignedCertificate ssc = new SelfSignedCertificate();
+                SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
                 pipeline.addLast(sslCtx.newHandler(channel.alloc()));
             }
             if (config.isEnableCompress()) {
