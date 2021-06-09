@@ -21,7 +21,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
-import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.springframework.util.CollectionUtils;
 
@@ -207,12 +206,13 @@ public final class Sockets {
     }
 
     //region Address
+    private static final String dnsServer = "114.114.114.114";
     public static final InetAddress LOOPBACK_ADDRESS = InetAddress.getLoopbackAddress(),
             ANY_ADDRESS = quietly(() -> InetAddress.getByName("0.0.0.0"));
 
     public static List<String> getDnsRecords(String domain, String[] types) {
 //        InetAddress.getByName(ddns).getHostAddress()
-        return getDnsRecords(domain, types, "114.114.114.114", 10, 2);
+        return getDnsRecords(domain, types, dnsServer, 10, 2);
     }
 
     @SneakyThrows
@@ -240,7 +240,7 @@ public final class Sockets {
 
     //InetAddress.getLocalHost(); 可能会返回127.0.0.1
     @SneakyThrows
-    public static Inet4Address getLocalAddress() {
+    public static InetAddress getLocalAddress() {
         Inet4Address candidateAddress = null;
         Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
         while (interfaces.hasMoreElements()) {
@@ -255,20 +255,22 @@ public final class Sockets {
                     continue;
                 }
                 if (address.isSiteLocalAddress()) {
-                    return (Inet4Address) address;
+                    return address;
                 }
                 candidateAddress = (Inet4Address) address;
             }
         }
         if (candidateAddress == null) {
             try (DatagramSocket socket = new DatagramSocket()) {
-                socket.connect(InetAddress.getByName("8.8.8.8"), 53);
+                socket.connect(InetAddress.getByName(dnsServer), 53);
                 if (socket.getLocalAddress() instanceof Inet4Address) {
-                    return (Inet4Address) socket.getLocalAddress();
+                    return socket.getLocalAddress();
                 }
             }
         }
-        throw new InvalidException("LAN IP not found");
+        log.warn("LAN IP not found");
+//        throw new InvalidException("LAN IP not found");
+        return InetAddress.getLocalHost();
     }
 
     public InetAddress[] getAddresses(String host) {
