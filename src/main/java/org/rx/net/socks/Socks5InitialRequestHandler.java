@@ -19,10 +19,10 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = ctx.pipeline();
         pipeline.remove(Socks5InitialRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        log.debug("socks5 init connect: {}", msg);
+//        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
         if (msg.decoderResult().isFailure() || !msg.version().equals(SocksVersion.SOCKS5)) {
-            log.warn("socks5 error protocol");
+            log.warn("socks5[{}] error protocol", server.getConfig().getListenPort());
 //            ctx.fireChannelRead(msg);
             ctx.writeAndFlush(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED)).addListener(ChannelFutureListener.CLOSE);
             return;

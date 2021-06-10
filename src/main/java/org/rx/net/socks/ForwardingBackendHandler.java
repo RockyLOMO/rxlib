@@ -20,7 +20,7 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
         }
 
         Channel outbound = ctx.channel();
-        log.trace("{} -> {} forwarded to {}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress());
+//        log.debug("{} -> {} forwarded to {}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress());
         inbound.writeAndFlush(msg).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
     }
 

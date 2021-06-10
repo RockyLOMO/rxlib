@@ -10,6 +10,9 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+
+import static org.rx.core.App.isNull;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -22,7 +25,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        log.debug("socks5 read: {},{}:{}", msg.type(), msg.dstAddr(), msg.dstPort());
+        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (!msg.type().equals(Socks5CommandType.CONNECT)) {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
@@ -35,6 +38,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, ReconnectingEventArgs e) {
+        SocketAddress remoteAddr = isNull(e.getUpstream().getAddress(), e.getRemoteAddress());
         Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             e.getUpstream().initChannel(channel);
@@ -48,11 +52,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
+                log.debug("socks5[{}] connect to backend {} fail", server.getConfig().getListenPort(), remoteAddr);
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
-            log.trace("socks5 connect to backend {}", e.getRemoteAddress());
+            log.debug("socks5[{}] connect to backend {}", server.getConfig().getListenPort(), remoteAddr);
             Channel outbound = f.channel();
+//            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));
             inbound.pipeline().addLast("to-upstream", new ForwardingFrontendHandler(outbound));
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, addrType));

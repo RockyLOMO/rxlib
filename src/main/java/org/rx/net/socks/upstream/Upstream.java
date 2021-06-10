@@ -1,17 +1,17 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.socket.SocketChannel;
-import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.net.SocketAddress;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public abstract class Upstream {
-    public static final String HANDLER_NAME = "proxy";
     @Getter
-    @Setter(AccessLevel.PROTECTED)
-    private SocketAddress address;
+    protected SocketAddress address;
+    @Getter
+    protected final Queue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
 
     public abstract void initChannel(SocketChannel channel);
 }

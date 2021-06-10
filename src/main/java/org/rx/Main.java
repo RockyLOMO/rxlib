@@ -49,7 +49,7 @@ public final class Main {
 
             SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_ALL.flags());
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, addr -> new Socks5Upstream(frontConf, authenticEndpoint.right));
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, addr -> new Socks5Upstream(addr, frontConf, authenticEndpoint.right));
         }
 
         log.info("Server started..");

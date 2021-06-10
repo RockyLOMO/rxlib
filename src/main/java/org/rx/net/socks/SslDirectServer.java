@@ -114,7 +114,7 @@ public final class SslDirectServer extends Disposable {
         this.config = config;
         serverBootstrap = Sockets.serverBootstrap(channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-            SslUtil.appendFrontendHandler(channel, config.getTransportFlags());
+            SslUtil.addFrontendHandler(channel, config.getTransportFlags());
             pipeline.addLast(new FrontendHandler());
         });
         serverBootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {

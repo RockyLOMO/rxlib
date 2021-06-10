@@ -57,7 +57,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
                     new ProxyChannelIdleHandler());
 //            SocksPortUnificationServerHandler
-            SslUtil.appendFrontendHandler(channel, config.getTransportFlags());
+            SslUtil.addFrontendHandler(channel, config.getTransportFlags());
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));

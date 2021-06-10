@@ -10,12 +10,13 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.SneakyThrows;
 import org.rx.bean.FlagsEnum;
+import org.rx.net.AESHandler;
 
 import java.net.InetSocketAddress;
 
 public class SslUtil {
     @SneakyThrows
-    public static void appendFrontendHandler(Channel channel, FlagsEnum<TransportFlags> flags) {
+    public static void addFrontendHandler(Channel channel, FlagsEnum<TransportFlags> flags) {
         if (flags == null) {
             return;
         }
@@ -25,6 +26,9 @@ public class SslUtil {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
+        }
+        if (flags.has(TransportFlags.FRONTEND_AES)) {
+            pipeline.addLast(new AESHandler(AESHandler.defaultKey()));
         }
         if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
             pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
@@ -42,6 +46,9 @@ public class SslUtil {
             if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
                 pipeline.addFirst(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
+            if (flags.has(TransportFlags.BACKEND_AES)) {
+                pipeline.addFirst(new AESHandler(AESHandler.defaultKey()));
+            }
             if (flags.has(TransportFlags.BACKEND_SSL)) {
                 SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
                 pipeline.addFirst(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
@@ -52,6 +59,9 @@ public class SslUtil {
         if (flags.has(TransportFlags.BACKEND_SSL)) {
             SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
+        }
+        if (flags.has(TransportFlags.BACKEND_AES)) {
+            pipeline.addLast(new AESHandler(AESHandler.defaultKey()));
         }
         if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
             pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));

@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -18,10 +19,13 @@ import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.Provider;
+import java.security.Security;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -230,16 +234,43 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_COMPRESS.flags());
+        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_SSL.flags());
         frontConf.setConnectTimeoutMillis(60000);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                addr -> new Socks5Upstream(frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
+                addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
 
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_COMPRESS.flags());
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_SSL.flags());
         backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
         System.in.read();
+    }
+
+    @Test
+    public void crypt() {
+        String content = "This is content";
+        byte[] key = "顺风使舵".getBytes(StandardCharsets.UTF_8);
+        byte[] encoded = AESUtil.generateKey(key).getEncoded();
+        assert org.rx.core.Arrays.equals(encoded, AESUtil.generateKey(key).getEncoded());
+
+        ByteBuf src = Bytes.directBuffer();
+        try {
+            src.writeCharSequence(content, StandardCharsets.UTF_8);
+            ByteBuf target = AESUtil.encrypt(src, key);
+
+            ByteBuf recover = AESUtil.decrypt(target, key);
+            String txt = (String) recover.readCharSequence(recover.readableBytes(), StandardCharsets.UTF_8);
+            System.out.println(txt);
+            assert content.equals(txt);
+        } finally {
+            src.release();
+        }
+
+        byte[] bytes = AESHandler.defaultKey();
+        byte[] encrypt = AESUtil.encrypt(content.getBytes(StandardCharsets.UTF_8), bytes);
+
+        byte[] decrypt = AESUtil.decrypt(encrypt, bytes);
+        System.out.println(new String(decrypt));
     }
 
     @Test
