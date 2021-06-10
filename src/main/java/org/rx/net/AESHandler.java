@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.rx.bean.DateTime;
 import org.rx.security.AESUtil;
 
@@ -16,6 +17,8 @@ public class AESHandler extends MessageToMessageCodec<ByteBuf, ByteBuf> {
         return String.format("℞%s", DateTime.now().toDateString()).getBytes(StandardCharsets.UTF_8);
     }
 
+    @Setter
+    volatile boolean skipDecode;
     final byte[] key;
 
     @Override
@@ -26,6 +29,11 @@ public class AESHandler extends MessageToMessageCodec<ByteBuf, ByteBuf> {
 
     @Override
     protected void decode(ChannelHandlerContext channelHandlerContext, ByteBuf byteBuf, List<Object> list) {
+        if (skipDecode) {
+            list.add(byteBuf);
+            return;
+        }
+
         ByteBuf decrypt = AESUtil.decrypt(byteBuf, key);
         list.add(decrypt);
     }
