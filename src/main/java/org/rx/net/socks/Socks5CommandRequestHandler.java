@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.socks.support.SocksSupport;
 import org.rx.net.socks.support.UnresolvedEndpoint;
@@ -64,11 +63,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             });
         }
         SocketAddress finalDestinationAddress = destinationEndpoint.toSocketAddress();
-        Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
+        Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             e.getUpstream().initChannel(channel);
-        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, server.getConfig().getConnectTimeoutMillis())
-                .connect(finalDestinationAddress).addListener((ChannelFutureListener) f -> {
+        }).connect(finalDestinationAddress).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -83,7 +81,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            log.debug("socks5[{}] {} connect to backend {}, destAddr={}", server.getConfig().getListenPort(),
+            log.info("socks5[{}] {} connect to backend {}, destAddr={}", server.getConfig().getListenPort(),
                     inbound.channel(), outbound, finalDestinationAddress);
 //            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));

@@ -57,13 +57,16 @@ public final class Sockets {
     }
 
     public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
-        return serverBootstrap(MemoryMode.LOW, initChannel);
+        return serverBootstrap(null, initChannel);
     }
 
-    public static ServerBootstrap serverBootstrap(MemoryMode mode, BiAction<SocketChannel> initChannel) {
-        if (mode == null) {
-            mode = MemoryMode.LOW;
+    public static ServerBootstrap serverBootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
+        if (config == null) {
+            config = new SocketConfig();
         }
+        MemoryMode mode = config.getMemoryMode();
+        int connectTimeoutMillis = config.getConnectTimeoutMillis();
+        boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
         int bossThreadAmount = 1; //等于bind的次数，默认1
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
@@ -73,12 +76,12 @@ public final class Sockets {
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childOption(ChannelOption.TCP_NODELAY, highNetwork)
+                .childOption(ChannelOption.SO_KEEPALIVE, !highNetwork)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
@@ -113,26 +116,29 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
-        return bootstrap(Strings.EMPTY, MemoryMode.LOW, initChannel);
+        return bootstrap(Strings.EMPTY, null, initChannel);
     }
 
-    public static Bootstrap bootstrap(@NonNull String groupName, MemoryMode mode, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactorEventLoop(groupName), mode, initChannel);
+    public static Bootstrap bootstrap(@NonNull String groupName, SocketConfig config, BiAction<SocketChannel> initChannel) {
+        return bootstrap(reactorEventLoop(groupName), config, initChannel);
     }
 
-    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, MemoryMode mode, BiAction<SocketChannel> initChannel) {
-        if (mode == null) {
-            mode = MemoryMode.LOW;
+    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
+        if (config == null) {
+            config = new SocketConfig();
         }
+        MemoryMode mode = config.getMemoryMode();
+        int connectTimeoutMillis = config.getConnectTimeoutMillis();
+        boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
         WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
         Bootstrap b = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(channelClass())
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, App.getConfig().getNetTimeoutMillis())
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
+                .option(ChannelOption.TCP_NODELAY, highNetwork)
+                .option(ChannelOption.SO_KEEPALIVE, !highNetwork)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);

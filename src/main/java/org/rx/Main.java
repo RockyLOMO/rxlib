@@ -7,6 +7,7 @@ import org.rx.bean.Tuple;
 import org.rx.core.App;
 import org.rx.core.Reflects;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
@@ -23,8 +24,6 @@ import static org.rx.core.App.eq;
 
 @Slf4j
 public final class Main implements SocksSupport {
-    //java -jar rxlib-2.17.3-SNAPSHOT.jar -shadowMode=1 -port=9900 -connectTimeout=120000 -shadowUser=youfanX:5PXx$^JNMgvn3P658@f-li.cn:9900
-    //java -jar rxlib-2.17.3-SNAPSHOT.jar -port=9900 -connectTimeout=120000 -shadowServer=youfanX:5PXx$^JNMgvn3P658@103.79.76.126:9900
     public static void main(String[] args) {
         Map<String, String> options = App.argsOptions(args);
         Tuple<Boolean, Integer> port = Reflects.tryConvert(options.get("port"), Integer.class);
@@ -47,6 +46,7 @@ public final class Main implements SocksSupport {
             Remoting.listen(app, port.right + 1);
 
             SocksConfig backConf = new SocksConfig(port.right, TransportFlags.FRONTEND_COMPRESS.flags());
+            backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, auth.getUsername()) && eq(p, auth.getPassword()), null);
         } else {
@@ -59,6 +59,7 @@ public final class Main implements SocksSupport {
             SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), port.right + 1), 2));
 
             SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_COMPRESS.flags());
+            frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
             frontSvr.setSupport(support);

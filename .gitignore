@@ -2,6 +2,7 @@
 .idea/
 out/
 target/
+logs/
 
 # ignore files
 *.iml

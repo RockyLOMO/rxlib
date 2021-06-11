@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
@@ -52,7 +51,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         this.config = config;
         this.authenticator = authenticator;
         this.router = router;
-        bootstrap = Sockets.serverBootstrap(channel -> {
+        bootstrap = Sockets.serverBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //流量统计
@@ -72,7 +71,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             }
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
-        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
+        });
         bootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.error("Listen on port {} fail", config.getListenPort(), f.cause());

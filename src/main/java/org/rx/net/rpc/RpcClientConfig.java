@@ -1,16 +1,16 @@
 package org.rx.net.rpc;
 
 import lombok.Data;
-import org.rx.core.App;
-import org.rx.net.MemoryMode;
+import lombok.EqualsAndHashCode;
+import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import javax.validation.constraints.NotNull;
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 
 @Data
-public class RpcClientConfig implements Serializable {
+@EqualsAndHashCode(callSuper = true)
+public class RpcClientConfig extends SocketConfig {
     public static final int NON_POOL_SIZE = -1;
     public static final int DEFAULT_VERSION = 0;
 
@@ -41,8 +41,6 @@ public class RpcClientConfig implements Serializable {
     private static final long serialVersionUID = -4952694662640163676L;
     @NotNull
     private InetSocketAddress serverEndpoint;
-    private MemoryMode memoryMode;
-    private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
     private boolean enableSsl;
     private boolean enableCompress;
     private boolean autoReconnect;

@@ -146,7 +146,6 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Getter
     private final RpcServerConfig config;
     private ServerBootstrap bootstrap;
-    //    private SslContext sslCtx;
     private volatile Channel serverChannel;
     private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
@@ -195,7 +194,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             throw new InvalidException("Server has started");
         }
 
-        bootstrap = Sockets.serverBootstrap(config.getMemoryMode(), channel -> {
+        bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             if (config.isEnableSsl()) {
@@ -210,8 +209,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());
-        }).option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
+        }).option(ChannelOption.SO_REUSEADDR, true);
         InetSocketAddress endpoint = Sockets.getAnyEndpoint(config.getListenPort());
         bootstrap.bind(endpoint).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {

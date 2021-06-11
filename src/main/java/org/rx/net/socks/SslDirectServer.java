@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiFunc;
 
@@ -59,7 +58,7 @@ public final class SslDirectServer extends Disposable {
         public void channelActive(ChannelHandlerContext inbound) {
             InetSocketAddress proxyEndpoint = router.invoke((InetSocketAddress) inbound.channel().remoteAddress());
             log.debug("connect to backend {}", proxyEndpoint);
-            Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
+            Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
                 ChannelPipeline pipeline = channel.pipeline();
                 SslUtil.addBackendHandler(channel, config.getTransportFlags(), proxyEndpoint, false);
                 pipeline.addLast(new BackendHandler(inbound));
