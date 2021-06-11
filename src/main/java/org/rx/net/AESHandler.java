@@ -1,32 +1,34 @@
 package org.rx.net;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.MessageToMessageCodec;
-import lombok.RequiredArgsConstructor;
-import org.rx.bean.DateTime;
+import io.netty.channel.ChannelPromise;
 import org.rx.security.AESUtil;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
-@RequiredArgsConstructor
-public class AESHandler extends MessageToMessageCodec<ByteBuf, ByteBuf> {
-    public static byte[] defaultKey() {
-        return String.format("℞%s", DateTime.now().toDateString()).getBytes(StandardCharsets.UTF_8);
-    }
-
-    final byte[] key;
-
+public class AESHandler extends ChannelDuplexHandler {
     @Override
-    protected void encode(ChannelHandlerContext channelHandlerContext, ByteBuf byteBuf, List<Object> list) {
-        ByteBuf encrypt = AESUtil.encrypt(byteBuf, key);
-        list.add(encrypt);
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+//        super.channelRead(ctx, msg);
+        ByteBuf buf = (ByteBuf) msg;
+        try {
+            ByteBuf decrypt = AESUtil.decrypt(buf, AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8));
+            ctx.fireChannelRead(decrypt);
+        } finally {
+            buf.release();
+        }
     }
 
     @Override
-    protected void decode(ChannelHandlerContext channelHandlerContext, ByteBuf byteBuf, List<Object> list) {
-        ByteBuf decrypt = AESUtil.decrypt(byteBuf, key);
-        list.add(decrypt);
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        ByteBuf buf = (ByteBuf) msg;
+        try {
+            ByteBuf encrypt = AESUtil.encrypt(buf, AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8));
+            super.write(ctx, encrypt, promise);
+        } finally {
+            buf.release();
+        }
     }
 }

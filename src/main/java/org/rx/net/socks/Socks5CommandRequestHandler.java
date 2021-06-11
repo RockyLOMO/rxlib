@@ -5,9 +5,14 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.SUID;
+import org.rx.bean.Tuple;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
+import org.rx.net.socks.support.SocksSupport;
+import org.rx.net.socks.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.security.AESUtil;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -31,18 +36,37 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        InetSocketAddress dstAddr = InetSocketAddress.createUnresolved(msg.dstAddr(), msg.dstPort());
-        Upstream upstream = server.router.invoke(dstAddr);
-        ReconnectingEventArgs e = new ReconnectingEventArgs(dstAddr, upstream);
+        String dstAddr = msg.dstAddr();
+        if (dstAddr.startsWith(SocksSupport.FAKE_PREFIX)) {
+            int s = SocksSupport.FAKE_PREFIX.length();
+            String realHost = SocksSupport.FAKE_DICT.get(SUID.valueOf(dstAddr.substring(s, 22 + s)));
+            if (realHost != null) {
+                dstAddr = realHost;
+                log.debug("recover dstAddr {}", dstAddr);
+            }
+        }
+
+        UnresolvedEndpoint destinationAddress = new UnresolvedEndpoint(dstAddr, msg.dstPort());
+        Upstream upstream = server.router.invoke(destinationAddress);
+        ReconnectingEventArgs e = new ReconnectingEventArgs(destinationAddress, upstream);
         connect(inbound, msg.dstAddrType(), e);
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, ReconnectingEventArgs e) {
-        SocketAddress remoteAddr = isNull(e.getUpstream().getAddress(), e.getRemoteAddress());
+        UnresolvedEndpoint destinationAddress = isNull(e.getUpstream().getAddress(), e.getDestinationAddress());
+        if (server.support != null) {
+            String realHost = destinationAddress.getHost();
+            log.debug("fake dstAddr {}", realHost);
+            SUID hash = SUID.compute(realHost);
+            server.support.fakeHost(hash, AESUtil.encryptToBase64(realHost, AESUtil.dailyKey()));
+            destinationAddress.setHost(String.format("%s%s.f-li.cn", SocksSupport.FAKE_PREFIX, hash));
+        }
+        SocketAddress finalDestinationAddress = destinationAddress.toSocketAddress();
         Sockets.bootstrap(inbound.channel().eventLoop(), MemoryMode.LOW, channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             e.getUpstream().initChannel(channel);
-        }).connect(e.getRemoteAddress()).addListener((ChannelFutureListener) f -> {
+        }).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, server.getConfig().getConnectTimeoutMillis())
+                .connect(finalDestinationAddress).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -52,11 +76,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.debug("socks5[{}] connect to backend {} fail", server.getConfig().getListenPort(), remoteAddr);
+                log.debug("socks5[{}] connect to backend {} fail", server.getConfig().getListenPort(), finalDestinationAddress, f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
-            log.debug("socks5[{}] connect to backend {}", server.getConfig().getListenPort(), remoteAddr);
+            log.debug("socks5[{}] connect to backend {}", server.getConfig().getListenPort(), finalDestinationAddress);
             Channel outbound = f.channel();
 //            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));

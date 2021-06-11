@@ -3,27 +3,26 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.EventArgs;
+import org.rx.net.socks.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
-
-import java.net.SocketAddress;
 
 import static org.rx.core.App.eq;
 
 @Getter
 public class ReconnectingEventArgs extends EventArgs {
-    private SocketAddress remoteAddress;
+    private UnresolvedEndpoint destinationAddress;
     private Upstream upstream;
     private boolean changed;
     private int failCount;
 
-    public ReconnectingEventArgs(@NonNull SocketAddress remoteAddress, Upstream upstream) {
-        this.remoteAddress = remoteAddress;
+    public ReconnectingEventArgs(@NonNull UnresolvedEndpoint destinationAddress, Upstream upstream) {
+        this.destinationAddress = destinationAddress;
         this.upstream = upstream;
     }
 
-    public void setRemoteAddress(@NonNull SocketAddress remoteAddress) {
-        changed = changed || !eq(this.remoteAddress, remoteAddress);
-        this.remoteAddress = remoteAddress;
+    public void setDestinationAddress(@NonNull UnresolvedEndpoint destinationAddress) {
+        changed = changed || !eq(this.destinationAddress, destinationAddress);
+        this.destinationAddress = destinationAddress;
     }
 
     public void setUpstream(@NonNull Upstream upstream) {

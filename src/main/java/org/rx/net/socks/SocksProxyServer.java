@@ -14,11 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.net.Sockets;
+import org.rx.net.socks.support.SocksSupport;
+import org.rx.net.socks.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.BiFunc;
 
-import java.net.SocketAddress;
 import java.util.function.BiConsumer;
 
 //thanks https://github.com/hsupu/netty-socks
@@ -31,7 +32,9 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     final ServerBootstrap bootstrap;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
-    final BiFunc<SocketAddress, Upstream> router;
+    final BiFunc<UnresolvedEndpoint, Upstream> router;
+    @Setter
+    SocksSupport support;
 
     public boolean isAuthEnabled() {
         return authenticator != null;
@@ -41,7 +44,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         this(config, null, null);
     }
 
-    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<SocketAddress, Upstream> router) {
+    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<UnresolvedEndpoint, Upstream> router) {
         if (router == null) {
             router = endpoint -> new DirectUpstream();
         }

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.bean.DateTime;
 import org.rx.core.App;
 
 import javax.crypto.Cipher;
@@ -17,6 +18,10 @@ import java.security.SecureRandom;
 public class AESUtil {
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
 
+    public static String dailyKey() {
+        return String.format("℞%s", DateTime.now().toDateString());
+    }
+
     public static String encryptToBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
         return App.convertToBase64String(valueByte);
@@ -24,16 +29,6 @@ public class AESUtil {
 
     public static String decryptFromBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = decrypt(App.convertFromBase64String(data), key.getBytes(StandardCharsets.UTF_8));
-        return new String(valueByte, StandardCharsets.UTF_8);
-    }
-
-    public static String encryptWithKeyBase64(@NonNull String data, @NonNull String key) {
-        byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), App.convertFromBase64String(key));
-        return App.convertToBase64String(valueByte);
-    }
-
-    public static String decryptWithKeyBase64(@NonNull String data, @NonNull String key) {
-        byte[] valueByte = decrypt(App.convertFromBase64String(data), App.convertFromBase64String(key));
         return new String(valueByte, StandardCharsets.UTF_8);
     }
 

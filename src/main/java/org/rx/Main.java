@@ -2,21 +2,27 @@ package org.rx;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.App;
 import org.rx.core.Reflects;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.Sockets;
+import org.rx.net.rpc.Remoting;
+import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.TransportFlags;
+import org.rx.net.socks.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.security.AESUtil;
 
 import java.util.Map;
 
 import static org.rx.core.App.eq;
 
 @Slf4j
-public final class Main {
+public final class Main implements SocksSupport {
     //java -jar rxlib-2.17.3-SNAPSHOT.jar -shadowMode=1 -port=9900 -connectTimeout=120000 -shadowUser=youfanX:5PXx$^JNMgvn3P658@f-li.cn:9900
     //java -jar rxlib-2.17.3-SNAPSHOT.jar -port=9900 -connectTimeout=120000 -shadowServer=youfanX:5PXx$^JNMgvn3P658@103.79.76.126:9900
     public static void main(String[] args) {
@@ -27,33 +33,45 @@ public final class Main {
             return;
         }
 
+        Main app = new Main();
         Tuple<Boolean, Integer> connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
         if (eq(mode, "1")) {
-            Tuple<Boolean, AuthenticEndpoint> authenticEndpoint = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
-            if (authenticEndpoint.right == null) {
+            Tuple<Boolean, AuthenticEndpoint> shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
+            if (shadowUser.right == null) {
                 System.out.println("Invalid shadowUser arg");
                 return;
             }
-            AuthenticEndpoint auth = authenticEndpoint.right;
+            AuthenticEndpoint auth = shadowUser.right;
 
-            SocksConfig backConf = new SocksConfig(port.right, TransportFlags.FRONTEND_ALL.flags());
+            Remoting.listen(app, port.right + 1);
+
+            SocksConfig backConf = new SocksConfig(port.right, TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, auth.getUsername()) && eq(p, auth.getPassword()), null);
         } else {
-            Tuple<Boolean, AuthenticEndpoint> authenticEndpoint = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
-            if (authenticEndpoint.right == null) {
+            Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
+            if (shadowServer.right == null) {
                 log.info("Invalid shadowServer arg");
                 return;
             }
 
-            SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_ALL.flags());
+            SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), port.right + 1), 2));
+
+            SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, addr -> new Socks5Upstream(addr, frontConf, authenticEndpoint.right));
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, addr -> new Socks5Upstream(addr, frontConf, shadowServer.right));
+            frontSvr.setSupport(support);
         }
 
         log.info("Server started..");
-        new Main().await();
+        app.await();
+    }
+
+    @Override
+    public void fakeHost(SUID hash, String realHost) {
+        realHost = AESUtil.decryptFromBase64(realHost, AESUtil.dailyKey());
+        SocksSupport.FAKE_DICT.put(hash, realHost);
     }
 
     @SneakyThrows

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.Main;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
@@ -18,6 +19,7 @@ import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.*;
+import org.rx.net.socks.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
@@ -220,6 +222,21 @@ public class SocksTester {
 //        System.in.read();
     }
 
+    int connectTimeout = 30000;
+
+    @SneakyThrows
+    @Test
+    public void hybridProxy() {
+        SslDirectConfig frontConf = new SslDirectConfig(1080, TransportFlags.BACKEND_AES.flags());
+        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:1081"));
+
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_AES.flags());
+        backConf.setConnectTimeoutMillis(connectTimeout);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+
+        System.in.read();
+    }
+
     @SneakyThrows
     @Test
     public void directProxy() {
@@ -234,12 +251,15 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_SSL.flags());
+        Remoting.listen(new Main(), 1181);
+
+        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(60000);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
+        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 10)));
 
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_SSL.flags());
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
@@ -266,7 +286,7 @@ public class SocksTester {
             src.release();
         }
 
-        byte[] bytes = AESHandler.defaultKey();
+        byte[] bytes = AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8);
         byte[] encrypt = AESUtil.encrypt(content.getBytes(StandardCharsets.UTF_8), bytes);
 
         byte[] decrypt = AESUtil.decrypt(encrypt, bytes);
