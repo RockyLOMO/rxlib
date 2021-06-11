@@ -24,7 +24,6 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         log.debug("socks5 auth {}:{}", msg.username(), msg.password());
 
         if (server.getAuthenticator() == null || !server.getAuthenticator().auth(msg.username(), msg.password())) {
-            ProxyChannelManageHandler.get(ctx).setUsername("unauthorized");
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }

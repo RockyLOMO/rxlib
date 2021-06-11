@@ -8,18 +8,24 @@ import lombok.Setter;
 import org.rx.bean.DateTime;
 
 public class ProxyChannelManageHandler extends ChannelTrafficShapingHandler {
+    String DEFAULT_USER = "anonymous";
+
     public static ProxyChannelManageHandler get(ChannelHandlerContext ctx) {
         return (ProxyChannelManageHandler) ctx.pipeline().get(ProxyChannelManageHandler.class.getSimpleName());
     }
 
     @Getter
     @Setter(AccessLevel.PROTECTED)
-    private String username = "anonymous";
+    private String username = DEFAULT_USER;
     @Getter
     private DateTime beginTime;
     @Getter
     private DateTime endTime;
     final FlowLogger flowLogger;
+
+    public boolean isAnonymous() {
+        return DEFAULT_USER.equals(username);
+    }
 
     public ProxyChannelManageHandler(long checkInterval, FlowLogger flowLogger) {
         super(checkInterval);

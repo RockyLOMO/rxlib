@@ -10,9 +10,12 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.SneakyThrows;
 import org.rx.bean.FlagsEnum;
+import org.rx.net.AESCodec;
 import org.rx.net.AESHandler;
+import org.rx.security.AESUtil;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 
 public class SslUtil {
     @SneakyThrows
@@ -28,8 +31,8 @@ public class SslUtil {
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
         if (flags.has(TransportFlags.FRONTEND_AES)) {
-//            pipeline.addLast(new AESHandler(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
-            pipeline.addLast(new AESHandler());
+            pipeline.addLast(new AESCodec(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
+//            pipeline.addLast(new AESHandler());
         }
         if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
             pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
@@ -48,8 +51,8 @@ public class SslUtil {
                 pipeline.addFirst(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
             if (flags.has(TransportFlags.BACKEND_AES)) {
-//                pipeline.addFirst(new AESHandler(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
-                pipeline.addFirst(new AESHandler());
+                pipeline.addFirst(new AESCodec(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
+//                pipeline.addFirst(new AESHandler());
             }
             if (flags.has(TransportFlags.BACKEND_SSL)) {
                 SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
@@ -63,8 +66,8 @@ public class SslUtil {
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
         }
         if (flags.has(TransportFlags.BACKEND_AES)) {
-//            pipeline.addLast(new AESHandler(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
-            pipeline.addLast(new AESHandler());
+            pipeline.addLast(new AESCodec(AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8)));
+//            pipeline.addLast(new AESHandler());
         }
         if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
             pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));

@@ -60,7 +60,7 @@ public final class Main implements SocksSupport {
 
             SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, addr -> new Socks5Upstream(addr, frontConf, shadowServer.right));
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
             frontSvr.setSupport(support);
         }
 
@@ -70,8 +70,8 @@ public final class Main implements SocksSupport {
 
     @Override
     public void fakeHost(SUID hash, String realHost) {
-        realHost = AESUtil.decryptFromBase64(realHost, AESUtil.dailyKey());
-        SocksSupport.FAKE_DICT.put(hash, realHost);
+        realHost = AESUtil.decryptFromBase64(realHost);
+        SocksSupport.HOST_DICT.put(hash, realHost);
     }
 
     @SneakyThrows

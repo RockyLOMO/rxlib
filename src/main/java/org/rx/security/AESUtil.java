@@ -22,9 +22,17 @@ public class AESUtil {
         return String.format("℞%s", DateTime.now().toDateString());
     }
 
+    public static String encryptToBase64(@NonNull String data) {
+        return encryptToBase64(data, dailyKey());
+    }
+
     public static String encryptToBase64(@NonNull String data, @NonNull String key) {
         byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
         return App.convertToBase64String(valueByte);
+    }
+
+    public static String decryptFromBase64(@NonNull String data) {
+        return decryptFromBase64(data, dailyKey());
     }
 
     public static String decryptFromBase64(@NonNull String data, @NonNull String key) {

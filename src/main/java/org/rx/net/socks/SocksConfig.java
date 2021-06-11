@@ -12,7 +12,7 @@ public class SocksConfig implements Serializable {
     private final int listenPort;
     private final FlagsEnum<TransportFlags> transportFlags;
     private int connectTimeoutMillis = 20000;
-    private int trafficShapingInterval = 5000;
+    private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds;
     private int writeTimeoutSeconds;
 }

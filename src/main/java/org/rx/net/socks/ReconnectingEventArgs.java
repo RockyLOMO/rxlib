@@ -10,19 +10,19 @@ import static org.rx.core.App.eq;
 
 @Getter
 public class ReconnectingEventArgs extends EventArgs {
-    private UnresolvedEndpoint destinationAddress;
+    private UnresolvedEndpoint destinationEndpoint;
     private Upstream upstream;
     private boolean changed;
     private int failCount;
 
-    public ReconnectingEventArgs(@NonNull UnresolvedEndpoint destinationAddress, Upstream upstream) {
-        this.destinationAddress = destinationAddress;
+    public ReconnectingEventArgs(@NonNull UnresolvedEndpoint destinationEndpoint, Upstream upstream) {
+        this.destinationEndpoint = destinationEndpoint;
         this.upstream = upstream;
     }
 
-    public void setDestinationAddress(@NonNull UnresolvedEndpoint destinationAddress) {
-        changed = changed || !eq(this.destinationAddress, destinationAddress);
-        this.destinationAddress = destinationAddress;
+    public void setDestinationEndpoint(@NonNull UnresolvedEndpoint destinationEndpoint) {
+        changed = changed || !eq(this.destinationEndpoint, destinationEndpoint);
+        this.destinationEndpoint = destinationEndpoint;
     }
 
     public void setUpstream(@NonNull Upstream upstream) {

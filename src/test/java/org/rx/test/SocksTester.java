@@ -253,13 +253,13 @@ public class SocksTester {
     public void socks5Proxy() {
         Remoting.listen(new Main(), 1181);
 
-        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_COMPRESS.flags());
+        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_ALL.flags());
         frontConf.setConnectTimeoutMillis(60000);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
-        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 10)));
+        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 4)));
 
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_COMPRESS.flags());
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_ALL.flags());
         backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
