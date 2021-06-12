@@ -19,7 +19,7 @@ public class AESUtil {
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
 
     public static String dailyKey() {
-        return String.format("℞%s", DateTime.now().toDateString());
+        return String.format("℞%s", DateTime.utcNow().toDateString());
     }
 
     public static String encryptToBase64(@NonNull String data) {
