@@ -275,7 +275,6 @@ public final class Sockets {
                 }
             }
         }
-        log.warn("LAN IP not found");
 //        throw new InvalidException("LAN IP not found");
         return InetAddress.getLocalHost();
     }

@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
+import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
@@ -253,13 +254,13 @@ public class SocksTester {
     public void socks5Proxy() {
         Remoting.listen(new Main(), 1181);
 
-        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_ALL.flags());
+        SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_AES.flags());
         frontConf.setConnectTimeoutMillis(60000);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
-        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 4)));
+        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 2)));
 
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_ALL.flags());
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_AES.flags());
         backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
@@ -286,11 +287,10 @@ public class SocksTester {
             src.release();
         }
 
-        byte[] bytes = AESUtil.dailyKey().getBytes(StandardCharsets.UTF_8);
-        byte[] encrypt = AESUtil.encrypt(content.getBytes(StandardCharsets.UTF_8), bytes);
-
-        byte[] decrypt = AESUtil.decrypt(encrypt, bytes);
-        System.out.println(new String(decrypt));
+        String encrypt = AESUtil.encryptToBase64(content);
+//        String decrypt = AESUtil.decryptFromBase64(encrypt, String.format("℞%s", DateTime.utcNow().addDays(-1).toDateString()));
+        String decrypt = AESUtil.decryptFromBase64(encrypt);
+        System.out.println(decrypt);
     }
 
     @Test
