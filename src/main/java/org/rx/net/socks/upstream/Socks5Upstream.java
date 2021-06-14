@@ -7,7 +7,7 @@ import org.rx.core.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SslUtil;
-import org.rx.net.socks.support.UnresolvedEndpoint;
+import org.rx.net.support.UnresolvedEndpoint;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

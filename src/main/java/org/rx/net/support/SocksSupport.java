@@ -1,9 +1,11 @@
-package org.rx.net.socks.support;
+package org.rx.net.support;
 
 import org.apache.commons.collections4.map.LRUMap;
 import org.rx.bean.SUID;
 
+import java.net.InetAddress;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 public interface SocksSupport {
@@ -12,4 +14,6 @@ public interface SocksSupport {
     Map<SUID, String> HOST_DICT = Collections.synchronizedMap(new LRUMap<>(2000));
 
     void fakeHost(SUID hash, String realHost);
+
+    List<InetAddress> resolveHost(String host);
 }

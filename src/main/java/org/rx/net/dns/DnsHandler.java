@@ -6,32 +6,47 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.*;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Map;
 
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
+    final DnsServer server;
     final DnsClient client;
-    final Map<String, byte[]> customHosts;
+    @Getter(lazy = true)
+    private final DnsClient outland = DnsClient.outlandClient();
 
-    public DnsHandler(Map<String, byte[]> customHosts, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
-        this.customHosts = customHosts;
+    public DnsHandler(DnsServer server, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
+        this.server = server;
         client = new DnsClient(eventLoopGroup, nameServerList);
     }
 
     @Override
     public void channelRead0(ChannelHandlerContext ctx, DatagramDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
-        log.debug("query domain {}", question.name());
+        String domain = question.name().substring(0, question.name().length() - 1);
+        log.debug("query domain {}", domain);
 
         DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
-        byte[] ip = customHosts.get(question.name());
+        byte[] ip = server.getCustomHosts().get(domain);
         if (ip != null) {
             response.addRecord(DnsSection.QUESTION, question);
 
-            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 600, Unpooled.wrappedBuffer(ip));
+            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 300, Unpooled.wrappedBuffer(ip));
+            response.addRecord(DnsSection.ANSWER, queryAnswer);
+            ctx.writeAndFlush(response);
+            return;
+        }
+
+        if (server.support != null) {
+            response.addRecord(DnsSection.QUESTION, question);
+
+            InetAddress address = server.support.resolveHost(domain).get(0);
+            //ttl 秒
+            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 600, Unpooled.wrappedBuffer(address.getAddress()));
             response.addRecord(DnsSection.ANSWER, queryAnswer);
             ctx.writeAndFlush(response);
             return;
@@ -39,7 +54,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
 
         client.nameResolver.query(question).addListener(f -> {
             if (!f.isSuccess()) {
-                log.error("query domain {} fail", question.name(), f.cause());
+                log.error("query domain {} fail", domain, f.cause());
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();

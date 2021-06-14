@@ -9,15 +9,19 @@ import org.rx.core.Reflects;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
+import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.TransportFlags;
-import org.rx.net.socks.support.SocksSupport;
+import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 
+import java.net.InetAddress;
+import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.App.eq;
@@ -63,16 +67,26 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
             frontSvr.setSupport(support);
+
+            DnsServer frontDnsSvr = new DnsServer();
+            frontDnsSvr.setSupport(support);
         }
 
         log.info("Server started..");
         app.await();
     }
 
+    final DnsClient outlandClient = DnsClient.outlandClient();
+
     @Override
     public void fakeHost(SUID hash, String realHost) {
         realHost = AESUtil.decryptFromBase64(realHost);
         SocksSupport.HOST_DICT.put(hash, realHost);
+    }
+
+    @Override
+    public List<InetAddress> resolveHost(String host) {
+        return outlandClient.resolveAll(host);
     }
 
     @SneakyThrows

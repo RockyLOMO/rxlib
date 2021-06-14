@@ -1,4 +1,4 @@
-package org.rx.net.socks.support;
+package org.rx.net.support;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

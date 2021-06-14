@@ -31,8 +31,12 @@ public class DnsClient extends Disposable {
 
     static final EventLoopGroup eventLoopGroup = new NioEventLoopGroup();
 
-    public static InetSocketAddress defaultNameServer() {
-        return Sockets.parseEndpoint("114.114.114.114:53");
+    public static InetSocketAddress[] inlandServerList() {
+        return new InetSocketAddress[]{Sockets.parseEndpoint("114.114.114.114:53")};
+    }
+
+    public static DnsClient outlandClient() {
+        return new DnsClient(Sockets.parseEndpoint("8.8.8.8:53"), Sockets.parseEndpoint("1.1.1.1:53"));
     }
 
     final DnsNameResolver nameResolver;

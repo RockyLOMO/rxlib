@@ -8,8 +8,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.net.Sockets;
-import org.rx.net.socks.support.SocksSupport;
-import org.rx.net.socks.support.UnresolvedEndpoint;
+import org.rx.net.support.SocksSupport;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.security.AESUtil;
 
@@ -79,12 +79,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.warn("socks5[{}] connect to backend {}/{} fail", server.getConfig().getListenPort(), finalDestinationAddress, realHost, f.cause());
+                log.warn("socks5[{}] connect to backend {}[{}] fail", server.getConfig().getListenPort(), finalDestinationAddress, realHost, f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
             Channel outbound = f.channel();
-            log.info("socks5[{}] {} connect to backend {}, destAddr={}/{}", server.getConfig().getListenPort(),
+            log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}]", server.getConfig().getListenPort(),
                     inbound.channel(), outbound, finalDestinationAddress, realHost);
 //            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));

@@ -8,8 +8,10 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
+import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -20,9 +22,11 @@ public class DnsServer extends Disposable {
     final NioEventLoopGroup eventLoopGroup;
     @Getter
     final Map<String, byte[]> customHosts = new ConcurrentHashMap<>(0);
+    @Setter
+    SocksSupport support;
 
     public DnsServer() {
-        this(53, DnsClient.defaultNameServer());
+        this(53);
     }
 
     public DnsServer(int port, InetSocketAddress... nameServerList) {
@@ -34,7 +38,7 @@ public class DnsServer extends Disposable {
             protected void initChannel(NioDatagramChannel nioDatagramChannel) {
                 nioDatagramChannel.pipeline().addLast(new DatagramDnsQueryDecoder());
                 nioDatagramChannel.pipeline().addLast(new DatagramDnsResponseEncoder());
-                nioDatagramChannel.pipeline().addLast(new DnsHandler(customHosts, eventLoopGroup, nameServerList));
+                nioDatagramChannel.pipeline().addLast(new DnsHandler(DnsServer.this, eventLoopGroup, nameServerList));
             }
         }).bind(port).addListener(f -> {
             if (!f.isSuccess()) {

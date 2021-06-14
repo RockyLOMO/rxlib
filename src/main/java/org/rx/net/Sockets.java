@@ -37,7 +37,7 @@ import static org.rx.core.App.*;
 public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
-    static final DnsClient dnsClient = new DnsClient(DnsClient.defaultNameServer());
+    static final DnsClient dnsClient = new DnsClient(DnsClient.inlandServerList());
 
     private static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());

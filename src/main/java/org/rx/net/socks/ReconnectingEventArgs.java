@@ -3,7 +3,7 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.EventArgs;
-import org.rx.net.socks.support.UnresolvedEndpoint;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 
 import static org.rx.core.App.eq;
