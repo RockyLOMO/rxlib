@@ -16,18 +16,17 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.util.NetUtil;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
+import org.rx.core.Arrays;
+import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
 import org.springframework.util.CollectionUtils;
 
-import javax.naming.Context;
-import javax.naming.directory.Attribute;
-import javax.naming.directory.DirContext;
-import javax.naming.directory.InitialDirContext;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -37,10 +36,11 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
-//    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
+    //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
+    static final DnsClient dnsClient = new DnsClient(DnsClient.defaultNameServer());
 
-    private static EventLoopGroup reactorEventLoop(@NonNull String groupName) {
-        return reactors.computeIfAbsent(groupName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+    private static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
+        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
     // not executor
@@ -48,7 +48,7 @@ public final class Sockets {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
 
-    private static Class<? extends SocketChannel> channelClass() {
+    public static Class<? extends SocketChannel> channelClass() {
         return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
@@ -119,8 +119,8 @@ public final class Sockets {
         return bootstrap(Strings.EMPTY, null, initChannel);
     }
 
-    public static Bootstrap bootstrap(@NonNull String groupName, SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactorEventLoop(groupName), config, initChannel);
+    public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
+        return bootstrap(reactorEventLoop(reactorName), config, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
@@ -213,36 +213,43 @@ public final class Sockets {
     }
 
     //region Address
-    private static final String dnsServer = "114.114.114.114";
     public static final InetAddress LOOPBACK_ADDRESS = InetAddress.getLoopbackAddress(),
             ANY_ADDRESS = quietly(() -> InetAddress.getByName("0.0.0.0"));
 
-    public static List<String> getDnsRecords(String domain, String[] types) {
-//        InetAddress.getByName(ddns).getHostAddress()
-        return getDnsRecords(domain, types, dnsServer, 10, 2);
+//    public static List<String> getDnsRecords(String domain, String[] types) {
+////        InetAddress.getByName(ddns).getHostAddress()
+//        return getDnsRecords(domain, types, dnsServer, 10, 2);
+//    }
+//
+//    @SneakyThrows
+//    public static List<String> getDnsRecords(String domain, String[] types, String dnsServer, int timeoutSeconds, int retryCount) {
+//        Hashtable<String, String> env = new Hashtable<>();
+//        env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
+//        //设置域名服务器
+//        env.put(Context.PROVIDER_URL, "dns://" + dnsServer);
+//        //连接时间
+//        env.put("com.sun.jndi.dns.timeout.initial", String.valueOf(timeoutSeconds * 1000));
+//        //连接次数
+//        env.put("com.sun.jndi.dns.timeout.retries", String.valueOf(retryCount));
+//        DirContext ctx = new InitialDirContext(env);
+//        Enumeration<?> e = ctx.getAttributes(domain, types).getAll();
+//        List<String> result = new ArrayList<>();
+//        while (e.hasMoreElements()) {
+//            Attribute attr = (Attribute) e.nextElement();
+//            int size = attr.size();
+//            for (int i = 0; i < size; i++) {
+//                result.add((String) attr.get(i));
+//            }
+//        }
+//        return result;
+//    }
+
+    public static List<InetAddress> resolveAddresses(String host) {
+        return dnsClient.resolveAll(host);
     }
 
-    @SneakyThrows
-    public static List<String> getDnsRecords(String domain, String[] types, String dnsServer, int timeoutSeconds, int retryCount) {
-        Hashtable<String, String> env = new Hashtable<>();
-        env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
-        //设置域名服务器
-        env.put(Context.PROVIDER_URL, "dns://" + dnsServer);
-        //连接时间
-        env.put("com.sun.jndi.dns.timeout.initial", String.valueOf(timeoutSeconds * 1000));
-        //连接次数
-        env.put("com.sun.jndi.dns.timeout.retries", String.valueOf(retryCount));
-        DirContext ctx = new InitialDirContext(env);
-        Enumeration<?> e = ctx.getAttributes(domain, types).getAll();
-        List<String> result = new ArrayList<>();
-        while (e.hasMoreElements()) {
-            Attribute attr = (Attribute) e.nextElement();
-            int size = attr.size();
-            for (int i = 0; i < size; i++) {
-                result.add((String) attr.get(i));
-            }
-        }
-        return result;
+    public static List<InetAddress> getAddresses(String host) {
+        return Cache.getOrSet(cacheKey("getAddresses", host), p -> Arrays.toList(InetAddress.getAllByName(host)));
     }
 
     //InetAddress.getLocalHost(); 可能会返回127.0.0.1
@@ -267,20 +274,11 @@ public final class Sockets {
                 candidateAddress = (Inet4Address) address;
             }
         }
-        if (candidateAddress == null) {
-            try (DatagramSocket socket = new DatagramSocket()) {
-                socket.connect(InetAddress.getByName(dnsServer), 53);
-                if (socket.getLocalAddress() instanceof Inet4Address) {
-                    return socket.getLocalAddress();
-                }
-            }
+        if (candidateAddress != null) {
+            return candidateAddress;
         }
 //        throw new InvalidException("LAN IP not found");
         return InetAddress.getLocalHost();
-    }
-
-    public InetAddress[] getAddresses(String host) {
-        return Cache.getOrSet(cacheKey("getAddresses", host), p -> InetAddress.getAllByName(host));
     }
 
     public static InetSocketAddress getAnyEndpoint(int port) {
@@ -288,8 +286,13 @@ public final class Sockets {
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
-        String[] arr = Strings.split(endpoint, ":", 2);
-        return new InetSocketAddress(arr[0], Integer.parseInt(arr[1]));
+        String[] pair = Strings.split(endpoint, ":", 2);
+        String ip = pair[0];
+        int port = Integer.parseInt(pair[1]);
+        if (NetUtil.isValidIpV4Address(ip)) {
+            return new InetSocketAddress(ip, port);
+        }
+        return InetSocketAddress.createUnresolved(ip, port);
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {

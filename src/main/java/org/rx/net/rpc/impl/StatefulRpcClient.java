@@ -183,7 +183,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             throw new InvalidException("Client has connected");
         }
 
-        bootstrap = Sockets.bootstrap(RpcServerConfig.GROUP_NAME, config, channel -> {
+        bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             if (config.isEnableSsl()) {
                 SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();

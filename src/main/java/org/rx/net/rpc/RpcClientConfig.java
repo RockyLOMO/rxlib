@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class RpcClientConfig extends SocketConfig {
+    public static final String REACTOR_NAME = "℞Rpc";
     public static final int NON_POOL_SIZE = -1;
     public static final int DEFAULT_VERSION = 0;
 

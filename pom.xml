@@ -113,11 +113,6 @@
         </dependency>
         <!--        <dependency>-->
         <!--            <groupId>org.checkerframework</groupId>-->
-        <!--            <artifactId>checker</artifactId>-->
-        <!--            <version>3.8.0</version>-->
-        <!--        </dependency>-->
-        <!--        <dependency>-->
-        <!--            <groupId>org.checkerframework</groupId>-->
         <!--            <artifactId>jdk8</artifactId>-->
         <!--            <version>3.3.0</version>-->
         <!--        </dependency>-->

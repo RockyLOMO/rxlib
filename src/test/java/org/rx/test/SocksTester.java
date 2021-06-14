@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
-import org.rx.bean.DateTime;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
@@ -13,6 +12,8 @@ import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
+import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
 import org.rx.net.rpc.Remoting;
@@ -27,8 +28,6 @@ import org.rx.test.bean.*;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.security.Provider;
-import java.security.Security;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -268,6 +267,21 @@ public class SocksTester {
     }
 
     @Test
+    public void dns() {
+        //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
+//        System.setProperty("sun.net.spi.nameservice.nameservers", "114.114.114.114");
+//        System.setProperty("sun.net.spi.nameservice.provider.1", "dns,sun");
+
+        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
+        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
+
+        DnsServer server = new DnsServer(53);
+        sleep(2000);
+        DnsClient client = new DnsClient(Sockets.parseEndpoint("127.0.0.1:53"));
+        System.out.println(client.resolve("devops.f-li.cn"));
+    }
+
+    @Test
     public void crypt() {
         String content = "This is content";
         byte[] key = "顺风使舵".getBytes(StandardCharsets.UTF_8);
@@ -303,14 +317,6 @@ public class SocksTester {
         bytes = Bytes.getBytes(b);
         System.out.println(Arrays.toString(bytes));
         assert Bytes.getLong(bytes, 0) == b;
-    }
-
-    @Test
-    public void dnsClient() {
-//        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-
-        List<String> dnsRecs = Sockets.getDnsRecords("cloud.f-li.cn", new String[]{"A"});
-        System.out.println(dnsRecs);
     }
 
     @Test

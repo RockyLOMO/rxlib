@@ -31,8 +31,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
         log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
-        if (!msg.type().equals(Socks5CommandType.CONNECT)
-                || (server.isAuthEnabled() && ProxyChannelManageHandler.get(inbound).isAnonymous())) {
+        if (server.isAuthEnabled() && ProxyChannelManageHandler.get(inbound).isAnonymous()) {
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
+            return;
+        }
+        if (!msg.type().equals(Socks5CommandType.CONNECT)) {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
@@ -51,7 +54,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         connect(inbound, msg.dstAddrType(), e);
     }
 
-    private void connect(ChannelHandlerContext inbound, Socks5AddressType addrType, ReconnectingEventArgs e) {
+    private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
         UnresolvedEndpoint destinationEndpoint = isNull(e.getUpstream().getEndpoint(), e.getDestinationEndpoint());
         String realHost = destinationEndpoint.getHost();
         if (server.support != null && !NetUtil.isValidIpV4Address(realHost)) {
@@ -72,21 +75,21 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     server.raiseEvent(server.onReconnecting, e);
                     if (!e.isCancel() && e.isChanged()) {
                         e.reset();
-                        connect(inbound, addrType, e);
+                        connect(inbound, dstAddrType, e);
                         return;
                     }
                 }
-                log.debug("socks5[{}] connect to backend {} fail", server.getConfig().getListenPort(), finalDestinationAddress, f.cause());
-                inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, addrType)).addListener(ChannelFutureListener.CLOSE);
+                log.warn("socks5[{}] connect to backend {}/{} fail", server.getConfig().getListenPort(), finalDestinationAddress, realHost, f.cause());
+                inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
             Channel outbound = f.channel();
-            log.info("socks5[{}] {} connect to backend {}, destAddr={}", server.getConfig().getListenPort(),
-                    inbound.channel(), outbound, finalDestinationAddress);
+            log.info("socks5[{}] {} connect to backend {}, destAddr={}/{}", server.getConfig().getListenPort(),
+                    inbound.channel(), outbound, finalDestinationAddress, realHost);
 //            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
             outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));
             inbound.pipeline().addLast("to-upstream", new ForwardingFrontendHandler(outbound));
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, addrType));
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType));
         });
     }
 }
