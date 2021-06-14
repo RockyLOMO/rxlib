@@ -30,18 +30,19 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
         String domain = question.name().substring(0, question.name().length() - 1);
         log.debug("query domain {}", domain);
 
-        DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
         byte[] ip = server.getCustomHosts().get(domain);
         if (ip != null) {
+            DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
             response.addRecord(DnsSection.QUESTION, question);
 
-            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 300, Unpooled.wrappedBuffer(ip));
+            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 150, Unpooled.wrappedBuffer(ip));
             response.addRecord(DnsSection.ANSWER, queryAnswer);
             ctx.writeAndFlush(response);
             return;
         }
 
         if (server.support != null) {
+            DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
             response.addRecord(DnsSection.QUESTION, question);
 
             InetAddress address = server.support.resolveHost(domain).get(0);
@@ -58,18 +59,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
-            copySections(envelope.content(), response);
-            ctx.writeAndFlush(response);
+            ctx.writeAndFlush(DnsMessageUtil.newUdpResponse(query.recipient(), query.sender(), envelope.content()));
         });
-    }
-
-    private void copySections(DnsResponse r1, DnsResponse r2) {
-        for (DnsSection section : DnsSection.values()) {
-            for (int i = 0; i < r1.count(section); i++) {
-                DnsRecord record = r1.recordAt(section, i);
-                r2.addRecord(section, record);
-            }
-        }
     }
 
     @Override

@@ -275,12 +275,12 @@ public class SocksTester {
 //        System.setProperty("sun.net.spi.nameservice.nameservers", "114.114.114.114");
 //        System.setProperty("sun.net.spi.nameservice.provider.1", "dns,sun");
 
-        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
+//        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
 //        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
 
         sleep(2000);
-        DnsClient client = new DnsClient(Sockets.parseEndpoint("127.0.0.1:53"));
-        System.out.println(client.resolve("devops.f-li.cn"));
+        DnsClient client = new DnsClient(Sockets.parseEndpoint("192.168.31.7:853"));
+        System.out.println(client.resolve("google.com"));
     }
 
     @Test
