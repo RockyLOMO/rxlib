@@ -9,6 +9,7 @@ import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.App;
+import org.rx.core.Cache;
 import org.rx.core.NQuery;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
@@ -17,6 +18,8 @@ import org.rx.security.AESUtil;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+
+import static org.rx.core.App.cacheKey;
 
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
@@ -46,7 +49,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
         }
         if (server.support != null) {
             App.getLogMetrics().get().put("host", domain);
-            List<InetAddress> address = server.support.resolveHost(AESUtil.encryptToBase64(domain));
+            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> server.support.resolveHost(AESUtil.encryptToBase64(domain)));
             if (CollectionUtils.isEmpty(address)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorUdpResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
