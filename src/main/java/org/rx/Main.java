@@ -68,7 +68,8 @@ public final class Main implements SocksSupport {
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
             frontSvr.setSupport(support);
 
-            DnsServer frontDnsSvr = new DnsServer();
+            Tuple<Boolean, Integer> shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
+            DnsServer frontDnsSvr = new DnsServer(shadowDnsPort.right);
             frontDnsSvr.setSupport(support);
         }
 
@@ -86,6 +87,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public List<InetAddress> resolveHost(String host) {
+        host = AESUtil.decryptFromBase64(host);
         return outlandClient.resolveAll(host);
     }
 

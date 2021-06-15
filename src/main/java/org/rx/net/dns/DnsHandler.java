@@ -7,9 +7,16 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.rx.core.App;
+import org.rx.core.NQuery;
+import org.rx.net.Sockets;
+import org.rx.net.support.SocksSupport;
+import org.rx.security.AESUtil;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
 
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
@@ -29,24 +36,22 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
 
         byte[] ip = server.getCustomHosts().get(domain);
         if (ip != null) {
-            DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
-            response.addRecord(DnsSection.QUESTION, question);
-
-            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 150, Unpooled.wrappedBuffer(ip));
-            response.addRecord(DnsSection.ANSWER, queryAnswer);
-            ctx.writeAndFlush(response);
+            ctx.writeAndFlush(newResponse(query, question, 150, ip));
             return;
         }
 
+        if (domain.endsWith(SocksSupport.FAKE_SUFFIX)) {
+            ctx.writeAndFlush(newResponse(query, question, 3600, Sockets.LOOPBACK_ADDRESS.getAddress()));
+            return;
+        }
         if (server.support != null) {
-            DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
-            response.addRecord(DnsSection.QUESTION, question);
-
-            InetAddress address = server.support.resolveHost(domain).get(0);
-            //ttl 秒
-            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, 600, Unpooled.wrappedBuffer(address.getAddress()));
-            response.addRecord(DnsSection.ANSWER, queryAnswer);
-            ctx.writeAndFlush(response);
+            App.getLogMetrics().get().put("host", domain);
+            List<InetAddress> address = server.support.resolveHost(AESUtil.encryptToBase64(domain));
+            if (CollectionUtils.isEmpty(address)) {
+                ctx.writeAndFlush(DnsMessageUtil.newErrorUdpResponse(query, DnsResponseCode.NXDOMAIN));
+                return;
+            }
+            ctx.writeAndFlush(newResponse(query, question, 600, NQuery.of(address).select(InetAddress::getAddress).toArray()));
             return;
         }
 
@@ -58,6 +63,18 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
             ctx.writeAndFlush(DnsMessageUtil.newUdpResponse(query.recipient(), query.sender(), envelope.content()));
         });
+    }
+
+    //ttl 秒
+    private DatagramDnsResponse newResponse(DatagramDnsQuery query, DefaultDnsQuestion question, long ttl, byte[]... addresses) {
+        DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
+        response.addRecord(DnsSection.QUESTION, question);
+
+        for (byte[] address : addresses) {
+            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, ttl, Unpooled.wrappedBuffer(address));
+            response.addRecord(DnsSection.ANSWER, queryAnswer);
+        }
+        return response;
     }
 
     @Override

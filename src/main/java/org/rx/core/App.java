@@ -6,12 +6,15 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import io.netty.util.concurrent.FastThreadLocal;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Description;
@@ -38,6 +41,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -71,9 +75,16 @@ public final class App extends SystemUtils {
             return v;
         }
     };
-    private static volatile RxConfig config;
     @Setter
-    private static volatile Predicate<Throwable> ignoreExceptionHandler;
+    static volatile Predicate<Throwable> ignoreExceptionHandler;
+    @Getter
+    static final FastThreadLocal<Map<String, Object>> logMetrics = new FastThreadLocal<Map<String, Object>>() {
+        @Override
+        protected Map<String, Object> initialValue() throws Exception {
+            return new ConcurrentHashMap<>();
+        }
+    };
+    private static volatile RxConfig config;
 
     public static synchronized RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
@@ -541,21 +552,24 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        boolean doWrite = false;
-        switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
-            case WriteOnNull:
-                doWrite = eventArgs.getError() != null
-                        || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
-                        || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
-                break;
-            case WriteOnError:
-                if (eventArgs.getError() != null) {
+        Map<String, Object> metrics = logMetrics.getIfExists();
+        boolean doWrite = !MapUtils.isEmpty(metrics);
+        if (!doWrite) {
+            switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
+                case WriteOnNull:
+                    doWrite = eventArgs.getError() != null
+                            || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
+                            || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
+                    break;
+                case WriteOnError:
+                    if (eventArgs.getError() != null) {
+                        doWrite = true;
+                    }
+                    break;
+                case Always:
                     doWrite = true;
-                }
-                break;
-            case Always:
-                doWrite = true;
-                break;
+                    break;
+            }
         }
         if (doWrite) {
             List<String> whitelist = eventArgs.getLogTypeWhitelist();
@@ -567,6 +581,13 @@ public final class App extends SystemUtils {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
             StringBuilder msg = new StringBuilder(256);
             formatMessage.invoke(msg);
+            if (metrics != null) {
+                msg.append("Metrics:\t");
+                for (Map.Entry<String, Object> entry : metrics.entrySet()) {
+                    msg.append("%s=%s ", entry.getKey(), toJsonString(entry.getValue()));
+                }
+                msg.appendLine();
+            }
             if (eventArgs.getError() != null) {
 //                log.error(msg.toString(), eventArgs.getError());
                 log(msg.toString(), eventArgs.getError());

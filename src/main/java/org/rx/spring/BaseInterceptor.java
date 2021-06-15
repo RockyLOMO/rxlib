@@ -1,6 +1,5 @@
 package org.rx.spring;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -12,20 +11,11 @@ import org.rx.util.function.TripleFunc;
 
 import javax.annotation.Resource;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
-    static final FastThreadLocal<Map<String, Object>> metrics = new FastThreadLocal<Map<String, Object>>() {
-        @Override
-        protected Map<String, Object> initialValue() throws Exception {
-            return new ConcurrentHashMap<>();
-        }
-    };
-
     public volatile BiConsumer<BaseInterceptor, ProceedEventArgs> onProcessing, onProceed, onError;
     protected TripleFunc<Signature, Object, Object> argShortSelector;
     @Resource
@@ -66,14 +56,6 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                 } else {
                     msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
-                }
-                Map<String, Object> map = metrics.getIfExists();
-                if (map != null) {
-                    msg.append("metrics: ");
-                    for (Map.Entry<String, Object> entry : map.entrySet()) {
-                        msg.append("\t%s=%s", entry.getKey(), jsonString(signature, entry.getValue()));
-                    }
-                    msg.appendLine();
                 }
             });
         }

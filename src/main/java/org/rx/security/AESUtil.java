@@ -29,7 +29,11 @@ public class AESUtil {
             return dateKey;
         }
         lastDate = date;
-        return dateKey = String.format("℞%s", date).getBytes(StandardCharsets.UTF_8);
+        return dateKey = dateKey(date);
+    }
+
+    private static byte[] dateKey(String date) {
+        return String.format("℞%s", date).getBytes(StandardCharsets.UTF_8);
     }
 
     public static String encryptToBase64(@NonNull String data) {
@@ -60,7 +64,7 @@ public class AESUtil {
 //                    && (utcNow = DateTime.utcNow().addDays(1).getDateComponent()).getHours() == 0 //4 test
                     && utcNow.getMinutes() == 0) {
                 log.warn("redo decrypt");
-                valueByte = decrypt(rawBytes, String.format("℞%s", utcNow.addDays(-1).toDateString()).getBytes(StandardCharsets.UTF_8));
+                valueByte = decrypt(rawBytes, dateKey(utcNow.addDays(-1).toDateString()));
             } else {
                 throw e;
             }
