@@ -6,7 +6,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.*;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetAddress;
@@ -16,8 +15,6 @@ import java.net.InetSocketAddress;
 public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
     final DnsServer server;
     final DnsClient client;
-    @Getter(lazy = true)
-    private final DnsClient outland = DnsClient.outlandClient();
 
     public DnsHandler(DnsServer server, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
         this.server = server;

@@ -17,6 +17,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -37,7 +38,8 @@ import static org.rx.core.App.*;
 public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
-    static final DnsClient dnsClient = new DnsClient(DnsClient.inlandServerList());
+    @Getter(lazy = true)
+    private static final DnsClient dnsClient = DnsClient.inlandServerList();
 
     private static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
@@ -245,7 +247,7 @@ public final class Sockets {
 //    }
 
     public static List<InetAddress> resolveAddresses(String host) {
-        return dnsClient.resolveAll(host);
+        return getDnsClient().resolveAll(host);
     }
 
     public static List<InetAddress> getAddresses(String host) {
