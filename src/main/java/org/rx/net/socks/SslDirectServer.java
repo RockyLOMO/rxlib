@@ -118,10 +118,8 @@ public final class SslDirectServer extends Disposable {
         });
         serverBootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("Listen on port {} fail", config.getListenPort(), f.cause());
-                return;
+                log.error("Listened on port {} fail", config.getListenPort(), f.cause());
             }
-            log.debug("Listened on port {}..", config.getListenPort());
         });
         this.router = router;
     }

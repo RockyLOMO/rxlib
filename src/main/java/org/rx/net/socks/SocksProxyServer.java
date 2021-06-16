@@ -74,7 +74,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         });
         bootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("Listen on port {} fail", config.getListenPort(), f.cause());
+                log.error("Listened on port {} fail", config.getListenPort(), f.cause());
             }
         });
     }

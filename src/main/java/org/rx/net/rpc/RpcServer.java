@@ -177,7 +177,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     protected ClientHandler getHandler(ChannelId id) {
         ClientHandler handler = clients.get(id);
         if (handler == null) {
-            throw new InvalidException("Client not found");
+            throw new InvalidException("Client %s not found", id);
         }
         return handler;
     }
@@ -215,12 +215,12 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         InetSocketAddress endpoint = Sockets.getAnyEndpoint(config.getListenPort());
         bootstrap.bind(endpoint).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("Listened on port {} fail..", endpoint, f.cause());
+                log.error("Listened on port {} fail", endpoint, f.cause());
                 isStarted = false;
                 return;
             }
             serverChannel = f.channel();
-            log.debug("Listened on port {}..", endpoint);
+            log.debug("Listened on port {}", endpoint);
         });
         isStarted = true;
     }

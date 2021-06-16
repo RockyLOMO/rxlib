@@ -42,10 +42,10 @@ public class DnsServer extends Disposable {
             }
         }).bind(port).addListener(f -> {
             if (!f.isSuccess()) {
-                log.error("Listen on port {} fail", port, f.cause());
+                log.error("Listened on port {} fail", port, f.cause());
                 return;
             }
-            log.info("Listen on port {}", port);
+            log.info("Listened on port {}", port);
         });
     }
 

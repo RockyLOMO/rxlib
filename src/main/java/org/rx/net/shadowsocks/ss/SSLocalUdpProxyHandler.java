@@ -1,7 +1,5 @@
 package org.rx.net.shadowsocks.ss;
 
-import cn.wowspeeder.encryption.CryptFactory;
-import cn.wowspeeder.encryption.ICrypt;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -12,6 +10,8 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.socks.SocksAddressType;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.rx.net.shadowsocks.encryption.CryptoFactory;
+import org.rx.net.shadowsocks.encryption.ICrypto;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -23,11 +23,11 @@ public class SSLocalUdpProxyHandler extends SimpleChannelInboundHandler<Datagram
     private static byte[] SOCKS5_ADDRESS_PREFIX = new byte[]{0, 0, 0};
 
     private static EventLoopGroup proxyBossGroup = new NioEventLoopGroup();
-    private final ICrypt crypt;
+    private final ICrypto crypt;
     private final InetSocketAddress ssServer;
 
     public SSLocalUdpProxyHandler(String server, Integer port, String method, String password, String obfs, String obfsparam) {
-        crypt = CryptFactory.get(method, password, true);
+        crypt = CryptoFactory.get(method, password, true);
         ssServer = new InetSocketAddress(server, port);
     }
 

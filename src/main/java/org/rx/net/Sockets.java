@@ -83,7 +83,8 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .childOption(ChannelOption.TCP_NODELAY, highNetwork)
-                .childOption(ChannelOption.SO_KEEPALIVE, !highNetwork)
+//                .childOption(ChannelOption.SO_KEEPALIVE, !highNetwork)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);

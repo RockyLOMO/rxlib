@@ -1,7 +1,7 @@
 package org.rx.net.shadowsocks.ss.obfs;
 
-import cn.wowspeeder.ss.obfs.impl.HttpSimpleHandler;
 import io.netty.channel.ChannelHandler;
+import org.rx.net.shadowsocks.ss.obfs.impl.HttpSimpleHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

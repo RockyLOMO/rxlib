@@ -1,7 +1,5 @@
 package org.rx.net.shadowsocks.socks5;
 
-
-import cn.wowspeeder.ss.SSCommon;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -9,6 +7,8 @@ import io.netty.handler.codec.socksx.SocksMessage;
 import io.netty.handler.codec.socksx.v5.*;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.rx.net.Sockets;
+import org.rx.net.shadowsocks.ss.SSCommon;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -89,6 +89,6 @@ public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksM
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable throwable) {
         throwable.printStackTrace();
-        SocksServerUtils.closeOnFlush(ctx.channel());
+        Sockets.closeOnFlushed(ctx.channel());
     }
 }

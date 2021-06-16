@@ -1,7 +1,5 @@
 package org.rx.net.shadowsocks.ss;
 
-import cn.wowspeeder.encryption.CryptFactory;
-import cn.wowspeeder.encryption.ICrypt;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -15,6 +13,8 @@ import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.rx.net.shadowsocks.encryption.CryptoFactory;
+import org.rx.net.shadowsocks.encryption.ICrypto;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static InternalLogger logger = InternalLoggerFactory.getInstance(SSServerTcpProxyHandler.class);
 
-    private ICrypt crypt;
+    private ICrypto crypt;
     private InetSocketAddress ssServer;
     private Socks5CommandRequest remoteAddr;
     private Channel clientChannel;
@@ -35,7 +35,7 @@ public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf>
 
 
     public SSLocalTcpProxyHandler(String server, Integer port, String method, String password, String obfs, String obfsparam) {
-        crypt = CryptFactory.get(method, password);
+        crypt = CryptoFactory.get(method, password);
         ssServer = new InetSocketAddress(server, port);
     }
 

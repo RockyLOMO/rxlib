@@ -10,6 +10,7 @@ import io.netty.handler.codec.socksx.v5.Socks5CommandRequest;
 import io.netty.handler.codec.socksx.v5.Socks5CommandStatus;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
+import org.rx.net.Sockets;
 
 @ChannelHandler.Sharable
 public final class SocksServerConnectHandler extends SimpleChannelInboundHandler<SocksMessage> {
@@ -42,7 +43,7 @@ public final class SocksServerConnectHandler extends SimpleChannelInboundHandler
                         } else {
                             ctx.channel().writeAndFlush(new DefaultSocks5CommandResponse(
                                     Socks5CommandStatus.FAILURE, request.dstAddrType()));
-                            SocksServerUtils.closeOnFlush(ctx.channel());
+                            Sockets.closeOnFlushed(ctx.channel());
                         }
                     });
 
@@ -64,7 +65,7 @@ public final class SocksServerConnectHandler extends SimpleChannelInboundHandler
                         // Close the connection if the connection attempt has failed.
                         inboundChannel.writeAndFlush(
                                 new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, request.dstAddrType()));
-                        SocksServerUtils.closeOnFlush(inboundChannel);
+                        Sockets.closeOnFlushed(inboundChannel);
                     }
                 }
             });
@@ -75,6 +76,6 @@ public final class SocksServerConnectHandler extends SimpleChannelInboundHandler
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        SocksServerUtils.closeOnFlush(ctx.channel());
+        Sockets.closeOnFlushed(ctx.channel());
     }
 }
