@@ -26,6 +26,7 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -251,17 +252,20 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        Remoting.listen(new Main(), 1181);
+        int connectTimeoutMillis = 60000;
+        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_AES.flags());
+        backConf.setConnectTimeoutMillis(connectTimeoutMillis);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+        Remoting.listen(new Main(backSvr), 1181);
 
         SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_AES.flags());
-        frontConf.setConnectTimeoutMillis(60000);
+        frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
-        frontSvr.setSupport(Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 2)));
-
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_AES.flags());
-        backConf.setConnectTimeoutMillis(frontConf.getConnectTimeoutMillis());
-        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+        SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 2));
+        frontSvr.setSupport(support);
+        sleep(2000);
+        support.addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
 
         System.in.read();
     }

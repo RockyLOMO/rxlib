@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
-import io.netty.util.NetUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -58,7 +57,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
         UnresolvedEndpoint destinationEndpoint = isNull(e.getUpstream().getEndpoint(), e.getDestinationEndpoint());
         String realHost = destinationEndpoint.getHost();
-        if (server.support != null && !NetUtil.isValidIpV4Address(realHost)) {
+        if (server.support != null && !Sockets.isValidIp(realHost)) {
             App.getLogMetrics().get().put(String.format("socks5[%s]_dstAddr", server.getConfig().getListenPort()), realHost);
             SUID hash = SUID.compute(realHost);
             quietly(() -> {

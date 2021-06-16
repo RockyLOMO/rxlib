@@ -16,4 +16,6 @@ public interface SocksSupport {
     void fakeHost(SUID hash, String realHost);
 
     List<InetAddress> resolveHost(String host);
+
+    void addWhiteList(InetAddress endpoint);
 }

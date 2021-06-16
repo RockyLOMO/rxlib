@@ -8,6 +8,11 @@ import io.netty.handler.codec.socksx.SocksVersion;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.Sockets;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.Set;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -21,6 +26,18 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
+        Set<InetAddress> whiteList = server.getConfig().getWhiteList();
+        if (whiteList.isEmpty()) {
+            log.warn("socks5[{}] whiteList is empty", server.getConfig().getListenPort());
+            ctx.close();
+            return;
+        }
+        InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
+        if (!Sockets.isNatIp(remoteEp.getAddress()) && !whiteList.contains(remoteEp.getAddress())) {
+            log.warn("socks5[{}] {} access blocked", server.getConfig().getListenPort(), remoteEp);
+            ctx.close();
+            return;
+        }
         if (msg.decoderResult().isFailure() || !msg.version().equals(SocksVersion.SOCKS5)) {
             log.warn("socks5[{}] error protocol", server.getConfig().getListenPort(), msg.decoderResult().cause());
 //            ctx.fireChannelRead(msg);

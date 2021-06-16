@@ -218,33 +218,15 @@ public final class Sockets {
     public static final InetAddress LOOPBACK_ADDRESS = InetAddress.getLoopbackAddress(),
             ANY_ADDRESS = quietly(() -> InetAddress.getByName("0.0.0.0"));
 
-//    public static List<String> getDnsRecords(String domain, String[] types) {
-////        InetAddress.getByName(ddns).getHostAddress()
-//        return getDnsRecords(domain, types, dnsServer, 10, 2);
-//    }
-//
-//    @SneakyThrows
-//    public static List<String> getDnsRecords(String domain, String[] types, String dnsServer, int timeoutSeconds, int retryCount) {
-//        Hashtable<String, String> env = new Hashtable<>();
-//        env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
-//        //设置域名服务器
-//        env.put(Context.PROVIDER_URL, "dns://" + dnsServer);
-//        //连接时间
-//        env.put("com.sun.jndi.dns.timeout.initial", String.valueOf(timeoutSeconds * 1000));
-//        //连接次数
-//        env.put("com.sun.jndi.dns.timeout.retries", String.valueOf(retryCount));
-//        DirContext ctx = new InitialDirContext(env);
-//        Enumeration<?> e = ctx.getAttributes(domain, types).getAll();
-//        List<String> result = new ArrayList<>();
-//        while (e.hasMoreElements()) {
-//            Attribute attr = (Attribute) e.nextElement();
-//            int size = attr.size();
-//            for (int i = 0; i < size; i++) {
-//                result.add((String) attr.get(i));
-//            }
-//        }
-//        return result;
-//    }
+    @SneakyThrows
+    public static boolean isNatIp(InetAddress address) {
+        return eq(LOOPBACK_ADDRESS, address) || eq(InetAddress.getLocalHost(), address)
+                || address.getHostAddress().startsWith("192.168.");
+    }
+
+    public static boolean isValidIp(String ipV4OrIpV6) {
+        return NetUtil.isValidIpV4Address(ipV4OrIpV6) || NetUtil.isValidIpV6Address(ipV4OrIpV6);
+    }
 
     public static List<InetAddress> resolveAddresses(String host) {
         return getDnsClient().resolveAll(host);
@@ -291,7 +273,7 @@ public final class Sockets {
         String[] pair = Strings.split(endpoint, ":", 2);
         String ip = pair[0];
         int port = Integer.parseInt(pair[1]);
-        if (NetUtil.isValidIpV4Address(ip)) {
+        if (isValidIp(ip)) {
             return new InetSocketAddress(ip, port);
         }
         return InetSocketAddress.createUnresolved(ip, port);
