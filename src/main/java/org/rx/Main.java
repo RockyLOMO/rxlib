@@ -57,7 +57,7 @@ public final class Main implements SocksSupport {
             backConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, auth.getUsername()) && eq(p, auth.getPassword()), null);
 
-            Remoting.listen(app = new Main(backSvr), port.right + 1);
+            Remoting.listen(app = new Main(backSvr), port.right + 1).getServer().onPing = (s, e) -> backConf.getWhiteList().add(e.getClient().getRemoteAddress().getAddress());
         } else {
             Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
             if (shadowServer.right == null) {

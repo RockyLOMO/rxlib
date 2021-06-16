@@ -69,7 +69,10 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.debug("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
                 return;
             }
-            if (tryAs(pack, PingMessage.class, p -> log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp()))) {
+            if (tryAs(pack, PingMessage.class, p -> {
+                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp());
+                raiseEventAsync(onPong, new NEventArgs<>(p));
+            })) {
                 return;
             }
 
@@ -122,7 +125,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
-    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
+    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive, onPong;
     public volatile BiConsumer<RpcClient, NEventArgs<Throwable>> onError;
     @Getter
     private final RpcClientConfig config;

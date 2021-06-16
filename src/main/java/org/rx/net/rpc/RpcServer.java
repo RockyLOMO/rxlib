@@ -94,6 +94,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             if (tryAs(pack, PingMessage.class, p -> {
                 p.setReplyTimestamp(System.currentTimeMillis());
                 writeAndFlush(context(), p);
+                raiseEventAsync(onPing, new RpcServerEventArgs<>(client, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
@@ -140,6 +141,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
     public static final TaskScheduler SCHEDULER = new TaskScheduler("Rpc");
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Serializable>> onConnected, onDisconnected, onSend, onReceive;
+    public volatile BiConsumer<RpcServer, RpcServerEventArgs<PingMessage>> onPing;
     public volatile BiConsumer<RpcServer, RpcServerEventArgs<Throwable>> onError;
     public volatile BiConsumer<RpcServer, EventArgs> onClosed;
 

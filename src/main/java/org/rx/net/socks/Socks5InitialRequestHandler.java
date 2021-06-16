@@ -14,6 +14,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Set;
 
+import static org.rx.core.App.toJsonString;
+
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5InitialRequest> {
@@ -27,14 +29,9 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
-        if (whiteList.isEmpty()) {
-            log.warn("socks5[{}] whiteList is empty", server.getConfig().getListenPort());
-            ctx.close();
-            return;
-        }
         InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
         if (!Sockets.isNatIp(remoteEp.getAddress()) && !whiteList.contains(remoteEp.getAddress())) {
-            log.warn("socks5[{}] {} access blocked", server.getConfig().getListenPort(), remoteEp);
+            log.warn("socks5[{}] whiteList={}\n{} access blocked", server.getConfig().getListenPort(), toJsonString(whiteList), remoteEp);
             ctx.close();
             return;
         }
