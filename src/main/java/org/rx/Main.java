@@ -7,6 +7,7 @@ import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.App;
 import org.rx.core.Reflects;
+import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
@@ -21,9 +22,9 @@ import org.rx.net.socks.TransportFlags;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
+import org.rx.util.function.Action;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 
@@ -57,7 +58,7 @@ public final class Main implements SocksSupport {
             backConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, auth.getUsername()) && eq(p, auth.getPassword()), null);
 
-            Remoting.listen(app = new Main(backSvr), port.right + 1).getServer().onPing = (s, e) -> backConf.getWhiteList().add(e.getClient().getRemoteAddress().getAddress());
+            Remoting.listen(app = new Main(backSvr), port.right + 1);
         } else {
             Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
             if (shadowServer.right == null) {
@@ -78,7 +79,15 @@ public final class Main implements SocksSupport {
             DnsServer frontDnsSvr = new DnsServer(shadowDnsPort.right);
             frontDnsSvr.setSupport(support);
 
-            support.addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
+            Action fn = () -> {
+                InetAddress addr = InetAddress.getByName(HttpClient.getWanIp());
+                if (!frontConf.getWhiteList().add(addr)) {
+                    return;
+                }
+                support.addWhiteList(addr);
+            };
+            fn.invoke();
+            Tasks.schedule(fn, 3000);
         }
 
         log.info("Server started..");

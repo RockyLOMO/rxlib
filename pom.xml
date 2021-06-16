@@ -65,9 +65,17 @@
         <spring.boot.version>2.4.4</spring.boot.version>
         <spring.version>5.3.5</spring.version>
         <aspectj.version>1.9.6</aspectj.version>
+
+        <bcprov.version>1.69</bcprov.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk15on</artifactId>
+            <version>${bcprov.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-context</artifactId>
