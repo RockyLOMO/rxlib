@@ -225,7 +225,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             throw new InvalidException("Client connect fail", e);
         }
         if (!autoReconnect && !isConnected()) {
-            throw new InvalidException("Client connect fail");
+            throw new InvalidException("Client connect %s fail", config.getServerEndpoint());
         }
     }
 

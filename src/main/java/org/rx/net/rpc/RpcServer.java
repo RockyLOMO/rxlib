@@ -220,7 +220,6 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
             serverChannel = f.channel();
-            log.debug("Listened on port {}", endpoint);
         });
         isStarted = true;
     }

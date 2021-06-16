@@ -274,10 +274,11 @@ public final class Sockets {
         String[] pair = Strings.split(endpoint, ":", 2);
         String ip = pair[0];
         int port = Integer.parseInt(pair[1]);
-        if (isValidIp(ip)) {
-            return new InetSocketAddress(ip, port);
-        }
-        return InetSocketAddress.createUnresolved(ip, port);
+//        if (isValidIp(ip)) {
+//            return new InetSocketAddress(ip, port);
+//        }
+//        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题
+        return new InetSocketAddress(ip, port);
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {
