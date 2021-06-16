@@ -12,6 +12,7 @@ import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
@@ -116,6 +117,14 @@ public final class Sockets {
         if (group != null) {
             group.shutdownGracefully();
         }
+    }
+
+    public static Bootstrap udpBootstrap(@NonNull EventLoopGroup eventLoopGroup) {
+        Bootstrap bootstrap = new Bootstrap();
+        bootstrap.group(eventLoopGroup).channel(NioDatagramChannel.class)
+                .option(ChannelOption.SO_BROADCAST, true)
+                .handler(new LoggingHandler(LogLevel.INFO));
+        return bootstrap;
     }
 
     public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
