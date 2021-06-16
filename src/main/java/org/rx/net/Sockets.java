@@ -150,7 +150,8 @@ public final class Sockets {
                 .channel(channelClass())
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                 .option(ChannelOption.TCP_NODELAY, highNetwork)
-                .option(ChannelOption.SO_KEEPALIVE, !highNetwork)
+//                .option(ChannelOption.SO_KEEPALIVE, !highNetwork)
+                .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
