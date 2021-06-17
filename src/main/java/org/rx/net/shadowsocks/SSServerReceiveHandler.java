@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -12,11 +12,6 @@ public class SSServerReceiveHandler extends SimpleChannelInboundHandler<Object> 
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        super.channelActive(ctx);
-    }
-
-    @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
         if (isUdp) {
@@ -24,18 +19,13 @@ public class SSServerReceiveHandler extends SimpleChannelInboundHandler<Object> 
             if (udpRaw.content().readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
                 return;
             }
-            ctx.channel().attr(SSCommon.REMOTE_ADDR).set(udpRaw.sender());
+            ctx.channel().attr(SSCommon.REMOTE_ADDRESS).set(udpRaw.sender());
             ctx.fireChannelRead(udpRaw.content());
             return;
         }
 
-        ctx.channel().attr(SSCommon.REMOTE_ADDR).set((InetSocketAddress) ctx.channel().remoteAddress());
+        ctx.channel().attr(SSCommon.REMOTE_ADDRESS).set((InetSocketAddress) ctx.channel().remoteAddress());
         ctx.channel().pipeline().remove(this);
         ctx.fireChannelRead(msg);
-    }
-
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        super.exceptionCaught(ctx, cause);
     }
 }

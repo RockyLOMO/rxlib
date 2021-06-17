@@ -1,7 +1,7 @@
-package org.rx.net.shadowsocks.ss.obfs;
+package org.rx.net.shadowsocks.obfs;
 
 import io.netty.channel.ChannelHandler;
-import org.rx.net.shadowsocks.ss.obfs.impl.HttpSimpleHandler;
+import org.rx.net.shadowsocks.obfs.impl.HttpSimpleHandler;
 
 import java.util.Collections;
 import java.util.List;

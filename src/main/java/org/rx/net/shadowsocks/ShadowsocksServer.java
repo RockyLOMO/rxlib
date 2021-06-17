@@ -16,8 +16,7 @@ import org.rx.core.Disposable;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
-import org.rx.net.shadowsocks.ss.*;
-import org.rx.net.shadowsocks.ss.obfs.ObfsFactory;
+import org.rx.net.shadowsocks.obfs.ObfsFactory;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -34,7 +33,7 @@ public class ShadowsocksServer extends Disposable {
             _crypto.setForUdp(false);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast("timeout", new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+            ctx.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                     ctx.close();
@@ -51,11 +50,9 @@ public class ShadowsocksServer extends Disposable {
             }
 
             //ss
-            ctx.pipeline().addLast("ssCheckerReceive", new SSServerReceiveHandler())
-                    .addLast("ssCheckerSend", new SSServerSendHandler())
-                    .addLast("ssCipherCodec", new SSCipherCodec())
-                    .addLast("ssProtocolCodec", new SSProtocolCodec())
-                    .addLast("ssTcpProxy", new SSServerTcpProxyHandler(config));
+            ctx.pipeline().addLast(new SSServerReceiveHandler(), new SSServerSendHandler(),
+                    new SSCipherCodec(), new SSProtocolCodec(),
+                    new SSServerTcpProxyHandler(config));
         });
         bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -76,11 +73,9 @@ public class ShadowsocksServer extends Disposable {
                         _crypto.setForUdp(true);
                         ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-                        ctx.pipeline().addLast("ssCheckerReceive", new SSServerReceiveHandler())
-                                .addLast("ssCheckerSend", new SSServerSendHandler())
-                                .addLast("ssCipherCodec", new SSCipherCodec())
-                                .addLast("ssProtocolCodec", new SSProtocolCodec())
-                                .addLast("ssUdpProxy", new SSServerUdpProxyHandler());
+                        ctx.pipeline().addLast(new SSServerReceiveHandler(), new SSServerSendHandler(),
+                                new SSCipherCodec(), new SSProtocolCodec(),
+                                new SSServerUdpProxyHandler());
                     }
                 });
         udpBootstrap.bind(config.getEndpoint());

@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -106,7 +106,7 @@ public class SSLocalUdpProxyHandler extends SimpleChannelInboundHandler<Datagram
         }
 
         if (pc != null) {
-            pc.attr(SSCommon.REMOTE_DES).set(clientRecipient);
+            pc.attr(SSCommon.REMOTE_DEST).set(clientRecipient);
             pc.writeAndFlush(new DatagramPacket(msg.retain(), ssServer));
         }
     }

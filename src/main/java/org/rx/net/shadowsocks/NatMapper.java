@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.channel.Channel;
 
@@ -17,12 +17,8 @@ public class NatMapper {
         return udpTable.get(udpTarget);
     }
 
-    private static Channel removeUdpMapping(InetSocketAddress udpTarget) {
-        return udpTable.remove(udpTarget);
-    }
-
-    static void closeChannelGracefully(InetSocketAddress source) {
-        Channel udpChannel = removeUdpMapping(source);
+    static void closeUdpChannel(InetSocketAddress udpTarget) {
+        Channel udpChannel = udpTable.remove(udpTarget);
         if (udpChannel != null && udpChannel.isActive()) {
             udpChannel.close();
         }

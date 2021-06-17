@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.socks.SocksRequest;

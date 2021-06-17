@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss.obfs.impl;
+package org.rx.net.shadowsocks.obfs.impl;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

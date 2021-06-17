@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -41,7 +41,7 @@ public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf>
     protected void channelRead0(ChannelHandlerContext clientCtx, ByteBuf msg) throws Exception {
         if (this.clientChannel == null) {
             this.clientChannel = clientCtx.channel();
-            this.remoteAddr = clientChannel.attr(SSCommon.REMOTE_DES_SOCKS5).get();
+            this.remoteAddr = clientChannel.attr(SSCommon.REMOTE_DEST_SOCKS5).get();
         }
         logger.debug("channel id {},readableBytes:{}", clientChannel.id().toString(), msg.readableBytes());
 //        if (msg.readableBytes() == 0) return;

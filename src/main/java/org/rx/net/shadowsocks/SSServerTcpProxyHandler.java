@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -9,7 +9,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.socks.ForwardingBackendHandler;
 
 import java.net.InetSocketAddress;
@@ -27,12 +26,12 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
     public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
         Channel inbound = ctx.channel();
         if (outbound == null) {
-            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DES).get();
+            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
 
             Bootstrap bootstrap = Sockets.bootstrap(inbound.eventLoop(), config, ch -> ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                    log.debug("{} state:{}", clientRecipient.toString(), state.toString());
+                    log.debug("{} state:{}", clientRecipient, state);
                     Sockets.closeOnFlushed(outbound);
                     return super.newIdleStateEvent(state, first);
                 }

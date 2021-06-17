@@ -8,7 +8,7 @@ import io.netty.handler.codec.socksx.v5.*;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import org.rx.net.Sockets;
-import org.rx.net.shadowsocks.ss.SSCommon;
+import org.rx.net.shadowsocks.SSCommon;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -46,7 +46,7 @@ public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksM
                                 "0.0.0.0",
                                 0));
 
-                        ctx.channel().attr(SSCommon.REMOTE_DES_SOCKS5).set(socks5CmdRequest);
+                        ctx.channel().attr(SSCommon.REMOTE_DEST_SOCKS5).set(socks5CmdRequest);
 
 //                        ctx.fireChannelRead(socksRequest);
                     } else if (socks5CmdRequest.type() == Socks5CommandType.UDP_ASSOCIATE) {

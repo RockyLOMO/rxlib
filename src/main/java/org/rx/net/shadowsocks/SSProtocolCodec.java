@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -25,15 +25,15 @@ import java.util.List;
  **/
 @Slf4j
 public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
-    private boolean isSSLocal;
-    private boolean tcpAddressed = false;
+    private boolean isClient;
+    private boolean tcpAddressed;
 
     public SSProtocolCodec() {
         this(false);
     }
 
-    public SSProtocolCodec(boolean isSSLocal) {
-        this.isSSLocal = isSSLocal;
+    public SSProtocolCodec(boolean isClient) {
+        this.isClient = isClient;
     }
 
     @Override
@@ -54,9 +54,9 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = ctx.channel().attr(!isSSLocal ? SSCommon.REMOTE_SRC : SSCommon.REMOTE_DES).get();
-        } else if (isSSLocal && !tcpAddressed) {
-            addr = ctx.channel().attr(SSCommon.REMOTE_DES).get();
+            addr = ctx.channel().attr(!isClient ? SSCommon.REMOTE_SRC : SSCommon.REMOTE_DEST).get();
+        } else if (isClient && !tcpAddressed) {
+            addr = ctx.channel().attr(SSCommon.REMOTE_DEST).get();
             tcpAddressed = true;
         }
 
@@ -102,7 +102,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
 
-        if (isUdp || (!isSSLocal && !tcpAddressed)) {
+        if (isUdp || (!isClient && !tcpAddressed)) {
             SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
             if (addrRequest == null) {
                 log.warn("fail to decode address request from {}, pls check client's cipher setting", ctx.channel().remoteAddress());
@@ -114,7 +114,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
             log.debug(ctx.channel().id().toString() + " addressType = " + addrRequest.addressType() + ",host = " + addrRequest.host() + ",port = " + addrRequest.port() + ",dataBuff = " + buf.readableBytes());
 
             InetSocketAddress addr = new InetSocketAddress(addrRequest.host(), addrRequest.port());
-            ctx.channel().attr(!isSSLocal ? SSCommon.REMOTE_DES : SSCommon.REMOTE_SRC).set(addr);
+            ctx.channel().attr(!isClient ? SSCommon.REMOTE_DEST : SSCommon.REMOTE_SRC).set(addr);
 
             if (!isUdp) {
                 tcpAddressed = true;
@@ -122,11 +122,5 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         }
         buf.retain();
         out.add(msg);
-    }
-
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        InetSocketAddress clientSender = ctx.channel().attr(SSCommon.REMOTE_ADDR).get();
-        log.error("client {} error", clientSender, cause);
     }
 }

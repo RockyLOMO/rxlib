@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.ss;
+package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.socks.SocksAddressType;
