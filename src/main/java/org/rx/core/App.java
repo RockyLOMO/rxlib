@@ -77,7 +77,6 @@ public final class App extends SystemUtils {
     };
     @Setter
     static volatile Predicate<Throwable> ignoreExceptionHandler;
-    @Getter
     static final FastThreadLocal<Map<String, Object>> logMetrics = new FastThreadLocal<Map<String, Object>>() {
         @Override
         protected Map<String, Object> initialValue() throws Exception {
@@ -540,6 +539,10 @@ public final class App extends SystemUtils {
             log.warn(format, args);
         }
         return ApplicationException.getMessage(e);
+    }
+
+    public static void logMetric(String name, Object value) {
+        logMetrics.get().put(name, value);
     }
 
     public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {

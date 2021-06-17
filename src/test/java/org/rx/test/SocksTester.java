@@ -230,23 +230,16 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void ssProxy() {
+        SocksConfig backConf = new SocksConfig(1082, TransportFlags.NONE.flags());
+        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+
         ShadowsocksConfig config = new ShadowsocksConfig();
         config.setEndpoint(Sockets.parseEndpoint("127.0.0.1:1081"));
         config.setMethod("aes-128-gcm");
         config.setPassword("123456");
-        ShadowsocksServer server = new ShadowsocksServer(config);
+        ShadowsocksServer server = new ShadowsocksServer(config,
+                dstEp -> new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082")));
 
-        System.in.read();
-    }
-
-    @SneakyThrows
-    @Test
-    public void directProxy() {
-        SslDirectConfig frontConf = new SslDirectConfig(3307, TransportFlags.BACKEND_ALL.flags());
-        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
-
-        SslDirectConfig backConf = new SslDirectConfig(3308, TransportFlags.FRONTEND_ALL.flags());
-        SslDirectServer backSvr = new SslDirectServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
         System.in.read();
     }
 
@@ -262,12 +255,23 @@ public class SocksTester {
         SocksConfig frontConf = new SocksConfig(1080, TransportFlags.BACKEND_AES.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                addr -> new Socks5Upstream(addr, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
+                dstEp -> new Socks5Upstream(dstEp, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
         SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 2));
         frontSvr.setSupport(support);
         sleep(2000);
         support.addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
 
+        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void directProxy() {
+        SslDirectConfig frontConf = new SslDirectConfig(3307, TransportFlags.BACKEND_ALL.flags());
+        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
+
+        SslDirectConfig backConf = new SslDirectConfig(3308, TransportFlags.FRONTEND_ALL.flags());
+        SslDirectServer backSvr = new SslDirectServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
         System.in.read();
     }
 

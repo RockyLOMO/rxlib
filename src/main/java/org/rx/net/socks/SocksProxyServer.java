@@ -24,6 +24,7 @@ import java.util.function.BiConsumer;
 //thanks https://github.com/hsupu/netty-socks
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
+    public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = DirectUpstream::new;
     public volatile BiConsumer<SocksProxyServer, ReconnectingEventArgs> onReconnecting;
 
     @Getter
@@ -45,7 +46,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<UnresolvedEndpoint, Upstream> router) {
         if (router == null) {
-            router = Upstream.DIRECT_ROUTER;
+            router = DIRECT_ROUTER;
         }
 
         this.config = config;

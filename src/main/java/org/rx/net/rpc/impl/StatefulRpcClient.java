@@ -282,7 +282,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 }
             }
             if (!isConnected()) {
-                throw new ClientDisconnectedException();
+                throw new ClientDisconnectedException(channel.id());
             }
         }
 

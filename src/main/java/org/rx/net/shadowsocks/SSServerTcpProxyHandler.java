@@ -35,14 +35,19 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
             UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(clientRecipient.getHostString(), clientRecipient.getPort());
             Upstream upstream = server.router.invoke(destinationEndpoint);
 
-            Bootstrap bootstrap = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
-                @Override
-                protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                    log.debug("{} state:{}", clientRecipient, state);
-                    Sockets.closeOnFlushed(outbound);
-                    return super.newIdleStateEvent(state, first);
-                }
-            }, new ForwardingBackendHandler(ctx, pendingPackages)));
+            Bootstrap bootstrap = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> {
+                ChannelPipeline pipeline = ch.pipeline();
+                pipeline.addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+                    @Override
+                    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
+                        log.debug("{} state:{}", clientRecipient, state);
+                        Sockets.closeOnFlushed(outbound);
+                        return super.newIdleStateEvent(state, first);
+                    }
+                });
+                upstream.initChannel(ch);
+                pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
+            });
             outbound = bootstrap.connect(clientRecipient).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.error("Connect to backend {} fail", clientRecipient, f.cause());

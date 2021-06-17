@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.core.App;
+import org.rx.core.Cache;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -56,13 +57,16 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
-        UnresolvedEndpoint destinationEndpoint = isNull(e.getUpstream().getEndpoint(), e.getDestinationEndpoint());
+        UnresolvedEndpoint destinationEndpoint = e.getUpstream().getEndpoint();
         String realHost = destinationEndpoint.getHost();
         if (server.support != null && !Sockets.isValidIp(realHost)) {
-            App.getLogMetrics().get().put(String.format("socks5[%s]_dstAddr", server.getConfig().getListenPort()), realHost);
+            App.logMetric(String.format("socks5[%s]_dstAddr", server.getConfig().getListenPort()), realHost);
             SUID hash = SUID.compute(realHost);
             quietly(() -> {
-                server.support.fakeHost(hash, AESUtil.encryptToBase64(realHost));
+                Cache.getOrSet(hash, k -> {
+                    server.support.fakeHost(hash, AESUtil.encryptToBase64(realHost));
+                    return true;
+                });
                 destinationEndpoint.setHost(String.format("%s%s", hash, SocksSupport.FAKE_SUFFIX));
             });
         }

@@ -48,7 +48,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
             return;
         }
         if (server.support != null) {
-            App.getLogMetrics().get().put("host", domain);
+            App.logMetric("host", domain);
             List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> server.support.resolveHost(AESUtil.encryptToBase64(domain)));
             if (CollectionUtils.isEmpty(address)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorUdpResponse(query, DnsResponseCode.NXDOMAIN));

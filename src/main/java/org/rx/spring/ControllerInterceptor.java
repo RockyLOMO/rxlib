@@ -44,7 +44,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        SpringContext.metrics("url", Servlets.currentRequest().left.getRequestURL().toString());
+        App.logMetric("url", Servlets.currentRequest().left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 

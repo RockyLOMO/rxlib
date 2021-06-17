@@ -1,7 +1,6 @@
 package org.rx.spring;
 
 import lombok.Setter;
-import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.util.function.TripleFunc;
@@ -65,8 +64,4 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
 
     @Setter
     static TripleFunc<Throwable, String, Object> controllerExceptionHandler;
-
-    public static void metrics(String key, Object param) {
-        App.getLogMetrics().get().put(key, param);
-    }
 }
