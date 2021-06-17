@@ -45,7 +45,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<UnresolvedEndpoint, Upstream> router) {
         if (router == null) {
-            router = endpoint -> new DirectUpstream();
+            router = Upstream.DIRECT_ROUTER;
         }
 
         this.config = config;

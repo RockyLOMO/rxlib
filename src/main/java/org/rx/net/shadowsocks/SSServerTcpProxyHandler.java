@@ -7,9 +7,12 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.socks.ForwardingBackendHandler;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -18,17 +21,21 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @RequiredArgsConstructor
 public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
-    final ShadowsocksConfig config;
+    final ShadowsocksServer server;
     Channel outbound;
     final ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
 
+    @SneakyThrows
     @Override
     public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
         Channel inbound = ctx.channel();
         if (outbound == null) {
             InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
 
-            Bootstrap bootstrap = Sockets.bootstrap(inbound.eventLoop(), config, ch -> ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+            UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(clientRecipient.getHostString(), clientRecipient.getPort());
+            Upstream upstream = server.router.invoke(destinationEndpoint);
+
+            Bootstrap bootstrap = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                     log.debug("{} state:{}", clientRecipient, state);

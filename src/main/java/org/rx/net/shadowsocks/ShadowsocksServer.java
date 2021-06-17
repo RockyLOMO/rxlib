@@ -17,16 +17,27 @@ import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
+import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.util.function.BiFunc;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class ShadowsocksServer extends Disposable {
+    final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
+    final BiFunc<UnresolvedEndpoint, Upstream> router;
 
-    public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
-        bootstrap = Sockets.serverBootstrap(config, ctx -> {
+    public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router) {
+        if (router == null) {
+            router = Upstream.DIRECT_ROUTER;
+        }
+        this.router = router;
+
+        bootstrap = Sockets.serverBootstrap(this.config = config, ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(false);
 
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
@@ -52,7 +63,7 @@ public class ShadowsocksServer extends Disposable {
             //ss
             ctx.pipeline().addLast(new SSServerReceiveHandler(), new SSServerSendHandler(),
                     new SSCipherCodec(), new SSProtocolCodec(),
-                    new SSServerTcpProxyHandler(config));
+                    new SSServerTcpProxyHandler(this));
         });
         bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
