@@ -2,7 +2,6 @@ package org.rx.core.cache;
 
 import com.google.common.cache.CacheBuilder;
 import lombok.SneakyThrows;
-import org.rx.bean.RxConfig;
 import org.rx.core.Cache;
 import org.rx.util.function.BiFunc;
 
@@ -15,13 +14,12 @@ public class LocalCache<TK, TV> implements Cache<TK, TV> {
     private final com.google.common.cache.Cache<TK, TV> cache;
 
     public LocalCache() {
-        this(2);
+        this(1);
     }
 
     public LocalCache(int expireMinutes) {
-        cache = CacheBuilder.newBuilder().maximumSize(MAX_INT)
-                .expireAfterAccess(expireMinutes, TimeUnit.MINUTES)
-                .expireAfterWrite(expireMinutes, TimeUnit.MINUTES).build();
+        cache = CacheBuilder.newBuilder().maximumSize(Short.MAX_VALUE)
+                .expireAfterAccess(expireMinutes, TimeUnit.MINUTES).build(); //expireAfterAccess 包含expireAfterWrite
     }
 
     @Override

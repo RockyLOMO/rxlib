@@ -41,7 +41,7 @@ public interface Cache<TK, TV> {
                 case THREAD_CACHE:
                     return new ThreadCache<>();
                 case LOCAL_CACHE:
-                    return new LocalCache<>(4);
+                    return new LocalCache<>(2);
                 default:
                     return new LocalCache<>();
             }
