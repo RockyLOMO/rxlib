@@ -7,12 +7,12 @@ import io.netty.util.NetUtil;
 
 import java.net.IDN;
 
-public final class SSAddrRequest {
+public final class SSAddressRequest {
     private final SocksAddressType addressType;
     private final String host;
     private final int port;
 
-    public SSAddrRequest(SocksAddressType addressType, String host, int port) {
+    public SSAddressRequest(SocksAddressType addressType, String host, int port) {
         if (addressType == null) {
             throw new NullPointerException("addressType");
         } else if (host == null) {
@@ -58,10 +58,11 @@ public final class SSAddrRequest {
         return this.port;
     }
 
-    public void encodeAsByteBuf(ByteBuf byteBuf) {
+    public void encode(ByteBuf byteBuf) {
         byteBuf.writeByte(this.addressType.byteValue());
         switch (this.addressType) {
             case IPv4:
+            case IPv6:
                 byteBuf.writeBytes(NetUtil.createByteArrayFromIpAddressString(this.host));
                 byteBuf.writeShort(this.port);
                 break;
@@ -70,14 +71,11 @@ public final class SSAddrRequest {
                 byteBuf.writeBytes(this.host.getBytes(CharsetUtil.US_ASCII));
                 byteBuf.writeShort(this.port);
                 break;
-            case IPv6:
-                byteBuf.writeBytes(NetUtil.createByteArrayFromIpAddressString(this.host));
-                byteBuf.writeShort(this.port);
         }
     }
 
-    public static SSAddrRequest getAddrRequest(ByteBuf byteBuf) {
-        SSAddrRequest request = null;
+    public static SSAddressRequest decode(ByteBuf byteBuf) {
+        SSAddressRequest request = null;
         SocksAddressType addressType = SocksAddressType.valueOf(byteBuf.readByte());
         String host;
         int port;
@@ -85,14 +83,14 @@ public final class SSAddrRequest {
             case IPv4: {
                 host = SocksCommonUtils.intToIp(byteBuf.readInt());
                 port = byteBuf.readUnsignedShort();
-                request = new SSAddrRequest(addressType, host, port);
+                request = new SSAddressRequest(addressType, host, port);
                 break;
             }
             case DOMAIN: {
                 int fieldLength = byteBuf.readByte();
                 host = SocksCommonUtils.readUsAscii(byteBuf, fieldLength);
                 port = byteBuf.readUnsignedShort();
-                request = new SSAddrRequest(addressType, host, port);
+                request = new SSAddressRequest(addressType, host, port);
                 break;
             }
             case IPv6: {
@@ -100,7 +98,7 @@ public final class SSAddrRequest {
                 byteBuf.readBytes(bytes);
                 host = SocksCommonUtils.ipv6toStr(bytes);
                 port = byteBuf.readUnsignedShort();
-                request = new SSAddrRequest(addressType, host, port);
+                request = new SSAddressRequest(addressType, host, port);
                 break;
             }
             case UNKNOWN:

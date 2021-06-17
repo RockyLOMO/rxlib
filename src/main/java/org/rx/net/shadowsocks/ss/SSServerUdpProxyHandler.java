@@ -27,7 +27,7 @@ public class SSServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
     @Override
     protected void channelRead0(ChannelHandlerContext clientCtx, ByteBuf msg) throws Exception {
 //        logger.debug("readableBytes:" + msg.readableBytes());
-        InetSocketAddress clientSender = clientCtx.channel().attr(SSCommon.RemoteAddr).get();
+        InetSocketAddress clientSender = clientCtx.channel().attr(SSCommon.REMOTE_ADDR).get();
         InetSocketAddress clientRecipient = clientCtx.channel().attr(SSCommon.REMOTE_DES).get();
         proxy(clientSender, clientRecipient, clientCtx, msg.retain());
     }
@@ -44,8 +44,8 @@ public class SSServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                         protected void initChannel(Channel ch) throws Exception {
                             int proxyIdleTimeout
                                     = clientRecipient.getPort() != 53
-                                    ? SSCommon.UDP_PROXY_IDEL_TIME
-                                    : SSCommon.UDP_DNS_PROXY_IDEL_TIME;
+                                    ? SSCommon.UDP_PROXY_IDLE_TIME
+                                    : SSCommon.UDP_DNS_PROXY_IDLE_TIME;
                             ch.pipeline()
                                     .addLast("timeout", new IdleStateHandler(0, 0, proxyIdleTimeout, TimeUnit.SECONDS) {
                                         @Override

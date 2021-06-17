@@ -20,6 +20,8 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.shadowsocks.ShadowsocksConfig;
+import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.*;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -227,13 +229,12 @@ public class SocksTester {
 
     @SneakyThrows
     @Test
-    public void hybridProxy() {
-        SslDirectConfig frontConf = new SslDirectConfig(1080, TransportFlags.BACKEND_AES.flags());
-        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:1081"));
-
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_AES.flags());
-        backConf.setConnectTimeoutMillis(connectTimeout);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+    public void ssProxy() {
+        ShadowsocksConfig config = new ShadowsocksConfig();
+        config.setEndpoint(Sockets.parseEndpoint("127.0.0.1:1081"));
+        config.setMethod("aes-128-gcm");
+        config.setPassword("123456");
+        ShadowsocksServer server = new ShadowsocksServer(config);
 
         System.in.read();
     }

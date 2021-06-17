@@ -37,7 +37,7 @@ public class SSLocalUdpProxyHandler extends SimpleChannelInboundHandler<Datagram
         InetSocketAddress clientSender = msg.sender();
 
         msg.content().skipBytes(3);//skip [5, 0, 0]
-        SSAddrRequest addrRequest = SSAddrRequest.getAddrRequest(msg.content());
+        SSAddressRequest addrRequest = SSAddressRequest.decode(msg.content());
         InetSocketAddress clientRecipient = new InetSocketAddress(addrRequest.host(), addrRequest.port());
         proxy(clientSender, msg.content(), clientRecipient, clientCtx);
     }
@@ -65,19 +65,19 @@ public class SSLocalUdpProxyHandler extends SimpleChannelInboundHandler<Datagram
                                         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) throws Exception {
 
                                             InetSocketAddress sAddr = ctx.channel().attr(SSCommon.REMOTE_SRC).get();
-                                            SSAddrRequest ssAddr;
+                                            SSAddressRequest ssAddr;
                                             if (sAddr.getAddress() instanceof Inet6Address) {
-                                                ssAddr = new SSAddrRequest(SocksAddressType.IPv6, sAddr.getHostString(), sAddr.getPort());
+                                                ssAddr = new SSAddressRequest(SocksAddressType.IPv6, sAddr.getHostString(), sAddr.getPort());
                                             } else if (sAddr.getAddress() instanceof Inet4Address) {
-                                                ssAddr = new SSAddrRequest(SocksAddressType.IPv4, sAddr.getHostString(), sAddr.getPort());
+                                                ssAddr = new SSAddressRequest(SocksAddressType.IPv4, sAddr.getHostString(), sAddr.getPort());
                                             } else {
-                                                ssAddr = new SSAddrRequest(SocksAddressType.DOMAIN, sAddr.getHostString(), sAddr.getPort());
+                                                ssAddr = new SSAddressRequest(SocksAddressType.DOMAIN, sAddr.getHostString(), sAddr.getPort());
                                             }
 
                                             //add socks5 udp  prefixed address
                                             ByteBuf addrBuff = Unpooled.buffer(128);
                                             addrBuff.writeBytes(SOCKS5_ADDRESS_PREFIX);
-                                            ssAddr.encodeAsByteBuf(addrBuff);
+                                            ssAddr.encode(addrBuff);
 
                                             ByteBuf content = Unpooled.wrappedBuffer(addrBuff, msg.content().retain());
                                             clientCtx.writeAndFlush(new DatagramPacket(content, clientSender));

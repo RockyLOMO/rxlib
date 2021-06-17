@@ -34,7 +34,7 @@ public class ShadowsocksServer extends Disposable {
             _crypto.setForUdp(false);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast("timeout", new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDEL_TIME, TimeUnit.SECONDS) {
+            ctx.pipeline().addLast("timeout", new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                     ctx.close();
@@ -51,11 +51,11 @@ public class ShadowsocksServer extends Disposable {
             }
 
             //ss
-            ctx.pipeline().addLast("ssCheckerReceive", new SSServerCheckerReceive())
-                    .addLast("ssCheckerSend", new SSServerCheckerSend())
+            ctx.pipeline().addLast("ssCheckerReceive", new SSServerReceiveHandler())
+                    .addLast("ssCheckerSend", new SSServerSendHandler())
                     .addLast("ssCipherCodec", new SSCipherCodec())
                     .addLast("ssProtocolCodec", new SSProtocolCodec())
-                    .addLast("ssTcpProxy", new SSServerTcpProxyHandler());
+                    .addLast("ssTcpProxy", new SSServerTcpProxyHandler(config));
         });
         bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -76,8 +76,8 @@ public class ShadowsocksServer extends Disposable {
                         _crypto.setForUdp(true);
                         ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-                        ctx.pipeline().addLast("ssCheckerReceive", new SSServerCheckerReceive())
-                                .addLast("ssCheckerSend", new SSServerCheckerSend())
+                        ctx.pipeline().addLast("ssCheckerReceive", new SSServerReceiveHandler())
+                                .addLast("ssCheckerSend", new SSServerSendHandler())
                                 .addLast("ssCipherCodec", new SSCipherCodec())
                                 .addLast("ssProtocolCodec", new SSProtocolCodec())
                                 .addLast("ssUdpProxy", new SSServerUdpProxyHandler());

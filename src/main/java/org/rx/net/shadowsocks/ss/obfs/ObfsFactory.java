@@ -8,6 +8,10 @@ import java.util.List;
 
 public class ObfsFactory {
     public static List<ChannelHandler> getObfsHandler(String obfs) {
+        if (obfs == null) {
+            return Collections.emptyList();
+        }
+
         switch (obfs) {
             case HttpSimpleHandler.OBFS_NAME:
                 return HttpSimpleHandler.getHandlers();

@@ -8,20 +8,28 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
+import java.util.Collection;
+
 @Slf4j
 @RequiredArgsConstructor
 public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
+    public static final String PIPELINE_NAME = "to-upstream";
     final Channel outbound;
+    final Collection<Object> pendingPackages;
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (!outbound.isActive()) {
+            if (pendingPackages != null) {
+                log.debug("add pending packages");
+                pendingPackages.add(msg);
+            }
             return;
         }
 
         Channel inbound = ctx.channel();
-//        log.debug("{} forwarded to {} -> {}", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        outbound.writeAndFlush(msg).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+        log.debug("{} forwarded to {} -> {}", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        outbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
     @Override

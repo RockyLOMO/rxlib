@@ -14,6 +14,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.security.AESUtil;
 
 import java.net.SocketAddress;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.App.isNull;
 import static org.rx.core.App.quietly;
@@ -86,9 +87,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Channel outbound = f.channel();
             log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}]", server.getConfig().getListenPort(),
                     inbound.channel(), outbound, finalDestinationAddress, realHost);
-//            Sockets.writeAndFlush(outbound, e.getUpstream().getPendingPackages());
-            outbound.pipeline().addLast("from-upstream", new ForwardingBackendHandler(inbound));
-            inbound.pipeline().addLast("to-upstream", new ForwardingFrontendHandler(outbound));
+            ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
+            outbound.pipeline().addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
+            inbound.pipeline().addLast(ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType));
         });
     }

@@ -24,8 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static InternalLogger logger = InternalLoggerFactory.getInstance(SSServerTcpProxyHandler.class);
-
-    private ICrypto crypt;
+    private ICrypto crypto;
     private InetSocketAddress ssServer;
     private Socks5CommandRequest remoteAddr;
     private Channel clientChannel;
@@ -33,9 +32,8 @@ public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf>
     private Bootstrap proxyClient;
     private List<ByteBuf> clientBuffs;
 
-
     public SSLocalTcpProxyHandler(String server, Integer port, String method, String password, String obfs, String obfsparam) {
-        crypt = CryptoFactory.get(method, password);
+        crypto = CryptoFactory.get(method, password);
         ssServer = new InetSocketAddress(server, port);
     }
 
@@ -68,10 +66,10 @@ public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf>
 
                                     ch.attr(SSCommon.IS_UDP).set(false);
 
-                                    ch.attr(SSCommon.CIPHER).set(crypt);
+                                    ch.attr(SSCommon.CIPHER).set(crypto);
 
                                     ch.pipeline()
-                                            .addLast("timeout", new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDEL_TIME, TimeUnit.SECONDS) {
+                                            .addLast("timeout", new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                                                 @Override
                                                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                                                     logger.debug("{} state:{}", ssServer.toString(), state.toString());
@@ -122,9 +120,9 @@ public class SSLocalTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf>
                                     logger.debug("channel id {}, {}<->{}<->{} connect  {}", clientChannel.id().toString(), clientChannel.remoteAddress().toString(), future.channel().localAddress().toString(), ssServer.toString(), future.isSuccess());
                                     remoteChannel = future.channel();
                                     //write addr
-                                    SSAddrRequest ssAddr = new SSAddrRequest(SocksAddressType.valueOf(this.remoteAddr.dstAddrType().byteValue()), this.remoteAddr.dstAddr(), this.remoteAddr.dstPort());
+                                    SSAddressRequest ssAddr = new SSAddressRequest(SocksAddressType.valueOf(this.remoteAddr.dstAddrType().byteValue()), this.remoteAddr.dstAddr(), this.remoteAddr.dstPort());
                                     ByteBuf addrBuff = Unpooled.buffer(128);
-                                    ssAddr.encodeAsByteBuf(addrBuff);
+                                    ssAddr.encode(addrBuff);
                                     remoteChannel.writeAndFlush(addrBuff);
 
                                     //write remaining bufs

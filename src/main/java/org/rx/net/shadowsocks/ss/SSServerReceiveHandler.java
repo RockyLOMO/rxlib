@@ -3,15 +3,11 @@ package org.rx.net.shadowsocks.ss;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.util.internal.logging.InternalLogger;
-import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.net.InetSocketAddress;
 
-public class SSServerCheckerReceive extends SimpleChannelInboundHandler<Object> {
-    private static InternalLogger logger = InternalLoggerFactory.getInstance(SSServerCheckerReceive.class);
-
-    public SSServerCheckerReceive() {
+public class SSServerReceiveHandler extends SimpleChannelInboundHandler<Object> {
+    public SSServerReceiveHandler() {
         super(false);
     }
 
@@ -23,19 +19,19 @@ public class SSServerCheckerReceive extends SimpleChannelInboundHandler<Object> 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
-
         if (isUdp) {
             DatagramPacket udpRaw = ((DatagramPacket) msg);
             if (udpRaw.content().readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
                 return;
             }
-            ctx.channel().attr(SSCommon.RemoteAddr).set(udpRaw.sender());
+            ctx.channel().attr(SSCommon.REMOTE_ADDR).set(udpRaw.sender());
             ctx.fireChannelRead(udpRaw.content());
-        } else {
-            ctx.channel().attr(SSCommon.RemoteAddr).set((InetSocketAddress) ctx.channel().remoteAddress());
-            ctx.channel().pipeline().remove(this);
-            ctx.fireChannelRead(msg);
+            return;
         }
+
+        ctx.channel().attr(SSCommon.REMOTE_ADDR).set((InetSocketAddress) ctx.channel().remoteAddress());
+        ctx.channel().pipeline().remove(this);
+        ctx.fireChannelRead(msg);
     }
 
     @Override
