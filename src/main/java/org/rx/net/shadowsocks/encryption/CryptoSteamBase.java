@@ -1,15 +1,15 @@
 package org.rx.net.shadowsocks.encryption;
 
+import io.netty.buffer.ByteBuf;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
+import org.rx.io.Bytes;
 
 import javax.crypto.SecretKey;
-import java.io.ByteArrayOutputStream;
-import java.security.SecureRandom;
 import java.util.Arrays;
 
 public abstract class CryptoSteamBase implements ICrypto {
@@ -37,6 +37,49 @@ public abstract class CryptoSteamBase implements ICrypto {
         _key = getKey();
     }
 
+    @SneakyThrows
+    @Override
+    public void encrypt(byte[] data, ByteBuf stream) {
+        synchronized (encLock) {
+            stream.clear();
+            if (!_encryptIVSet || forUdp) {
+                _encryptIVSet = true;
+                byte[] iv = Bytes.randomBytes(_ivLength);
+                setIV(iv, true);
+                stream.writeBytes(iv);
+            }
+            _encrypt(data, stream);
+        }
+    }
+
+    @Override
+    public void encrypt(byte[] data, int length, ByteBuf stream) {
+        byte[] d = Arrays.copyOfRange(data, 0, length);
+        encrypt(d, stream);
+    }
+
+    @Override
+    public void decrypt(byte[] data, ByteBuf stream) {
+        byte[] temp;
+        synchronized (decLock) {
+            stream.clear();
+            if (!_decryptIVSet || forUdp) {
+                _decryptIVSet = true;
+                setIV(data, false);
+                temp = Arrays.copyOfRange(data, _ivLength, data.length);
+            } else {
+                temp = data;
+            }
+            _decrypt(temp, stream);
+        }
+    }
+
+    @Override
+    public void decrypt(byte[] data, int length, ByteBuf stream) {
+        byte[] d = Arrays.copyOfRange(data, 0, length);
+        decrypt(d, stream);
+    }
+
     protected void setIV(byte[] iv, boolean isEncrypt) {
         if (_ivLength == 0) {
             return;
@@ -60,55 +103,6 @@ public abstract class CryptoSteamBase implements ICrypto {
         return new ParametersWithIV(new KeyParameter(_key.getEncoded()), _decryptIV);
     }
 
-    @SneakyThrows
-    @Override
-    public void encrypt(byte[] data, ByteArrayOutputStream stream) {
-        synchronized (encLock) {
-            stream.reset();
-            if (!_encryptIVSet || forUdp) {
-                _encryptIVSet = true;
-                byte[] iv = randomBytes(_ivLength);
-                setIV(iv, true);
-                stream.write(iv);
-            }
-            _encrypt(data, stream);
-        }
-    }
-
-    @Override
-    public void encrypt(byte[] data, int length, ByteArrayOutputStream stream) {
-        byte[] d = Arrays.copyOfRange(data, 0, length);
-        encrypt(d, stream);
-    }
-
-    @Override
-    public void decrypt(byte[] data, ByteArrayOutputStream stream) {
-        byte[] temp;
-        synchronized (decLock) {
-            stream.reset();
-            if (!_decryptIVSet || forUdp) {
-                _decryptIVSet = true;
-                setIV(data, false);
-                temp = Arrays.copyOfRange(data, _ivLength, data.length);
-            } else {
-                temp = data;
-            }
-            _decrypt(temp, stream);
-        }
-    }
-
-    @Override
-    public void decrypt(byte[] data, int length, ByteArrayOutputStream stream) {
-        byte[] d = Arrays.copyOfRange(data, 0, length);
-        decrypt(d, stream);
-    }
-
-    private byte[] randomBytes(int size) {
-        byte[] bytes = new byte[size];
-        new SecureRandom().nextBytes(bytes);
-        return bytes;
-    }
-
     protected abstract int getIVLength();
 
     protected abstract int getKeyLength();
@@ -117,7 +111,7 @@ public abstract class CryptoSteamBase implements ICrypto {
 
     protected abstract StreamCipher getCipher(boolean isEncrypted);
 
-    protected abstract void _encrypt(byte[] data, ByteArrayOutputStream stream);
+    protected abstract void _encrypt(byte[] data, ByteBuf stream);
 
-    protected abstract void _decrypt(byte[] data, ByteArrayOutputStream stream);
+    protected abstract void _decrypt(byte[] data, ByteBuf stream);
 }

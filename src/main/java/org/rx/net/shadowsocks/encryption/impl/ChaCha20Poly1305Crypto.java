@@ -2,72 +2,32 @@ package org.rx.net.shadowsocks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.AEADCipher;
-import org.bouncycastle.crypto.modes.GCMBlockCipher;
+import org.bouncycastle.crypto.modes.ChaCha20Poly1305;
 import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
 
 import java.nio.ByteBuffer;
-import java.security.InvalidAlgorithmParameterException;
 
-@Slf4j
-public class AesGcmCrypto extends CryptoAeadBase {
-    public final static String CIPHER_AEAD_128_GCM = "aes-128-gcm";
-    //    public final static String CIPHER_AEAD_192_GCM = "aes-192-gcm";
-    public final static String CIPHER_AEAD_256_GCM = "aes-256-gcm";
-
-    public AesGcmCrypto(String name, String password) {
+public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
+    public ChaCha20Poly1305Crypto(String name, String password) {
         super(name, password);
     }
 
-    //	Nonce Size
     @Override
-    public int getKeyLength() {
-        switch (_name) {
-            case CIPHER_AEAD_128_GCM:
-                return 16;
-//            case CIPHER_AEAD_192_GCM:
-//                return 24;
-            case CIPHER_AEAD_256_GCM:
-                return 32;
-        }
-        return 0;
+    protected int getKeyLength() {
+        return 32;
     }
 
     @Override
-    public int getSaltLength() {
-        switch (_name) {
-            case CIPHER_AEAD_128_GCM:
-                return 16;
-//            case CIPHER_AEAD_192_GCM:
-//              return 24;
-            case CIPHER_AEAD_256_GCM:
-                return 32;
-        }
-        return 0;
+    protected int getSaltLength() {
+        return 32;
     }
 
-    @SneakyThrows
     @Override
     protected AEADCipher getCipher(boolean isEncrypted) {
-        switch (_name) {
-            case CIPHER_AEAD_128_GCM:
-            case CIPHER_AEAD_256_GCM:
-                return new GCMBlockCipher(new AESEngine());
-            default:
-                throw new InvalidAlgorithmParameterException(_name);
-        }
+        return new ChaCha20Poly1305();
     }
 
-    /**
-     * TCP:[encrypted payload length][length tag][encrypted payload][payload tag]
-     * UDP:[salt][encrypted payload][tag]
-     * //TODO need return multi chunks
-     *
-     * @param data
-     * @param stream
-     */
     @SneakyThrows
     @Override
     protected void _tcpEncrypt(byte[] data, ByteBuf stream) {
@@ -96,18 +56,12 @@ public class AesGcmCrypto extends CryptoAeadBase {
         }
     }
 
-    /**
-     * @param data
-     * @param stream
-     */
     @SneakyThrows
     @Override
     protected void _tcpDecrypt(byte[] data, ByteBuf stream) {
         ByteBuffer buffer = ByteBuffer.wrap(data);
         while (buffer.hasRemaining()) {
-            log.debug("id:{} remaining {} payloadLenRead:{} payloadRead:{}", hashCode(), buffer.hasRemaining(), payloadLenRead, payloadRead);
             if (payloadRead == 0) {
-//                [encrypted payload length][length tag]
                 int wantLen = 2 + getTagLength() - payloadLenRead;
                 int remaining = buffer.remaining();
                 if (wantLen <= remaining) {
@@ -125,9 +79,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 increment(decNonce);
             }
 
-//            [encrypted payload length][length tag]
             int size = ByteBuffer.wrap(decBuffer, 0, 2).getShort();
-            log.debug("payload length:{},remaining:{},payloadRead:{}", size, buffer.remaining(), payloadRead);
             if (size == 0) {
                 //TODO exists?
                 return;

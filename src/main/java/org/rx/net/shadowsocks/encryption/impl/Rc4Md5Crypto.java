@@ -1,5 +1,6 @@
 package org.rx.net.shadowsocks.encryption.impl;
 
+import io.netty.buffer.ByteBuf;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.engines.RC4Engine;
@@ -9,19 +10,8 @@ import org.rx.security.MD5Util;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.ByteArrayOutputStream;
-import java.util.HashMap;
-import java.util.Map;
 
 public class Rc4Md5Crypto extends CryptoSteamBase {
-    public static String CIPHER_RC4_MD5 = "rc4-md5";
-
-    public static Map<String, String> getCiphers() {
-        Map<String, String> ciphers = new HashMap<>();
-        ciphers.put(CIPHER_RC4_MD5, Rc4Md5Crypto.class.getName());
-        return ciphers;
-    }
-
     public Rc4Md5Crypto(String name, String password) {
         super(name, password);
     }
@@ -55,20 +45,16 @@ public class Rc4Md5Crypto extends CryptoSteamBase {
     }
 
     @Override
-    protected void _encrypt(byte[] data, ByteArrayOutputStream stream) {
-        int noBytesProcessed;
+    protected void _encrypt(byte[] data, ByteBuf stream) {
         byte[] buffer = new byte[data.length];
-
-        noBytesProcessed = encCipher.processBytes(data, 0, data.length, buffer, 0);
-        stream.write(buffer, 0, noBytesProcessed);
+        int noBytesProcessed = encCipher.processBytes(data, 0, data.length, buffer, 0);
+        stream.writeBytes(buffer, 0, noBytesProcessed);
     }
 
     @Override
-    protected void _decrypt(byte[] data, ByteArrayOutputStream stream) {
-        int noBytesProcessed;
+    protected void _decrypt(byte[] data, ByteBuf stream) {
         byte[] buffer = new byte[data.length];
-
-        noBytesProcessed = decCipher.processBytes(data, 0, data.length, buffer, 0);
-        stream.write(buffer, 0, noBytesProcessed);
+        int noBytesProcessed = decCipher.processBytes(data, 0, data.length, buffer, 0);
+        stream.writeBytes(buffer, 0, noBytesProcessed);
     }
 }

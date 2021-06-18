@@ -1,5 +1,6 @@
 package org.rx.net.shadowsocks.encryption.impl;
 
+import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import org.bouncycastle.crypto.StreamBlockCipher;
 import org.bouncycastle.crypto.engines.AESEngine;
@@ -9,10 +10,7 @@ import org.rx.net.shadowsocks.encryption.CryptoSteamBase;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.ByteArrayOutputStream;
 import java.security.InvalidAlgorithmParameterException;
-import java.util.HashMap;
-import java.util.Map;
 
 public class AesCrypto extends CryptoSteamBase {
     public final static String CIPHER_AES_128_CFB = "aes-128-cfb";
@@ -21,17 +19,6 @@ public class AesCrypto extends CryptoSteamBase {
     public final static String CIPHER_AES_128_OFB = "aes-128-ofb";
     public final static String CIPHER_AES_192_OFB = "aes-192-ofb";
     public final static String CIPHER_AES_256_OFB = "aes-256-ofb";
-
-    public static Map<String, String> getCiphers() {
-        Map<String, String> ciphers = new HashMap<>();
-        ciphers.put(CIPHER_AES_128_CFB, AesCrypto.class.getName());
-        ciphers.put(CIPHER_AES_192_CFB, AesCrypto.class.getName());
-        ciphers.put(CIPHER_AES_256_CFB, AesCrypto.class.getName());
-        ciphers.put(CIPHER_AES_128_OFB, AesCrypto.class.getName());
-        ciphers.put(CIPHER_AES_192_OFB, AesCrypto.class.getName());
-        ciphers.put(CIPHER_AES_256_OFB, AesCrypto.class.getName());
-        return ciphers;
-    }
 
     public AesCrypto(String name, String password) {
         super(name, password);
@@ -94,16 +81,16 @@ public class AesCrypto extends CryptoSteamBase {
     }
 
     @Override
-    protected void _encrypt(byte[] data, ByteArrayOutputStream stream) {
+    protected void _encrypt(byte[] data, ByteBuf stream) {
         byte[] buffer = new byte[data.length];
         int noBytesProcessed = encCipher.processBytes(data, 0, data.length, buffer, 0);
-        stream.write(buffer, 0, noBytesProcessed);
+        stream.writeBytes(buffer, 0, noBytesProcessed);
     }
 
     @Override
-    protected void _decrypt(byte[] data, ByteArrayOutputStream stream) {
+    protected void _decrypt(byte[] data, ByteBuf stream) {
         byte[] buffer = new byte[data.length];
         int noBytesProcessed = decCipher.processBytes(data, 0, data.length, buffer, 0);
-        stream.write(buffer, 0, noBytesProcessed);
+        stream.writeBytes(buffer, 0, noBytesProcessed);
     }
 }
