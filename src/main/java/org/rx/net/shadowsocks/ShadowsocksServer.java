@@ -25,6 +25,7 @@ import org.rx.util.function.BiFunc;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+//thanks https://github.com/TongxiJi/shadowsocks-java
 @Slf4j
 public class ShadowsocksServer extends Disposable {
     final ShadowsocksConfig config;
@@ -65,14 +66,14 @@ public class ShadowsocksServer extends Disposable {
                     new SSCipherCodec(), new SSProtocolCodec(),
                     new SSServerTcpProxyHandler(this));
         });
-        bootstrap.bind(config.getEndpoint()).addListener((ChannelFutureListener) f -> {
+        bootstrap.bind(config.getServerEndpoint()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", config.getEndpoint(), f.cause());
+                log.error("Listened on port {} fail", config.getServerEndpoint(), f.cause());
             }
         });
 
         //udp server
-        Bootstrap udpBootstrap = Sockets.udpBootstrap(bootstrap.config().group())
+        Bootstrap udpBootstrap = Sockets.udpBootstrap(bootstrap.config().group(), true)
                 .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
                 .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
@@ -89,7 +90,7 @@ public class ShadowsocksServer extends Disposable {
                                 new SSServerUdpProxyHandler());
                     }
                 });
-        udpBootstrap.bind(config.getEndpoint());
+        udpBootstrap.bind(config.getServerEndpoint());
     }
 
     @Override

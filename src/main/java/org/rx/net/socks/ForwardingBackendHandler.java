@@ -16,16 +16,17 @@ import java.util.Collection;
 public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
     public static final String PIPELINE_NAME = "from-upstream";
     final ChannelHandlerContext inbound;
-    final Collection<Object> pendingPackages;
+    final Collection<Object> outboundPendingPackages;
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        if (CollectionUtils.isEmpty(pendingPackages)) {
+        if (CollectionUtils.isEmpty(outboundPendingPackages)) {
             return;
         }
 
-        log.debug("flush pending packages");
-        Sockets.writeAndFlush(ctx.channel(), pendingPackages);
+        Channel outbound = ctx.channel();
+        log.debug("{} flush forwarded to {} -> {}", inbound.channel().remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        Sockets.writeAndFlush(outbound, outboundPendingPackages);
     }
 
     @Override

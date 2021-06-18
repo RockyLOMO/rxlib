@@ -1,23 +1,20 @@
 package org.rx.net.shadowsocks;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.Sockets;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class SSServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
-    private static EventLoopGroup proxyBossGroup = new NioEventLoopGroup();
-
     @Override
     protected void channelRead0(ChannelHandlerContext clientCtx, ByteBuf msg) throws Exception {
         InetSocketAddress clientSender = clientCtx.channel().attr(SSCommon.REMOTE_ADDRESS).get();
@@ -25,10 +22,11 @@ public class SSServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
         proxy(clientSender, clientRecipient, clientCtx, msg.retain());
     }
 
+    @SneakyThrows
     private void proxy(InetSocketAddress clientSender, InetSocketAddress clientRecipient, ChannelHandlerContext clientCtx, ByteBuf msg) {
         Channel udpChannel = NatMapper.getUdpChannel(clientSender);
         if (udpChannel == null) {
-            Bootstrap bootstrap = new Bootstrap().group(proxyBossGroup).channel(NioDatagramChannel.class)
+            udpChannel = Sockets.udpBootstrap()
                     .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
                     .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
                     .handler(new ChannelInitializer<Channel>() {
@@ -51,13 +49,12 @@ public class SSServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                                 }
                             });
                         }
-                    });
-            udpChannel = bootstrap.bind(0).addListener((ChannelFutureListener) future -> {
-                if (future.isSuccess()) {
-                    log.debug("channel id {}, {}<->{}<->{} connect {}", clientCtx.channel().id().toString(), clientSender.toString(), future.channel().localAddress().toString(), clientRecipient.toString(), future.isSuccess());
-                    NatMapper.putUdpChannel(clientSender, future.channel());
-                }
-            }).channel();
+                    }).bind(0).addListener((ChannelFutureListener) future -> {
+                        if (future.isSuccess()) {
+                            log.debug("channel id {}, {}<->{}<->{} connect {}", clientCtx.channel().id().toString(), clientSender.toString(), future.channel().localAddress().toString(), clientRecipient.toString(), future.isSuccess());
+                            NatMapper.putUdpChannel(clientSender, future.channel());
+                        }
+                    }).sync().channel();
         }
 
         if (udpChannel != null) {

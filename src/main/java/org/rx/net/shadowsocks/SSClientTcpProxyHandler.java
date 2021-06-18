@@ -1,64 +1,63 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.handler.codec.socks.SocksAddressType;
+import io.netty.handler.codec.socksx.v5.Socks5CommandRequest;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
+import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.socks.ForwardingBackendHandler;
-import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
 
-import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RequiredArgsConstructor
-public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
-    final ShadowsocksServer server;
+public class SSClientTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
+    final ShadowsocksConfig config;
     final ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
     Channel outbound;
 
-    @SneakyThrows
     @Override
-    public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
         Channel inbound = ctx.channel();
         if (outbound == null) {
-            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
+            Socks5CommandRequest remoteRequest = inbound.attr(SSCommon.REMOTE_SOCKS5_DEST).get();
+            //write addr
+            SSAddressRequest addrRequest = new SSAddressRequest(SocksAddressType.valueOf(remoteRequest.dstAddrType().byteValue()), remoteRequest.dstAddr(), remoteRequest.dstPort());
+            ByteBuf addrBuf = Unpooled.buffer(128);
+            addrRequest.encode(addrBuf);
+            pendingPackages.add(addrBuf);
 
-            UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(clientRecipient.getHostString(), clientRecipient.getPort());
-            Upstream upstream = server.router.invoke(destinationEndpoint);
+            outbound = Sockets.bootstrap(inbound.eventLoop(), config, ch -> {
+                ch.attr(SSCommon.IS_UDP).set(false);
+                ch.attr(SSCommon.CIPHER).set(CryptoFactory.get(config.getMethod(), config.getPassword()));
 
-            outbound = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> {
-                ChannelPipeline pipeline = ch.pipeline();
-                pipeline.addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+                ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        log.debug("{} state:{}", clientRecipient, state);
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
-                });
-                upstream.initChannel(ch);
-                pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
-            }).connect(clientRecipient).addListener((ChannelFutureListener) f -> {
+                }, new SSCipherCodec(), new SSProtocolCodec(true), new ForwardingBackendHandler(ctx, pendingPackages));
+            }).connect(config.getServerEndpoint()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("connect to backend {} fail", clientRecipient, f.cause());
+                    log.error("SsClient connect to backend {} fail", config.getServerEndpoint(), f.cause());
                     Sockets.closeOnFlushed(inbound);
                     return;
                 }
-                log.info("connect to backend {}", clientRecipient);
+                log.info("SsClient connect to backend {}", config.getServerEndpoint());
             }).channel();
         }
 
         if (!outbound.isActive()) {
-            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
-            log.debug("{} pending forwarded to {}", inbound.remoteAddress(), clientRecipient);
+            log.debug("xx add pending packages");
             pendingPackages.add(msg.retain());
             return;
         }

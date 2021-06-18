@@ -30,7 +30,7 @@ public class DnsServer extends Disposable {
     }
 
     public DnsServer(int port, InetSocketAddress... nameServerList) {
-        Bootstrap bootstrap = Sockets.udpBootstrap(eventLoopGroup).handler(new ChannelInitializer<NioDatagramChannel>() {
+        Bootstrap bootstrap = Sockets.udpBootstrap(eventLoopGroup, true).handler(new ChannelInitializer<NioDatagramChannel>() {
             @Override
             protected void initChannel(NioDatagramChannel nioDatagramChannel) {
                 nioDatagramChannel.pipeline().addLast(new DatagramDnsQueryDecoder());

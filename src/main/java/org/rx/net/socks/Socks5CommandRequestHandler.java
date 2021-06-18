@@ -17,7 +17,6 @@ import org.rx.security.AESUtil;
 import java.net.SocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import static org.rx.core.App.isNull;
 import static org.rx.core.App.quietly;
 
 @Slf4j
@@ -37,10 +36,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        if (!msg.type().equals(Socks5CommandType.CONNECT)) {
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
-            return;
-        }
+
         String dstAddr = msg.dstAddr();
         if (dstAddr.endsWith(SocksSupport.FAKE_SUFFIX)) {
             String realHost = SocksSupport.HOST_DICT.get(SUID.valueOf(dstAddr.substring(0, 22)));
@@ -49,11 +45,16 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 log.info("socks5[{}] recover dstAddr {}", server.getConfig().getListenPort(), dstAddr);
             }
         }
+        if (msg.type() == Socks5CommandType.CONNECT) {
+            UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(dstAddr, msg.dstPort());
+            Upstream upstream = server.router.invoke(destinationEndpoint);
+            ReconnectingEventArgs e = new ReconnectingEventArgs(destinationEndpoint, upstream);
+            connect(inbound, msg.dstAddrType(), e);
+        } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
 
-        UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(dstAddr, msg.dstPort());
-        Upstream upstream = server.router.invoke(destinationEndpoint);
-        ReconnectingEventArgs e = new ReconnectingEventArgs(destinationEndpoint, upstream);
-        connect(inbound, msg.dstAddrType(), e);
+        } else {
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
+        }
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {

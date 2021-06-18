@@ -119,10 +119,15 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap udpBootstrap(@NonNull EventLoopGroup eventLoopGroup) {
+    public static Bootstrap udpBootstrap() {
+        EventLoopGroup eventLoopGroup = reactors.computeIfAbsent("_UDP", k -> new NioEventLoopGroup());
+        return udpBootstrap(eventLoopGroup, false);
+    }
+
+    public static Bootstrap udpBootstrap(@NonNull EventLoopGroup eventLoopGroup, boolean broadcast) {
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup).channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, true)
+                .option(ChannelOption.SO_BROADCAST, broadcast)
                 .handler(new LoggingHandler(LogLevel.INFO));
         return bootstrap;
     }

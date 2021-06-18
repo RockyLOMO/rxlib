@@ -20,6 +20,7 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.shadowsocks.ShadowsocksClient;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.*;
@@ -234,11 +235,14 @@ public class SocksTester {
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
         ShadowsocksConfig config = new ShadowsocksConfig();
-        config.setEndpoint(Sockets.parseEndpoint("127.0.0.1:1081"));
+        config.setServerEndpoint(Sockets.parseEndpoint("127.0.0.1:1081"));
         config.setMethod("aes-128-gcm");
         config.setPassword("123456");
-        ShadowsocksServer server = new ShadowsocksServer(config,
-                dstEp -> new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082")));
+//        ShadowsocksServer server = new ShadowsocksServer(config,
+//                dstEp -> new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082")));
+        ShadowsocksServer server = new ShadowsocksServer(config, null);
+
+//        ShadowsocksClient client = new ShadowsocksClient(1080, config);
 
         System.in.read();
     }
