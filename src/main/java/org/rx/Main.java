@@ -92,13 +92,14 @@ public final class Main implements SocksSupport {
             fn.invoke();
             Tasks.schedule(fn, 3000);
 
-            ShadowsocksConfig ssConfig = new ShadowsocksConfig();
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.getAnyEndpoint(port.right + 1),
+                    CipherKind.AES_128_GCM.getCipherName(), shadowServer.right.getPassword());
             ssConfig.setMemoryMode(MemoryMode.MEDIUM);
             ssConfig.setConnectTimeoutMillis(connectTimeout.right);
-            ssConfig.setServerEndpoint(Sockets.getAnyEndpoint(port.right + 1));
-            ssConfig.setMethod(CipherKind.AES_128_GCM.getCipherName());
-            ssConfig.setPassword(shadowServer.right.getPassword());
-            ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> new Socks5Upstream(dstEp, frontConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right))));
+            SocksConfig directConf = new SocksConfig(port.right, TransportFlags.NONE.flags());
+            frontConf.setMemoryMode(MemoryMode.MEDIUM);
+            frontConf.setConnectTimeoutMillis(connectTimeout.right);
+            ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right))));
         }
 
         log.info("Server started..");
