@@ -12,8 +12,8 @@ public class CryptoFactory {
 
     @SneakyThrows
     public static ICrypto get(String name, String password, boolean forUdp) {
-        CipherName cipherName = NQuery.of(CipherName.values()).first(p -> p.getName().equals(name));
-        Constructor<?> constructor = cipherName.type.getConstructor(String.class, String.class);
+        CipherKind cipherKind = NQuery.of(CipherKind.values()).first(p -> p.getCipherName().equals(name));
+        Constructor<?> constructor = cipherKind.type.getConstructor(String.class, String.class);
         ICrypto crypt = (ICrypto) constructor.newInstance(name, password);
         crypt.setForUdp(forUdp);
         return crypt;

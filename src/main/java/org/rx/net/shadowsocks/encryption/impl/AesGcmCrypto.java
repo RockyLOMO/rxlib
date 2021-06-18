@@ -13,9 +13,9 @@ import java.security.InvalidAlgorithmParameterException;
 
 @Slf4j
 public class AesGcmCrypto extends CryptoAeadBase {
-    public final static String CIPHER_AEAD_128_GCM = "aes-128-gcm";
+    public final static String AEAD_AES_128_GCM = "aes-128-gcm";
     //    public final static String CIPHER_AEAD_192_GCM = "aes-192-gcm";
-    public final static String CIPHER_AEAD_256_GCM = "aes-256-gcm";
+    public final static String AEAD_AES_256_GCM = "aes-256-gcm";
 
     public AesGcmCrypto(String name, String password) {
         super(name, password);
@@ -25,11 +25,11 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     public int getKeyLength() {
         switch (_name) {
-            case CIPHER_AEAD_128_GCM:
+            case AEAD_AES_128_GCM:
                 return 16;
 //            case CIPHER_AEAD_192_GCM:
 //                return 24;
-            case CIPHER_AEAD_256_GCM:
+            case AEAD_AES_256_GCM:
                 return 32;
         }
         return 0;
@@ -38,11 +38,11 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     public int getSaltLength() {
         switch (_name) {
-            case CIPHER_AEAD_128_GCM:
+            case AEAD_AES_128_GCM:
                 return 16;
 //            case CIPHER_AEAD_192_GCM:
 //              return 24;
-            case CIPHER_AEAD_256_GCM:
+            case AEAD_AES_256_GCM:
                 return 32;
         }
         return 0;
@@ -52,8 +52,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     protected AEADCipher getCipher(boolean isEncrypted) {
         switch (_name) {
-            case CIPHER_AEAD_128_GCM:
-            case CIPHER_AEAD_256_GCM:
+            case AEAD_AES_128_GCM:
+            case AEAD_AES_256_GCM:
                 return new GCMBlockCipher(new AESEngine());
             default:
                 throw new InvalidAlgorithmParameterException(_name);

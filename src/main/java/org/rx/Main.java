@@ -16,6 +16,9 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.shadowsocks.ShadowsocksConfig;
+import org.rx.net.shadowsocks.ShadowsocksServer;
+import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.TransportFlags;
@@ -88,6 +91,14 @@ public final class Main implements SocksSupport {
             };
             fn.invoke();
             Tasks.schedule(fn, 3000);
+
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig();
+            ssConfig.setMemoryMode(MemoryMode.MEDIUM);
+            ssConfig.setConnectTimeoutMillis(connectTimeout.right);
+            ssConfig.setServerEndpoint(Sockets.getAnyEndpoint(port.right + 1));
+            ssConfig.setMethod(CipherKind.AES_128_GCM.getCipherName());
+            ssConfig.setPassword(shadowServer.right.getPassword());
+            ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> new Socks5Upstream(dstEp, frontConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right))));
         }
 
         log.info("Server started..");
