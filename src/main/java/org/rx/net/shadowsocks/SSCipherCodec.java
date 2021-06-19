@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
-import org.rx.net.shadowsocks.encryption.CryptoUtil;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 
 import java.util.List;
@@ -21,14 +20,12 @@ public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
             throw new Exception("unsupported msg type:" + msg.getClass());
         }
 
-        ICrypto _crypto = ctx.channel().attr(SSCommon.CIPHER).get();
-        byte[] data = CryptoUtil.encrypt(_crypto, buf);
-        if (data == null || data.length == 0) {
-            return;
-        }
+        ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
+        byte[] data = new byte[buf.readableBytes()];
+        buf.getBytes(0, data);
+        crypt.encrypt(data, buf);
 
-        buf.retain().clear().writeBytes(data);
-        out.add(msg);
+        out.add(buf.retain());
     }
 
     @Override
@@ -42,13 +39,11 @@ public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
             throw new Exception("unsupported msg type:" + msg.getClass());
         }
 
-        ICrypto _crypto = ctx.channel().attr(SSCommon.CIPHER).get();
-        byte[] data = CryptoUtil.decrypt(_crypto, buf);
-        if (data == null || data.length == 0) {
-            return;
-        }
+        ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
+        byte[] data = new byte[buf.readableBytes()];
+        buf.getBytes(0, data);
+        crypt.decrypt(data, buf);
 
-        buf.retain().clear().writeBytes(data);
-        out.add(msg);
+        out.add(buf.retain());
     }
 }

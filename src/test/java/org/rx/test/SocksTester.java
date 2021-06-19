@@ -23,6 +23,7 @@ import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.shadowsocks.ShadowsocksClient;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
+import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -234,10 +235,8 @@ public class SocksTester {
         SocksConfig backConf = new SocksConfig(1082, TransportFlags.NONE.flags());
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
 
-        ShadowsocksConfig config = new ShadowsocksConfig();
-        config.setServerEndpoint(Sockets.parseEndpoint("127.0.0.1:1081"));
-        config.setMethod("aes-128-gcm");
-        config.setPassword("123456");
+        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.parseEndpoint("127.0.0.1:1081"),
+                CipherKind.AES_128_GCM.getCipherName(), "123456");
 //        ShadowsocksServer server = new ShadowsocksServer(config,
 //                dstEp -> new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082")));
         ShadowsocksServer server = new ShadowsocksServer(config, null);
