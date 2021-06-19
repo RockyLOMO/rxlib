@@ -51,7 +51,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             ReconnectingEventArgs e = new ReconnectingEventArgs(destinationEndpoint, upstream);
             connect(inbound, msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-
+            log.warn("Udp not impl");
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         } else {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         }

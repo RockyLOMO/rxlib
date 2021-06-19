@@ -8,9 +8,11 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.SUID;
 import org.rx.net.Sockets;
 import org.rx.net.socks.ForwardingBackendHandler;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -29,36 +31,43 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
     public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
         Channel inbound = ctx.channel();
         if (outbound == null) {
-            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
-
-            UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(clientRecipient.getHostString(), clientRecipient.getPort());
+            InetSocketAddress dstEndpoint = inbound.attr(SSCommon.REMOTE_DEST).get();
+            UnresolvedEndpoint destinationEndpoint = new UnresolvedEndpoint(dstEndpoint.getHostString(), dstEndpoint.getPort());
             Upstream upstream = server.router.invoke(destinationEndpoint);
 
+            String realHost = destinationEndpoint.getHost();
+            if (!Sockets.isValidIp(realHost)) {
+                SUID hash = SUID.compute(realHost);
+                SocksSupport.HOST_DICT.put(hash, realHost);
+                destinationEndpoint.setHost(String.format("%s%s", hash, SocksSupport.FAKE_SUFFIX));
+            }
+
+            InetSocketAddress finalDestinationAddress = destinationEndpoint.toSocketAddress();
             outbound = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> {
                 ChannelPipeline pipeline = ch.pipeline();
                 pipeline.addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        log.debug("{} state:{}", clientRecipient, state);
+                        log.info("{}[{}] timeout {}", finalDestinationAddress, realHost, state);
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
                 });
                 upstream.initChannel(ch);
                 pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
-            }).connect(clientRecipient).addListener((ChannelFutureListener) f -> {
+            }).connect(finalDestinationAddress).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("connect to backend {} fail", clientRecipient, f.cause());
+                    log.error("connect to backend {}[{}] fail", finalDestinationAddress, realHost, f.cause());
                     Sockets.closeOnFlushed(inbound);
                     return;
                 }
-                log.info("connect to backend {}", clientRecipient);
+                log.info("connect to backend {}[{}]", finalDestinationAddress, realHost);
             }).channel();
         }
 
         if (!outbound.isActive()) {
-            InetSocketAddress clientRecipient = inbound.attr(SSCommon.REMOTE_DEST).get();
-            log.debug("{} pending forwarded to {}", inbound.remoteAddress(), clientRecipient);
+            InetSocketAddress dstEndpoint = inbound.attr(SSCommon.REMOTE_DEST).get();
+            log.debug("{} pending forwarded to {}", inbound.remoteAddress(), dstEndpoint);
             pendingPackages.add(msg.retain());
             return;
         }
@@ -69,6 +78,10 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
+        if (outbound == null) {
+            return;
+        }
+
         Sockets.closeOnFlushed(outbound);
     }
 

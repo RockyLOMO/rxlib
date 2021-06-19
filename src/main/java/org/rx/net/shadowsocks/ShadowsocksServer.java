@@ -48,7 +48,8 @@ public class ShadowsocksServer extends Disposable {
             ctx.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                    ctx.close();
+                    log.info("{} timeout {}", ctx.remoteAddress(), state);
+                    Sockets.closeOnFlushed(ctx);
                     return super.newIdleStateEvent(state, first);
                 }
             });
