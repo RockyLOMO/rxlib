@@ -36,7 +36,7 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
             Upstream upstream = server.router.invoke(destinationEndpoint);
 
             String realHost = destinationEndpoint.getHost();
-            if (!Sockets.isValidIp(realHost)) {
+            if (SocksSupport.FAKE_IPS.contains(realHost) || !Sockets.isValidIp(realHost)) {
                 SUID hash = SUID.compute(realHost);
                 SocksSupport.HOST_DICT.put(hash, realHost);
                 destinationEndpoint.setHost(String.format("%s%s", hash, SocksSupport.FAKE_SUFFIX));

@@ -40,9 +40,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         String dstAddr = msg.dstAddr();
         if (dstAddr.endsWith(SocksSupport.FAKE_SUFFIX)) {
             String realHost = SocksSupport.HOST_DICT.get(SUID.valueOf(dstAddr.substring(0, 22)));
-            if (realHost != null) {
+            if (realHost == null) {
+                log.error("socks5[{}] recover fail, dstAddr={}", server.getConfig().getListenPort(), dstAddr);
+            } else {
+                log.info("socks5[{}] recover dstAddr {}[{}]", server.getConfig().getListenPort(), dstAddr, realHost);
                 dstAddr = realHost;
-                log.info("socks5[{}] recover dstAddr {}", server.getConfig().getListenPort(), dstAddr);
             }
         }
         if (msg.type() == Socks5CommandType.CONNECT) {
@@ -61,7 +63,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
         UnresolvedEndpoint destinationEndpoint = e.getUpstream().getEndpoint();
         String realHost = destinationEndpoint.getHost();
-        if (server.support != null && !Sockets.isValidIp(realHost)) {
+        if (server.support != null
+                && (SocksSupport.FAKE_IPS.contains(realHost) || !Sockets.isValidIp(realHost))
+        ) {
             App.logMetric(String.format("socks5[%s]_dstAddr", server.getConfig().getListenPort()), realHost);
             SUID hash = SUID.compute(realHost);
             quietly(() -> {
