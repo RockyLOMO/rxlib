@@ -17,4 +17,9 @@ public class ProxyChannelIdleHandler extends ChannelInboundHandlerAdapter {
         }
         super.userEventTriggered(ctx, evt);
     }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.error("debug", cause);
+    }
 }

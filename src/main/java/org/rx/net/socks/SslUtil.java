@@ -16,6 +16,10 @@ import org.rx.security.AESUtil;
 import java.net.InetSocketAddress;
 
 public class SslUtil {
+    public static final String ZIP_ENCODER = "ZIP_ENCODER";
+    public static final String ZIP_DECODER = "ZIP_DECODER";
+    public static final String AES_CODEC = "AES_CODEC";
+
     @SneakyThrows
     public static void addFrontendHandler(Channel channel, FlagsEnum<TransportFlags> flags) {
         if (flags == null) {
@@ -32,7 +36,8 @@ public class SslUtil {
             pipeline.addLast(new AESCodec(AESUtil.dailyKey()).channelHandlers());
         }
         if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
-            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
+                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
     }
 
@@ -45,7 +50,8 @@ public class SslUtil {
         ChannelPipeline pipeline = channel.pipeline();
         if (reverse) {
             if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
-                pipeline.addFirst(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+                pipeline.addFirst(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP))
+                        .addFirst(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             }
             if (flags.has(TransportFlags.BACKEND_AES)) {
                 pipeline.addFirst(new AESCodec(AESUtil.dailyKey()).channelHandlers());
@@ -62,10 +68,11 @@ public class SslUtil {
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
         }
         if (flags.has(TransportFlags.BACKEND_AES)) {
-            pipeline.addLast(new AESCodec(AESUtil.dailyKey()));
+            pipeline.addLast(new AESCodec(AESUtil.dailyKey()).channelHandlers());
         }
         if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
-            pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
+                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
     }
 }

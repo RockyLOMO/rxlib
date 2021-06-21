@@ -36,8 +36,9 @@ import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthResponseDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthStatus;
 import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.handler.proxy.ProxyHandler;
-import io.netty.util.NetUtil;
-import io.netty.util.internal.StringUtil;
+import lombok.Setter;
+import lombok.SneakyThrows;
+import org.rx.util.function.Action;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -45,22 +46,21 @@ import java.util.Arrays;
 import java.util.Collections;
 
 public final class Socks5ProxyHandler extends ProxyHandler {
-
     private static final String PROTOCOL = "socks5";
     private static final String AUTH_PASSWORD = "password";
     private static final String AUTH_NONE = "none";
 
     private static final Socks5InitialRequest INIT_REQUEST_NO_AUTH =
             new DefaultSocks5InitialRequest(Collections.singletonList(Socks5AuthMethod.NO_AUTH));
-
     private static final Socks5InitialRequest INIT_REQUEST_PASSWORD =
             new DefaultSocks5InitialRequest(Arrays.asList(Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD));
 
     private final String username;
     private final String password;
-
     private String decoderName;
     private String encoderName;
+    @Setter
+    private Action handshakeCallback;
 
     public Socks5ProxyHandler(SocketAddress proxyAddress) {
         this(proxyAddress, null, null);
@@ -128,6 +128,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
+    @SneakyThrows
     @Override
     protected boolean handleResponse(ChannelHandlerContext ctx, Object response) throws Exception {
         if (response instanceof Socks5InitialResponse) {
@@ -171,6 +172,9 @@ public final class Socks5ProxyHandler extends ProxyHandler {
             throw new ProxyConnectException(exceptionMessage("status: " + res.status()));
         }
 
+        if (handshakeCallback != null) {
+            handshakeCallback.invoke();
+        }
         return true;
     }
 

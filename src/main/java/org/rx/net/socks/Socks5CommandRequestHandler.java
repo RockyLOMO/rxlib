@@ -8,14 +8,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.Cache;
+import org.rx.core.StringBuilder;
+import org.rx.core.Strings;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.security.AESUtil;
 
-import java.net.SocketAddress;
+import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.App.quietly;
@@ -77,7 +80,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 destinationEndpoint.setHost(String.format("%s%s", hash, SocksSupport.FAKE_SUFFIX));
             });
         }
-        SocketAddress finalDestinationAddress = destinationEndpoint.toSocketAddress();
+        InetSocketAddress finalDestinationAddress = destinationEndpoint.toSocketAddress();
+        StringBuilder aesMsg = new StringBuilder();
         Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), channel -> {
             //ch.pipeline().addLast(new LoggingHandler());//in out
             e.getUpstream().initChannel(channel);
@@ -96,17 +100,51 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            boolean enableAES = destinationEndpoint.getPort() == SocksConfig.DNS_PORT;
-            log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}] AES={}", server.getConfig().getListenPort(),
-                    inbound.channel(), outbound, finalDestinationAddress, realHost, enableAES);
-            if (enableAES) {
-                outbound.pipeline().addLast(new AESCodec(SocksConfig.DNS_KEY).channelHandlers());
-                inbound.pipeline().addLast(new AESCodec(SocksConfig.DNS_KEY).channelHandlers());
+            Socks5ProxyHandler proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class);
+            if (proxyHandler != null) {
+                System.out.println("setHandshake!");
+                proxyHandler.setHandshakeCallback(() -> {
+                    System.out.println("setHandshakeCallback!");
+//            boolean enableAES = destinationEndpoint.getPort() == SocksConfig.DNS_PORT;
+//            if (enableAES) {
+//                    if (server.getConfig().getTransportFlags().has(TransportFlags.BACKEND_COMPRESS)) {
+//                        ChannelHandler[] handlers = new AESCodec(SocksConfig.DNS_KEY).channelHandlers();
+//                        for (int i = handlers.length - 1; i > -1; i--) {
+//                            ChannelHandler handler = handlers[i];
+//                            outbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+//                        }
+////                        SslUtil.addBackendHandler(outbound, TransportFlags.BACKEND_AES.flags(), finalDestinationAddress, false);
+////                        SslUtil.addBackendHandler(outbound, TransportFlags.BACKEND_SSL.flags(), finalDestinationAddress, false);
+//                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
+//                    }
+//            }
+                    relay(inbound, outbound, dstAddrType, finalDestinationAddress, realHost, aesMsg);
+                });
+                return;
             }
-            ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
-            outbound.pipeline().addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
-            inbound.pipeline().addLast(ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType));
+
+            relay(inbound, outbound, dstAddrType, finalDestinationAddress, realHost, aesMsg);
         });
+    }
+
+    private void relay(ChannelHandlerContext inbound, Channel outbound, Socks5AddressType dstAddrType, InetSocketAddress destinationAddress, String realHost,
+                       StringBuilder extMsg) {
+//        if (server.getConfig().getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
+//            ChannelHandler[] handlers = new AESCodec(SocksConfig.DNS_KEY).channelHandlers();
+//            for (int i = handlers.length - 1; i > -1; i--) {
+//                ChannelHandler handler = handlers[i];
+//                inbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+//            }
+////            SslUtil.addFrontendHandler(inbound.channel(), TransportFlags.FRONTEND_AES.flags());
+////            SslUtil.addFrontendHandler(inbound.channel(), TransportFlags.FRONTEND_SSL.flags());
+//            extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
+//        }
+
+        log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}] {}", server.getConfig().getListenPort(),
+                inbound.channel(), outbound, destinationAddress, realHost, extMsg.toString());
+        ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
+        outbound.pipeline().addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
+        inbound.pipeline().addLast(ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));
+        inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType));
     }
 }
