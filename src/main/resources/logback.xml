@@ -3,7 +3,7 @@
     <!--    <springProperty scope="context" name="logLevel" source="logging.pattern.level"/>-->
     <!--    <springProperty scope="context" name="logPath" source="logging.file.path"/>-->
     <!--    <springProperty scope="context" name="appName" source="spring.application.name"/>-->
-    <property name="logLevel" value="DEBUG"/>
+    <property name="logLevel" value="INFO"/>
     <property name="logPath" value="./logs"/>
     <property name="appName" value="RxSocks"/>
     <property name="days" value="2"/>

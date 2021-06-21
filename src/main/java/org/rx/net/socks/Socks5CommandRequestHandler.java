@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.Cache;
+import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -95,8 +96,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}]", server.getConfig().getListenPort(),
-                    inbound.channel(), outbound, finalDestinationAddress, realHost);
+            boolean enableAES = destinationEndpoint.getPort() == SocksConfig.DNS_PORT;
+            log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}] AES={}", server.getConfig().getListenPort(),
+                    inbound.channel(), outbound, finalDestinationAddress, realHost, enableAES);
+            if (enableAES) {
+                outbound.pipeline().addLast(new AESCodec(SocksConfig.DNS_KEY).channelHandlers());
+                inbound.pipeline().addLast(new AESCodec(SocksConfig.DNS_KEY).channelHandlers());
+            }
             ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
             outbound.pipeline().addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
             inbound.pipeline().addLast(ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));

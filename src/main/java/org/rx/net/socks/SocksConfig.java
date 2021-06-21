@@ -9,6 +9,7 @@ import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class SocksConfig extends SocketConfig {
+    public static final int DNS_PORT = 53;
+    public static final byte[] DNS_KEY = "FREEDOM".getBytes(StandardCharsets.UTF_8);
     private final int listenPort;
     private final FlagsEnum<TransportFlags> transportFlags;
     private int trafficShapingInterval = 10000;
