@@ -11,9 +11,9 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public interface SocksSupport {
-    String FAKE_SUFFIX = "x.f-li.cn";
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.4.4"));
 
+    String FAKE_SUFFIX = "x.f-li.cn";
     Map<SUID, String> HOST_DICT = Collections.synchronizedMap(new LRUMap<>(4000));
 
     void fakeHost(SUID hash, String realHost);

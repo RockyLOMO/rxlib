@@ -25,7 +25,7 @@ public final class SslDirectServer extends Disposable {
             ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
             Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
                 ChannelPipeline pipeline = channel.pipeline();
-                SslUtil.addBackendHandler(channel, config.getTransportFlags(), proxyEndpoint, false);
+                SslUtil.addBackendHandler(channel, config.getTransportFlags(), proxyEndpoint);
                 pipeline.addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
             });
             bootstrap.connect(proxyEndpoint).addListener((ChannelFutureListener) f -> {

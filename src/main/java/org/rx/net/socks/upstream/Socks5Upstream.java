@@ -33,8 +33,8 @@ public class Socks5Upstream extends Upstream {
             throw new InvalidException("ProxyHandlers is empty");
         }
 
+        SslUtil.addBackendHandler(channel, config.getTransportFlags(), getEndpoint().toSocketAddress());
         int i = ThreadLocalRandom.current().nextInt(0, proxyHandlers.size());
-        channel.pipeline().addFirst("proxy", proxyHandlers.get(i));
-        SslUtil.addBackendHandler(channel, config.getTransportFlags(), getEndpoint().toSocketAddress(), true);
+        channel.pipeline().addLast(proxyHandlers.get(i));
     }
 }

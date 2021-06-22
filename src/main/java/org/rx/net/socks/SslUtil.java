@@ -42,27 +42,12 @@ public class SslUtil {
     }
 
     @SneakyThrows
-    public static void addBackendHandler(Channel channel, FlagsEnum<TransportFlags> flags, InetSocketAddress remoteEndpoint, boolean reverse) {
+    public static void addBackendHandler(Channel channel, FlagsEnum<TransportFlags> flags, InetSocketAddress remoteEndpoint) {
         if (flags == null) {
             return;
         }
 
         ChannelPipeline pipeline = channel.pipeline();
-        if (reverse) {
-            if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
-                pipeline.addFirst(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP))
-                        .addFirst(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-            }
-            if (flags.has(TransportFlags.BACKEND_AES)) {
-                pipeline.addFirst(new AESCodec(AESUtil.dailyKey()).channelHandlers());
-            }
-            if (flags.has(TransportFlags.BACKEND_SSL)) {
-                SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-                pipeline.addFirst(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
-            }
-            return;
-        }
-
         if (flags.has(TransportFlags.BACKEND_SSL)) {
             SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));

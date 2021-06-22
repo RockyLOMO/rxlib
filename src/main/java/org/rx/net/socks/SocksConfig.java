@@ -17,7 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class SocksConfig extends SocketConfig {
-    public static final int DNS_PORT = 53;
     public static final byte[] DNS_KEY = "FREEDOM".getBytes(StandardCharsets.UTF_8);
     private final int listenPort;
     private final FlagsEnum<TransportFlags> transportFlags;
@@ -30,6 +29,15 @@ public class SocksConfig extends SocketConfig {
     private Set<InetAddress> whiteList() {
         Set<InetAddress> list = ConcurrentHashMap.newKeySet(1);
         list.add(Sockets.LOOPBACK_ADDRESS);
+        return list;
+    }
+
+    @Getter(lazy = true)
+    private final Set<Integer> AESPorts = aesList();
+
+    private Set<Integer> aesList() {
+        Set<Integer> list = ConcurrentHashMap.newKeySet(1);
+        list.add(53);
         return list;
     }
 }
