@@ -1,6 +1,7 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.socket.SocketChannel;
+import lombok.Getter;
 import lombok.NonNull;
 import org.rx.bean.RandomList;
 import org.rx.core.NQuery;
@@ -12,6 +13,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 public class Socks5Upstream extends Upstream {
     final SocksConfig config;
+    @Getter
     final RandomList<Socks5ProxyHandler> proxyHandlers = new RandomList<>();
 
     public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull AuthenticEndpoint... authEps) {
