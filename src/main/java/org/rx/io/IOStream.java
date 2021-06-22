@@ -6,12 +6,13 @@ import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
-import sun.misc.Cleaner;
-import sun.nio.ch.DirectBuffer;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Objects;
 
 import static org.rx.core.App.*;
@@ -97,12 +98,46 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     //from FileChannelImpl#unmap
     public static void release(@NonNull ByteBuffer buffer) {
-        tryAs(buffer, DirectBuffer.class, db -> {
-            Cleaner cl = db.cleaner();
-            if (cl != null) {
-                cl.clean();
+        if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
+            return;
+        }
+
+        invoke(invoke(viewed(buffer), "cleaner"), "clean");
+    }
+
+    private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
+        return AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+            try {
+                Method method;
+                try {
+                    method = target.getClass().getMethod(methodName, args);
+                } catch (NoSuchMethodException e) {
+                    method = target.getClass().getDeclaredMethod(methodName, args);
+                }
+                method.setAccessible(true);
+                return method.invoke(target);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
             }
         });
+    }
+
+    private static ByteBuffer viewed(ByteBuffer buffer) {
+        String methodName = "viewedBuffer";
+        Method[] methods = buffer.getClass().getMethods();
+        for (Method method : methods) {
+            if (method.getName().equals("attachment")) {
+                methodName = "attachment";
+                break;
+            }
+        }
+
+        ByteBuffer viewedBuffer = (ByteBuffer) invoke(buffer, methodName);
+        if (viewedBuffer == null) {
+            return buffer;
+        } else {
+            return viewed(viewedBuffer);
+        }
     }
 
     @Setter(AccessLevel.PROTECTED)
