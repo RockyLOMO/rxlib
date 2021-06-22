@@ -18,7 +18,6 @@ import java.net.InetSocketAddress;
 public class SslUtil {
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
-    public static final String AES_CODEC = "AES_CODEC";
 
     @SneakyThrows
     public static void addFrontendHandler(Channel channel, FlagsEnum<TransportFlags> flags) {

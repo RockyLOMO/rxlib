@@ -48,7 +48,7 @@ public class CompositeMmap extends Disposable {
     }
 
     @Override
-    protected synchronized void freeObjects() {
+    protected void freeObjects() {
         owner.unmap(this);
     }
 

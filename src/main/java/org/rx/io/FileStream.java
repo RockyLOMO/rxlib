@@ -153,7 +153,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    protected synchronized void freeObjects() {
+    protected void freeObjects() {
         quietly(() -> {
             super.freeObjects();
             for (CompositeMmap compositeMmap : mmaps.values()) {

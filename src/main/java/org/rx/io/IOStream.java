@@ -151,7 +151,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     @SneakyThrows
     @Override
-    protected synchronized void freeObjects() {
+    protected void freeObjects() {
         quietly(this::flush);
         tryClose(writer);
         tryClose(reader);

@@ -2,6 +2,7 @@ package org.rx.net.socks.upstream;
 
 import io.netty.channel.socket.SocketChannel;
 import lombok.NonNull;
+import org.rx.bean.RandomList;
 import org.rx.core.NQuery;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
@@ -9,13 +10,9 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SslUtil;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
-
 public class Socks5Upstream extends Upstream {
     final SocksConfig config;
-    final List<Socks5ProxyHandler> proxyHandlers = new CopyOnWriteArrayList<>();
+    final RandomList<Socks5ProxyHandler> proxyHandlers = new RandomList<>();
 
     public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull AuthenticEndpoint... authEps) {
         endpoint = dstEp;
@@ -34,7 +31,6 @@ public class Socks5Upstream extends Upstream {
         }
 
         SslUtil.addBackendHandler(channel, config.getTransportFlags(), getEndpoint().toSocketAddress());
-        int i = ThreadLocalRandom.current().nextInt(0, proxyHandlers.size());
-        channel.pipeline().addLast(proxyHandlers.get(i));
+        channel.pipeline().addLast(proxyHandlers.next());
     }
 }

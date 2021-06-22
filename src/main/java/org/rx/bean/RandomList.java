@@ -3,10 +3,12 @@ package org.rx.bean;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.App.NON_WARNING;
@@ -15,6 +17,8 @@ import static org.rx.core.App.require;
 @SuppressWarnings(NON_WARNING)
 @Slf4j
 public class RandomList<T> implements Collection<T>, Serializable {
+    private static final int DEFAULT_WEIGHT = 2;
+
     @AllArgsConstructor
     private static class WeightElement<T> implements Serializable {
         private final T element;
@@ -35,16 +39,8 @@ public class RandomList<T> implements Collection<T>, Serializable {
         }
     }
 
-    private final List<WeightElement<T>> elements = new ArrayList<>();
+    private final List<WeightElement<T>> elements = new CopyOnWriteArrayList<>();
     private volatile int maxRandomValue;
-
-    public int getWeight(T element) {
-        WeightElement<T> weightElement = findElement(element);
-        if (weightElement == null) {
-            throw new NoSuchElementException();
-        }
-        return weightElement.weight;
-    }
 
     public synchronized T next() {
         switch (elements.size()) {
@@ -70,44 +66,74 @@ public class RandomList<T> implements Collection<T>, Serializable {
             maxRandomValue = hold.threshold.end;
         }
         Integer v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-        NQuery<WeightElement<T>> q = NQuery.of(elements);
-        log.debug("{}\tnext {}/{}", q.select(p -> String.format("%s threshold[%s-%s]", p.element, p.threshold.start, p.threshold.end)).toJoinString(",", p -> p), v, maxRandomValue);
-        return q.single(p -> p.threshold.has(v)).element;
+//        NQuery<WeightElement<T>> q = NQuery.of(elements);
+//        log.debug("{}\tnext {}/{}", q.select(p -> String.format("%s threshold[%s-%s]", p.element, p.threshold.start, p.threshold.end)).toJoinString(",", p -> p), v, maxRandomValue);
+//        return q.single(p -> p.threshold.has(v)).element;
+
         //二分法查找
-//        int start = 1, end = elements.size() - 1;
-//        while (true) {
-//            int index = (start + end) / 2;
-//            if (v < elements.get(index).threshold.start) {
-//                end = index - 1;
-//            } else if (v >= elements.get(index).threshold.end) {
-//                start = index + 1;
-//            } else {
-//                return elements.get(index).element;
-//            }
-//        }
+        int low = 0;
+        int high = elements.size() - 1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            WeightElement<T> weightElement = elements.get(mid);
+            DataRange<Integer> threshold = weightElement.threshold;
+            if (threshold.end <= v) {
+                low = mid + 1;
+            } else if (threshold.start > v) {
+                high = mid - 1;
+            } else {
+                return weightElement.element;
+            }
+        }
+        throw new NoSuchElementException();
     }
 
-    private synchronized WeightElement<T> findElement(int index) {
+    private boolean change(boolean changed) {
+        if (changed) {
+            maxRandomValue = 0;
+        }
+        return changed;
+    }
+
+    public int getWeight(T element) {
+        WeightElement<T> weightElement = findElement(element, true);
+        synchronized (weightElement) {
+            return weightElement.weight;
+        }
+    }
+
+    public void setWeight(T element, int weight) {
+        WeightElement<T> weightElement = findElement(element, true);
+        synchronized (weightElement) {
+            weightElement.weight = weight;
+        }
+    }
+
+    private WeightElement<T> findElement(int index) {
         return elements.get(index);
     }
 
-    private synchronized WeightElement<T> findElement(T element) {
-        return NQuery.of(elements).firstOrDefault(p -> p.element == element);
+    private WeightElement<T> findElement(T element, boolean throwOnEmpty) {
+        WeightElement<T> weightElement = NQuery.of(elements).firstOrDefault(p -> p.element == element);
+        if (throwOnEmpty && weightElement == null) {
+            throw new NoSuchElementException();
+        }
+        return weightElement;
     }
 
     @Override
-    public synchronized int size() {
+    public int size() {
         return elements.size();
     }
 
     @Override
-    public synchronized boolean isEmpty() {
+    public boolean isEmpty() {
         return elements.isEmpty();
     }
 
     @Override
     public boolean contains(Object element) {
-        return findElement((T) element) != null;
+        return findElement((T) element, false) != null;
     }
 
     @Override
@@ -116,24 +142,26 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public synchronized Iterator<T> iterator() {
+    public Iterator<T> iterator() {
+        Iterator<WeightElement<T>> iterator = elements.iterator();
         return new Iterator<T>() {
-            int offset = -1;
-
             @Override
             public boolean hasNext() {
-                return ++offset < size();
+                return iterator.hasNext();
             }
 
             @Override
             public T next() {
-                return findElement(offset).element;
+                return iterator.next().element;
             }
         };
     }
 
     @Override
     public Object[] toArray() {
+        if (elements.isEmpty()) {
+            return Arrays.EMPTY_OBJECT_ARRAY;
+        }
         return NQuery.of(elements).select(p -> p.element).toArray();
     }
 
@@ -144,71 +172,53 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     @Override
-    public boolean add(T t) {
-        return add(t, 2);
+    public boolean add(T element) {
+        return add(element, DEFAULT_WEIGHT);
     }
 
-    public synchronized boolean add(T element, int weight) {
+    public boolean add(T element, int weight) {
         require(weight, weight >= 0);
 
         boolean changed;
-        WeightElement<T> weightElement = findElement(element);
+        WeightElement<T> weightElement = findElement(element, false);
         if (weightElement == null) {
             elements.add(new WeightElement<>(element, weight));
             changed = true;
         } else {
-            if (changed = weightElement.weight != weight) {
-                weightElement.weight = weight;
+            synchronized (weightElement) {
+                if (changed = weightElement.weight != weight) {
+                    weightElement.weight = weight;
+                }
             }
         }
         return change(changed);
     }
 
-    private boolean change(boolean changed) {
-        if (changed) {
-            maxRandomValue = 0;
-        }
-        return changed;
-    }
-
     @Override
-    public synchronized boolean remove(Object element) {
+    public boolean remove(Object element) {
         return change(elements.removeIf(p -> p.element == element));
     }
 
     @Override
-    public synchronized boolean addAll(Collection<? extends T> c) {
-        boolean changed = false;
-        for (T t : c) {
-            if (add(t)) {
-                changed = true;
-            }
-        }
-        return changed;
+    public boolean addAll(Collection<? extends T> c) {
+        return change(elements.addAll(NQuery.of(c).select(p -> new WeightElement<T>(p, DEFAULT_WEIGHT)).toList()));
     }
 
     @Override
-    public synchronized boolean removeAll(Collection<?> c) {
-        boolean changed = false;
-        for (Object o : c) {
-            if (remove(o)) {
-                changed = true;
-            }
-        }
-        return changed;
+    public boolean removeAll(Collection<?> c) {
+        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList();
+        return change(elements.removeAll(c));
     }
 
     @Override
-    public synchronized boolean retainAll(Collection<?> c) {
-        int size = elements.size();
+    public boolean retainAll(Collection<?> c) {
         List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList();
         elements.clear();
-        elements.addAll(items);
-        return change(size != elements.size());
+        return change(elements.addAll(items));
     }
 
     @Override
-    public synchronized void clear() {
+    public void clear() {
         elements.clear();
         change(true);
     }

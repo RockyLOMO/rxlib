@@ -170,7 +170,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     @Override
-    protected synchronized void freeObjects() {
+    protected void freeObjects() {
         autoReconnect = false; //import
         Sockets.closeOnFlushed(channel);
 //        bootstrap.config().group().shutdownGracefully();

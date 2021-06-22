@@ -168,7 +168,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     }
 
     @Override
-    protected synchronized void freeObjects() {
+    protected void freeObjects() {
         isStarted = false;
         Sockets.closeOnFlushed(serverChannel);
         Sockets.closeBootstrap(bootstrap);

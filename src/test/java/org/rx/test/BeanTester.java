@@ -1,10 +1,13 @@
 package org.rx.test;
 
+import lombok.SneakyThrows;
 import org.apache.commons.lang3.BooleanUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
 import org.rx.core.App;
+import org.rx.core.StringBuilder;
+import org.rx.core.Tasks;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
@@ -16,6 +19,7 @@ import org.rx.util.BeanMapNullValueStrategy;
 
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 
 import static org.rx.core.App.*;
 
@@ -91,6 +95,7 @@ public class BeanTester extends TestUtil {
         System.out.println(toJsonString(t));
     }
 
+    @SneakyThrows
     @Test
     public void randomList() {
         RandomList<String> list = new RandomList<>();
@@ -99,16 +104,30 @@ public class BeanTester extends TestUtil {
         list.add("c", 2);
         list.add("d", 1);
         for (String s : list) {
-            System.out.println(s);
+            System.out.print(s + " ");
         }
-        for (int i = 0; i < 20; i++) {
-            System.out.println(list.next());
+        System.out.println();
+
+        CountDownLatch l = new CountDownLatch(10);
+        for (int i = 0; i < 10; i++) {
+            Tasks.run(() -> {
+                StringBuilder str = new StringBuilder();
+                for (int j = 0; j < 10; j++) {
+                    str.append(list.next() + " ");
+                }
+                System.out.println(str);
+                l.countDown();
+            });
         }
+        l.await();
+
         for (int i = 0; i < 10000; i++) {
-            String next = list.next();
-            System.out.println(next);
-            list.remove(next);
-            list.add(next);
+            Tasks.run(() -> {
+                String next = list.next();
+                System.out.println(next);
+                list.remove(next);
+                list.add(next);
+            });
         }
     }
 

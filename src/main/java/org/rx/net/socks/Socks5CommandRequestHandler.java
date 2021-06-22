@@ -102,7 +102,6 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             SocksConfig config = server.getConfig();
             if (config.getAESPorts().contains(destinationEndpoint.getPort()) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
-                    System.out.println("setHandshakeCallback!");
                     if (config.getTransportFlags().has(TransportFlags.BACKEND_COMPRESS)) {
                         ChannelHandler[] handlers = new AESCodec(SocksConfig.DNS_KEY).channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
@@ -110,8 +109,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                             outbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                         }
 //                        SslUtil.addBackendHandler(outbound, TransportFlags.BACKEND_AES.flags(), finalDestinationAddress, false);
-//                        SslUtil.addBackendHandler(outbound, TransportFlags.BACKEND_SSL.flags(), finalDestinationAddress, false);
-                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
+//                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
+                        aesMsg.append("[BACKEND_AES]");
                     }
                     relay(inbound, outbound, dstAddrType, finalDestinationAddress, realHost, aesMsg);
                 });
@@ -141,8 +140,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     inbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                 }
 //            SslUtil.addFrontendHandler(inbound.channel(), TransportFlags.FRONTEND_AES.flags());
-//            SslUtil.addFrontendHandler(inbound.channel(), TransportFlags.FRONTEND_SSL.flags());
-                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
+//                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
+                extMsg.append("[FRONTEND_AES]");
             }
             log.info("socks5[{}] {} connect to backend {}, destAddr={}[{}] {}", config.getListenPort(),
                     inbound.channel(), outbound, destinationAddress, realHost, extMsg.toString());
