@@ -10,6 +10,7 @@ import org.rx.test.bean.PersonBean;
 import org.rx.test.common.TestUtil;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -18,6 +19,12 @@ import java.util.UUID;
 import static org.rx.core.App.toJsonString;
 
 public class IOTester {
+    @Test
+    public void releaseBuffer() {
+        ByteBuffer buffer = ByteBuffer.allocateDirect(64);
+        IOStream.release(buffer);
+    }
+
     @Test
     public void testBinaryStream() {
         BinaryStream stream = new BinaryStream(new MemoryStream());

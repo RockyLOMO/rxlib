@@ -24,6 +24,7 @@ import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.TransportFlags;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.security.AESUtil;
 import org.rx.util.function.Action;
 
@@ -110,9 +111,9 @@ public final class Main implements SocksSupport {
     final DnsClient outlandClient = DnsClient.outlandClient();
 
     @Override
-    public void fakeHost(SUID hash, String realHost) {
-        realHost = AESUtil.decryptFromBase64(realHost);
-        SocksSupport.HOST_DICT.put(hash, realHost);
+    public void fakeEndpoint(SUID hash, String endpoint) {
+        endpoint = AESUtil.decryptFromBase64(endpoint);
+        SocksSupport.HOST_DICT.put(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
     @Override

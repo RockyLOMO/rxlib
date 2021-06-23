@@ -97,6 +97,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     //from FileChannelImpl#unmap
+    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
     public static void release(@NonNull ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
             return;

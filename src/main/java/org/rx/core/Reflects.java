@@ -25,6 +25,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
@@ -328,9 +330,17 @@ public class Reflects extends TypeUtils {
     }
 
     private static void setAccess(AccessibleObject member) {
+        if (member.isAccessible()) {
+            return;
+        }
         try {
-            if (!member.isAccessible()) {
-                member.setAccessible(true);
+            if (System.getSecurityManager() == null) {
+                member.setAccessible(true); // <~ Dragons
+            } else {
+                AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+                    member.setAccessible(true);  // <~ moar Dragons
+                    return null;
+                });
             }
         } catch (Exception e) {
             log.warn("setAccess", e);

@@ -11,12 +11,13 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public interface SocksSupport {
-    List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.4.4", "8.8.8.8"));
+    List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.8.8", "8.8.4.4"));
 
-    String FAKE_SUFFIX = "x.f-li.cn";
-    Map<SUID, String> HOST_DICT = Collections.synchronizedMap(new LRUMap<>(4000));
+    String FAKE_HOST_SUFFIX = "x.f-li.cn";
+    int[] FAKE_PORT_OBFS = new int[]{443, 3306};
+    Map<SUID, UnresolvedEndpoint> HOST_DICT = Collections.synchronizedMap(new LRUMap<>(4000));
 
-    void fakeHost(SUID hash, String realHost);
+    void fakeEndpoint(SUID hash, String realEndpoint);
 
     List<InetAddress> resolveHost(String host);
 

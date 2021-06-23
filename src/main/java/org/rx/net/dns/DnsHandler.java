@@ -43,7 +43,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
             return;
         }
 
-        if (domain.endsWith(SocksSupport.FAKE_SUFFIX)) {
+        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
             ctx.writeAndFlush(newResponse(query, question, 3600, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
         }

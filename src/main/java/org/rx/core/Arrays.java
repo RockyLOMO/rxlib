@@ -3,11 +3,13 @@ package org.rx.core;
 import lombok.NonNull;
 import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.lang3.ArrayUtils;
+import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.App.NON_WARNING;
 
@@ -39,6 +41,14 @@ public class Arrays extends ArrayUtils {
             list.add(t);
         }
         return list;
+    }
+
+    public static int randomGet(int[] array) {
+        if (isEmpty(array)) {
+            throw new InvalidException("Array is empty");
+        }
+
+        return array[ThreadLocalRandom.current().nextInt(0, array.length)];
     }
 
     public static boolean equals(byte[] a, byte[] b) {
