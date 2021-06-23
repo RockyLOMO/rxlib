@@ -20,36 +20,47 @@ public class DnsMessageUtil {
         return newQuery;
     }
 
-    public static DatagramDnsResponse newUdpResponse(@Nonnull InetSocketAddress sender,
-                                                     @Nonnull InetSocketAddress recipient,
-                                                     @Nonnull DnsResponse dnsResponse) {
-        final DatagramDnsResponse newResponse = new DatagramDnsResponse(sender, recipient, dnsResponse.id(), dnsResponse.opCode(), dnsResponse.code())
-                .setAuthoritativeAnswer(dnsResponse.isAuthoritativeAnswer())
+    public static DefaultDnsResponse newResponse(InetSocketAddress sender, InetSocketAddress recipient,
+                                                 @Nonnull DnsResponse dnsResponse) {
+        DefaultDnsResponse response;
+        if (sender != null && recipient != null) {
+            response = new DatagramDnsResponse(sender, recipient, dnsResponse.id(), dnsResponse.opCode(), dnsResponse.code());
+        } else {
+            response = new DefaultDnsResponse(dnsResponse.id(), dnsResponse.opCode(), dnsResponse.code());
+        }
+        response.setAuthoritativeAnswer(dnsResponse.isAuthoritativeAnswer())
                 .setTruncated(dnsResponse.isTruncated())
                 .setRecursionAvailable(dnsResponse.isRecursionAvailable())
                 .setRecursionDesired(dnsResponse.isRecursionDesired())
                 .setZ(dnsResponse.z());
         for (DnsSection section : DnsSection.values()) {
-            setRecord(section, dnsResponse, newResponse);
+            setRecord(section, dnsResponse, response);
         }
-        return newResponse;
+        return response;
     }
 
-    public static DatagramDnsResponse newErrorUdpResponse(@Nonnull DatagramDnsQuery datagramDnsQuery,
-                                                          @Nonnull DnsResponseCode rCode) {
-        return newErrorUdpResponse(datagramDnsQuery.recipient(), datagramDnsQuery.sender(), datagramDnsQuery, rCode);
+    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsQuery dnsQuery, @Nonnull DnsResponseCode rCode) {
+        if (dnsQuery instanceof DatagramDnsQuery) {
+            return newErrorResponse(((DatagramDnsQuery) dnsQuery).recipient(), ((DatagramDnsQuery) dnsQuery).sender(), dnsQuery, rCode);
+        }
+        return newErrorResponse(null, null, dnsQuery, rCode);
     }
 
-    public static DatagramDnsResponse newErrorUdpResponse(@Nonnull DatagramDnsResponse datagramDnsResponse,
-                                                          @Nonnull DnsResponseCode rCode) {
-        return newErrorUdpResponse(datagramDnsResponse.sender(), datagramDnsResponse.recipient(), datagramDnsResponse, rCode);
+    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsResponse dnsResponse, @Nonnull DnsResponseCode rCode) {
+        if (dnsResponse instanceof DatagramDnsResponse) {
+            return newErrorResponse(((DatagramDnsResponse) dnsResponse).sender(), ((DatagramDnsResponse) dnsResponse).recipient(), dnsResponse, rCode);
+        }
+        return newErrorResponse(null, null, dnsResponse, rCode);
     }
 
-    public static DatagramDnsResponse newErrorUdpResponse(@Nonnull InetSocketAddress sender,
-                                                          @Nonnull InetSocketAddress recipient,
-                                                          @Nonnull DnsMessage dnsMessage,
-                                                          @Nonnull DnsResponseCode rCode) {
-        DatagramDnsResponse response = new DatagramDnsResponse(sender, recipient, dnsMessage.id(), dnsMessage.opCode(), rCode);
+    private static DefaultDnsResponse newErrorResponse(InetSocketAddress sender, InetSocketAddress recipient,
+                                                       @Nonnull DnsMessage dnsMessage, @Nonnull DnsResponseCode rCode) {
+        DefaultDnsResponse response;
+        if (sender != null && recipient != null) {
+            response = new DatagramDnsResponse(sender, recipient, dnsMessage.id(), dnsMessage.opCode(), rCode);
+        } else {
+            response = new DefaultDnsResponse(dnsMessage.id(), dnsMessage.opCode(), rCode);
+        }
         if (dnsMessage.count(DnsSection.QUESTION) > 0) {
             setRecord(DnsSection.QUESTION, dnsMessage, response);
         }

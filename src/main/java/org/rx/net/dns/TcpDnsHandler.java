@@ -19,19 +19,17 @@ import java.util.List;
 import static org.rx.core.App.cacheKey;
 
 @Slf4j
-public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
+public class TcpDnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final DnsServer server;
-    final boolean isTcp;
     final DnsClient client;
 
-    public DnsHandler(DnsServer server, boolean isTcp, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
+    public TcpDnsHandler(DnsServer server, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
         this.server = server;
-        this.isTcp = isTcp;
         client = new DnsClient(eventLoopGroup, nameServerList);
     }
 
     @Override
-    public void channelRead0(ChannelHandlerContext ctx, DatagramDnsQuery query) {
+    public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = question.name().substring(0, question.name().length() - 1);
         log.debug("query domain {}", domain);
@@ -42,7 +40,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
             return;
         }
 
-        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX) || true) {
+        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)||true) {
             ctx.writeAndFlush(newResponse(query, question, 3600, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
         }
@@ -63,17 +61,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
-            if (isTcp) {
-                ctx.writeAndFlush(DnsMessageUtil.newResponse(null, null, envelope.content())).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-                return;
-            }
-            ctx.writeAndFlush(DnsMessageUtil.newResponse(query.recipient(), query.sender(), envelope.content()));
+            ctx.writeAndFlush(DnsMessageUtil.newResponse(null, null, envelope.content())).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         });
     }
 
     //ttl 秒
-    private DatagramDnsResponse newResponse(DatagramDnsQuery query, DefaultDnsQuestion question, long ttl, byte[]... addresses) {
-        DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
+    private DefaultDnsResponse newResponse(DefaultDnsQuery query, DefaultDnsQuestion question, long ttl, byte[]... addresses) {
+        DefaultDnsResponse response = new DefaultDnsResponse(query.id());
         response.addRecord(DnsSection.QUESTION, question);
 
         for (byte[] address : addresses) {

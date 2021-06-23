@@ -1,8 +1,8 @@
 package org.rx.net.dns;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class DnsServer extends Disposable {
-    final NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup();
+    final ServerBootstrap serverBootstrap;
     @Getter
     final Map<String, byte[]> customHosts = new ConcurrentHashMap<>(0);
     @Setter
@@ -30,25 +30,24 @@ public class DnsServer extends Disposable {
     }
 
     public DnsServer(int port, InetSocketAddress... nameServerList) {
-        Bootstrap bootstrap = Sockets.udpBootstrap(eventLoopGroup, true).handler(new ChannelInitializer<NioDatagramChannel>() {
+        serverBootstrap = Sockets.serverBootstrap(channel -> {
+            channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(),
+                    new DnsHandler(DnsServer.this, true, DnsServer.this.serverBootstrap.config().childGroup(), nameServerList));
+        });
+        serverBootstrap.bind(port).addListener(Sockets.bindCallback(port));
+
+        Bootstrap bootstrap = Sockets.udpBootstrap(serverBootstrap.config().group(), true).handler(new ChannelInitializer<NioDatagramChannel>() {
             @Override
-            protected void initChannel(NioDatagramChannel nioDatagramChannel) {
-                nioDatagramChannel.pipeline().addLast(new DatagramDnsQueryDecoder());
-                nioDatagramChannel.pipeline().addLast(new DatagramDnsResponseEncoder());
-                nioDatagramChannel.pipeline().addLast(new DnsHandler(DnsServer.this, eventLoopGroup, nameServerList));
+            protected void initChannel(NioDatagramChannel channel) {
+                channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
+                        new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
             }
         });
-        bootstrap.bind(port).addListener(f -> {
-            if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", port, f.cause());
-                return;
-            }
-            log.info("Listened on port {}", port);
-        });
+        bootstrap.bind(port).addListener(Sockets.bindCallback(port));
     }
 
     @Override
     protected void freeObjects() {
-        eventLoopGroup.shutdownGracefully();
+        Sockets.closeBootstrap(serverBootstrap);
     }
 }

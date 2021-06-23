@@ -278,21 +278,21 @@ public class SocksTester {
         System.in.read();
     }
 
+    @SneakyThrows
     @Test
     public void dns() {
         DnsServer server = new DnsServer(53);
         server.getCustomHosts().put("devops.f-li.cn", new byte[]{2, 2, 2, 2});
 
         //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-//        System.setProperty("sun.net.spi.nameservice.nameservers", "114.114.114.114");
-//        System.setProperty("sun.net.spi.nameservice.provider.1", "dns,sun");
-
 //        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
 //        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
 
-        sleep(2000);
-        DnsClient client = new DnsClient(Sockets.parseEndpoint("192.168.31.7:853"));
-        System.out.println(client.resolve("google.com"));
+//        sleep(2000);
+//        DnsClient client = new DnsClient(Sockets.parseEndpoint("192.168.31.7:853"));
+//        System.out.println(client.resolve("google.com"));
+
+        System.in.read();
     }
 
     @Test

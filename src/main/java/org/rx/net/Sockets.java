@@ -42,7 +42,7 @@ public final class Sockets {
     @Getter(lazy = true)
     private static final DnsClient dnsClient = DnsClient.inlandServerList();
 
-    private static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
+    public static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
@@ -170,6 +170,17 @@ public final class Sockets {
             });
         }
         return b;
+    }
+
+    public static ChannelFutureListener bindCallback(int port) {
+        return f -> {
+            String ch = f.channel() instanceof NioDatagramChannel ? "UDP" : "TCP";
+            if (!f.isSuccess()) {
+                log.error("{} Listen on port {} fail", ch, port, f.cause());
+                return;
+            }
+            log.info("{} Listened on {}", ch, f.channel().localAddress());
+        };
     }
 
     public static void dumpPipeline(String name, Channel channel) {

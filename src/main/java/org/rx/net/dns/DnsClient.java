@@ -1,7 +1,6 @@
 package org.rx.net.dns;
 
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.resolver.dns.*;
 import lombok.NonNull;
@@ -29,8 +28,6 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static final EventLoopGroup eventLoopGroup = new NioEventLoopGroup();
-
     public static DnsClient inlandServerList() {
         return new DnsClient(Sockets.parseEndpoint("114.114.114.114:53"));
     }
@@ -42,7 +39,7 @@ public class DnsClient extends Disposable {
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull InetSocketAddress... nameServerList) {
-        this(eventLoopGroup, nameServerList);
+        this(Sockets.reactorEventLoop(DnsClient.class.getSimpleName()), nameServerList);
     }
 
     public DnsClient(@NonNull EventLoopGroup eventLoopGroup, @NonNull InetSocketAddress... nameServerList) {
