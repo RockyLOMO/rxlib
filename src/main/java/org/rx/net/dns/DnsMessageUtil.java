@@ -7,6 +7,30 @@ import javax.annotation.Nonnull;
 import java.net.InetSocketAddress;
 
 public class DnsMessageUtil {
+    public static DefaultDnsResponse newResponse(DefaultDnsQuery query, DnsResponse response, boolean isTcp) {
+        DefaultDnsResponse newResponse = newResponse(query, isTcp);
+        newResponse.setOpCode(response.opCode()).setCode(response.code())
+                .setAuthoritativeAnswer(response.isAuthoritativeAnswer())
+                .setTruncated(response.isTruncated())
+                .setRecursionAvailable(response.isRecursionAvailable())
+                .setRecursionDesired(response.isRecursionDesired())
+                .setZ(response.z());
+        for (DnsSection section : DnsSection.values()) {
+            setRecord(section, response, newResponse);
+        }
+        return newResponse;
+    }
+
+    public static DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp) {
+        DefaultDnsResponse response;
+        if (!isTcp && query instanceof DatagramDnsQuery) {
+            response = new DatagramDnsResponse(((DatagramDnsQuery) query).recipient(), ((DatagramDnsQuery) query).sender(), query.id());
+        } else {
+            response = new DefaultDnsResponse(query.id());
+        }
+        return response;
+    }
+
     @Nonnull
     public static DatagramDnsQuery newUdpQuery(@Nonnull InetSocketAddress sender,
                                                @Nonnull InetSocketAddress recipient,
@@ -18,25 +42,6 @@ public class DnsMessageUtil {
             setRecord(DnsSection.QUESTION, dnsQuery, newQuery);
         }
         return newQuery;
-    }
-
-    public static DefaultDnsResponse newResponse(InetSocketAddress sender, InetSocketAddress recipient,
-                                                 @Nonnull DnsResponse dnsResponse) {
-        DefaultDnsResponse response;
-        if (sender != null && recipient != null) {
-            response = new DatagramDnsResponse(sender, recipient, dnsResponse.id(), dnsResponse.opCode(), dnsResponse.code());
-        } else {
-            response = new DefaultDnsResponse(dnsResponse.id(), dnsResponse.opCode(), dnsResponse.code());
-        }
-        response.setAuthoritativeAnswer(dnsResponse.isAuthoritativeAnswer())
-                .setTruncated(dnsResponse.isTruncated())
-                .setRecursionAvailable(dnsResponse.isRecursionAvailable())
-                .setRecursionDesired(dnsResponse.isRecursionDesired())
-                .setZ(dnsResponse.z());
-        for (DnsSection section : DnsSection.values()) {
-            setRecord(section, dnsResponse, response);
-        }
-        return response;
     }
 
     public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsQuery dnsQuery, @Nonnull DnsResponseCode rCode) {

@@ -2,7 +2,6 @@ package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -67,11 +66,7 @@ public class ShadowsocksServer extends Disposable {
                     new SSCipherCodec(), new SSProtocolCodec(),
                     new SSServerTcpProxyHandler(this));
         });
-        bootstrap.bind(config.getServerEndpoint()).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", config.getServerEndpoint(), f.cause());
-            }
-        });
+        bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.bindCallback(config.getServerEndpoint().getPort()));
 
         //udp server
         Bootstrap udpBootstrap = Sockets.udpBootstrap(bootstrap.config().group(), true)

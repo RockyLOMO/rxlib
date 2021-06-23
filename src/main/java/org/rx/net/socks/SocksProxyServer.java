@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
@@ -73,11 +72,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
         });
-        bootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", config.getListenPort(), f.cause());
-            }
-        });
+        bootstrap.bind(config.getListenPort()).addListener(Sockets.bindCallback(config.getListenPort()));
     }
 
     @Override

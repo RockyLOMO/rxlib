@@ -10,4 +10,5 @@ public class SocketConfig implements DeepCloneable {
 
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
+    private boolean enableNettyLog;
 }

@@ -89,8 +89,10 @@ public final class Sockets {
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
-        //netty日志
-        b.handler(new LoggingHandler(LogLevel.INFO));
+        if (config.isEnableNettyLog()) {
+            //netty日志
+            b.handler(new LoggingHandler(LogLevel.INFO));
+        }
         if (initChannel != null) {
             b.childHandler(new ChannelInitializer<SocketChannel>() {
                 @SneakyThrows
@@ -160,6 +162,9 @@ public final class Sockets {
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+        if (config.isEnableNettyLog()) {
+            b.handler(new LoggingHandler(LogLevel.INFO));
+        }
         if (initChannel != null) {
             b.handler(new ChannelInitializer<SocketChannel>() {
                 @SneakyThrows

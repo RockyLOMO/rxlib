@@ -52,11 +52,7 @@ public final class SslDirectServer extends Disposable {
             SslUtil.addFrontendHandler(channel, config.getTransportFlags());
             pipeline.addLast(new RequestHandler());
         });
-        serverBootstrap.bind(config.getListenPort()).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", config.getListenPort(), f.cause());
-            }
-        });
+        serverBootstrap.bind(config.getListenPort()).addListener(Sockets.bindCallback(config.getListenPort()));
         this.router = router;
     }
 

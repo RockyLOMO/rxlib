@@ -198,9 +198,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                     new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         InetSocketAddress endpoint = Sockets.getAnyEndpoint(config.getListenPort());
-        bootstrap.bind(endpoint).addListener((ChannelFutureListener) f -> {
+        bootstrap.bind(endpoint).addListener(Sockets.bindCallback(config.getListenPort())).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("Listened on port {} fail", endpoint, f.cause());
                 isStarted = false;
                 return;
             }

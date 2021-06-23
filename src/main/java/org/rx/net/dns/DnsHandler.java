@@ -19,7 +19,7 @@ import java.util.List;
 import static org.rx.core.App.cacheKey;
 
 @Slf4j
-public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
+public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final DnsServer server;
     final boolean isTcp;
     final DnsClient client;
@@ -31,7 +31,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
     }
 
     @Override
-    public void channelRead0(ChannelHandlerContext ctx, DatagramDnsQuery query) {
+    public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = question.name().substring(0, question.name().length() - 1);
         log.debug("query domain {}", domain);
@@ -42,7 +42,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
             return;
         }
 
-        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX) || true) {
+        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
             ctx.writeAndFlush(newResponse(query, question, 3600, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
         }
@@ -63,17 +63,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DatagramDnsQuery> {
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
-            if (isTcp) {
-                ctx.writeAndFlush(DnsMessageUtil.newResponse(null, null, envelope.content())).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-                return;
-            }
-            ctx.writeAndFlush(DnsMessageUtil.newResponse(query.recipient(), query.sender(), envelope.content()));
+            ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         });
     }
 
     //ttl 秒
-    private DatagramDnsResponse newResponse(DatagramDnsQuery query, DefaultDnsQuestion question, long ttl, byte[]... addresses) {
-        DatagramDnsResponse response = new DatagramDnsResponse(query.recipient(), query.sender(), query.id());
+    private DefaultDnsResponse newResponse(DefaultDnsQuery query, DefaultDnsQuestion question, long ttl, byte[]... addresses) {
+        DefaultDnsResponse response = DnsMessageUtil.newResponse(query, isTcp);
         response.addRecord(DnsSection.QUESTION, question);
 
         for (byte[] address : addresses) {
