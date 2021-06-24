@@ -20,6 +20,7 @@ import java.security.SecureRandom;
 @Slf4j
 public class AESUtil {
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
+    private static final int KEY_SIZE = 128; //256
     private static String lastDate;
     private static byte[] dateKey;
 
@@ -77,7 +78,7 @@ public class AESUtil {
         SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
         random.setSeed(seed);
         KeyGenerator keygen = KeyGenerator.getInstance("AES");
-        keygen.init(256, random);
+        keygen.init(KEY_SIZE, random);
         return keygen.generateKey();
     }
 

@@ -52,7 +52,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
         if (msg.type() == Socks5CommandType.CONNECT) {
             Upstream upstream = server.router.invoke(dstEp);
-            ReconnectingEventArgs e = new ReconnectingEventArgs(dstEp, upstream);
+            ReconnectingEventArgs e = new ReconnectingEventArgs(upstream);
             connect(inbound, msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.warn("Udp not impl");
@@ -91,7 +91,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.warn("socks5[{}] connect to backend {}[{}] fail", server.getConfig().getListenPort(), finalDestinationEp, e.getDestinationEndpoint(), f.cause());
+                log.warn("socks5[{}] connect to backend {}[{}] fail", server.getConfig().getListenPort(), finalDestinationEp, e.getUpstream().getEndpoint(), f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
@@ -111,12 +111,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 //                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
                         aesMsg.append("[BACKEND_AES]");
                     }
-                    relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getDestinationEndpoint(), aesMsg);
+                    relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getUpstream().getEndpoint(), aesMsg);
                 });
                 return;
             }
 
-            relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getDestinationEndpoint(), aesMsg);
+            relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getUpstream().getEndpoint(), aesMsg);
         });
     }
 

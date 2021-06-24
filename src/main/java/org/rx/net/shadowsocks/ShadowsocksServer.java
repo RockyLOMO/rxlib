@@ -66,7 +66,7 @@ public class ShadowsocksServer extends Disposable {
                     new SSCipherCodec(), new SSProtocolCodec(),
                     new SSServerTcpProxyHandler(this));
         });
-        bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.bindCallback(config.getServerEndpoint().getPort()));
+        bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
         Bootstrap udpBootstrap = Sockets.udpBootstrap(bootstrap.config().group(), true)

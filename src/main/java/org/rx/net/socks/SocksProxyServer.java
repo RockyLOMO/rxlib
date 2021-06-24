@@ -72,7 +72,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
         });
-        bootstrap.bind(config.getListenPort()).addListener(Sockets.bindCallback(config.getListenPort()));
+        bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
     }
 
     @Override

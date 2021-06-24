@@ -34,7 +34,7 @@ public class DnsServer extends Disposable {
             channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(),
                     new DnsHandler(DnsServer.this, true, DnsServer.this.serverBootstrap.config().childGroup(), nameServerList));
         });
-        serverBootstrap.bind(port).addListener(Sockets.bindCallback(port));
+        serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
         Bootstrap bootstrap = Sockets.udpBootstrap(serverBootstrap.config().group(), true).handler(new ChannelInitializer<NioDatagramChannel>() {
             @Override
@@ -43,7 +43,7 @@ public class DnsServer extends Disposable {
                         new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
             }
         });
-        bootstrap.bind(port).addListener(Sockets.bindCallback(port));
+        bootstrap.bind(port).addListener(Sockets.logBind(port));
     }
 
     @Override

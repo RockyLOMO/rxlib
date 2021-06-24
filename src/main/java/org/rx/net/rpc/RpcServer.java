@@ -198,7 +198,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                     new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         InetSocketAddress endpoint = Sockets.getAnyEndpoint(config.getListenPort());
-        bootstrap.bind(endpoint).addListener(Sockets.bindCallback(config.getListenPort())).addListener((ChannelFutureListener) f -> {
+        bootstrap.bind(endpoint).addListener(Sockets.logBind(config.getListenPort())).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 isStarted = false;
                 return;

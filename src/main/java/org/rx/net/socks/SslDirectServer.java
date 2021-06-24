@@ -52,7 +52,7 @@ public final class SslDirectServer extends Disposable {
             SslUtil.addFrontendHandler(channel, config.getTransportFlags());
             pipeline.addLast(new RequestHandler());
         });
-        serverBootstrap.bind(config.getListenPort()).addListener(Sockets.bindCallback(config.getListenPort()));
+        serverBootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
         this.router = router;
     }
 

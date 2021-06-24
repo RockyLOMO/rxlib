@@ -177,7 +177,7 @@ public final class Sockets {
         return b;
     }
 
-    public static ChannelFutureListener bindCallback(int port) {
+    public static ChannelFutureListener logBind(int port) {
         return f -> {
             String ch = f.channel() instanceof NioDatagramChannel ? "UDP" : "TCP";
             if (!f.isSuccess()) {
@@ -186,6 +186,10 @@ public final class Sockets {
             }
             log.info("{} Listened on {}", ch, f.channel().localAddress());
         };
+    }
+
+    public static  ChannelFutureListener logConnect(InetSocketAddress endpoint){
+
     }
 
     public static void dumpPipeline(String name, Channel channel) {
