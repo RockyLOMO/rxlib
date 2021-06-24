@@ -37,13 +37,13 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class StatefulRpcClient extends Disposable implements RpcClient {
-    class ClientHandler extends DuplexHandler {
+    class ClientHandler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            writeAndFlush(ctx, new HandshakePacket(config.getEventVersion())).addListener(p -> {
+            ctx.writeAndFlush(new HandshakePacket(config.getEventVersion())).addListener(p -> {
                 if (p.isSuccess()) {
                     //握手需要异步
                     raiseEventAsync(onConnected, EventArgs.EMPTY);
@@ -96,7 +96,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         break;
                     case WRITER_IDLE:
                         log.debug("clientHeartbeat ping {}", channel.remoteAddress());
-                        writeAndFlush(ctx, new PingMessage());
+                        ctx.writeAndFlush(new PingMessage());
                         break;
                 }
             }
@@ -187,7 +187,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
-                    new ClientHandler());
+                    DuplexHandler.DEFAULT, new ClientHandler());
         });
         ChannelFuture future = bootstrap.connect(config.getServerEndpoint());
         if (!wait) {
@@ -281,8 +281,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             return;
         }
 
-        ClientHandler handler = (ClientHandler) channel.pipeline().last();
-        handler.writeAndFlush(channel.pipeline().lastContext(), pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        channel.writeAndFlush(pack);
         log.debug("clientWrite {} {}", config.getServerEndpoint(), pack);
     }
 

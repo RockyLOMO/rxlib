@@ -36,19 +36,12 @@ import static org.rx.core.App.*;
 @Slf4j
 @RequiredArgsConstructor
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
-    class ClientHandler extends DuplexHandler {
+    class ClientHandler extends ChannelInboundHandlerAdapter {
         private RpcServerClient client;
         private Channel channel;
 
         public boolean isConnected() {
             return channel != null && channel.isActive();
-        }
-
-        public ChannelHandlerContext context() {
-            if (!isConnected()) {
-                throw new ClientDisconnectedException(channel.id());
-            }
-            return channel.pipeline().lastContext();
         }
 
         @Override
@@ -89,7 +82,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             }
             if (tryAs(pack, PingMessage.class, p -> {
                 p.setReplyTimestamp(System.currentTimeMillis());
-                writeAndFlush(ctx, p);
+                ctx.writeAndFlush(p);
                 raiseEventAsync(onPing, new RpcServerEventArgs<>(client, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
@@ -183,7 +176,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
-                    new ClientHandler());
+                    DuplexHandler.DEFAULT, new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -236,12 +229,13 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
         raiseEvent(onSend, args);
         ClientHandler handler;
-        if (args.isCancel() || (handler = getHandler(client.getId(), false)) == null) {
+        if (args.isCancel()
+                || (handler = getHandler(client.getId(), false)) == null || !handler.isConnected()) {
             log.warn("The client {} disconnected", client.getId());
             return;
         }
 
-        handler.writeAndFlush(handler.context(), pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        handler.channel.writeAndFlush(pack);
         log.debug("serverWrite {} {}", handler.channel.remoteAddress(), pack.getClass());
     }
 
