@@ -281,6 +281,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public <TK> NQuery<T> orderBy(BiFunc<T, TK> keySelector) {
+//        return me(stream().sorted(Comparator.nullsLast(Comparator.comparing((Function) keySelector.toFunction()))));
         return me(stream().sorted(getComparator(keySelector)));
     }
 
@@ -312,7 +313,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
                 Comparable c1 = as(k1s.get(i), Comparable.class);
                 Comparable c2 = as(k2s.get(i), Comparable.class);
                 if (c1 == null || c2 == null) {
-                    continue;
+                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
                 }
                 int r = c1.compareTo(c2);
                 if (r == 0) {
