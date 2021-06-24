@@ -40,7 +40,7 @@ public class ShadowsocksClient extends Disposable {
             }
         });
 
-        Bootstrap udpBootstrap = Sockets.udpBootstrap(tcpBootstrap.config().childGroup(), false)
+        Bootstrap udpBootstrap = Sockets.udpBootstrap()
                 .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
                 .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
                 .handler(new ChannelInitializer<NioDatagramChannel>() {

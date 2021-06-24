@@ -68,7 +68,7 @@ public final class Main implements SocksSupport {
 
             RpcServerConfig rpcConf = new RpcServerConfig(port.right + 1);
             rpcConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
-            Remoting.listen(app = new Main(backSvr), port.right + 1);
+            Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
             Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
             if (shadowServer.right == null) {

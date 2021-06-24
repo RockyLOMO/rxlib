@@ -69,7 +69,7 @@ public class ShadowsocksServer extends Disposable {
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        Bootstrap udpBootstrap = Sockets.udpBootstrap(bootstrap.config().group(), true)
+        Bootstrap udpBootstrap = Sockets.udpBootstrap(true)
                 .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
                 .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
                 .handler(new ChannelInitializer<NioDatagramChannel>() {

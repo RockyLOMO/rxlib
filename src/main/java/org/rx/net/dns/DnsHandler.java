@@ -14,9 +14,11 @@ import org.rx.security.AESUtil;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collections;
 import java.util.List;
 
 import static org.rx.core.App.cacheKey;
+import static org.rx.core.App.isNull;
 
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
@@ -48,7 +50,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         if (server.support != null) {
             App.logMetric("host", domain);
-            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> server.support.resolveHost(AESUtil.encryptToBase64(domain)));
+            //未命中也缓存
+            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> isNull(server.support.resolveHost(AESUtil.encryptToBase64(domain)), Collections.emptyList()));
             if (CollectionUtils.isEmpty(address)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
