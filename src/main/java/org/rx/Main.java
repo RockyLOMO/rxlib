@@ -22,6 +22,7 @@ import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.TransportFlags;
+import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -100,7 +101,13 @@ public final class Main implements SocksSupport {
             SocksConfig directConf = new SocksConfig(port.right, TransportFlags.NONE.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right))));
+            UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
+            ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
+                if (dstEp.equals(loopbackDns)) {
+                    return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort.right));
+                }
+                return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right)));
+            });
         }
 
         log.info("Server started..");

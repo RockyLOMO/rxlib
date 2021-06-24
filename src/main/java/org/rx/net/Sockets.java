@@ -40,9 +40,11 @@ public final class Sockets {
     static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
+    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
+    @Getter(lazy = true)
     private static final DnsClient dnsClient = DnsClient.inlandServerList();
 
-    public static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
+    static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
@@ -122,8 +124,7 @@ public final class Sockets {
     }
 
     public static Bootstrap udpBootstrap() {
-        EventLoopGroup eventLoopGroup = reactors.computeIfAbsent("_UDP", k -> new NioEventLoopGroup());
-        return udpBootstrap(eventLoopGroup, false);
+        return udpBootstrap(getUdpEventLoop(), false);
     }
 
     public static Bootstrap udpBootstrap(@NonNull EventLoopGroup eventLoopGroup, boolean broadcast) {

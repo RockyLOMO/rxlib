@@ -39,7 +39,7 @@ public class DnsClient extends Disposable {
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull InetSocketAddress... nameServerList) {
-        this(Sockets.reactorEventLoop(DnsClient.class.getSimpleName()), nameServerList);
+        this(Sockets.getUdpEventLoop(), nameServerList);
     }
 
     public DnsClient(@NonNull EventLoopGroup eventLoopGroup, @NonNull InetSocketAddress... nameServerList) {
