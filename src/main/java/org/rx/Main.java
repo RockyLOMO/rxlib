@@ -16,12 +16,13 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
-import org.rx.net.socks.TransportFlags;
+import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -58,11 +59,15 @@ public final class Main implements SocksSupport {
             }
             AuthenticEndpoint auth = shadowUser.right;
 
-            SocksConfig backConf = new SocksConfig(port.right, TransportFlags.FRONTEND_COMPRESS.flags());
+            SocksConfig backConf = new SocksConfig(port.right);
+            backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, auth.getUsername()) && eq(p, auth.getPassword()), null);
+            backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
+            RpcServerConfig rpcConf = new RpcServerConfig(port.right + 1);
+            rpcConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             Remoting.listen(app = new Main(backSvr), port.right + 1);
         } else {
             Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
@@ -71,13 +76,17 @@ public final class Main implements SocksSupport {
                 return;
             }
 
-            SocksConfig frontConf = new SocksConfig(port.right, TransportFlags.BACKEND_COMPRESS.flags());
+            SocksConfig frontConf = new SocksConfig(port.right);
+            frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
+            frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             app = new Main(frontSvr);
-            SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 4));
+            RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 4);
+            rpcConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+            SocksSupport support = Remoting.create(SocksSupport.class, rpcConf);
             frontSvr.setSupport(support);
 
             Tuple<Boolean, Integer> shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
@@ -98,7 +107,7 @@ public final class Main implements SocksSupport {
                     CipherKind.AES_128_GCM.getCipherName(), shadowServer.right.getPassword());
             ssConfig.setMemoryMode(MemoryMode.MEDIUM);
             ssConfig.setConnectTimeoutMillis(connectTimeout.right);
-            SocksConfig directConf = new SocksConfig(port.right, TransportFlags.NONE.flags());
+            SocksConfig directConf = new SocksConfig(port.right);
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);

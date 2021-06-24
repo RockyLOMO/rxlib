@@ -141,6 +141,10 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void suid() {
+        String jstr = toJsonString(SUID.randomSUID());
+        SUID sid = fromJson(jstr, SUID.class);
+        assert jstr.substring(1, jstr.length() - 1).equals(sid.toString());
+
         Map<Integer, Long> map = new HashMap<>();
         for (int i = 0; i < 10; i++) {
             map.put(i, System.nanoTime());

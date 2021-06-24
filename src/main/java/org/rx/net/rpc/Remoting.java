@@ -308,9 +308,7 @@ public final class Remoting {
     }
 
     public static ServerBean listen(Object contractInstance, int listenPort) {
-        RpcServerConfig config = new RpcServerConfig();
-        config.setListenPort(listenPort);
-        return listen(contractInstance, config);
+        return listen(contractInstance, new RpcServerConfig(listenPort));
     }
 
     public static ServerBean listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {

@@ -33,8 +33,8 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
         Channel inbound = ctx.channel();
         if (outbound == null) {
             InetSocketAddress dstEndpoint = inbound.attr(SSCommon.REMOTE_DEST).get();
-            UnresolvedEndpoint destinationEp = new UnresolvedEndpoint(dstEndpoint.getHostString(), dstEndpoint.getPort());
-            Upstream upstream = server.router.invoke(destinationEp);
+            Upstream upstream = server.router.invoke(new UnresolvedEndpoint(dstEndpoint.getHostString(), dstEndpoint.getPort()));
+            UnresolvedEndpoint destinationEp = upstream.getEndpoint();
 
             if (SocksSupport.FAKE_IPS.contains(destinationEp.getHost()) || !Sockets.isValidIp(destinationEp.getHost())) {
                 SUID hash = SUID.compute(destinationEp.toString());
@@ -48,7 +48,7 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                 pipeline.addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        log.info("{}[{}] timeout {}", finalDestinationEp, upstream.getEndpoint(), state);
+                        log.info("{}[{}] timeout {}", dstEndpoint, finalDestinationEp, state);
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
@@ -57,11 +57,11 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                 pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
             }).connect(destinationEp.toSocketAddress()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("connect to backend {}[{}] fail", finalDestinationEp, upstream.getEndpoint(), f.cause());
+                    log.error("connect to backend {}[{}] fail", dstEndpoint, finalDestinationEp, f.cause());
                     Sockets.closeOnFlushed(inbound);
                     return;
                 }
-                log.info("connect to backend {}[{}]", finalDestinationEp, upstream.getEndpoint());
+                log.info("connect to backend {}[{}]", dstEndpoint, finalDestinationEp);
             }).channel();
         }
 

@@ -12,11 +12,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.net.Sockets;
+import org.rx.net.TransportUtil;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.PredicateFunc;
 
 import java.util.function.BiConsumer;
 
@@ -24,6 +26,7 @@ import java.util.function.BiConsumer;
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = DirectUpstream::new;
+    public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == 53;
     public volatile BiConsumer<SocksProxyServer, ReconnectingEventArgs> onReconnecting;
 
     @Getter
@@ -32,6 +35,8 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final BiFunc<UnresolvedEndpoint, Upstream> router;
+    @Setter
+    private PredicateFunc<UnresolvedEndpoint> aesRouter;
     @Setter
     SocksSupport support;
 
@@ -61,7 +66,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
                     new ProxyChannelIdleHandler());
 //            SocksPortUnificationServerHandler
-            SslUtil.addFrontendHandler(channel, config.getTransportFlags());
+            TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));
@@ -78,5 +83,13 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
+    }
+
+    @SneakyThrows
+    boolean aesRouter(UnresolvedEndpoint dstEp) {
+        if (aesRouter == null) {
+            return false;
+        }
+        return aesRouter.invoke(dstEp);
     }
 }

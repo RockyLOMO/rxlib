@@ -8,7 +8,7 @@ import org.rx.core.NQuery;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.socks.SslUtil;
+import org.rx.net.TransportUtil;
 import org.rx.net.support.UnresolvedEndpoint;
 
 public class Socks5Upstream extends Upstream {
@@ -32,7 +32,7 @@ public class Socks5Upstream extends Upstream {
             throw new InvalidException("ProxyHandlers is empty");
         }
 
-        SslUtil.addBackendHandler(channel, config.getTransportFlags(), getEndpoint().toSocketAddress());
+        TransportUtil.addBackendHandler(channel, config, getEndpoint().toSocketAddress());
         channel.pipeline().addLast(proxyHandlers.next());
     }
 }

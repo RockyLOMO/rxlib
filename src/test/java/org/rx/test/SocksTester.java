@@ -12,7 +12,6 @@ import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
-import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
@@ -20,13 +19,14 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.shadowsocks.ShadowsocksClient;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
+import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
@@ -99,8 +99,7 @@ public class SocksTester {
     @Test
     public void rpc_StatefulImpl() {
         //服务端监听
-        RpcServerConfig serverConfig = new RpcServerConfig();
-        serverConfig.setListenPort(3307);
+        RpcServerConfig serverConfig = new RpcServerConfig(3307);
         serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
 //        serverConfig.getEventBroadcastVersions().add(2);  //版本号一致才广播
         UserManagerImpl server = new UserManagerImpl();
@@ -227,19 +226,25 @@ public class SocksTester {
 //        System.in.read();
     }
 
-    int connectTimeout = 30000;
+    int connectTimeoutMillis = 30000;
 
     @SneakyThrows
     @Test
     public void ssProxy() {
-        SocksConfig backConf = new SocksConfig(1082, TransportFlags.NONE.flags());
+        SocksConfig backConf = new SocksConfig(1082);
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
+
+        DnsServer frontDnsSvr = new DnsServer(853);
+        UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
 
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.parseEndpoint("127.0.0.1:1081"),
                 CipherKind.AES_128_GCM.getCipherName(), "123456");
-//        ShadowsocksServer server = new ShadowsocksServer(config,
-//                dstEp -> new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082")));
-        ShadowsocksServer server = new ShadowsocksServer(config, null);
+        ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
+            if (dstEp.equals(loopbackDns)) {
+                return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
+            }
+            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082"));
+        });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
 
@@ -249,17 +254,26 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        int connectTimeoutMillis = 60000;
-        SocksConfig backConf = new SocksConfig(1081, TransportFlags.FRONTEND_COMPRESS.flags());
+        SocksConfig backConf = new SocksConfig(1081);
+        backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer backSvr = new SocksProxyServer(backConf);
-        Remoting.listen(new Main(backSvr), 1181);
+        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        SocksConfig frontConf = new SocksConfig(1090, TransportFlags.BACKEND_COMPRESS.flags());
+        RpcServerConfig rpcServerConf = new RpcServerConfig(1181);
+        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.listen(new Main(backSvr), rpcServerConf);
+
+        SocksConfig frontConf = new SocksConfig(1090);
+        frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 dstEp -> new Socks5Upstream(dstEp, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
-        SocksSupport support = Remoting.create(SocksSupport.class, RpcClientConfig.poolMode("127.0.0.1:1181", 2));
+        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+
+        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:1181", 2);
+        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        SocksSupport support = Remoting.create(SocksSupport.class, rpcClientConf);
         frontSvr.setSupport(support);
         sleep(2000);
         support.addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
@@ -270,11 +284,14 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void directProxy() {
-        SslDirectConfig frontConf = new SslDirectConfig(3307, TransportFlags.BACKEND_ALL.flags());
-        SslDirectServer frontSvr = new SslDirectServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
+        DirectConfig frontConf = new DirectConfig(3307);
+        frontConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+        DirectProxyServer frontSvr = new DirectProxyServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
 
-        SslDirectConfig backConf = new SslDirectConfig(3308, TransportFlags.FRONTEND_ALL.flags());
-        SslDirectServer backSvr = new SslDirectServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
+        DirectConfig backConf = new DirectConfig(3308);
+        backConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
+        DirectProxyServer backSvr = new DirectProxyServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
+
         System.in.read();
     }
 
@@ -284,9 +301,9 @@ public class SocksTester {
         DnsServer server = new DnsServer(53);
         server.getCustomHosts().put("devops.f-li.cn", new byte[]{2, 2, 2, 2});
 
-        //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-//        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
-//        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
+//        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
+        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
+        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
 
 //        sleep(2000);
 //        DnsClient client = new DnsClient(Sockets.parseEndpoint("192.168.31.7:853"));

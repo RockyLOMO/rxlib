@@ -2,14 +2,9 @@ package org.rx.net.rpc.impl;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.handler.codec.compression.ZlibCodecFactory;
-import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.codec.serialization.ObjectEncoder;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.Attribute;
@@ -25,6 +20,7 @@ import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.DuplexHandler;
 import org.rx.net.Sockets;
+import org.rx.net.TransportUtil;
 import org.rx.net.rpc.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.net.rpc.packet.HandshakePacket;
@@ -188,13 +184,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
         bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
-            if (config.isEnableSsl()) {
-                SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-                pipeline.addLast(sslCtx.newHandler(channel.alloc(), config.getServerEndpoint().getHostString(), config.getServerEndpoint().getPort()));
-            }
-            if (config.isEnableCompress()) {
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP), ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-            }
+            TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());
@@ -205,9 +195,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             return;
         }
         ManualResetEvent connectWaiter = new ManualResetEvent();
-        future.addListener((ChannelFutureListener) f -> {
+        future.addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.error("connect {} fail", config.getServerEndpoint(), f.cause());
                 f.channel().close();
                 if (autoReconnect) {
                     reconnect(connectWaiter);

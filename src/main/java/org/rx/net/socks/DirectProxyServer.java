@@ -6,31 +6,28 @@ import io.netty.channel.*;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.net.Sockets;
+import org.rx.net.TransportUtil;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-@Slf4j
-public final class SslDirectServer extends Disposable {
+public final class DirectProxyServer extends Disposable {
     class RequestHandler extends ChannelInboundHandlerAdapter {
         @SneakyThrows
         @Override
         public void channelActive(ChannelHandlerContext inbound) {
             InetSocketAddress proxyEndpoint = router.invoke((InetSocketAddress) inbound.channel().remoteAddress());
-            log.debug("connect to backend {}", proxyEndpoint);
             ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
             Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
                 ChannelPipeline pipeline = channel.pipeline();
-                SslUtil.addBackendHandler(channel, config.getTransportFlags(), proxyEndpoint);
+                TransportUtil.addBackendHandler(channel, config, proxyEndpoint);
                 pipeline.addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
             });
-            bootstrap.connect(proxyEndpoint).addListener((ChannelFutureListener) f -> {
+            bootstrap.connect(proxyEndpoint).addListeners(Sockets.logConnect(proxyEndpoint), (ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("Connect to backend {} fail", proxyEndpoint, f.cause());
                     Sockets.closeOnFlushed(inbound.channel());
                     return;
                 }
@@ -41,15 +38,15 @@ public final class SslDirectServer extends Disposable {
     }
 
     @Getter
-    final SslDirectConfig config;
+    final DirectConfig config;
     final ServerBootstrap serverBootstrap;
     final BiFunc<InetSocketAddress, InetSocketAddress> router;
 
-    public SslDirectServer(@NonNull SslDirectConfig config, @NonNull BiFunc<InetSocketAddress, InetSocketAddress> router) {
+    public DirectProxyServer(@NonNull DirectConfig config, @NonNull BiFunc<InetSocketAddress, InetSocketAddress> router) {
         this.config = config;
         serverBootstrap = Sockets.serverBootstrap(channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-            SslUtil.addFrontendHandler(channel, config.getTransportFlags());
+            TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(new RequestHandler());
         });
         serverBootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));

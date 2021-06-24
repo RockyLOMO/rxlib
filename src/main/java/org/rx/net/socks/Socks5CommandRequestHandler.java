@@ -12,6 +12,8 @@ import org.rx.core.Cache;
 import org.rx.core.StringBuilder;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
+import org.rx.net.TransportUtil;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -91,7 +93,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.warn("socks5[{}] connect to backend {}[{}] fail", server.getConfig().getListenPort(), finalDestinationEp, e.getUpstream().getEndpoint(), f.cause());
+                log.error("socks5[{}] connect fail, dstEp={}[{}]", server.getConfig().getListenPort(),
+                        finalDestinationEp, e.getUpstream().getEndpoint(), f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
@@ -99,15 +102,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             StringBuilder aesMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
             SocksConfig config = server.getConfig();
-            if (config.getAESPorts().contains(finalDestinationEp.getPort()) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
+            if (server.aesRouter(finalDestinationEp) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.BACKEND_COMPRESS)) {
-                        ChannelHandler[] handlers = new AESCodec(SocksConfig.DNS_KEY).channelHandlers();
+                        ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                            outbound.pipeline().addAfter(TransportUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                         }
-//                        SslUtil.addBackendHandler(outbound, TransportFlags.BACKEND_AES.flags(), finalDestinationAddress, false);
 //                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
                         aesMsg.append("[BACKEND_AES]");
                     }
@@ -133,18 +135,17 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
 
             SocksConfig config = server.getConfig();
-            if (config.getAESPorts().contains(destinationEp.getPort()) && config.getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
-                ChannelHandler[] handlers = new AESCodec(SocksConfig.DNS_KEY).channelHandlers();
+            if (server.aesRouter(destinationEp) && config.getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
+                ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
-                    inbound.pipeline().addAfter(SslUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                    inbound.pipeline().addAfter(TransportUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                 }
-//            SslUtil.addFrontendHandler(inbound.channel(), TransportFlags.FRONTEND_AES.flags());
 //                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
                 extMsg.append("[FRONTEND_AES]");
             }
-            log.info("socks5[{}] {} connect to backend {}, dstEp={}[{}] {}", config.getListenPort(),
-                    inbound.channel(), outbound, destinationEp, realEp, extMsg.toString());
+            log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(),
+                    inbound.channel().localAddress(), outbound.remoteAddress(), destinationEp, realEp, extMsg.toString());
         });
     }
 }

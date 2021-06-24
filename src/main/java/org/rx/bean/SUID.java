@@ -1,18 +1,43 @@
 package org.rx.bean;
 
+import com.alibaba.fastjson.annotation.JSONType;
+import com.alibaba.fastjson.parser.DefaultJSONParser;
+import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
+import com.alibaba.fastjson.serializer.JSONSerializer;
+import com.alibaba.fastjson.serializer.ObjectSerializer;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import org.rx.core.StringBuilder;
 import org.rx.io.Bytes;
 import org.rx.security.MD5Util;
 
+import java.io.IOException;
 import java.io.Serializable;
+import java.lang.reflect.Type;
 import java.util.Base64;
 import java.util.UUID;
 
+@JSONType(serializer = SUID.Serializer.class, deserializer = SUID.Serializer.class)
 @EqualsAndHashCode
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class SUID implements Serializable {
+    public static class Serializer implements ObjectSerializer, ObjectDeserializer {
+        @Override
+        public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
+            return (T) SUID.valueOf(parser.parse().toString());
+        }
+
+        @Override
+        public int getFastMatchToken() {
+            return 0;
+        }
+
+        @Override
+        public void write(JSONSerializer serializer, Object object, Object fieldName, Type fieldType, int features) throws IOException {
+            serializer.write(object.toString());
+        }
+    }
+
     private static final long serialVersionUID = -8613691951420514734L;
 
     public static SUID compute(String data) {

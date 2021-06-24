@@ -25,7 +25,7 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
         }
 
         Channel outbound = ctx.channel();
-        log.debug("{} flush forwarded to {} -> {}", inbound.channel().remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        log.debug("{} flush forwarded to {} => {}", inbound.channel().remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         Sockets.writeAndFlush(outbound, outboundPendingPackages);
     }
 
@@ -36,7 +36,7 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
         }
 
         Channel outbound = ctx.channel();
-        log.debug("{} -> {} forwarded to {}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress());
+        log.debug("{} => {} forwarded to {}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress());
         inbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
@@ -48,7 +48,7 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel outbound = ctx.channel();
-        log.warn("{} -> {} forwarded to {} thrown", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress(), cause);
+        log.warn("{} => {} forwarded to {} thrown", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress(), cause);
         Sockets.closeOnFlushed(outbound);
     }
 }

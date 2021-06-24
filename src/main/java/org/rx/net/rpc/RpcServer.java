@@ -2,14 +2,9 @@ package org.rx.net.rpc;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.handler.codec.compression.ZlibCodecFactory;
-import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.codec.serialization.ObjectEncoder;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -24,6 +19,7 @@ import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.DuplexHandler;
 import org.rx.net.Sockets;
+import org.rx.net.TransportUtil;
 import org.rx.net.rpc.packet.HandshakePacket;
 import org.rx.net.rpc.packet.PingMessage;
 
@@ -184,15 +180,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
-            if (config.isEnableSsl()) {
-                SelfSignedCertificate ssc = new SelfSignedCertificate();
-                SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-                pipeline.addLast(sslCtx.newHandler(channel.alloc()));
-            }
-            if (config.isEnableCompress()) {
-                pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP),
-                        ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-            }
+            TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());

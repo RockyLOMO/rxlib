@@ -1,4 +1,4 @@
-package org.rx.net.socks;
+package org.rx.net;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
@@ -8,19 +8,20 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.FlagsEnum;
-import org.rx.net.AESCodec;
-import org.rx.security.AESUtil;
+import org.rx.core.exception.InvalidException;
 
 import java.net.InetSocketAddress;
 
-public class SslUtil {
+public class TransportUtil {
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
 
     @SneakyThrows
-    public static void addFrontendHandler(Channel channel, FlagsEnum<TransportFlags> flags) {
+    public static void addFrontendHandler(Channel channel, @NonNull SocketConfig config) {
+        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return;
         }
@@ -32,7 +33,10 @@ public class SslUtil {
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
         if (flags.has(TransportFlags.FRONTEND_AES)) {
-            pipeline.addLast(new AESCodec(AESUtil.dailyKey()).channelHandlers());
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
         if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
@@ -41,7 +45,8 @@ public class SslUtil {
     }
 
     @SneakyThrows
-    public static void addBackendHandler(Channel channel, FlagsEnum<TransportFlags> flags, InetSocketAddress remoteEndpoint) {
+    public static void addBackendHandler(Channel channel, @NonNull SocketConfig config, InetSocketAddress remoteEndpoint) {
+        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return;
         }
@@ -52,7 +57,10 @@ public class SslUtil {
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
         }
         if (flags.has(TransportFlags.BACKEND_AES)) {
-            pipeline.addLast(new AESCodec(AESUtil.dailyKey()).channelHandlers());
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
         if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))

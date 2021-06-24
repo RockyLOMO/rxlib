@@ -189,8 +189,14 @@ public final class Sockets {
         };
     }
 
-    public static  ChannelFutureListener logConnect(InetSocketAddress endpoint){
-
+    public static ChannelFutureListener logConnect(InetSocketAddress endpoint) {
+        return f -> {
+            if (!f.isSuccess()) {
+                log.error("TCP Connect {} fail", endpoint, f.cause());
+                return;
+            }
+            log.info("TCP Connected {}", endpoint);
+        };
     }
 
     public static void dumpPipeline(String name, Channel channel) {
