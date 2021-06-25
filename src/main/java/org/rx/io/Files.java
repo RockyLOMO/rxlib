@@ -27,6 +27,10 @@ public class Files extends FilenameUtils {
     @Getter
     private static final CurdFile<File> curdFile = new LocalCurdFile();
 
+    public static boolean isDirectory(String path) {
+        return curdFile.isDirectory(path);
+    }
+
     public static void saveDirectory(String path) {
         curdFile.saveDirectory(path);
     }
@@ -37,10 +41,6 @@ public class Files extends FilenameUtils {
 
     public static void delete(String path) {
         curdFile.delete(path);
-    }
-
-    public static boolean isDirectory(String path) {
-        return curdFile.isDirectory(path);
     }
 
     public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {

@@ -391,7 +391,7 @@ public class CoreTester extends TestUtil {
 //            return null;
         }), new ErrorBean()};
         System.out.println(toJsonString(args));
-        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
+        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false, false)), false)));
 
         String str = "abc";
         assert str.equals(toJsonString(str));

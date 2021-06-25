@@ -10,7 +10,7 @@ import java.io.*;
 public final class HybridStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
-    private MemoryStream memoryStream = new MemoryStream();
+    private MemoryStream memoryStream = new MemoryStream(256, true, true);
     private FileStream fileStream;
     @Setter
     private String name;

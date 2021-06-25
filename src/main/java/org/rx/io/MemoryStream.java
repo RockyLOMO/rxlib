@@ -1,165 +1,43 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import lombok.NonNull;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
-import org.rx.bean.$;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 
 import java.io.*;
-import java.util.Arrays;
 
-import static org.rx.core.App.*;
+import static org.rx.core.App.values;
 
-public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStream.BytesWriter> implements Serializable {
-    private static final long serialVersionUID = 1171318600626020868L;
-
-    public static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = Integer.MAX_VALUE;
-
-        public int getPosition() {
-            return count;
-        }
-
-        public synchronized void setPosition(int position) {
-            require(position, minPosition <= position);
-
-            count = position;
-        }
-
-        public int getLength() {
-            return length;
-        }
-
-        public synchronized void setLength(int length) {
-            require(length, length <= maxLength);
-
-            this.length = length;
-        }
-
-        public synchronized byte[] getBuffer() {
-            return buf;
-        }
-
-        public synchronized void setBuffer(@NonNull byte[] buffer) {
-            buf = buffer;
-        }
-
-        public BytesWriter(int capacity) {
-            super(capacity);
-        }
-
-        public BytesWriter(@NonNull byte[] buffer, int offset, int count, boolean nonResizable) {
-            super(0);
-            require(offset, offset >= 0);
-            if (nonResizable) {
-                require(count, offset + count <= buffer.length);
-                minPosition = offset;
-                maxLength = count;
-            }
-
-            setBuffer(buffer);
-            setPosition(offset);
-            setLength(count);
-        }
-
-        @Override
-        public synchronized void write(int b) {
-            beforeWrite(1);
-            super.write(b);
-            afterWrite();
-        }
-
-        @Override
-        public synchronized void write(@NonNull byte[] b, int off, int len) {
-            beforeWrite(len);
-            super.write(b, off, len);
-            afterWrite();
-        }
-
-        private void beforeWrite(int count) {
-            require(count, getPosition() + count < maxLength);
-        }
-
-        private void afterWrite() {
-            if (getPosition() > getLength()) {
-                setLength(getPosition());
-            }
-        }
-
-        @Override
-        public synchronized void writeTo(@NonNull OutputStream out) throws IOException {
-            out.write(getBuffer(), minPosition, getLength());
-        }
-
-        @Override
-        public int size() {
-            return getLength();
-        }
-
-        @Override
-        public void reset() {
-            setPosition(minPosition);
-        }
-    }
-
-    public static final class BytesReader extends ByteArrayInputStream {
-        public int getPosition() {
-            return pos;
-        }
-
-        public synchronized void setPosition(int position) {
-            this.pos = position;
-        }
-
-        public int getLength() {
-            return count;
-        }
-
-        public synchronized void setLength(int length) {
-            count = length;
-        }
-
-        public BytesReader(byte[] buffer, int offset, int count) {
-            super(buffer);
-            setBuffer(buffer, offset, count, offset);
-        }
-
-        public synchronized void setBuffer(@NonNull byte[] buffer, int offset, int count, int mark) {
-            require(offset, offset >= 0);
-            //require(count, offset + count < buffer.length);
-
-            this.buf = buffer;
-            this.pos = offset;
-            this.count = count;
-            this.mark = mark;
-        }
-    }
-
+public final class MemoryStream extends IOStream<InputStream, OutputStream> implements Serializable {
+    private static final long serialVersionUID = 6209361024929311435L;
     @Setter
     private String name;
+    private boolean directBuffer;
     private boolean publiclyVisible;
+    @Getter
+    private transient ByteBuf buffer;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
-        BytesWriter writer = getWriter();
-        out.writeInt(writer.getPosition());
-        out.writeInt(writer.getLength());
-        out.write(writer.getBuffer(), 0, writer.getLength());
+        out.writeInt((int) getPosition());
+        out.writeInt((int) getLength());
+        setPosition(0);
+        copyTo(getReader(), out);
     }
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         int pos = in.readInt();
         int len = in.readInt();
-        BytesWriter writer = new BytesWriter(new byte[len], 0, len, false);
-        setWriter(writer);
-        copyTo(in, len, writer);
-        writer.setPosition(pos);
-        initReader(publiclyVisible);
+        buffer = directBuffer ? Bytes.directBuffer(len, true) : Bytes.heapBuffer(len, true);
+        setLength(len);
+        copyTo(in, getWriter());
+        setPosition(pos);
     }
 
     @Override
@@ -171,9 +49,46 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     }
 
     @Override
-    public MemoryStream.BytesReader getReader() {
-        checkRead();
-        return super.getReader();
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int available() {
+                    return buffer.readableBytes();
+                }
+
+                @Override
+                public int read() {
+                    if (buffer.readableBytes() == 0) {
+                        return -1;
+                    }
+                    return buffer.readByte();
+                }
+            };
+        }
+        return reader;
+    }
+
+    @Override
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(int b) {
+                    buffer.writerIndex(buffer.readerIndex());
+                    buffer.writeByte(b);
+                    buffer.readerIndex(buffer.writerIndex());
+                }
+
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    buffer.writerIndex(buffer.readerIndex());
+                    buffer.writeBytes(b, off, len);
+                    buffer.readerIndex(buffer.writerIndex());
+                }
+            };
+        }
+        return writer;
     }
 
     @Override
@@ -183,141 +98,96 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
 
     @Override
     public long getPosition() {
-        return getWriter().getPosition();
+        return buffer.readerIndex();
     }
 
     @Override
     public void setPosition(long position) {
-        checkNotClosed();
+        if (position > Integer.MAX_VALUE) {
+            throw new InvalidException("position > Integer.MAX_VALUE");
+        }
 
-        getWriter().setPosition((int) position);
-        checkRead();
+        buffer.readerIndex((int) position);
     }
 
     @Override
     public long getLength() {
-        return getWriter().getLength();
+        return buffer.writerIndex();
     }
 
     public void setLength(int length) {
-        checkNotClosed();
-
-        getWriter().setLength(length);
-        checkRead();
+        buffer.writerIndex(length);
     }
 
     @ErrorCode
-    public byte[] getBuffer() {
+    public ByteBuf getBuffer() {
         checkNotClosed();
         if (!publiclyVisible) {
             throw new ApplicationException(values());
         }
 
-        return getWriter().getBuffer();
+        return buffer;
     }
 
     public MemoryStream() {
-        this(32, false);
+        this(256, false, false);
     }
 
-    public MemoryStream(int capacity, boolean publiclyVisible) {
-        super(null, new BytesWriter(capacity));
-        initReader(publiclyVisible);
-    }
-
-    public MemoryStream(byte[] buffer, int offset, int count) {
-        this(buffer, offset, count, true, false);
-    }
-
-    public MemoryStream(byte[] buffer, int offset, int count, boolean nonResizable, boolean publiclyVisible) {
-        super(null, new BytesWriter(buffer, offset, count, nonResizable));
-        initReader(publiclyVisible);
-    }
-
-    private void initReader(boolean publiclyVisible) {
-        BytesWriter writer = getWriter();
-        setReader(new BytesReader(writer.getBuffer(), writer.getPosition(), writer.getLength()));
+    public MemoryStream(int initialCapacity, boolean directBuffer, boolean publiclyVisible) {
+        super(null, null);
+        buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity, true) : Bytes.heapBuffer(initialCapacity, true);
         this.publiclyVisible = publiclyVisible;
     }
 
-    private void checkRead() {
-        BytesWriter writer = getWriter();
-        super.getReader().setBuffer(writer.getBuffer(), writer.getPosition(), writer.getLength(), writer.minPosition);
+    public MemoryStream(byte[] buffer, int offset, int length) {
+        super(null, null);
+        this.buffer = Bytes.wrap(buffer, offset, length);
     }
 
     @Override
-    public long available() {
-        checkRead();
-        return super.available();
+    protected void freeObjects() {
+        buffer.release();
     }
 
-    @Override
-    public int read() {
-        checkRead();
-        return super.read();
+    public void write(ByteBuf src) {
+        buffer.writeBytes(src);
     }
 
-    @Override
-    public int read(byte[] buffer, int offset, int count) {
-        checkRead();
-        int size = super.read(buffer, offset, count);
-        setPosition(getPosition() + size);
-        return size;
+    public void write(ByteBuf src, int length) {
+        buffer.writeBytes(src, length);
     }
 
-    @Override
-    public void copyTo(OutputStream out) {
-        checkNotClosed();
-
-        checkRead();
-        super.copyTo(out);
+    public void write(ByteBuf src, int srcIndex, int length) {
+        buffer.writeBytes(src, srcIndex, length);
     }
 
-    @Override
-    public void write(int b) {
-        super.write(b);
-        checkRead();
+    public void read(ByteBuf dst) {
+        buffer.readBytes(dst);
     }
 
-    @Override
-    public void write(byte[] buffer, int offset, int count) {
-        super.write(buffer, offset, count);
-        checkRead();
+    public void read(ByteBuf dst, int length) {
+        buffer.readBytes(dst, length);
     }
 
-    @Override
-    public void write(InputStream in, long count) {
-        super.write(in, count);
-        checkRead();
+    public void read(ByteBuf dst, int dstIndex, int length) {
+        buffer.readBytes(dst, dstIndex, length);
     }
 
-    public void writeTo(@NonNull IOStream<?, ?> out) {
-        writeTo(out.getWriter());
+    public void write(IOStream<?, ?> stream, int length) {
+        write(stream.getReader(), length);
     }
 
     @SneakyThrows
-    public void writeTo(@NonNull OutputStream out) {
-        checkNotClosed();
-
-        getWriter().writeTo(out);
+    public void write(InputStream in, int length) {
+        buffer.writeBytes(in, length);
     }
 
-    public boolean tryGetBuffer($<ByteBuf> out) {
-        checkNotClosed();
-
-        if (out == null || !publiclyVisible) {
-            return false;
-        }
-        BytesWriter writer = getWriter();
-        out.v = Bytes.wrap(writer.getBuffer(), writer.getPosition(), writer.getLength());
-        return true;
+    public void read(IOStream<?, ?> stream, int length) {
+        read(stream.getWriter(), length);
     }
 
-    @Override
-    public synchronized byte[] toArray() {
-        checkNotClosed();
-
-        BytesWriter writer = getWriter();
-        return Arrays.copyOf(writer.getBuffer(), writer.getLength());
+    @SneakyThrows
+    public void read(OutputStream out, int length) {
+        buffer.readBytes(out, length);
     }
 }

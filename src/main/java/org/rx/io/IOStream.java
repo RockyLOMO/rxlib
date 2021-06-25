@@ -82,7 +82,8 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     @SneakyThrows
     public static <T extends Serializable> IOStream<?, ?> serialize(@NonNull T obj) {
-        HybridStream stream = new HybridStream();
+//        HybridStream stream = new HybridStream();
+        MemoryStream stream = new MemoryStream();
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         out.writeObject(obj);  //close 会关闭stream
         out.flush();

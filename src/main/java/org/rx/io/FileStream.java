@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
 import org.rx.bean.SUID;
@@ -32,7 +33,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return temp;
     }
 
-    private File file;
+    private String name;
     private BufferedRandomAccessFile.FileMode fileMode;
     transient BufferedRandomAccessFile randomAccessFile;
     transient final Map<BiTuple<FileChannel.MapMode, Long, Long>, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
@@ -40,6 +41,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
+        out.writeUTF(randomAccessFile.getPath());
         out.writeLong(getPosition());
         copyTo(out);
     }
@@ -49,6 +51,13 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (fileMode == BufferedRandomAccessFile.FileMode.READ_ONLY) {
             fileMode = BufferedRandomAccessFile.FileMode.READ_WRITE;
         }
+        File file;
+        String absolutePath = in.readUTF();
+        if (!absolutePath.startsWith("/")) {
+            file = createTempFile();
+        } else {
+            file = new File(absolutePath);
+        }
         randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
         long pos = in.readLong();
         copyTo(in, this.getWriter());
@@ -56,12 +65,12 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     public String getPath() {
-        return file.getPath();
+        return randomAccessFile.getPath();
     }
 
     @Override
     public String getName() {
-        return file.getName();
+        return FilenameUtils.getName(getPath());
     }
 
     @SneakyThrows
