@@ -12,6 +12,7 @@ import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
+import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.RestClient;
@@ -19,6 +20,7 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.shadowsocks.ShadowsocksClient;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
@@ -298,16 +300,20 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void dns() {
+        final String domain = "devops.f-li.cn";
+        final InetAddress hostResult = InetAddress.getByName("2.2.2.2");
         DnsServer server = new DnsServer(53);
-        server.getCustomHosts().put("devops.f-li.cn", new byte[]{2, 2, 2, 2});
+        server.getCustomHosts().put(domain, hostResult.getAddress());
 
 //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
         System.out.println(Sockets.getAddresses("devops.f-li.cn"));
 
-//        sleep(2000);
-//        DnsClient client = new DnsClient(Sockets.parseEndpoint("192.168.31.7:853"));
-//        System.out.println(client.resolve("google.com"));
+        sleep(2000);
+        DnsClient client = new DnsClient(Sockets.parseEndpoint("127.0.0.1:53"));
+        InetAddress result = client.resolve(domain);
+
+        assert result.equals(hostResult);
 
         System.in.read();
     }

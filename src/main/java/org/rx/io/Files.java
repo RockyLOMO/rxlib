@@ -27,8 +27,8 @@ public class Files extends FilenameUtils {
     @Getter
     private static final CurdFile<File> curdFile = new LocalCurdFile();
 
-    public static void createDirectory(String path) {
-        curdFile.createDirectory(path);
+    public static void saveDirectory(String path) {
+        curdFile.saveDirectory(path);
     }
 
     public static void saveFile(String filePath, InputStream in) {

@@ -18,7 +18,7 @@ public class MemoryStream extends IOStream<MemoryStream.BytesReader, MemoryStrea
     private static final long serialVersionUID = 1171318600626020868L;
 
     public static final class BytesWriter extends ByteArrayOutputStream {
-        private volatile int minPosition, length, maxLength = MAX_INT;
+        private volatile int minPosition, length, maxLength = Integer.MAX_VALUE;
 
         public int getPosition() {
             return count;

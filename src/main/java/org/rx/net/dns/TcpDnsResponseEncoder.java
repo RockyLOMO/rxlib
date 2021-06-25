@@ -4,13 +4,24 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageEncoder;
-import io.netty.handler.codec.dns.*;
+import io.netty.handler.codec.dns.DnsRecordEncoder;
+import io.netty.handler.codec.dns.DnsResponse;
+import io.netty.handler.codec.dns.DnsSection;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.List;
 
 @ChannelHandler.Sharable
-public class TcpDnsResponseEncoder extends MessageToMessageEncoder<DnsResponse> {
-    private final DnsRecordEncoder encoder = DnsRecordEncoder.DEFAULT;
+public final class TcpDnsResponseEncoder extends MessageToMessageEncoder<DnsResponse> {
+    private final DnsRecordEncoder encoder;
+
+    public TcpDnsResponseEncoder() {
+        this(DnsRecordEncoder.DEFAULT);
+    }
+
+    public TcpDnsResponseEncoder(DnsRecordEncoder encoder) {
+        this.encoder = ObjectUtil.checkNotNull(encoder, "encoder");
+    }
 
     @Override
     protected void encode(ChannelHandlerContext ctx, DnsResponse response, List<Object> out) throws Exception {
@@ -19,10 +30,10 @@ public class TcpDnsResponseEncoder extends MessageToMessageEncoder<DnsResponse> 
         try {
             buf.writerIndex(buf.writerIndex() + 2);
             encodeHeader(response, buf);
-            this.encodeQuestions(response, buf);
-            this.encodeRecords(response, DnsSection.ANSWER, buf);
-            this.encodeRecords(response, DnsSection.AUTHORITY, buf);
-            this.encodeRecords(response, DnsSection.ADDITIONAL, buf);
+            encodeQuestions(response, buf);
+            encodeRecords(response, DnsSection.ANSWER, buf);
+            encodeRecords(response, DnsSection.AUTHORITY, buf);
+            encodeRecords(response, DnsSection.ADDITIONAL, buf);
             buf.setShort(0, buf.readableBytes() - 2);
             success = true;
         } finally {
@@ -61,14 +72,14 @@ public class TcpDnsResponseEncoder extends MessageToMessageEncoder<DnsResponse> 
     private void encodeQuestions(DnsResponse response, ByteBuf buf) throws Exception {
         int count = response.count(DnsSection.QUESTION);
         for (int i = 0; i < count; ++i) {
-            this.encoder.encodeQuestion(response.recordAt(DnsSection.QUESTION, i), buf);
+            encoder.encodeQuestion(response.recordAt(DnsSection.QUESTION, i), buf);
         }
     }
 
     private void encodeRecords(DnsResponse response, DnsSection section, ByteBuf buf) throws Exception {
         int count = response.count(section);
         for (int i = 0; i < count; ++i) {
-            this.encoder.encodeRecord(response.recordAt(section, i), buf);
+            encoder.encodeRecord(response.recordAt(section, i), buf);
         }
     }
 }

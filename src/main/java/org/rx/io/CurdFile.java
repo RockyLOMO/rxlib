@@ -1,25 +1,12 @@
 package org.rx.io;
 
+import org.apache.commons.io.FilenameUtils;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 
 import java.io.InputStream;
 
 public interface CurdFile<T> {
-    void createDirectory(String path);
-
-    void saveFile(String filePath, InputStream in);
-
-    void delete(String path);
-
-    boolean isDirectory(String path);
-
-    boolean exists(String path);
-
-    NQuery<T> listDirectories(String directoryPath, boolean recursive);
-
-    NQuery<T> listFiles(String directoryPath, boolean recursive);
-
     default String padDirectoryPath(String path) {
         if (Strings.isEmpty(path)) {
             return Strings.EMPTY;
@@ -31,4 +18,25 @@ public interface CurdFile<T> {
         char separatorChar = path.lastIndexOf('\\') != -1 ? '\\' : '/';
         return path + separatorChar;
     }
+
+    default boolean isDirectory(String path) {
+        if (Strings.isEmpty(path)) {
+            throw new IllegalArgumentException("path");
+        }
+
+        char ch = path.charAt(path.length() - 1);
+        return ch == '/' || ch == '\\' || Strings.isEmpty(FilenameUtils.getExtension(path));
+    }
+
+    void saveDirectory(String path);
+
+    NQuery<T> listDirectories(String directoryPath, boolean recursive);
+
+    void saveFile(String filePath, InputStream in);
+
+    NQuery<T> listFiles(String directoryPath, boolean recursive);
+
+    boolean exists(String path);
+
+    void delete(String path);
 }

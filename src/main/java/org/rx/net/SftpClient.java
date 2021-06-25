@@ -85,33 +85,6 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
         session.disconnect();
     }
 
-    @SneakyThrows
-    @Override
-    public void createDirectory(String remotePath) {
-        String dirPath = FilenameUtils.getFullPath(remotePath);
-        if (exists(dirPath)) {
-            return;
-        }
-        channel.mkdir(dirPath);
-    }
-
-    @Override
-    public void saveFile(String remotePath, InputStream in) {
-        uploadFile(IOStream.wrap(FilenameUtils.getName(remotePath), in), remotePath);
-    }
-
-    @SneakyThrows
-    public void delete(String remotePath) {
-        if (isDirectory(remotePath)) {
-            for (SftpFile file : listFiles(remotePath, true)) {
-                channel.rm(file.getPath());
-            }
-            channel.rmdir(remotePath);
-            return;
-        }
-        channel.rm(remotePath);
-    }
-
     @Override
     public boolean isDirectory(String remotePath) {
         if (Strings.isEmpty(remotePath)) {
@@ -131,6 +104,33 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
             log.warn("exists", e);
         }
         return false;
+    }
+
+    @SneakyThrows
+    public void delete(String remotePath) {
+        if (isDirectory(remotePath)) {
+            for (SftpFile file : listFiles(remotePath, true)) {
+                channel.rm(file.getPath());
+            }
+            channel.rmdir(remotePath);
+            return;
+        }
+        channel.rm(remotePath);
+    }
+
+    @SneakyThrows
+    @Override
+    public void saveDirectory(String remotePath) {
+        String dirPath = FilenameUtils.getFullPath(remotePath);
+        if (exists(dirPath)) {
+            return;
+        }
+        channel.mkdir(dirPath);
+    }
+
+    @Override
+    public void saveFile(String remotePath, InputStream in) {
+        uploadFile(IOStream.wrap(FilenameUtils.getName(remotePath), in), remotePath);
     }
 
     @Override
@@ -191,12 +191,12 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
             remotePath = padDirectoryPath(remotePath) + stream.getName();
         }
 
-        createDirectory(remotePath);
+        saveDirectory(remotePath);
         channel.put(stream.getReader(), remotePath);
     }
 
     public void downloadFile(String remotePath, String localPath) {
-        Files.createDirectory(localPath);
+        Files.saveDirectory(localPath);
 
         downloadFile(remotePath, IOStream.wrap(localPath));
     }
