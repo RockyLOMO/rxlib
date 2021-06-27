@@ -27,12 +27,13 @@ public class IOTester {
 
     @Test
     public void hybridStream() {
-        HybridStream stream = new HybridStream(16);
-        testSeekStream(stream); // 12 len
+        HybridStream stream = new HybridStream(70, null);
+        testSeekStream(stream);
 
-        byte[] bytes = "wanglezhi".getBytes();
-        stream.write(bytes);
-        assert stream.getPosition() == 12 + bytes.length && stream.getLength() == stream.getPosition();
+        long position = stream.getPosition();
+        System.out.println(position);
+        stream.write(content);
+        assert stream.getPosition() == position + content.length && stream.getLength() == stream.getPosition();
         byte[] data = new byte[(int) stream.getLength()];
         stream.setPosition(0L);
         stream.read(data);
@@ -100,7 +101,8 @@ public class IOTester {
     }
 
     final boolean doWrite = true;
-    final String nameFormat = "C:\\download\\%s.txt";
+    final String nameFormat = "D:\\download\\%s.txt";
+    final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @SneakyThrows
     @Test
@@ -183,8 +185,6 @@ public class IOTester {
         System.out.println(toJsonString(bean));
         System.out.println(toJsonString(newBean));
     }
-
-    final byte[] content = "Hello world, 王湵范!".getBytes();
 
     private void testSeekStream(IOStream<?, ?> stream) {
         stream.write(content);

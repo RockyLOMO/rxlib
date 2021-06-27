@@ -175,7 +175,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         long totalMemory = os.getTotalPhysicalMemorySize();
         return new MonitorInfo(os.getAvailableProcessors(), os.getSystemCpuLoad(), threads.getThreadCount(),
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
-                Cache.getOrSet(cacheKey("getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace())), Cache.LOCAL_CACHE));
+                Cache.<String, NQuery<DiskMonitorInfo>>getInstance(Cache.LOCAL_CACHE).get(cacheKey("getBean"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace()))));
     }
 
     public ThreadInfo[] findDeadlockedThreads() {

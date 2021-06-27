@@ -4,13 +4,16 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RxConfig;
 
-import java.io.*;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Serializable;
 
 @Slf4j
 public final class HybridStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
-    private MemoryStream memoryStream = new MemoryStream(256, true, true);
+    private final String tempFilePath;
+    private MemoryStream memoryStream = new MemoryStream();
     private FileStream fileStream;
     @Setter
     private String name;
@@ -19,9 +22,9 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
         if (fileStream != null) {
             return fileStream;
         }
-        if (memoryStream.getLength() >= maxMemorySize) {
-            log.debug("MemorySize: {}, switch to FileStream", maxMemorySize);
-            memoryStream.copyTo(fileStream = new FileStream());
+        if (memoryStream.getLength() > maxMemorySize) {
+            log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
+            memoryStream.copyTo(fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath));
             fileStream.setPosition(memoryStream.getPosition());
             memoryStream = null;
             return fileStream;
@@ -68,12 +71,13 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public HybridStream() {
-        this(RxConfig.MAX_HEAP_BUF_SIZE);
+        this(RxConfig.MAX_HEAP_BUF_SIZE, null);
     }
 
-    public HybridStream(int maxMemorySize) {
+    public HybridStream(int maxMemorySize, String tempFilePath) {
         super(null, null);
         this.maxMemorySize = maxMemorySize;
+        this.tempFilePath = tempFilePath;
     }
 
     @Override

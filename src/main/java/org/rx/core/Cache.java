@@ -1,34 +1,27 @@
 package org.rx.core;
 
 import lombok.NonNull;
-import org.rx.core.cache.LocalCache;
-import org.rx.core.cache.ThreadCache;
+import org.rx.core.cache.CaffeineCache;
+import org.rx.core.cache.PersistentCache;
+import org.rx.core.exception.ApplicationException;
+import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.rx.core.App.*;
 
-public interface Cache<TK, TV> {
-    int NON_EXPIRE_MINUTES = 0;
-    String LRU_CACHE = "LruCache";
+public interface Cache<TK, TV> extends ConcurrentMap<TK, TV> {
     String LOCAL_CACHE = "localCache";
-    String THREAD_CACHE = "ThreadCache";
+    String DISTRIBUTED_CACHE = "distributedCache";
 
-    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier) {
-        return getOrSet(key, supplier, NON_EXPIRE_MINUTES);
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
+        return getOrSet(key, loadingFunc, CacheExpirations.NON_EXPIRE);
     }
 
-    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, int expireMinutes) {
-        return getOrSet(key, supplier, expireMinutes, App.getConfig().getDefaultCache());
-    }
-
-    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> supplier, String cacheName) {
-        return getOrSet(key, supplier, NON_EXPIRE_MINUTES, cacheName);
-    }
-
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> supplier, int expireMinutes, String cacheName) {
-        return Cache.<TK, TV>getInstance(cacheName).get(key, supplier, expireMinutes);
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpirations expirations) {
+        return Cache.<TK, TV>getInstance(App.getConfig().getDefaultCache()).get(key, loadingFunc, expirations);
     }
 
     static <TK, TV> Cache<TK, TV> getInstance() {
@@ -38,42 +31,49 @@ public interface Cache<TK, TV> {
     static <TK, TV> Cache<TK, TV> getInstance(String name) {
         return Container.getInstance().getOrRegister(name, () -> {
             switch (name) {
-                case THREAD_CACHE:
-                    return new ThreadCache<>();
                 case LOCAL_CACHE:
-                    return new LocalCache<>(2);
+                    return (Cache<TK, TV>) CaffeineCache.SLIDING_CACHE;
+                case DISTRIBUTED_CACHE:
+                    return (Cache<TK, TV>) PersistentCache.DEFAULT;
                 default:
-                    return new LocalCache<>();
+                    throw new InvalidException("Cache provider %s not exists", name);
             }
         });
     }
 
-    long size();
+    default TV get(TK key, BiFunc<TK, TV> loadingFunc) {
+        return computeIfAbsent(key, k -> {
+            try {
+                TV val = loadingFunc.invoke(k);
+                if (val == null) {
+                    throw new InvalidException("Loading result is null");
+                }
+                return val;
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        });
+    }
 
-    Set<TK> keySet();
+    default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpirations expirations) {
+        return get(key, loadingFunc);
+    }
 
-    TV put(TK key, TV val);
+    Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc);
 
-    default TV put(TK key, TV value, int expireMinutes) {
+    Map<TK, TV> getAll(Iterable<TK> keys);
+
+    default TV put(TK key, TV value, CacheExpirations expirations) {
         return put(key, value);
     }
 
-    TV remove(TK key);
-
-    default void remove(TK key, boolean destroy) {
+    default TV remove(TK key, boolean destroy) {
         TV v = remove(key);
         if (destroy) {
             tryClose(v);
         }
+        return v;
     }
 
-    void clear();
-
-    TV get(TK key);
-
-    TV get(TK key, BiFunc<TK, TV> supplier);
-
-    default TV get(TK key, BiFunc<TK, TV> supplier, int expireMinutes) {
-        return get(key, supplier);
-    }
+    void removeAll(Iterable<TK> keys);
 }

@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
 
+@Slf4j
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
@@ -33,7 +35,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return temp;
     }
 
-    private String name;
     private BufferedRandomAccessFile.FileMode fileMode;
     transient BufferedRandomAccessFile randomAccessFile;
     transient final Map<BiTuple<FileChannel.MapMode, Long, Long>, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
@@ -51,14 +52,16 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (fileMode == BufferedRandomAccessFile.FileMode.READ_ONLY) {
             fileMode = BufferedRandomAccessFile.FileMode.READ_WRITE;
         }
-        File file;
-        String absolutePath = in.readUTF();
-        if (!absolutePath.startsWith("/")) {
+        File file = new File(in.readUTF());
+        if (file.exists()) {
             file = createTempFile();
-        } else {
-            file = new File(absolutePath);
         }
-        randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        try {
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        } catch (Exception e) {
+            log.warn("readObject", e);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        }
         long pos = in.readLong();
         copyTo(in, this.getWriter());
         setPosition(pos);
@@ -157,7 +160,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @SneakyThrows
     public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
         super(null, null);
-        this.randomAccessFile = new BufferedRandomAccessFile(this.file = file, this.fileMode = mode, size);
+        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
     }
 
     @SneakyThrows

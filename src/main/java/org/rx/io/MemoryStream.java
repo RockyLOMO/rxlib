@@ -1,7 +1,6 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.annotation.ErrorCode;
@@ -19,7 +18,6 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     private String name;
     private boolean directBuffer;
     private boolean publiclyVisible;
-    @Getter
     private transient ByteBuf buffer;
 
     private void writeObject(ObjectOutputStream out) throws IOException {

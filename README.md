@@ -1,3 +1,5 @@
+[![Java CI](https://github.com/RockyLOMO/rxlib/actions/workflows/maven.yml/badge.svg)](https://github.com/RockyLOMO/rxlib/actions/workflows/maven.yml)
+
 # ℞lib-java
 A set of utilities for Java.
 
@@ -6,7 +8,7 @@ A set of utilities for Java.
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.17.4</version>
+    <version>2.17.3</version>
 </dependency>
 ```
 

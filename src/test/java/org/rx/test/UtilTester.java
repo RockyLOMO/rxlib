@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.buffer.ByteBufUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -18,6 +19,9 @@ import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.SoftReference;
+import java.lang.ref.WeakReference;
 import java.text.MessageFormat;
 import java.util.Collections;
 import java.util.List;
@@ -64,8 +68,15 @@ public class UtilTester {
         System.out.println("log:" + App.log("hello {}!", 1, new InvalidException("a").level(ExceptionLevel.USER_OPERATION)));
     }
 
+    WeakReference<Integer> x = new WeakReference<>(10);
     @Test
     public void security() {
-
+//        SoftReference<Integer> x = new SoftReference<>(10);
+        System.out.println(x.get());
+        
+        for (int i = 0; i < 10; i++) {
+            System.gc();
+            System.out.println("x:"+x.get());
+        }
     }
 }
