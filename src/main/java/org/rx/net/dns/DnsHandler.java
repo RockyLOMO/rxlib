@@ -5,12 +5,10 @@ import io.netty.channel.*;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.rx.core.App;
 import org.rx.core.Cache;
 import org.rx.core.NQuery;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
-import org.rx.security.AESUtil;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -49,9 +47,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
         if (server.support != null) {
-            App.logMetric("host", domain);
             //未命中也缓存
-            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> isNull(server.support.resolveHost(AESUtil.encryptToBase64(domain)), Collections.emptyList()));
+            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> isNull(server.support.resolveHost(domain), Collections.emptyList()));
             if (CollectionUtils.isEmpty(address)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

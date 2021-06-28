@@ -6,9 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
-import org.rx.core.App;
-import org.rx.core.Arrays;
-import org.rx.core.Cache;
+import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
@@ -70,11 +68,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 && (SocksSupport.FAKE_IPS.contains(destinationEp.getHost()) || !Sockets.isValidIp(destinationEp.getHost()))
         ) {
             String dstEpStr = destinationEp.toString();
-            App.logMetric(String.format("socks5[%s]_dstEp", server.getConfig().getListenPort()), dstEpStr);
+            App.logMetric(String.format("socks5[%s]", server.getConfig().getListenPort()), Strings.EMPTY);
             SUID hash = SUID.compute(dstEpStr);
             quietly(() -> {
                 Cache.getOrSet(hash, k -> {
-                    server.support.fakeEndpoint(hash, AESUtil.encryptToBase64(dstEpStr));
+                    server.support.fakeEndpoint(hash, dstEpStr);
                     return true;
                 });
             });

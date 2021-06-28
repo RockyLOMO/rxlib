@@ -67,7 +67,7 @@ public final class Main implements SocksSupport {
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             RpcServerConfig rpcConf = new RpcServerConfig(port.right + 1);
-            rpcConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+            rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
             Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
@@ -85,7 +85,7 @@ public final class Main implements SocksSupport {
 
             app = new Main(frontSvr);
             RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 4);
-            rpcConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+            rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
             SocksSupport support = Remoting.create(SocksSupport.class, rpcConf);
             frontSvr.setSupport(support);
 
@@ -128,13 +128,11 @@ public final class Main implements SocksSupport {
 
     @Override
     public void fakeEndpoint(SUID hash, String endpoint) {
-        endpoint = AESUtil.decryptFromBase64(endpoint);
         SocksSupport.HOST_DICT.put(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
     @Override
     public List<InetAddress> resolveHost(String host) {
-        host = AESUtil.decryptFromBase64(host);
         return outlandClient.resolveAll(host);
     }
 
