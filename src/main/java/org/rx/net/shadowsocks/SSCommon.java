@@ -14,7 +14,6 @@ public class SSCommon {
     public static final AttributeKey<InetSocketAddress> REMOTE_SRC = AttributeKey.valueOf("REMOTE_SRC");
     public static final AttributeKey<Socks5CommandRequest> REMOTE_SOCKS5_DEST = AttributeKey.valueOf("REMOTE_SOCKS5_DEST");
 
-    public static final int TCP_PROXY_IDLE_TIME = 60 * 4;
     public static final int UDP_PROXY_IDLE_TIME = 60 * 4;
     //udp proxy,when is dns proxy,listener timeout
     public static final int UDP_DNS_PROXY_IDLE_TIME = 10;

@@ -297,6 +297,10 @@ public class CoreTester extends TestUtil {
         Cache<Tuple<?, ?>, Integer> cache = Cache.getInstance(Cache.LOCAL_CACHE);
         cache.put(key, 100);
         assert cache.get(key).equals(100);
+        Tasks.scheduleOnce(() -> {
+            assert cache.get(Tuple.of(1, "a")) == null;
+            log.info("LOCAL_CACHE ok");
+        }, 3 * 60 * 1000);
 
         PersistentCache<Serializable, GirlBean> pCache = (PersistentCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
         pCache.put(key, new GirlBean());
@@ -307,12 +311,7 @@ public class CoreTester extends TestUtil {
         pCache.clear();
         pCache.loadFromDisk();
         assert pCache.get(key) != null;
-        log.info("pCache ok");
-
-        Tasks.scheduleOnce(() -> {
-            assert cache.get(Tuple.of(1, "a")) == null;
-            System.out.println("ok");
-        }, 3 * 60 * 1000);
+        log.info("PersistentCache ok");
 
         System.in.read();
     }

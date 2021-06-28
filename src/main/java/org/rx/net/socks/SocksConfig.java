@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SocksConfig extends SocketConfig {
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds;
+    private int readTimeoutSeconds = 60 * 60 * 24;
     private int writeTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();

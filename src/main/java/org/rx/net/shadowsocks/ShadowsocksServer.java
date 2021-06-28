@@ -44,7 +44,7 @@ public class ShadowsocksServer extends Disposable {
             _crypto.setForUdp(false);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                     log.info("{} timeout {}", ctx.remoteAddress(), state);
