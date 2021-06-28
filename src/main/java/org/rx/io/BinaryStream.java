@@ -114,7 +114,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
         HybridStream serialize = new HybridStream();
         serialize.write(this, len);
         serialize.setPosition(0L);
-        return IOStream.deserialize(serialize);
+        return IOStream.deserialize(serialize, true);
     }
 
     @SneakyThrows

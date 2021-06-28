@@ -31,46 +31,19 @@ public class FileWatcher extends Disposable {
     }
 
     @Getter
-    private String directoryPath;
-    private WatchService service;
+    private final String directoryPath;
     private volatile boolean keepHandle;
-    private Future<?> future;
-    private final List<Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>>> callback;
+    private final WatchService service;
+    private final Future<?> future;
+    private final List<Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>>> callback = new CopyOnWriteArrayList<>();
 
     @SneakyThrows
     public FileWatcher(String directoryPath) {
         this.directoryPath = directoryPath;
-        callback = new CopyOnWriteArrayList<>();
 
-        Files.createDirectory(directoryPath);
+        Files.saveDirectory(directoryPath);
         service = FileSystems.getDefault().newWatchService();
         Paths.get(directoryPath).register(service, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE);
-    }
-
-    @SneakyThrows
-    @Override
-    protected void freeObjects() {
-        stop();
-        service.close();
-        service = null;
-    }
-
-    public boolean tryPeek(@NonNull TripleAction<ChangeKind, Path> onChange) {
-        WatchKey key = service.poll();
-        if (key == null) {
-            return false;
-        }
-        for (WatchEvent<?> event : key.pollEvents()) {
-            raiseEvent(event, Tuple.of(onChange, null));
-        }
-        key.reset();
-        return true;
-    }
-
-    public synchronized FileWatcher start() {
-        if (future != null) {
-            return this;
-        }
 
         keepHandle = true;
         future = Tasks.run(() -> {
@@ -85,9 +58,28 @@ public class FileWatcher extends Disposable {
                     key.reset();
                 });
             }
-            return null;
         });
-        return this;
+    }
+
+    @SneakyThrows
+    @Override
+    protected void freeObjects() {
+        keepHandle = false;
+        future.cancel(false);
+        callback.clear();
+        service.close();
+    }
+
+    public boolean tryPeek(@NonNull TripleAction<ChangeKind, Path> onChange) {
+        WatchKey key = service.poll();
+        if (key == null) {
+            return false;
+        }
+        for (WatchEvent<?> event : key.pollEvents()) {
+            raiseEvent(event, Tuple.of(onChange, null));
+        }
+        key.reset();
+        return true;
     }
 
     public FileWatcher callback(TripleAction<ChangeKind, Path> onChange) {
@@ -124,16 +116,5 @@ public class FileWatcher extends Disposable {
         for (Tuple<TripleAction<ChangeKind, Path>, Predicate<Path>> tuple : callback) {
             tuple.left.invoke(kind, changedPath);
         }
-    }
-
-    public synchronized void stop() {
-        if (future == null) {
-            return;
-        }
-
-        future.cancel(false);
-        future = null;
-        keepHandle = false;
-        callback.clear();
     }
 }

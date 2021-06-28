@@ -54,7 +54,7 @@ import static java.lang.Math.pow;
 @SuppressWarnings(App.NON_WARNING)
 public final class App extends SystemUtils {
     public static final String NON_WARNING = "all", CACHE_KEY_SUFFIX = ":";
-    public static final int TIMEOUT_INFINITE = -1, MAX_INT = Integer.MAX_VALUE - 8;
+    public static final int TIMEOUT_INFINITE = -1;
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -529,9 +529,7 @@ public final class App extends SystemUtils {
 
         InvalidException invalidException = as(e, InvalidException.class);
         if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-            if (!Tasks.raiseUncaughtException(format, args)) {
-                log.error(format, args);
-            }
+            log.error(format, args);
         } else {
             format += "\t{}";
             args[args.length - 1] = e.getMessage();
@@ -742,7 +740,7 @@ public final class App extends SystemUtils {
 
     public static <T extends Serializable> T deepClone(T obj) {
         IOStream<?, ?> serialize = IOStream.serialize(obj);
-        return IOStream.deserialize(serialize);
+        return IOStream.deserialize(serialize, true);
     }
     //endregion
 }

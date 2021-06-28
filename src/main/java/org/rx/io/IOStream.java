@@ -2,6 +2,7 @@ package org.rx.io;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RxConfig;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
@@ -80,9 +81,13 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         out.write(value.getBytes(charset));
     }
 
+    public static <T extends Serializable> IOStream<?, ?> serialize(T obj) {
+        return serialize(obj, RxConfig.MAX_HEAP_BUF_SIZE, null);
+    }
+
     @SneakyThrows
-    public static <T extends Serializable> IOStream<?, ?> serialize(@NonNull T obj) {
-        HybridStream stream = new HybridStream();
+    public static <T extends Serializable> HybridStream serialize(@NonNull T obj, int maxMemorySize, String tempFilePath) {
+        HybridStream stream = new HybridStream(maxMemorySize, tempFilePath);
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         out.writeObject(obj);  //close 会关闭stream
         out.flush();
@@ -90,13 +95,22 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return stream;
     }
 
-    @SneakyThrows
-    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream) {
-        ObjectInputStream in = new ObjectInputStream(stream.getReader());
-        return (T) in.readObject();
+    public static <T extends Serializable> T deserialize(IOStream<?, ?> stream) {
+        return deserialize(stream, false);
     }
 
-    //from FileChannelImpl#unmap
+    @SneakyThrows
+    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveClose) {
+        try {
+            ObjectInputStream in = new ObjectInputStream(stream.getReader());
+            return (T) in.readObject();
+        } finally {
+            if (leveClose) {
+                stream.close();
+            }
+        }
+    }
+
     //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
     public static void release(@NonNull ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {

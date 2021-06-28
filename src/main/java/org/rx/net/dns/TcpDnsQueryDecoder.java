@@ -1,20 +1,22 @@
 package org.rx.net.dns;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.dns.*;
-import lombok.extern.slf4j.Slf4j;
+import io.netty.util.internal.ObjectUtil;
 
-@Slf4j
-//@ChannelHandler.Sharable
-public class TcpDnsQueryDecoder extends LengthFieldBasedFrameDecoder {
-    private final DnsRecordDecoder decoder = DnsRecordDecoder.DEFAULT;
+public final class TcpDnsQueryDecoder extends LengthFieldBasedFrameDecoder {
+    private final DnsRecordDecoder decoder;
 
     public TcpDnsQueryDecoder() {
-        super(Short.MAX_VALUE, 0, 2, 0, 2);
+        this(DnsRecordDecoder.DEFAULT, Integer.MAX_VALUE);
+    }
+
+    public TcpDnsQueryDecoder(DnsRecordDecoder decoder, int maxFrameLength) {
+        super(maxFrameLength, 0, 2, 0, 2);
+        this.decoder = ObjectUtil.checkNotNull(decoder, "decoder");
     }
 
     @Override
@@ -32,11 +34,10 @@ public class TcpDnsQueryDecoder extends LengthFieldBasedFrameDecoder {
             int answerCount = buf.readUnsignedShort();
             int authorityRecordCount = buf.readUnsignedShort();
             int additionalRecordCount = buf.readUnsignedShort();
-            this.decodeQuestions(query, buf, questionCount);
-            this.decodeRecords(query, DnsSection.ANSWER, buf, answerCount);
-            this.decodeRecords(query, DnsSection.AUTHORITY, buf, authorityRecordCount);
-            this.decodeRecords(query, DnsSection.ADDITIONAL, buf, additionalRecordCount);
-            log.debug("dnsQuery:{}", query);
+            decodeQuestions(query, buf, questionCount);
+            decodeRecords(query, DnsSection.ANSWER, buf, answerCount);
+            decodeRecords(query, DnsSection.AUTHORITY, buf, authorityRecordCount);
+            decodeRecords(query, DnsSection.ADDITIONAL, buf, additionalRecordCount);
             success = true;
             return query;
         } finally {
@@ -44,11 +45,6 @@ public class TcpDnsQueryDecoder extends LengthFieldBasedFrameDecoder {
                 query.release();
             }
         }
-    }
-
-    @Override
-    protected ByteBuf extractFrame(ChannelHandlerContext ctx, ByteBuf buffer, int index, int length) {
-        return buffer.copy(index, length);
     }
 
     private static DnsQuery newQuery(ByteBuf buf) {
@@ -66,13 +62,13 @@ public class TcpDnsQueryDecoder extends LengthFieldBasedFrameDecoder {
 
     private void decodeQuestions(DnsQuery query, ByteBuf buf, int questionCount) throws Exception {
         for (int i = questionCount; i > 0; --i) {
-            query.addRecord(DnsSection.QUESTION, this.decoder.decodeQuestion(buf));
+            query.addRecord(DnsSection.QUESTION, decoder.decodeQuestion(buf));
         }
     }
 
     private void decodeRecords(DnsQuery query, DnsSection section, ByteBuf buf, int count) throws Exception {
         for (int i = count; i > 0; --i) {
-            DnsRecord r = this.decoder.decodeRecord(buf);
+            DnsRecord r = decoder.decodeRecord(buf);
             if (r == null) {
                 break;
             }

@@ -3,6 +3,8 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
 import org.rx.bean.SUID;
@@ -20,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
 
+@Slf4j
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
@@ -32,7 +35,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return temp;
     }
 
-    private File file;
     private BufferedRandomAccessFile.FileMode fileMode;
     transient BufferedRandomAccessFile randomAccessFile;
     transient final Map<BiTuple<FileChannel.MapMode, Long, Long>, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
@@ -40,6 +42,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
+        out.writeUTF(randomAccessFile.getPath());
         out.writeLong(getPosition());
         copyTo(out);
     }
@@ -49,19 +52,28 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (fileMode == BufferedRandomAccessFile.FileMode.READ_ONLY) {
             fileMode = BufferedRandomAccessFile.FileMode.READ_WRITE;
         }
-        randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        File file = new File(in.readUTF());
+        if (file.exists()) {
+            file = createTempFile();
+        }
+        try {
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        } catch (Exception e) {
+            log.warn("readObject", e);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        }
         long pos = in.readLong();
         copyTo(in, this.getWriter());
         setPosition(pos);
     }
 
     public String getPath() {
-        return file.getPath();
+        return randomAccessFile.getPath();
     }
 
     @Override
     public String getName() {
-        return file.getName();
+        return FilenameUtils.getName(getPath());
     }
 
     @SneakyThrows
@@ -148,7 +160,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @SneakyThrows
     public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
         super(null, null);
-        this.randomAccessFile = new BufferedRandomAccessFile(this.file = file, this.fileMode = mode, size);
+        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
     }
 
     @SneakyThrows
