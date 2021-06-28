@@ -54,7 +54,11 @@ class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
     @Override
     public void delete(String path) {
+        File file = new File(path);
+        if (!file.exists()) {
+            return;
+        }
 //        java.nio.file.Files.delete(), FileUtils.deleteQuietly();  DirectoryNotEmptyException
-        FileUtils.forceDelete(new File(path));
+        FileUtils.forceDelete(file);
     }
 }

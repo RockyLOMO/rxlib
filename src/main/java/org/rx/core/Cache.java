@@ -20,23 +20,27 @@ public interface Cache<TK, TV> extends ConcurrentMap<TK, TV> {
         return getOrSet(key, loadingFunc, CacheExpirations.NON_EXPIRE);
     }
 
+    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc, String cacheName) {
+        return getOrSet(key, loadingFunc, CacheExpirations.NON_EXPIRE, cacheName);
+    }
+
     static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpirations expirations) {
-        return Cache.<TK, TV>getInstance(App.getConfig().getDefaultCache()).get(key, loadingFunc, expirations);
+        return getOrSet(key, loadingFunc, expirations, App.getConfig().getDefaultCache());
     }
 
-    static <TK, TV> Cache<TK, TV> getInstance() {
-        return getInstance(App.getConfig().getDefaultCache());
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpirations expirations, String cacheName) {
+        return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expirations);
     }
 
-    static <TK, TV> Cache<TK, TV> getInstance(String name) {
-        return Container.getInstance().getOrRegister(name, () -> {
-            switch (name) {
+    static <TK, TV> Cache<TK, TV> getInstance(String cacheName) {
+        return Container.getInstance().getOrRegister(cacheName, () -> {
+            switch (cacheName) {
                 case LOCAL_CACHE:
                     return (Cache<TK, TV>) CaffeineCache.SLIDING_CACHE;
                 case DISTRIBUTED_CACHE:
                     return (Cache<TK, TV>) PersistentCache.DEFAULT;
                 default:
-                    throw new InvalidException("Cache provider %s not exists", name);
+                    throw new InvalidException("Cache provider %s not exists", cacheName);
             }
         });
     }

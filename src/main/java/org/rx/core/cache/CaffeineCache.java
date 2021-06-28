@@ -33,7 +33,7 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public boolean containsKey(Object key) {
-        return cache.getIfPresent((TK) key) != null;
+        return cache.getIfPresent(key) != null;
     }
 
     @Override
@@ -43,7 +43,7 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV get(Object key) {
-        return cache.getIfPresent((TK) key);
+        return cache.getIfPresent(key);
     }
 
     @Override

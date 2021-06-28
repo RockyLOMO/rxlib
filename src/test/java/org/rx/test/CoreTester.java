@@ -10,6 +10,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.cache.PersistentCache;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.MemoryStream;
@@ -19,6 +20,7 @@ import org.rx.util.RedoTimer;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
@@ -284,6 +286,34 @@ public class CoreTester extends TestUtil {
             }
         }, 2000);
         System.out.println("main thread done");
+        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void cache() {
+        Tuple<Integer, String> key = Tuple.of(1, "a");
+
+        Cache<Tuple<?, ?>, Integer> cache = Cache.getInstance(Cache.LOCAL_CACHE);
+        cache.put(key, 100);
+        assert cache.get(key).equals(100);
+
+        PersistentCache<Serializable, GirlBean> pCache = (PersistentCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+        pCache.put(key, new GirlBean());
+        assert pCache.get(key) != null;
+        sleep(8000);
+        pCache.saveToDisk();
+        sleep(8000);
+        pCache.clear();
+        pCache.loadFromDisk();
+        assert pCache.get(key) != null;
+        log.info("pCache ok");
+
+        Tasks.scheduleOnce(() -> {
+            assert cache.get(Tuple.of(1, "a")) == null;
+            System.out.println("ok");
+        }, 3 * 60 * 1000);
+
         System.in.read();
     }
 

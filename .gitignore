@@ -9,3 +9,4 @@ logs/
 config.json
 bootstrapPath_IS_UNDEFINED
 .DS_Store
+RxCache.db

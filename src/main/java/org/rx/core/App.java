@@ -529,9 +529,7 @@ public final class App extends SystemUtils {
 
         InvalidException invalidException = as(e, InvalidException.class);
         if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-            if (!Tasks.raiseUncaughtException(format, args)) {
-                log.error(format, args);
-            }
+            log.error(format, args);
         } else {
             format += "\t{}";
             args[args.length - 1] = e.getMessage();
@@ -742,7 +740,7 @@ public final class App extends SystemUtils {
 
     public static <T extends Serializable> T deepClone(T obj) {
         IOStream<?, ?> serialize = IOStream.serialize(obj);
-        return IOStream.deserialize(serialize);
+        return IOStream.deserialize(serialize, true);
     }
     //endregion
 }

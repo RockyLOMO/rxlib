@@ -101,7 +101,7 @@ public class IOTester {
     }
 
     final boolean doWrite = true;
-    final String nameFormat = "D:\\download\\%s.txt";
+    final String nameFormat = "C:\\download\\%s.txt";
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @SneakyThrows

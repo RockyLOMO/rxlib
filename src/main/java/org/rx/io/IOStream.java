@@ -95,10 +95,20 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return stream;
     }
 
+    public static <T extends Serializable> T deserialize(IOStream<?, ?> stream) {
+        return deserialize(stream, false);
+    }
+
     @SneakyThrows
-    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream) {
-        ObjectInputStream in = new ObjectInputStream(stream.getReader());
-        return (T) in.readObject();
+    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveClose) {
+        try {
+            ObjectInputStream in = new ObjectInputStream(stream.getReader());
+            return (T) in.readObject();
+        } finally {
+            if (leveClose) {
+                stream.close();
+            }
+        }
     }
 
     //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED

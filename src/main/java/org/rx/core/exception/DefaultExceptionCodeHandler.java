@@ -18,13 +18,13 @@ import static org.rx.core.App.*;
 @Slf4j
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     protected Map<String, Object> getMessageSource() {
-        return Cache.<String, Map<String, Object>>getInstance(Cache.LOCAL_CACHE).get(cacheKey("getMessageSource"), k -> {
+        return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
             Map<String, Object> codes = loadYaml("errorCode.yml");
             if (codes.isEmpty()) {
                 log.warn("load errorCode.yml fail");
             }
             return codes;
-        });
+        }, Cache.LOCAL_CACHE);
     }
 
     @SneakyThrows
@@ -72,10 +72,10 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(Cache.<String, Tuple<Class, Method[]>>getInstance(Cache.LOCAL_CACHE).get(stack.getClassName(), p -> {
+            Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
                 Class type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
-            }), Tuple.class);
+            }, Cache.LOCAL_CACHE), Tuple.class);
             if (caller == null) {
                 continue;
             }
