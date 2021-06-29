@@ -45,7 +45,7 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
             UnresolvedEndpoint finalDestinationEp = destinationEp;
             outbound = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> {
                 ChannelPipeline pipeline = ch.pipeline();
-                pipeline.addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+                pipeline.addLast(new IdleStateHandler(0, 0, server.config.getTcpIdleTime(), TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                         log.info("{}[{}] timeout {}", dstEndpoint, finalDestinationEp, state);

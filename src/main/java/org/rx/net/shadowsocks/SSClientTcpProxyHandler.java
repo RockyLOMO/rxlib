@@ -39,7 +39,7 @@ public class SSClientTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                 ch.attr(SSCommon.IS_UDP).set(false);
                 ch.attr(SSCommon.CIPHER).set(CryptoFactory.get(config.getMethod(), config.getPassword()));
 
-                ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+                ch.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                         Sockets.closeOnFlushed(outbound);

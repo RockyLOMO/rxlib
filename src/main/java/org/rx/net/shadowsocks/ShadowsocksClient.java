@@ -24,14 +24,14 @@ public class ShadowsocksClient extends Disposable {
     public ShadowsocksClient(int localSocksPort, ShadowsocksConfig config) {
         this.config = config;
         tcpBootstrap = Sockets.serverBootstrap(ctx -> {
-            ctx.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.TCP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
-                                       @Override
-                                       protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                                           ctx.close();
-                                           return super.newIdleStateEvent(state, first);
-                                       }
-                                   },
-                    new SocksPortUnificationServerHandler(), SocksServerHandler.INSTANCE,
+            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
+                @Override
+                protected IdleStateEvent newIdleStateEvent (IdleState state,boolean first){
+                    ctx.close();
+                    return super.newIdleStateEvent(state, first);
+                }
+            },
+            new SocksPortUnificationServerHandler(), SocksServerHandler.INSTANCE,
                     new SSClientTcpProxyHandler(config));
         });
         tcpBootstrap.bind(localSocksPort).addListener(f -> {

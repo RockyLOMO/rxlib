@@ -55,12 +55,22 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
                     return buffer.readableBytes();
                 }
 
+                //byte -1?
                 @Override
                 public int read() {
                     if (buffer.readableBytes() == 0) {
                         return -1;
                     }
                     return buffer.readByte();
+                }
+
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    if (buffer.readableBytes() == 0) {
+                        return -1;
+                    }
+                    buffer.readBytes(b, off, len);
+                    return len;
                 }
             };
         }
