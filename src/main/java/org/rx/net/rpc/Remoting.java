@@ -207,6 +207,7 @@ public final class Remoting {
             } catch (ClientDisconnectedException e) {
                 if (!client.isAutoReconnect()) {
                     pool.returnClient(client);
+                    sync.v = null;
                     throw e;
                 }
 

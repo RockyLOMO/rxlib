@@ -88,7 +88,12 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 }
 
                 @Override
-                public int read() throws IOException {
+                public int read(byte[] b, int off, int len) {
+                    return FileStream.this.read(b, off, len);
+                }
+
+                @Override
+                public int read() {
                     return FileStream.this.read();
                 }
             });
@@ -104,12 +109,17 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 //            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
             setWriter(new OutputStream() {
                 @Override
-                public void write(int b) throws IOException {
+                public void write(byte[] b, int off, int len) {
+                    FileStream.this.write(b, off, len);
+                }
+
+                @Override
+                public void write(int b) {
                     FileStream.this.write(b);
                 }
 
                 @Override
-                public void flush() throws IOException {
+                public void flush() {
                     FileStream.this.flush();
                 }
             });

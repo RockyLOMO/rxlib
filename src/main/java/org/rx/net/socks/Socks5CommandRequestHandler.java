@@ -16,7 +16,6 @@ import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.security.AESUtil;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 

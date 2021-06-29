@@ -23,6 +23,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         GenericObjectPoolConfig<StatefulRpcClient> config = new GenericObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);
+        config.setTestOnReturn(true);
         config.setJmxEnabled(false);
         config.setMaxWaitMillis(template.getConnectTimeoutMillis());
         config.setMinIdle(App.getConfig().getNetMinPoolSize());
@@ -80,10 +81,15 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         return client;
     }
 
+    @SneakyThrows
     @Override
     public StatefulRpcClient returnClient(StatefulRpcClient client) {
         checkNotClosed();
 
+//        if (!client.isAutoReconnect() && !client.isConnected()) {
+//            pool.invalidateObject(client);
+//            return null;
+//        }
         log.debug("Return RpcClient {}", client);
         pool.returnObject(client); //调用多次同一对象会hang
 //        log.debug("Return RpcClient {} ok", client);

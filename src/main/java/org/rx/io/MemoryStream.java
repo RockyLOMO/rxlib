@@ -55,15 +55,6 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
                     return buffer.readableBytes();
                 }
 
-                //byte -1?
-                @Override
-                public int read() {
-                    if (buffer.readableBytes() == 0) {
-                        return -1;
-                    }
-                    return buffer.readByte();
-                }
-
                 @Override
                 public int read(byte[] b, int off, int len) {
                     if (buffer.readableBytes() == 0) {
@@ -71,6 +62,15 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
                     }
                     buffer.readBytes(b, off, len);
                     return len;
+                }
+
+                //byte -1?
+                @Override
+                public int read() {
+                    if (buffer.readableBytes() == 0) {
+                        return -1;
+                    }
+                    return buffer.readByte();
                 }
             };
         }
@@ -82,16 +82,16 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         if (writer == null) {
             writer = new OutputStream() {
                 @Override
-                public void write(int b) {
+                public void write(byte[] b, int off, int len) {
                     buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeByte(b);
+                    buffer.writeBytes(b, off, len);
                     buffer.readerIndex(buffer.writerIndex());
                 }
 
                 @Override
-                public void write(byte[] b, int off, int len) throws IOException {
+                public void write(int b) {
                     buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeBytes(b, off, len);
+                    buffer.writeByte(b);
                     buffer.readerIndex(buffer.writerIndex());
                 }
             };
