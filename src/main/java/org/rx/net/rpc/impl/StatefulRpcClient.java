@@ -11,7 +11,6 @@ import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
@@ -119,6 +118,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
+    private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive, onPong;
@@ -129,9 +129,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Getter
     private Date connectedTime;
     private volatile Channel channel;
-    @Getter
-    @Setter
-    private volatile boolean autoReconnect;
     private volatile Future<?> reconnectFuture;
     private volatile ChannelFuture reconnectChannelFuture;
 
@@ -140,12 +137,16 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         return RpcServer.SCHEDULER;
     }
 
+    public boolean isAutoReconnect() {
+        return config.getReconnectPeriod() > 0;
+    }
+
     public boolean isConnected() {
         return channel != null && channel.isActive();
     }
 
     protected boolean isShouldReconnect() {
-        return autoReconnect && !isConnected();
+        return isAutoReconnect() && !isConnected();
     }
 
     public InetSocketAddress getLocalAddress() {
@@ -157,17 +158,16 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     public StatefulRpcClient(@NonNull RpcClientConfig config) {
         this.config = config;
-        autoReconnect = config.isAutoReconnect();
 //        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
     }
 
     protected StatefulRpcClient() {
-        this.config = null;
+        this.config = NULL_CONF;
     }
 
     @Override
     protected void freeObjects() {
-        autoReconnect = false; //import
+        config.setReconnectPeriod(RpcClientConfig.NON_RECONNECT); //import
         Sockets.closeOnFlushed(channel);
 //        bootstrap.config().group().shutdownGracefully();
     }
@@ -198,7 +198,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         future.addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 f.channel().close();
-                if (autoReconnect) {
+                if (isAutoReconnect()) {
                     reconnect(connectWaiter);
                     return;
                 }
@@ -213,7 +213,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         } catch (TimeoutException e) {
             throw new InvalidException("Client connect fail", e);
         }
-        if (!autoReconnect && !isConnected()) {
+        if (!isAutoReconnect() && !isConnected()) {
             throw new InvalidException("Client connect %s fail", config.getServerEndpoint());
         }
     }
@@ -257,7 +257,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 reconnectFuture = null;
             }
             return ok;
-        }, App.getConfig().getNetReconnectPeriod());
+        }, config.getReconnectPeriod());
     }
 
     @Override

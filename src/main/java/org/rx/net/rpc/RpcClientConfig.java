@@ -12,6 +12,7 @@ import java.net.InetSocketAddress;
 @EqualsAndHashCode(callSuper = true)
 public class RpcClientConfig extends SocketConfig {
     public static final String REACTOR_NAME = "℞Rpc";
+    public static final int NON_RECONNECT = -1;
     public static final int NON_POOL_SIZE = -1;
     public static final int DEFAULT_VERSION = 0;
 
@@ -22,7 +23,7 @@ public class RpcClientConfig extends SocketConfig {
     public static RpcClientConfig statefulMode(InetSocketAddress serverEndpoint, int eventVersion) {
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(serverEndpoint);
-        config.setAutoReconnect(true);
+        config.setReconnectPeriod(2000);
         config.setEventVersion(eventVersion);
         return config;
     }
@@ -34,7 +35,7 @@ public class RpcClientConfig extends SocketConfig {
     public static RpcClientConfig poolMode(InetSocketAddress serverEndpoint, int maxPoolSize) {
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(serverEndpoint);
-        config.setAutoReconnect(false);
+        config.setReconnectPeriod(NON_RECONNECT);
         config.setMaxPoolSize(maxPoolSize);
         return config;
     }
@@ -42,7 +43,7 @@ public class RpcClientConfig extends SocketConfig {
     private static final long serialVersionUID = -4952694662640163676L;
     @NotNull
     private InetSocketAddress serverEndpoint;
-    private boolean autoReconnect;
+    private int reconnectPeriod = NON_RECONNECT;
     private int eventVersion = DEFAULT_VERSION;
     private int maxPoolSize = NON_POOL_SIZE;
 
