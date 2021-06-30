@@ -2,7 +2,6 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
-import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Disposable;
@@ -11,19 +10,18 @@ import org.rx.core.NQuery;
 
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 
 public class CompositeMmap extends Disposable {
     final FileStream owner;
-    final BiTuple<FileChannel.MapMode, Long, Long> key;
+    final FileStream.MapBlock key;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
 
     public long position() {
-        return key.middle;
+        return key.position;
     }
 
-    public long length() {
-        return key.right;
+    public long size() {
+        return key.size;
     }
 
     public MappedByteBuffer[] buffers() {
@@ -31,18 +29,18 @@ public class CompositeMmap extends Disposable {
     }
 
     @SneakyThrows
-    CompositeMmap(FileStream owner, BiTuple<FileChannel.MapMode, Long, Long> key) {
+    CompositeMmap(FileStream owner, FileStream.MapBlock key) {
         this.owner = owner;
         this.key = key;
 
-        long totalCount = key.right - key.middle;
+        long totalCount = key.size;
         long max = Integer.MAX_VALUE;
         buffers = new Tuple[(int) Math.floorDiv(totalCount, max) + 1];
         long prev = 0;
         for (int i = 0; i < buffers.length; i++) {
             long count = Math.min(max, totalCount);
             DataRange<Long> range = new DataRange<>(prev, prev = (prev + count));
-            buffers[i] = Tuple.of((MappedByteBuffer) owner.randomAccessFile.getChannel().map(key.left, range.start, count).mark(), range);
+            buffers[i] = Tuple.of((MappedByteBuffer) owner.randomAccessFile.getChannel().map(key.mode, range.start, count).mark(), range);
             totalCount -= count;
         }
     }

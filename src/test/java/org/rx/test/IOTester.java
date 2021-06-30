@@ -77,7 +77,7 @@ public class IOTester {
 
         testMmap(mmap, 1);
         testMmap(mmap, Integer.MAX_VALUE + 1L);
-        testMmap(mmap, mmap.length() - 12);
+        testMmap(mmap, mmap.position() + mmap.size() - 12);
 
 //        fs.setLength(Integer.MAX_VALUE);
 

@@ -99,9 +99,9 @@ public class Bytes {
         return readLine(buffer, 0, buffer.length);
     }
 
-    public static String readLine(byte[] buffer, int offset, int count) {
+    public static String readLine(byte[] buffer, int offset, int length) {
         final byte line = '\n', line2 = '\r';
-        for (int i = offset; i < Math.min(count, buffer.length); i++) {
+        for (int i = offset; i < Math.min(length, buffer.length); i++) {
             byte b = buffer[i];
             if (b == line || b == line2) {
                 return toString(buffer, offset, i);
@@ -114,8 +114,8 @@ public class Bytes {
         return wrap(buffer).toString(StandardCharsets.UTF_8);
     }
 
-    public static String toString(byte[] buffer, int offset, int count) {
-        return new String(buffer, offset, count, StandardCharsets.UTF_8);
+    public static String toString(byte[] buffer, int offset, int length) {
+        return new String(buffer, offset, length, StandardCharsets.UTF_8);
     }
 
     public static byte[] getBytes(int val) {

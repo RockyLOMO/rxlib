@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RxConfig;
@@ -87,13 +88,13 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public static <T extends Serializable> HybridStream serialize(T obj, int maxMemorySize, String tempFilePath) {
         HybridStream stream = new HybridStream(maxMemorySize, tempFilePath);
-        serializeTo(stream, obj);
+        serialize(obj, stream);
         stream.setPosition(0);
         return stream;
     }
 
     @SneakyThrows
-    public static <T extends Serializable> void serializeTo(@NonNull IOStream<?, ?> stream, @NonNull T obj) {
+    public static <T extends Serializable> void serialize(@NonNull T obj, @NonNull IOStream<?, ?> stream) {
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         out.writeObject(obj);  //close会关闭stream
         out.flush();
@@ -225,19 +226,25 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return getReader().read();
     }
 
-    public int read(@NonNull byte[] data) {
+    public int read(@NonNull byte[] buffer) {
         checkNotClosed();
 
-        return read(data, 0, data.length);
+        return read(buffer, 0, buffer.length);
     }
 
     @SneakyThrows
-    public int read(@NonNull byte[] buffer, int offset, int count) {
+    public int read(@NonNull byte[] buffer, int offset, int length) {
         checkNotClosed();
         require(offset, offset >= 0);
 
-        return getReader().read(buffer, offset, count);
+        return getReader().read(buffer, offset, length);
     }
+
+    public int read(ByteBuf dst) {
+        return read(dst, dst.writableBytes());
+    }
+
+    public abstract int read(ByteBuf dst, int length);
 
     @SneakyThrows
     public void write(int b) {
@@ -246,19 +253,25 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         getWriter().write(b);
     }
 
-    public void write(@NonNull byte[] data) {
+    public void write(@NonNull byte[] buffer) {
         checkNotClosed();
 
-        write(data, 0, data.length);
+        write(buffer, 0, buffer.length);
     }
 
     @SneakyThrows
-    public void write(@NonNull byte[] buffer, int offset, int count) {
+    public void write(@NonNull byte[] buffer, int offset, int length) {
         checkNotClosed();
         require(offset, offset >= 0);
 
-        getWriter().write(buffer, offset, count);
+        getWriter().write(buffer, offset, length);
     }
+
+    public void write(ByteBuf src) {
+        write(src, src.readableBytes());
+    }
+
+    public abstract void write(ByteBuf src, int length);
 
     public void write(@NonNull IOStream<?, ?> in, long count) {
         write(in.getReader(), count);
@@ -294,7 +307,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         doCopy(getReader(), out);
     }
 
-    //重置position
+    //会重置position
     private synchronized void doCopy(InputStream in, OutputStream out) {
         checkNotClosed();
 

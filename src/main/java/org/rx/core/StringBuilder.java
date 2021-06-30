@@ -82,8 +82,8 @@ public final class StringBuilder {
         return this;
     }
 
-    public StringBuilder remove(int offset, int count) {
-        buffer.delete(offset, offset + count);
+    public StringBuilder remove(int offset, int length) {
+        buffer.delete(offset, offset + length);
         return this;
     }
 
@@ -115,7 +115,7 @@ public final class StringBuilder {
         return buffer.toString();
     }
 
-    public String toString(int offset, int count) {
-        return buffer.substring(offset, offset + count);
+    public String toString(int offset, int length) {
+        return buffer.substring(offset, offset + length);
     }
 }

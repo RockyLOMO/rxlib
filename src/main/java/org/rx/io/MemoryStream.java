@@ -157,37 +157,14 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         buffer.release();
     }
 
-    public void write(ByteBuf src) {
-        buffer.writeBytes(src);
-    }
-
-    public void write(ByteBuf src, int length) {
-        buffer.writeBytes(src, length);
-    }
-
-    public void write(ByteBuf src, int srcIndex, int length) {
-        buffer.writeBytes(src, srcIndex, length);
-    }
-
-    public void read(ByteBuf dst) {
-        buffer.readBytes(dst);
-    }
-
-    public void read(ByteBuf dst, int length) {
+    @Override
+    public int read(ByteBuf dst, int length) {
         buffer.readBytes(dst, length);
+        return length;
     }
 
     public void read(ByteBuf dst, int dstIndex, int length) {
         buffer.readBytes(dst, dstIndex, length);
-    }
-
-    public void write(IOStream<?, ?> stream, int length) {
-        write(stream.getReader(), length);
-    }
-
-    @SneakyThrows
-    public void write(InputStream in, int length) {
-        buffer.writeBytes(in, length);
     }
 
     public void read(IOStream<?, ?> stream, int length) {
@@ -197,5 +174,19 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     @SneakyThrows
     public void read(OutputStream out, int length) {
         buffer.readBytes(out, length);
+    }
+
+    @Override
+    public void write(ByteBuf src, int length) {
+        buffer.writeBytes(src, length);
+    }
+
+    public void write(ByteBuf src, int srcIndex, int length) {
+        buffer.writeBytes(src, srcIndex, length);
+    }
+
+    @SneakyThrows
+    public void write(InputStream in, int length) {
+        buffer.writeBytes(in, length);
     }
 }

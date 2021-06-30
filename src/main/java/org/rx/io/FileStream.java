@@ -1,11 +1,12 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
+import lombok.EqualsAndHashCode;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
-import org.rx.bean.BiTuple;
 import org.rx.bean.DataRange;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
@@ -26,6 +27,22 @@ import static org.rx.core.App.*;
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
+    @RequiredArgsConstructor
+    @EqualsAndHashCode
+    static class Block {
+        final long position, size;
+    }
+
+    @EqualsAndHashCode(callSuper = true)
+    static class MapBlock extends Block {
+        final FileChannel.MapMode mode;
+
+        public MapBlock(FileChannel.MapMode mode, long position, long size) {
+            super(position, size);
+            this.mode = mode;
+        }
+    }
+
     @SneakyThrows
     public static File createTempFile() {
         File temp = File.createTempFile(SUID.randomSUID().toString(), ".rfs");
@@ -37,8 +54,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private BufferedRandomAccessFile.FileMode fileMode;
     transient BufferedRandomAccessFile randomAccessFile;
-    transient final Map<BiTuple<FileChannel.MapMode, Long, Long>, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
-    transient final Map<Tuple<Long, Long>, FileLock> locks = new ConcurrentHashMap<>(0);
+    transient final Map<MapBlock, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
+    transient final Map<Block, FileLock> locks = new ConcurrentHashMap<>(0);
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
@@ -202,8 +219,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    public int read(byte[] buffer, int offset, int count) {
-        return randomAccessFile.read(buffer, offset, count);
+    public int read(byte[] buffer, int offset, int length) {
+        return randomAccessFile.read(buffer, offset, length);
     }
 
     @SneakyThrows
@@ -214,8 +231,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    public void write(byte[] buffer, int offset, int count) {
-        randomAccessFile.write(buffer, offset, count);
+    public void write(byte[] buffer, int offset, int length) {
+        randomAccessFile.write(buffer, offset, length);
     }
 
     @SneakyThrows
@@ -229,18 +246,18 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         randomAccessFile.sync();
     }
 
-    public long read(ByteBuf buf) {
-        return read(buf, buf.writableBytes());
+    public long read(ByteBuf dst) {
+        return read(dst, dst.writableBytes());
     }
 
     @SneakyThrows
-    public synchronized long read(ByteBuf buf, int count) {
+    public synchronized long read(ByteBuf dst, int length) {
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
         long totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(count, BufferedRandomAccessFile.BufSize.SMALL_DATA.value));
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.BufSize.SMALL_DATA.value));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
             if (c < b.limit()) {
@@ -249,29 +266,29 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             return b;
         };
         int r;
-        while ((r = ch.read(resetFunc.invoke(buffer, count))) > 0) {
+        while ((r = ch.read(resetFunc.invoke(buffer, length))) > 0) {
             buffer.flip();
-            buf.writeBytes(buffer);
-            count -= r;
+            dst.writeBytes(buffer);
+            length -= r;
             totalRead += r;
         }
         setPosition(pos + totalRead);
         return totalRead;
     }
 
-    public long write(ByteBuf byteBuf) {
-        return write(byteBuf, byteBuf.readableBytes());
+    public long write(ByteBuf src) {
+        return write(src, src.readableBytes());
     }
 
     @SneakyThrows
-    public synchronized long write(ByteBuf byteBuf, int count) {
+    public synchronized long write(ByteBuf src, int length) {
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
-        int rIndex = byteBuf.readerIndex(), rEndIndex = rIndex + count;
-        ByteBuf buf = byteBuf;
-        if (buf.readableBytes() != count) {
+        int rIndex = src.readerIndex(), rEndIndex = rIndex + length;
+        ByteBuf buf = src;
+        if (buf.readableBytes() != length) {
             buf = buf.slice(rIndex, rEndIndex);
         }
         long w;
@@ -287,7 +304,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 break;
         }
 
-        byteBuf.readerIndex(rEndIndex);
+        src.readerIndex(rEndIndex);
         setPosition(pos + w);
         switch (fileMode) {
             case READ_WRITE_AND_SYNC_CONTENT:
@@ -301,15 +318,16 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     public CompositeMmap mmap(FileChannel.MapMode mode) {
-        return mmap(mode, getPosition(), getLength());
+        long pos = getPosition();
+        return mmap(mode, pos, getLength() - pos);
     }
 
     @SneakyThrows
-    public CompositeMmap mmap(FileChannel.MapMode mode, long position, long length) {
+    public CompositeMmap mmap(FileChannel.MapMode mode, long position, long size) {
         if (mode == null) {
             mode = FileChannel.MapMode.READ_WRITE;
         }
-        return mmaps.computeIfAbsent(BiTuple.of(mode, position, length), k -> new CompositeMmap(this, k));
+        return mmaps.computeIfAbsent(new MapBlock(mode, position, size), k -> new CompositeMmap(this, k));
     }
 
     // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows需要先执行unmap())
@@ -326,20 +344,20 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @SneakyThrows
-    public void lockRead(long position, long length) {
-        locks.computeIfAbsent(Tuple.of(position, length), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, length, true)));
+    public void lockRead(long position, long size) {
+        locks.computeIfAbsent(new Block(position, size), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, size, true)));
     }
 
     @SneakyThrows
-    public void lockWrite(long position, long length) {
-        locks.computeIfAbsent(Tuple.of(position, length), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, length, false)));
+    public void lockWrite(long position, long size) {
+        locks.computeIfAbsent(new Block(position, size), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, size, false)));
     }
 
     @SneakyThrows
-    public void unlock(long position, long length) {
-        FileLock lock = locks.remove(Tuple.of(position, length));
+    public void unlock(long position, long size) {
+        FileLock lock = locks.remove(new Block(position, size));
         if (lock == null) {
-            throw new InvalidException("File position={} length={} not locked", position, length);
+            throw new InvalidException("File {} block={},{} not locked", this.getPath(), position, size);
         }
         lock.release();
     }

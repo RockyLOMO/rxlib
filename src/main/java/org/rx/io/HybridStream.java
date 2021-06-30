@@ -96,8 +96,8 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
-    public int read(byte[] buffer, int offset, int count) {
-        return getStream().read(buffer, offset, count);
+    public int read(byte[] buffer, int offset, int length) {
+        return getStream().read(buffer, offset, length);
     }
 
     @Override
@@ -106,8 +106,8 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
-    public void write(byte[] buffer, int offset, int count) {
-        getStream().write(buffer, offset, count);
+    public void write(byte[] buffer, int offset, int length) {
+        getStream().write(buffer, offset, length);
     }
 
     @Override
