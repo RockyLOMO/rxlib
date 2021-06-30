@@ -36,7 +36,7 @@ public class PersistentCache<TK, TV> extends CaffeineCache<TK, TV> {
     }
 
     public synchronized void loadFromDisk() {
-        HashMap<Serializable, Serializable> map = IOStream.deserialize(new FileStream(snapshotFilePath), true);
+        HashMap<Serializable, Serializable> map = IOStream.deserialize(new FileStream(snapshotFilePath));
         log.info("load {} items from db file {}", map.size(), new File(snapshotFilePath).getAbsolutePath());
         for (Entry<Serializable, Serializable> entry : map.entrySet()) {
             quietly(() -> put(from(entry.getKey()), from(entry.getValue())));

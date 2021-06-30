@@ -740,7 +740,7 @@ public final class App extends SystemUtils {
 
     public static <T extends Serializable> T deepClone(T obj) {
         IOStream<?, ?> serialize = IOStream.serialize(obj);
-        return IOStream.deserialize(serialize, true);
+        return IOStream.deserialize(serialize);
     }
     //endregion
 }

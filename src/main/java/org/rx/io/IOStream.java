@@ -85,14 +85,18 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return serialize(obj, RxConfig.MAX_HEAP_BUF_SIZE, null);
     }
 
-    @SneakyThrows
-    public static <T extends Serializable> HybridStream serialize(@NonNull T obj, int maxMemorySize, String tempFilePath) {
+    public static <T extends Serializable> HybridStream serialize(T obj, int maxMemorySize, String tempFilePath) {
         HybridStream stream = new HybridStream(maxMemorySize, tempFilePath);
-        ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
-        out.writeObject(obj);  //close 会关闭stream
-        out.flush();
-        stream.setPosition(0L);
+        serializeTo(stream, obj);
+        stream.setPosition(0);
         return stream;
+    }
+
+    @SneakyThrows
+    public static <T extends Serializable> void serializeTo(@NonNull IOStream<?, ?> stream, @NonNull T obj) {
+        ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
+        out.writeObject(obj);  //close会关闭stream
+        out.flush();
     }
 
     public static <T extends Serializable> T deserialize(IOStream<?, ?> stream) {
@@ -100,12 +104,12 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     @SneakyThrows
-    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveClose) {
+    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveOpen) {
         try {
             ObjectInputStream in = new ObjectInputStream(stream.getReader());
             return (T) in.readObject();
         } finally {
-            if (leveClose) {
+            if (!leveOpen) {
                 stream.close();
             }
         }
