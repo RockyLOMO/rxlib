@@ -23,6 +23,7 @@ import static org.rx.core.App.*;
 @AllArgsConstructor
 public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
     private static final long serialVersionUID = 3204673656139586437L;
+    public static final int NON_READ_FULLY = -1;
 
     public static IOStream<?, ?> wrap(String filePath) {
         return wrap(new File(filePath));
@@ -43,27 +44,23 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     public static IOStream<?, ?> wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
         stream.setName(name);
-        copyTo(in, stream.getWriter());
+        stream.write(in);
         stream.setPosition(0L);
         return stream;
     }
 
-    public static void copyTo(InputStream in, OutputStream out) {
-        copyTo(in, -1, out);
-    }
-
     @SneakyThrows
-    public static void copyTo(@NonNull InputStream in, long count, @NonNull OutputStream out) {
+    public static long copy(@NonNull InputStream in, long length, @NonNull OutputStream out) {
         byte[] buffer = Bytes.arrayBuffer();
+        boolean readFully = length != NON_READ_FULLY;
+        long copyLen = 0;
         int read;
-        boolean fixCount = count != -1;
-        while ((!fixCount || count > 0) && (read = in.read(buffer, 0, buffer.length)) != -1) {
+        while ((!readFully || copyLen < length) && (read = in.read(buffer, 0, buffer.length)) != -1) {
             out.write(buffer, 0, read);
-            if (fixCount) {
-                count -= read;
-            }
+            copyLen += read;
         }
         out.flush();
+        return copyLen;
     }
 
     @SneakyThrows
@@ -240,11 +237,32 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return getReader().read(buffer, offset, length);
     }
 
+    public long read(IOStream<?, ?> stream) {
+        return read(stream, NON_READ_FULLY);
+    }
+
+    public long read(@NonNull IOStream<?, ?> stream, long length) {
+        return read(stream.getWriter(), length);
+    }
+
+    public long read(OutputStream out) {
+        return read(out, NON_READ_FULLY);
+    }
+
+    public long read(OutputStream out, long length) {
+        checkNotClosed();
+
+        return copy(getReader(), length, out);
+    }
+
     public int read(ByteBuf dst) {
         return read(dst, dst.writableBytes());
     }
 
-    public abstract int read(ByteBuf dst, int length);
+    @SneakyThrows
+    public int read(ByteBuf dst, int length) {
+        return dst.writeBytes(getReader(), length);
+    }
 
     @SneakyThrows
     public void write(int b) {
@@ -267,20 +285,31 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         getWriter().write(buffer, offset, length);
     }
 
+    public long write(IOStream<?, ?> stream) {
+        return write(stream, NON_READ_FULLY);
+    }
+
+    public long write(@NonNull IOStream<?, ?> stream, long length) {
+        return write(stream.getReader(), length);
+    }
+
+    public long write(InputStream in) {
+        return write(in, NON_READ_FULLY);
+    }
+
+    public long write(InputStream in, long length) {
+        checkNotClosed();
+
+        return copy(in, length, getWriter());
+    }
+
     public void write(ByteBuf src) {
         write(src, src.readableBytes());
     }
 
-    public abstract void write(ByteBuf src, int length);
-
-    public void write(@NonNull IOStream<?, ?> in, long count) {
-        write(in.getReader(), count);
-    }
-
-    public void write(InputStream in, long count) {
-        checkNotClosed();
-
-        copyTo(in, count, getWriter());
+    @SneakyThrows
+    public void write(ByteBuf src, int length) {
+        src.readBytes(getWriter(), length);
     }
 
     @SneakyThrows
@@ -289,37 +318,6 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         checkNotClosed();
 
         getWriter().flush();
-    }
-
-    public void copyFrom(@NonNull IOStream<?, ?> in) {
-        copyFrom(in.getReader());
-    }
-
-    public void copyFrom(@NonNull InputStream in) {
-        doCopy(in, getWriter());
-    }
-
-    public void copyTo(@NonNull IOStream<?, ?> out) {
-        copyTo(out.getWriter());
-    }
-
-    public void copyTo(@NonNull OutputStream out) {
-        doCopy(getReader(), out);
-    }
-
-    //会重置position
-    private synchronized void doCopy(InputStream in, OutputStream out) {
-        checkNotClosed();
-
-        if (!canSeek()) {
-            log.warn("{} can't seek, reset position ignore", this.getClass().getName());
-            copyTo(in, out);
-            return;
-        }
-        long pos = getPosition();
-        setPosition(0L);
-        copyTo(in, out);
-        setPosition(pos);
     }
 
     public synchronized byte[] toArray() {

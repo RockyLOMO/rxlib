@@ -99,7 +99,7 @@ public class HttpClient {
 
                         @Override
                         public void writeTo(@NotNull BufferedSink bufferedSink) throws IOException {
-                            stream.copyTo(bufferedSink.outputStream());
+                            stream.read(bufferedSink.outputStream());
                         }
                     });
                 }
@@ -161,7 +161,7 @@ public class HttpClient {
                     return stream;
                 }
                 try {
-                    IOStream.copyTo(body.byteStream(), stream.getWriter());
+                    stream.write(body.byteStream());
                     stream.setPosition(0);
                 } finally {
                     body.close();
@@ -522,7 +522,7 @@ public class HttpClient {
             servletResponse.setContentLength((int) responseBody.contentLength());
             InputStream in = responseBody.byteStream();
             ServletOutputStream out = servletResponse.getOutputStream();
-            IOStream.copyTo(in, out);
+            IOStream.copy(in, IOStream.NON_READ_FULLY, out);
         }
     }
 }

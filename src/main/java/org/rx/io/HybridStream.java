@@ -24,8 +24,9 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
         }
         if (memoryStream.getLength() > maxMemorySize) {
             log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
-            memoryStream.copyTo(fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath));
-            fileStream.setPosition(memoryStream.getPosition());
+            fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
+            memoryStream.setPosition(0);
+            fileStream.write(memoryStream);
             memoryStream = null;
             return fileStream;
         }
@@ -85,43 +86,33 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
         getStream().close();
     }
 
-    @Override
-    public long available() {
-        return getStream().available();
-    }
-
-    @Override
-    public int read() {
-        return getStream().read();
-    }
-
-    @Override
-    public int read(byte[] buffer, int offset, int length) {
-        return getStream().read(buffer, offset, length);
-    }
-
-    @Override
-    public void write(int b) {
-        getStream().write(b);
-    }
-
-    @Override
-    public void write(byte[] buffer, int offset, int length) {
-        getStream().write(buffer, offset, length);
-    }
-
-    @Override
-    public void flush() {
-        getStream().flush();
-    }
-
-    @Override
-    public void copyTo(IOStream<?, ?> out) {
-        getStream().copyTo(out);
-    }
-
-    @Override
-    public void copyTo(OutputStream out) {
-        getStream().copyTo(out);
-    }
+//    @Override
+//    public long available() {
+//        return getStream().available();
+//    }
+//
+//    @Override
+//    public int read() {
+//        return getStream().read();
+//    }
+//
+//    @Override
+//    public int read(byte[] buffer, int offset, int length) {
+//        return getStream().read(buffer, offset, length);
+//    }
+//
+//    @Override
+//    public void write(int b) {
+//        getStream().write(b);
+//    }
+//
+//    @Override
+//    public void write(byte[] buffer, int offset, int length) {
+//        getStream().write(buffer, offset, length);
+//    }
+//
+//    @Override
+//    public void flush() {
+//        getStream().flush();
+//    }
 }

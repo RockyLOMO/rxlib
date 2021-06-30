@@ -40,7 +40,7 @@ public class ApiController {
         ReceivePack pack = server.frontendPoll(new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint)));
         ServletOutputStream out = response.getOutputStream();
         for (IOStream<?, ?> binary : pack.getBinaries()) {
-            binary.copyTo(out);
+            binary.read(out);
         }
     }
 }

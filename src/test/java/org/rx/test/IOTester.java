@@ -62,7 +62,7 @@ public class IOTester {
         stream.setPosition(0L);
         ByteBuf buf = Bytes.directBuffer();
         buf.writeBytes(content);
-        long write = stream.write(buf);
+        long write = stream.write0(buf);
         assert buf.readerIndex() == stream.getPosition();
         assert stream.getPosition() == write && write == buf.writerIndex();
 
@@ -131,30 +131,6 @@ public class IOTester {
     }
 
     @Test
-    public void memoryStream() {
-        MemoryStream stream = new MemoryStream(32, false, true);
-        testSeekStream(stream);
-
-        stream.setPosition(0L);
-        for (int i = 0; i < 40; i++) {
-            stream.write(i);
-        }
-        System.out.printf("Position=%s, Length=%s, Capacity=%s%n", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().writerIndex());
-
-        stream.setPosition(0L);
-        System.out.println(stream.read());
-
-        IOStream<?, ?> serializeStream = IOStream.serialize(stream);
-        MemoryStream newStream = IOStream.deserialize(serializeStream);
-        newStream.setPosition(0L);
-        byte[] bytes = newStream.toArray();
-        for (int i = 0; i < 40; i++) {
-            assert bytes[i] == i;
-        }
-    }
-
-    @Test
     public void binaryStream() {
         BinaryStream stream = new BinaryStream(new MemoryStream());
         stream.writeString("test hello");
@@ -184,6 +160,30 @@ public class IOTester {
 
         System.out.println(toJsonString(bean));
         System.out.println(toJsonString(newBean));
+    }
+
+    @Test
+    public void memoryStream() {
+        MemoryStream stream = new MemoryStream(32, false, true);
+        testSeekStream(stream);
+
+        stream.setPosition(0L);
+        for (int i = 0; i < 40; i++) {
+            stream.write(i);
+        }
+        System.out.printf("Position=%s, Length=%s, Capacity=%s%n", stream.getPosition(),
+                stream.getLength(), stream.getBuffer().writerIndex());
+
+        stream.setPosition(0L);
+        System.out.println(stream.read());
+
+        IOStream<?, ?> serializeStream = IOStream.serialize(stream);
+        MemoryStream newStream = IOStream.deserialize(serializeStream);
+        newStream.setPosition(0L);
+        byte[] bytes = newStream.toArray();
+        for (int i = 0; i < 40; i++) {
+            assert bytes[i] == i;
+        }
     }
 
     private void testSeekStream(IOStream<?, ?> stream) {

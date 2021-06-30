@@ -2,7 +2,6 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Setter;
-import lombok.SneakyThrows;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
@@ -25,7 +24,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         out.writeInt((int) getPosition());
         out.writeInt((int) getLength());
         setPosition(0);
-        copyTo(getReader(), out);
+        read(out);
     }
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
@@ -34,7 +33,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         int len = in.readInt();
         buffer = directBuffer ? Bytes.directBuffer(len, true) : Bytes.heapBuffer(len, true);
         setLength(len);
-        copyTo(in, getWriter());
+        write(in);
         setPosition(pos);
     }
 
@@ -57,11 +56,13 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
 
                 @Override
                 public int read(byte[] b, int off, int len) {
-                    if (buffer.readableBytes() == 0) {
+                    int readableBytes = buffer.readableBytes();
+                    if (readableBytes == 0) {
                         return -1;
                     }
-                    buffer.readBytes(b, off, len);
-                    return len;
+                    int len0 = Math.min(readableBytes, len);
+                    buffer.readBytes(b, off, len0);
+                    return len0;
                 }
 
                 //byte -1?
@@ -167,15 +168,6 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         buffer.readBytes(dst, dstIndex, length);
     }
 
-    public void read(IOStream<?, ?> stream, int length) {
-        read(stream.getWriter(), length);
-    }
-
-    @SneakyThrows
-    public void read(OutputStream out, int length) {
-        buffer.readBytes(out, length);
-    }
-
     @Override
     public void write(ByteBuf src, int length) {
         buffer.writeBytes(src, length);
@@ -183,10 +175,5 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
 
     public void write(ByteBuf src, int srcIndex, int length) {
         buffer.writeBytes(src, srcIndex, length);
-    }
-
-    @SneakyThrows
-    public void write(InputStream in, int length) {
-        buffer.writeBytes(in, length);
     }
 }

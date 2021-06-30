@@ -112,7 +112,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     public <T extends Serializable> T readObject() {
         long len = readLong();
         HybridStream serialize = new HybridStream();
-        serialize.write(this, len);
+        read(serialize, len);
         serialize.setPosition(0L);
         return IOStream.deserialize(serialize);
     }
@@ -169,6 +169,6 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     public <T extends Serializable> void writeObject(T value) {
         IOStream<?, ?> serialize = IOStream.serialize(value);
         writeLong(serialize.getLength());
-        serialize.copyTo(this);
+        write(serialize);
     }
 }

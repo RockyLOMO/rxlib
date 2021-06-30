@@ -97,7 +97,7 @@ public class Servlets extends ServletRequestUtils {
         response.setContentType(contentType);
         response.setContentLength((int) stream.getLength());
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", HttpClient.encodeUrl(stream.getName())));
-        stream.copyTo(response.getOutputStream());
+        stream.read(response.getOutputStream());
     }
 
     @SneakyThrows
@@ -107,7 +107,7 @@ public class Servlets extends ServletRequestUtils {
         response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.utcNow().addSeconds(cacheSeconds).getTime()).toString());
         response.setContentType(contentType);
         if (in != null) {
-            IOStream.copyTo(in, response.getOutputStream());
+            IOStream.copy(in, IOStream.NON_READ_FULLY, response.getOutputStream());
         }
     }
 
