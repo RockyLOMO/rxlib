@@ -1,23 +1,20 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import lombok.EqualsAndHashCode;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.DataRange;
+import org.rx.bean.FlagsEnum;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
-import org.rx.core.exception.InvalidException;
+import org.rx.core.Lazy;
 import org.rx.util.function.TripleFunc;
 
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -53,9 +50,15 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     private BufferedRandomAccessFile.FileMode fileMode;
-    transient BufferedRandomAccessFile randomAccessFile;
+    private FlagsEnum<CompositeLock.Flags> lockFlags;
+    @Getter(AccessLevel.PROTECTED)
+    private transient BufferedRandomAccessFile randomAccessFile;
     transient final Map<MapBlock, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
-    transient final Map<Block, FileLock> locks = new ConcurrentHashMap<>(0);
+    transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
+
+    public CompositeLock getLock() {
+        return lock.getValue();
+    }
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
@@ -185,10 +188,15 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         this(file, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
     }
 
+    public FileStream(File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
+        this(file, mode, size, CompositeLock.Flags.READ_WRITE_LOCK.flags());
+    }
+
     @SneakyThrows
-    public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
+    public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
         super(null, null);
         this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
+        this.lockFlags = lockFlags;
     }
 
     @SneakyThrows
@@ -201,9 +209,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             }
         });
         randomAccessFile.close();
-        for (FileLock value : locks.values()) {
-            value.release();
-        }
     }
 
     @SneakyThrows
@@ -346,24 +351,5 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : compositeMmap.buffers) {
             release(tuple.left);
         }
-    }
-
-    @SneakyThrows
-    public void lockRead(long position, long size) {
-        locks.computeIfAbsent(new Block(position, size), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, size, true)));
-    }
-
-    @SneakyThrows
-    public void lockWrite(long position, long size) {
-        locks.computeIfAbsent(new Block(position, size), k -> sneakyInvoke(() -> randomAccessFile.getChannel().lock(position, size, false)));
-    }
-
-    @SneakyThrows
-    public void unlock(long position, long size) {
-        FileLock lock = locks.remove(new Block(position, size));
-        if (lock == null) {
-            throw new InvalidException("File {} block={},{} not locked", this.getPath(), position, size);
-        }
-        lock.release();
     }
 }

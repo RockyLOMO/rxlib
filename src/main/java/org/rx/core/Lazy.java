@@ -6,7 +6,7 @@ import java.util.function.Supplier;
 
 @RequiredArgsConstructor
 public final class Lazy<T> {
-    private T value;
+    private volatile T value;
     private final Supplier<T> supplier;
 
     public boolean isValueCreated() {

@@ -3,12 +3,14 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -67,8 +69,10 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
 
     final File parentDirectory;
     final MetaData metaData;
-    final FileStream reader, writer;
-    final ReentrantReadWriteLock locker = new ReentrantReadWriteLock();
+    final FileStream writer;
+//    final CompositeMmap mmap;
+    final CompositeLock locker;
+    final LinkedTransferQueue<FileStream> readers = new LinkedTransferQueue<>();
     final IndexNode[] indexes;
     final Serializer serializer;
 
@@ -84,16 +88,21 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
     }
 
     public KeyValueStore(String dirPath) {
-        this(dirPath, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
+        this(dirPath, 1, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
     }
 
-    public KeyValueStore(@NonNull String dirPath, int indexFileCount, Serializer serializer) {
+    public KeyValueStore(@NonNull String dirPath, int readerCount, int indexFileCount, Serializer serializer) {
         parentDirectory = new File(dirPath);
         this.serializer = serializer;
 
         File logFile = new File(getParentDirectory(), LOG_FILE);
         writer = new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
-        reader = new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        locker = writer.getLock();
+
+        for (int i = 0; i < readerCount; i++) {
+            readers.offer(new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA));
+        }
+
         if (writer.getLength() == 0) {
             saveMetaData(metaData = new MetaData());
             writer.setPosition(HEADER_LENGTH);
@@ -106,24 +115,28 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
     }
 
     private void saveMetaData(MetaData metaData) {
-        writer.lockWrite(0, HEADER_LENGTH);
-        try {
+        locker.writeInvoke(() -> {
             metaData.logLength = writer.getPosition();
             writer.setPosition(0);
             serializer.serialize(metaData, writer);
+        }, 0, HEADER_LENGTH);
+    }
+
+    @SneakyThrows
+    private MetaData loadMetaData() {
+        FileStream reader = readers.take();
+        try {
+            return locker.readInvoke(() -> {
+                reader.setPosition(0);
+                return serializer.deserialize(reader, true);
+            }, 0, HEADER_LENGTH);
         } finally {
-            writer.unlock(0, HEADER_LENGTH);
+            readers.offer(reader);
         }
     }
 
-    private MetaData loadMetaData() {
-        reader.lockRead(0, HEADER_LENGTH);
-        try {
-            reader.setPosition(0);
-            return serializer.deserialize(reader, true);
-        } finally {
-            reader.unlock(0, HEADER_LENGTH);
-        }
+    private void xx(){
+
     }
 
     private IndexNode indexStream(int hashCode) {
@@ -175,25 +188,25 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
     }
 
     private void saveValue(KeyData keyData, TV v) {
-        locker.writeLock().lock();
-        try {
+        locker.writeInvoke(() -> {
             keyData.logPosition = writer.getPosition();
             serializer.serialize(v, writer);
             keyData.logSize = (int) (writer.getPosition() - keyData.logPosition);
-        } finally {
-            locker.writeLock().unlock();
-        }
+        });
     }
 
+    @SneakyThrows
     private TV findValue(KeyData keyData) {
         require(keyData, keyData.logPosition >= 0 && keyData.logSize > 0);
 
-        locker.readLock().lock();
+        FileStream reader = readers.take();
         try {
-            reader.setPosition(keyData.logPosition);
-            return serializer.deserialize(reader);
+            return locker.readInvoke(() -> {
+                reader.setPosition(keyData.logPosition);
+                return serializer.deserialize(reader);
+            });
         } finally {
-            locker.readLock().unlock();
+            readers.offer(reader);
         }
     }
 
@@ -346,13 +359,10 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
 
     @Override
     public synchronized void clear() {
-        locker.writeLock().lock();
-        try {
+        locker.writeInvoke(() -> {
             writer.setLength(metaData.logLength = HEADER_LENGTH);
             metaData.size.set(0);
-        } finally {
-            locker.writeLock().unlock();
-        }
+        });
 
         for (IndexNode index : indexes) {
             if (index == null) {

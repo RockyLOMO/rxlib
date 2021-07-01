@@ -11,7 +11,7 @@ import org.rx.core.NQuery;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 
-public class CompositeMmap extends Disposable {
+public final class CompositeMmap extends Disposable {
     final FileStream owner;
     final FileStream.MapBlock key;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
@@ -40,7 +40,7 @@ public class CompositeMmap extends Disposable {
         for (int i = 0; i < buffers.length; i++) {
             long count = Math.min(max, totalCount);
             DataRange<Long> range = new DataRange<>(prev, prev = (prev + count));
-            buffers[i] = Tuple.of((MappedByteBuffer) owner.randomAccessFile.getChannel().map(key.mode, range.start, count).mark(), range);
+            buffers[i] = Tuple.of((MappedByteBuffer) owner.getRandomAccessFile().getChannel().map(key.mode, range.start, count).mark(), range);
             totalCount -= count;
         }
     }
