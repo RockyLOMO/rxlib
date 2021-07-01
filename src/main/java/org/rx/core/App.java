@@ -22,11 +22,8 @@ import org.rx.bean.*;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
-import org.rx.io.FileStream;
-import org.rx.io.IOStream;
-import org.rx.io.Bytes;
+import org.rx.io.*;
 import org.rx.security.MD5Util;
-import org.rx.io.MemoryStream;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.spring.SpringContext;
 import org.rx.util.function.*;
@@ -729,18 +726,19 @@ public final class App extends SystemUtils {
     }
 
     public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = IOStream.serialize(obj).toArray();
+        byte[] data = Serializer.DEFAULT.serialize(obj).toArray();
         return convertToBase64String(data);
     }
 
     public static <T extends Serializable> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64String(base64);
-        return IOStream.deserialize(new MemoryStream(data, 0, data.length));
+        return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
 
     public static <T extends Serializable> T deepClone(T obj) {
-        IOStream<?, ?> serialize = IOStream.serialize(obj);
-        return IOStream.deserialize(serialize);
+        IOStream<?, ?> stream = Serializer.DEFAULT.serialize(obj);
+        stream.setPosition(0);
+        return Serializer.DEFAULT.deserialize(stream);
     }
     //endregion
 }

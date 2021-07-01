@@ -10,6 +10,7 @@ import org.rx.core.Tasks;
 import org.rx.io.FileStream;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
+import org.rx.io.Serializer;
 
 import java.io.File;
 import java.io.Serializable;
@@ -36,7 +37,7 @@ public class PersistentCache<TK, TV> extends CaffeineCache<TK, TV> {
     }
 
     public synchronized void loadFromDisk() {
-        HashMap<Serializable, Serializable> map = IOStream.deserialize(new FileStream(snapshotFilePath));
+        HashMap<Serializable, Serializable> map = Serializer.DEFAULT.deserialize(new FileStream(snapshotFilePath));
         log.info("load {} items from db file {}", map.size(), new File(snapshotFilePath).getAbsolutePath());
         for (Entry<Serializable, Serializable> entry : map.entrySet()) {
             quietly(() -> put(from(entry.getKey()), from(entry.getValue())));
@@ -65,7 +66,7 @@ public class PersistentCache<TK, TV> extends CaffeineCache<TK, TV> {
             quietly(() -> map.put(to(entry.getKey()), to(entry.getValue())));
         }
         log.info("save {} items to db file {}", map.size(), new File(snapshotFilePath).getAbsolutePath());
-        IOStream.serialize(map, 0, snapshotFilePath).close();
+        Serializer.DEFAULT.serialize(map, 0, snapshotFilePath).close();
         lastSize = curSize;
     }
 

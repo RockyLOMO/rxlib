@@ -70,7 +70,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
     final FileStream reader, writer;
     final ReentrantReadWriteLock locker = new ReentrantReadWriteLock();
     final IndexNode[] indexes;
-    final Serializer<TV> serializer;
+    final Serializer serializer;
 
     File getParentDirectory() {
         parentDirectory.mkdirs();
@@ -87,8 +87,9 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         this(dirPath, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
     }
 
-    public KeyValueStore(@NonNull String dirPath, int indexFileCount, Serializer<TV> serializer) {
+    public KeyValueStore(@NonNull String dirPath, int indexFileCount, Serializer serializer) {
         parentDirectory = new File(dirPath);
+        this.serializer = serializer;
 
         File logFile = new File(getParentDirectory(), LOG_FILE);
         writer = new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
@@ -102,7 +103,6 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         }
 
         indexes = new IndexNode[indexFileCount];
-        this.serializer = serializer;
     }
 
     private void saveMetaData(MetaData metaData) {
@@ -110,7 +110,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         try {
             metaData.logLength = writer.getPosition();
             writer.setPosition(0);
-            IOStream.serialize(metaData, writer);
+            serializer.serialize(metaData, writer);
         } finally {
             writer.unlock(0, HEADER_LENGTH);
         }
@@ -120,7 +120,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         reader.lockRead(0, HEADER_LENGTH);
         try {
             reader.setPosition(0);
-            return IOStream.deserialize(reader, true);
+            return serializer.deserialize(reader, true);
         } finally {
             reader.unlock(0, HEADER_LENGTH);
         }

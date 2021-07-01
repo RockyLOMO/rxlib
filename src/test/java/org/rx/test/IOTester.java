@@ -25,19 +25,33 @@ public class IOTester {
         IOStream.release(buffer);
     }
 
+    final boolean doWrite = true;
+    final String nameFormat = "C:\\download\\%s.txt";
+    final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
+    final String KvPath = "C:\\download\\RxKv";
+
+    @Test
+    public void kvDb() {
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(KvPath);
+        System.out.println(kv);
+    }
+
     @Test
     public void hybridStream() {
-        HybridStream stream = new HybridStream(70, null);
-        testSeekStream(stream);
+        int[] maxSizes = new int[]{35, 70};
+        for (int max : maxSizes) {
+            HybridStream stream = new HybridStream(max, null);
+            testSeekStream(stream);
 
-        long position = stream.getPosition();
-        System.out.println(position);
-        stream.write(content);
-        assert stream.getPosition() == position + content.length && stream.getLength() == stream.getPosition();
-        byte[] data = new byte[(int) stream.getLength()];
-        stream.setPosition(0L);
-        stream.read(data);
-        System.out.println(new String(data));
+            long position = stream.getPosition();
+            System.out.println(position);
+            stream.write(content);
+            assert stream.getPosition() == position + content.length && stream.getLength() == stream.getPosition();
+            byte[] data = new byte[(int) stream.getLength()];
+            stream.setPosition(0L);
+            stream.read(data);
+            System.out.println(new String(data));
+        }
     }
 
     @SneakyThrows
@@ -99,10 +113,6 @@ public class IOTester {
         assert buf.readLong() == 1024;
         assert buf.readInt() == 512;
     }
-
-    final boolean doWrite = true;
-    final String nameFormat = "C:\\download\\%s.txt";
-    final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @SneakyThrows
     @Test
@@ -177,8 +187,9 @@ public class IOTester {
         stream.setPosition(0L);
         System.out.println(stream.read());
 
-        IOStream<?, ?> serializeStream = IOStream.serialize(stream);
-        MemoryStream newStream = IOStream.deserialize(serializeStream);
+        IOStream<?, ?> serializeStream = Serializer.DEFAULT.serialize(stream);
+        serializeStream.setPosition(0);
+        MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
         for (int i = 0; i < 40; i++) {

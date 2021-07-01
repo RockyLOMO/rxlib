@@ -309,15 +309,17 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return w;
     }
 
-    @SneakyThrows
     @Override
     public void flush() {
-        randomAccessFile.flush();
+        flush(false);
     }
 
     @SneakyThrows
-    public void sync() {
-        randomAccessFile.sync();
+    public void flush(boolean flushToDisk) {
+        randomAccessFile.flush();
+        if (flushToDisk) {
+            randomAccessFile.sync();
+        }
     }
 
     public CompositeMmap mmap(FileChannel.MapMode mode) {

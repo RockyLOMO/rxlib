@@ -3,7 +3,6 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.RxConfig;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
@@ -77,40 +76,6 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     @SneakyThrows
     public static void writeString(@NonNull OutputStream out, @NonNull String value, @NonNull Charset charset) {
         out.write(value.getBytes(charset));
-    }
-
-    public static <T extends Serializable> IOStream<?, ?> serialize(T obj) {
-        return serialize(obj, RxConfig.MAX_HEAP_BUF_SIZE, null);
-    }
-
-    public static <T extends Serializable> HybridStream serialize(T obj, int maxMemorySize, String tempFilePath) {
-        HybridStream stream = new HybridStream(maxMemorySize, tempFilePath);
-        serialize(obj, stream);
-        stream.setPosition(0);
-        return stream;
-    }
-
-    @SneakyThrows
-    public static <T extends Serializable> void serialize(@NonNull T obj, @NonNull IOStream<?, ?> stream) {
-        ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
-        out.writeObject(obj);  //close会关闭stream
-        out.flush();
-    }
-
-    public static <T extends Serializable> T deserialize(IOStream<?, ?> stream) {
-        return deserialize(stream, false);
-    }
-
-    @SneakyThrows
-    public static <T extends Serializable> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveOpen) {
-        try {
-            ObjectInputStream in = new ObjectInputStream(stream.getReader());
-            return (T) in.readObject();
-        } finally {
-            if (!leveOpen) {
-                stream.close();
-            }
-        }
     }
 
     //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
@@ -324,6 +289,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         checkNotClosed();
 
         long pos = getPosition();
+        setPosition(0);
         byte[] data = new byte[(int) (getLength() - pos)];
         read(data);
         setPosition(pos);
