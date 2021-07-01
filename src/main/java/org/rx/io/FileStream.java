@@ -49,12 +49,12 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return temp;
     }
 
-    private BufferedRandomAccessFile.FileMode fileMode;
+    private FileMode fileMode;
     private FlagsEnum<CompositeLock.Flags> lockFlags;
     @Getter(AccessLevel.PROTECTED)
     private transient BufferedRandomAccessFile randomAccessFile;
     transient final Map<MapBlock, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
-    transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
+    private transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
 
     public CompositeLock getLock() {
         return lock.getValue();
@@ -70,8 +70,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
-        if (fileMode == BufferedRandomAccessFile.FileMode.READ_ONLY) {
-            fileMode = BufferedRandomAccessFile.FileMode.READ_WRITE;
+        if (fileMode == FileMode.READ_ONLY) {
+            fileMode = FileMode.READ_WRITE;
         }
         File file = new File(in.readUTF());
         if (file.exists()) {
@@ -185,15 +185,15 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     public FileStream(File file) {
-        this(file, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
     }
 
-    public FileStream(File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size) {
+    public FileStream(File file, FileMode mode, BufferedRandomAccessFile.BufSize size) {
         this(file, mode, size, CompositeLock.Flags.READ_WRITE_LOCK.flags());
     }
 
     @SneakyThrows
-    public FileStream(@NonNull File file, BufferedRandomAccessFile.FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
+    public FileStream(@NonNull File file, FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
         super(null, null);
         this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
         this.lockFlags = lockFlags;

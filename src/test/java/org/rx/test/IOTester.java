@@ -2,7 +2,9 @@ package org.rx.test;
 
 import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DateTime;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.io.*;
@@ -18,6 +20,7 @@ import java.util.UUID;
 
 import static org.rx.core.App.toJsonString;
 
+@Slf4j
 public class IOTester {
     @Test
     public void releaseBuffer() {
@@ -33,7 +36,24 @@ public class IOTester {
     @Test
     public void kvDb() {
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(KvPath);
-        System.out.println(kv);
+        kv.clear();
+        for (int i = 0; i < 10; i++) {
+            String val = kv.get(i);
+            if (val == null) {
+                val = DateTime.now().toString();
+                kv.put(i, val);
+                String newGet = kv.get(i);
+                log.info("put new {} {} -> {}", i, val, newGet);
+                assert val.equals(newGet);
+            }
+
+            val += "|";
+            kv.put(i, val);
+            String newGet = kv.get(i);
+            log.info("put {} {} -> {}", i, val, newGet);
+            assert val.equals(newGet);
+        }
+        kv.close();
     }
 
     @Test
@@ -117,7 +137,7 @@ public class IOTester {
     @SneakyThrows
     @Test
     public void fileBuf64K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 64), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 64), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
         TestUtil.invoke("fileBuf64K", () -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());
@@ -130,7 +150,7 @@ public class IOTester {
     @SneakyThrows
     @Test
     public void fileBuf4K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 4), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 4), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
         TestUtil.invoke("fileBuf4K", () -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());

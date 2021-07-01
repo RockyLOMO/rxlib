@@ -5,6 +5,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Disposable;
 
 import java.io.File;
 import java.io.Serializable;
@@ -27,7 +28,7 @@ import static org.rx.core.App.require;
  * value
  */
 @Slf4j
-public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
+public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
     static class MetaData implements Serializable {
         private static final long serialVersionUID = -4204525178919466203L;
 
@@ -70,7 +71,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
     final File parentDirectory;
     final MetaData metaData;
     final FileStream writer;
-//    final CompositeMmap mmap;
+    //    final CompositeMmap mmap;
     final CompositeLock locker;
     final LinkedTransferQueue<FileStream> readers = new LinkedTransferQueue<>();
     final IndexNode[] indexes;
@@ -91,16 +92,24 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         this(dirPath, 1, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
     }
 
+    /**
+     * @param dirPath
+     * @param readerCount    The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
+     *                       Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
+     *                       The only recommended way to read a file from a single disk is to read sequentially with one thread.
+     * @param indexFileCount
+     * @param serializer
+     */
     public KeyValueStore(@NonNull String dirPath, int readerCount, int indexFileCount, Serializer serializer) {
         parentDirectory = new File(dirPath);
         this.serializer = serializer;
 
         File logFile = new File(getParentDirectory(), LOG_FILE);
-        writer = new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        writer = new FileStream(logFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
         locker = writer.getLock();
 
         for (int i = 0; i < readerCount; i++) {
-            readers.offer(new FileStream(logFile, BufferedRandomAccessFile.FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA));
+            readers.offer(new FileStream(logFile, FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA));
         }
 
         if (writer.getLength() == 0) {
@@ -114,11 +123,17 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         indexes = new IndexNode[indexFileCount];
     }
 
+    @Override
+    protected void freeObjects() {
+        saveMetaData(metaData);
+    }
+
     private void saveMetaData(MetaData metaData) {
         locker.writeInvoke(() -> {
             metaData.logLength = writer.getPosition();
             writer.setPosition(0);
             serializer.serialize(metaData, writer);
+            writer.setPosition(metaData.logLength);
         }, 0, HEADER_LENGTH);
     }
 
@@ -135,7 +150,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         }
     }
 
-    private void xx(){
+    private void xx() {
 
     }
 
@@ -144,7 +159,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         synchronized (indexes) {
             IndexNode index = indexes[i];
             if (index == null) {
-                indexes[i] = index = new IndexNode(new FileStream(new File(getIndexDirectory(), String.format("%s", i)), BufferedRandomAccessFile.FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA), new ReentrantReadWriteLock());
+                indexes[i] = index = new IndexNode(new FileStream(new File(getIndexDirectory(), String.format("%s", i)), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA), new ReentrantReadWriteLock());
             }
             return index;
         }
@@ -167,7 +182,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
 
     protected TV read(TK k) {
         KeyData key = findKey(k);
-        if (key == null || key.status != KeyStatus.NORMAL) {
+        if (key == null) {
             return null;
         }
 
@@ -191,6 +206,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         locker.writeInvoke(() -> {
             keyData.logPosition = writer.getPosition();
             serializer.serialize(v, writer);
+            writer.flush();
             keyData.logSize = (int) (writer.getPosition() - keyData.logPosition);
         });
     }
@@ -203,7 +219,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
         try {
             return locker.readInvoke(() -> {
                 reader.setPosition(keyData.logPosition);
-                return serializer.deserialize(reader);
+                return serializer.deserialize(reader, true);
             });
         } finally {
             readers.offer(reader);
@@ -227,6 +243,7 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
             buf.writeLong(keyData.logPosition);
             buf.writeInt(keyData.logSize);
             out.write(buf);
+            out.flush();
         } finally {
             node.locker.writeLock().unlock();
             if (buf != null) {
@@ -364,18 +381,16 @@ public class KeyValueStore<TK, TV> implements ConcurrentMap<TK, TV> {
             metaData.size.set(0);
         });
 
-        for (IndexNode index : indexes) {
+        for (int i = 0; i < indexes.length; i++) {
+            IndexNode index = indexes[i];
             if (index == null) {
                 continue;
             }
 
-            index.locker.writeLock().lock();
-            try {
-                index.stream.setLength(0);
-            } finally {
-                index.locker.writeLock().unlock();
-            }
+            index.stream.close();
+            indexes[i] = null;
         }
+        Files.delete(getIndexDirectory().getAbsolutePath());
     }
 
     @Override

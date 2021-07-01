@@ -20,16 +20,6 @@ import java.io.RandomAccessFile;
  */
 public class BufferedRandomAccessFile extends RandomAccessFile {
     @RequiredArgsConstructor
-    public enum FileMode {
-        READ_ONLY("r"),
-        READ_WRITE("rw"),
-        READ_WRITE_AND_SYNC_CONTENT("rwd"),
-        READ_WRITE_AND_SYNC_ALL("rws");
-
-        final String value;
-    }
-
-    @RequiredArgsConstructor
     public enum BufSize {
         NON_BUF(0),
         SMALL_DATA(1024 * 4),
@@ -38,8 +28,7 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
         final int value;
     }
 
-    private String path_;
-
+    private final String path_;
     /*
      * This implementation is based on the buffer implementation in Modula-3's
      * "Rd", "Wr", "RdClass", and "WrClass" interfaces.
