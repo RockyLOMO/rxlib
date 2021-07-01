@@ -24,7 +24,6 @@ import org.rx.util.function.BiFunc;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-//thanks https://github.com/TongxiJi/shadowsocks-java
 @Slf4j
 public class ShadowsocksServer extends Disposable {
     final ShadowsocksConfig config;

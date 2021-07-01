@@ -22,7 +22,6 @@ import org.rx.util.function.PredicateFunc;
 
 import java.util.function.BiConsumer;
 
-//thanks https://github.com/hsupu/netty-socks
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = DirectUpstream::new;
