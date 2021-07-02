@@ -1,20 +1,110 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
-import org.rx.core.Disposable;
 import org.rx.core.Lazy;
 import org.rx.core.NQuery;
 
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 
-public final class CompositeMmap extends Disposable {
+public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     final FileStream owner;
     final FileStream.MapBlock key;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
+    @Getter
+    @Setter
+    long position;
+
+    @Override
+    public boolean canSeek() {
+        return true;
+    }
+
+    @SneakyThrows
+    @Override
+    public long getLength() {
+        return key.size;
+    }
+
+    @Override
+    public String getName() {
+        return owner.getName();
+    }
+
+    @Override
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    ByteBuf buf = Bytes.wrap(b, off, len);
+                    buf.clear();
+                    try {
+                        int read = CompositeMmap.this.read(position, buf);
+                        position += read;
+                        return read;
+                    } finally {
+                        buf.release();
+                    }
+                }
+
+                @Override
+                public int read() {
+                    ByteBuf buf = Bytes.directBuffer();
+                    try {
+                        position += CompositeMmap.this.read(position, buf, 1);
+                        return buf.readByte();
+                    } finally {
+                        buf.release();
+                    }
+                }
+            };
+        }
+        return reader;
+    }
+
+    @Override
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) {
+                    ByteBuf buf = Bytes.wrap(b, off, len);
+                    try {
+                        position += CompositeMmap.this.write(position, buf);
+                    } finally {
+                        buf.release();
+                    }
+                }
+
+                @Override
+                public void write(int b) {
+                    ByteBuf buf = Bytes.directBuffer();
+                    buf.writeByte(b);
+                    try {
+                        position += CompositeMmap.this.write(position, buf);
+                    } finally {
+                        buf.release();
+                    }
+                }
+
+                @Override
+                public void flush() {
+                    for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
+                        tuple.left.force();
+                    }
+                }
+            };
+        }
+        return writer;
+    }
 
     public long position() {
         return key.position;
@@ -30,6 +120,7 @@ public final class CompositeMmap extends Disposable {
 
     @SneakyThrows
     CompositeMmap(FileStream owner, FileStream.MapBlock key) {
+        super(null, null);
         this.owner = owner;
         this.key = key;
 

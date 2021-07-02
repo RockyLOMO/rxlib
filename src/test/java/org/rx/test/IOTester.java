@@ -8,6 +8,7 @@ import org.rx.bean.DateTime;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.io.*;
+import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.common.TestUtil;
 
@@ -28,15 +29,16 @@ public class IOTester {
         IOStream.release(buffer);
     }
 
+    final String baseDir = "C:\\download";
+    final String filePathFormat = baseDir + "\\%s.txt";
+    final String KvPath = baseDir + "\\RxKv";
     final boolean doWrite = true;
-    final String nameFormat = "C:\\download\\%s.txt";
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
-    final String KvPath = "C:\\download\\RxKv";
 
     @Test
     public void kvDb() {
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(KvPath);
-        kv.clear();
+//        kv.clear();
         for (int i = 0; i < 10; i++) {
             String val = kv.get(i);
             if (val == null) {
@@ -45,6 +47,7 @@ public class IOTester {
                 String newGet = kv.get(i);
                 log.info("put new {} {} -> {}", i, val, newGet);
                 assert val.equals(newGet);
+                assert kv.size() == i + 1;
             }
 
             val += "|";
@@ -53,6 +56,16 @@ public class IOTester {
             log.info("put {} {} -> {}", i, val, newGet);
             assert val.equals(newGet);
         }
+
+        kv.put(16, null);
+        String s = kv.get(16);
+        assert s == null;
+
+        log.info("remove {} {}", 9, kv.remove(9));
+
+        kv.put(32, "a");
+        log.info("remove {} {}", 32, kv.remove(32, "a"));
+
         kv.close();
     }
 
@@ -106,8 +119,9 @@ public class IOTester {
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));
 
-        FileStream fs = new FileStream(String.format(nameFormat, "mmap"));
+        FileStream fs = new FileStream(String.format(filePathFormat, "mmap"));
         CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
+        testMmapStream(mmap);
 
         testMmap(mmap, 1);
         testMmap(mmap, Integer.MAX_VALUE + 1L);
@@ -134,10 +148,25 @@ public class IOTester {
         assert buf.readInt() == 512;
     }
 
+    private void testMmapStream(IOStream<?, ?> stream) {
+        stream.write(content);
+        assert stream.getPosition() == content.length;
+        stream.setPosition(0L);
+        assert stream.available() == 0;
+        byte[] data = new byte[content.length];
+        int count = stream.read(data);
+        assert stream.getPosition() == count;
+        assert Arrays.equals(content, data);
+
+//        long pos = stream.getPosition();
+//        IOStream<?, ?> newStream = App.deepClone(stream);
+//        assert pos == newStream.getPosition();
+    }
+
     @SneakyThrows
     @Test
     public void fileBuf64K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 64), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 64), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
         TestUtil.invoke("fileBuf64K", () -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());
@@ -150,7 +179,7 @@ public class IOTester {
     @SneakyThrows
     @Test
     public void fileBuf4K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(nameFormat, 4), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 4), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
         TestUtil.invoke("fileBuf4K", () -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());
@@ -235,28 +264,38 @@ public class IOTester {
 
     @Test
     public void listFiles() {
-        for (File p : Files.listFiles("/", false)) {
+        for (File p : Files.listFiles(baseDir, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listFiles("/", true)) {
+        for (File p : Files.listFiles(baseDir, true)) {
             System.out.println(p);
         }
     }
 
     @Test
     public void listDirectories() {
-        String dirPath = "E:\\rdbc\\mysql-backup";
-        Path path = Files.path(dirPath);
+        Path path = Files.path(baseDir);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (File p : Files.listDirectories(dirPath, false)) {
+        for (File p : Files.listDirectories(baseDir, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listDirectories(dirPath, true)) {
+        for (File p : Files.listDirectories(baseDir, true)) {
             System.out.println(p);
         }
+    }
+
+    @Test
+    public void serialize() {
+        //json
+        GirlBean girlBean = new GirlBean();
+        girlBean.setAge(8);
+        IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
+        serialize.setPosition(0);
+        GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
+        assert girlBean.equals(deGirl);
     }
 }

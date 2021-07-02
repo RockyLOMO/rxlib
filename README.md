@@ -70,5 +70,9 @@ public void threadPool() {
 * [ShadowsocksServer & ShadowsocksClient](https://github.com/RockyLOMO/rxlib/wiki/ShadowsocksServer-&-ShadowsocksClient) 
 * [BeanMapper - 基于cglib bytecode实现](https://github.com/RockyLOMO/rxlib/wiki/BeanMapper---%E5%9F%BA%E4%BA%8Ecglib-bytecode%E5%AE%9E%E7%8E%B0)
 * [NQuery - lambda parallel stream](https://github.com/RockyLOMO/rxlib/wiki/NQuery---lambda-parallel-stream)
-* [SUID - Base64缩短的不丢精度的UUID](https://github.com/RockyLOMO/rxlib/wiki/ShortUUID---%E5%9F%BA%E4%BA%8EBase64%E7%BC%A9%E7%9F%AD)
-* BufferedRandomAccessFile
+* [SUID - Base64缩短不丢精度的UUID](https://github.com/RockyLOMO/rxlib/wiki/ShortUUID---%E5%9F%BA%E4%BA%8EBase64%E7%BC%A9%E7%9F%AD)
+* [KeyValueStore - 键值数据库]()
+
+#### Thanks
+* https://github.com/hsupu/netty-socks
+* https://github.com/TongxiJi/shadowsocks-java

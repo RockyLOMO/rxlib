@@ -101,8 +101,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Override
     public InputStream getReader() {
         if (reader == null) {
-//            setReader(new BufferedInputStream(new FileInputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
-            setReader(new InputStream() {
+            reader = new InputStream() {
                 @Override
                 public int available() throws IOException {
                     return (int) randomAccessFile.bytesRemaining();
@@ -117,18 +116,17 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 public int read() {
                     return FileStream.this.read();
                 }
-            });
+            };
         }
-        return super.getReader();
+        return reader;
     }
 
     @SneakyThrows
     @Override
     public OutputStream getWriter() {
         if (writer == null) {
-            //RandomAccessFile 搭配
 //            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
-            setWriter(new OutputStream() {
+            writer = new OutputStream() {
                 @Override
                 public void write(byte[] b, int off, int len) {
                     FileStream.this.write(b, off, len);
@@ -143,9 +141,9 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 public void flush() {
                     FileStream.this.flush();
                 }
-            });
+            };
         }
-        return super.getWriter();
+        return writer;
     }
 
     @Override

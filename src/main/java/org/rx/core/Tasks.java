@@ -13,7 +13,10 @@ import org.slf4j.helpers.MessageFormatter;
 import java.sql.Time;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -36,6 +39,13 @@ public final class Tasks {
     private static final List<TaskScheduler> replicas;
     //HashedWheelTimer
     private static final ScheduledExecutorService scheduler;
+    //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
+    private static final FastThreadLocal<Map<?, ?>> threadMap = new FastThreadLocal<Map<?, ?>>() {
+        @Override
+        protected Map<?, ?> initialValue() throws Exception {
+            return new WeakHashMap<>();
+        }
+    };
     private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();
 
     static {
@@ -49,6 +59,10 @@ public final class Tasks {
 
     public static TaskScheduler pool() {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
+    }
+
+    public static <K, V> V threadMapCompute(K k, Function<K, V> absentMappingFunc) {
+        return ((Map<K, V>) threadMap.get()).computeIfAbsent(k, absentMappingFunc);
     }
 
     public static UncaughtExceptionContext raisingContext() {
