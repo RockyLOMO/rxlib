@@ -45,6 +45,7 @@ public class IOTester {
                 String newGet = kv.get(i);
                 log.info("put new {} {} -> {}", i, val, newGet);
                 assert val.equals(newGet);
+                assert kv.size() == i + 1;
             }
 
             val += "|";

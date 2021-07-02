@@ -22,7 +22,7 @@ public class RedoTimer {
         private final AtomicInteger redoCount;
         private volatile boolean done;
         private volatile Timeout timeout;
-        private volatile Throwable lastError;
+        private Throwable lastError;
 
         @Override
         public void run(Timeout timeout) throws Exception {

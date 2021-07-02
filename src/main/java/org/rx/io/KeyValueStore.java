@@ -6,13 +6,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
+import org.rx.core.Tasks;
 
 import java.io.File;
-import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedTransferQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.App.require;
@@ -29,13 +28,6 @@ import static org.rx.core.App.require;
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
-    static class MetaData implements Serializable {
-        private static final long serialVersionUID = -4204525178919466203L;
-
-        final AtomicInteger size = new AtomicInteger();
-        long logLength;
-    }
-
     @RequiredArgsConstructor
     static class KeyData {
         long position = -1;
@@ -60,7 +52,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     static final String LOG_FILE = "RxKv.log";
-    static final int HEADER_LENGTH = 1024 * 2;
+    static final int HEADER_LENGTH = 1024;
     static final int KEY_SIZE = 17, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE, MAX_INDEX_FILE_SIZE = 1024 * 1024 * 128;
     static final int HASH_BITS = 0x7fffffff;
 
@@ -69,7 +61,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     final File parentDirectory;
-    final MetaData metaData;
+    final KeyValueMetaStore metaStore;
     final FileStream writer;
     //    final CompositeMmap mmap;
     final CompositeLock locker;
@@ -112,33 +104,32 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             readers.offer(new FileStream(logFile, FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA));
         }
 
-        if (writer.getLength() == 0) {
-            saveMetaData(metaData = new MetaData());
-            writer.setPosition(HEADER_LENGTH);
-        } else {
-            metaData = loadMetaData();
-            writer.setPosition(Math.max(HEADER_LENGTH, metaData.logLength));
-        }
+        metaStore = new KeyValueMetaStore(this::saveMetaData, this::loadMetaData);
+        writer.setPosition(Math.max(HEADER_LENGTH, metaStore.meta.getLogLength()));
 
         indexes = new IndexNode[indexFileCount];
     }
 
     @Override
     protected void freeObjects() {
-        saveMetaData(metaData);
+        saveMetaData(metaStore.meta);
     }
 
-    private void saveMetaData(MetaData metaData) {
+    private void saveMetaData(KeyValueMetaStore.MetaData metaData) {
         locker.writeInvoke(() -> {
-            metaData.logLength = writer.getPosition();
+            metaData.setLogLength(writer.getPosition());
             writer.setPosition(0);
             serializer.serialize(metaData, writer);
-            writer.setPosition(metaData.logLength);
+            writer.setPosition(metaData.getLogLength());
         }, 0, HEADER_LENGTH);
     }
 
     @SneakyThrows
-    private MetaData loadMetaData() {
+    private KeyValueMetaStore.MetaData loadMetaData() {
+        if (writer.getLength() == 0) {
+            return new KeyValueMetaStore.MetaData();
+        }
+
         FileStream reader = readers.take();
         try {
             return locker.readInvoke(() -> {
@@ -148,10 +139,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         } finally {
             readers.offer(reader);
         }
-    }
-
-    private void xx() {
-
     }
 
     private IndexNode indexStream(int hashCode) {
@@ -176,7 +163,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             saveKey(key);
         }
         if (key.position == -1) {
-            metaData.size.incrementAndGet();
+            metaStore.meta.incrementSize();
         }
     }
 
@@ -198,7 +185,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         TV val = findValue(key);
         key.status = KeyStatus.DELETE;
         saveKey(key);
-        metaData.size.decrementAndGet();
+        metaStore.meta.decrementSize();
         return val;
     }
 
@@ -208,12 +195,17 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             serializer.serialize(v, writer);
             writer.flush();
             keyData.logSize = (int) (writer.getPosition() - keyData.logPosition);
+
+            metaStore.meta.setLogLength(writer.getPosition());
         });
     }
 
     @SneakyThrows
     private TV findValue(KeyData keyData) {
         require(keyData, keyData.logPosition >= 0 && keyData.logSize > 0);
+        if (keyData.logPosition > metaStore.meta.getLogLength()) {
+            return null;
+        }
 
         FileStream reader = readers.take();
         try {
@@ -253,43 +245,45 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     private KeyData findKey(TK k) {
-        int hashCode = k.hashCode();
-        IndexNode node = indexStream(hashCode);
-        ByteBuf buf = null;
-        node.locker.readLock().lock();
-        try {
-            FileStream in = node.stream;
-            long len = in.getLength();
-            if (len == 0) {
-                return null;
-            }
-
-            in.setPosition(0);
-            buf = Bytes.directBuffer(KEY_SIZE, false);
-            while (in.read(buf, KEY_SIZE) > 0) {
-                byte status = buf.readByte();
-                if (buf.readInt() != hashCode) {
-                    buf.clear();
-                    continue;
-                }
-                if (status != KeyStatus.NORMAL.value) {
+        return Tasks.threadMapCompute(k, x -> {
+            int hashCode = k.hashCode();
+            IndexNode node = indexStream(hashCode);
+            ByteBuf buf = null;
+            node.locker.readLock().lock();
+            try {
+                FileStream in = node.stream;
+                long len = in.getLength();
+                if (len == 0) {
                     return null;
                 }
 
-                KeyData keyData = new KeyData(hashCode);
-                keyData.position = in.getPosition() - KEY_SIZE;
-                keyData.logPosition = buf.readLong();
-                keyData.logSize = buf.readInt();
-                return keyData;
-            }
+                in.setPosition(0);
+                buf = Bytes.directBuffer(KEY_SIZE, false);
+                while (in.read(buf, KEY_SIZE) > 0) {
+                    byte status = buf.readByte();
+                    if (buf.readInt() != hashCode) {
+                        buf.clear();
+                        continue;
+                    }
+                    if (status != KeyStatus.NORMAL.value) {
+                        return null;
+                    }
 
-            return null;
-        } finally {
-            node.locker.readLock().unlock();
-            if (buf != null) {
-                buf.release();
+                    KeyData keyData = new KeyData(hashCode);
+                    keyData.position = in.getPosition() - KEY_SIZE;
+                    keyData.logPosition = buf.readLong();
+                    keyData.logSize = buf.readInt();
+                    return keyData;
+                }
+
+                return null;
+            } finally {
+                node.locker.readLock().unlock();
+                if (buf != null) {
+                    buf.release();
+                }
             }
-        }
+        });
     }
 
     @Override
@@ -299,7 +293,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @Override
     public int size() {
-        return metaData.size.get();
+        return metaStore.meta.getSize();
     }
 
     @Override
@@ -377,8 +371,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     @Override
     public synchronized void clear() {
         locker.writeInvoke(() -> {
-            writer.setLength(metaData.logLength = HEADER_LENGTH);
-            metaData.size.set(0);
+            metaStore.meta.setLogLength(HEADER_LENGTH);
+            metaStore.meta.setSize(0);
+            writer.setLength(HEADER_LENGTH);
         });
 
         for (int i = 0; i < indexes.length; i++) {
