@@ -215,7 +215,7 @@ public class SocksTester {
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint0, threadCount));
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint0, 1, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
