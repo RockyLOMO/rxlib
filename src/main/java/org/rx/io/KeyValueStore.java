@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
+import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -8,7 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.Tasks;
 
-import java.io.File;
+import java.io.*;
+import java.nio.channels.FileChannel;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedTransferQueue;
@@ -21,24 +23,44 @@ import static org.rx.core.App.require;
  * size + logLength
  *
  * <p>index
- * status(1) + key.hashCode(4) + pos(8) + size(4)
+ * key.hashCode(4) + pos(8) + size(4)
  *
  * <p>log
- * value
+ * status(1) + key.hashCode(4) + value
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
     @RequiredArgsConstructor
     static class KeyData {
         long position = -1;
-        KeyStatus status = KeyStatus.NORMAL;
         final int hashCode;
         long logPosition;
         int logSize;
     }
 
+    @AllArgsConstructor
+    static class ValueData<TV> implements Serializable {
+        private static final long serialVersionUID = -2218602651671401557L;
+
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.writeByte(status.value);
+            out.writeInt(hashCode);
+            out.writeObject(value);
+        }
+
+        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+            status = in.readByte() == EntryStatus.NORMAL.value ? EntryStatus.NORMAL : EntryStatus.DELETE;
+            hashCode = in.readInt();
+            value = (TV) in.readObject();
+        }
+
+        EntryStatus status;
+        int hashCode;
+        TV value;
+    }
+
     @RequiredArgsConstructor
-    enum KeyStatus {
+    enum EntryStatus {
         NORMAL((byte) 0),
         DELETE((byte) 1);
 
@@ -52,19 +74,20 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     static final String LOG_FILE = "RxKv.log";
-    static final int HEADER_LENGTH = 1024;
-    static final int KEY_SIZE = 17, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE, MAX_INDEX_FILE_SIZE = 1024 * 1024 * 128;
+    static final int HEADER_LENGTH = 512;
+    static final int DELETED_POSITION = -1;
+    static final int KEY_SIZE = 16, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE, MAX_INDEX_FILE_SIZE = 1024 * 1024 * 128;
     static final int HASH_BITS = 0x7fffffff;
 
-    static final int spread(int h) {
+    static int spread(int h) {
         return (h ^ (h >>> 16)) & HASH_BITS;
     }
 
     final File parentDirectory;
-    final KeyValueMetaStore metaStore;
     final FileStream writer;
-    //    final CompositeMmap mmap;
     final CompositeLock locker;
+    final KeyValueMetaStore metaStore;
+    final CompositeMmap metaMmap;
     final LinkedTransferQueue<FileStream> readers = new LinkedTransferQueue<>();
     final IndexNode[] indexes;
     final Serializer serializer;
@@ -106,8 +129,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
         metaStore = new KeyValueMetaStore(this::saveMetaData, this::loadMetaData);
         writer.setPosition(Math.max(HEADER_LENGTH, metaStore.meta.getLogLength()));
+        metaMmap = writer.mmap(FileChannel.MapMode.READ_WRITE, 0, HEADER_LENGTH); //在loadMetaData之后
 
         indexes = new IndexNode[indexFileCount];
+
+        if (metaStore.meta.getLogLength() < writer.getLength()) {
+//todo reconver
+        }
     }
 
     @Override
@@ -157,14 +185,35 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         if (key == null) {
             key = new KeyData(k.hashCode());
         }
+        ValueData<TV> val = new ValueData<>(EntryStatus.NORMAL, key.hashCode, v);
 
         synchronized (this) {
-            saveValue(key, v);
+            saveValue(key, val);
             saveKey(key);
         }
         if (key.position == -1) {
             metaStore.meta.incrementSize();
         }
+    }
+
+    protected TV delete(TK k) {
+        KeyData key = findKey(k);
+        if (key == null) {
+            return null;
+        }
+        ValueData<TV> val = findValue(key);
+        if (val == null) {
+            return null;
+        }
+
+        key.logPosition = -1;
+        val.status = EntryStatus.DELETE;
+        synchronized (this) {
+            saveValue(key, val);
+            saveKey(key);
+        }
+        metaStore.meta.decrementSize();
+        return val.value;
     }
 
     protected TV read(TK k) {
@@ -173,55 +222,52 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
 
-        return findValue(key);
+        ValueData<TV> val = findValue(key);
+        return val != null ? val.value : null;
     }
 
-    protected TV delete(TK k) {
-        KeyData key = findKey(k);
-        if (key == null) {
-            return null;
-        }
+    private void saveValue(KeyData key, ValueData<TV> value) {
+        require(value, value.status != null);
 
-        TV val = findValue(key);
-        key.status = KeyStatus.DELETE;
-        saveKey(key);
-        metaStore.meta.decrementSize();
-        return val;
-    }
-
-    private void saveValue(KeyData keyData, TV v) {
         locker.writeInvoke(() -> {
-            keyData.logPosition = writer.getPosition();
-            serializer.serialize(v, writer);
+            key.logPosition = writer.getPosition();
+            serializer.serialize(value, writer);
             writer.flush();
-            keyData.logSize = (int) (writer.getPosition() - keyData.logPosition);
+            key.logSize = (int) (writer.getPosition() - key.logPosition);
 
             metaStore.meta.setLogLength(writer.getPosition());
         });
     }
 
-    @SneakyThrows
-    private TV findValue(KeyData keyData) {
-        require(keyData, keyData.logPosition >= 0 && keyData.logSize > 0);
-        if (keyData.logPosition > metaStore.meta.getLogLength()) {
+    private ValueData<TV> findValue(KeyData key) {
+        require(key, key.logPosition >= 0);
+        if (key.logPosition > metaStore.meta.getLogLength()) {
+            key.logPosition = DELETED_POSITION;
+            saveKey(key);
             return null;
         }
 
+        return findValue(key.logPosition);
+    }
+
+    @SneakyThrows
+    private ValueData<TV> findValue(long logPosition) {
         FileStream reader = readers.take();
         try {
-            return locker.readInvoke(() -> {
-                reader.setPosition(keyData.logPosition);
+            ValueData<TV> val = locker.readInvoke(() -> {
+                reader.setPosition(logPosition);
                 return serializer.deserialize(reader, true);
             });
+            if (val.status != EntryStatus.NORMAL) {
+                return null;
+            }
+            return val;
         } finally {
             readers.offer(reader);
         }
     }
 
     private void saveKey(KeyData keyData) {
-        require(keyData, keyData.status != null);
-        require(keyData, keyData.logPosition >= 0 && keyData.logSize > 0);
-
         IndexNode node = indexStream(keyData.hashCode);
         ByteBuf buf = null;
         node.locker.writeLock().lock();
@@ -230,7 +276,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             out.setPosition(keyData.position > -1 ? keyData.position : out.getLength());
 
             buf = Bytes.directBuffer(KEY_SIZE, false);
-            buf.writeByte(keyData.status.value);
             buf.writeInt(keyData.hashCode);
             buf.writeLong(keyData.logPosition);
             buf.writeInt(keyData.logSize);
@@ -244,46 +289,46 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         }
     }
 
-    private KeyData findKey(TK k) {
-        return Tasks.threadMapCompute(k, x -> {
-            int hashCode = k.hashCode();
-            IndexNode node = indexStream(hashCode);
-            ByteBuf buf = null;
-            node.locker.readLock().lock();
-            try {
-                FileStream in = node.stream;
-                long len = in.getLength();
-                if (len == 0) {
+    private KeyData findKey(@NonNull TK k) {
+//        return Tasks.threadMapCompute(k, x -> {
+        int hashCode = k.hashCode();
+        IndexNode node = indexStream(hashCode);
+        ByteBuf buf = null;
+        node.locker.readLock().lock();
+        try {
+            FileStream in = node.stream;
+            long len = in.getLength();
+            if (len == 0) {
+                return null;
+            }
+
+            in.setPosition(0);
+            buf = Bytes.directBuffer(KEY_SIZE, false);
+            while (in.read(buf, KEY_SIZE) > 0) {
+                if (buf.readInt() != hashCode) {
+                    buf.clear();
+                    continue;
+                }
+                long logPos = buf.readLong();
+                if (logPos == DELETED_POSITION) {
                     return null;
                 }
 
-                in.setPosition(0);
-                buf = Bytes.directBuffer(KEY_SIZE, false);
-                while (in.read(buf, KEY_SIZE) > 0) {
-                    byte status = buf.readByte();
-                    if (buf.readInt() != hashCode) {
-                        buf.clear();
-                        continue;
-                    }
-                    if (status != KeyStatus.NORMAL.value) {
-                        return null;
-                    }
-
-                    KeyData keyData = new KeyData(hashCode);
-                    keyData.position = in.getPosition() - KEY_SIZE;
-                    keyData.logPosition = buf.readLong();
-                    keyData.logSize = buf.readInt();
-                    return keyData;
-                }
-
-                return null;
-            } finally {
-                node.locker.readLock().unlock();
-                if (buf != null) {
-                    buf.release();
-                }
+                KeyData keyData = new KeyData(hashCode);
+                keyData.position = in.getPosition() - KEY_SIZE;
+                keyData.logPosition = logPos;
+                keyData.logSize = buf.readInt();
+                return keyData;
             }
-        });
+
+            return null;
+        } finally {
+            node.locker.readLock().unlock();
+            if (buf != null) {
+                buf.release();
+            }
+        }
+//        });
     }
 
     @Override
