@@ -196,6 +196,9 @@ public final class Remoting {
                         clientBean.waiter.waitOne(client.getConfig().getConnectTimeoutMillis());
                         clientBean.waiter.reset();
                     } catch (TimeoutException e) {
+                        if (!client.isConnected()) {
+                            throw new ClientDisconnectedException(e);
+                        }
                         if (clientBean.pack.returnValue == null) {
                             throw e;
                         }

@@ -19,14 +19,15 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
     private final GenericObjectPool<StatefulRpcClient> pool;
 
     public RpcClientPoolImpl(RpcClientConfig template) {
-        int maxSize = Math.max(1, template.getMaxPoolSize());
+        int minSize = Math.max(2, template.getMinPoolSize());
+        int maxSize = Math.max(minSize, template.getMaxPoolSize());
         GenericObjectPoolConfig<StatefulRpcClient> config = new GenericObjectPoolConfig<>();
         config.setLifo(true);
         config.setTestOnBorrow(true);
         config.setTestOnReturn(true);
         config.setJmxEnabled(false);
         config.setMaxWaitMillis(template.getConnectTimeoutMillis());
-        config.setMinIdle(App.getConfig().getNetMinPoolSize());
+        config.setMinIdle(minSize);
         config.setMaxIdle(maxSize);
         config.setMaxTotal(maxSize);
         pool = new GenericObjectPool<>(new BasePooledObjectFactory<StatefulRpcClient>() {

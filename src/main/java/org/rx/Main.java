@@ -84,7 +84,7 @@ public final class Main implements SocksSupport {
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             app = new Main(frontSvr);
-            RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 4);
+            RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 2, 4);
             rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
             SocksSupport support = Remoting.create(SocksSupport.class, rpcConf);
             frontSvr.setSupport(support);

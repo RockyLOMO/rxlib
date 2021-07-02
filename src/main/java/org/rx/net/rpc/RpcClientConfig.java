@@ -29,13 +29,14 @@ public class RpcClientConfig extends SocketConfig {
     }
 
     public static RpcClientConfig poolMode(String serverEndpoint, int maxPoolSize) {
-        return poolMode(Sockets.parseEndpoint(serverEndpoint), maxPoolSize);
+        return poolMode(Sockets.parseEndpoint(serverEndpoint), 2, maxPoolSize);
     }
 
-    public static RpcClientConfig poolMode(InetSocketAddress serverEndpoint, int maxPoolSize) {
+    public static RpcClientConfig poolMode(InetSocketAddress serverEndpoint, int minPoolSize, int maxPoolSize) {
         RpcClientConfig config = new RpcClientConfig();
         config.setServerEndpoint(serverEndpoint);
         config.setReconnectPeriod(NON_RECONNECT);
+        config.setMinPoolSize(minPoolSize);
         config.setMaxPoolSize(maxPoolSize);
         return config;
     }
@@ -45,6 +46,7 @@ public class RpcClientConfig extends SocketConfig {
     private InetSocketAddress serverEndpoint;
     private int reconnectPeriod = NON_RECONNECT;
     private int eventVersion = DEFAULT_VERSION;
+    private int minPoolSize;
     private int maxPoolSize = NON_POOL_SIZE;
 
     public boolean isUsePool() {
