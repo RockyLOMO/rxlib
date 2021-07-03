@@ -165,7 +165,7 @@ public class BeanTester extends TestUtil {
 
         Set<SUID> set = new HashSet<>();
         int len = 100;  //1530ms
-        invoke("suid", () -> {
+        invoke("suid", i -> {
             SUID suid1 = SUID.randomSUID();
             System.out.println(suid1.toString());
             set.add(suid1);

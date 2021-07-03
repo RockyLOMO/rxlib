@@ -96,6 +96,10 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
      * operation.
      */
 
+    public BufferedRandomAccessFile(String name, FileMode mode, BufSize size) throws IOException {
+        this(new File(name), mode, size);
+    }
+
     /**
      * Open a new <code>BufferedRandomAccessFile</code> on <code>file</code>
      * in mode <code>mode</code>, which should be "r" for reading only, or
@@ -104,17 +108,6 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
     public BufferedRandomAccessFile(File file, FileMode mode, BufSize size) throws IOException {
         super(file, mode.value);
         path_ = file.getAbsolutePath();
-        this.init(size.value, mode.value);
-    }
-
-    /**
-     * Open a new <code>BufferedRandomAccessFile</code> on the file named
-     * <code>name</code> in mode <code>mode</code>, which should be "r" for
-     * reading only, or "rw" for reading and writing.
-     */
-    public BufferedRandomAccessFile(String name, FileMode mode, BufSize size) throws IOException {
-        super(name, mode.value);
-        path_ = name;
         this.init(size.value, mode.value);
     }
 
@@ -133,22 +126,43 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
         }
     }
 
-    public String getPath() {
-        return path_;
-    }
-
-    public void sync() throws IOException {
-        if (syncNeeded_) {
-            flush();
-            getChannel().force(true); // true, because file length counts as "metadata"
-            syncNeeded_ = false;
-        }
-    }
-
+    @Override
     public void close() throws IOException {
         sync();
         this.buff_ = null;
         super.close();
+    }
+
+    public String getPath() {
+        return path_;
+    }
+
+    public boolean isEOF() throws IOException {
+        return getFilePointer() == length();
+    }
+
+    public long bytesRemaining() throws IOException {
+        return length() - getFilePointer();
+    }
+
+    public long length() throws IOException {
+        if (fileLength == -1) {
+            // max accounts for the case where we have written past the old file length, but not yet flushed our buffer
+            return Math.max(this.curr_, super.length());
+        } else {
+            // opened as read only, file length is cached
+            return fileLength;
+        }
+    }
+
+    @Override
+    public long getFilePointer() {
+        return this.curr_;
+    }
+
+    @Override
+    public void seek(long pos) throws IOException {
+        this.curr_ = pos;
     }
 
     /* Flush any dirty bytes in the buffer to disk. */
@@ -161,6 +175,31 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
             this.diskPos_ = this.hi_;
             this.dirty_ = false;
         }
+    }
+
+    public void sync() throws IOException {
+        if (syncNeeded_) {
+            flush();
+            getChannel().force(true); // true, because file length counts as "metadata"
+            syncNeeded_ = false;
+        }
+    }
+
+    /*
+     * On exit from this routine <code>this.curr == this.hi</code> iff <code>pos</code>
+     * is at or past the end-of-file, which can only happen if the file was
+     * opened in read-only mode.
+     */
+    private void reBuffer() throws IOException {
+        this.flush();
+        this.lo_ = this.curr_;
+        this.maxHi_ = this.lo_ + (long) this.buff_.length;
+        if (this.diskPos_ != this.lo_) {
+            super.seek(this.lo_);
+            this.diskPos_ = this.lo_;
+        }
+        int n = this.fillBuffer();
+        this.hi_ = this.lo_ + (long) n;
     }
 
     /*
@@ -181,41 +220,6 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
         this.hitEOF_ = (count < this.buff_.length);
         this.diskPos_ += count;
         return count;
-    }
-
-    public void seek(long pos) throws IOException {
-        this.curr_ = pos;
-    }
-
-    /*
-     * On exit from this routine <code>this.curr == this.hi</code> iff <code>pos</code>
-     * is at or past the end-of-file, which can only happen if the file was
-     * opened in read-only mode.
-     */
-    private void reBuffer() throws IOException {
-        this.flush();
-        this.lo_ = this.curr_;
-        this.maxHi_ = this.lo_ + (long) this.buff_.length;
-        if (this.diskPos_ != this.lo_) {
-            super.seek(this.lo_);
-            this.diskPos_ = this.lo_;
-        }
-        int n = this.fillBuffer();
-        this.hi_ = this.lo_ + (long) n;
-    }
-
-    public long getFilePointer() {
-        return this.curr_;
-    }
-
-    public long length() throws IOException {
-        if (fileLength == -1) {
-            // max accounts for the case where we have written past the old file length, but not yet flushed our buffer
-            return Math.max(this.curr_, super.length());
-        } else {
-            // opened as read only, file length is cached
-            return fileLength;
-        }
     }
 
     public int read() throws IOException {
@@ -287,13 +291,5 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
         if (this.curr_ > this.hi_)
             this.hi_ = this.curr_;
         return len;
-    }
-
-    public boolean isEOF() throws IOException {
-        return getFilePointer() == length();
-    }
-
-    public long bytesRemaining() throws IOException {
-        return length() - getFilePointer();
     }
 }

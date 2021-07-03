@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
 
 @Slf4j
@@ -39,32 +40,51 @@ public class IOTester {
     public void kvDb() {
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(KvPath);
 //        kv.clear();
-        for (int i = 0; i < 10; i++) {
+        int loopCount = 100, removeK = 99;
+        TestUtil.invoke("put", i -> {
             String val = kv.get(i);
             if (val == null) {
                 val = DateTime.now().toString();
+                if (i == removeK) {
+                    System.out.println(1);
+                }
                 kv.put(i, val);
                 String newGet = kv.get(i);
+                while (newGet == null) {
+                    newGet = kv.get(i);
+                    sleep(1000);
+                }
                 log.info("put new {} {} -> {}", i, val, newGet);
                 assert val.equals(newGet);
-                assert kv.size() == i + 1;
+                if (i != removeK) {
+                    assert kv.size() == i + 1;
+                } else {
+                    assert kv.size() == 100;
+                    System.out.println("x:" + kv.size());
+                }
             }
 
             val += "|";
             kv.put(i, val);
             String newGet = kv.get(i);
+            while (newGet == null) {
+                newGet = kv.get(i);
+                sleep(1000);
+                System.out.println("x:" + newGet);
+            }
             log.info("put {} {} -> {}", i, val, newGet);
             assert val.equals(newGet);
-        }
+        }, loopCount);
+        log.info("remove {} {}", removeK, kv.remove(removeK));
+        assert kv.size() == removeK;
 
-        kv.put(16, null);
-        String s = kv.get(16);
-        assert s == null;
+        int mk = 1001, mk2 = 1002;
+        kv.put(mk2, "a");
+        log.info("remove {} {}", mk2, kv.remove(mk2, "a"));
 
-        log.info("remove {} {}", 9, kv.remove(9));
-
-        kv.put(32, "a");
-        log.info("remove {} {}", 32, kv.remove(32, "a"));
+//        kv.put(mk, null);
+//        String s = kv.get(mk);
+//        assert s == null;
 
         kv.close();
     }
@@ -167,7 +187,7 @@ public class IOTester {
     @Test
     public void fileBuf64K() {
         BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 64), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
-        TestUtil.invoke("fileBuf64K", () -> {
+        TestUtil.invoke("fileBuf64K", i -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());
                 return;
@@ -180,7 +200,7 @@ public class IOTester {
     @Test
     public void fileBuf4K() {
         BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 4), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
-        TestUtil.invoke("fileBuf4K", () -> {
+        TestUtil.invoke("fileBuf4K", i -> {
             if (doWrite) {
                 fd.write(UUID.randomUUID().toString().getBytes());
                 return;

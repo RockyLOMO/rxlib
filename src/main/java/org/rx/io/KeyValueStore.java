@@ -1,16 +1,16 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import lombok.AllArgsConstructor;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.core.Disposable;
+import org.rx.core.Tasks;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedTransferQueue;
@@ -18,22 +18,26 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.require;
+import static org.rx.core.App.sleep;
 
 /**
  * meta
- * size + logLength
+ * size + logPosition
  *
  * <p>index
  * key.hashCode(4) + pos(8) + size(4)
  *
  * <p>log
  * status(1) + key + value
+ * <p>
+ * delay relative sequential write
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
     @RequiredArgsConstructor
+    @ToString
     static class KeyData<TK> {
-        TK key;
+        final TK key;
         long position = -1;
 
         final int hashCode;
@@ -42,6 +46,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     @AllArgsConstructor
+    @ToString
     static class Entry<TK, TV> implements Serializable {
         private static final long serialVersionUID = -2218602651671401557L;
 
@@ -78,7 +83,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int HEADER_LENGTH = 512;
-    static final int DELETED_POSITION = -1;
+    static final int TOMB_MARK = -1;
     static final int KEY_SIZE = 16, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE, MAX_INDEX_FILE_SIZE = 1024 * 1024 * 128;
     static final int HASH_BITS = 0x7fffffff;
 
@@ -86,14 +91,16 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return (h ^ (h >>> 16)) & HASH_BITS;
     }
 
+    final KeyValueStoreConfig config;
     final File parentDirectory;
-    final FileStream writer;
+    final FileStream main;
     final CompositeLock locker;
+    final IOStream<?, ?> writer;
+    final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
     final KeyValueMetaStore metaStore;
-    final CompositeMmap metaMmap;
-    final LinkedTransferQueue<FileStream> readers = new LinkedTransferQueue<>();
     final IndexNode[] indexes;
     final Serializer serializer;
+    FileChannel open ;
 
     File getParentDirectory() {
         parentDirectory.mkdirs();
@@ -107,92 +114,108 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     public KeyValueStore(String dirPath) {
-        this(dirPath, 1, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
+        this(new KeyValueStoreConfig(dirPath), (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
     }
 
-    /**
-     * @param dirPath
-     * @param readerCount    The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
-     *                       Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
-     *                       The only recommended way to read a file from a single disk is to read sequentially with one thread.
-     * @param indexFileCount
-     * @param serializer
-     */
-    public KeyValueStore(@NonNull String dirPath, int readerCount, int indexFileCount, Serializer serializer) {
-        parentDirectory = new File(dirPath);
+    public KeyValueStore(@NonNull KeyValueStoreConfig config, int indexFileCount, Serializer serializer) {
+        this.config = config;
+
+        parentDirectory = new File(config.getDirectoryPath());
         this.serializer = serializer;
 
         File logFile = new File(getParentDirectory(), LOG_FILE);
-        writer = new FileStream(logFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
-        locker = writer.getLock();
 
-        for (int i = 0; i < readerCount; i++) {
-            readers.offer(new FileStream(logFile, FileMode.READ_ONLY, BufferedRandomAccessFile.BufSize.LARGE_DATA));
+        main = new FileStream(logFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
+        locker = main.getLock();
+        metaStore = new KeyValueMetaStore(this, new FileStream.Block(0, HEADER_LENGTH));
+        ensureGrow();
+        long totalLength = main.getLength();
+
+        if (config.isUseMmap()) {
+            writer = main.mmap(FileChannel.MapMode.READ_WRITE, 0, totalLength);
+        } else {
+            writer = main;
+        }
+        for (int i = 0; i < config.getReaderCount(); i++) {
+//            if (config.isUseMmap()) {
+                readers.offer(main.mmap(FileChannel.MapMode.READ_ONLY, 0, totalLength));
+//            } else {
+                try {
+                     open = FileChannel.open(logFile.toPath(), StandardOpenOption.READ);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+//                readers.offer(new FileStream(logFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA));
+//            }
+//            readers.offer(writer);
         }
 
-        metaStore = new KeyValueMetaStore(this::saveMetaData, this::loadMetaData);
-        writer.setPosition(Math.max(HEADER_LENGTH, metaStore.meta.getLogLength()));
-        metaMmap = writer.mmap(FileChannel.MapMode.READ_WRITE, 0, HEADER_LENGTH); //在loadMetaData之后
+        writer.setPosition(Math.max(HEADER_LENGTH, metaStore.meta.getLogPosition()));
+        metaStore.meta.setLogPosition(writer.getPosition());
 
         indexes = new IndexNode[indexFileCount];
 
-        long pos = metaStore.meta.getLogLength();
-        while (pos < writer.getLength()) {
-            $<Long> endPos = $();
-            Entry<TK, TV> val = findValue(pos, null, endPos);
-            if (val == null || val.value == null) {
-                continue;
-            }
-
-            TK k = val.key;
-            KeyData<TK> key = findKey(k);
-            if (key == null) {
-                key = new KeyData<>(k.hashCode());
-                key.key = k;
-            }
-            synchronized (this) {
-                key.logPosition = pos;
-                key.logSize = (int) (endPos.v - key.logPosition);
-                metaStore.meta.setLogLength(endPos.v);
-
-                saveKey(key);
-            }
-            if (key.position == -1) {
-                metaStore.meta.incrementSize();
-            }
-            pos = endPos.v;
-        }
+//        long pos = metaStore.meta.getLogPosition();
+////        pos = HEADER_LENGTH;
+//        while (pos < writer.getLength()) {
+//            $<Long> endPos = $();
+//            Entry<TK, TV> val = findValue(pos, null, endPos);
+//            if (val == null || val.value == null) {
+//                continue;
+//            }
+//
+//            TK k = val.key;
+//            KeyData<TK> key = findKey(k);
+//            if (key == null) {
+//                key = new KeyData<>(k, k.hashCode());
+//            }
+//            synchronized (this) {
+//                key.logPosition = pos;
+//                key.logSize = (int) (endPos.v - key.logPosition);
+//                if (val.value == null) {
+//                    key.logPosition = TOMB_MARK;
+//                }
+//                metaStore.meta.setLogLength(endPos.v);
+//
+//                saveKey(key);
+//            }
+//            if (key.position == -1 && key.logPosition != TOMB_MARK) {
+//                metaStore.meta.incrementSize();
+//            }
+//            pos = endPos.v;
+//        }
     }
 
     @Override
     protected void freeObjects() {
-        saveMetaData(metaStore.meta);
+        metaStore.saveMetaData();
+
+        main.close();
+        writer.close();
+        IOStream<?, ?> r;
+        while ((r = readers.poll()) != null) {
+            r.close();
+        }
     }
 
-    private void saveMetaData(KeyValueMetaStore.MetaData metaData) {
+    private void ensureGrow() {
         locker.writeInvoke(() -> {
-            metaData.setLogLength(writer.getPosition());
-            writer.setPosition(0);
-            serializer.serialize(metaData, writer);
-            writer.setPosition(metaData.getLogLength());
-        }, 0, HEADER_LENGTH);
+            long length = main.getLength();
+            if (length < config.getLogFileGrowSize()) {
+                main.setLength(config.getLogFileGrowSize());
+                log.debug("growLength");
+                return;
+            }
+
+            if (writer != null && writer.getPosition() / (float) length > config.getLogFileGrowFactor()) {
+                main.setLength(length + config.getLogFileGrowSize());
+                log.debug("growLengthx");
+            }
+        });
     }
 
-    @SneakyThrows
-    private KeyValueMetaStore.MetaData loadMetaData() {
-        if (writer.getLength() == 0) {
-            return new KeyValueMetaStore.MetaData();
-        }
+    private void growLength() {
 
-        FileStream reader = readers.take();
-        try {
-            return locker.readInvoke(() -> {
-                reader.setPosition(0);
-                return serializer.deserialize(reader, true);
-            }, 0, HEADER_LENGTH);
-        } finally {
-            readers.offer(reader);
-        }
     }
 
     private IndexNode indexStream(int hashCode) {
@@ -207,18 +230,25 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     protected void write(TK k, TV v) {
+        boolean incr = false;
         KeyData<TK> key = findKey(k);
         if (key == null) {
-            key = new KeyData<>(k.hashCode());
-            key.key = k;
+            key = new KeyData<>(k, k.hashCode());
+            incr = true;
         }
-        Entry<TK, TV> val = new Entry<>(EntryStatus.NORMAL, k, v);
+        if (key.logPosition == TOMB_MARK) {
+            if (v == null) {
+                return;
+            }
+            incr = true;
+        }
 
+        Entry<TK, TV> val = new Entry<>(EntryStatus.NORMAL, k, v);
         synchronized (this) {
             saveValue(key, val);
             saveKey(key);
         }
-        if (key.position == -1) {
+        if (incr) {
             metaStore.meta.incrementSize();
         }
     }
@@ -233,7 +263,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
 
-        key.logPosition = -1;
+        key.logPosition = TOMB_MARK;
         val.status = EntryStatus.DELETE;
         synchronized (this) {
             saveValue(key, val);
@@ -245,7 +275,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     protected TV read(TK k) {
         KeyData<TK> key = findKey(k);
-        if (key == null) {
+        if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
 
@@ -254,6 +284,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     private void saveValue(KeyData<TK> key, Entry<TK, TV> value) {
+        checkNotClosed();
+        require(key, !(key.logPosition == TOMB_MARK && value.value == null));
         require(value, value.status != null);
 
         locker.writeInvoke(() -> {
@@ -261,15 +293,19 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             serializer.serialize(value, writer);
             writer.flush();
             key.logSize = (int) (writer.getPosition() - key.logPosition);
+            if (value.status == EntryStatus.DELETE) {
+                key.logPosition = TOMB_MARK;
+            }
 
-            metaStore.meta.setLogLength(writer.getPosition());
+            metaStore.meta.setLogPosition(writer.getPosition());
         });
+        log.debug("saveValue {} {}", key, value);
     }
 
     private Entry<TK, TV> findValue(KeyData<TK> key) {
         require(key, key.logPosition >= 0);
-        if (key.logPosition > metaStore.meta.getLogLength()) {
-            key.logPosition = DELETED_POSITION;
+        if (key.logPosition > metaStore.meta.getLogPosition()) {
+            key.logPosition = TOMB_MARK;
             saveKey(key);
             return null;
         }
@@ -279,20 +315,34 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @SneakyThrows
     private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
-        FileStream reader = readers.take();
+        log.debug("findValue {} {}", k == null ? "NULL" : k.hashCode(), logPosition);
+        IOStream<?, ?> reader = readers.take();
         try {
             Entry<TK, TV> val = locker.readInvoke(() -> {
                 reader.setPosition(logPosition);
                 try {
                     return serializer.deserialize(reader, true);
+                } catch (Exception e) {
+                    if (e instanceof StreamCorruptedException) {
+                        ByteBuffer allocate = ByteBuffer.allocate(10);
+                        open.position(logPosition).read(allocate);
+                        byte[] array = allocate.array();
+
+                        log.error("findValue {}", k.hashCode(), e);
+                        return null;
+                    }
+                    throw e;
                 } finally {
                     if (position != null) {
                         position.v = reader.getPosition();
                     }
                 }
             });
-            if (val.status != EntryStatus.NORMAL
-                    || (k != null && !k.equals(val.key))) {
+            if (val == null || val.status != EntryStatus.NORMAL) {
+                return null;
+            }
+            if (k != null && !k.equals(val.key)) {
+                log.warn("Hash collision {} {}", k.hashCode(), k);
                 return null;
             }
             return val;
@@ -302,6 +352,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     private void saveKey(KeyData<TK> key) {
+        checkNotClosed();
+        log.debug("saveKey {} {}", key.hashCode, key);
+
         IndexNode node = indexStream(key.hashCode);
         ByteBuf buf = null;
         node.locker.writeLock().lock();
@@ -324,6 +377,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     private KeyData<TK> findKey(@NonNull TK k) {
+        log.debug("findKey {}", k.hashCode());
 //        return Tasks.threadMapCompute(k, x -> {
         int hashCode = k.hashCode();
         IndexNode node = indexStream(hashCode);
@@ -344,12 +398,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
                     continue;
                 }
                 long logPos = buf.readLong();
-                if (logPos == DELETED_POSITION) {
-                    return null;
-                }
+//                if (logPos == TOMB_MARK) {
+//                    return null;
+//                }
 
-                KeyData<TK> keyData = new KeyData<>(hashCode);
-                keyData.key = k;
+                KeyData<TK> keyData = new KeyData<>(k, hashCode);
                 keyData.position = in.getPosition() - KEY_SIZE;
                 keyData.logPosition = logPos;
                 keyData.logSize = buf.readInt();
@@ -451,9 +504,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     @Override
     public synchronized void clear() {
         locker.writeInvoke(() -> {
-            metaStore.meta.setLogLength(HEADER_LENGTH);
             metaStore.meta.setSize(0);
-            writer.setLength(HEADER_LENGTH);
+            metaStore.meta.setLogPosition(HEADER_LENGTH);
+
+            writer.setPosition(HEADER_LENGTH);
         });
 
         for (int i = 0; i < indexes.length; i++) {

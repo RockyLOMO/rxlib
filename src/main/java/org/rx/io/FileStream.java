@@ -108,13 +108,13 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
                 }
 
                 @Override
-                public int read(byte[] b, int off, int len) {
-                    return FileStream.this.read(b, off, len);
+                public int read(byte[] b, int off, int len) throws IOException {
+                    return randomAccessFile.read(b, off, len);
                 }
 
                 @Override
-                public int read() {
-                    return FileStream.this.read();
+                public int read() throws IOException {
+                    return randomAccessFile.read();
                 }
             };
         }
@@ -128,13 +128,13 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 //            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
             writer = new OutputStream() {
                 @Override
-                public void write(byte[] b, int off, int len) {
-                    FileStream.this.write(b, off, len);
+                public void write(byte[] b, int off, int len) throws IOException {
+                    randomAccessFile.write(b, off, len);
                 }
 
                 @Override
-                public void write(int b) {
-                    FileStream.this.write(b);
+                public void write(int b) throws IOException {
+                    randomAccessFile.write(b);
                 }
 
                 @Override
@@ -212,19 +212,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @SneakyThrows
     @Override
     public long available() {
-        return randomAccessFile.length() - randomAccessFile.getFilePointer();
-    }
-
-    @SneakyThrows
-    @Override
-    public int read() {
-        return randomAccessFile.read();
-    }
-
-    @SneakyThrows
-    @Override
-    public int read(byte[] buffer, int offset, int length) {
-        return randomAccessFile.read(buffer, offset, length);
+        return randomAccessFile.bytesRemaining();
     }
 
     @SneakyThrows
@@ -252,18 +240,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         }
         setPosition(pos + totalRead);
         return totalRead;
-    }
-
-    @SneakyThrows
-    @Override
-    public void write(int b) {
-        randomAccessFile.write(b);
-    }
-
-    @SneakyThrows
-    @Override
-    public void write(byte[] buffer, int offset, int length) {
-        randomAccessFile.write(buffer, offset, length);
     }
 
     @Override
@@ -301,14 +277,14 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
         src.readerIndex(rEndIndex);
         setPosition(pos + w);
-        switch (fileMode) {
-            case READ_WRITE_AND_SYNC_CONTENT:
-                ch.force(false);
-                break;
-            case READ_WRITE_AND_SYNC_ALL:
-                ch.force(true);
-                break;
-        }
+//        switch (fileMode) {
+//            case READ_WRITE_AND_SYNC_CONTENT:
+//                ch.force(false);
+//                break;
+//            case READ_WRITE_AND_SYNC_ALL:
+//                ch.force(true);
+//                break;
+//        }
         return w;
     }
 

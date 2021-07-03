@@ -49,6 +49,8 @@
         </encoder>
     </appender>
 
+    <logger name="org.rx" level="DEBUG"/>
+
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="infoAppender"/>
