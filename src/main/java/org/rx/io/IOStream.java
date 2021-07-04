@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
+import org.rx.core.Lazy;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
 
@@ -19,7 +20,6 @@ import java.util.Objects;
 import static org.rx.core.App.*;
 
 @Slf4j
-@AllArgsConstructor
 public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
     private static final long serialVersionUID = 3204673656139586437L;
     public static final int NON_READ_FULLY = -1;
@@ -78,6 +78,10 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         out.write(value.getBytes(charset));
     }
 
+    static int safeRemaining(long remaining) {
+        return remaining >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
+    }
+
     //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
     public static void release(@NonNull ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
@@ -122,22 +126,22 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         }
     }
 
-    @Setter(AccessLevel.PROTECTED)
-    protected transient TI reader;
-    @Setter(AccessLevel.PROTECTED)
-    protected transient TO writer;
-
-    public abstract String getName();
+    private final transient Lazy<TI> reader = new Lazy<>(this::initReader);
+    private final transient Lazy<TO> writer = new Lazy<>(this::initWriter);
 
     public TI getReader() {
-        Objects.requireNonNull(reader);
-        return reader;
+        return Objects.requireNonNull(reader.getValue());
     }
 
     public TO getWriter() {
-        Objects.requireNonNull(writer);
-        return writer;
+        return Objects.requireNonNull(writer.getValue());
     }
+
+    protected abstract TI initReader();
+
+    protected abstract TO initWriter();
+
+    public abstract String getName();
 
     public boolean canRead() {
         return !isClosed() && available() > 0;
@@ -169,9 +173,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     @SneakyThrows
     @Override
     protected void freeObjects() {
-        quietly(this::flush);
-        tryClose(writer);
-        tryClose(reader);
+        flush();
+        tryClose(getWriter());
+        tryClose(getReader());
+    }
+
+    @Override
+    public void close() {
+        quietly(super::close);
     }
 
     @SneakyThrows

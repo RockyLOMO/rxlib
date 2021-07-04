@@ -4,21 +4,14 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
-import org.rx.bean.DataRange;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.SUID;
-import org.rx.bean.Tuple;
 import org.rx.core.Lazy;
 import org.rx.util.function.TripleFunc;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static org.rx.core.App.*;
 
 @Slf4j
 public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
@@ -53,7 +46,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     private FlagsEnum<CompositeLock.Flags> lockFlags;
     @Getter(AccessLevel.PROTECTED)
     private transient BufferedRandomAccessFile randomAccessFile;
-    transient final Map<MapBlock, CompositeMmap> mmaps = new ConcurrentHashMap<>(0);
     private transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
 
     public CompositeLock getLock() {
@@ -97,53 +89,45 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         return FilenameUtils.getName(getPath());
     }
 
-    @SneakyThrows
     @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                @Override
-                public int available() throws IOException {
-                    return (int) randomAccessFile.bytesRemaining();
-                }
+    protected InputStream initReader() {
+        return new InputStream() {
+            @Override
+            public int available() {
+                return safeRemaining(FileStream.this.available());
+            }
 
-                @Override
-                public int read(byte[] b, int off, int len) throws IOException {
-                    return randomAccessFile.read(b, off, len);
-                }
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                return randomAccessFile.read(b, off, len);
+            }
 
-                @Override
-                public int read() throws IOException {
-                    return randomAccessFile.read();
-                }
-            };
-        }
-        return reader;
+            @Override
+            public int read() throws IOException {
+                return randomAccessFile.read();
+            }
+        };
     }
 
-    @SneakyThrows
     @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-//            super.setWriter(new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K));
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) throws IOException {
-                    randomAccessFile.write(b, off, len);
-                }
+    protected OutputStream initWriter() {
+        //new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K)
+        return new OutputStream() {
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                randomAccessFile.write(b, off, len);
+            }
 
-                @Override
-                public void write(int b) throws IOException {
-                    randomAccessFile.write(b);
-                }
+            @Override
+            public void write(int b) throws IOException {
+                randomAccessFile.write(b);
+            }
 
-                @Override
-                public void flush() {
-                    FileStream.this.flush();
-                }
-            };
-        }
-        return writer;
+            @Override
+            public void flush() {
+                FileStream.this.flush();
+            }
+        };
     }
 
     @Override
@@ -153,19 +137,19 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    public long getPosition() {
+    public synchronized long getPosition() {
         return randomAccessFile.getFilePointer();
     }
 
     @SneakyThrows
     @Override
-    public void setPosition(long position) {
+    public synchronized void setPosition(long position) {
         randomAccessFile.seek(position);
     }
 
     @SneakyThrows
     @Override
-    public long getLength() {
+    public synchronized long getLength() {
         return randomAccessFile.length();
     }
 
@@ -192,7 +176,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     public FileStream(@NonNull File file, FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
-        super(null, null);
         this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
         this.lockFlags = lockFlags;
     }
@@ -200,12 +183,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @SneakyThrows
     @Override
     protected void freeObjects() {
-        quietly(() -> {
-            super.freeObjects();
-            for (CompositeMmap compositeMmap : mmaps.values()) {
-                compositeMmap.close();
-            }
-        });
         randomAccessFile.close();
     }
 
@@ -311,19 +288,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (mode == null) {
             mode = FileChannel.MapMode.READ_WRITE;
         }
-        return mmaps.computeIfAbsent(new MapBlock(mode, position, size), k -> new CompositeMmap(this, k));
-    }
-
-    // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows需要先执行unmap())
-    // A mapping, once established, is not dependent upon the file channel that was used to create it. Closing the channel, in particular, has no effect upon the validity of the mapping.
-    public void unmap(@NonNull CompositeMmap buf) {
-        CompositeMmap compositeMmap = mmaps.remove(buf.key);
-        if (compositeMmap == null) {
-            return;
-        }
-
-        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : compositeMmap.buffers) {
-            release(tuple.left);
-        }
+        return new CompositeMmap(this, new MapBlock(mode, position, size));
     }
 }

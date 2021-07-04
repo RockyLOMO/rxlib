@@ -22,6 +22,7 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
     @RequiredArgsConstructor
     public enum BufSize {
         NON_BUF(0),
+        TINY_DATA(1024),
         SMALL_DATA(1024 * 4),
         LARGE_DATA(1 << 16);// 64K buffer
 

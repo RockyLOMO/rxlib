@@ -8,14 +8,24 @@ import java.nio.charset.StandardCharsets;
 
 public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     private static final long serialVersionUID = 7204373912624988890L;
-    private boolean leaveOpen;
+    private final boolean leaveOpen;
     @Getter
-    private IOStream<?, ?> baseStream;
+    private final IOStream<?, ?> baseStream;
     private transient BufferedReader reader2;
 
     @Override
     public String getName() {
         return baseStream.getName();
+    }
+
+    @Override
+    protected DataInputStream initReader() {
+        return new DataInputStream(baseStream.getReader());
+    }
+
+    @Override
+    protected DataOutputStream initWriter() {
+        return new DataOutputStream(baseStream.getWriter());
     }
 
     @Override
@@ -43,8 +53,6 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     public BinaryStream(IOStream<?, ?> stream, boolean leaveOpen) {
-        super(new DataInputStream(stream.getReader()), new DataOutputStream(stream.getWriter()));
-
         baseStream = stream;
         this.leaveOpen = leaveOpen;
     }

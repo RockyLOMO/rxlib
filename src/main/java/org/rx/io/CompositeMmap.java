@@ -9,18 +9,98 @@ import org.rx.bean.Tuple;
 import org.rx.core.Lazy;
 import org.rx.core.NQuery;
 
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 
 public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
+    private static final long serialVersionUID = -3293392999599916L;
+
+    private void writeObject(ObjectOutputStream out) throws IOException {
+        throw new UnsupportedEncodingException();
+    }
+
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        throw new UnsupportedEncodingException();
+    }
+
     final FileStream owner;
+    @Getter
     final FileStream.MapBlock key;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
     @Getter
     @Setter
     long position;
+
+    @Override
+    public String getName() {
+        return owner.getName();
+    }
+
+    @Override
+    protected InputStream initReader() {
+        return new InputStream() {
+            @Override
+            public int available() {
+                return safeRemaining(CompositeMmap.this.available());
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) {
+                ByteBuf buf = Bytes.wrap(b, off, len);
+                buf.clear();
+                try {
+                    int read = CompositeMmap.this.read(position, buf);
+                    position += read;
+                    return read;
+                } finally {
+                    buf.release();
+                }
+            }
+
+            @Override
+            public int read() {
+                ByteBuf buf = Bytes.directBuffer();
+                try {
+                    position += CompositeMmap.this.read(position, buf, 1);
+                    return buf.readByte();
+                } finally {
+                    buf.release();
+                }
+            }
+        };
+    }
+
+    @Override
+    protected OutputStream initWriter() {
+        return new OutputStream() {
+            @Override
+            public void write(byte[] b, int off, int len) {
+                ByteBuf buf = Bytes.wrap(b, off, len);
+                try {
+                    position += CompositeMmap.this.write(position, buf);
+                } finally {
+                    buf.release();
+                }
+            }
+
+            @Override
+            public void write(int b) {
+                ByteBuf buf = Bytes.directBuffer();
+                buf.writeByte(b);
+                try {
+                    position += CompositeMmap.this.write(position, buf);
+                } finally {
+                    buf.release();
+                }
+            }
+
+            @Override
+            public void flush() {
+                CompositeMmap.this.flush();
+            }
+        };
+    }
 
     @Override
     public boolean canSeek() {
@@ -30,88 +110,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     @SneakyThrows
     @Override
     public long getLength() {
-        return key.size;
-    }
-
-    @Override
-    public String getName() {
-        return owner.getName();
-    }
-
-    @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                @Override
-                public int read(byte[] b, int off, int len) {
-                    ByteBuf buf = Bytes.wrap(b, off, len);
-                    buf.clear();
-                    try {
-                        int read = CompositeMmap.this.read(position, buf);
-                        position += read;
-                        return read;
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public int read() {
-                    ByteBuf buf = Bytes.directBuffer();
-                    try {
-                        position += CompositeMmap.this.read(position, buf, 1);
-                        return buf.readByte();
-                    } finally {
-                        buf.release();
-                    }
-                }
-            };
-        }
-        return reader;
-    }
-
-    @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    ByteBuf buf = Bytes.wrap(b, off, len);
-                    try {
-                        position += CompositeMmap.this.write(position, buf);
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public void write(int b) {
-                    ByteBuf buf = Bytes.directBuffer();
-                    buf.writeByte(b);
-                    try {
-                        position += CompositeMmap.this.write(position, buf);
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public void flush() {
-                    for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
-                        tuple.left.force();
-                    }
-                }
-            };
-        }
-        return writer;
-    }
-
-    public long position() {
-        return key.position;
-    }
-
-    public long size() {
-        return key.size;
+        return key.position + key.size;
     }
 
     public MappedByteBuffer[] buffers() {
@@ -120,7 +119,6 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     @SneakyThrows
     CompositeMmap(FileStream owner, FileStream.MapBlock key) {
-        super(null, null);
         this.owner = owner;
         this.key = key;
 
@@ -138,7 +136,27 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     @Override
     protected void freeObjects() {
-        owner.unmap(this);
+        // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows需要先执行unmap())
+        // A mapping, once established, is not dependent upon the file channel that was used to create it. Closing the channel, in particular, has no effect upon the validity of the mapping.
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
+            release(tuple.left);
+        }
+    }
+
+    @Override
+    public long available() {
+        return remaining(position);
+    }
+
+    public long remaining(long position) {
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
+            DataRange<Long> range = tuple.right;
+            if (!range.has(position)) {
+                continue;
+            }
+            return range.end - position;
+        }
+        return 0;
     }
 
     public int read(long position, ByteBuf byteBuf) {
@@ -223,5 +241,12 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
             }
         }
         return byteBuf.readerIndex() - readerIndex;
+    }
+
+    @Override
+    public void flush() {
+        for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
+            tuple.left.force();
+        }
     }
 }

@@ -22,8 +22,8 @@ public abstract class Disposable implements AutoCloseable {
         if (closed) {
             return;
         }
-        freeObjects();
         closed = true;
+        freeObjects();
     }
 
     protected abstract void freeObjects();

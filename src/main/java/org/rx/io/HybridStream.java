@@ -42,6 +42,16 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
+    protected InputStream initReader() {
+        return null;
+    }
+
+    @Override
+    protected OutputStream initWriter() {
+        return null;
+    }
+
+    @Override
     public InputStream getReader() {
         return getStream().getReader();
     }
@@ -76,7 +86,6 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public HybridStream(int maxMemorySize, String tempFilePath) {
-        super(null, null);
         this.maxMemorySize = maxMemorySize;
         this.tempFilePath = tempFilePath;
     }

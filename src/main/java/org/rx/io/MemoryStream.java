@@ -46,58 +46,52 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                @Override
-                public int available() {
-                    return buffer.readableBytes();
-                }
+    protected InputStream initReader() {
+        return new InputStream() {
+            @Override
+            public int available() {
+                return buffer.readableBytes();
+            }
 
-                @Override
-                public int read(byte[] b, int off, int len) {
-                    int readableBytes = buffer.readableBytes();
-                    if (readableBytes == 0) {
-                        return -1;
-                    }
-                    int len0 = Math.min(readableBytes, len);
-                    buffer.readBytes(b, off, len0);
-                    return len0;
+            @Override
+            public int read(byte[] b, int off, int len) {
+                int readableBytes = buffer.readableBytes();
+                if (readableBytes == 0) {
+                    return -1;
                 }
+                int len0 = Math.min(readableBytes, len);
+                buffer.readBytes(b, off, len0);
+                return len0;
+            }
 
-                //byte -1?
-                @Override
-                public int read() {
-                    if (buffer.readableBytes() == 0) {
-                        return -1;
-                    }
-                    return buffer.readByte();
+            //byte -1?
+            @Override
+            public int read() {
+                if (buffer.readableBytes() == 0) {
+                    return -1;
                 }
-            };
-        }
-        return reader;
+                return buffer.readByte();
+            }
+        };
     }
 
     @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeBytes(b, off, len);
-                    buffer.readerIndex(buffer.writerIndex());
-                }
+    protected OutputStream initWriter() {
+        return new OutputStream() {
+            @Override
+            public void write(byte[] b, int off, int len) {
+                buffer.writerIndex(buffer.readerIndex());
+                buffer.writeBytes(b, off, len);
+                buffer.readerIndex(buffer.writerIndex());
+            }
 
-                @Override
-                public void write(int b) {
-                    buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeByte(b);
-                    buffer.readerIndex(buffer.writerIndex());
-                }
-            };
-        }
-        return writer;
+            @Override
+            public void write(int b) {
+                buffer.writerIndex(buffer.readerIndex());
+                buffer.writeByte(b);
+                buffer.readerIndex(buffer.writerIndex());
+            }
+        };
     }
 
     @Override
@@ -143,13 +137,11 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public MemoryStream(int initialCapacity, boolean directBuffer, boolean publiclyVisible) {
-        super(null, null);
         buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity, true) : Bytes.heapBuffer(initialCapacity, true);
         this.publiclyVisible = publiclyVisible;
     }
 
     public MemoryStream(byte[] buffer, int offset, int length) {
-        super(null, null);
         this.buffer = Bytes.wrap(buffer, offset, length);
     }
 
