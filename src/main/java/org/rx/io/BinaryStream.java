@@ -34,6 +34,16 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @Override
+    public boolean canRead() {
+        return baseStream.canRead();
+    }
+
+    @Override
+    public boolean canWrite() {
+        return baseStream.canWrite();
+    }
+
+    @Override
     public long getPosition() {
         return baseStream.getPosition();
     }

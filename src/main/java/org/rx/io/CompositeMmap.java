@@ -12,6 +12,7 @@ import org.rx.core.NQuery;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 
 public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     private static final long serialVersionUID = -3293392999599916L;
@@ -26,7 +27,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     final FileStream owner;
     @Getter
-    final FileStream.MapBlock key;
+    final FileStream.Block block;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
     @Getter
     @Setter
@@ -110,7 +111,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     @SneakyThrows
     @Override
     public long getLength() {
-        return key.position + key.size;
+        return block.position + block.size;
     }
 
     public MappedByteBuffer[] buffers() {
@@ -118,18 +119,18 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     }
 
     @SneakyThrows
-    CompositeMmap(FileStream owner, FileStream.MapBlock key) {
+    CompositeMmap(FileStream owner, FileChannel.MapMode mode, FileStream.Block block) {
         this.owner = owner;
-        this.key = key;
+        this.block = block;
 
-        long totalCount = key.size;
+        long totalCount = block.size;
         long max = Integer.MAX_VALUE;
         buffers = new Tuple[(int) Math.floorDiv(totalCount, max) + 1];
         long prev = 0;
         for (int i = 0; i < buffers.length; i++) {
             long count = Math.min(max, totalCount);
             DataRange<Long> range = new DataRange<>(prev, prev = (prev + count));
-            buffers[i] = Tuple.of((MappedByteBuffer) owner.getRandomAccessFile().getChannel().map(key.mode, range.start, count).mark(), range);
+            buffers[i] = Tuple.of((MappedByteBuffer) owner.getRandomAccessFile().getChannel().map(mode, range.start, count).mark(), range);
             totalCount -= count;
         }
     }

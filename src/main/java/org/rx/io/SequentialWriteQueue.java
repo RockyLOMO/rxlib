@@ -4,30 +4,40 @@ import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
 import org.rx.core.Disposable;
+import org.rx.core.NQuery;
 import org.rx.core.RunFlag;
 import org.rx.core.Tasks;
 import org.rx.util.RedoTimer;
 import org.rx.util.function.Action;
 
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
 import static org.rx.core.App.quietly;
 
-final class WriteBackQueue extends Disposable {
+@Slf4j
+final class SequentialWriteQueue extends Disposable {
     @Setter
     long delaySavePeriod = 500;
     @Getter
-    private final IntWaterMark waterMark = new IntWaterMark(8, 16);
+    private final IntWaterMark waterMark = new IntWaterMark(4, 8);
     private final TreeMap<Long, Action> sortMap = new TreeMap<>();
     private final RedoTimer timer = new RedoTimer();
     private Timeout timeout;
 
     @Override
     protected void freeObjects() {
-        consume();
+        List<Action> actions = NQuery.of(sortMap.values()).toList();
+        for (Action action : actions) {
+            quietly(action);
+        }
+
+        //避免action 又 offer 死循环
+//        consume();
     }
 
     @SneakyThrows
@@ -40,6 +50,7 @@ final class WriteBackQueue extends Disposable {
 
         sortMap.put(position, writeAction);
         if (sortMap.size() > waterMark.getHigh()) {
+            log.debug("high water mark");
             Tasks.run((Action) this::consume, toString(), RunFlag.SINGLE);
             wait();
             return;
@@ -62,6 +73,7 @@ final class WriteBackQueue extends Disposable {
             synchronized (this) {
                 entry = sortMap.pollFirstEntry();
                 if (sortMap.size() <= waterMark.getLow()) {
+                    log.debug("low water mark");
                     notifyAll();
                 }
             }

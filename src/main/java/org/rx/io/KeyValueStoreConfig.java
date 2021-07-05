@@ -7,6 +7,9 @@ import lombok.RequiredArgsConstructor;
 @Data
 public class KeyValueStoreConfig {
     private final String directoryPath;
+    /**
+     * init big file for sequential write
+     */
     private long logGrowSize = 1024 * 1024 * 1024; //1G
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.

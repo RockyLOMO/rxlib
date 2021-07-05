@@ -14,6 +14,8 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.rx.core.App.require;
+
 @Slf4j
 public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private static final long serialVersionUID = 1414441456982833443L;
@@ -29,12 +31,25 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     static class MetaHeader implements Serializable {
         private static final long serialVersionUID = 3894764623767567837L;
 
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.writeLong(logPosition);
+            out.writeInt(size.get());
+        }
+
+        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+            logPosition = in.readLong();
+            size = new AtomicInteger();
+            size.set(in.readInt());
+        }
+
         transient BiAction<MetaHeader> writeBack;
         @Getter
-        private volatile long logPosition;
-        private final AtomicInteger size = new AtomicInteger();
+        private volatile long logPosition = HEADER_SIZE;
+        private AtomicInteger size = new AtomicInteger();
 
         public void setLogPosition(long logPosition) {
+            require(logPosition, logPosition >= HEADER_SIZE);
+
             this.logPosition = logPosition;
             writeBack();
         }
@@ -63,6 +78,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             if (writeBack == null) {
                 return;
             }
+//            log.debug("write back {}", this);
             writeBack.invoke(this);
         }
     }
@@ -82,7 +98,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final WriteBackQueue writeBackQueue = new WriteBackQueue();
+    private final SequentialWriteQueue sequentialWriteQueue = new SequentialWriteQueue();
 
     @Override
     public String getName() {
@@ -130,19 +146,22 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     public long getReaderPosition() {
+        return getReaderPosition(false);
+    }
+
+    public long getReaderPosition(boolean remove) {
         Long val = readerPosition.getIfExists();
         if (val == null) {
             throw new InvalidException("Reader position not set");
+        }
+        if (remove) {
+            readerPosition.remove();
         }
         return val;
     }
 
     public void setReaderPosition(long position) {
         readerPosition.set(position);
-    }
-
-    public void removeReaderPosition() {
-        readerPosition.remove();
     }
 
     @Override
@@ -162,14 +181,13 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         meta = loadMeta();
-        meta.writeBack = m -> writeBackQueue.offer(0, this::saveMeta);
+        meta.writeBack = m -> sequentialWriteQueue.offer(0, this::saveMeta);
     }
 
     @Override
     protected void freeObjects() {
+        sequentialWriteQueue.close();
         releaseReaderAndWriter();
-
-        writeBackQueue.consume();
         main.close();
     }
 
@@ -184,7 +202,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         checkNotClosed();
 
         lock.writeInvoke(() -> {
-            meta.setLogPosition(writer.getPosition());
+//            meta.setLogPosition(writer.getPosition());
             writer.setPosition(0);
             serializer.serialize(meta, writer);
         }, 0, HEADER_SIZE);
@@ -289,7 +307,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                 int read = action.invoke(reader);
                 setReaderPosition(reader.getPosition());
                 return read;
-            });
+            }, HEADER_SIZE, Long.MAX_VALUE);
         } finally {
             readers.offer(reader);
         }
@@ -305,7 +323,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             writer.setPosition(meta.getLogPosition());
             action.invoke(writer);
             meta.setLogPosition(writer.getPosition());
-        });
+        }, HEADER_SIZE, Long.MAX_VALUE);
     }
 
     @Override

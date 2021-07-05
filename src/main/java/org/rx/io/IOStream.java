@@ -5,7 +5,6 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.Lazy;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.ApplicationException;
 
@@ -126,15 +125,21 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         }
     }
 
-    private final transient Lazy<TI> reader = new Lazy<>(this::initReader);
-    private final transient Lazy<TO> writer = new Lazy<>(this::initWriter);
+    private transient TI reader;
+    private transient TO writer;
 
     public TI getReader() {
-        return Objects.requireNonNull(reader.getValue());
+        if (reader == null) {
+            reader = Objects.requireNonNull(initReader());
+        }
+        return reader;
     }
 
     public TO getWriter() {
-        return Objects.requireNonNull(writer.getValue());
+        if (writer == null) {
+            writer = Objects.requireNonNull(initWriter());
+        }
+        return writer;
     }
 
     protected abstract TI initReader();

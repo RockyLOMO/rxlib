@@ -11,19 +11,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import static org.rx.bean.$.$;
 import static org.rx.core.App.require;
 
 /**
  * meta
- * size + logPosition
+ * logPosition + size
  *
  * <p>index
  * key.hashCode(4) + pos(8) + size(4)
  *
  * <p>log
- * status(1) + key + value
- * <p>
- * delay relative sequential write
+ * key + value
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
@@ -44,18 +43,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         private static final long serialVersionUID = -2218602651671401557L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
-            out.writeByte(status.value);
             out.writeObject(key);
             out.writeObject(value);
         }
 
         private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            status = in.readByte() == EntryStatus.NORMAL.value ? EntryStatus.NORMAL : EntryStatus.DELETE;
             key = (TK) in.readObject();
             value = (TV) in.readObject();
         }
 
-        EntryStatus status;
         TK key;
         TV value;
     }
@@ -100,8 +96,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return dir;
     }
 
-    public KeyValueStore(String dirPath) {
-        this(new KeyValueStoreConfig(dirPath), (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
+    public KeyValueStore(KeyValueStoreConfig config) {
+        this(config, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
     }
 
     public KeyValueStore(@NonNull KeyValueStoreConfig config, int indexFileCount, Serializer serializer) {
@@ -115,35 +111,37 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
         indexes = new IndexNode[indexFileCount];
 
-//        long pos = metaStore.meta.getLogPosition();
-////        pos = HEADER_LENGTH;
-//        while (pos < writer.getLength()) {
-//            $<Long> endPos = $();
-//            Entry<TK, TV> val = findValue(pos, null, endPos);
-//            if (val == null || val.value == null) {
-//                continue;
-//            }
-//
-//            TK k = val.key;
-//            KeyData<TK> key = findKey(k);
-//            if (key == null) {
-//                key = new KeyData<>(k, k.hashCode());
-//            }
-//            synchronized (this) {
-//                key.logPosition = pos;
-//                key.logSize = (int) (endPos.v - key.logPosition);
-//                if (val.value == null) {
-//                    key.logPosition = TOMB_MARK;
-//                }
-//                metaStore.meta.setLogLength(endPos.v);
-//
-//                saveKey(key);
-//            }
-//            if (key.position == -1 && key.logPosition != TOMB_MARK) {
-//                metaStore.meta.incrementSize();
-//            }
-//            pos = endPos.v;
-//        }
+        long pos = wal.meta.getLogPosition();
+//        pos = WALFileStream.HEADER_SIZE;
+        Entry<TK, TV> val;
+        $<Long> endPos = $();
+        while ((val = findValue(pos, null, endPos)) != null) {
+            boolean incr = false;
+            TK k = val.key;
+            KeyData<TK> key = findKey(k);
+            if (key == null) {
+                key = new KeyData<>(k, k.hashCode());
+                incr = true;
+            }
+            if (key.logPosition == TOMB_MARK) {
+                incr = true;
+            }
+            synchronized (this) {
+                key.logPosition = pos;
+                key.logSize = (int) (endPos.v - key.logPosition);
+                if (val.value == null) {
+                    key.logPosition = TOMB_MARK;
+                }
+                wal.meta.setLogPosition(endPos.v);
+
+                saveKey(key);
+            }
+            if (incr) {
+                wal.meta.incrementSize();
+            }
+            log.debug("recover {}", key);
+            pos = endPos.v;
+        }
     }
 
     @Override
@@ -177,7 +175,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             incr = true;
         }
 
-        Entry<TK, TV> val = new Entry<>(EntryStatus.NORMAL, k, v);
+        Entry<TK, TV> val = new Entry<>(k, v);
         synchronized (this) {
             saveValue(key, val);
             saveKey(key);
@@ -197,8 +195,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
 
-        key.logPosition = TOMB_MARK;
-        val.status = EntryStatus.DELETE;
+//        key.logPosition = TOMB_MARK;
+        val.value = null;
         synchronized (this) {
             saveValue(key, val);
             saveKey(key);
@@ -220,14 +218,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     private void saveValue(KeyData<TK> key, Entry<TK, TV> value) {
         checkNotClosed();
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
-        require(value, value.status != null);
 
         wal.lock.writeInvoke(() -> {
             key.logPosition = wal.meta.getLogPosition();
             serializer.serialize(value, wal);
             wal.flush();
             key.logSize = (int) (wal.meta.getLogPosition() - key.logPosition);
-            if (value.status == EntryStatus.DELETE) {
+            if (value.value == null) {
                 key.logPosition = TOMB_MARK;
             }
         });
@@ -247,24 +244,25 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @SneakyThrows
     private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
-        log.debug("findValue {} {}", k == null ? "NULL" : k.hashCode(), logPosition);
+        Object kStr = k == null ? "NULL" : k.hashCode();
+        log.debug("findValue {} {}", kStr, logPosition);
         Entry<TK, TV> val = null;
         try {
             wal.setReaderPosition(logPosition);
             val = serializer.deserialize(wal, true);
         } catch (Exception e) {
             if (e instanceof StreamCorruptedException) {
-                log.error("findValue {}", k.hashCode(), e);
+                log.error("findValue {} {}", kStr, logPosition, e);
             } else {
                 throw e;
             }
         } finally {
+            long readerPosition = wal.getReaderPosition(true);
             if (position != null) {
-                position.v = wal.getReaderPosition();
+                position.v = readerPosition;
             }
-            wal.removeReaderPosition();
         }
-        if (val == null || val.status != EntryStatus.NORMAL) {
+        if (val == null || val.value == null) {
             return null;
         }
         if (k != null && !k.equals(val.key)) {

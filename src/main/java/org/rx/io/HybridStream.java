@@ -67,6 +67,16 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
+    public boolean canRead() {
+        return getStream().canRead();
+    }
+
+    @Override
+    public boolean canWrite() {
+        return getStream().canWrite();
+    }
+
+    @Override
     public long getPosition() {
         return getStream().getPosition();
     }

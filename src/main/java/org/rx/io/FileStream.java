@@ -19,18 +19,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @RequiredArgsConstructor
     @EqualsAndHashCode
-    static class Block {
-        final long position, size;
-    }
-
-    @EqualsAndHashCode(callSuper = true)
-    static class MapBlock extends Block {
-        final FileChannel.MapMode mode;
-
-        public MapBlock(FileChannel.MapMode mode, long position, long size) {
-            super(position, size);
-            this.mode = mode;
-        }
+    public static class Block {
+        public final long position, size;
     }
 
     @SneakyThrows
@@ -133,6 +123,11 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Override
     public boolean canSeek() {
         return true;
+    }
+
+    @Override
+    public boolean canWrite() {
+        return super.canWrite() && fileMode != FileMode.READ_ONLY;
     }
 
     @SneakyThrows
@@ -288,6 +283,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         if (mode == null) {
             mode = FileChannel.MapMode.READ_WRITE;
         }
-        return new CompositeMmap(this, new MapBlock(mode, position, size));
+        return new CompositeMmap(this, mode, new Block(position, size));
     }
 }

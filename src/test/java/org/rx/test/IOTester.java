@@ -38,7 +38,9 @@ public class IOTester {
 
     @Test
     public void kvDb() {
-        KeyValueStore<Integer, String> kv = new KeyValueStore<>(KvPath);
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
+        conf.setLogGrowSize(1024 * 1024 * 4);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
 //        kv.clear();
         int loopCount = 100, removeK = 99;
         TestUtil.invoke("put", i -> {
@@ -145,7 +147,7 @@ public class IOTester {
 
         testMmap(mmap, 1);
         testMmap(mmap, Integer.MAX_VALUE + 1L);
-        testMmap(mmap, mmap.position() + mmap.size() - 12);
+        testMmap(mmap, mmap.getBlock().position + mmap.getBlock().size - 12);
 
 //        fs.setLength(Integer.MAX_VALUE);
 
@@ -172,7 +174,7 @@ public class IOTester {
         stream.write(content);
         assert stream.getPosition() == content.length;
         stream.setPosition(0L);
-        assert stream.available() == 0;
+//        assert stream.available() == 0;
         byte[] data = new byte[content.length];
         int count = stream.read(data);
         assert stream.getPosition() == count;
