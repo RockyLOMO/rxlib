@@ -13,8 +13,8 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
-    public static void hexDump(ByteBuf buf) {
-        System.out.println(ByteBufUtil.prettyHexDump(buf));
+    public static String hexDump(ByteBuf buf) {
+        return ByteBufUtil.prettyHexDump(buf);
     }
 
     public static ByteBuf wrap(byte[] buffer, int offset, int length) {

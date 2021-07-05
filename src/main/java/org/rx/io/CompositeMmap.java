@@ -160,6 +160,11 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
         return 0;
     }
 
+    @Override
+    public int read(ByteBuf dst, int length) {
+        return read(position, dst, length);
+    }
+
     public int read(long position, ByteBuf byteBuf) {
         return read(position, byteBuf, byteBuf.writableBytes());
     }
@@ -194,6 +199,11 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
             }
         }
         return byteBuf.writerIndex() - writerIndex;
+    }
+
+    @Override
+    public void write(ByteBuf src, int length) {
+        write(position, src, length);
     }
 
     public int write(long position, ByteBuf byteBuf) {

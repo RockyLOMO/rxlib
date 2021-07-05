@@ -104,34 +104,4 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     protected void freeObjects() {
         getStream().close();
     }
-
-//    @Override
-//    public long available() {
-//        return getStream().available();
-//    }
-//
-//    @Override
-//    public int read() {
-//        return getStream().read();
-//    }
-//
-//    @Override
-//    public int read(byte[] buffer, int offset, int length) {
-//        return getStream().read(buffer, offset, length);
-//    }
-//
-//    @Override
-//    public void write(int b) {
-//        getStream().write(b);
-//    }
-//
-//    @Override
-//    public void write(byte[] buffer, int offset, int length) {
-//        getStream().write(buffer, offset, length);
-//    }
-//
-//    @Override
-//    public void flush() {
-//        getStream().flush();
-//    }
 }

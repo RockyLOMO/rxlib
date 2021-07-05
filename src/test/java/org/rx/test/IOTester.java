@@ -18,6 +18,7 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
@@ -35,6 +36,29 @@ public class IOTester {
     final String KvPath = baseDir + "\\RxKv";
     final boolean doWrite = true;
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
+
+    @Test
+    public void kvDb2() {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
+        conf.setLogGrowSize(1024 * 1024 * 4);
+        conf.setIndexBufferSize(1024 * 1024 * 4);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
+        int loopCount = 10;
+        TestUtil.invoke("kvdb", i -> {
+//                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
+            int k = i;
+            String val = kv.get(k);
+            if (val == null) {
+                kv.put(k, val = String.valueOf(k));
+            }
+            String newGet = kv.get(k);
+            if (!val.equals(newGet)) {
+                log.error("check: {} == {}", val, newGet);
+            }
+            assert val.equals(newGet);
+        }, loopCount);
+        kv.close();
+    }
 
     @Test
     public void kvDb() {
