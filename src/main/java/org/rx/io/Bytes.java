@@ -12,8 +12,11 @@ import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
-//ByteBufUtil.prettyHexDump()
 public class Bytes {
+    public static void hexDump(ByteBuf buf) {
+        System.out.println(ByteBufUtil.prettyHexDump(buf));
+    }
+
     public static ByteBuf wrap(byte[] buffer, int offset, int length) {
         return Unpooled.wrappedBuffer(buffer, offset, length);
     }

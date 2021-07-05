@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
@@ -19,24 +18,13 @@ import static org.rx.core.App.require;
  * logPosition + size
  *
  * <p>index
- * key.hashCode(4) + pos(8) + size(4)
+ * key.hashCode(4) + pos(8)
  *
  * <p>log
  * key + value
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
-    @RequiredArgsConstructor
-    @ToString
-    static class KeyData<TK> {
-        final TK key;
-        long position = -1;
-
-        final int hashCode;
-        long logPosition;
-        int logSize;
-    }
-
     @AllArgsConstructor
     @ToString
     static class Entry<TK, TV> implements Serializable {
@@ -72,17 +60,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
-    static final int KEY_SIZE = 16, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE, MAX_INDEX_FILE_SIZE = 1024 * 1024 * 128;
-    static final int HASH_BITS = 0x7fffffff;
-
-    static int spread(int h) {
-        return (h ^ (h >>> 16)) & HASH_BITS;
-    }
+    static final int KEY_SIZE = 16, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE;
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
     final WALFileStream wal;
-    final IndexNode[] indexes;
+    final HashFileIndexer<TK> indexer;
     final Serializer serializer;
 
     File getParentDirectory() {
@@ -96,11 +79,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return dir;
     }
 
-    public KeyValueStore(KeyValueStoreConfig config) {
-        this(config, (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / MAX_INDEX_FILE_SIZE), Serializer.DEFAULT);
-    }
-
-    public KeyValueStore(@NonNull KeyValueStoreConfig config, int indexFileCount, Serializer serializer) {
+    public KeyValueStore(@NonNull KeyValueStoreConfig config, Serializer serializer) {
         this.config = config;
 
         parentDirectory = new File(config.getDirectoryPath());
@@ -109,7 +88,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         File logFile = new File(getParentDirectory(), LOG_FILE);
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
 
-        indexes = new IndexNode[indexFileCount];
+        indexer = new HashFileIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexBufferSize());
 
         long pos = wal.meta.getLogPosition();
 //        pos = WALFileStream.HEADER_SIZE;
@@ -118,9 +97,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         while ((val = findValue(pos, null, endPos)) != null) {
             boolean incr = false;
             TK k = val.key;
-            KeyData<TK> key = findKey(k);
+            HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
             if (key == null) {
-                key = new KeyData<>(k, k.hashCode());
+                key = new HashFileIndexer.KeyData<>(k, k.hashCode());
                 incr = true;
             }
             if (key.logPosition == TOMB_MARK) {
@@ -128,13 +107,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             }
             synchronized (this) {
                 key.logPosition = pos;
-                key.logSize = (int) (endPos.v - key.logPosition);
                 if (val.value == null) {
                     key.logPosition = TOMB_MARK;
                 }
                 wal.meta.setLogPosition(endPos.v);
 
-                saveKey(key);
+                indexer.saveKey(key);
             }
             if (incr) {
                 wal.meta.incrementSize();
@@ -146,26 +124,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @Override
     protected void freeObjects() {
+        indexer.close();
         wal.close();
-        //todo index
-    }
-
-    private IndexNode indexStream(int hashCode) {
-        int i = (indexes.length - 1) & spread(hashCode);
-        synchronized (indexes) {
-            IndexNode index = indexes[i];
-            if (index == null) {
-                indexes[i] = index = new IndexNode(new FileStream(new File(getIndexDirectory(), String.format("%s", i)), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA), new ReentrantReadWriteLock());
-            }
-            return index;
-        }
     }
 
     protected void write(TK k, TV v) {
         boolean incr = false;
-        KeyData<TK> key = findKey(k);
+        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null) {
-            key = new KeyData<>(k, k.hashCode());
+            key = new HashFileIndexer.KeyData<>(k, k.hashCode());
             incr = true;
         }
         if (key.logPosition == TOMB_MARK) {
@@ -178,7 +145,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         Entry<TK, TV> val = new Entry<>(k, v);
         synchronized (this) {
             saveValue(key, val);
-            saveKey(key);
+            indexer.saveKey(key);
         }
         if (incr) {
             wal.meta.incrementSize();
@@ -186,7 +153,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     protected TV delete(TK k) {
-        KeyData<TK> key = findKey(k);
+        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null) {
             return null;
         }
@@ -199,14 +166,14 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         val.value = null;
         synchronized (this) {
             saveValue(key, val);
-            saveKey(key);
+            indexer.saveKey(key);
         }
         wal.meta.decrementSize();
         return val.value;
     }
 
     protected TV read(TK k) {
-        KeyData<TK> key = findKey(k);
+        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
@@ -215,7 +182,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return val != null ? val.value : null;
     }
 
-    private void saveValue(KeyData<TK> key, Entry<TK, TV> value) {
+    private void saveValue(HashFileIndexer.KeyData<TK> key, Entry<TK, TV> value) {
         checkNotClosed();
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
@@ -223,7 +190,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             key.logPosition = wal.meta.getLogPosition();
             serializer.serialize(value, wal);
             wal.flush();
-            key.logSize = (int) (wal.meta.getLogPosition() - key.logPosition);
             if (value.value == null) {
                 key.logPosition = TOMB_MARK;
             }
@@ -231,11 +197,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         log.debug("saveValue {} {}", key, value);
     }
 
-    private Entry<TK, TV> findValue(KeyData<TK> key) {
+    private Entry<TK, TV> findValue(HashFileIndexer.KeyData<TK> key) {
         require(key, key.logPosition >= 0);
         if (key.logPosition > wal.meta.getLogPosition()) {
             key.logPosition = TOMB_MARK;
-            saveKey(key);
+            indexer.saveKey(key);
             return null;
         }
 
@@ -272,74 +238,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return val;
     }
 
-    private void saveKey(KeyData<TK> key) {
-        checkNotClosed();
-        log.debug("saveKey {} {}", key.hashCode, key);
-
-        IndexNode node = indexStream(key.hashCode);
-        ByteBuf buf = null;
-        node.locker.writeLock().lock();
-        try {
-            FileStream out = node.stream;
-            out.setPosition(key.position > -1 ? key.position : out.getLength());
-
-            buf = Bytes.directBuffer(KEY_SIZE, false);
-            buf.writeInt(key.hashCode);
-            buf.writeLong(key.logPosition);
-            buf.writeInt(key.logSize);
-            out.write(buf);
-            out.flush();
-        } finally {
-            node.locker.writeLock().unlock();
-            if (buf != null) {
-                buf.release();
-            }
-        }
-    }
-
-    private KeyData<TK> findKey(@NonNull TK k) {
-        log.debug("findKey {}", k.hashCode());
-//        return Tasks.threadMapCompute(k, x -> {
-        int hashCode = k.hashCode();
-        IndexNode node = indexStream(hashCode);
-        ByteBuf buf = null;
-        node.locker.readLock().lock();
-        try {
-            FileStream in = node.stream;
-            long len = in.getLength();
-            if (len == 0) {
-                return null;
-            }
-
-            in.setPosition(0);
-            buf = Bytes.directBuffer(KEY_SIZE, false);
-            while (in.read(buf, KEY_SIZE) > 0) {
-                if (buf.readInt() != hashCode) {
-                    buf.clear();
-                    continue;
-                }
-                long logPos = buf.readLong();
-//                if (logPos == TOMB_MARK) {
-//                    return null;
-//                }
-
-                KeyData<TK> keyData = new KeyData<>(k, hashCode);
-                keyData.position = in.getPosition() - KEY_SIZE;
-                keyData.logPosition = logPos;
-                keyData.logSize = buf.readInt();
-                return keyData;
-            }
-
-            return null;
-        } finally {
-            node.locker.readLock().unlock();
-            if (buf != null) {
-                buf.release();
-            }
-        }
-//        });
-    }
-
     @Override
     public boolean isEmpty() {
         return size() == 0;
@@ -352,7 +250,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @Override
     public boolean containsKey(Object key) {
-        return findKey((TK) key) != null;
+        return indexer.findKey((TK) key) != null;
     }
 
     @Override
@@ -424,18 +322,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     @Override
     public synchronized void clear() {
+        indexer.clear();
         wal.clear();
-
-        for (int i = 0; i < indexes.length; i++) {
-            IndexNode index = indexes[i];
-            if (index == null) {
-                continue;
-            }
-
-            index.stream.close();
-            indexes[i] = null;
-        }
-        Files.delete(getIndexDirectory().getAbsolutePath());
     }
 
     @Override

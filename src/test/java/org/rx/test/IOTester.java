@@ -40,7 +40,8 @@ public class IOTester {
     public void kvDb() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
-        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+        conf.setIndexBufferSize(1024 * 1024);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
 //        kv.clear();
         int loopCount = 100, removeK = 99;
         TestUtil.invoke("put", i -> {
