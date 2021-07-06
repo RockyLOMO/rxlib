@@ -2,7 +2,6 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
@@ -29,13 +28,21 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     @Getter
     final FileStream.Block block;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
-    @Getter
-    @Setter
     long position;
 
     @Override
     public String getName() {
         return owner.getName();
+    }
+
+    @Override
+    public synchronized long getPosition() {
+        return position;
+    }
+
+    @Override
+    public synchronized void setPosition(long position) {
+        this.position = position;
     }
 
     @Override
@@ -149,7 +156,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
         return remaining(position);
     }
 
-    public long remaining(long position) {
+    public synchronized long remaining(long position) {
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
@@ -257,7 +264,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     }
 
     @Override
-    public void flush() {
+    public synchronized void flush() {
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             tuple.left.force();
         }

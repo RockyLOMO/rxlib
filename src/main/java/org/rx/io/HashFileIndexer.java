@@ -9,10 +9,12 @@ import org.rx.core.Strings;
 import org.rx.core.Tasks;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.nio.file.Paths;
 
 import static org.rx.core.App.require;
+import static org.rx.core.App.tryClose;
 
 @Slf4j
 final class HashFileIndexer<TK> extends Disposable {
@@ -31,9 +33,8 @@ final class HashFileIndexer<TK> extends Disposable {
         private final HashFileIndexer<?> owner;
         private final FileStream main;
         private final CompositeLock lock;
-        private final AtomicInteger wroteSize = new AtomicInteger();
-        private volatile long wroteBytes = HEADER_SIZE;
-        private IOStream<?, ?> stream;
+        private long _wroteBytes = HEADER_SIZE;
+        private IOStream<?, ?> writer, reader;
 
         Slot(HashFileIndexer<?> owner, File indexFile) {
             this.owner = owner;
@@ -46,14 +47,17 @@ final class HashFileIndexer<TK> extends Disposable {
         }
 
         private void createStream() {
-            lock.writeInvoke(() -> stream = main.mmap(FileChannel.MapMode.READ_WRITE, 0, main.getLength()));
+            lock.writeInvoke(() -> {
+                long length = main.getLength();
+                writer = main.mmap(FileChannel.MapMode.READ_WRITE, 0, length);
+                reader = main.mmap(FileChannel.MapMode.READ_ONLY, 0, length);
+            });
         }
 
         private void releaseStream() {
             lock.writeInvoke(() -> {
-                if (stream != null) {
-                    stream.close();
-                }
+                tryClose(writer);
+                tryClose(reader);
             });
         }
 
@@ -61,10 +65,10 @@ final class HashFileIndexer<TK> extends Disposable {
             return lock.writeInvoke(() -> {
                 long length = main.getLength();
                 if (length < owner.growSize
-                        || (float) wroteBytes / length > WALFileStream.GROW_FACTOR) {
+                        || (float) getWroteBytes() / length > WALFileStream.GROW_FACTOR) {
 //                    assert wroteBytes != 0;
                     long resize = length + owner.growSize;
-                    log.debug("growLength {} {}->{}", main.getName(), length, resize);
+                    log.debug("growSize {} {}->{}", main.getName(), length, resize);
                     releaseStream();
                     main.setLength(resize);
                     createStream();
@@ -74,23 +78,24 @@ final class HashFileIndexer<TK> extends Disposable {
             });
         }
 
-        public int incrementSize() {
-            return lock.writeInvoke(() -> {
-                int size = wroteSize.incrementAndGet();
-                wroteBytes = HEADER_SIZE + (long) size * KEY_SIZE;
-                saveSize();
-                return size;
-            });
+        public synchronized long getWroteBytes() {
+            return _wroteBytes;
+        }
+
+        public synchronized void incrementWroteBytes() {
+            _wroteBytes += KEY_SIZE;
+            saveSize();
         }
 
         void saveSize() {
             ByteBuf buf = Bytes.directBuffer(HEADER_SIZE, false);
             try {
                 lock.writeInvoke(() -> {
-                    stream.setPosition(0);
-                    buf.writeInt(wroteSize.get());
-                    stream.write(buf);
-                    stream.flush();
+                    writer.setPosition(0);
+                    int size = (int) ((getWroteBytes() - HEADER_SIZE) / KEY_SIZE);
+                    buf.writeInt(size);
+                    writer.write(buf);
+                    writer.flush();
                 }, 0, HEADER_SIZE);
             } finally {
                 buf.release();
@@ -101,10 +106,10 @@ final class HashFileIndexer<TK> extends Disposable {
             ByteBuf buf = Bytes.directBuffer(HEADER_SIZE, false);
             try {
                 lock.readInvoke(() -> {
-                    stream.setPosition(0);
-                    if (stream.read(buf) > 0) {
-                        wroteSize.set(buf.readInt());
-                        wroteBytes = HEADER_SIZE + (long) wroteSize.get() * KEY_SIZE;
+                    reader.setPosition(0);
+                    if (reader.read(buf) > 0) {
+                        int size = buf.readInt();
+                        _wroteBytes = HEADER_SIZE + (long) size * KEY_SIZE;
                     }
                 }, 0, HEADER_SIZE);
             } finally {
@@ -145,7 +150,7 @@ final class HashFileIndexer<TK> extends Disposable {
                 continue;
             }
 
-            slot.stream.close();
+            slot.releaseStream();
             slot.main.close();
         }
     }
@@ -158,7 +163,7 @@ final class HashFileIndexer<TK> extends Disposable {
                     continue;
                 }
 
-                slot.stream.close();
+                slot.releaseStream();
                 slot.main.close();
                 slots[i] = null;
             }
@@ -182,75 +187,85 @@ final class HashFileIndexer<TK> extends Disposable {
         require(key, key.position >= -1);
 
         Slot slot = slot(key.hashCode);
-        ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
-        try {
-            slot.lock.writeInvoke(() -> {
-                slot.ensureGrow();
-//                if (key.key != null) {
-//                    cache().remove(key.key);
-//                }
+        slot.lock.writeInvoke(() -> {
+            slot.ensureGrow();
 
-                IOStream<?, ?> out = slot.stream;
-                long pos = key.position == -1 ? slot.wroteBytes : key.position;
-                out.setPosition(pos);
+            IOStream<?, ?> out = slot.writer;
+            long pos = key.position == -1 ? slot.getWroteBytes() : key.position;
+            out.setPosition(pos);
 
+            ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
+            try {
                 buf.writeInt(key.hashCode);
                 buf.writeLong(key.logPosition);
-                log.debug("saveKey {} -> {} pos={}{}", slot.main.getName(), key, pos, dump(buf));
                 out.write(buf);
                 out.flush();
-
-                if (key.position == -1) {
-                    slot.incrementSize();
-                }
-            }, HEADER_SIZE);
-        } finally {
-            if (buf != null) {
+            } finally {
                 buf.release();
             }
-        }
+            log.info("saveKey {} -> {} pos={}{}", slot.main.getName(), key, pos, dump(buf));
+
+            if (key.position == -1) {
+                slot.incrementWroteBytes();
+//                    log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
+            }
+
+            if (key.key != null) {
+                cache().remove(key.key);
+//                cache().put(key.key, key); //hang?
+            }
+        }, HEADER_SIZE);
     }
 
     public KeyData<TK> findKey(@NonNull TK k) {
 //        return Tasks.threadMapCompute(k, x -> {
-//        return cache().get(k, x -> {
-        int hashCode = k.hashCode();
-        Slot slot = slot(hashCode);
-        ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
-        try {
+        return cache().get(k, x -> {
+            int hashCode = k.hashCode();
+            Slot slot = slot(hashCode);
+
             return slot.lock.readInvoke(() -> {
-                IOStream<?, ?> in = slot.stream;
+                IOStream<?, ?> in = slot.reader;
 
                 in.setPosition(HEADER_SIZE);
                 long pos = in.getPosition();
-                long endPos = slot.wroteBytes;
-                while (pos < endPos && in.read(buf, KEY_SIZE) > 0) {
-//                        log.debug("findKey {} -> {} pos={}{}", slot.main.getName(), k.hashCode(), pos, dump(buf));
-                    int hash = buf.readInt();
-                    if (pos > HEADER_SIZE && hash == 0) {
-                        log.error("sync error {} pos={}", k, pos);
-                    }
-                    if (hash != hashCode) {
-                        pos += KEY_SIZE;
-                        buf.clear();
-                        continue;
-                    }
+                long endPos = slot.getWroteBytes();
+                ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
+                try {
+                    while (pos < endPos && in.read(buf, KEY_SIZE) > 0) {
+//                    log.debug("findKey {} -> {} pos={}{}", slot.main.getName(), hashCode, pos, dump(buf));
+                        int hash = buf.readInt();
+                        if (hash != hashCode) {
+                            pos += KEY_SIZE;
+                            buf.clear();
+                            continue;
+                        }
 
-                    KeyData<TK> keyData = new KeyData<>(k, hashCode);
-                    keyData.position = in.getPosition() - KEY_SIZE;
-                    keyData.logPosition = buf.readLong();
-                    return keyData;
+                        KeyData<TK> keyData = new KeyData<>(k, hashCode);
+                        keyData.position = in.getPosition() - KEY_SIZE;
+                        keyData.logPosition = buf.readLong();
+                        return keyData;
+                    }
+                } finally {
+                    buf.release();
                 }
 
-                log.debug("findKey {} -> {} pos={}{}", slot.main.getName(), k.hashCode(), pos, dump(buf));
+                if (pos > HEADER_SIZE) {
+                    try (FileChannel open = FileChannel.open(Paths.get(slot.main.getPath()))) {
+                        open.position(pos - KEY_SIZE);
+                        ByteBuffer b = ByteBuffer.allocate(KEY_SIZE);
+                        int r = open.read(b);
+                        assert r == KEY_SIZE;
+                        b.flip();
+                        KeyData<TK> tmp = new KeyData<>(null, b.getInt());
+                        tmp.position = pos - KEY_SIZE;
+                        tmp.logPosition = b.getLong();
+                        log.error("syncErr {} -> {} pos={}/{} redo={}", slot.main.getName(), hashCode, pos, endPos, tmp);
+                    }
+                }
+//                log.warn("findKey fail {} -> {} pos={}/{}{}", slot.main.getName(), hashCode, pos, endPos, dump(buf));
                 return null;
             }, HEADER_SIZE);
-        } finally {
-            if (buf != null) {
-                buf.release();
-            }
-        }
-//        });
+        });
     }
 
     private Cache<TK, KeyData<TK>> cache() {
