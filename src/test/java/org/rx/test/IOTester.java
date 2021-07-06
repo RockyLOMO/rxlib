@@ -31,7 +31,7 @@ public class IOTester {
         IOStream.release(buffer);
     }
 
-    final String baseDir = "C:\\download";
+    final String baseDir = "D:\\download";
     final String filePathFormat = baseDir + "\\%s.txt";
     final String KvPath = baseDir + "\\RxKv";
     final boolean doWrite = true;
@@ -41,12 +41,12 @@ public class IOTester {
     public void kvDb2() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexBufferSize(1024 * 1024 * 4);
+        conf.setIndexBufferSize(1024 * 1024);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
-        int loopCount = 10;
+        int loopCount = 100;
         TestUtil.invoke("kvdb", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
-            int k = i;
+            int k = 64;
             String val = kv.get(k);
             if (val == null) {
                 kv.put(k, val = String.valueOf(k));

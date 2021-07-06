@@ -35,7 +35,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         Slot(HashFileIndexer<?> owner, File indexFile) {
             this.owner = owner;
-            main = new FileStream(indexFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.TINY_DATA);
+            main = new FileStream(indexFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
             lock = main.getLock();
             if (!ensureGrow()) {
                 createStream();
@@ -169,6 +169,7 @@ final class HashFileIndexer<TK> extends Disposable {
             if (slot == null) {
                 slots[i] = slot = new Slot(this, new File(directory, String.format("%s", i)));
             }
+            log.debug("slot {}->{}", hashCode, i);
             return slot;
         }
     }
@@ -216,7 +217,7 @@ final class HashFileIndexer<TK> extends Disposable {
                 long endPos = slot.keysBytes.get();
                 while (pos < endPos && in.read(buf, KEY_SIZE) > 0) {
                     pos += KEY_SIZE;
-                    log.debug("findKey {}\n{}", k.hashCode(), Bytes.hexDump(buf));
+//                    log.debug("findKey {}\n{}", k.hashCode(), Bytes.hexDump(buf));
                     if (buf.readInt() != hashCode) {
                         buf.clear();
                         continue;

@@ -186,11 +186,9 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
     @Override
     protected void freeObjects() {
-        lock.writeInvoke(() -> {
-            sequentialWriteQueue.close();
-            releaseReaderAndWriter();
-            main.close();
-        });
+        sequentialWriteQueue.close();
+        releaseReaderAndWriter();
+        main.close();
     }
 
     public void clear() {
