@@ -40,10 +40,10 @@ public final class Tasks {
     //HashedWheelTimer
     private static final ScheduledExecutorService scheduler;
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
-    private static final FastThreadLocal<Map<?, ?>> threadMap = new FastThreadLocal<Map<?, ?>>() {
+    static final FastThreadLocal<Map<?, ?>> threadMap = new FastThreadLocal<Map<?, ?>>() {
         @Override
-        protected Map<?, ?> initialValue() throws Exception {
-            return new WeakHashMap<>();
+        protected Map<?, ?> initialValue() {
+            return new WeakHashMap<>(8);
         }
     };
     private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();

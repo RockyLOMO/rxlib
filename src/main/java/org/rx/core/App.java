@@ -73,12 +73,7 @@ public final class App extends SystemUtils {
     };
     @Setter
     static volatile Predicate<Throwable> ignoreExceptionHandler;
-    static final FastThreadLocal<Map<String, Object>> logMetrics = new FastThreadLocal<Map<String, Object>>() {
-        @Override
-        protected Map<String, Object> initialValue() throws Exception {
-            return new ConcurrentHashMap<>();
-        }
-    };
+    static final String LOG_METRIC_PREFIX = "LM:";
     private static volatile RxConfig config;
 
     public static synchronized RxConfig getConfig() {
@@ -536,7 +531,8 @@ public final class App extends SystemUtils {
     }
 
     public static void logMetric(String name, Object value) {
-        logMetrics.get().put(name, value);
+        Map<String, Object> metrics = (Map<String, Object>) Tasks.threadMap.get();
+        metrics.put(LOG_METRIC_PREFIX + name, value);
     }
 
     public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {
@@ -549,7 +545,7 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, Object> metrics = logMetrics.getIfExists();
+        Map<String, Object> metrics = (Map<String, Object>) Tasks.threadMap.getIfExists();
         boolean doWrite = !MapUtils.isEmpty(metrics);
         if (!doWrite) {
             switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
@@ -581,7 +577,11 @@ public final class App extends SystemUtils {
             if (metrics != null) {
                 msg.append("Metrics:\t");
                 for (Map.Entry<String, Object> entry : metrics.entrySet()) {
-                    msg.append("%s=%s ", entry.getKey(), toJsonString(entry.getValue()));
+                    String key = entry.getKey();
+                    if (!Strings.startsWith(key, LOG_METRIC_PREFIX)) {
+                        continue;
+                    }
+                    msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
                 }
                 msg.appendLine();
             }

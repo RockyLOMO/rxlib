@@ -18,7 +18,6 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
@@ -41,12 +40,12 @@ public class IOTester {
     public void kvDb2() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexBufferSize(1024 * 1024);
+        conf.setIndexGrowSize(1024 * 1024);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
-        int loopCount = 100;
-        TestUtil.invoke("kvdb", i -> {
+        int loopCount = 10000;
+        TestUtil.invokeAsync("kvdb", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
-            int k = 64;
+            int k = i;
             String val = kv.get(k);
             if (val == null) {
                 kv.put(k, val = String.valueOf(k));
@@ -64,7 +63,7 @@ public class IOTester {
     public void kvDb() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexBufferSize(1024 * 1024);
+        conf.setIndexGrowSize(1024 * 1024);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
 //        kv.clear();
         int loopCount = 100, removeK = 99;

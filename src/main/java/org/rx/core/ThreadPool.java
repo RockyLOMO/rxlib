@@ -166,7 +166,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     private final String poolName;
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Tuple<ReentrantLock, AtomicInteger>> syncRoot = new ConcurrentHashMap<>(0);
+    private final ConcurrentHashMap<String, Tuple<ReentrantLock, AtomicInteger>> syncRoot = new ConcurrentHashMap<>(8);
     private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorInfo>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;

@@ -91,7 +91,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     static final int HEADER_SIZE = 256;
     private final FileStream main;
     final CompositeLock lock;
-    private final long growLength;
+    private final long growSize;
     private final int readerCount;
     private IOStream<?, ?> writer;
     private final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
@@ -169,12 +169,12 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         return lock.readInvoke(main::getLength);
     }
 
-    public WALFileStream(File file, long growLength, int readerCount, Serializer serializer) {
-        this.growLength = growLength;
+    public WALFileStream(File file, long growSize, int readerCount, Serializer serializer) {
+        this.growSize = growSize;
         this.readerCount = readerCount;
         this.serializer = serializer;
 
-        main = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.TINY_DATA);
+        main = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
         lock = main.getLock();
         if (!ensureGrow()) {
             createReaderAndWriter();
@@ -259,14 +259,14 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private boolean ensureGrow() {
         return lock.writeInvoke(() -> {
             long length = main.getLength();
-            if (length < growLength) {
-                log.debug("growLength {} 0->{}", getName(), growLength);
-                _setLength(growLength);
+            if (length < growSize) {
+                log.debug("growLength {} 0->{}", getName(), growSize);
+                _setLength(growSize);
                 return true;
             }
 
             if (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR) {
-                long resize = length + growLength;
+                long resize = length + growSize;
                 log.debug("growLength {} {}->{}", getName(), length, resize);
                 _setLength(resize);
                 return true;
@@ -307,7 +307,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                 int read = action.invoke(reader);
                 setReaderPosition(reader.getPosition());
                 return read;
-            }, HEADER_SIZE, Long.MAX_VALUE);
+            }, HEADER_SIZE);
         } finally {
             readers.offer(reader);
         }
@@ -323,7 +323,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             writer.setPosition(meta.getLogPosition());
             action.invoke(writer);
             meta.setLogPosition(writer.getPosition());
-        }, HEADER_SIZE, Long.MAX_VALUE);
+        }, HEADER_SIZE);
     }
 
     @Override

@@ -28,7 +28,7 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    private final ConcurrentHashMap<FileStream.Block, ReentrantReadWriteLock> rwLocks = new ConcurrentHashMap<>(0);
+    private final ConcurrentHashMap<FileStream.Block, ReentrantReadWriteLock> rwLocks = new ConcurrentHashMap<>(8);
 
     @SneakyThrows
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
@@ -60,6 +60,7 @@ public final class CompositeLock {
     }
 
     private ReentrantReadWriteLock overlaps(long position, long size) {
+        long l = Long.MAX_VALUE + 1;
         for (Map.Entry<FileStream.Block, ReentrantReadWriteLock> entry : rwLocks.entrySet()) {
             FileStream.Block block = entry.getKey();
             if (position + size <= block.position)
@@ -75,12 +76,20 @@ public final class CompositeLock {
         lock(ALL_BLOCK, true, action.toFunc());
     }
 
+    public void readInvoke(Action action, long position) {
+        readInvoke(action, position, Long.MAX_VALUE - position);
+    }
+
     public void readInvoke(Action action, long position, long size) {
         lock(new FileStream.Block(position, size), true, action.toFunc());
     }
 
     public void writeInvoke(Action action) {
         lock(ALL_BLOCK, false, action.toFunc());
+    }
+
+    public void writeInvoke(Action action, long position) {
+        writeInvoke(action, position, Long.MAX_VALUE - position);
     }
 
     public void writeInvoke(Action action, long position, long size) {
@@ -91,12 +100,20 @@ public final class CompositeLock {
         return lock(ALL_BLOCK, true, action);
     }
 
+    public <T> T readInvoke(Func<T> action, long position) {
+        return readInvoke(action, position, Long.MAX_VALUE - position);
+    }
+
     public <T> T readInvoke(Func<T> action, long position, long size) {
         return lock(new FileStream.Block(position, size), true, action);
     }
 
     public <T> T writeInvoke(Func<T> action) {
         return lock(ALL_BLOCK, false, action);
+    }
+
+    public <T> T writeInvoke(Func<T> action, long position) {
+        return writeInvoke(action, position, Long.MAX_VALUE - position);
     }
 
     public <T> T writeInvoke(Func<T> action, long position, long size) {

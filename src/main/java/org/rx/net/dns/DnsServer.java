@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DnsServer extends Disposable {
     final ServerBootstrap serverBootstrap;
     @Getter
-    final Map<String, byte[]> customHosts = new ConcurrentHashMap<>(0);
+    final Map<String, byte[]> customHosts = new ConcurrentHashMap<>();
     @Setter
     SocksSupport support;
 

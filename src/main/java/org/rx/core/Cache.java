@@ -45,14 +45,17 @@ public interface Cache<TK, TV> extends ConcurrentMap<TK, TV> {
         });
     }
 
+    /**
+     * computeIfAbsent
+     *
+     * @param key
+     * @param loadingFunc result可以为null
+     * @return
+     */
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {
         return computeIfAbsent(key, k -> {
             try {
-                TV val = loadingFunc.invoke(k);
-                if (val == null) {
-                    throw new InvalidException("Loading result is null");
-                }
-                return val;
+                return loadingFunc.invoke(k);
             } catch (Throwable e) {
                 throw ApplicationException.sneaky(e);
             }

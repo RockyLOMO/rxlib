@@ -49,7 +49,7 @@
         </encoder>
     </appender>
 
-    <logger name="org.rx" level="DEBUG"/>
+<!--    <logger name="org.rx.io" level="DEBUG"/>-->
 
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>

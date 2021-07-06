@@ -60,7 +60,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
-    static final int KEY_SIZE = 16, READ_BLOCK_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE;
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
@@ -88,9 +87,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         File logFile = new File(getParentDirectory(), LOG_FILE);
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
 
-        indexer = new HashFileIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexBufferSize());
+        indexer = new HashFileIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
 
         long pos = wal.meta.getLogPosition();
+        log.debug("init logPos={}", pos);
 //        pos = WALFileStream.HEADER_SIZE;
         Entry<TK, TV> val;
         $<Long> endPos = $();

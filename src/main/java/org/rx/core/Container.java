@@ -16,7 +16,7 @@ import static org.rx.core.App.sneakyInvoke;
 public final class Container {
     @Getter
     private static final Container instance = new Container();
-    private final Map<String, Object> holder = new ConcurrentHashMap<>();
+    private final Map<String, Object> holder = new ConcurrentHashMap<>(8);
 
     public <T> T getOrRegister(Class<T> type) {
         return (T) holder.computeIfAbsent(type.getName(), k -> Reflects.newInstance(type));

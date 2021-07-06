@@ -19,5 +19,5 @@ public class KeyValueStoreConfig {
     private int logReaderCount = 1;
 
     private int indexSlotSize = 1024 * 1024 * 128; //128M
-    private int indexBufferSize = 1024 * 1024 * 32; //32M
+    private int indexGrowSize = 1024 * 1024 * 32; //32M
 }

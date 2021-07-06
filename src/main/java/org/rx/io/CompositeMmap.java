@@ -162,7 +162,9 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     @Override
     public int read(ByteBuf dst, int length) {
-        return read(position, dst, length);
+        int read = read(position, dst, length);
+        position += read;
+        return read;
     }
 
     public int read(long position, ByteBuf byteBuf) {
@@ -203,7 +205,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     @Override
     public void write(ByteBuf src, int length) {
-        write(position, src, length);
+        position += write(position, src, length);
     }
 
     public int write(long position, ByteBuf byteBuf) {
