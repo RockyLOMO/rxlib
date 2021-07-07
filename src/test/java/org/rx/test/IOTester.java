@@ -37,6 +37,17 @@ public class IOTester {
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @Test
+    public void recheck() {
+        FileStream stream = new FileStream("D:\\download\\RxKv\\index\\36");
+        stream.setPosition(700);
+        ByteBuf buf = Bytes.directBuffer();
+        int r = stream.read(buf, 12);
+        assert r == 12;
+        System.out.println(buf.readInt());
+        System.out.println(buf.readLong());
+    }
+
+    @Test
     public void kvDb2() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);

@@ -84,7 +84,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         public synchronized void incrementWroteBytes() {
             _wroteBytes += KEY_SIZE;
-            saveSize();
+//            saveSize();
         }
 
         void saveSize() {
@@ -199,7 +199,7 @@ final class HashFileIndexer<TK> extends Disposable {
                 buf.writeInt(key.hashCode);
                 buf.writeLong(key.logPosition);
                 out.write(buf);
-                out.flush();
+//                out.flush();
             } finally {
                 buf.release();
             }
