@@ -90,7 +90,7 @@ public class RedoTimer {
     }
 
     public Timeout runAndSetTimeout(BiAction<Timeout> task, long delayMillis) {
-        return setTimeout(task, delayMillis, 1);
+        return runAndSetTimeout(task, delayMillis, 1);
     }
 
     @SneakyThrows

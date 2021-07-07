@@ -6,15 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
-import org.rx.core.Tasks;
 
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 
-import static org.rx.core.App.require;
-import static org.rx.core.App.tryClose;
+import static org.rx.core.App.*;
 
 @Slf4j
 final class HashFileIndexer<TK> extends Disposable {
@@ -84,7 +82,11 @@ final class HashFileIndexer<TK> extends Disposable {
 
         public synchronized void incrementWroteBytes() {
             _wroteBytes += KEY_SIZE;
-//            saveSize();
+            owner.writeQueue.offer(Long.parseLong(main.getName()), this::saveSize);
+        }
+
+        public synchronized void resetWroteBytes() {
+            _wroteBytes = HEADER_SIZE;
         }
 
         void saveSize() {
@@ -95,7 +97,7 @@ final class HashFileIndexer<TK> extends Disposable {
                     int size = (int) ((getWroteBytes() - HEADER_SIZE) / KEY_SIZE);
                     buf.writeInt(size);
                     writer.write(buf);
-                    writer.flush();
+//                    writer.flush();
                 }, 0, HEADER_SIZE);
             } finally {
                 buf.release();
@@ -131,16 +133,16 @@ final class HashFileIndexer<TK> extends Disposable {
     private final File directory;
     private final int growSize;
     private final Slot[] slots;
+    private final SequentialWriteQueue writeQueue;
 
     public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);
         this.growSize = growSize;
-
-        directory.mkdirs();
         this.directory = directory;
 
         int slotCount = (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / slotSize);
         slots = new Slot[slotCount];
+        writeQueue = new SequentialWriteQueue(slotCount + 1);
     }
 
     @Override
@@ -157,17 +159,13 @@ final class HashFileIndexer<TK> extends Disposable {
 
     public void clear() {
         synchronized (slots) {
-            for (int i = 0; i < slots.length; i++) {
-                Slot slot = slots[i];
+            for (Slot slot : slots) {
                 if (slot == null) {
                     continue;
                 }
 
-                slot.releaseStream();
-                slot.main.close();
-                slots[i] = null;
+                slot.resetWroteBytes();
             }
-            Files.delete(directory.getAbsolutePath());
         }
     }
 
@@ -176,6 +174,7 @@ final class HashFileIndexer<TK> extends Disposable {
         synchronized (slots) {
             Slot slot = slots[i];
             if (slot == null) {
+                directory.mkdirs();
                 slots[i] = slot = new Slot(this, new File(directory, String.format("%s", i)));
             }
             return slot;
@@ -203,11 +202,11 @@ final class HashFileIndexer<TK> extends Disposable {
             } finally {
                 buf.release();
             }
-            log.info("saveKey {} -> {} pos={}{}", slot.main.getName(), key, pos, dump(buf));
+//            log.info("saveKey {} -> {} pos={}{}", slot.main.getName(), key, pos, dump(buf));
 
             if (key.position == -1) {
                 slot.incrementWroteBytes();
-//                    log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
+//                log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
             }
 
             if (key.key != null) {
@@ -218,7 +217,6 @@ final class HashFileIndexer<TK> extends Disposable {
     }
 
     public KeyData<TK> findKey(@NonNull TK k) {
-//        return Tasks.threadMapCompute(k, x -> {
         return cache().get(k, x -> {
             int hashCode = k.hashCode();
             Slot slot = slot(hashCode);
@@ -249,19 +247,19 @@ final class HashFileIndexer<TK> extends Disposable {
                     buf.release();
                 }
 
-                if (pos > HEADER_SIZE) {
-                    try (FileChannel open = FileChannel.open(Paths.get(slot.main.getPath()))) {
-                        open.position(pos - KEY_SIZE);
-                        ByteBuffer b = ByteBuffer.allocate(KEY_SIZE);
-                        int r = open.read(b);
-                        assert r == KEY_SIZE;
-                        b.flip();
-                        KeyData<TK> tmp = new KeyData<>(null, b.getInt());
-                        tmp.position = pos - KEY_SIZE;
-                        tmp.logPosition = b.getLong();
-                        log.error("syncErr {} -> {} pos={}/{} redo={}", slot.main.getName(), hashCode, pos, endPos, tmp);
-                    }
-                }
+//                if (pos > HEADER_SIZE) {
+//                    try (FileChannel open = FileChannel.open(Paths.get(slot.main.getPath()))) {
+//                        open.position(pos - KEY_SIZE);
+//                        ByteBuffer b = ByteBuffer.allocate(KEY_SIZE);
+//                        int r = open.read(b);
+//                        assert r == KEY_SIZE;
+//                        b.flip();
+//                        KeyData<TK> tmp = new KeyData<>(null, b.getInt());
+//                        tmp.position = pos - KEY_SIZE;
+//                        tmp.logPosition = b.getLong();
+//                        log.error("syncErr {} -> {} pos={}/{} redo={}", slot.main.getName(), hashCode, pos, endPos, tmp);
+//                    }
+//                }
 //                log.warn("findKey fail {} -> {} pos={}/{}{}", slot.main.getName(), hashCode, pos, endPos, dump(buf));
                 return null;
             }, HEADER_SIZE);

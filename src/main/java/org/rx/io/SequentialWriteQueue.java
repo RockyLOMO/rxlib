@@ -2,60 +2,68 @@ package org.rx.io;
 
 import io.netty.util.Timeout;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
-import org.rx.core.Disposable;
-import org.rx.core.NQuery;
-import org.rx.core.RunFlag;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.util.RedoTimer;
 import org.rx.util.function.Action;
 
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 
 import static org.rx.core.App.quietly;
 
 @Slf4j
 final class SequentialWriteQueue extends Disposable {
     @Setter
-    long delaySavePeriod = 500;
+    private long delaySavePeriod = 500;
     @Getter
-    private final IntWaterMark waterMark = new IntWaterMark(4, 8);
-    private final TreeMap<Long, Action> sortMap = new TreeMap<>();
+    private final IntWaterMark waterMark;
+    private final NavigableMap<Long, Action> sortMap = Collections.synchronizedNavigableMap(new TreeMap<>());
     private final RedoTimer timer = new RedoTimer();
-    private Timeout timeout;
+    private volatile Timeout timeout;
+    private final ManualResetEvent event = new ManualResetEvent();
+    private volatile boolean stop;  //避免consume时又offer 死循环
+
+    SequentialWriteQueue(int highWaterMark) {
+        this(new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
+    }
+
+    SequentialWriteQueue(@NonNull IntWaterMark waterMark) {
+        this.waterMark = waterMark;
+    }
 
     @Override
     protected void freeObjects() {
-        List<Action> actions = NQuery.of(sortMap.values()).toList();
-        for (Action action : actions) {
-            quietly(action);
-        }
-
-        //避免action 又 offer 死循环
-//        consume();
+        stop = true;
+        consume();
     }
 
     @SneakyThrows
-    public synchronized void offer(long position, Action writeAction) {
+    public void offer(long position, Action writeAction) {
         checkNotClosed();
+        if (stop) {
+            writeAction.invoke();
+            return;
+        }
+
+        sortMap.put(position, writeAction);
+
+        if (sortMap.size() > waterMark.getHigh()) {
+            log.warn("high water mark threshold");
+            if (timeout == null) {
+                timeout = timer.setTimeout(this::consume, 1);
+            }
+            event.waitOne();
+            event.reset();
+            log.info("below low water mark");
+        }
 
         if (timeout != null) {
             timeout.cancel();
         }
-
-        sortMap.put(position, writeAction);
-        if (sortMap.size() > waterMark.getHigh()) {
-            log.debug("high water mark");
-            Tasks.run((Action) this::consume, toString(), RunFlag.SINGLE);
-            wait();
-            return;
-        }
-
         timeout = timer.setTimeout(this::consume, delaySavePeriod);
     }
 
@@ -64,23 +72,18 @@ final class SequentialWriteQueue extends Disposable {
     }
 
     private void consume(Timeout t) {
-        if (t != null) {
-            t.cancel();
-        }
-
-        while (true) {
-            Map.Entry<Long, Action> entry;
-            synchronized (this) {
-                entry = sortMap.pollFirstEntry();
-                if (sortMap.size() <= waterMark.getLow()) {
-                    log.debug("low water mark");
-                    notifyAll();
-                }
+        int size = sortMap.size();
+        while (size > 0) {
+            Map.Entry<Long, Action> entry = sortMap.pollFirstEntry();
+            if (sortMap.size() <= waterMark.getLow()) {
+                log.debug("low water mark threshold");
+                event.set();
             }
             if (entry == null) {
                 break;
             }
             quietly(entry.getValue());
+            size--;
         }
     }
 }

@@ -98,7 +98,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final SequentialWriteQueue sequentialWriteQueue = new SequentialWriteQueue();
+    private final SequentialWriteQueue writeQueue = new SequentialWriteQueue(8);
 
     @Override
     public String getName() {
@@ -181,12 +181,12 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         meta = loadMeta();
-        meta.writeBack = m -> sequentialWriteQueue.offer(0, this::saveMeta);
+        meta.writeBack = m -> writeQueue.offer(0, this::saveMeta);
     }
 
     @Override
     protected void freeObjects() {
-        sequentialWriteQueue.close();
+        writeQueue.close();
         releaseReaderAndWriter();
         main.close();
     }
@@ -202,7 +202,6 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         checkNotClosed();
 
         lock.writeInvoke(() -> {
-//            meta.setLogPosition(writer.getPosition());
             writer.setPosition(0);
             serializer.serialize(meta, writer);
         }, 0, HEADER_SIZE);

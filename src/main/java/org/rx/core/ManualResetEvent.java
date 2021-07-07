@@ -9,7 +9,6 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.App.TIMEOUT_INFINITE;
 
 public final class ManualResetEvent {
-    private final Object monitor = this;
     private volatile boolean open;
     @Getter
     private int holdCount;
@@ -27,35 +26,30 @@ public final class ManualResetEvent {
         waitOne(TIMEOUT_INFINITE);
     }
 
-    public void waitOne(long timeout) throws TimeoutException {
+    public synchronized void waitOne(long timeout) throws TimeoutException {
         timeout = timeout == TIMEOUT_INFINITE ? 0 : timeout;
-        synchronized (monitor) {
-            while (!open) {
-                try {
-                    holdCount++;
-                    monitor.wait(timeout);
-                } catch (InterruptedException e) {
-                    //ignore
-                    throw InvalidException.sneaky(e);
-                } finally {
-                    holdCount--;
+        while (!open) {
+            try {
+                holdCount++;
+                wait(timeout);
+            } catch (InterruptedException e) {
+                //ignore
+                throw InvalidException.sneaky(e);
+            } finally {
+                holdCount--;
+            }
+            if (timeout > 0) {
+                if (!open) {
+                    throw new TimeoutException("Call waitOne() timeout");
                 }
-                if (timeout > 0) {
-                    if (!open) {
-                        throw new TimeoutException("Call waitOne() timeout");
-                    }
-                    break;
-                }
+                break;
             }
         }
     }
 
-    public void set() {
-        synchronized (monitor) {
-            open = true;
-            monitor.notifyAll();
-            holdCount = 0;
-        }
+    public synchronized void set() {
+        open = true;
+        notifyAll();
     }
 
     public void reset() {//close stop

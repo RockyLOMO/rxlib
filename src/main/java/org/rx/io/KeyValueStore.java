@@ -189,7 +189,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         wal.lock.writeInvoke(() -> {
             key.logPosition = wal.meta.getLogPosition();
             serializer.serialize(value, wal);
-            wal.flush();
             if (value.value == null) {
                 key.logPosition = TOMB_MARK;
             }

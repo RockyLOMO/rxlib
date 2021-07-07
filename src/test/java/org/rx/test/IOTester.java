@@ -76,7 +76,7 @@ public class IOTester {
         conf.setLogGrowSize(1024 * 1024 * 4);
         conf.setIndexGrowSize(1024 * 1024);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
-//        kv.clear();
+        kv.clear();
         int loopCount = 100, removeK = 99;
         TestUtil.invoke("put", i -> {
             String val = kv.get(i);
