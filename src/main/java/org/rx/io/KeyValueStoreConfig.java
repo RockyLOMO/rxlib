@@ -6,11 +6,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Data
 public class KeyValueStoreConfig {
+    static final int OneM = 1024 * 1024;
+
     private final String directoryPath;
     /**
      * init big file for sequential write
      */
-    private long logGrowSize = 1024 * 1024 * 1024; //1G
+    private long logGrowSize = OneM * 1024; //1G
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
@@ -18,6 +20,6 @@ public class KeyValueStoreConfig {
      */
     private int logReaderCount = 1;
 
-    private int indexSlotSize = 1024 * 1024 * 128; //128M
-    private int indexGrowSize = 1024 * 1024 * 32; //32M
+    private int indexSlotSize = OneM * 128; //128M
+    private int indexGrowSize = OneM * 32; //32M
 }

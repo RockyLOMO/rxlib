@@ -60,7 +60,6 @@ public final class CompositeLock {
     }
 
     private ReentrantReadWriteLock overlaps(long position, long size) {
-        long l = Long.MAX_VALUE + 1;
         for (Map.Entry<FileStream.Block, ReentrantReadWriteLock> entry : rwLocks.entrySet()) {
             FileStream.Block block = entry.getKey();
             if (position + size <= block.position)

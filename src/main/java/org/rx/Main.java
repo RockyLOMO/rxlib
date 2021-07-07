@@ -27,7 +27,6 @@ import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.security.AESUtil;
 import org.rx.util.function.Action;
 
 import java.net.InetAddress;
@@ -128,7 +127,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public void fakeEndpoint(SUID hash, String endpoint) {
-        SocksSupport.HOST_DICT.put(hash, UnresolvedEndpoint.valueOf(endpoint));
+        SocksSupport.fakeDict().put(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
     @Override

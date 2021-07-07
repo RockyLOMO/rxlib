@@ -10,6 +10,8 @@ import java.net.InetSocketAddress;
 @RequiredArgsConstructor
 @Data
 public class UnresolvedEndpoint implements Serializable {
+    private static final long serialVersionUID = -1870762625355971485L;
+
     public static UnresolvedEndpoint valueOf(String value) {
         InetSocketAddress endpoint = Sockets.parseEndpoint(value);
         return new UnresolvedEndpoint(endpoint.getHostString(), endpoint.getPort());

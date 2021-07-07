@@ -3,12 +3,12 @@ package org.rx.io;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
+import org.rx.core.Cache;
 import org.rx.core.Disposable;
 
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.require;
@@ -26,6 +26,7 @@ import static org.rx.core.App.require;
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
     @AllArgsConstructor
+    @EqualsAndHashCode
     @ToString
     static class Entry<TK, TV> implements Serializable {
         private static final long serialVersionUID = -2218602651671401557L;
@@ -52,12 +53,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         final byte value;
     }
 
-    @RequiredArgsConstructor
-    static class IndexNode {
-        final FileStream stream;
-        final ReentrantReadWriteLock locker;
-    }
-
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
 
@@ -78,7 +73,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return dir;
     }
 
-    public KeyValueStore(@NonNull KeyValueStoreConfig config, Serializer serializer) {
+    public KeyValueStore(@NonNull String directoryPath) {
+        this(new KeyValueStoreConfig(directoryPath), Serializer.DEFAULT);
+    }
+
+    public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
         this.config = config;
 
         parentDirectory = new File(config.getDirectoryPath());
@@ -186,13 +185,14 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         checkNotClosed();
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
-        wal.lock.writeInvoke(() -> {
-            key.logPosition = wal.meta.getLogPosition();
-            serializer.serialize(value, wal);
-            if (value.value == null) {
-                key.logPosition = TOMB_MARK;
-            }
-        });
+//        wal.lock.writeInvoke(() -> {
+        key.logPosition = wal.meta.getLogPosition();
+        serializer.serialize(value, wal);
+        if (value.value == null) {
+            key.logPosition = TOMB_MARK;
+        }
+//            cache().remove(cacheKey(key));
+//        });
         log.debug("saveValue {} {}", key, value);
     }
 
@@ -205,6 +205,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         }
 
         return findValue(key.logPosition, key.key, null);
+//        return wal.lock.readInvoke(() -> cache().get(cacheKey(key), k -> findValue(key.logPosition, key.key, null)));
     }
 
     @SneakyThrows
@@ -235,6 +236,14 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
         return val;
+    }
+
+    private String cacheKey(HashFileIndexer.KeyData<TK> key) {
+        return String.valueOf(key.logPosition);
+    }
+
+    private Cache<String, Entry<TK, TV>> cache() {
+        return Cache.getInstance(Cache.LOCAL_CACHE);
     }
 
     @Override

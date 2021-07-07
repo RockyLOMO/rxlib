@@ -17,6 +17,7 @@ import static org.rx.core.App.*;
 @Slf4j
 final class HashFileIndexer<TK> extends Disposable {
     @RequiredArgsConstructor
+    @EqualsAndHashCode
     @ToString
     static class KeyData<TK> {
         final TK key;
