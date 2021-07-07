@@ -48,12 +48,21 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         if (server.support != null) {
             //未命中也缓存
-            List<InetAddress> address = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> isNull(server.support.resolveHost(domain), Collections.emptyList()));
-            if (CollectionUtils.isEmpty(address)) {
+            List<InetAddress> addresses = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> {
+//                List<InetAddress> result = SocksSupport.hostDict().get(domain);
+//                if (CollectionUtils.isEmpty(result)) {
+//                    result = server.support.resolveHost(domain);
+//                    if (CollectionUtils.isEmpty(result)) {
+//                        return Collections.emptyList();
+//                    }
+//                }
+                return isNull(server.support.resolveHost(domain), Collections.emptyList());
+            });
+            if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, question, 600, NQuery.of(address).select(InetAddress::getAddress).toArray()));
+            ctx.writeAndFlush(newResponse(query, question, 600, NQuery.of(addresses).select(InetAddress::getAddress).toArray()));
             return;
         }
 

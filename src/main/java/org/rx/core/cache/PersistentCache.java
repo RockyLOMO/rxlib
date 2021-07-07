@@ -2,78 +2,161 @@ package org.rx.core.cache;
 
 import com.alibaba.fastjson.JSON;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.Scheduler;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.core.Cache;
+import org.rx.core.CacheExpirations;
 import org.rx.core.Tasks;
-import org.rx.io.FileStream;
-import org.rx.io.Files;
-import org.rx.io.IOStream;
-import org.rx.io.Serializer;
+import org.rx.core.exception.ApplicationException;
+import org.rx.io.*;
+import org.rx.util.function.BiFunc;
 
 import java.io.File;
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.*;
 
 @Slf4j
-public class PersistentCache<TK, TV> extends CaffeineCache<TK, TV> {
+public class PersistentCache<TK, TV> implements Cache<TK, TV> {
+    @AllArgsConstructor
+    static class Entry<TV> implements Serializable {
+        private static final long serialVersionUID = -7742074465897857966L;
+        TV value;
+        CacheExpirations expiration;
+    }
+
     public static Cache DEFAULT = new PersistentCache<>("RxCache.db");
-    static final String JSON_TYPE = "JSON:";
 
-    final String snapshotFilePath;
-    int lastSize;
+    final com.github.benmanes.caffeine.cache.Cache<TK, Entry<TV>> cache;
+    final KeyValueStore<TK, Entry<TV>> store;
 
-    public PersistentCache(String snapshotFilePath) {
-        super(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
+    public PersistentCache(String kvDirectoryPath) {
+        cache = Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
                 .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
-                .build());
-        this.snapshotFilePath = snapshotFilePath;
-        Tasks.run(this::loadFromDisk);
-        Tasks.schedule(this::saveToDisk, 30 * 1000);
+                .removalListener(this::onRemoval).build();
+        store = new KeyValueStore<>(kvDirectoryPath);
     }
 
-    public synchronized void loadFromDisk() {
-        HashMap<Serializable, Serializable> map = Serializer.DEFAULT.deserialize(new FileStream(snapshotFilePath));
-        log.info("load {} items from db file {}", map.size(), new File(snapshotFilePath).getAbsolutePath());
-        for (Entry<Serializable, Serializable> entry : map.entrySet()) {
-            quietly(() -> put(from(entry.getKey()), from(entry.getValue())));
-        }
-    }
-
-    @SneakyThrows
-    private <T> T from(Serializable serializable) {
-        String json = as(serializable, String.class);
-        if (json != null && json.startsWith(JSON_TYPE)) {
-            int i = json.indexOf(":", JSON_TYPE.length());
-            return fromJson(json.substring(i + 1), Class.forName(json.substring(JSON_TYPE.length(), i)));
-        }
-        return (T) serializable;
-    }
-
-    public synchronized void saveToDisk() {
-        int curSize = size();
-        if (lastSize == curSize) {
+    private void onRemoval(@Nullable TK tk, @Nullable Entry<TV> tvEntry, @NonNull RemovalCause removalCause) {
+        if (tk == null || tvEntry == null || removalCause == RemovalCause.EXPIRED) {
             return;
         }
-
-        Files.delete(snapshotFilePath);
-        HashMap<Serializable, Serializable> map = new HashMap<>(curSize);
-        for (Entry<TK, TV> entry : entrySet()) {
-            quietly(() -> map.put(to(entry.getKey()), to(entry.getValue())));
+        if (!(tk instanceof Serializable && tvEntry.value instanceof Serializable)) {
+            return;
         }
-        log.info("save {} items to db file {}", map.size(), new File(snapshotFilePath).getAbsolutePath());
-        Serializer.DEFAULT.serialize(map, 0, snapshotFilePath).close();
-        lastSize = curSize;
+        store.put(tk, tvEntry);
     }
 
-    private Serializable to(Object val) {
-        if (val instanceof Serializable) {
-            return (Serializable) val;
-        }
-        return String.format("%s%s:%s", JSON_TYPE, val.getClass().getName(), JSON.toJSONString(val));
+    @Override
+    public boolean isEmpty() {
+        return size() == 0;
+    }
+
+    @Override
+    public int size() {
+        return (int) cache.estimatedSize() + store.size();
+    }
+
+    @Override
+    public boolean containsKey(Object key) {
+        return cache.getIfPresent(key) != null;
+    }
+
+    @Override
+    public boolean containsValue(Object value) {
+        return cache.asMap().containsValue(value);
+    }
+
+    @Override
+    public TV get(Object key) {
+        return cache.getIfPresent(key);
+    }
+
+    @Override
+    public Map<TK, TV> getAll(Iterable<TK> keys) {
+        return cache.getAllPresent(keys);
+    }
+
+    @Override
+    public Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc) {
+        return cache.getAll(keys, ks -> {
+            try {
+                return loadingFunc.invoke((Set<TK>) ks);
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        });
+    }
+
+    @Override
+    public TV put(TK key, TV value) {
+        return cache.asMap().put(key, value);
+    }
+
+    @Override
+    public void putAll(Map<? extends TK, ? extends TV> m) {
+        cache.putAll(m);
+    }
+
+    @Override
+    public TV putIfAbsent(TK key, TV value) {
+        return cache.asMap().putIfAbsent(key, value);
+    }
+
+    @Override
+    public boolean replace(TK key, TV oldValue, TV newValue) {
+        return cache.asMap().replace(key, oldValue, newValue);
+    }
+
+    @Override
+    public TV replace(TK key, TV value) {
+        return cache.asMap().replace(key, value);
+    }
+
+    @Override
+    public TV remove(Object key) {
+        return cache.asMap().remove(key);
+    }
+
+    @Override
+    public boolean remove(Object key, Object value) {
+        return cache.asMap().remove(key, value);
+    }
+
+    @Override
+    public void removeAll(Iterable<TK> keys) {
+        cache.invalidateAll(keys);
+    }
+
+    @Override
+    public void clear() {
+        cache.invalidateAll();
+    }
+
+    @Override
+    public Set<TK> keySet() {
+        return cache.asMap().keySet();
+    }
+
+    @Override
+    public Collection<TV> values() {
+        return cache.asMap().values();
+    }
+
+    @Override
+    public Set<Map.Entry<TK, TV>> entrySet() {
+        return cache.asMap().entrySet();
     }
 }

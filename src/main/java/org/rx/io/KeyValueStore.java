@@ -161,7 +161,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
 
-//        key.logPosition = TOMB_MARK;
         val.value = null;
         synchronized (this) {
             saveValue(key, val);
