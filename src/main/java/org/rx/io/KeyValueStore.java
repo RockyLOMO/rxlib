@@ -36,9 +36,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             out.writeObject(value);
         }
 
-        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            key = (TK) in.readObject();
-            value = (TV) in.readObject();
+        private void readObject(ObjectInputStream in) throws IOException {
+            try {
+                key = (TK) in.readObject();
+                value = (TV) in.readObject();
+            } catch (ClassNotFoundException e) {
+                log.error("readObject {}", e.getMessage());
+            }
         }
 
         TK key;

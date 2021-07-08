@@ -305,7 +305,7 @@ public class CoreTester extends TestUtil {
 
         HybridCache<Serializable, PersonBean> pCache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
         pCache.put(key1, PersonBean.girl);
-        pCache.put(key2, PersonBean.boy, CacheExpirations.builder().absoluteExpiration(2).build());
+        pCache.put(key2, PersonBean.boy, CacheExpirations.absolute(2));
         pCache.put(4, PersonBean.girl);
         pCache.remove(4);
         Tasks.scheduleOnce(() -> {
