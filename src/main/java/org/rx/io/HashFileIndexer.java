@@ -6,11 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
+import org.rx.core.cache.CaffeineCache;
 
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.*;
 
@@ -135,6 +137,8 @@ final class HashFileIndexer<TK> extends Disposable {
     private final int growSize;
     private final Slot[] slots;
     private final SequentialWriteQueue writeQueue;
+    private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache.builder()
+            .expireAfterAccess(2, TimeUnit.MINUTES).build());
 
     public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);
@@ -211,14 +215,14 @@ final class HashFileIndexer<TK> extends Disposable {
             }
 
             if (key.key != null) {
-                cache().remove(key.key);
+                cache.remove(key.key);
 //                cache().put(key.key, key); //hang?
             }
         }, HEADER_SIZE);
     }
 
     public KeyData<TK> findKey(@NonNull TK k) {
-        return cache().get(k, x -> {
+        return cache.get(k, x -> {
             int hashCode = k.hashCode();
             Slot slot = slot(hashCode);
 
@@ -265,10 +269,6 @@ final class HashFileIndexer<TK> extends Disposable {
                 return null;
             }, HEADER_SIZE);
         });
-    }
-
-    private Cache<TK, KeyData<TK>> cache() {
-        return Cache.getInstance(Cache.LOCAL_CACHE);
     }
 
     private String dump(ByteBuf buf) {

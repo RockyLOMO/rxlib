@@ -18,6 +18,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.quietly;
 
@@ -74,7 +75,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     server.support.fakeEndpoint(hash, dstEpStr);
                     return true;
                 });
-            }).wait(10 * 1000));
+            }).get(8, TimeUnit.SECONDS));
             destinationEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
         }
 

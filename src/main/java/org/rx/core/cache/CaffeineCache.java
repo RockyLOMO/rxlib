@@ -15,10 +15,14 @@ import java.util.concurrent.TimeUnit;
 
 @RequiredArgsConstructor
 public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
-    public static final Cache SLIDING_CACHE = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool())
-            .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()))
+    public static final Cache SLIDING_CACHE = new CaffeineCache<>(builder()
             .softValues().expireAfterAccess(2, TimeUnit.MINUTES)
             .build());
+
+    public static Caffeine<Object, Object> builder() {
+        return Caffeine.newBuilder().executor(Tasks.pool())
+                .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
+    }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;
 
