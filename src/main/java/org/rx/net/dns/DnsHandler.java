@@ -6,6 +6,7 @@ import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.Cache;
+import org.rx.core.CacheExpirations;
 import org.rx.core.NQuery;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
@@ -48,16 +49,9 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         if (server.support != null) {
             //未命中也缓存
-            List<InetAddress> addresses = Cache.getOrSet(cacheKey("resolveHost:", domain), k -> {
-//                List<InetAddress> result = SocksSupport.hostDict().get(domain);
-//                if (CollectionUtils.isEmpty(result)) {
-//                    result = server.support.resolveHost(domain);
-//                    if (CollectionUtils.isEmpty(result)) {
-//                        return Collections.emptyList();
-//                    }
-//                }
-                return isNull(server.support.resolveHost(domain), Collections.emptyList());
-            });
+            List<InetAddress> addresses = Cache.getOrSet(cacheKey("resolveHost:", domain),
+                    k -> isNull(server.support.resolveHost(domain), Collections.emptyList()),
+                    CacheExpirations.builder().absoluteExpiration(60 * 12).build(), Cache.DISTRIBUTED_CACHE);
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

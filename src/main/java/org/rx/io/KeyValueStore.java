@@ -28,7 +28,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     @AllArgsConstructor
     @EqualsAndHashCode
     @ToString
-    static class Entry<TK, TV> implements Serializable {
+    private static class Entry<TK, TV> implements Serializable {
         private static final long serialVersionUID = -2218602651671401557L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
@@ -55,6 +55,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
+    @Getter(lazy = true)
+    private static final KeyValueStore instance = new KeyValueStore<>();
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
@@ -73,8 +75,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         return dir;
     }
 
-    public KeyValueStore(@NonNull String directoryPath) {
-        this(new KeyValueStoreConfig(directoryPath), Serializer.DEFAULT);
+    private KeyValueStore() {
+        this(new KeyValueStoreConfig("./RxData"), Serializer.DEFAULT);
     }
 
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {

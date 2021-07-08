@@ -20,9 +20,10 @@ import static org.rx.core.App.*;
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
 public final class DateTime extends Date {
-    public static final TimeZone UtcZone = TimeZone.getTimeZone("UTC");
-    public static final DateTime BaseDate = new DateTime(2000, 1, 1);
-    public static final NQuery<String> Formats = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
+    private static final long serialVersionUID = 414744178681347341L;
+    public static final DateTime MIN = new DateTime(2000, 1, 1), MAX = new DateTime(9999, 12, 31);
+    public static final NQuery<String> FORMATS = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
+    private static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis());
@@ -35,7 +36,7 @@ public final class DateTime extends Date {
     @ErrorCode(cause = ParseException.class)
     public static DateTime valueOf(String dateString) {
         ApplicationException lastEx = null;
-        for (String format : Formats) {
+        for (String format : FORMATS) {
             try {
                 return valueOf(dateString, format);
             } catch (ApplicationException ex) {
@@ -44,7 +45,7 @@ public final class DateTime extends Date {
         }
         $<ParseException> out = $();
         Exception nested = lastEx.tryGet(out, ParseException.class) ? out.v : lastEx;
-        throw new ApplicationException(values(String.join(",", Formats), dateString), nested);
+        throw new ApplicationException(values(String.join(",", FORMATS), dateString), nested);
     }
 
     @SneakyThrows
@@ -225,7 +226,7 @@ public final class DateTime extends Date {
     }
 
     public DateTime asUniversalTime() {
-        getCalendar().setTimeZone(UtcZone);
+        getCalendar().setTimeZone(UTC_ZONE);
         return this;
     }
 
@@ -234,12 +235,12 @@ public final class DateTime extends Date {
     }
 
     public String toDateTimeString() {
-        return toString(Formats.first());
+        return toString(FORMATS.first());
     }
 
     @Override
     public String toString() {
-        return toString(Formats.last());
+        return toString(FORMATS.last());
     }
 
     public String toString(@NonNull String format) {

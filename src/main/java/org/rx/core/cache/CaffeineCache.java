@@ -15,7 +15,8 @@ import java.util.concurrent.TimeUnit;
 
 @RequiredArgsConstructor
 public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
-    public static final Cache SLIDING_CACHE = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
+    public static final Cache SLIDING_CACHE = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool())
+            .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()))
             .softValues().expireAfterAccess(2, TimeUnit.MINUTES)
             .build());
 
@@ -51,7 +52,6 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
         return cache.getAllPresent(keys);
     }
 
-    @Override
     public Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc) {
         return cache.getAll(keys, ks -> {
             try {

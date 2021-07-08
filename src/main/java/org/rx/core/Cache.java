@@ -8,11 +8,11 @@ import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 import static org.rx.core.App.*;
 
-public interface Cache<TK, TV> extends ConcurrentMap<TK, TV> {
+public interface Cache<TK, TV> extends Map<TK, TV> {
     String LOCAL_CACHE = "localCache";
     String DISTRIBUTED_CACHE = "distributedCache";
 
@@ -53,20 +53,24 @@ public interface Cache<TK, TV> extends ConcurrentMap<TK, TV> {
      * @return
      */
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {
-        return computeIfAbsent(key, k -> {
+        Function<TK, TV> fn = k -> {
             try {
                 return loadingFunc.invoke(k);
             } catch (Throwable e) {
                 throw ApplicationException.sneaky(e);
             }
-        });
+        };
+        try {
+            return computeIfAbsent(key, fn);
+        } catch (ClassCastException e) {
+            App.log("get", e.getMessage());
+            return null;
+        }
     }
 
     default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpirations expirations) {
         return get(key, loadingFunc);
     }
-
-    Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc);
 
     Map<TK, TV> getAll(Iterable<TK> keys);
 

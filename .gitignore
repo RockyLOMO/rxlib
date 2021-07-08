@@ -7,6 +7,5 @@ logs/
 # ignore files
 *.iml
 config.json
-bootstrapPath_IS_UNDEFINED
 .DS_Store
-RxCache.db
+RxData

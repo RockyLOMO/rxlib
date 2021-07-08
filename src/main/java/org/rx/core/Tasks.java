@@ -61,6 +61,10 @@ public final class Tasks {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
     }
 
+    public static ScheduledExecutorService scheduler() {
+        return scheduler;
+    }
+
     public static <K, V> V threadMapCompute(K k, Function<K, V> absentMappingFunc) {
         return ((Map<K, V>) threadMap.get()).computeIfAbsent(k, absentMappingFunc);
     }

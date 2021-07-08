@@ -36,7 +36,7 @@ public class BeanTester extends TestUtil {
         class DateToIntConvert implements BeanMapConverter<Date, Integer> {
             @Override
             public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
-                return (int) (sourceValue.getTime() - DateTime.BaseDate.getTime());
+                return (int) (sourceValue.getTime() - DateTime.MIN.getTime());
             }
         }
 

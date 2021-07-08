@@ -292,26 +292,39 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void cache() {
-        Tuple<Integer, String> key = Tuple.of(1, "a");
+        Tuple<Integer, String> key1 = Tuple.of(1, "a");
+        Tuple<Integer, String> key2 = Tuple.of(2, "b");
 
-        Cache<Tuple<?, ?>, Integer> cache = Cache.getInstance(Cache.LOCAL_CACHE);
-        cache.put(key, 100);
-        assert cache.get(key).equals(100);
+//        Cache<Tuple<?, ?>, Integer> cache = Cache.getInstance(Cache.LOCAL_CACHE);
+//        cache.put(key, 100);
+//        assert cache.get(key).equals(100);
+//        Tasks.scheduleOnce(() -> {
+//            assert cache.get(Tuple.of(1, "a")) == null;
+//            log.info("LOCAL_CACHE ok");
+//        }, 3 * 60 * 1000);
+
+        PersistentCache<Serializable, PersonBean> pCache = (PersistentCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+        pCache.put(key1, PersonBean.girl);
+        pCache.put(key2, PersonBean.boy, CacheExpirations.builder().absoluteExpiration(2).build());
+        pCache.put(4, PersonBean.girl);
+        pCache.remove(4);
         Tasks.scheduleOnce(() -> {
-            assert cache.get(Tuple.of(1, "a")) == null;
-            log.info("LOCAL_CACHE ok");
-        }, 3 * 60 * 1000);
-
-        PersistentCache<Serializable, GirlBean> pCache = (PersistentCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-        pCache.put(key, new GirlBean());
-        assert pCache.get(key) != null;
-        sleep(8000);
-        pCache.saveToDisk();
-        sleep(8000);
-        pCache.clear();
-        pCache.loadFromDisk();
-        assert pCache.get(key) != null;
-        log.info("PersistentCache ok");
+            sleep(1000);
+            PersonBean v1 = pCache.get(Tuple.of(1, "a"));
+            PersonBean v2 = pCache.get(Tuple.of(2, "b"));
+            log.info("key1={} key2={}", v1, v2);
+            assert v1.equals(PersonBean.girl);
+            assert v2.equals(PersonBean.boy);
+            log.info("pCache ok");
+        }, 60 * 1000 + 10);
+        Tasks.scheduleOnce(() -> {
+            PersonBean v1 = pCache.get(key1);
+            PersonBean v2 = pCache.get(key2);
+            log.info("key1={} key2={}", v1, v2);
+            assert v1.equals(PersonBean.girl);
+            assert v2 == null;
+            log.info("pCache ok");
+        }, 60 * 1000 * 2 + 10);
 
         System.in.read();
     }

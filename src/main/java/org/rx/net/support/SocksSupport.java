@@ -13,14 +13,13 @@ public interface SocksSupport {
     String FAKE_HOST_SUFFIX = "x.f-li.cn";
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.8.8", "8.8.4.4"));
-    KeyValueStore db = new KeyValueStore<>("./data");
 
     static Map<SUID, UnresolvedEndpoint> fakeDict() {
-        return db;
+        return KeyValueStore.getInstance();
     }
 
     static Map<String, List<InetAddress>> hostDict() {
-        return db;
+        return KeyValueStore.getInstance();
     }
 
     void fakeEndpoint(SUID hash, String realEndpoint);

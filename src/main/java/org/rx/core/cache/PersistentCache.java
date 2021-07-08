@@ -1,64 +1,57 @@
 package org.rx.core.cache;
 
-import com.alibaba.fastjson.JSON;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.Scheduler;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.SneakyThrows;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.keyvalue.AbstractMapEntry;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.bean.DateTime;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
+import org.rx.core.NQuery;
 import org.rx.core.Tasks;
-import org.rx.core.exception.ApplicationException;
 import org.rx.io.*;
-import org.rx.util.function.BiFunc;
 
-import java.io.File;
 import java.io.Serializable;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
-
-import static org.rx.core.App.*;
 
 @Slf4j
 public class PersistentCache<TK, TV> implements Cache<TK, TV> {
-    @AllArgsConstructor
-    static class Entry<TV> implements Serializable {
+    @RequiredArgsConstructor
+    static class ValueWrapper<TV> implements Serializable {
         private static final long serialVersionUID = -7742074465897857966L;
-        TV value;
+        final TV value;
+        final int slidingMinutes;
         DateTime expire;
-        int slidingMinutes;
     }
 
-    public static Cache DEFAULT = new PersistentCache<>("RxCache.db");
+    public static Cache DEFAULT = new PersistentCache<>();
 
-    final Cache<TK, Entry<TV>> cache;
-    final KeyValueStore<TK, Entry<TV>> store;
+    final Cache<TK, ValueWrapper<TV>> cache;
+    final KeyValueStore<TK, ValueWrapper<TV>> store;
 
-    public PersistentCache(String kvDirectoryPath) {
+    public PersistentCache() {
         cache = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
                 .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
                 .removalListener(this::onRemoval).build());
-        store = new KeyValueStore<>(kvDirectoryPath);
+        store = KeyValueStore.getInstance();
     }
 
-    private void onRemoval(@Nullable TK tk, @Nullable Entry<TV> tvEntry, @NonNull RemovalCause removalCause) {
-        if (tk == null || tvEntry == null || removalCause == RemovalCause.EXPIRED) {
+    private void onRemoval(@Nullable TK key, PersistentCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
+        log.info("onRemoval {} {}", key, removalCause);
+        if (key == null || wrapper == null || wrapper.value == null
+                || removalCause == RemovalCause.EXPLICIT || wrapper.expire.before(DateTime.utcNow())) {
             return;
         }
-        if (!(tk instanceof Serializable && tvEntry.value instanceof Serializable)) {
+        if (!(key instanceof Serializable && wrapper.value instanceof Serializable)) {
             return;
         }
-        store.put(tk, tvEntry);
+        store.put(key, wrapper);
+//        log.debug("switch to store {}", key);
     }
 
     @Override
@@ -83,73 +76,67 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV get(Object key) {
-        Entry<TV> entry = cache.get(key);
-        if (entry == null) {
-            entry = store.get(key);
+        ValueWrapper<TV> valueWrapper = cache.get(key);
+        if (valueWrapper == null) {
+            valueWrapper = store.get(key);
         }
-        return unwrap((TK) key, entry);
+        return unwrap((TK) key, valueWrapper);
     }
 
-    private TV unwrap(TK key, Entry<TV> entry) {
-        if (entry == null) {
+    private TV unwrap(TK key, ValueWrapper<TV> wrapper) {
+        if (wrapper == null) {
             return null;
         }
         DateTime utc = DateTime.utcNow();
-        if (entry.expire.before(utc)) {
-            cache.remove(key);
+        if (wrapper.expire.before(utc)) {
+            remove(key);
             return null;
         }
-        if (entry.slidingMinutes > 0) {
-            entry.expire = utc.addMinutes(entry.slidingMinutes);
-            cache.put(key, entry);
+        if (wrapper.slidingMinutes > 0) {
+            wrapper.expire = utc.addMinutes(wrapper.slidingMinutes);
+            cache.put(key, wrapper);
         }
-        return entry.value;
+        return wrapper.value;
     }
 
     @Override
     public Map<TK, TV> getAll(Iterable<TK> keys) {
-        return cache.getAllPresent(keys);
-    }
-
-    @Override
-    public Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc) {
-        return cache.getAll(keys, ks -> {
-            try {
-                return loadingFunc.invoke((Set<TK>) ks);
-            } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
-            }
-        });
+        return NQuery.of(keys).toMap(k -> k, this::get);
     }
 
     @Override
     public TV put(TK key, TV value) {
-        return cache.put(key, new Entry<>(value,) );
+        return put(key, value, CacheExpirations.NON_EXPIRE);
+    }
+
+    @Override
+    public TV put(TK key, TV value, CacheExpirations expirations) {
+        if (expirations == null) {
+            expirations = CacheExpirations.NON_EXPIRE;
+        }
+
+        ValueWrapper<TV> wrapper = new ValueWrapper<>(value, expirations.getSlidingExpiration());
+        if (expirations.getSlidingExpiration() > 0) {
+            wrapper.expire = DateTime.utcNow().addMinutes(expirations.getSlidingExpiration());
+        } else if (expirations.getAbsoluteExpiration() > 0) {
+            wrapper.expire = DateTime.utcNow().addMinutes(expirations.getAbsoluteExpiration());
+        } else {
+            wrapper.expire = DateTime.MAX;
+        }
+        ValueWrapper<TV> old = cache.put(key, wrapper);
+        return unwrap(key, old);
     }
 
     @Override
     public void putAll(Map<? extends TK, ? extends TV> m) {
-        cache.putAll(m);
-    }
-
-    @Override
-    public TV putIfAbsent(TK key, TV value) {
-        return cache.asMap().putIfAbsent(key, value);
-    }
-
-    @Override
-    public boolean replace(TK key, TV oldValue, TV newValue) {
-        return cache.asMap().replace(key, oldValue, newValue);
-    }
-
-    @Override
-    public TV replace(TK key, TV value) {
-        return cache.asMap().replace(key, value);
+        for (Map.Entry<? extends TK, ? extends TV> entry : m.entrySet()) {
+            put(entry.getKey(), entry.getValue());
+        }
     }
 
     @Override
     public TV remove(Object key) {
-        Entry<TV> remove = cache.remove(key);
+        ValueWrapper<TV> remove = cache.remove(key);
         if (remove == null) {
             remove = store.remove(key);
         }
@@ -157,32 +144,34 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public boolean remove(Object key, Object value) {
-        return cache.asMap().remove(key, value);
-    }
-
-    @Override
     public void removeAll(Iterable<TK> keys) {
-        cache.invalidateAll(keys);
+        for (TK k : keys) {
+            remove(k);
+        }
     }
 
     @Override
     public void clear() {
-        cache.invalidateAll();
+        cache.clear();
+        store.clear();
     }
 
     @Override
     public Set<TK> keySet() {
-        return cache.asMap().keySet();
+        return cache.keySet();
     }
 
     @Override
     public Collection<TV> values() {
-        return cache.asMap().values();
+        return NQuery.of(keySet()).select(k -> get(k)).where(Objects::nonNull).toList();
     }
 
     @Override
     public Set<Map.Entry<TK, TV>> entrySet() {
-        return cache.asMap().entrySet();
+        return NQuery.of(keySet()).select(k -> {
+            TV v = get(k);
+            return v == null ? null : (Map.Entry<TK, TV>) new AbstractMapEntry<TK, TV>(k, v) {
+            };
+        }).where(Objects::nonNull).toSet();
     }
 }
