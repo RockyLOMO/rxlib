@@ -11,6 +11,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.rx.bean.DateTime;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
 import org.rx.core.Tasks;
@@ -34,18 +35,19 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
     static class Entry<TV> implements Serializable {
         private static final long serialVersionUID = -7742074465897857966L;
         TV value;
-        CacheExpirations expiration;
+        DateTime expire;
+        int slidingMinutes;
     }
 
     public static Cache DEFAULT = new PersistentCache<>("RxCache.db");
 
-    final com.github.benmanes.caffeine.cache.Cache<TK, Entry<TV>> cache;
+    final Cache<TK, Entry<TV>> cache;
     final KeyValueStore<TK, Entry<TV>> store;
 
     public PersistentCache(String kvDirectoryPath) {
-        cache = Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
+        cache = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
                 .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
-                .removalListener(this::onRemoval).build();
+                .removalListener(this::onRemoval).build());
         store = new KeyValueStore<>(kvDirectoryPath);
     }
 
@@ -66,22 +68,42 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public int size() {
-        return (int) cache.estimatedSize() + store.size();
+        return cache.size() + store.size();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return cache.getIfPresent(key) != null;
+        return cache.containsKey(key) || store.containsKey(key);
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.asMap().containsValue(value);
+        return cache.containsValue(value) || store.containsValue(value);
     }
 
     @Override
     public TV get(Object key) {
-        return cache.getIfPresent(key);
+        Entry<TV> entry = cache.get(key);
+        if (entry == null) {
+            entry = store.get(key);
+        }
+        return unwrap((TK) key, entry);
+    }
+
+    private TV unwrap(TK key, Entry<TV> entry) {
+        if (entry == null) {
+            return null;
+        }
+        DateTime utc = DateTime.utcNow();
+        if (entry.expire.before(utc)) {
+            cache.remove(key);
+            return null;
+        }
+        if (entry.slidingMinutes > 0) {
+            entry.expire = utc.addMinutes(entry.slidingMinutes);
+            cache.put(key, entry);
+        }
+        return entry.value;
     }
 
     @Override
@@ -102,7 +124,7 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV put(TK key, TV value) {
-        return cache.asMap().put(key, value);
+        return cache.put(key, new Entry<>(value,) );
     }
 
     @Override
@@ -127,7 +149,11 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV remove(Object key) {
-        return cache.asMap().remove(key);
+        Entry<TV> remove = cache.remove(key);
+        if (remove == null) {
+            remove = store.remove(key);
+        }
+        return remove == null ? null : remove.value;
     }
 
     @Override
