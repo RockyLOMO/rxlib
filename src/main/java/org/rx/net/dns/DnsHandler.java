@@ -51,7 +51,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             //未命中也缓存
             List<InetAddress> addresses = Cache.getOrSet(cacheKey("resolveHost:", domain),
                     k -> isNull(server.support.resolveHost(domain), Collections.emptyList()),
-                    CacheExpirations.builder().absoluteExpiration(60 * 12).build(), Cache.DISTRIBUTED_CACHE);
+                    CacheExpirations.absolute(60 * 12), Cache.DISTRIBUTED_CACHE);
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

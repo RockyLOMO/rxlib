@@ -120,7 +120,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
 
     @SneakyThrows
     @Override
-    public void saveDirectory(String remotePath) {
+    public void createDirectory(String remotePath) {
         String dirPath = FilenameUtils.getFullPath(remotePath);
         if (exists(dirPath)) {
             return;
@@ -191,12 +191,12 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
             remotePath = padDirectoryPath(remotePath) + stream.getName();
         }
 
-        saveDirectory(remotePath);
+        createDirectory(remotePath);
         channel.put(stream.getReader(), remotePath);
     }
 
     public void downloadFile(String remotePath, String localPath) {
-        Files.saveDirectory(localPath);
+        Files.createDirectory(localPath);
 
         downloadFile(remotePath, IOStream.wrap(localPath));
     }

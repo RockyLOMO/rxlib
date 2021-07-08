@@ -3,6 +3,7 @@ package org.rx.core;
 import lombok.NonNull;
 import org.rx.core.cache.CaffeineCache;
 import org.rx.core.cache.HybridCache;
+import org.rx.core.cache.ThreadCache;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
@@ -14,6 +15,7 @@ import static org.rx.core.App.*;
 
 public interface Cache<TK, TV> extends Map<TK, TV> {
     String LOCAL_CACHE = "localCache";
+    String THREAD_CACHE = "threadCache";
     String DISTRIBUTED_CACHE = "distributedCache";
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
@@ -39,6 +41,8 @@ public interface Cache<TK, TV> extends Map<TK, TV> {
                     return (Cache<TK, TV>) CaffeineCache.SLIDING_CACHE;
                 case DISTRIBUTED_CACHE:
                     return (Cache<TK, TV>) HybridCache.DEFAULT;
+                case THREAD_CACHE:
+                    return (Cache<TK, TV>) ThreadCache.getInstance();
                 default:
                     throw new InvalidException("Cache provider %s not exists", cacheName);
             }

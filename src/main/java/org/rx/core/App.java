@@ -6,7 +6,6 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
@@ -37,7 +36,6 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -531,8 +529,7 @@ public final class App extends SystemUtils {
     }
 
     public static void logMetric(String name, Object value) {
-        Map<String, Object> metrics = (Map<String, Object>) Tasks.threadMap.get();
-        metrics.put(LOG_METRIC_PREFIX + name, value);
+        Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
     public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {
@@ -545,7 +542,7 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, Object> metrics = (Map<String, Object>) Tasks.threadMap.getIfExists();
+        Map<String, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
         boolean doWrite = !MapUtils.isEmpty(metrics);
         if (!doWrite) {
             switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {

@@ -70,12 +70,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             String dstEpStr = destinationEp.toString();
             App.logMetric(String.format("socks5[%s]", server.getConfig().getListenPort()), Strings.EMPTY);
             SUID hash = SUID.compute(dstEpStr);
-            quietly(() -> Tasks.run(() -> {
-                Cache.getOrSet(hash, k -> {
-                    server.support.fakeEndpoint(hash, dstEpStr);
-                    return true;
-                });
-            }).get(8, TimeUnit.SECONDS));
+            Cache.getOrSet(hash, k -> quietly(() -> Tasks.run(() -> {
+                server.support.fakeEndpoint(hash, dstEpStr);
+                return true;
+            }).get(8, TimeUnit.SECONDS)));
             destinationEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
         }
 

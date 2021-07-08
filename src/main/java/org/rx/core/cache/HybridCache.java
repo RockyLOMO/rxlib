@@ -111,10 +111,10 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
         }
 
         ValueWrapper<TV> wrapper = new ValueWrapper<>(value, expirations.getSlidingExpiration());
-        if (expirations.getSlidingExpiration() > 0) {
+        if (expirations.getAbsoluteExpiration() != null) {
+            wrapper.expire = expirations.getAbsoluteExpiration();
+        } else if (expirations.getSlidingExpiration() > 0) {
             wrapper.expire = DateTime.utcNow().addMinutes(expirations.getSlidingExpiration());
-        } else if (expirations.getAbsoluteExpiration() > 0) {
-            wrapper.expire = DateTime.utcNow().addMinutes(expirations.getAbsoluteExpiration());
         } else {
             wrapper.expire = DateTime.MAX;
         }

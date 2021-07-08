@@ -28,7 +28,7 @@ public interface CurdFile<T> {
         return ch == '/' || ch == '\\' || Strings.isEmpty(FilenameUtils.getExtension(path));
     }
 
-    void saveDirectory(String path);
+    void createDirectory(String path);
 
     NQuery<T> listDirectories(String directoryPath, boolean recursive);
 

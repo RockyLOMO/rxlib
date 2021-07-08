@@ -17,7 +17,7 @@ import java.nio.file.StandardCopyOption;
 class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
     @Override
-    public void saveDirectory(String path) {
+    public void createDirectory(String path) {
         //do not use File parent = path.getParentFile();
         Files.createDirectories(new File(FilenameUtils.getFullPath(path)).toPath());
     }
