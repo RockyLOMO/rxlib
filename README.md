@@ -71,7 +71,7 @@ public void threadPool() {
 * [BeanMapper - 基于cglib bytecode实现](https://github.com/RockyLOMO/rxlib/wiki/BeanMapper---%E5%9F%BA%E4%BA%8Ecglib-bytecode%E5%AE%9E%E7%8E%B0)
 * [NQuery - lambda parallel stream](https://github.com/RockyLOMO/rxlib/wiki/NQuery---lambda-parallel-stream)
 * [SUID - Base64缩短不丢精度的UUID](https://github.com/RockyLOMO/rxlib/wiki/ShortUUID---%E5%9F%BA%E4%BA%8EBase64%E7%BC%A9%E7%9F%AD)
-* [KeyValueStore - 键值数据库]()
+* [KeyValueStore - 键值存储](https://github.com/RockyLOMO/rxlib/wiki/KeyValueStore---%E9%94%AE%E5%80%BC%E5%AD%98%E5%82%A8)
 
 #### Thanks
 * https://github.com/hsupu/netty-socks

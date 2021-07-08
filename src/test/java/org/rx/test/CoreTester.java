@@ -10,7 +10,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.cache.PersistentCache;
+import org.rx.core.cache.HybridCache;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.MemoryStream;
@@ -303,7 +303,7 @@ public class CoreTester extends TestUtil {
 //            log.info("LOCAL_CACHE ok");
 //        }, 3 * 60 * 1000);
 
-        PersistentCache<Serializable, PersonBean> pCache = (PersistentCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+        HybridCache<Serializable, PersonBean> pCache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
         pCache.put(key1, PersonBean.girl);
         pCache.put(key2, PersonBean.boy, CacheExpirations.builder().absoluteExpiration(2).build());
         pCache.put(4, PersonBean.girl);

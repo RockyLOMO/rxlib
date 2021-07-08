@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import com.alibaba.fastjson.JSON;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -8,9 +9,9 @@ import lombok.SneakyThrows;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.lang.reflect.Type;
 
-import static org.rx.core.App.as;
-import static org.rx.core.App.fromJson;
+import static org.rx.core.App.*;
 
 public class JdkAndJsonSerializer implements Serializer {
     @RequiredArgsConstructor
@@ -20,6 +21,8 @@ public class JdkAndJsonSerializer implements Serializer {
         final Class<?> type;
         final String json;
     }
+
+    public static final FastThreadLocal<Type> jsonType = new FastThreadLocal<>();
 
     @SneakyThrows
     @Override
@@ -40,7 +43,8 @@ public class JdkAndJsonSerializer implements Serializer {
 
             JsonWrapper wrapper;
             if ((wrapper = as(obj0, JsonWrapper.class)) != null) {
-                return fromJson(wrapper.json, wrapper.type);
+                Type type = isNull(jsonType.getIfExists(), wrapper.type);
+                return fromJson(wrapper.json, type);
             }
             return (T) obj0;
         } finally {

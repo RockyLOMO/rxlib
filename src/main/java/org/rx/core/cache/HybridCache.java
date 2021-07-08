@@ -20,7 +20,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-public class PersistentCache<TK, TV> implements Cache<TK, TV> {
+public class HybridCache<TK, TV> implements Cache<TK, TV> {
     @RequiredArgsConstructor
     static class ValueWrapper<TV> implements Serializable {
         private static final long serialVersionUID = -7742074465897857966L;
@@ -29,19 +29,19 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
         DateTime expire;
     }
 
-    public static Cache DEFAULT = new PersistentCache<>();
+    public static Cache DEFAULT = new HybridCache<>();
 
     final Cache<TK, ValueWrapper<TV>> cache;
     final KeyValueStore<TK, ValueWrapper<TV>> store;
 
-    public PersistentCache() {
+    public HybridCache() {
         cache = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
                 .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
                 .removalListener(this::onRemoval).build());
         store = KeyValueStore.getInstance();
     }
 
-    private void onRemoval(@Nullable TK key, PersistentCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
+    private void onRemoval(@Nullable TK key, HybridCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
         log.info("onRemoval {} {}", key, removalCause);
         if (key == null || wrapper == null || wrapper.value == null
                 || removalCause == RemovalCause.EXPLICIT || wrapper.expire.before(DateTime.utcNow())) {
@@ -100,11 +100,6 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public Map<TK, TV> getAll(Iterable<TK> keys) {
-        return NQuery.of(keys).toMap(k -> k, this::get);
-    }
-
-    @Override
     public TV put(TK key, TV value) {
         return put(key, value, CacheExpirations.NON_EXPIRE);
     }
@@ -128,26 +123,12 @@ public class PersistentCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public void putAll(Map<? extends TK, ? extends TV> m) {
-        for (Map.Entry<? extends TK, ? extends TV> entry : m.entrySet()) {
-            put(entry.getKey(), entry.getValue());
-        }
-    }
-
-    @Override
     public TV remove(Object key) {
         ValueWrapper<TV> remove = cache.remove(key);
         if (remove == null) {
             remove = store.remove(key);
         }
         return remove == null ? null : remove.value;
-    }
-
-    @Override
-    public void removeAll(Iterable<TK> keys) {
-        for (TK k : keys) {
-            remove(k);
-        }
     }
 
     @Override
