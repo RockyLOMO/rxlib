@@ -1,6 +1,7 @@
 package org.rx.bean;
 
 import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Arrays;
@@ -16,6 +17,7 @@ import static org.rx.core.App.require;
 
 @SuppressWarnings(NON_WARNING)
 @Slf4j
+@NoArgsConstructor
 public class RandomList<T> implements Collection<T>, Serializable {
     private static final int DEFAULT_WEIGHT = 2;
 
@@ -41,6 +43,12 @@ public class RandomList<T> implements Collection<T>, Serializable {
 
     private final List<WeightElement<T>> elements = new CopyOnWriteArrayList<>();
     private volatile int maxRandomValue;
+
+    public RandomList(Iterable<T> elements) {
+        for (T item : elements) {
+            add(item);
+        }
+    }
 
     public synchronized T next() {
         switch (elements.size()) {

@@ -3,11 +3,10 @@ package org.rx;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
-import org.rx.core.App;
-import org.rx.core.Reflects;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
@@ -69,17 +68,19 @@ public final class Main implements SocksSupport {
             rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
-            Tuple<Boolean, AuthenticEndpoint> shadowServer = Reflects.tryConvert(options.get("shadowServer"), AuthenticEndpoint.class);
-            if (shadowServer.right == null) {
+            NQuery<Tuple<Boolean, AuthenticEndpoint>> q = NQuery.of(Strings.split(options.get("shadowServer"), ",")).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
+            if (q.any(p -> p.right == null)) {
                 log.info("Invalid shadowServer arg");
                 return;
             }
+            RandomList<AuthenticEndpoint> shadowServers = new RandomList<>();
+            shadowServers.addAll(q.select(p -> p.right).toList());
 
             SocksConfig frontConf = new SocksConfig(port.right);
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServer.right));
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             app = new Main(frontSvr);
@@ -100,7 +101,7 @@ public final class Main implements SocksSupport {
                 support.addWhiteList(addr);
             };
             fn.invoke();
-            Tasks.schedule(fn, 3000);
+            Tasks.schedule(fn, 30 * 1000);
 
             ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.getAnyEndpoint(port.right + 1),
                     CipherKind.AES_128_GCM.getCipherName(), shadowServer.right.getPassword());

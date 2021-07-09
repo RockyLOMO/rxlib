@@ -8,4 +8,4 @@ logs/
 *.iml
 config.json
 .DS_Store
-RxData
+data
