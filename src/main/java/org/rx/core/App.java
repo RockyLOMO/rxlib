@@ -542,7 +542,7 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
+        Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
         boolean doWrite = !MapUtils.isEmpty(metrics);
         if (!doWrite) {
             switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
@@ -572,9 +572,9 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(256);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<String, Object> entry : metrics.entrySet()) {
-                String key = entry.getKey();
-                if (!Strings.startsWith(key, LOG_METRIC_PREFIX)) {
+            for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
+                String key;
+                if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
                     continue;
                 }
                 if (first) {
