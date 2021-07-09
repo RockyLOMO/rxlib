@@ -3,7 +3,6 @@ package org.rx.io;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
-import org.rx.core.Cache;
 import org.rx.core.Disposable;
 
 import java.io.*;
@@ -80,7 +79,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     private KeyValueStore() {
-        this(new KeyValueStoreConfig("./RxData"), Serializer.DEFAULT);
+        this(KeyValueStoreConfig.defaultConfig(), Serializer.DEFAULT);
     }
 
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
@@ -111,10 +110,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
                 incr = true;
             }
             synchronized (this) {
-                key.logPosition = pos;
-                if (val.value == null) {
-                    key.logPosition = TOMB_MARK;
-                }
+                key.logPosition = val.value == null ? TOMB_MARK : pos;
                 wal.meta.setLogPosition(endPos.v);
 
                 indexer.saveKey(key);
@@ -190,14 +186,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         checkNotClosed();
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
-//        wal.lock.writeInvoke(() -> {
         key.logPosition = wal.meta.getLogPosition();
         serializer.serialize(value, wal);
         if (value.value == null) {
             key.logPosition = TOMB_MARK;
         }
-//            cache().remove(cacheKey(key));
-//        });
         log.debug("saveValue {} {}", key, value);
     }
 
@@ -210,7 +203,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         }
 
         return findValue(key.logPosition, key.key, null);
-//        return wal.lock.readInvoke(() -> cache().get(cacheKey(key), k -> findValue(key.logPosition, key.key, null)));
     }
 
     @SneakyThrows
@@ -241,14 +233,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
             return null;
         }
         return val;
-    }
-
-    private String cacheKey(HashFileIndexer.KeyData<TK> key) {
-        return String.valueOf(key.logPosition);
-    }
-
-    private Cache<String, Entry<TK, TV>> cache() {
-        return Cache.getInstance(Cache.LOCAL_CACHE);
     }
 
     @Override

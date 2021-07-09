@@ -3,6 +3,7 @@ package org.rx.core.cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Scheduler;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.AbstractMapEntry;
@@ -32,13 +33,13 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
     public static Cache DEFAULT = new HybridCache<>();
 
     final Cache<TK, ValueWrapper<TV>> cache;
-    final KeyValueStore<TK, ValueWrapper<TV>> store;
+    @Getter(lazy = true)
+    private final KeyValueStore<TK, ValueWrapper<TV>> store = KeyValueStore.getInstance();
 
     public HybridCache() {
         cache = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
                 .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
                 .removalListener(this::onRemoval).build());
-        store = KeyValueStore.getInstance();
     }
 
     private void onRemoval(@Nullable TK key, HybridCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
@@ -50,8 +51,8 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
         if (!(key instanceof Serializable && wrapper.value instanceof Serializable)) {
             return;
         }
-        store.put(key, wrapper);
-//        log.debug("switch to store {}", key);
+        getStore().put(key, wrapper);
+//        log.debug("switch to getStore() {}", key);
     }
 
     @Override
@@ -61,24 +62,24 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public int size() {
-        return cache.size() + store.size();
+        return cache.size() + getStore().size();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return cache.containsKey(key) || store.containsKey(key);
+        return cache.containsKey(key) || getStore().containsKey(key);
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.containsValue(value) || store.containsValue(value);
+        return cache.containsValue(value) || getStore().containsValue(value);
     }
 
     @Override
     public TV get(Object key) {
         ValueWrapper<TV> valueWrapper = cache.get(key);
         if (valueWrapper == null) {
-            valueWrapper = store.get(key);
+            valueWrapper = getStore().get(key);
         }
         return unwrap((TK) key, valueWrapper);
     }
@@ -126,7 +127,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
     public TV remove(Object key) {
         ValueWrapper<TV> remove = cache.remove(key);
         if (remove == null) {
-            remove = store.remove(key);
+            remove = getStore().remove(key);
         }
         return remove == null ? null : remove.value;
     }
@@ -134,7 +135,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV> {
     @Override
     public void clear() {
         cache.clear();
-        store.clear();
+        getStore().clear();
     }
 
     @Override

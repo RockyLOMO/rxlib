@@ -2,12 +2,12 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.FastThreadLocal;
-import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 
 import java.io.*;
 import java.nio.channels.FileChannel;
@@ -32,25 +32,28 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         private static final long serialVersionUID = 3894764623767567837L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
-            out.writeLong(logPosition);
+            out.writeLong(_logPosition);
             out.writeInt(size.get());
         }
 
         private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            logPosition = in.readLong();
+            _logPosition = in.readLong();
             size = new AtomicInteger();
             size.set(in.readInt());
         }
 
         transient BiAction<MetaHeader> writeBack;
-        @Getter
-        private volatile long logPosition = HEADER_SIZE;
+        private long _logPosition = HEADER_SIZE;
         private AtomicInteger size = new AtomicInteger();
 
-        public void setLogPosition(long logPosition) {
+        public synchronized long getLogPosition() {
+            return _logPosition;
+        }
+
+        public synchronized void setLogPosition(long logPosition) {
             require(logPosition, logPosition >= HEADER_SIZE);
 
-            this.logPosition = logPosition;
+            _logPosition = logPosition;
             writeBack();
         }
 
@@ -81,10 +84,6 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 //            log.debug("write back {}", this);
             writeBack.invoke(this);
         }
-    }
-
-    interface ReadInvoker {
-        int invoke(IOStream<?, ?> reader);
     }
 
     static final float GROW_FACTOR = 0.75f;
@@ -259,14 +258,14 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         return lock.writeInvoke(() -> {
             long length = main.getLength();
             if (length < growSize) {
-                log.debug("growLength {} 0->{}", getName(), growSize);
+                log.debug("growSize {} 0->{}", getName(), growSize);
                 _setLength(growSize);
                 return true;
             }
 
             if (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR) {
                 long resize = length + growSize;
-                log.debug("growLength {} {}->{}", getName(), length, resize);
+                log.debug("growSize {} {}->{}", getName(), length, resize);
                 _setLength(resize);
                 return true;
             }
@@ -298,7 +297,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     @SneakyThrows
-    private int ensureRead(ReadInvoker action) {
+    private int ensureRead(BiFunc<IOStream<?, ?>, Integer> action) {
         IOStream<?, ?> reader = readers.take();
         try {
             return lock.readInvoke(() -> {

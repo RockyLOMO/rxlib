@@ -34,7 +34,7 @@ public class Bytes {
     }
 
     public static ByteBuf heapBuffer() {
-        return heapBuffer(RxConfig.HEAP_BUF_SIZE, true);
+        return heapBuffer(RxConfig.HEAP_BUF_SIZE, false);
     }
 
     public static ByteBuf heapBuffer(int initialCapacity, boolean unpool) {

@@ -6,7 +6,15 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Data
 public class KeyValueStoreConfig {
+    public static final String DEFAULT_DIRECTORY = "./data";
     static final int OneM = 1024 * 1024;
+
+    public static KeyValueStoreConfig defaultConfig() {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(DEFAULT_DIRECTORY);
+        conf.setLogGrowSize(OneM * 512);
+        conf.setIndexGrowSize(OneM * 16);
+        return conf;
+    }
 
     private final String directoryPath;
     /**

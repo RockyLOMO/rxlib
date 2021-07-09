@@ -571,15 +571,19 @@ public final class App extends SystemUtils {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
             StringBuilder msg = new StringBuilder(256);
             formatMessage.invoke(msg);
-            if (metrics != null) {
-                msg.append("Metrics:\t");
-                for (Map.Entry<String, Object> entry : metrics.entrySet()) {
-                    String key = entry.getKey();
-                    if (!Strings.startsWith(key, LOG_METRIC_PREFIX)) {
-                        continue;
-                    }
-                    msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
+            boolean first = true;
+            for (Map.Entry<String, Object> entry : metrics.entrySet()) {
+                String key = entry.getKey();
+                if (!Strings.startsWith(key, LOG_METRIC_PREFIX)) {
+                    continue;
                 }
+                if (first) {
+                    msg.append("Metrics:\t");
+                    first = false;
+                }
+                msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
+            }
+            if (!first) {
                 msg.appendLine();
             }
             if (eventArgs.getError() != null) {
