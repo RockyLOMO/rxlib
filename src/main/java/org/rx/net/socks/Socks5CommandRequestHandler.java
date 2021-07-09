@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
-import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
@@ -18,9 +17,6 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
-
-import static org.rx.core.App.quietly;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -63,23 +59,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
-        UnresolvedEndpoint destinationEp = e.getUpstream().getEndpoint();
-        if (server.support != null
-                && (SocksSupport.FAKE_IPS.contains(destinationEp.getHost()) || !Sockets.isValidIp(destinationEp.getHost()))
-        ) {
-            String dstEpStr = destinationEp.toString();
-            App.logMetric(String.format("socks5[%s]", server.getConfig().getListenPort()), Strings.EMPTY);
-            SUID hash = SUID.compute(dstEpStr);
-            Cache.getOrSet(hash, k -> quietly(() -> Tasks.run(() -> {
-                server.support.fakeEndpoint(hash, dstEpStr);
-                return true;
-            }).get(8, TimeUnit.SECONDS)));
-            destinationEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
-        }
-
-        UnresolvedEndpoint finalDestinationEp = destinationEp;
-        Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), channel -> e.getUpstream().initChannel(channel))
-                .connect(destinationEp.toSocketAddress()).addListener((ChannelFutureListener) f -> {
+        Upstream upstream = e.getUpstream();
+        Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), upstream::initChannel)
+                .connect(upstream.getEndpoint().toSocketAddress()).addListener((ChannelFutureListener) f -> {
+            //initChannel 可能会变dstEp
+            UnresolvedEndpoint destinationEp = upstream.getEndpoint();
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -90,7 +74,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     }
                 }
                 log.error("socks5[{}] connect fail, dstEp={}[{}]", server.getConfig().getListenPort(),
-                        finalDestinationEp, e.getUpstream().getEndpoint(), f.cause());
+                        destinationEp, e.getUpstream().getEndpoint(), f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
@@ -98,7 +82,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             StringBuilder aesMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
             SocksConfig config = server.getConfig();
-            if (server.aesRouter(finalDestinationEp) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
+            if (server.aesRouter(destinationEp) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.BACKEND_COMPRESS)) {
                         ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
@@ -109,12 +93,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 //                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
                         aesMsg.append("[BACKEND_AES]");
                     }
-                    relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getUpstream().getEndpoint(), aesMsg);
+                    relay(inbound, outbound, dstAddrType, destinationEp, e.getUpstream().getEndpoint(), aesMsg);
                 });
                 return;
             }
 
-            relay(inbound, outbound, dstAddrType, finalDestinationEp, e.getUpstream().getEndpoint(), aesMsg);
+            relay(inbound, outbound, dstAddrType, destinationEp, e.getUpstream().getEndpoint(), aesMsg);
         });
     }
 

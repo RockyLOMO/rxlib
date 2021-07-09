@@ -1,13 +1,11 @@
 package org.rx.net.support;
 
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import org.rx.net.Sockets;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 
-@RequiredArgsConstructor
 @Data
 public class UnresolvedEndpoint implements Serializable {
     private static final long serialVersionUID = -1870762625355971485L;

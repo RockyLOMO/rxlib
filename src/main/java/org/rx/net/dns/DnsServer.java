@@ -9,9 +9,10 @@ import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RandomList;
 import org.rx.core.Disposable;
 import org.rx.net.Sockets;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -23,7 +24,7 @@ public class DnsServer extends Disposable {
     @Getter
     final Map<String, byte[]> customHosts = new ConcurrentHashMap<>();
     @Setter
-    SocksSupport support;
+    RandomList<UpstreamSupport> support;
 
     public DnsServer() {
         this(53);

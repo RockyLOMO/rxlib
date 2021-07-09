@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
+import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
@@ -29,6 +30,7 @@ import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
@@ -266,19 +268,23 @@ public class SocksTester {
         rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         Remoting.listen(new Main(backSvr), rpcServerConf);
 
+        RandomList<UpstreamSupport> supports = new RandomList<>();
+        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:1181", 2);
+        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        supports.add(new UpstreamSupport(new AuthenticEndpoint("127.0.0.1:1081"),
+                Remoting.create(SocksSupport.class, rpcClientConf)));
+
         SocksConfig frontConf = new SocksConfig(1090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                dstEp -> new Socks5Upstream(dstEp, frontConf, new AuthenticEndpoint("127.0.0.1:1081")));
+                dstEp -> new Socks5Upstream(dstEp, frontConf, supports));
         frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:1181", 2);
-        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        SocksSupport support = Remoting.create(SocksSupport.class, rpcClientConf);
-        frontSvr.setSupport(support);
         sleep(2000);
-        support.addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
+        for (UpstreamSupport support : supports) {
+            support.getSupport().addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
+        }
 
         System.in.read();
     }

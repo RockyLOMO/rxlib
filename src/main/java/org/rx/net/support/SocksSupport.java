@@ -18,10 +18,6 @@ public interface SocksSupport {
         return KeyValueStore.getInstance();
     }
 
-    static Map<String, List<InetAddress>> hostDict() {
-        return KeyValueStore.getInstance();
-    }
-
     void fakeEndpoint(SUID hash, String realEndpoint);
 
     List<InetAddress> resolveHost(String host);

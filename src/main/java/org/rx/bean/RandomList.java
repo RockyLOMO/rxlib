@@ -19,10 +19,12 @@ import static org.rx.core.App.require;
 @Slf4j
 @NoArgsConstructor
 public class RandomList<T> implements Collection<T>, Serializable {
+    private static final long serialVersionUID = 675332324858046587L;
     private static final int DEFAULT_WEIGHT = 2;
 
     @AllArgsConstructor
     private static class WeightElement<T> implements Serializable {
+        private static final long serialVersionUID = 7199704019570049544L;
         private final T element;
         private int weight;
         private final DataRange<Integer> threshold = new DataRange<>();
@@ -42,12 +44,10 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     private final List<WeightElement<T>> elements = new CopyOnWriteArrayList<>();
-    private volatile int maxRandomValue;
+    private int maxRandomValue;
 
-    public RandomList(Iterable<T> elements) {
-        for (T item : elements) {
-            add(item);
-        }
+    public RandomList(Collection<T> elements) {
+        addAll(elements);
     }
 
     public synchronized T next() {
@@ -96,7 +96,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
         throw new NoSuchElementException();
     }
 
-    private boolean change(boolean changed) {
+    private synchronized boolean change(boolean changed) {
         if (changed) {
             maxRandomValue = 0;
         }

@@ -13,7 +13,6 @@ import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -36,8 +35,6 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     final BiFunc<UnresolvedEndpoint, Upstream> router;
     @Setter
     private PredicateFunc<UnresolvedEndpoint> aesRouter;
-    @Setter
-    SocksSupport support;
 
     public boolean isAuthEnabled() {
         return authenticator != null;

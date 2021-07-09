@@ -26,6 +26,7 @@ import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Action;
 
 import java.net.InetAddress;
@@ -69,12 +70,17 @@ public final class Main implements SocksSupport {
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
             NQuery<Tuple<Boolean, AuthenticEndpoint>> q = NQuery.of(Strings.split(options.get("shadowServer"), ",")).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
-            if (q.any(p -> p.right == null)) {
+            if (!q.any() || q.any(p -> p.right == null)) {
                 log.info("Invalid shadowServer arg");
                 return;
             }
-            RandomList<AuthenticEndpoint> shadowServers = new RandomList<>();
-            shadowServers.addAll(q.select(p -> p.right).toList());
+
+            RandomList<UpstreamSupport> shadowServers = new RandomList<>(q.select(p -> {
+                AuthenticEndpoint shadowServer = p.right;
+                RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 4);
+                rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+                return new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf));
+            }).toList());
 
             SocksConfig frontConf = new SocksConfig(port.right);
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
@@ -82,29 +88,26 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null, dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
-
             app = new Main(frontSvr);
-            RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.right.getEndpoint(), shadowServer.right.getEndpoint().getPort() + 1), 2, 4);
-            rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
-            SocksSupport support = Remoting.create(SocksSupport.class, rpcConf);
-            frontSvr.setSupport(support);
 
             Tuple<Boolean, Integer> shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer frontDnsSvr = new DnsServer(shadowDnsPort.right);
-            frontDnsSvr.setSupport(support);
+            frontDnsSvr.setSupport(shadowServers);
 
             Action fn = () -> {
                 InetAddress addr = InetAddress.getByName(HttpClient.getWanIp());
                 if (!frontConf.getWhiteList().add(addr)) {
                     return;
                 }
-                support.addWhiteList(addr);
+                for (UpstreamSupport shadowServer : shadowServers) {
+                    shadowServer.getSupport().addWhiteList(addr);
+                }
             };
             fn.invoke();
-            Tasks.schedule(fn, 30 * 1000);
+            Tasks.schedule(fn, 60 * 1000);
 
             ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.getAnyEndpoint(port.right + 1),
-                    CipherKind.AES_128_GCM.getCipherName(), shadowServer.right.getPassword());
+                    CipherKind.AES_128_GCM.getCipherName(), shadowServers.next().getEndpoint().getPassword());
             ssConfig.setMemoryMode(MemoryMode.MEDIUM);
             ssConfig.setConnectTimeoutMillis(connectTimeout.right);
             SocksConfig directConf = new SocksConfig(port.right);
