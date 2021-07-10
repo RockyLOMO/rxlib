@@ -13,6 +13,7 @@ import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
+import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -24,7 +25,9 @@ import java.util.function.BiConsumer;
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = DirectUpstream::new;
-    public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == 53;
+    public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
+//            || dstEp.getPort() == 80
+            ;
     public volatile BiConsumer<SocksProxyServer, ReconnectingEventArgs> onReconnecting;
 
     @Getter

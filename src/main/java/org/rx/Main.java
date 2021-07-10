@@ -77,7 +77,7 @@ public final class Main implements SocksSupport {
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>(q.select(p -> {
                 AuthenticEndpoint shadowServer = p.right;
-                RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 4);
+                RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
                 rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
                 return new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf));
             }).toList());
@@ -104,7 +104,7 @@ public final class Main implements SocksSupport {
                 }
             };
             fn.invoke();
-            Tasks.schedule(fn, 60 * 1000);
+            Tasks.schedule(fn, 120 * 1000);
 
             ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.getAnyEndpoint(port.right + 1),
                     CipherKind.AES_128_GCM.getCipherName(), shadowServers.next().getEndpoint().getPassword());
@@ -113,9 +113,10 @@ public final class Main implements SocksSupport {
             SocksConfig directConf = new SocksConfig(port.right);
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-            UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
+//            UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", SocksSupport.DNS_PORT);
             ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
-                if (dstEp.equals(loopbackDns)) {
+//                if (dstEp.equals(loopbackDns)) {
+                if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                     return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort.right));
                 }
                 return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right)));

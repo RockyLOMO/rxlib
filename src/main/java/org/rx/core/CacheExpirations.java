@@ -17,15 +17,15 @@ public final class CacheExpirations {
     public static CacheExpirations today(int expireMinutes) {
         DateTime now = DateTime.now(), expire = now.addMinutes(expireMinutes);
         DateTime max = DateTime.valueOf(String.format("%s 23:59:59", now.toDateString()), DateTime.FORMATS.first());
-        return new CacheExpirations(expire.before(max) ? expire : max, -1);
+        return new CacheExpirations(expire.before(max) ? expire : max, NON_EXPIRE.slidingExpiration);
     }
 
     public static CacheExpirations absolute(int expireMinutes) {
-        return new CacheExpirations(DateTime.utcNow().addMinutes(expireMinutes), -1);
+        return new CacheExpirations(DateTime.utcNow().addMinutes(expireMinutes), NON_EXPIRE.slidingExpiration);
     }
 
     public static CacheExpirations sliding(int expireMinutes) {
-        return new CacheExpirations(null, expireMinutes);
+        return new CacheExpirations(NON_EXPIRE.absoluteExpiration, expireMinutes);
     }
 
     private final DateTime absoluteExpiration;

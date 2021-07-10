@@ -13,6 +13,9 @@ public interface SocksSupport {
     String FAKE_HOST_SUFFIX = "x.f-li.cn";
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.8.8", "8.8.4.4"));
+    List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
+    int DNS_PORT = 53;
+    long ASYNC_TIMEOUT = 6 * 1000;
 
     static Map<SUID, UnresolvedEndpoint> fakeDict() {
         return KeyValueStore.getInstance();

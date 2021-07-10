@@ -45,15 +45,16 @@ public class Socks5Upstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
         if (support != null
-                && (SocksSupport.FAKE_IPS.contains(this.endpoint.getHost()) || !Sockets.isValidIp(this.endpoint.getHost()))) {
-            String dstEpStr = this.endpoint.toString();
+                && (SocksSupport.FAKE_IPS.contains(endpoint.getHost()) || SocksSupport.FAKE_PORTS.contains(endpoint.getPort())
+                || !Sockets.isValidIp(endpoint.getHost()))) {
+            String dstEpStr = endpoint.toString();
             SUID hash = SUID.compute(dstEpStr);
             Cache.getOrSet(hash, k -> quietly(() -> Tasks.run(() -> {
                 App.logMetric(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
-            }).get(8, TimeUnit.SECONDS)));
-            this.endpoint = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
+            }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS)));
+            endpoint = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
