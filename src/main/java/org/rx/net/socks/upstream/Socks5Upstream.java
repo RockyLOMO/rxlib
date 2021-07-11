@@ -49,12 +49,13 @@ public class Socks5Upstream extends Upstream {
                 || !Sockets.isValidIp(endpoint.getHost()))) {
             String dstEpStr = endpoint.toString();
             SUID hash = SUID.compute(dstEpStr);
+            //先变更
+            endpoint = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> quietly(() -> Tasks.run(() -> {
                 App.logMetric(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
             }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS)));
-            endpoint = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());

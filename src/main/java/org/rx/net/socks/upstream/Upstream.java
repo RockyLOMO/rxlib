@@ -6,7 +6,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 public abstract class Upstream {
     @Getter
-    protected UnresolvedEndpoint endpoint;
+    protected volatile UnresolvedEndpoint endpoint;
 
     public abstract void initChannel(SocketChannel channel);
 }
