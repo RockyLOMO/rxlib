@@ -25,8 +25,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
         if (memoryStream.getLength() > maxMemorySize) {
             log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
             fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
-            memoryStream.setPosition(0);
-            fileStream.write(memoryStream);
+            fileStream.write(memoryStream.rewind());
             memoryStream = null;
             return fileStream;
         }

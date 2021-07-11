@@ -86,12 +86,13 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
     @Override
     public StatefulRpcClient returnClient(StatefulRpcClient client) {
         checkNotClosed();
-        if (!client.isAutoReconnect() && !client.isConnected()) {
-            pool.invalidateObject(client);
-            return null;
-        }
 
         try {
+            if (!client.isAutoReconnect() && !client.isConnected()) {
+                pool.invalidateObject(client);
+                return null;
+            }
+
             pool.returnObject(client); //对同一对象会return多次hang
         } catch (IllegalStateException e) {
             log.warn("returnClient", e);

@@ -132,7 +132,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public void fakeEndpoint(SUID hash, String endpoint) {
-        SocksSupport.fakeDict().put(hash, UnresolvedEndpoint.valueOf(endpoint));
+        SocksSupport.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
     @Override

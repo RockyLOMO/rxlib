@@ -35,16 +35,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         HybridStream stream = new HybridStream();
         stream.setName(name);
         stream.write(data);
-        stream.setPosition(0L);
-        return stream;
+        return stream.rewind();
     }
 
     public static IOStream<?, ?> wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
         stream.setName(name);
         stream.write(in);
-        stream.setPosition(0L);
-        return stream;
+        return stream.rewind();
     }
 
     @SneakyThrows
@@ -308,5 +306,10 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         read(data);
         setPosition(pos);
         return data;
+    }
+
+    public final IOStream<TI, TO> rewind() {
+        setPosition(0L);
+        return this;
     }
 }

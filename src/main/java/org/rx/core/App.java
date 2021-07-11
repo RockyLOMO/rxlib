@@ -738,8 +738,7 @@ public final class App extends SystemUtils {
 
     public static <T extends Serializable> T deepClone(T obj) {
         IOStream<?, ?> stream = Serializer.DEFAULT.serialize(obj);
-        stream.setPosition(0);
-        return Serializer.DEFAULT.deserialize(stream);
+        return Serializer.DEFAULT.deserialize(stream.rewind());
     }
     //endregion
 }
