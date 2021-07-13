@@ -16,6 +16,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.App.require;
 
+/**
+ * Optimum buffer size is related to a number of things: file system block size, CPU cache size and cache latency.
+ * <p>
+ * Most file systems are configured to use block sizes of 4096 or 8192. In theory, if you configure your buffer size so you are reading a few bytes more than the disk block, the operations with the file system can be extremely inefficient (i.e. if you configured your buffer to read 4100 bytes at a time, each read would require 2 block reads by the file system). If the blocks are already in cache, then you wind up paying the price of RAM -> L3/L2 cache latency. If you are unlucky and the blocks are not in cache yet, the you pay the price of the disk->RAM latency as well.
+ * <p>
+ * This is why you see most buffers sized as a power of 2, and generally larger than (or equal to) the disk block size. This means that one of your stream reads could result in multiple disk block reads - but those reads will always use a full block - no wasted reads.
+ * <p>
+ * Now, this is offset quite a bit in a typical streaming scenario because the block that is read from disk is going to still be in memory when you hit the next read (we are doing sequential reads here, after all) - so you wind up paying the RAM -> L3/L2 cache latency price on the next read, but not the disk->RAM latency. In terms of order of magnitude, disk->RAM latency is so slow that it pretty much swamps any other latency you might be dealing with.
+ * <p>
+ * So, I suspect that if you ran a test with different cache sizes (haven't done this myself), you will probably find a big impact of cache size up to the size of the file system block. Above that, I suspect that things would level out pretty quickly.
+ * <p>
+ * There are a ton of conditions and exceptions here - the complexities of the system are actually quite staggering (just getting a handle on L3 -> L2 cache transfers is mind bogglingly complex, and it changes with every CPU type).
+ * <p>
+ * This leads to the 'real world' answer: If your app is like 99% out there, set the cache size to 8192 and move on (even better, choose encapsulation over performance and use BufferedInputStream to hide the details). If you are in the 1% of apps that are highly dependent on disk throughput, craft your implementation so you can swap out different disk interaction strategies, and provide the knobs and dials to allow your users to test and optimize (or come up with some self optimizing system).
+ */
 @Slf4j
 public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private static final long serialVersionUID = 1414441456982833443L;
@@ -203,6 +218,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         lock.writeInvoke(() -> {
             writer.setPosition(0);
             serializer.serialize(meta, writer);
+            writer.flush();
         }, 0, HEADER_SIZE);
     }
 

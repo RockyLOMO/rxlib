@@ -16,6 +16,12 @@ import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.*;
 
+/**
+ * murmur3_128  com.google.common.hash.Hashing.goodFastHash(128);
+ * only cache key position
+ *
+ * @param <TK>
+ */
 @Slf4j
 final class HashFileIndexer<TK> extends Disposable {
     @RequiredArgsConstructor

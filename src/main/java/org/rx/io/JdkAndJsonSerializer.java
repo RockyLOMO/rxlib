@@ -31,7 +31,7 @@ public class JdkAndJsonSerializer implements Serializer {
 
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         out.writeObject(obj0);
-        out.flush();//close会关闭stream
+//        out.flush();
     }
 
     @SneakyThrows
