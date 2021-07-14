@@ -28,7 +28,7 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
-//protobuf
+//snappy + protobuf
 @Slf4j
 public final class Remoting {
     public static class ClientBean {

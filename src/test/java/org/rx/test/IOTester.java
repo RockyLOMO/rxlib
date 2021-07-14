@@ -1,6 +1,8 @@
 package org.rx.test;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.compression.SnappyFrameDecoder;
+import io.netty.handler.codec.compression.SnappyFrameEncoder;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -17,7 +19,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.UUID;
+import java.util.zip.GZIPOutputStream;
 
 import static org.rx.core.App.sleep;
 import static org.rx.core.App.toJsonString;
@@ -33,7 +35,6 @@ public class IOTester {
     final String baseDir = "D:\\download";
     final String filePathFormat = baseDir + "\\%s.txt";
     final String KvPath = baseDir + "\\RxKv";
-    final boolean doWrite = true;
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @Test
@@ -124,6 +125,22 @@ public class IOTester {
 //        assert s == null;
 
         kv.close();
+    }
+
+    @SneakyThrows
+    @Test
+    public void zipStream() {
+        MemoryStream stream = new MemoryStream();
+        GZIPOutputStream out = new GZIPOutputStream(stream.getWriter());
+        for (int i = 0; i < 10; i++) {
+            out.write(content);
+        }
+        out.flush();
+        out.finish();
+
+
+        System.out.println(content.length * 10);
+        System.out.println(stream.toArray().length);
     }
 
     @Test
@@ -218,32 +235,6 @@ public class IOTester {
 //        long pos = stream.getPosition();
 //        IOStream<?, ?> newStream = App.deepClone(stream);
 //        assert pos == newStream.getPosition();
-    }
-
-    @SneakyThrows
-    @Test
-    public void fileBuf64K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 64), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.LARGE_DATA);
-        TestUtil.invoke("fileBuf64K", i -> {
-            if (doWrite) {
-                fd.write(UUID.randomUUID().toString().getBytes());
-                return;
-            }
-            fd.read(UUID.randomUUID().toString().getBytes());
-        });
-    }
-
-    @SneakyThrows
-    @Test
-    public void fileBuf4K() {
-        BufferedRandomAccessFile fd = new BufferedRandomAccessFile(String.format(filePathFormat, 4), FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
-        TestUtil.invoke("fileBuf4K", i -> {
-            if (doWrite) {
-                fd.write(UUID.randomUUID().toString().getBytes());
-                return;
-            }
-            fd.read(UUID.randomUUID().toString().getBytes());
-        });
     }
 
     @Test

@@ -2,6 +2,7 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.FastThreadLocal;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
@@ -107,6 +108,8 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     final CompositeLock lock;
     private final long growSize;
     private final int readerCount;
+    @Setter
+    private boolean autoFlush;
     private IOStream<?, ?> writer;
     private final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
@@ -218,7 +221,9 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         lock.writeInvoke(() -> {
             writer.setPosition(0);
             serializer.serialize(meta, writer);
-            writer.flush();
+            if (autoFlush) {
+                writer.flush();
+            }
         }, 0, HEADER_SIZE);
     }
 
@@ -336,6 +341,9 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         lock.writeInvoke(() -> {
             writer.setPosition(meta.getLogPosition());
             action.invoke(writer);
+            if (autoFlush) {
+                writer.flush();
+            }
             meta.setLogPosition(writer.getPosition());
         }, HEADER_SIZE);
     }

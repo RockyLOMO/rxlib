@@ -302,7 +302,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
         long pos = getPosition();
         setPosition(0);
-        byte[] data = new byte[(int) (getLength() - pos)];
+        byte[] data = new byte[(int) getLength()];
         read(data);
         setPosition(pos);
         return data;

@@ -21,6 +21,8 @@ import static org.rx.core.App.require;
  *
  * <p>log
  * key + value
+ *
+ * 减少文件，二分查找
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
