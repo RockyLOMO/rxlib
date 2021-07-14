@@ -93,6 +93,7 @@ public final class Main implements SocksSupport {
             Tuple<Boolean, Integer> shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer frontDnsSvr = new DnsServer(shadowDnsPort.right);
             frontDnsSvr.setSupport(shadowServers);
+            Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort.right));
 
             Action fn = () -> {
                 InetAddress addr = InetAddress.getByName(HttpClient.getWanIp());
@@ -106,16 +107,14 @@ public final class Main implements SocksSupport {
             fn.invoke();
             Tasks.schedule(fn, 120 * 1000);
 
-            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.getAnyEndpoint(port.right + 1),
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.anyEndpoint(port.right + 1),
                     CipherKind.AES_128_GCM.getCipherName(), shadowServers.next().getEndpoint().getPassword());
             ssConfig.setMemoryMode(MemoryMode.MEDIUM);
             ssConfig.setConnectTimeoutMillis(connectTimeout.right);
             SocksConfig directConf = new SocksConfig(port.right);
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
-//            UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", SocksSupport.DNS_PORT);
             ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
-//                if (dstEp.equals(loopbackDns)) {
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                     return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort.right));
                 }

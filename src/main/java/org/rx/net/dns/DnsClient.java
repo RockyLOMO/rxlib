@@ -28,7 +28,7 @@ public class DnsClient extends Disposable {
         }
     }
 
-    public static DnsClient inlandServerList() {
+    public static DnsClient inlandClient() {
         return new DnsClient(Sockets.parseEndpoint("114.114.114.114:53"));
     }
 

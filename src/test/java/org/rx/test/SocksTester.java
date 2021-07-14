@@ -21,7 +21,6 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.shadowsocks.ShadowsocksClient;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
@@ -41,8 +40,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.rx.core.App.sleep;
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class SocksTester {
@@ -308,20 +306,21 @@ public class SocksTester {
     public void dns() {
         final String domain = "devops.f-li.cn";
         final InetAddress hostResult = InetAddress.getByName("2.2.2.2");
-        DnsServer server = new DnsServer(53);
+        DnsServer server = new DnsServer(54);
         server.getCustomHosts().put(domain, hostResult.getAddress());
 
+        Sockets.injectNameService(Sockets.parseEndpoint("127.0.0.1:54"));
 //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
-        System.out.println(Sockets.resolveAddresses("devops.f-li.cn"));
-        System.out.println(Sockets.getAddresses("devops.f-li.cn"));
+
+        List<InetAddress> r0 = DnsClient.inlandClient().resolveAll(domain);
+        InetAddress[] r1 = InetAddress.getAllByName(domain);
+        System.out.println(r0 + "\n" + toJsonArray(r1));
+        assert !r0.get(0).equals(r1[0]);
 
         sleep(2000);
-        DnsClient client = new DnsClient(Sockets.parseEndpoint("127.0.0.1:53"));
+        DnsClient client = new DnsClient(Sockets.parseEndpoint("127.0.0.1:54"));
         InetAddress result = client.resolve(domain);
-
         assert result.equals(hostResult);
-
-        System.in.read();
     }
 
     @Test

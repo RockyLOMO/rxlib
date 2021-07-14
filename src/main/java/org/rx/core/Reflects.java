@@ -331,7 +331,7 @@ public class Reflects extends TypeUtils {
         }, Cache.LOCAL_CACHE);
     }
 
-    private static void setAccess(AccessibleObject member) {
+    public static void setAccess(AccessibleObject member) {
         if (member.isAccessible()) {
             return;
         }

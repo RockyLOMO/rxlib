@@ -1,5 +1,7 @@
 package org.rx.net;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.net.*;
 
 import io.netty.bootstrap.Bootstrap;
@@ -18,16 +20,13 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
-import org.springframework.util.CollectionUtils;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,8 +40,36 @@ public final class Sockets {
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
-    @Getter(lazy = true)
-    private static final DnsClient dnsClient = DnsClient.inlandServerList();
+
+    @SneakyThrows
+    public static void injectNameService(InetSocketAddress... nameServerList) {
+        Class<?> type = InetAddress.class;
+        DnsClient client = Arrays.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
+        try {
+            Field field = type.getDeclaredField("nameService");
+            Reflects.setAccess(field);
+            field.set(null, nsProxy(field.get(null), client));
+        } catch (NoSuchFieldException e) {
+            Field field = type.getDeclaredField("nameServices");
+            Reflects.setAccess(field);
+            List<Object> nsList = (List<Object>) field.get(null);
+            nsList.set(0, nsProxy(nsList.get(0), client));
+        }
+    }
+
+    private static Object nsProxy(Object ns, DnsClient client) {
+        Class<?> type = ns.getClass();
+        return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
+            if (method.getName().equals("lookupAllHostAddr")) {
+                String host = (String) args[0];
+                List<InetAddress> addresses = client.resolveAll(host);
+                if (!CollectionUtils.isEmpty(addresses)) {
+                    return addresses.toArray(new InetAddress[0]);
+                }
+            }
+            return method.invoke(ns, args);
+        });
+    }
 
     static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
@@ -271,14 +298,6 @@ public final class Sockets {
         return NetUtil.isValidIpV4Address(ipV4OrIpV6) || NetUtil.isValidIpV6Address(ipV4OrIpV6);
     }
 
-    public static List<InetAddress> resolveAddresses(String host) {
-        return getDnsClient().resolveAll(host);
-    }
-
-    public static List<InetAddress> getAddresses(String host) {
-        return Cache.getOrSet(cacheKey("getAddresses", host), p -> Arrays.toList(InetAddress.getAllByName(host)));
-    }
-
     //InetAddress.getLocalHost(); 可能会返回127.0.0.1
     @SneakyThrows
     public static InetAddress getLocalAddress() {
@@ -308,7 +327,11 @@ public final class Sockets {
         return InetAddress.getLocalHost();
     }
 
-    public static InetSocketAddress getAnyEndpoint(int port) {
+    public static InetSocketAddress localEndpoint(int port) {
+        return new InetSocketAddress(LOOPBACK_ADDRESS, port);
+    }
+
+    public static InetSocketAddress anyEndpoint(int port) {
         return new InetSocketAddress(ANY_ADDRESS, port);
     }
 
