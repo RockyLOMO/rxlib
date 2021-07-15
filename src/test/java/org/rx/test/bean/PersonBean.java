@@ -30,4 +30,9 @@ public class PersonBean implements IPerson {
     public Date birth;
     public Long moneyCent;
     public Decimal money;
+
+    @Override
+    public boolean enableCompress() {
+        return gender == PersonGender.Girl;
+    }
 }

@@ -1,8 +1,6 @@
 package org.rx.test;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.compression.SnappyFrameDecoder;
-import io.netty.handler.codec.compression.SnappyFrameEncoder;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -19,10 +17,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.zip.GZIPOutputStream;
 
-import static org.rx.core.App.sleep;
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class IOTester {
@@ -46,6 +42,19 @@ public class IOTester {
         assert r == 12;
         System.out.println(buf.readInt());
         System.out.println(buf.readLong());
+    }
+
+    @Test
+    public void kvZip() {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
+        conf.setLogGrowSize(1024 * 1024 * 4);
+        conf.setIndexGrowSize(1024 * 1024);
+        KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
+        kv.put(0, PersonBean.boy);
+        kv.put(1, PersonBean.girl);
+
+        assert kv.get(0).equals(PersonBean.boy);
+        assert kv.get(1).equals(PersonBean.girl);
     }
 
     @Test
@@ -130,17 +139,21 @@ public class IOTester {
     @SneakyThrows
     @Test
     public void zipStream() {
+        int loopCount = 4;
+
         MemoryStream stream = new MemoryStream();
-        GZIPOutputStream out = new GZIPOutputStream(stream.getWriter());
-        for (int i = 0; i < 10; i++) {
+        GZIPStream out = new GZIPStream(stream);
+        for (int i = 0; i < loopCount; i++) {
             out.write(content);
         }
-        out.flush();
         out.finish();
 
-
-        System.out.println(content.length * 10);
+        System.out.println(content.length * loopCount);
         System.out.println(stream.toArray().length);
+
+        byte[] outBytes = out.toArray();
+        System.out.println(new String(outBytes));
+        System.out.println(new String(outBytes).length());
     }
 
     @Test

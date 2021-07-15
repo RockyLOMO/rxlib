@@ -64,13 +64,13 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
                 return len0;
             }
 
-            //byte -1?
             @Override
             public int read() {
                 if (buffer.readableBytes() == 0) {
                     return -1;
                 }
-                return buffer.readByte();
+                // java has no unsigned byte
+                return buffer.readByte() & 0xff;
             }
         };
     }

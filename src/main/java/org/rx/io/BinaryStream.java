@@ -1,16 +1,18 @@
 package org.rx.io;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
+@RequiredArgsConstructor
 public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     private static final long serialVersionUID = 7204373912624988890L;
-    private final boolean leaveOpen;
     @Getter
     private final IOStream<?, ?> baseStream;
+    private final boolean leaveOpen;
     private transient BufferedReader reader2;
 
     @Override
@@ -60,11 +62,6 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
 
     public BinaryStream(IOStream<?, ?> stream) {
         this(stream, false);
-    }
-
-    public BinaryStream(IOStream<?, ?> stream, boolean leaveOpen) {
-        baseStream = stream;
-        this.leaveOpen = leaveOpen;
     }
 
     @Override

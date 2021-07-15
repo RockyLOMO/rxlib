@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.App.as;
 import static org.rx.core.App.require;
 
 /**
@@ -21,7 +22,7 @@ import static org.rx.core.App.require;
  *
  * <p>log
  * key + value
- *
+ * <p>
  * 减少文件，二分查找
  */
 @Slf4j
@@ -29,7 +30,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     @AllArgsConstructor
     @EqualsAndHashCode
     @ToString
-    private static class Entry<TK, TV> implements Serializable {
+    private static class Entry<TK, TV> implements Compressible {
         private static final long serialVersionUID = -2218602651671401557L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
@@ -48,6 +49,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
         TK key;
         TV value;
+
+        @Override
+        public boolean enableCompress() {
+            Compressible k = as(key, Compressible.class);
+            Compressible v = as(value, Compressible.class);
+            return (k != null && k.enableCompress()) || (v != null && v.enableCompress());
+        }
     }
 
     @RequiredArgsConstructor
@@ -60,6 +68,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
+    static final byte COMPRESS_MAGIC = Byte.MIN_VALUE + 1;
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
 
@@ -189,7 +198,14 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
         key.logPosition = wal.meta.getLogPosition();
-        serializer.serialize(value, wal);
+        if (value.enableCompress()) {
+            wal.write(COMPRESS_MAGIC);
+            try (GZIPStream gzip = new GZIPStream(wal, true)) {
+                serializer.serialize(value, gzip);
+            }
+        } else {
+            serializer.serialize(value, wal);
+        }
         if (value.value == null) {
             key.logPosition = TOMB_MARK;
         }
@@ -214,7 +230,18 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         Entry<TK, TV> val = null;
         try {
             wal.setReaderPosition(logPosition);
-            val = serializer.deserialize(wal, true);
+            int magic = wal.read();
+            if (magic == (COMPRESS_MAGIC & 0xff)) {
+                try (GZIPStream gzip = new GZIPStream(wal, true)) {
+                    val = serializer.deserialize(gzip, true);
+                } catch (Exception e) {
+                    log.error("decompress[{}]", magic, e);
+                }
+            }
+            if (val == null) {
+                wal.setReaderPosition(logPosition);
+                val = serializer.deserialize(wal, true);
+            }
         } catch (Exception e) {
             if (e instanceof StreamCorruptedException) {
                 log.error("findValue {} {}", kStr, logPosition, e);

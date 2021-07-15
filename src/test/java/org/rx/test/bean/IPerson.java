@@ -1,6 +1,6 @@
 package org.rx.test.bean;
 
-import java.io.Serializable;
+import org.rx.io.Compressible;
 
-public interface IPerson extends Serializable {
+public interface IPerson extends Compressible {
 }

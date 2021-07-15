@@ -71,7 +71,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
                 ByteBuf buf = Bytes.directBuffer();
                 try {
                     position += CompositeMmap.this.read(position, buf, 1);
-                    return buf.readByte();
+                    return buf.readByte() & 0xff;
                 } finally {
                     buf.release();
                 }
