@@ -59,7 +59,9 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
                 buf.clear();
                 try {
                     int read = CompositeMmap.this.read(position, buf);
-                    position += read;
+                    if (read > -1) {
+                        position += read;
+                    }
                     return read;
                 } finally {
                     buf.release();
@@ -68,9 +70,13 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
             @Override
             public int read() {
-                ByteBuf buf = Bytes.directBuffer();
+                ByteBuf buf = Bytes.directBuffer(1);
                 try {
-                    position += CompositeMmap.this.read(position, buf, 1);
+                    int read = CompositeMmap.this.read(position, buf, 1);
+                    if (read == -1) {
+                        return read;
+                    }
+                    position += read;
                     return buf.readByte() & 0xff;
                 } finally {
                     buf.release();
@@ -94,7 +100,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
             @Override
             public void write(int b) {
-                ByteBuf buf = Bytes.directBuffer();
+                ByteBuf buf = Bytes.directBuffer(1);
                 buf.writeByte(b);
                 try {
                     position += CompositeMmap.this.write(position, buf);
@@ -207,7 +213,8 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
                 break;
             }
         }
-        return byteBuf.writerIndex() - writerIndex;
+        int read = byteBuf.writerIndex() - writerIndex;
+        return read == 0 ? -1 : read;
     }
 
     @Override

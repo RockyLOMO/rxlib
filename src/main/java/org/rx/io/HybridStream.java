@@ -13,7 +13,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private MemoryStream memoryStream = new MemoryStream();
+    private MemoryStream memoryStream = new MemoryStream(256, true, false);
     private FileStream fileStream;
     @Setter
     private String name;
@@ -26,6 +26,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
             log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
             fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
             fileStream.write(memoryStream.rewind());
+            memoryStream.close();
             memoryStream = null;
             return fileStream;
         }
@@ -63,11 +64,6 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     @Override
     public boolean canSeek() {
         return getStream().canSeek();
-    }
-
-    @Override
-    public boolean canRead() {
-        return getStream().canRead();
     }
 
     @Override

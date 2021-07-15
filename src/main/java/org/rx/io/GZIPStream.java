@@ -36,11 +36,6 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
     }
 
     @Override
-    public boolean canRead() {
-        return baseStream.canRead();
-    }
-
-    @Override
     public boolean canWrite() {
         return baseStream.canWrite();
     }

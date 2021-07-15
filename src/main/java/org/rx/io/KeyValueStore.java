@@ -68,7 +68,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
-    static final byte COMPRESS_MAGIC = Byte.MIN_VALUE + 1;
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
 
@@ -198,14 +197,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
         key.logPosition = wal.meta.getLogPosition();
-        if (value.enableCompress()) {
-            wal.write(COMPRESS_MAGIC);
-            try (GZIPStream gzip = new GZIPStream(wal, true)) {
-                serializer.serialize(value, gzip);
-            }
-        } else {
-            serializer.serialize(value, wal);
-        }
+        serializer.serialize(value, wal);
         if (value.value == null) {
             key.logPosition = TOMB_MARK;
         }
@@ -230,18 +222,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
         Entry<TK, TV> val = null;
         try {
             wal.setReaderPosition(logPosition);
-            int magic = wal.read();
-            if (magic == (COMPRESS_MAGIC & 0xff)) {
-                try (GZIPStream gzip = new GZIPStream(wal, true)) {
-                    val = serializer.deserialize(gzip, true);
-                } catch (Exception e) {
-                    log.error("decompress[{}]", magic, e);
-                }
-            }
-            if (val == null) {
-                wal.setReaderPosition(logPosition);
-                val = serializer.deserialize(wal, true);
-            }
+            val = serializer.deserialize(wal, true);
         } catch (Exception e) {
             if (e instanceof StreamCorruptedException) {
                 log.error("findValue {} {}", kStr, logPosition, e);

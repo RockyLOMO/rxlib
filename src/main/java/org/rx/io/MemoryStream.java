@@ -31,7 +31,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
         in.defaultReadObject();
         int pos = in.readInt();
         int len = in.readInt();
-        buffer = directBuffer ? Bytes.directBuffer(len, true) : Bytes.heapBuffer(len, true);
+        buffer = directBuffer ? Bytes.directBuffer(len) : Bytes.heapBuffer(len, true);
         setLength(len);
         write(in);
         setPosition(pos);
@@ -137,7 +137,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public MemoryStream(int initialCapacity, boolean directBuffer, boolean publiclyVisible) {
-        buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity, true) : Bytes.heapBuffer(initialCapacity, true);
+        buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity) : Bytes.heapBuffer(initialCapacity, true);
         this.publiclyVisible = publiclyVisible;
     }
 

@@ -146,10 +146,6 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public abstract String getName();
 
-    public boolean canRead() {
-        return !isClosed() && available() > 0;
-    }
-
     public boolean canWrite() {
         return !isClosed();
     }
@@ -188,7 +184,9 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     @SneakyThrows
     public long available() {
-        checkNotClosed();
+        if (isClosed()) {
+            return 0;
+        }
 
         return getReader().available();
     }
@@ -242,6 +240,16 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     @SneakyThrows
+    public short readShort() {
+        int ch1 = read();
+        int ch2 = read();
+        if ((ch1 | ch2) < 0) {
+            throw new EOFException();
+        }
+        return (short) ((ch1 << 8) + (ch2 << 0));
+    }
+
+    @SneakyThrows
     public void write(int b) {
         checkNotClosed();
 
@@ -287,6 +295,11 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     @SneakyThrows
     public void write(ByteBuf src, int length) {
         src.readBytes(getWriter(), length);
+    }
+
+    public void writeShort(short v) {
+        write((v >>> 8) & 0xFF);
+        write((v >>> 0) & 0xFF);
     }
 
     @SneakyThrows

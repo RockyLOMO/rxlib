@@ -201,7 +201,7 @@ public class IOTester {
         assert stream.getPosition() == write && write == buf.writerIndex();
 
         stream.setPosition(0L);
-        buf = Bytes.directBuffer(buf.writerIndex(), false);
+        buf = Bytes.directBuffer(buf.writerIndex());
         long read = stream.read(buf);
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));

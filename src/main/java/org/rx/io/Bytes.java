@@ -43,12 +43,11 @@ public class Bytes {
     }
 
     public static ByteBuf directBuffer() {
-        return directBuffer(BufferedRandomAccessFile.BufSize.SMALL_DATA.value, false);
+        return directBuffer(BufferedRandomAccessFile.BufSize.SMALL_DATA.value);
     }
 
-    public static ByteBuf directBuffer(int initialCapacity, boolean unpool) {
-        ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
-        return allocator.directBuffer(initialCapacity);
+    public static ByteBuf directBuffer(int initialCapacity) {
+        return PooledByteBufAllocator.DEFAULT.directBuffer(initialCapacity);
     }
 
     @SneakyThrows
@@ -58,7 +57,7 @@ public class Bytes {
 
     @SneakyThrows
     public static ByteBuf copyInputStream(InputStream in, int length) {
-        ByteBuf buf = directBuffer(length, false);
+        ByteBuf buf = directBuffer(length);
         buf.writeBytes(in, length);
         return buf;
     }

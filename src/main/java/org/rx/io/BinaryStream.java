@@ -36,11 +36,6 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @Override
-    public boolean canRead() {
-        return baseStream.canRead();
-    }
-
-    @Override
     public boolean canWrite() {
         return baseStream.canWrite();
     }
@@ -82,6 +77,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @SneakyThrows
+    @Override
     public short readShort() {
         return getReader().readShort();
     }
@@ -142,6 +138,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @SneakyThrows
+    @Override
     public void writeShort(short value) {
         getWriter().writeShort(value);
     }

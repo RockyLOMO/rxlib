@@ -99,7 +99,7 @@ final class HashFileIndexer<TK> extends Disposable {
         }
 
         void saveSize() {
-            ByteBuf buf = Bytes.directBuffer(HEADER_SIZE, false);
+            ByteBuf buf = Bytes.directBuffer(HEADER_SIZE);
             try {
                 lock.writeInvoke(() -> {
                     writer.setPosition(0);
@@ -114,7 +114,7 @@ final class HashFileIndexer<TK> extends Disposable {
         }
 
         void loadSize() {
-            ByteBuf buf = Bytes.directBuffer(HEADER_SIZE, false);
+            ByteBuf buf = Bytes.directBuffer(HEADER_SIZE);
             try {
                 lock.readInvoke(() -> {
                     reader.setPosition(0);
@@ -204,7 +204,7 @@ final class HashFileIndexer<TK> extends Disposable {
             long pos = key.position == -1 ? slot.getWroteBytes() : key.position;
             out.setPosition(pos);
 
-            ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
+            ByteBuf buf = Bytes.directBuffer(KEY_SIZE);
             try {
                 buf.writeInt(key.hashCode);
                 buf.writeLong(key.logPosition);
@@ -238,7 +238,7 @@ final class HashFileIndexer<TK> extends Disposable {
                 in.setPosition(HEADER_SIZE);
                 long pos = in.getPosition();
                 long endPos = slot.getWroteBytes();
-                ByteBuf buf = Bytes.directBuffer(KEY_SIZE, false);
+                ByteBuf buf = Bytes.directBuffer(KEY_SIZE);
                 try {
                     while (pos < endPos && in.read(buf, KEY_SIZE) > 0) {
 //                    log.debug("findKey {} -> {} pos={}{}", slot.main.getName(), hashCode, pos, dump(buf));
