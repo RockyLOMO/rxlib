@@ -115,6 +115,9 @@ public final class Main implements SocksSupport {
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
+                if (ssConfig.isBypass(dstEp.getHost())) {
+                    return new DirectUpstream(dstEp);
+                }
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                     return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort.right));
                 }

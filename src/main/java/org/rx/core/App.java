@@ -569,7 +569,7 @@ public final class App extends SystemUtils {
         }
         if (doWrite) {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(256);
+            StringBuilder msg = new StringBuilder(RxConfig.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
             for (Map.Entry<Object, Object> entry : metrics.entrySet()) {

@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.rx.bean.RxConfig;
 
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -21,13 +22,13 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
     @SneakyThrows
     @Override
     protected GZIPInputStream initReader() {
-        return new GZIPInputStream(baseStream.getReader());
+        return new GZIPInputStream(baseStream.getReader(), RxConfig.HEAP_BUF_SIZE);
     }
 
     @SneakyThrows
     @Override
     protected GZIPOutputStream initWriter() {
-        return new GZIPOutputStream(baseStream.getWriter());
+        return new GZIPOutputStream(baseStream.getWriter(), RxConfig.HEAP_BUF_SIZE);
     }
 
     @Override
@@ -77,7 +78,7 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
         long pos = getPosition();
         setPosition(0);
         ByteBuf buf = Bytes.heapBuffer();
-        while (read(buf, 256) != -1) {
+        while (read(buf, RxConfig.HEAP_BUF_SIZE) != -1) {
         }
         setPosition(pos);
         return Bytes.getBytes(buf);

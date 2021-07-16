@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.Setter;
 import org.rx.annotation.ErrorCode;
+import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
@@ -133,7 +134,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public MemoryStream() {
-        this(256, false, false);
+        this(RxConfig.HEAP_BUF_SIZE, false, false);
     }
 
     public MemoryStream(int initialCapacity, boolean directBuffer, boolean publiclyVisible) {

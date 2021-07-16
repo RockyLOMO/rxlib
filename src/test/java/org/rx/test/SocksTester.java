@@ -301,6 +301,16 @@ public class SocksTester {
         System.in.read();
     }
 
+    @Test
+    public void isBypass() {
+        SocketConfig conf = new SocketConfig();
+        assert conf.isBypass("127.0.0.1");
+        assert conf.isBypass("192.168.31.1");
+        assert !conf.isBypass("192.169.31.1");
+        assert conf.isBypass("localhost");
+        assert !conf.isBypass("google.cn");
+    }
+
     @SneakyThrows
     @Test
     public void dns() {

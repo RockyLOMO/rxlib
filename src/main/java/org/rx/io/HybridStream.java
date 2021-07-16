@@ -13,7 +13,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private MemoryStream memoryStream = new MemoryStream(256, true, false);
+    private MemoryStream memoryStream = new MemoryStream(RxConfig.HEAP_BUF_SIZE, true, false);
     private FileStream fileStream;
     @Setter
     private String name;
