@@ -89,7 +89,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             return null;
         }
         DateTime utc = DateTime.utcNow();
-        log.info("check {} < NOW[{}]", wrapper.expire, utc);
+//        log.info("check {} < NOW[{}]", wrapper.expire, utc);
         if (wrapper.expire.before(utc)) {
             remove(key);
             if (onExpired == null) {
