@@ -250,6 +250,18 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     @SneakyThrows
+    public int readInt() {
+        int ch1 = read();
+        int ch2 = read();
+        int ch3 = read();
+        int ch4 = read();
+        if ((ch1 | ch2 | ch3 | ch4) < 0) {
+            throw new EOFException();
+        }
+        return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
+    }
+
+    @SneakyThrows
     public void write(int b) {
         checkNotClosed();
 
@@ -298,6 +310,13 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public void writeShort(short v) {
+        write((v >>> 8) & 0xFF);
+        write((v >>> 0) & 0xFF);
+    }
+
+    public void writeInt(int v) {
+        write((v >>> 24) & 0xFF);
+        write((v >>> 16) & 0xFF);
         write((v >>> 8) & 0xFF);
         write((v >>> 0) & 0xFF);
     }

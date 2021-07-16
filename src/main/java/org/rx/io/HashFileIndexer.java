@@ -143,8 +143,9 @@ final class HashFileIndexer<TK> extends Disposable {
     private final int growSize;
     private final Slot[] slots;
     private final SequentialWriteQueue writeQueue;
-    private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache.builder()
-            .expireAfterAccess(2, TimeUnit.MINUTES).build());
+    private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache
+            .builder(0.2f, 16 * 2 + 8 + 4 + 8)
+            .build());
 
     public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);
@@ -221,8 +222,8 @@ final class HashFileIndexer<TK> extends Disposable {
             }
 
             if (key.key != null) {
-                cache.remove(key.key);
-//                cache().put(key.key, key); //hang?
+//                cache.remove(key.key);
+                cache.put(key.key, key); //hang?
             }
         }, HEADER_SIZE);
     }

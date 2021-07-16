@@ -14,15 +14,26 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import static org.rx.core.App.require;
+
 @RequiredArgsConstructor
 public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
-    public static final Cache SLIDING_CACHE = new CaffeineCache<>(builder()
-            .softValues().expireAfterAccess(2, TimeUnit.MINUTES)
-            .build());
+    public static final Cache SLIDING_CACHE = new CaffeineCache<>(builder(60 * 2)
+            .softValues().build());
 
-    public static Caffeine<Object, Object> builder() {
+    public static Caffeine<Object, Object> builder(long slidingSeconds) {
         return Caffeine.newBuilder().executor(Tasks.pool())
-                .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
+                .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()))
+                .expireAfterAccess(slidingSeconds, TimeUnit.SECONDS);
+    }
+
+    public static Caffeine<Object, Object> builder(float memoryPercent, int entryWeigh) {
+        require(memoryPercent, 0 < memoryPercent && memoryPercent <= 1);
+
+        return Caffeine.newBuilder().executor(Tasks.pool())
+                .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()))
+                .maximumWeight((long) (Runtime.getRuntime().maxMemory() * memoryPercent))
+                .weigher((k, v) -> entryWeigh);
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;

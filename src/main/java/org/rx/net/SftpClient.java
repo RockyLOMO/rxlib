@@ -130,7 +130,9 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
 
     @Override
     public void saveFile(String remotePath, InputStream in) {
-        uploadFile(IOStream.wrap(FilenameUtils.getName(remotePath), in), remotePath);
+        try (IOStream<?, ?> stream = IOStream.wrap(FilenameUtils.getName(remotePath), in)) {
+            uploadFile(stream, remotePath);
+        }
     }
 
     @Override

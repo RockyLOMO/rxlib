@@ -13,7 +13,6 @@ import org.rx.io.*;
 
 import java.io.Serializable;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.eq;
@@ -36,10 +35,10 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
     private final KeyValueStore<TK, ValueWrapper<TV>> store = KeyValueStore.getInstance();
 
     public HybridCache() {
-        cache = new CaffeineCache<>(CaffeineCache.builder().softValues()
-                .expireAfterAccess(1, TimeUnit.MINUTES)
-//                .expireAfterAccess(5, TimeUnit.SECONDS)
-                .maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
+//        long ttl = 5;
+        long ttl = 60;
+        cache = new CaffeineCache<>(CaffeineCache.builder(ttl)
+                .softValues().maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
     }
 
     private void onRemoval(@Nullable TK key, HybridCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
