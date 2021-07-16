@@ -24,6 +24,8 @@ public class DnsServer extends Disposable {
     @Getter
     final Map<String, byte[]> customHosts = new ConcurrentHashMap<>();
     @Setter
+    int ttl = 1800;
+    @Setter
     RandomList<UpstreamSupport> support;
 
     public DnsServer() {

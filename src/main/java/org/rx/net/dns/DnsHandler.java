@@ -25,11 +25,10 @@ import static org.rx.core.App.*;
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     static final String DOMAIN_PREFIX = "resolveHost:";
-    static final int expireMinutes = 60 * 12;
     final DnsServer server;
     final boolean isTcp;
     final DnsClient client;
-    final HybridCache<Object, Object> cache;
+    final Cache<Object, Object> cache;
 
     public DnsHandler(DnsServer server, boolean isTcp, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
         this.server = server;
@@ -38,8 +37,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         if (server.support == null) {
             cache = null;
         } else {
-            cache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-            cache.onExpired = (s, e) -> {
+            cache = Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+            ((HybridCache<Object, Object>) cache).onExpired = (s, e) -> {
                 Map.Entry<Object, Object> entry = e.getValue();
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
@@ -49,14 +48,14 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
                 String domain = key.substring(DOMAIN_PREFIX.length());
                 List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
-                List<InetAddress> Addresses = quietly(() -> Tasks.run(() -> {
+                List<InetAddress> addresses = quietly(() -> Tasks.run(() -> {
                     List<InetAddress> list = isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList());
-                    cache.put(key, list, CacheExpirations.absolute(expireMinutes));
+                    cache.put(key, list, CacheExpirations.absolute(server.ttl));
                     log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
                     return list;
-                }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MICROSECONDS));
-                if (!CollectionUtils.isEmpty(Addresses)) {
-                    entry.setValue(Addresses);
+                }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS));
+                if (!CollectionUtils.isEmpty(addresses)) {
+                    entry.setValue(addresses);
                 }
                 log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
             };
@@ -85,19 +84,19 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
         if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
-            ctx.writeAndFlush(newResponse(query, question, 3600, Sockets.LOOPBACK_ADDRESS.getAddress()));
+            ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
         }
         if (server.support != null) {
             //未命中也缓存
             List<InetAddress> addresses = cache().get(DOMAIN_PREFIX + domain,
                     k -> isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList()),
-                    CacheExpirations.absolute(expireMinutes));
+                    CacheExpirations.absolute(server.ttl));
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, question, 600, NQuery.of(addresses).select(InetAddress::getAddress).toArray()));
+            ctx.writeAndFlush(newResponse(query, question, server.ttl, NQuery.of(addresses).select(InetAddress::getAddress).toArray()));
             return;
         }
 

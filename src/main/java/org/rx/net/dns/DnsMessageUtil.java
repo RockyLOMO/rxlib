@@ -51,12 +51,12 @@ public class DnsMessageUtil {
         return newErrorResponse(null, null, dnsQuery, rCode);
     }
 
-    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsResponse dnsResponse, @Nonnull DnsResponseCode rCode) {
-        if (dnsResponse instanceof DatagramDnsResponse) {
-            return newErrorResponse(((DatagramDnsResponse) dnsResponse).sender(), ((DatagramDnsResponse) dnsResponse).recipient(), dnsResponse, rCode);
-        }
-        return newErrorResponse(null, null, dnsResponse, rCode);
-    }
+//    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsResponse dnsResponse, @Nonnull DnsResponseCode rCode) {
+//        if (dnsResponse instanceof DatagramDnsResponse) {
+//            return newErrorResponse(((DatagramDnsResponse) dnsResponse).sender(), ((DatagramDnsResponse) dnsResponse).recipient(), dnsResponse, rCode);
+//        }
+//        return newErrorResponse(null, null, dnsResponse, rCode);
+//    }
 
     private static DefaultDnsResponse newErrorResponse(InetSocketAddress sender, InetSocketAddress recipient,
                                                        @Nonnull DnsMessage dnsMessage, @Nonnull DnsResponseCode rCode) {

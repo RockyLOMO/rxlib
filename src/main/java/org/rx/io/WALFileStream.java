@@ -237,7 +237,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                     return serializer.deserialize(reader, true);
                 } catch (Exception e) {
                     if (e instanceof StreamCorruptedException) {
-                        App.log("loadMeta", e);
+                        App.log("loadMeta {}", e.getMessage());
                         return new MetaHeader();
                     }
                     throw e;

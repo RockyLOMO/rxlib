@@ -202,7 +202,9 @@ public final class DateTime extends Date {
         long mark = c.getTimeInMillis();
         c.set(field, c.get(field) + value);
         try {
-            return new DateTime(c.getTimeInMillis());
+            DateTime newVal = new DateTime(c.getTimeInMillis());
+            newVal.getCalendar().setTimeZone(getCalendar().getTimeZone());
+            return newVal;
         } finally {
             c.setTimeInMillis(mark);
         }

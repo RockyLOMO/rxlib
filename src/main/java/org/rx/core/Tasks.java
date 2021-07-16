@@ -44,7 +44,7 @@ public final class Tasks {
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
         }
-        scheduler = new ScheduledThreadPoolExecutor(1, replicas.get(0).getThreadFactory());
+        scheduler = new ScheduledThreadPoolExecutor(2, replicas.get(0).getThreadFactory());
     }
 
     public static TaskScheduler pool() {

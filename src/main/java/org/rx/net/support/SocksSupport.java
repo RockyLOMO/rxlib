@@ -15,7 +15,7 @@ public interface SocksSupport {
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>(Arrays.toList("8.8.8.8", "8.8.4.4"));
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
-    long ASYNC_TIMEOUT = 6 * 1000;
+    long ASYNC_TIMEOUT = 5 * 1000;
 
     static Map<SUID, UnresolvedEndpoint> fakeDict() {
         return KeyValueStore.getInstance();

@@ -1,15 +1,14 @@
 package org.rx.core;
 
 import lombok.NonNull;
+import lombok.SneakyThrows;
 import org.rx.core.cache.CaffeineCache;
 import org.rx.core.cache.HybridCache;
 import org.rx.core.cache.ThreadCache;
-import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.*;
-import java.util.function.Function;
 
 import static org.rx.core.App.*;
 
@@ -49,40 +48,32 @@ public interface Cache<TK, TV> extends Map<TK, TV> {
         });
     }
 
-    /**
-     * computeIfAbsent
-     *
-     * @param key
-     * @param loadingFunc result可以为null
-     * @return
-     */
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {
-        Function<TK, TV> fn = k -> {
-            try {
-                return loadingFunc.invoke(k);
-            } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
-            }
-        };
-        try {
-            return computeIfAbsent(key, fn);
-        } catch (ClassCastException e) {
-            App.log("get", e.getMessage());
-            return null;
-        }
+        return get(key, loadingFunc, null);
     }
 
+    @SneakyThrows
     default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpirations expiration) {
-        return get(key, loadingFunc);
+        TV v;
+        if ((v = get(key)) == null) {
+            TV newValue;
+            if ((newValue = loadingFunc.invoke(key)) != null) {
+                put(key, newValue, expiration);
+                return newValue;
+            }
+        }
+        return v;
     }
 
     default Map<TK, TV> getAll(Iterable<TK> keys) {
         return NQuery.of(keys).toMap(k -> k, this::get);
     }
 
-    default TV put(TK key, TV value, CacheExpirations expiration) {
-        return put(key, value);
+    default TV put(TK key, TV value) {
+        return put(key, value, null);
     }
+
+    TV put(TK key, TV value, CacheExpirations expiration);
 
     default TV remove(TK key, boolean destroy) {
         TV v = remove(key);

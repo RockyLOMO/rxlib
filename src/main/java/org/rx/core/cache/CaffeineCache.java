@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Scheduler;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Cache;
+import org.rx.core.CacheExpirations;
 import org.rx.core.Tasks;
 import org.rx.core.exception.ApplicationException;
 import org.rx.util.function.BiFunc;
@@ -67,7 +68,7 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public TV put(TK key, TV value) {
+    public TV put(TK key, TV value, CacheExpirations expiration) {
         return cache.asMap().put(key, value);
     }
 

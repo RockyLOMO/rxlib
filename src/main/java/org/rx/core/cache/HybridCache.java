@@ -1,8 +1,6 @@
 package org.rx.core.cache;
 
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.github.benmanes.caffeine.cache.Scheduler;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,13 +36,14 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
     private final KeyValueStore<TK, ValueWrapper<TV>> store = KeyValueStore.getInstance();
 
     public HybridCache() {
-        cache = new CaffeineCache<>(Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.disabledScheduler())
-                .softValues().expireAfterAccess(1, TimeUnit.MINUTES).maximumSize(Short.MAX_VALUE)
-                .removalListener(this::onRemoval).build());
+        cache = new CaffeineCache<>(CaffeineCache.builder().softValues()
+                .expireAfterAccess(1, TimeUnit.MINUTES)
+//                .expireAfterAccess(5, TimeUnit.SECONDS)
+                .maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
     }
 
     private void onRemoval(@Nullable TK key, HybridCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
-        log.info("onRemoval {} {}", key, removalCause);
+//        log.info("onRemoval {} {}", key, removalCause);
         if (key == null || wrapper == null || wrapper.value == null
                 || removalCause == RemovalCause.EXPLICIT || wrapper.expire.before(DateTime.utcNow())) {
             return;
@@ -53,7 +52,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             return;
         }
         getStore().put(key, wrapper);
-//        log.debug("switch to getStore() {}", key);
+        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, wrapper.expire);
     }
 
     @Override
@@ -90,6 +89,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             return null;
         }
         DateTime utc = DateTime.utcNow();
+        log.info("check {} < NOW[{}]", wrapper.expire, utc);
         if (wrapper.expire.before(utc)) {
             remove(key);
             if (onExpired == null) {

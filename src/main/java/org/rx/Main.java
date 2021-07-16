@@ -92,6 +92,7 @@ public final class Main implements SocksSupport {
 
             Tuple<Boolean, Integer> shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer frontDnsSvr = new DnsServer(shadowDnsPort.right);
+            frontDnsSvr.setTtl(60 * 60 * 12); //12 hour
             frontDnsSvr.setSupport(shadowServers);
             Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort.right));
 
@@ -115,12 +116,14 @@ public final class Main implements SocksSupport {
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout.right);
             ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
-                if (ssConfig.isBypass(dstEp.getHost())) {
-                    return new DirectUpstream(dstEp);
-                }
+                //must first
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                     return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort.right));
                 }
+                if (ssConfig.isBypass(dstEp.getHost())) {
+                    return new DirectUpstream(dstEp);
+                }
+
                 return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port.right)));
             });
         }

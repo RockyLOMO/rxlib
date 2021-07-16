@@ -62,4 +62,8 @@ public class DnsClient extends Disposable {
     public List<InetAddress> resolveAll(String inetHost) {
         return await(nameResolver.resolveAll(inetHost));
     }
+
+    public void clearCache() {
+        nameResolver.resolveCache().clear();
+    }
 }
