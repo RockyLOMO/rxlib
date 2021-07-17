@@ -59,12 +59,16 @@ public final class Sockets {
 
     private static Object nsProxy(Object ns, DnsClient client) {
         Class<?> type = ns.getClass();
+        InetAddress[] empty = new InetAddress[0];
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (method.getName().equals("lookupAllHostAddr")) {
                 String host = (String) args[0];
+                if (!host.contains(".")) {
+                    return empty;
+                }
                 List<InetAddress> addresses = client.resolveAll(host);
                 if (!CollectionUtils.isEmpty(addresses)) {
-                    return addresses.toArray(new InetAddress[0]);
+                    return addresses.toArray(empty);
                 }
             }
             return method.invoke(ns, args);

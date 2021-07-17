@@ -20,7 +20,7 @@ import static org.rx.core.App.eq;
 @Slf4j
 public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCache<TK, TV>> {
     @RequiredArgsConstructor
-    static class ValueWrapper<TV> implements Serializable {
+    static class CacheItem<TV> implements Serializable {
         private static final long serialVersionUID = -7742074465897857966L;
         final TV value;
         final int slidingMinutes;
@@ -30,9 +30,9 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
     public static Cache DEFAULT = new HybridCache<>();
 
     public volatile BiConsumer<HybridCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired;
-    final Cache<TK, ValueWrapper<TV>> cache;
+    final Cache<TK, CacheItem<TV>> cache;
     @Getter(lazy = true)
-    private final KeyValueStore<TK, ValueWrapper<TV>> store = KeyValueStore.getInstance();
+    private final KeyValueStore<TK, CacheItem<TV>> store = KeyValueStore.getInstance();
 
     public HybridCache() {
 //        long ttl = 5;
@@ -41,17 +41,17 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
                 .softValues().maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
     }
 
-    private void onRemoval(@Nullable TK key, HybridCache.ValueWrapper<TV> wrapper, @NonNull RemovalCause removalCause) {
+    private void onRemoval(@Nullable TK key, CacheItem<TV> item, @NonNull RemovalCause removalCause) {
 //        log.info("onRemoval {} {}", key, removalCause);
-        if (key == null || wrapper == null || wrapper.value == null
-                || removalCause == RemovalCause.EXPLICIT || wrapper.expire.before(DateTime.utcNow())) {
+        if (key == null || item == null || item.value == null
+                || removalCause == RemovalCause.EXPLICIT || item.expire.before(DateTime.utcNow())) {
             return;
         }
-        if (!(key instanceof Serializable && wrapper.value instanceof Serializable)) {
+        if (!(key instanceof Serializable && item.value instanceof Serializable)) {
             return;
         }
-        getStore().put(key, wrapper);
-        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, wrapper.expire);
+        getStore().put(key, item);
+        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.expire);
     }
 
     @Override
@@ -73,33 +73,33 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
 
     @Override
     public TV get(Object key) {
-        ValueWrapper<TV> valueWrapper = cache.get(key);
-        if (valueWrapper == null) {
-            valueWrapper = getStore().get(key);
+        CacheItem<TV> item = cache.get(key);
+        if (item == null) {
+            item = getStore().get(key);
         }
-        return unwrap((TK) key, valueWrapper);
+        return unwrap((TK) key, item);
     }
 
-    private TV unwrap(TK key, ValueWrapper<TV> wrapper) {
-        if (wrapper == null) {
+    private TV unwrap(TK key, CacheItem<TV> item) {
+        if (item == null) {
             return null;
         }
         DateTime utc = DateTime.utcNow();
-//        log.info("check {} < NOW[{}]", wrapper.expire, utc);
-        if (wrapper.expire.before(utc)) {
+//        log.info("check {} < NOW[{}]", item.expire, utc);
+        if (item.expire.before(utc)) {
             remove(key);
             if (onExpired == null) {
                 return null;
             }
-            NEventArgs<Map.Entry<TK, TV>> args = new NEventArgs<>(new DefaultMapEntry<>(key, wrapper.value));
+            NEventArgs<Map.Entry<TK, TV>> args = new NEventArgs<>(new DefaultMapEntry<>(key, item.value));
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
-        if (wrapper.slidingMinutes > 0) {
-            wrapper.expire = utc.addMinutes(wrapper.slidingMinutes);
-            cache.put(key, wrapper);
+        if (item.slidingMinutes > 0) {
+            item.expire = utc.addMinutes(item.slidingMinutes);
+            cache.put(key, item);
         }
-        return wrapper.value;
+        return item.value;
     }
 
     @Override
@@ -108,21 +108,21 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             expirations = CacheExpirations.NON_EXPIRE;
         }
 
-        ValueWrapper<TV> wrapper = new ValueWrapper<>(value, expirations.getSlidingExpiration());
+        CacheItem<TV> item = new CacheItem<>(value, expirations.getSlidingExpiration());
         if (!eq(expirations.getAbsoluteExpiration(), CacheExpirations.NON_EXPIRE.getAbsoluteExpiration())) {
-            wrapper.expire = expirations.getAbsoluteExpiration();
+            item.expire = expirations.getAbsoluteExpiration();
         } else if (expirations.getSlidingExpiration() != CacheExpirations.NON_EXPIRE.getSlidingExpiration()) {
-            wrapper.expire = DateTime.utcNow().addMinutes(expirations.getSlidingExpiration());
+            item.expire = DateTime.utcNow().addMinutes(expirations.getSlidingExpiration());
         } else {
-            wrapper.expire = DateTime.MAX;
+            item.expire = DateTime.MAX;
         }
-        ValueWrapper<TV> old = cache.put(key, wrapper);
+        CacheItem<TV> old = cache.put(key, item);
         return unwrap(key, old);
     }
 
     @Override
     public TV remove(Object key) {
-        ValueWrapper<TV> remove = cache.remove(key);
+        CacheItem<TV> remove = cache.remove(key);
         if (remove == null) {
             remove = getStore().remove(key);
         }

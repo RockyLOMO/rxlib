@@ -11,6 +11,7 @@ import org.rx.util.function.Func;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.sql.Time;
+import java.util.BitSet;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
@@ -100,6 +101,31 @@ public final class Tasks {
     }
 
     @SneakyThrows
+    @SafeVarargs
+    public static <T> T randomRetry(Func<T>... funcs) {
+        int mid = ThreadLocalRandom.current().nextInt(0, funcs.length);
+        Throwable last = null;
+        for (int i = 0; i < mid; i++) {
+            try {
+                return funcs[i].invoke();
+            } catch (Throwable e) {
+                last = e;
+            }
+        }
+        for (int i = mid; i < funcs.length; i++) {
+            try {
+                return funcs[i].invoke();
+            } catch (Throwable e) {
+                last = e;
+            }
+        }
+        if (last != null) {
+            throw last;
+        }
+        return null;
+    }
+
+    @SneakyThrows
     public static <T> T await(Future<T> future) {
         if (future instanceof CompletableFuture) {
             return ((CompletableFuture<T>) future).join();
@@ -114,6 +140,8 @@ public final class Tasks {
     public static <T> T awaitQuietly(Future<T> future, long millis) {
         try {
             return future.get(millis, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("awaitNow timeout {}", e.getMessage());
         } catch (Exception e) {
             log.warn("awaitNow", e);
         }
