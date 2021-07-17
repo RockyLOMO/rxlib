@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
-import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.MemoryMode;
@@ -23,10 +22,8 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.DirectUpstream;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Action;
 
 import java.net.InetAddress;
@@ -35,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static org.rx.core.App.eq;
+import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -119,10 +117,15 @@ public final class Main implements SocksSupport {
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                     return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
                 }
+                //bypass
                 if (ssConfig.isBypass(dstEp.getHost())) {
                     return new DirectUpstream(dstEp);
                 }
-
+                //gateway
+                IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(dstEp.getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
+                if (ipAddress != null && ipAddress.isChina()) {
+                    return new DirectUpstream(dstEp);
+                }
                 return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port)));
             });
         }

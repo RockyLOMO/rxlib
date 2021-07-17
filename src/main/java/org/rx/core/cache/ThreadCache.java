@@ -35,13 +35,8 @@ public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public TV put(TK key, TV value) {
-        return (TV) local.get().put(key, value);
-    }
-
-    @Override
     public TV put(TK key, TV value, CacheExpirations expiration) {
-        return put(key, value);
+        return (TV) local.get().put(key, value);
     }
 
     @Override

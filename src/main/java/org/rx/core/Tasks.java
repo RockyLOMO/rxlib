@@ -83,11 +83,41 @@ public final class Tasks {
     }
 
     @SneakyThrows
+    @SafeVarargs
+    public static <T> T sequentialRetry(Func<T>... funcs) {
+        Throwable last = null;
+        for (Func<T> func : funcs) {
+            try {
+                return func.invoke();
+            } catch (Throwable e) {
+                last = e;
+            }
+        }
+        if (last != null) {
+            throw last;
+        }
+        return null;
+    }
+
+    @SneakyThrows
     public static <T> T await(Future<T> future) {
         if (future instanceof CompletableFuture) {
             return ((CompletableFuture<T>) future).join();
         }
         return future.get();
+    }
+
+    public static <T> T awaitQuietly(Func<T> func, long millis) {
+        return awaitQuietly(run(func), millis);
+    }
+
+    public static <T> T awaitQuietly(Future<T> future, long millis) {
+        try {
+            return future.get(millis, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.warn("awaitNow", e);
+        }
+        return null;
     }
 
     public static CompletableFuture<Void> run(Action task) {

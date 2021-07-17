@@ -36,7 +36,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
 
     public HybridCache() {
 //        long ttl = 5;
-        long ttl = 60;
+        long ttl = 60 * 2;
         cache = new CaffeineCache<>(CaffeineCache.builder(ttl)
                 .softValues().maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
     }
@@ -55,11 +55,6 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
     }
 
     @Override
-    public boolean isEmpty() {
-        return size() == 0;
-    }
-
-    @Override
     public int size() {
         return cache.size() + getStore().size();
     }
@@ -71,7 +66,9 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.containsValue(value) || getStore().containsValue(value);
+        return cache.containsValue(value)
+//                || getStore().containsValue(value)
+                ;
     }
 
     @Override
@@ -103,11 +100,6 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             cache.put(key, wrapper);
         }
         return wrapper.value;
-    }
-
-    @Override
-    public TV put(TK key, TV value) {
-        return put(key, value, CacheExpirations.NON_EXPIRE);
     }
 
     @Override

@@ -6,8 +6,6 @@ import lombok.RequiredArgsConstructor;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
 import org.rx.core.Tasks;
-import org.rx.core.exception.ApplicationException;
-import org.rx.util.function.BiFunc;
 
 import java.util.Collection;
 import java.util.Map;
@@ -18,7 +16,7 @@ import static org.rx.core.App.require;
 
 @RequiredArgsConstructor
 public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
-    public static final Cache SLIDING_CACHE = new CaffeineCache<>(builder(60 * 2)
+    public static final Cache SLIDING_CACHE = new CaffeineCache<>(builder(60)
             .softValues().build());
 
     public static Caffeine<Object, Object> builder(long slidingSeconds) {
@@ -39,11 +37,6 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;
 
     @Override
-    public boolean isEmpty() {
-        return cache.estimatedSize() == 0;
-    }
-
-    @Override
     public int size() {
         return (int) cache.estimatedSize();
     }
@@ -61,21 +54,6 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
     @Override
     public TV get(Object key) {
         return cache.getIfPresent(key);
-    }
-
-    @Override
-    public Map<TK, TV> getAll(Iterable<TK> keys) {
-        return cache.getAllPresent(keys);
-    }
-
-    public Map<TK, TV> getAll(Iterable<TK> keys, BiFunc<Set<TK>, Map<TK, TV>> loadingFunc) {
-        return cache.getAll(keys, ks -> {
-            try {
-                return loadingFunc.invoke((Set<TK>) ks);
-            } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
-            }
-        });
     }
 
     @Override
@@ -111,11 +89,6 @@ public class CaffeineCache<TK, TV> implements Cache<TK, TV> {
     @Override
     public boolean remove(Object key, Object value) {
         return cache.asMap().remove(key, value);
-    }
-
-    @Override
-    public void removeAll(Iterable<TK> keys) {
-        cache.invalidateAll(keys);
     }
 
     @Override

@@ -2,17 +2,16 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.bean.AbstractMap;
 import org.rx.core.cache.CaffeineCache;
 import org.rx.core.cache.HybridCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
-import java.util.*;
-
 import static org.rx.core.App.*;
 
-public interface Cache<TK, TV> extends Map<TK, TV> {
+public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     String LOCAL_CACHE = "localCache";
     String THREAD_CACHE = "threadCache";
     String DISTRIBUTED_CACHE = "distributedCache";
@@ -65,10 +64,7 @@ public interface Cache<TK, TV> extends Map<TK, TV> {
         return v;
     }
 
-    default Map<TK, TV> getAll(Iterable<TK> keys) {
-        return NQuery.of(keys).toMap(k -> k, this::get);
-    }
-
+    @Override
     default TV put(TK key, TV value) {
         return put(key, value, null);
     }
@@ -81,33 +77,5 @@ public interface Cache<TK, TV> extends Map<TK, TV> {
             tryClose(v);
         }
         return v;
-    }
-
-    default void removeAll(Iterable<TK> keys) {
-        for (TK k : keys) {
-            remove(k);
-        }
-    }
-
-    @Override
-    default boolean isEmpty() {
-        return size() == 0;
-    }
-
-    @Override
-    default boolean containsKey(Object key) {
-        return get(key) != null;
-    }
-
-    @Override
-    default boolean containsValue(Object value) {
-        return values().contains(value);
-    }
-
-    @Override
-    default void putAll(Map<? extends TK, ? extends TV> m) {
-        for (Entry<? extends TK, ? extends TV> entry : m.entrySet()) {
-            put(entry.getKey(), entry.getValue());
-        }
     }
 }

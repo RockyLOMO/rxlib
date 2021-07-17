@@ -14,9 +14,7 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
-import java.util.concurrent.TimeUnit;
-
-import static org.rx.core.App.quietly;
+import static org.rx.core.Tasks.awaitQuietly;
 
 public class Socks5Upstream extends Upstream {
     final SocksConfig config;
@@ -51,11 +49,11 @@ public class Socks5Upstream extends Upstream {
             SUID hash = SUID.compute(dstEpStr);
             //先变更
             endpoint = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
-            Cache.getOrSet(hash, k -> quietly(() -> Tasks.run(() -> {
+            Cache.getOrSet(hash, k -> awaitQuietly(() -> {
                 App.logMetric(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
-            }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS)));
+            }, SocksSupport.ASYNC_TIMEOUT));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());

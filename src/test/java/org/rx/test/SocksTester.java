@@ -27,10 +27,8 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.DirectUpstream;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.support.UpstreamSupport;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
@@ -310,6 +308,9 @@ public class SocksTester {
         assert !conf.isBypass("192.169.31.1");
         assert conf.isBypass("localhost");
         assert !conf.isBypass("google.cn");
+
+        IPAddress ipAddress = IPSearcher.DEFAULT.search("x.f-li.cn");
+        System.out.println(ipAddress);
     }
 
     @SneakyThrows

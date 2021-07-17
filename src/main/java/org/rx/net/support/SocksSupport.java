@@ -2,11 +2,10 @@ package org.rx.net.support;
 
 import org.rx.bean.SUID;
 import org.rx.core.Arrays;
-import org.rx.io.KeyValueStore;
+import org.rx.core.Cache;
 
 import java.net.InetAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public interface SocksSupport {
@@ -17,8 +16,8 @@ public interface SocksSupport {
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 5 * 1000;
 
-    static Map<SUID, UnresolvedEndpoint> fakeDict() {
-        return KeyValueStore.getInstance();
+    static Cache<SUID, UnresolvedEndpoint> fakeDict() {
+        return Cache.getInstance(Cache.DISTRIBUTED_CACHE);
     }
 
     void fakeEndpoint(SUID hash, String realEndpoint);

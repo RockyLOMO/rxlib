@@ -8,7 +8,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
 import org.rx.core.NQuery;
-import org.rx.core.Tasks;
 import org.rx.core.cache.HybridCache;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
@@ -18,9 +17,9 @@ import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
 public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
@@ -48,12 +47,12 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
                 String domain = key.substring(DOMAIN_PREFIX.length());
                 List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
-                List<InetAddress> addresses = quietly(() -> Tasks.run(() -> {
+                List<InetAddress> addresses = awaitQuietly(() -> {
                     List<InetAddress> list = isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList());
                     cache.put(key, list, CacheExpirations.absolute(server.ttl));
                     log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
                     return list;
-                }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS));
+                }, SocksSupport.ASYNC_TIMEOUT);
                 if (!CollectionUtils.isEmpty(addresses)) {
                     entry.setValue(addresses);
                 }

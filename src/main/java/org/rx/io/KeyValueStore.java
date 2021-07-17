@@ -3,11 +3,12 @@ package org.rx.io;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
+import org.rx.bean.AbstractMap;
 import org.rx.core.Disposable;
 
 import java.io.*;
-import java.util.*;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Map;
+import java.util.Set;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.as;
@@ -26,7 +27,7 @@ import static org.rx.core.App.require;
  * 减少文件，二分查找
  */
 @Slf4j
-public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<TK, TV> {
+public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV> {
     @AllArgsConstructor
     @EqualsAndHashCode
     @ToString
@@ -90,6 +91,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
 
     private KeyValueStore() {
         this(KeyValueStoreConfig.defaultConfig(), Serializer.DEFAULT);
+    }
+
+    public KeyValueStore(KeyValueStoreConfig config) {
+        this(config, Serializer.DEFAULT);
     }
 
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
@@ -248,11 +253,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     @Override
-    public boolean isEmpty() {
-        return size() == 0;
-    }
-
-    @Override
     public int size() {
         return wal.meta.getSize();
     }
@@ -260,11 +260,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     @Override
     public boolean containsKey(Object key) {
         return indexer.findKey((TK) key) != null;
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -280,69 +275,14 @@ public class KeyValueStore<TK, TV> extends Disposable implements ConcurrentMap<T
     }
 
     @Override
-    public void putAll(Map<? extends TK, ? extends TV> m) {
-        for (Map.Entry<? extends TK, ? extends TV> entry : m.entrySet()) {
-            write(entry.getKey(), entry.getValue());
-        }
-    }
-
-    @Override
-    public TV putIfAbsent(TK key, TV value) {
-        TV cur = read(key);
-        if (cur == null) {
-            write(key, value);
-        }
-        return cur;
-    }
-
-    @Override
-    public boolean replace(TK key, TV oldValue, TV newValue) {
-        TV curValue = read(key);
-        if (!Objects.equals(curValue, oldValue) || curValue == null) {
-            return false;
-        }
-        write(key, newValue);
-        return true;
-    }
-
-    @Override
-    public TV replace(TK key, TV value) {
-        TV curValue;
-        if ((curValue = read(key)) != null) {
-            write(key, value);
-        }
-        return curValue;
-    }
-
-    @Override
     public TV remove(Object key) {
         return delete((TK) key);
-    }
-
-    @Override
-    public boolean remove(Object key, Object value) {
-        Object curValue = get(key);
-        if (!Objects.equals(curValue, value) || curValue == null) {
-            return false;
-        }
-        remove(key);
-        return true;
     }
 
     @Override
     public synchronized void clear() {
         indexer.clear();
         wal.clear();
-    }
-
-    @Override
-    public Set<TK> keySet() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<TV> values() {
-        throw new UnsupportedOperationException();
     }
 
     @Override

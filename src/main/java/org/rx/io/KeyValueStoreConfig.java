@@ -3,16 +3,25 @@ package org.rx.io;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * log 1G
+ * index 12G
+ */
 @RequiredArgsConstructor
 @Data
 public class KeyValueStoreConfig {
-    public static final String DEFAULT_DIRECTORY = "./data";
+    public static final String DEFAULT_DIRECTORY = "./data/def";
     static final int OneM = 1024 * 1024;
 
     public static KeyValueStoreConfig defaultConfig() {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(DEFAULT_DIRECTORY);
-        conf.setLogGrowSize(OneM * 512);
-        conf.setIndexGrowSize(OneM * 16);
+        return miniConfig(DEFAULT_DIRECTORY);
+    }
+
+    public static KeyValueStoreConfig miniConfig(String directoryPath) {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(directoryPath);
+        //init 1G
+        conf.setLogGrowSize(OneM * 256);
+        conf.setIndexGrowSize(OneM * 8);
         return conf;
     }
 
