@@ -53,7 +53,7 @@ public class Reflects extends TypeUtils {
     }
 
     static class SecurityManagerEx extends SecurityManager {
-        static SecurityManagerEx instance = new SecurityManagerEx();
+        static final SecurityManagerEx INSTANCE = new SecurityManagerEx();
 
         Class<?> stackClass(int depth) {
             return getClassContext()[depth];
@@ -103,7 +103,7 @@ public class Reflects extends TypeUtils {
 
     public static Class<?> stackClass(int depth) {
         //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
-        return SecurityManagerEx.instance.stackClass(2 + depth);
+        return SecurityManagerEx.INSTANCE.stackClass(2 + depth);
     }
 
     public static InputStream getResource(String namePattern) {

@@ -63,9 +63,7 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (method.getName().equals("lookupAllHostAddr")) {
                 String host = (String) args[0];
-                if (!host.contains(".")) {
-                    return empty;
-                }
+                //处理不了会交给源对象处理
                 List<InetAddress> addresses = client.resolveAll(host);
                 if (!CollectionUtils.isEmpty(addresses)) {
                     return addresses.toArray(empty);
