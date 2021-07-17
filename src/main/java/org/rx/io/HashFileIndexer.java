@@ -9,10 +9,7 @@ import org.rx.core.Strings;
 import org.rx.core.cache.CaffeineCache;
 
 import java.io.File;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Paths;
-import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.*;
 
@@ -142,7 +139,7 @@ final class HashFileIndexer<TK> extends Disposable {
     private final File directory;
     private final int growSize;
     private final Slot[] slots;
-    private final SequentialWriteQueue writeQueue;
+    private final WriteBehindQueue writeQueue;
     private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache
             .builder(0.2f, 16 * 2 + 8 + 4 + 8)
             .build());
@@ -154,7 +151,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         int slotCount = (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / slotSize);
         slots = new Slot[slotCount];
-        writeQueue = new SequentialWriteQueue(slotCount + 1);
+        writeQueue = new WriteBehindQueue(slotCount + 1);
     }
 
     @Override

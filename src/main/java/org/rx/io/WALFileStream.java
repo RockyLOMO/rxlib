@@ -115,7 +115,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final SequentialWriteQueue writeQueue = new SequentialWriteQueue(8);
+    private final WriteBehindQueue writeQueue = new WriteBehindQueue(8);
 
     @Override
     public String getName() {

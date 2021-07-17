@@ -349,19 +349,15 @@ public class Reflects extends TypeUtils {
         }
     }
 
-    public static <T> T convert(Object val, Class<T> toType) {
-        return tryConvert(val, toType).right;
-    }
-
-    public static <T> Tuple<Boolean, T> tryConvert(Object val, Class<T> toType) {
+    public static <T> T tryConvert(Object val, Class<T> toType) {
         return tryConvert(val, toType, null);
     }
 
-    public static <T> Tuple<Boolean, T> tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
+    public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
-            return Tuple.of(true, isNull(Reflects.changeType(val, toType), defaultVal));
+            return isNull(Reflects.changeType(val, toType), defaultVal);
         } catch (Exception ex) {
-            return Tuple.of(false, defaultVal);
+            return defaultVal;
         }
     }
 

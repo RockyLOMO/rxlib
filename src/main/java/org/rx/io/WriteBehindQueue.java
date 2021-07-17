@@ -16,22 +16,23 @@ import java.util.*;
 import static org.rx.core.App.quietly;
 
 @Slf4j
-final class SequentialWriteQueue extends Disposable {
+final class WriteBehindQueue extends Disposable {
     @Setter
     private long delaySavePeriod = 500;
     @Getter
     private final IntWaterMark waterMark;
+    //sequential
     private final NavigableMap<Long, Action> sortMap = Collections.synchronizedNavigableMap(new TreeMap<>());
     private final RedoTimer timer = new RedoTimer();
     private volatile Timeout timeout;
     private final ManualResetEvent event = new ManualResetEvent();
     private volatile boolean stop;  //避免consume时又offer 死循环
 
-    SequentialWriteQueue(int highWaterMark) {
+    WriteBehindQueue(int highWaterMark) {
         this(new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
     }
 
-    SequentialWriteQueue(@NonNull IntWaterMark waterMark) {
+    WriteBehindQueue(@NonNull IntWaterMark waterMark) {
         this.waterMark = waterMark;
     }
 
