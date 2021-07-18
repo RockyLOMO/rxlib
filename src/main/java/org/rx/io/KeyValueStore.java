@@ -1,14 +1,22 @@
 package org.rx.io;
 
+import com.google.common.collect.AbstractSequentialIterator;
+import com.google.common.hash.BloomFilter;
+import com.google.common.hash.Funnels;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.IteratorUtils;
 import org.rx.bean.$;
 import org.rx.bean.AbstractMap;
 import org.rx.core.Disposable;
 
 import java.io.*;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.as;
@@ -27,11 +35,12 @@ import static org.rx.core.App.require;
  * 减少文件，二分查找
  */
 @Slf4j
-public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV> {
+public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV>, Iterable<Map.Entry<TK, TV>> {
     @AllArgsConstructor
     @EqualsAndHashCode
     @ToString
-    private static class Entry<TK, TV> implements Compressible {
+    @Getter
+    static class Entry<TK, TV> implements Map.Entry<TK, TV>, Compressible {
         private static final long serialVersionUID = -2218602651671401557L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
@@ -52,6 +61,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         TV value;
 
         @Override
+        public TV setValue(TV value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public boolean enableCompress() {
             Compressible k = as(key, Compressible.class);
             Compressible v = as(value, Compressible.class);
@@ -67,8 +81,18 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         final byte value;
     }
 
+    static class Context {
+        int offset = 0, size = 100;
+    }
+
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
+    static final FastThreadLocal<Context> CTX = new FastThreadLocal<Context>() {
+        @Override
+        protected Context initialValue() {
+            return new Context();
+        }
+    };
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
 
@@ -250,6 +274,73 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             return null;
         }
         return val;
+    }
+
+    public void limit(int offset, int size) {
+        require(offset, offset >= 0);
+        require(size, size >= 0);
+
+        Context ctx = CTX.get();
+        ctx.offset = offset;
+        ctx.size = size;
+    }
+
+    @Override
+    public Iterator<Map.Entry<TK, TV>> iterator() {
+        Context ctx = CTX.getIfExists();
+        int size = size();
+        if (ctx == null || size <= ctx.offset || (ctx.offset + ctx.size) > size) {
+            return IteratorUtils.emptyIterator();
+        }
+
+        AtomicLong pos = new AtomicLong(wal.meta.getLogPosition());
+        BloomFilter<Integer> filter = BloomFilter.create(Funnels.integerFunnel(), ctx.offset + ctx.size, 0.003);
+        for (int i = 0; i < ctx.offset; i++) {
+            backwardFindValue(pos, filter);
+        }
+        Entry<TK, TV> first = backwardFindValue(pos, filter);
+        AtomicInteger remaining = new AtomicInteger(ctx.size - 1);
+        return new AbstractSequentialIterator<Map.Entry<TK, TV>>(first) {
+            @Override
+            protected Map.Entry<TK, TV> computeNext(Map.Entry<TK, TV> current) {
+                if (remaining.decrementAndGet() < 0) {
+                    return null;
+                }
+                return backwardFindValue(pos, filter);
+            }
+        };
+    }
+
+    private Entry<TK, TV> backwardFindValue(AtomicLong logPosition, BloomFilter<Integer> filter) {
+        long logPos = logPosition.get();
+        if (logPos <= WALFileStream.HEADER_SIZE) {
+            return null;
+        }
+
+        wal.setReaderPosition(logPos); //4 lock
+        return wal.backwardReadObject(reader -> {
+            long pos = reader.getPosition();
+            while (true) {
+                pos -= 4;
+                reader.setPosition(pos);
+                try {
+                    pos -= (4 + reader.readInt());
+                } catch (Exception e) {
+                    if (e instanceof EOFException) {
+                        return null;
+                    }
+                    throw e;
+                }
+                reader.setPosition(pos);
+                Entry<TK, TV> val = serializer.deserialize(reader, true);
+                if (filter.mightContain(val.key.hashCode())) {
+                    continue;
+                }
+                logPosition.set(pos);
+                filter.put(val.key.hashCode());
+                return val;
+            }
+        });
     }
 
     @Override

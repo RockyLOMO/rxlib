@@ -35,7 +35,7 @@ public class KeyValueStoreConfig {
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
      * The only recommended way to read a file from a single disk is to read sequentially with one thread.
      */
-    private int logReaderCount = 1;
+    private int logReaderCount = 2;
 
     private int indexSlotSize = OneM * 128; //128M
     private int indexGrowSize = OneM * 32; //32M

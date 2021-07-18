@@ -321,12 +321,29 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private int ensureRead(BiFunc<IOStream<?, ?>, Integer> action) {
         IOStream<?, ?> reader = readers.take();
         try {
+            long readerPosition = getReaderPosition();
             return lock.readInvoke(() -> {
-                reader.setPosition(getReaderPosition());
+                reader.setPosition(readerPosition);
                 int read = action.invoke(reader);
                 setReaderPosition(reader.getPosition());
                 return read;
-            }, HEADER_SIZE);
+            }, readerPosition);
+        } finally {
+            readers.offer(reader);
+        }
+    }
+
+    @SneakyThrows
+    public <T> T backwardReadObject(BiFunc<IOStream<?, ?>, T> action) {
+        IOStream<?, ?> reader = readers.take();
+        try {
+            long readerPosition = getReaderPosition();
+            return lock.readInvoke(() -> {
+                reader.setPosition(readerPosition);
+                T obj = action.invoke(reader);
+                setReaderPosition(reader.getPosition());
+                return obj;
+            }, HEADER_SIZE, readerPosition);
         } finally {
             readers.offer(reader);
         }
@@ -338,14 +355,20 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     private void ensureWrite(BiAction<IOStream<?, ?>> action) {
+        long logPosition = meta.getLogPosition();
         lock.writeInvoke(() -> {
-            writer.setPosition(meta.getLogPosition());
+            if (logPosition != meta.getLogPosition()) {
+                throw new InvalidException("concurrent error");
+            }
+
+            writer.setPosition(logPosition);
             action.invoke(writer);
             if (autoFlush) {
                 writer.flush();
             }
             meta.setLogPosition(writer.getPosition());
-        }, HEADER_SIZE);
+//        }, HEADER_SIZE);
+        }, logPosition);
     }
 
     @Override
