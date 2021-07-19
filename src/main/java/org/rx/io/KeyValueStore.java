@@ -12,7 +12,6 @@ import org.rx.core.Disposable;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.as;
@@ -302,7 +301,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                     return null;
                 }
                 if (++ctx.readPos == ctx.buf.length) {
-                    backwardFindValue(ctx, ctx.buf.length);
+                    backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
                     if (ctx.writePos == 0) {
                         return null;
                     }
