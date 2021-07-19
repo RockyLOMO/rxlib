@@ -140,6 +140,23 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
+    public void ushortPair() {
+        UShortPair x = new UShortPair();
+        System.out.println(x.getShort0());
+        System.out.println(x.getShort1());
+        int c = 2;
+        for (int i = 0; i < 10; i++) {
+            x.addShort0(c);
+            x.addShort1(c);
+            int j = c + i * c;
+            System.out.println(x.getShort0());
+            System.out.println(x.getShort1());
+            assert (x.getShort0() == j);
+            assert (x.getShort1() == j);
+        }
+    }
+
+    @Test
     public void suid() {
         String jstr = toJsonString(SUID.randomSUID());
         SUID sid = fromJson(jstr, SUID.class);

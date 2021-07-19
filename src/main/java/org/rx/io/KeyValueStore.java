@@ -3,7 +3,6 @@ package org.rx.io;
 import com.google.common.collect.AbstractSequentialIterator;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
@@ -12,11 +11,8 @@ import org.rx.bean.AbstractMap;
 import org.rx.core.Disposable;
 
 import java.io.*;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.as;
@@ -30,9 +26,9 @@ import static org.rx.core.App.require;
  * key.hashCode(4) + pos(8)
  *
  * <p>log
- * key + value
- * <p>
- * 减少文件，二分查找
+ * key + value + size(4)
+ *
+ * <p>减少文件，二分查找
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV>, Iterable<Map.Entry<TK, TV>> {
@@ -81,18 +77,19 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         final byte value;
     }
 
-    static class Context {
-        int offset = 0, size = 100;
+    @RequiredArgsConstructor
+    class IteratorContext {
+        long logPos = wal.meta.getLogPosition();
+        final BloomFilter<Integer> filter;
+        final Entry<TK, TV>[] buf;
+        int writePos;
+        int readPos;
+        int remaining;
     }
 
     static final String LOG_FILE = "RxKv.log";
     static final int TOMB_MARK = -1;
-    static final FastThreadLocal<Context> CTX = new FastThreadLocal<Context>() {
-        @Override
-        protected Context initialValue() {
-            return new Context();
-        }
-    };
+    static final int DEFAULT_ITERATOR_SIZE = 50;
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
 
@@ -276,70 +273,87 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         return val;
     }
 
-    public void limit(int offset, int size) {
+    @Override
+    public Iterator<Map.Entry<TK, TV>> iterator() {
+        return iterator(0, DEFAULT_ITERATOR_SIZE);
+    }
+
+    public Iterator<Map.Entry<TK, TV>> iterator(int offset, int size) {
         require(offset, offset >= 0);
         require(size, size >= 0);
 
-        Context ctx = CTX.get();
-        ctx.offset = offset;
-        ctx.size = size;
-    }
-
-    @Override
-    public Iterator<Map.Entry<TK, TV>> iterator() {
-        Context ctx = CTX.getIfExists();
-        int size = size();
-        if (ctx == null || size <= ctx.offset || (ctx.offset + ctx.size) > size) {
+        if (size() <= offset) {
             return IteratorUtils.emptyIterator();
         }
 
-        AtomicLong pos = new AtomicLong(wal.meta.getLogPosition());
-        BloomFilter<Integer> filter = BloomFilter.create(Funnels.integerFunnel(), ctx.offset + ctx.size, 0.003);
-        for (int i = 0; i < ctx.offset; i++) {
-            backwardFindValue(pos, filter);
+        IteratorContext ctx = new IteratorContext(BloomFilter.create(Funnels.integerFunnel(), offset + size, 0.003), new Entry[config.getIteratorPrefetchCount()]);
+        if (offset > 0 && !backwardFindValue(ctx, offset)) {
+            return IteratorUtils.emptyIterator();
         }
-        Entry<TK, TV> first = backwardFindValue(pos, filter);
-        AtomicInteger remaining = new AtomicInteger(ctx.size - 1);
-        return new AbstractSequentialIterator<Map.Entry<TK, TV>>(first) {
+        backwardFindValue(ctx, ctx.buf.length);
+        if (ctx.writePos == 0) {
+            return IteratorUtils.emptyIterator();
+        }
+        ctx.remaining = size - 1;
+        return new AbstractSequentialIterator<Map.Entry<TK, TV>>(ctx.buf[ctx.readPos]) {
             @Override
             protected Map.Entry<TK, TV> computeNext(Map.Entry<TK, TV> current) {
-                if (remaining.decrementAndGet() < 0) {
+                if (--ctx.remaining < 0) {
                     return null;
                 }
-                return backwardFindValue(pos, filter);
+                if (++ctx.readPos == ctx.buf.length) {
+                    backwardFindValue(ctx, ctx.buf.length);
+                    if (ctx.writePos == 0) {
+                        return null;
+                    }
+                }
+                return ctx.buf[ctx.readPos];
             }
         };
     }
 
-    private Entry<TK, TV> backwardFindValue(AtomicLong logPosition, BloomFilter<Integer> filter) {
-        long logPos = logPosition.get();
-        if (logPos <= WALFileStream.HEADER_SIZE) {
-            return null;
-        }
-
-        wal.setReaderPosition(logPos); //4 lock
+    private boolean backwardFindValue(IteratorContext ctx, int prefetchCount) {
+        wal.setReaderPosition(ctx.logPos); //4 lock
         return wal.backwardReadObject(reader -> {
-            long pos = reader.getPosition();
-            while (true) {
-                pos -= 4;
-                reader.setPosition(pos);
+            ctx.writePos = ctx.readPos = 0;
+            for (int i = 0; i < prefetchCount; i++) {
+                if (ctx.logPos <= WALFileStream.HEADER_SIZE) {
+                    ctx.remaining = 0;
+                    return false;
+                }
+
+                ctx.logPos -= 4;
+                reader.setPosition(ctx.logPos);
                 try {
-                    pos -= (4 + reader.readInt());
+                    int size = reader.readInt();
+                    log.debug("contentLength: {}", size);
+                    ctx.logPos -= size;
                 } catch (Exception e) {
                     if (e instanceof EOFException) {
-                        return null;
+                        ctx.remaining = 0;
+                        return false;
                     }
                     throw e;
                 }
-                reader.setPosition(pos);
-                Entry<TK, TV> val = serializer.deserialize(reader, true);
-                if (filter.mightContain(val.key.hashCode())) {
-                    continue;
+                reader.setPosition(ctx.logPos);
+                try {
+                    Entry<TK, TV> val = serializer.deserialize(reader, true);
+                    log.debug("read {}", val);
+                    if (ctx.filter.mightContain(val.key.hashCode())) {
+                        log.info("mightContain {}", val.key);
+                        continue;
+                    }
+                    ctx.filter.put(val.key.hashCode());
+                    ctx.buf[ctx.writePos++] = val;
+                } catch (Exception e) {
+                    if (e instanceof StreamCorruptedException) {
+                        ctx.remaining = 0;
+                        return false;
+                    }
+                    throw e;
                 }
-                logPosition.set(pos);
-                filter.put(val.key.hashCode());
-                return val;
             }
+            return true;
         });
     }
 
@@ -378,6 +392,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     @Override
     public Set<Map.Entry<TK, TV>> entrySet() {
-        throw new UnsupportedOperationException();
+        return entrySet(0, DEFAULT_ITERATOR_SIZE);
+    }
+
+    public Set<Map.Entry<TK, TV>> entrySet(int offset, int size) {
+        return new LinkedHashSet<>(IteratorUtils.toList(iterator(offset, size)));
     }
 }

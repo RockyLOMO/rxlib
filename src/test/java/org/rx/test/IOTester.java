@@ -17,6 +17,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.rx.core.App.*;
 
@@ -45,11 +46,33 @@ public class IOTester {
     }
 
     @Test
+    public void kvIterator() {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
+        conf.setLogGrowSize(1024 * 1024 * 4);
+        conf.setIndexGrowSize(1024 * 1024);
+        conf.setIteratorPrefetchCount(4);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+
+        for (int i = 0; i < 100; i++) {
+            kv.put(i, i + " " + DateTime.now().toString());
+        }
+
+        assert kv.size() == 100;
+        int j = 99;
+        for (Map.Entry<Integer, String> entry : kv) {
+            System.out.println(entry.getKey() + ": " + entry.getValue());
+            assert j == entry.getKey();
+            assert entry.getValue().startsWith(j + " ");
+            j--;
+        }
+    }
+
+    @Test
     public void kvZip() {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
         conf.setIndexGrowSize(1024 * 1024);
-        KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
+        KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
         kv.put(0, PersonBean.boy);
         kv.put(1, PersonBean.girl);
 
@@ -62,7 +85,7 @@ public class IOTester {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
         conf.setIndexGrowSize(1024 * 1024);
-        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         int loopCount = 10000;
         TestUtil.invokeAsync("kvdb", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
@@ -85,7 +108,7 @@ public class IOTester {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
         conf.setLogGrowSize(1024 * 1024 * 4);
         conf.setIndexGrowSize(1024 * 1024);
-        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf, Serializer.DEFAULT);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
         int loopCount = 100, removeK = 99;
         TestUtil.invoke("put", i -> {

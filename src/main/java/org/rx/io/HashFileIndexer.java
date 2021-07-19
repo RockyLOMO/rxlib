@@ -218,8 +218,9 @@ final class HashFileIndexer<TK> extends Disposable {
 //                log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
             }
 
-            if (key.key != null) {
+             if (key.key != null) {
 //                cache.remove(key.key);
+                key.position = pos;
                 cache.put(key.key, key); //hang?
             }
         }, HEADER_SIZE);
