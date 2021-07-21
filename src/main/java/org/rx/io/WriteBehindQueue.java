@@ -3,36 +3,37 @@ package org.rx.io;
 import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.util.RedoTimer;
-import org.rx.util.function.Action;
+import org.rx.util.function.BiAction;
 
 import java.util.*;
 
 import static org.rx.core.App.quietly;
 
 @Slf4j
-final class WriteBehindQueue extends Disposable {
-    @Setter
-    private long delaySavePeriod = 500;
+final class WriteBehindQueue<K, V> extends Disposable {
+    @Getter
+    private final long writeDelayed;
     @Getter
     private final IntWaterMark waterMark;
     //sequential
-    private final NavigableMap<Long, Action> sortMap = Collections.synchronizedNavigableMap(new TreeMap<>());
+    private final NavigableMap<K, Tuple<V, BiAction<V>>> sortMap = Collections.synchronizedNavigableMap(new TreeMap<>());
     private final RedoTimer timer = new RedoTimer();
     private volatile Timeout timeout;
     private final ManualResetEvent event = new ManualResetEvent();
     private volatile boolean stop;  //避免consume时又offer 死循环
 
-    WriteBehindQueue(int highWaterMark) {
-        this(new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
+    WriteBehindQueue(long writeDelayed, int highWaterMark) {
+        this(writeDelayed, new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
     }
 
-    WriteBehindQueue(@NonNull IntWaterMark waterMark) {
+    WriteBehindQueue(long writeDelayed, @NonNull IntWaterMark waterMark) {
+        this.writeDelayed = writeDelayed;
         this.waterMark = waterMark;
     }
 
@@ -42,15 +43,25 @@ final class WriteBehindQueue extends Disposable {
         consume();
     }
 
+    public void reset() {
+        sortMap.clear();
+        timeout = null;
+        event.set();
+    }
+
+    public V peek(@NonNull K posKey) {
+        return sortMap.getOrDefault(posKey, new Tuple<>()).left;
+    }
+
     @SneakyThrows
-    public void offer(long position, Action writeAction) {
+    public void offer(@NonNull K posKey, V writeVal, BiAction<V> writeAction) {
         checkNotClosed();
         if (stop) {
-            writeAction.invoke();
+            writeAction.invoke(writeVal);
             return;
         }
 
-        sortMap.put(position, writeAction);
+        sortMap.put(posKey, Tuple.of(writeVal, writeAction));
 
         if (sortMap.size() > waterMark.getHigh()) {
             log.warn("high water mark threshold");
@@ -65,7 +76,20 @@ final class WriteBehindQueue extends Disposable {
         if (timeout != null) {
             timeout.cancel();
         }
-        timeout = timer.setTimeout(this::consume, delaySavePeriod);
+        timeout = timer.setTimeout(this::consume, writeDelayed);
+    }
+
+    public boolean replace(@NonNull K posKey, V writeVal) {
+        if (writeVal == null) {
+            return sortMap.remove(posKey) != null;
+        }
+
+        Tuple<V, BiAction<V>> tuple = sortMap.get(posKey);
+        if (tuple == null) {
+            return false;
+        }
+        tuple.left = writeVal;
+        return true;
     }
 
     public void consume() {
@@ -75,7 +99,7 @@ final class WriteBehindQueue extends Disposable {
     private void consume(Timeout t) {
         int size = sortMap.size();
         while (size > 0) {
-            Map.Entry<Long, Action> entry = sortMap.pollFirstEntry();
+            Map.Entry<K, Tuple<V, BiAction<V>>> entry = sortMap.pollFirstEntry();
             if (sortMap.size() <= waterMark.getLow()) {
                 log.debug("low water mark threshold");
                 event.set();
@@ -83,7 +107,8 @@ final class WriteBehindQueue extends Disposable {
             if (entry == null) {
                 break;
             }
-            quietly(entry.getValue());
+            Tuple<V, BiAction<V>> tuple = entry.getValue();
+            quietly(() -> tuple.right.invoke(tuple.left));
             size--;
         }
     }

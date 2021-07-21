@@ -40,4 +40,7 @@ public class KeyValueStoreConfig {
 
     private int indexSlotSize = OneM * 128; //128M
     private int indexGrowSize = OneM * 32; //32M
+
+    private long writeBehindDelayed = 15000;
+    private int writeBehindHighWaterMark = 8;
 }

@@ -88,7 +88,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         public synchronized void incrementWroteBytes() {
             _wroteBytes += KEY_SIZE;
-            owner.writeQueue.offer(Long.parseLong(main.getName()), this::saveSize);
+            owner.queue.offer(main.getName(), 0, x -> saveSize());
         }
 
         public synchronized void resetWroteBytes() {
@@ -139,7 +139,7 @@ final class HashFileIndexer<TK> extends Disposable {
     private final File directory;
     private final int growSize;
     private final Slot[] slots;
-    private final WriteBehindQueue writeQueue;
+    private final WriteBehindQueue<String, Integer> queue;
     private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache
             .builder(0.2f, 16 * 2 + 8 + 4 + 8)
             .build());
@@ -151,7 +151,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         int slotCount = (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / slotSize);
         slots = new Slot[slotCount];
-        writeQueue = new WriteBehindQueue(slotCount + 1);
+        queue = new WriteBehindQueue<>(500, slotCount + 1);
     }
 
     @Override
@@ -218,7 +218,7 @@ final class HashFileIndexer<TK> extends Disposable {
 //                log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
             }
 
-             if (key.key != null) {
+            if (key.key != null) {
 //                cache.remove(key.key);
                 key.position = pos;
                 cache.put(key.key, key); //hang?

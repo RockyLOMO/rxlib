@@ -12,6 +12,7 @@ import org.rx.core.Disposable;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.as;
@@ -97,6 +98,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     final WALFileStream wal;
     final HashFileIndexer<TK> indexer;
     final Serializer serializer;
+    final WriteBehindQueue<TK, TV> queue;
 
     File getParentDirectory() {
         parentDirectory.mkdirs();
@@ -156,6 +158,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             log.debug("recover {}", key);
             pos = endPos.v;
         }
+
+        if (wal.meta.extra == null) {
+            wal.meta.extra = new AtomicInteger();
+        }
+
+        queue = new WriteBehindQueue<>(config.getWriteBehindDelayed(), config.getWriteBehindHighWaterMark());
     }
 
     @Override
@@ -266,7 +274,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             return null;
         }
         if (k != null && !k.equals(val.key)) {
-            log.warn("Hash collision {} {}", k.hashCode(), k);
+            AtomicInteger counter = (AtomicInteger) wal.meta.extra;
+            int total = counter == null ? -1 : counter.incrementAndGet();
+            log.warn("Hash collision {} {} total={}", k.hashCode(), k, total);
             return null;
         }
         return val;
@@ -285,7 +295,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             return IteratorUtils.emptyIterator();
         }
 
-        IteratorContext ctx = new IteratorContext(BloomFilter.create(Funnels.integerFunnel(), offset + size, 0.003), new Entry[config.getIteratorPrefetchCount()]);
+        IteratorContext ctx = new IteratorContext(BloomFilter.create(Funnels.integerFunnel(), offset + size, 0.001), new Entry[config.getIteratorPrefetchCount()]);
         if (offset > 0 && !backwardFindValue(ctx, offset)) {
             return IteratorUtils.emptyIterator();
         }
@@ -338,6 +348,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 try {
                     Entry<TK, TV> val = serializer.deserialize(reader, true);
                     log.debug("read {}", val);
+                    TV v = queue.peek(val.key);
+                    if (v != null) {
+                        val.value = v;
+                    }
                     if (ctx.filter.mightContain(val.key.hashCode())) {
                         log.info("mightContain {}", val.key);
                         continue;
@@ -363,12 +377,22 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     @Override
     public boolean containsKey(Object key) {
+        TK k = (TK) key;
+        TV v = queue.peek(k);
+        if (v != null) {
+            return true;
+        }
         return indexer.findKey((TK) key) != null;
     }
 
     @Override
     public TV get(Object key) {
-        return read((TK) key);
+        TK k = (TK) key;
+        TV v = queue.peek(k);
+        if (v != null) {
+            return v;
+        }
+        return read(k);
     }
 
     @Override
@@ -378,13 +402,20 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         return old;
     }
 
+    public void putBehind(TK key, TV value) {
+        queue.offer(key, value, v -> put(key, v));
+    }
+
     @Override
     public TV remove(Object key) {
-        return delete((TK) key);
+        TK k = (TK) key;
+        queue.replace(k, null);
+        return delete(k);
     }
 
     @Override
     public synchronized void clear() {
+        queue.reset();
         indexer.clear();
         wal.clear();
     }

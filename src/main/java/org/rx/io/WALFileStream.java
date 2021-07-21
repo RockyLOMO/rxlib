@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
 import org.rx.core.exception.InvalidException;
+import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -58,9 +59,10 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             size.set(in.readInt());
         }
 
-        transient BiAction<MetaHeader> writeBack;
+        private transient Action writeBack;
         private long _logPosition = HEADER_SIZE;
         private AtomicInteger size = new AtomicInteger();
+        Object extra;
 
         public synchronized long getLogPosition() {
             return _logPosition;
@@ -98,7 +100,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                 return;
             }
 //            log.debug("write back {}", this);
-            writeBack.invoke(this);
+            writeBack.invoke();
         }
     }
 
@@ -115,7 +117,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final WriteBehindQueue writeQueue = new WriteBehindQueue(8);
+    private final WriteBehindQueue<Long, MetaHeader> queue = new WriteBehindQueue<>(500, 2);
 
     @Override
     public String getName() {
@@ -198,12 +200,12 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         meta = loadMeta();
-        meta.writeBack = m -> writeQueue.offer(0, this::saveMeta);
+        meta.writeBack = () -> queue.offer(0L, meta, x -> saveMeta());
     }
 
     @Override
     protected void freeObjects() {
-        writeQueue.close();
+        queue.close();
         releaseReaderAndWriter();
         main.close();
     }
