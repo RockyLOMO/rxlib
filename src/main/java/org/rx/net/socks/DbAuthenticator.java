@@ -10,9 +10,9 @@ class DbAuthenticator implements Authenticator {
     final KeyValueStore<String, SocksUser> store = new KeyValueStore<>(KeyValueStoreConfig.miniConfig("./data/socks"));
 
     @Override
-    public boolean auth(String username, String password) {
+    public SocksUser login(String username, String password) {
         SocksUser user = store.get(username);
-        return user != null && eq(user.getPassword(), password);
+        return user != null && eq(user.getPassword(), password) ? user : null;
     }
 
     public void save(@NonNull SocksUser user) {

@@ -15,8 +15,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.as;
-import static org.rx.core.App.require;
+import static org.rx.core.App.*;
 
 /**
  * meta
@@ -398,7 +397,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public TV put(TK key, TV value) {
         TV old = read(key);
-        write(key, value);
+        if (!eq(old, value)) {
+            write(key, value);
+        }
         return old;
     }
 

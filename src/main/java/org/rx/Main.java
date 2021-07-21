@@ -21,6 +21,7 @@ import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.TransportFlags;
+import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -60,7 +61,7 @@ public final class Main implements SocksSupport {
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
-            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, shadowUser.getUsername()) && eq(p, shadowUser.getPassword()), null);
+            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, shadowUser.getUsername()) && eq(p, shadowUser.getPassword()) ? SocksUser.ANONYMOUS : null, null);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             RpcServerConfig rpcConf = new RpcServerConfig(port + 1);

@@ -31,7 +31,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
         log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
-        if (server.isAuthEnabled() && ProxyChannelManageHandler.get(inbound).isAnonymous()) {
+        if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
             return;
         }

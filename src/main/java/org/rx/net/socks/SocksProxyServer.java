@@ -59,7 +59,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //流量统计
-                pipeline.addLast(ProxyChannelManageHandler.class.getSimpleName(), new ProxyChannelManageHandler(config.getTrafficShapingInterval(), new FlowLoggerImpl()));
+                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(authenticator, config.getTrafficShapingInterval()));
             }
             //超时处理
             pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
