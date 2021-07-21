@@ -12,6 +12,7 @@ import org.rx.util.RedoTimer;
 import org.rx.util.function.BiAction;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import static org.rx.core.App.quietly;
 
@@ -22,7 +23,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
     @Getter
     private final IntWaterMark waterMark;
     //sequential
-    private final NavigableMap<K, Tuple<V, BiAction<V>>> sortMap = Collections.synchronizedNavigableMap(new TreeMap<>());
+    private final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> sortMap = new ConcurrentSkipListMap<>();
     private final RedoTimer timer = new RedoTimer();
     private volatile Timeout timeout;
     private final ManualResetEvent event = new ManualResetEvent();

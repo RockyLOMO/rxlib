@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class IncrementGenerator {
-    private volatile int val;
+    private int val;
 
     public synchronized int next() {
         int i = ++val;

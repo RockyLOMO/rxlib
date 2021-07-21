@@ -72,7 +72,7 @@ public final class App extends SystemUtils {
     @Setter
     static volatile Predicate<Throwable> ignoreExceptionHandler;
     static final String LOG_METRIC_PREFIX = "LM:";
-    private static volatile RxConfig config;
+    private static RxConfig config;
 
     public static synchronized RxConfig getConfig() {
         if (SpringContext.isInitiated()) {

@@ -136,7 +136,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Getter
     private final RpcServerConfig config;
     private ServerBootstrap bootstrap;
-    private volatile Channel serverChannel;
+    private Channel serverChannel;
     private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
     private volatile boolean isStarted;
