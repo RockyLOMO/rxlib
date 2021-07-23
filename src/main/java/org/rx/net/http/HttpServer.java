@@ -1,59 +1,107 @@
 package org.rx.net.http;
 
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
+import io.netty.handler.codec.http.cookie.Cookie;
+import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.util.CharsetUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.RxConfig;
+import org.rx.core.Arrays;
+import org.rx.core.Disposable;
 import org.rx.net.Sockets;
 
-import static io.netty.handler.codec.http.HttpHeaderNames.*;
-import static io.netty.handler.codec.http.HttpHeaderNames.CONNECTION;
-import static io.netty.handler.codec.http.HttpHeaderValues.*;
-import static io.netty.handler.codec.http.HttpHeaderValues.KEEP_ALIVE;
+import java.net.URI;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
-import static io.netty.handler.codec.http.HttpVersion.HTTP_1_0;
-import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 @Slf4j
-public class HttpServer {
-    class xxx extends SimpleChannelInboundHandler<HttpObject> {
+public class HttpServer extends Disposable {
+    class ServerHandler extends SimpleChannelInboundHandler<HttpObject> {
+        HttpRequest request;
+        Handler handler;
+        RequestBean req;
 
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {        if (!request.decoderResult().isSuccess()) {
-            sendError(ctx, BAD_REQUEST);
-            return;
-        }
-FullHttpMessage e;e.content()
+        protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
             if (msg instanceof HttpRequest) {
-                HttpRequest req = (HttpRequest) msg;
+                request = (HttpRequest) msg;
 
-
-                boolean keepAlive = HttpUtil.isKeepAlive(req);
-                FullHttpResponse response = new DefaultFullHttpResponse(req.protocolVersion(), OK,
-                        Unpooled.wrappedBuffer(CONTENT));
-                response.headers()
-                        .set(CONTENT_TYPE, TEXT_PLAIN)
-                        .setInt(CONTENT_LENGTH, response.content().readableBytes());
-
-                if (keepAlive) {
-                    if (!req.protocolVersion().isKeepAliveDefault()) {
-                        response.headers().set(CONNECTION, KEEP_ALIVE);
-                    }
-                } else {
-                    // Tell the client we're going to close the connection.
-                    response.headers().set(CONNECTION, CLOSE);
+                if (!request.decoderResult().isSuccess()) {
+                    sendError(ctx, BAD_REQUEST);
+                    return;
+                }
+                URI uri = new URI(request.uri());
+                handler = mapping.get(uri.getPath());
+                if (handler == null) {
+                    sendError(ctx, NOT_FOUND);
+                    return;
+                }
+                HttpMethod[] method = handler.method();
+                if (method != null && !Arrays.contains(method, request.method())) {
+                    sendError(ctx, METHOD_NOT_ALLOWED);
+                    return;
                 }
 
-                ChannelFuture f = ctx.write(response);
-                if (!keepAlive) {
-                    f.addListener(ChannelFutureListener.CLOSE);
+                req = new RequestBean(request.uri(), request.method());
+                req.getHeaders().setAll(request.headers());
+
+                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(request.uri());
+                Map<String, List<String>> params = queryStringDecoder.parameters();
+                if (!params.isEmpty()) {
+                    for (Map.Entry<String, List<String>> p : params.entrySet()) {
+                        String key = p.getKey();
+                        for (String val : p.getValue()) {
+                            req.getQueryString().put(key, val);
+                        }
+                    }
+                }
+            }
+
+            if (msg instanceof HttpContent) {
+                HttpContent httpContent = (HttpContent) msg;
+                ByteBuf content = httpContent.content();
+                if (content.isReadable()) {
+                    //todo isjson or form
+                    req.setContent(content);
+                }
+
+                if (msg instanceof LastHttpContent) {
+                    LastHttpContent trailer = (LastHttpContent) msg;
+                    if (!trailer.decoderResult().isSuccess()) {
+                        sendError(ctx, BAD_REQUEST);
+                        return;
+                    }
+
+                    ResponseBean res = new ResponseBean();
+                    try {
+                        handler.handle(req, res);
+                    } catch (Throwable e) {
+                        sendError(ctx, INTERNAL_SERVER_ERROR);
+                        return;
+                    }
+
+                    DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, res.getContent());
+                    response.headers().setAll(res.getHeaders());
+                    Set<Cookie> cookies = res.getCookies();
+                    if (!cookies.isEmpty()) {
+                        for (Cookie cookie : cookies) {
+                            response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
+                        }
+                    }
+                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, res.getContentType());
+                    //todo json or form
+                    sendResponse(ctx, response);
                 }
             }
         }
@@ -61,58 +109,71 @@ FullHttpMessage e;e.content()
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             log.error("caught", cause);
-            Sockets.closeOnFlushed(ctx.channel());       if (ctx.channel().isActive()) {
+            if (ctx.channel().isActive()) {
                 sendError(ctx, INTERNAL_SERVER_ERROR);
             }
         }
 
         private void sendRedirect(ChannelHandlerContext ctx, String newUri) {
-            FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, FOUND, Unpooled.EMPTY_BUFFER);
+            FullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
             response.headers().set(HttpHeaderNames.LOCATION, newUri);
-
-            sendAndCleanupConnection(ctx, response);
+            sendResponse(ctx, response);
         }
 
         private void sendError(ChannelHandlerContext ctx, HttpResponseStatus status) {
-            FullHttpResponse response = new DefaultFullHttpResponse(
-                    HTTP_1_1, status, Unpooled.copiedBuffer("Failure: " + status + "\r\n", CharsetUtil.UTF_8));
+            FullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), status,
+                    Unpooled.copiedBuffer("Failure: " + status, CharsetUtil.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
-
-            sendAndCleanupConnection(ctx, response);
+            sendResponse(ctx, response);
         }
 
-        /**
-         * If Keep-Alive is disabled, attaches "Connection: close" header to the response
-         * and closes the connection after the response being sent.
-         */
-        private void sendAndCleanupConnection(ChannelHandlerContext ctx, FullHttpResponse response) {
-            final FullHttpRequest request = this.request;
-            final boolean keepAlive = HttpUtil.isKeepAlive(request);
+        private void sendResponse(ChannelHandlerContext ctx, FullHttpResponse response) {
+            boolean keepAlive = HttpUtil.isKeepAlive(request);
             HttpUtil.setContentLength(response, response.content().readableBytes());
-            if (!keepAlive) {
-                // We're going to close the connection as soon as the response is sent,
-                // so we should also make it clear for the client.
-                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-            } else if (request.protocolVersion().equals(HTTP_1_0)) {
+            if (keepAlive) {
                 response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+            } else {
+                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
             }
-
             ChannelFuture flushPromise = ctx.writeAndFlush(response);
-
             if (!keepAlive) {
                 // Close the connection as soon as the response is sent.
                 flushPromise.addListener(ChannelFutureListener.CLOSE);
             }
         }
-        ServerCookieDecoder
     }
 
+    interface Handler {
+        default HttpMethod[] method() {
+            return null;
+        }
+
+        default boolean isRequestBody() {
+            return false;
+        }
+
+        default boolean isResponseBody() {
+            return false;
+        }
+
+        void handle(RequestBean request, ResponseBean response);
+    }
+
+    final ServerBootstrap bootstrap;
+    final Map<String, Handler> mapping = new ConcurrentHashMap<>();
+
     public HttpServer() {
-        Sockets.serverBootstrap(channel -> {
+        bootstrap = Sockets.serverBootstrap(channel -> {
             channel.pipeline().addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
                     new HttpContentCompressor(),
-                    new ChunkedWriteHandler());
+                    new ChunkedWriteHandler(),
+                    new ServerHandler());
         });
+    }
+
+    @Override
+    protected void freeObjects() {
+        Sockets.closeBootstrap(bootstrap);
     }
 }
