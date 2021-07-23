@@ -31,7 +31,6 @@ public class IOTester {
 
     final String baseDir = "D:\\download";
     final String filePathFormat = baseDir + "\\%s.txt";
-    final String KvPath = baseDir + "\\RxKv";
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @Test
@@ -47,9 +46,7 @@ public class IOTester {
 
     @Test
     public void kvIterator() {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
-        conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexGrowSize(1024 * 1024);
+        KeyValueStoreConfig conf = tstConf();
         conf.setIteratorPrefetchCount(4);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
 
@@ -69,9 +66,7 @@ public class IOTester {
 
     @Test
     public void kvZip() {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
-        conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexGrowSize(1024 * 1024);
+        KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
         kv.put(0, PersonBean.boy);
         kv.put(1, PersonBean.girl);
@@ -81,10 +76,8 @@ public class IOTester {
     }
 
     @Test
-    public void kvDb2() {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
-        conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexGrowSize(1024 * 1024);
+    public void kvDbAsync() {
+        KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         int loopCount = 10000;
         TestUtil.invokeAsync("kvdb", i -> {
@@ -100,14 +93,13 @@ public class IOTester {
             }
             assert val.equals(newGet);
         }, loopCount);
+
         kv.close();
     }
 
     @Test
     public void kvDb() {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(KvPath);
-        conf.setLogGrowSize(1024 * 1024 * 4);
-        conf.setIndexGrowSize(1024 * 1024);
+        KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
         int loopCount = 100, removeK = 99;
@@ -148,15 +140,31 @@ public class IOTester {
         log.info("remove {} {}", removeK, kv.remove(removeK));
         assert kv.size() == removeK;
 
-        int mk = 1001, mk2 = 1002;
+        int mk = 1001, mk2 = 1002, mk3 = 1003;
+
+        kv.put(mk, null);
+        assert kv.get(mk) == null;
+
         kv.put(mk2, "a");
         log.info("remove {} {}", mk2, kv.remove(mk2, "a"));
 
-//        kv.put(mk, null);
-//        String s = kv.get(mk);
-//        assert s == null;
+        assert kv.get(mk3) == null;
+        kv.putBehind(mk3, "1");
+        sleep(2000);
+        assert kv.get(mk3).equals("1");
+        kv.putBehind(mk3, "2");
+        assert kv.get(mk3).equals("2");
+        kv.putBehind(mk3, "3");
+        sleep(2000);
 
         kv.close();
+    }
+
+    private KeyValueStoreConfig tstConf() {
+        KeyValueStoreConfig conf = KeyValueStoreConfig.defaultConfig();
+        conf.setLogGrowSize(1024 * 1024);
+        conf.setIndexGrowSize(1024 * 32);
+        return conf;
     }
 
     @SneakyThrows

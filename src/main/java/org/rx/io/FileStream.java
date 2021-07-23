@@ -9,6 +9,7 @@ import org.rx.bean.SUID;
 import org.rx.core.Lazy;
 import org.rx.util.function.TripleFunc;
 
+import javax.activation.MimetypesFileTypeMap;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -77,6 +78,11 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Override
     public String getName() {
         return FilenameUtils.getName(getPath());
+    }
+
+    public String getContentType() {
+        MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
+        return mimeTypesMap.getContentType(getPath());
     }
 
     @Override

@@ -78,6 +78,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
             timeout.cancel();
         }
         timeout = timer.setTimeout(this::consume, writeDelayed);
+        log.debug("offer {} {} delay={}", posKey, writeVal, writeDelayed);
     }
 
     public boolean replace(@NonNull K posKey, V writeVal) {
@@ -110,6 +111,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
             }
             Tuple<V, BiAction<V>> tuple = entry.getValue();
             quietly(() -> tuple.right.invoke(tuple.left));
+            log.debug("consume {} {}", entry.getKey(), tuple.left);
             size--;
         }
     }
