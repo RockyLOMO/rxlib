@@ -1,5 +1,6 @@
 package org.rx.net.http;
 
+import io.netty.handler.codec.http.HttpHeaderNames;
 import lombok.Getter;
 import lombok.Setter;
 import okhttp3.*;
@@ -16,7 +17,7 @@ public class AuthenticProxy extends Proxy {
     public AuthenticProxy(Type type, SocketAddress sa, String username, String password) {
         super(type, sa);
         authenticator = (route, response) -> {
-            String name = HttpHeaders.PROXY_AUTHORIZATION;
+            String name = HttpHeaderNames.PROXY_AUTHORIZATION.toString();
             if (directOnFail && response.request().header(name) != null) {
                 return null;
             }

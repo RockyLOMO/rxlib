@@ -1,5 +1,8 @@
 package org.rx.net.http;
 
+import io.netty.handler.codec.http.DefaultHttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaders;
 import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -372,7 +375,7 @@ public class HttpClient {
     //不是线程安全
     private final OkHttpClient client;
     @Getter
-    private final HttpHeaders headers = new HttpHeaders();
+    private final HttpHeaders headers = new DefaultHttpHeaders();
     private ResponseContent responseContent;
 
     public HttpClient() {
@@ -380,20 +383,18 @@ public class HttpClient {
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        headers.setUserAgent(App.getConfig().getNetUserAgent());
+        headers.set(HttpHeaderNames.USER_AGENT, App.getConfig().getNetUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
-            headers.setCookie(rawCookie);
+            headers.set(HttpHeaderNames.COOKIE, rawCookie);
         }
         client = createClient(timeoutMillis, cookieJar, proxy);
     }
 
     private Request.Builder createRequest(String url) {
         Request.Builder builder = new Request.Builder().url(url);
-        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-            for (String val : entry.getValue()) {
-                builder.addHeader(entry.getKey(), val);
-            }
+        for (Map.Entry<String, String> entry : headers) {
+            builder.addHeader(entry.getKey(), entry.getValue());
         }
         return builder;
     }
@@ -486,9 +487,12 @@ public class HttpClient {
 
     @SneakyThrows
     public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
-        Map<String, List<String>> headers = NQuery.of(Collections.list(servletRequest.getHeaderNames())).toMap(p -> p, p -> Collections.list(servletRequest.getHeaders(p)));
-        headers.remove("host");
-        getHeaders().putAll(headers);
+        for (String n : Collections.list(servletRequest.getHeaderNames())) {
+            if ("host".equals(n)) {
+                continue;
+            }
+            getHeaders().set(n, servletRequest.getHeader(n));
+        }
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {

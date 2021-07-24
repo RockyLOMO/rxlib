@@ -1,23 +1,28 @@
 package org.rx.test;
 
+import com.alibaba.fastjson.JSONObject;
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.http.QueryStringEncoder;
+import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.MapUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
 import org.rx.bean.DateTime;
+import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.core.App;
 import org.rx.core.EventArgs;
+import org.rx.core.ManualResetEvent;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.HttpClient;
-import org.rx.net.http.RestClient;
+import org.rx.net.http.*;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
@@ -32,6 +37,7 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -401,6 +407,69 @@ public class SocksTester {
         bytes = Bytes.getBytes(b);
         System.out.println(Arrays.toString(bytes));
         assert Bytes.getLong(bytes, 0) == b;
+    }
+
+    @SneakyThrows
+    @Test
+    public void httpServer() {
+        ManualResetEvent wait = new ManualResetEvent();
+        Map<String, Object> qs = new HashMap<>();
+        qs.put("a", "1");
+        qs.put("b", "乐之");
+
+        Map<String, Object> f = new HashMap<>();
+        f.put("a", "1");
+        f.put("b", "乐之");
+
+        Map<String, IOStream<?, ?>> fi = new HashMap<>();
+        fi.put("a", IOStream.wrap("1.dat", new byte[]{1, 2, 3, 4, 5, 6, 7, 8}));
+
+        String j = "{\"a\":1,\"b\":\"乐之\"}";
+
+        String hbody = "<html><body>hello world</body></html>";
+        String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
+
+        HttpServer server = new HttpServer(8081);
+        server.requestMapping("/api", (request, response) -> {
+            MultiValueMap<String, String> queryString = request.getQueryString();
+            for (Map.Entry<String, Object> entry : qs.entrySet()) {
+                assert entry.getValue().equals(queryString.getFirst(entry.getKey()));
+            }
+
+            MultiValueMap<String, String> form = request.getForm();
+            for (Map.Entry<String, Object> entry : f.entrySet()) {
+                assert entry.getValue().equals(form.getFirst(entry.getKey()));
+            }
+
+            MultiValueMap<String, FileUpload> files = request.getFiles();
+            for (Map.Entry<String, IOStream<?, ?>> entry : fi.entrySet()) {
+                FileUpload fileUpload = files.getFirst(entry.getKey());
+                try {
+                    org.rx.core.Arrays.equals(fileUpload.get(), entry.getValue().toArray());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            response.htmlBody(hbody);
+        }).requestMapping("/json", (request, response) -> {
+            String json = request.jsonBody();
+            assert j.equals(json);
+
+            response.jsonBody(jbody);
+
+            wait.set();
+        });
+
+        HttpClient client = new HttpClient();
+        assert hbody.equals(client.post(HttpClient.buildQueryString("http://127.0.0.1:8081/api", qs), f, fi).asString());
+
+        String resJson = client.postJson("http://127.0.0.1:8081/json", j).asString();
+        System.out.println(jbody);
+        System.out.println(resJson);
+        assert jbody.equals(resJson);
+
+        wait.waitOne();
     }
 
     @Test

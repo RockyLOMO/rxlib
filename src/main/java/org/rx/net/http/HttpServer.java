@@ -8,19 +8,20 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.http.cookie.Cookie;
-import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
+import io.netty.handler.codec.http.multipart.*;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.util.CharsetUtil;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
+import org.rx.core.Strings;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
@@ -29,6 +30,7 @@ import static io.netty.handler.codec.http.HttpResponseStatus.*;
 public class HttpServer extends Disposable {
     class ServerHandler extends SimpleChannelInboundHandler<HttpObject> {
         HttpRequest request;
+        HttpPostRequestDecoder decoder;
         Handler handler;
         RequestBean req;
 
@@ -41,8 +43,8 @@ public class HttpServer extends Disposable {
                     sendError(ctx, BAD_REQUEST);
                     return;
                 }
-                URI uri = new URI(request.uri());
-                handler = mapping.get(uri.getPath());
+                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(request.uri());
+                handler = mapping.get(queryStringDecoder.path());
                 if (handler == null) {
                     sendError(ctx, NOT_FOUND);
                     return;
@@ -56,61 +58,94 @@ public class HttpServer extends Disposable {
                 req = new RequestBean(request.uri(), request.method());
                 req.getHeaders().setAll(request.headers());
 
-                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(request.uri());
                 Map<String, List<String>> params = queryStringDecoder.parameters();
                 if (!params.isEmpty()) {
                     for (Map.Entry<String, List<String>> p : params.entrySet()) {
-                        String key = p.getKey();
                         for (String val : p.getValue()) {
-                            req.getQueryString().put(key, val);
+                            req.getQueryString().put(p.getKey(), val);
                         }
+                    }
+                }
+
+                if (Strings.startsWith(req.getContentType(), HttpHeaderValues.MULTIPART_FORM_DATA.toString())
+                        || Strings.startsWith(req.getContentType(), HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED.toString())) {
+                    try {
+                        decoder = new HttpPostRequestDecoder(factory, request);
+                    } catch (HttpPostRequestDecoder.ErrorDataDecoderException e) {
+                        log.error("post decode", e);
+                        sendError(ctx, BAD_REQUEST);
+                        return;
                     }
                 }
             }
 
             if (msg instanceof HttpContent) {
-                HttpContent httpContent = (HttpContent) msg;
-                ByteBuf content = httpContent.content();
-                if (content.isReadable()) {
-                    //todo isjson or form
-                    req.setContent(content);
+                if (req == null) {
+                    return;
                 }
 
-                if (msg instanceof LastHttpContent) {
-                    LastHttpContent trailer = (LastHttpContent) msg;
-                    if (!trailer.decoderResult().isSuccess()) {
+                HttpContent content = (HttpContent) msg;
+                if (decoder != null) {
+                    try {
+                        decoder.offer(content);
+                    } catch (HttpPostRequestDecoder.ErrorDataDecoderException e) {
+                        log.error("post decode", e);
                         sendError(ctx, BAD_REQUEST);
                         return;
                     }
+
+                    try {
+                        while (decoder.hasNext()) {
+                            InterfaceHttpData httpData = decoder.next();
+                            if (httpData != null) {
+                                if (httpData.getHttpDataType().equals(InterfaceHttpData.HttpDataType.Attribute)) {
+                                    Attribute attr = (Attribute) httpData;
+                                    MultiValueMap<String, String> form = req.getForm();
+                                    if (form == null) {
+                                        req.setForm(form = new MultiValueMap<>());
+                                    }
+                                    form.put(attr.getName(), attr.getValue());
+                                } else if (httpData.getHttpDataType().equals(InterfaceHttpData.HttpDataType.FileUpload)) {
+                                    FileUpload file = (FileUpload) httpData;
+                                    MultiValueMap<String, FileUpload> files = req.getFiles();
+                                    if (files == null) {
+                                        req.setFiles(files = new MultiValueMap<>());
+                                    }
+                                    files.put(file.getName(), file);
+                                }
+                            }
+                        }
+                    } catch (HttpPostRequestDecoder.EndOfDataDecoderException e) {
+                        log.debug("EndOfData", e);
+                    }
+                } else {
+                    ByteBuf buf = req.getContent();
+                    if (buf == null) {
+                        req.setContent(buf = Bytes.directBuffer());
+                    }
+                    buf.writeBytes(content.content());
+                }
+
+                if (msg instanceof LastHttpContent) {
+//                    LastHttpContent trailer = (LastHttpContent) msg;
+//                    if (!trailer.decoderResult().isSuccess()) {
+//                        sendError(ctx, BAD_REQUEST);
+//                        return;
+//                    }
 
                     ResponseBean res = new ResponseBean();
                     try {
                         handler.handle(req, res);
                     } catch (Throwable e) {
+                        log.error("handle", e);
                         sendError(ctx, INTERNAL_SERVER_ERROR);
                         return;
                     }
 
                     DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, res.getContent());
                     response.headers().setAll(res.getHeaders());
-                    Set<Cookie> cookies = res.getCookies();
-                    if (!cookies.isEmpty()) {
-                        for (Cookie cookie : cookies) {
-                            response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
-                        }
-                    }
-                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, res.getContentType());
-                    //todo json or form
                     sendResponse(ctx, response);
                 }
-            }
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            log.error("caught", cause);
-            if (ctx.channel().isActive()) {
-                sendError(ctx, INTERNAL_SERVER_ERROR);
             }
         }
 
@@ -135,45 +170,64 @@ public class HttpServer extends Disposable {
             } else {
                 response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
             }
-            ChannelFuture flushPromise = ctx.writeAndFlush(response);
+            ChannelFuture future = ctx.writeAndFlush(response);
             if (!keepAlive) {
-                // Close the connection as soon as the response is sent.
-                flushPromise.addListener(ChannelFutureListener.CLOSE);
+                future.addListener(ChannelFutureListener.CLOSE);
+            }
+
+            if (decoder != null) {
+                decoder.destroy();
+                decoder = null;
+            }
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            if (decoder != null) {
+                decoder.cleanFiles();
+            }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            log.error("caught", cause);
+            if (ctx.channel().isActive()) {
+                sendError(ctx, INTERNAL_SERVER_ERROR);
             }
         }
     }
 
-    interface Handler {
+    public interface Handler {
         default HttpMethod[] method() {
             return null;
-        }
-
-        default boolean isRequestBody() {
-            return false;
-        }
-
-        default boolean isResponseBody() {
-            return false;
         }
 
         void handle(RequestBean request, ResponseBean response);
     }
 
-    final ServerBootstrap bootstrap;
+    private static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
+    final ServerBootstrap serverBootstrap;
+    @Getter
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
 
-    public HttpServer() {
-        bootstrap = Sockets.serverBootstrap(channel -> {
+    public HttpServer(int port) {
+        serverBootstrap = Sockets.serverBootstrap(channel -> {
             channel.pipeline().addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
                     new HttpContentCompressor(),
                     new ChunkedWriteHandler(),
                     new ServerHandler());
         });
+        serverBootstrap.bind(port).addListener(Sockets.logBind(port));
     }
 
     @Override
     protected void freeObjects() {
-        Sockets.closeBootstrap(bootstrap);
+        Sockets.closeBootstrap(serverBootstrap);
+    }
+
+    public HttpServer requestMapping(String path, Handler handler) {
+        mapping.put(path, handler);
+        return this;
     }
 }

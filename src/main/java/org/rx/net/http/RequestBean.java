@@ -5,14 +5,17 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
+import io.netty.handler.codec.http.multipart.FileUpload;
+import io.netty.util.CharsetUtil;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Strings;
-import org.rx.io.IOStream;
 
 import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.rx.core.App.isNull;
@@ -26,11 +29,11 @@ public class RequestBean {
     private final Set<Cookie> cookies = cookiesLazy();
     private final MultiValueMap<String, String> queryString = new MultiValueMap<>();
 
-    @Getter(lazy = true)
-    private final MultiValueMap<String, String> form = new MultiValueMap<>();
-    @Getter(lazy = true)
-    private final MultiValueMap<String, IOStream<?, ?>> files = new MultiValueMap<>();
-    @Setter
+    @Setter(AccessLevel.PROTECTED)
+    private MultiValueMap<String, String> form;
+    @Setter(AccessLevel.PROTECTED)
+    private MultiValueMap<String, FileUpload> files;
+    @Setter(AccessLevel.PROTECTED)
     private ByteBuf content;
 
     private Set<Cookie> cookiesLazy() {
@@ -41,8 +44,17 @@ public class RequestBean {
         return ServerCookieDecoder.STRICT.decode(cookie);
     }
 
+    public String getContentType() {
+        return headers.get(HttpHeaderNames.CONTENT_TYPE);
+    }
+
     public RequestBean(@NonNull String uri, HttpMethod method) {
         this.uri = uri;
         this.method = isNull(method, HttpMethod.GET);
+    }
+
+    public String jsonBody() {
+        Objects.requireNonNull(content);
+        return content.toString(CharsetUtil.UTF_8);
     }
 }
