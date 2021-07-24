@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
+import org.rx.core.Strings;
 import org.rx.core.exception.ApplicationException;
 
 import java.io.*;
@@ -33,14 +34,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public static IOStream<?, ?> wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
-        stream.setName(name);
+        stream.setName(isNull(name, Strings.EMPTY));
         stream.write(data);
         return stream.rewind();
     }
 
     public static IOStream<?, ?> wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
-        stream.setName(name);
+        stream.setName(isNull(name, Strings.EMPTY));
         stream.write(in);
         return stream.rewind();
     }

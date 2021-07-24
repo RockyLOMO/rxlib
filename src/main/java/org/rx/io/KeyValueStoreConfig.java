@@ -43,4 +43,9 @@ public class KeyValueStoreConfig {
 
     private long writeBehindDelayed = 1000;
     private int writeBehindHighWaterMark = 8;
+
+    private int apiPort = -1;
+    private String apiPassword;
+    private boolean apiSsl;
+    private boolean apiReturnJson;
 }

@@ -10,8 +10,6 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
@@ -29,7 +27,6 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -72,7 +69,7 @@ public class HttpClient {
         @Override
         public RequestBody toBody() {
             if (MapUtils.isEmpty(files)) {
-                String formString = buildQueryString(null, forms);
+                String formString = buildUrl(null, forms);
                 if (!Strings.isNullOrEmpty(formString)) {
                     formString = formString.substring(1);
                 }
@@ -94,14 +91,13 @@ public class HttpClient {
                         continue;
                     }
                     builder.addFormDataPart(entry.getKey(), stream.getName(), new RequestBody() {
-                        @Nullable
                         @Override
                         public MediaType contentType() {
                             return MediaType.parse(Files.getMediaTypeFromName(stream.getName()));
                         }
 
                         @Override
-                        public void writeTo(@NotNull BufferedSink bufferedSink) throws IOException {
+                        public void writeTo(BufferedSink bufferedSink) {
                             stream.read(bufferedSink.outputStream());
                         }
                     });
@@ -193,6 +189,22 @@ public class HttpClient {
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
     private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), App.getConfig().getNetKeepaliveSeconds(), TimeUnit.SECONDS);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
+    private static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
+        final X509Certificate[] empty = new X509Certificate[0];
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return empty;
+        }
+    };
 
     static {
 //        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2Hello");
@@ -223,10 +235,10 @@ public class HttpClient {
 
     public static void saveRawCookies(@NonNull String url, @NonNull String raw) {
         HttpUrl httpUrl = HttpUrl.get(url);
-        COOKIE_CONTAINER.saveFromResponse(httpUrl, parseRawCookie(httpUrl, raw));
+        COOKIE_CONTAINER.saveFromResponse(httpUrl, decodeCookie(httpUrl, raw));
     }
 
-    public static String toRawCookie(List<Cookie> cookies) {
+    public static String encodeCookie(List<Cookie> cookies) {
         if (cookies == null) {
             return "";
         }
@@ -234,8 +246,7 @@ public class HttpClient {
         return String.join("; ", NQuery.of(cookies).select(p -> p.name() + "=" + p.value()));
     }
 
-    @SneakyThrows
-    public static List<Cookie> parseRawCookie(@NonNull HttpUrl httpUrl, @NonNull String raw) {
+    public static List<Cookie> decodeCookie(@NonNull HttpUrl httpUrl, @NonNull String raw) {
         List<Cookie> cookies = new ArrayList<>();
         String domain = httpUrl.topPrivateDomain();
         for (String pair : raw.split(Pattern.quote("; "))) {
@@ -252,8 +263,57 @@ public class HttpClient {
         return cookies;
     }
 
+    public static String buildUrl(String url, Map<String, Object> queryString) {
+        if (url == null) {
+            url = "";
+        }
+        if (queryString == null) {
+            return url;
+        }
+
+        Map<String, Object> query = (Map) decodeQueryString(url);
+        query.putAll(queryString);
+        int i = url.indexOf("?");
+        if (i != -1) {
+            url = url.substring(0, i);
+        }
+        StringBuilder sb = new StringBuilder(url);
+        for (Map.Entry<String, Object> entry : query.entrySet()) {
+            Object val = entry.getValue();
+            if (val == null) {
+                continue;
+            }
+            sb.append(sb.length() == url.length() ? "?" : "&")
+                    .append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
+        }
+        return sb.toString();
+    }
+
     @SneakyThrows
-    public static Map<String, String> parseOriginalHeader(String raw) {
+    public static Map<String, String> decodeQueryString(String url) {
+        Map<String, String> params = new LinkedHashMap<>();
+        if (Strings.isEmpty(url)) {
+            return params;
+        }
+
+        int i = url.indexOf("?");
+        if (i != -1) {
+            url = url.substring(i + 1);
+        }
+        String[] pairs = url.split("&");
+        for (String pair : pairs) {
+            int idx = pair.indexOf("=");
+            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
+            String value = idx > 0 && pair.length() > idx + 1
+                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name())
+                    : null;
+            params.put(key, value);
+        }
+        return params;
+    }
+
+    @SneakyThrows
+    public static Map<String, String> decodeHeader(String raw) {
         Map<String, String> map = new LinkedHashMap<>();
         if (raw == null) {
             return map;
@@ -290,78 +350,15 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public static Map<String, String> parseQueryString(String url) {
-        Map<String, String> params = new LinkedHashMap<>();
-        if (Strings.isEmpty(url)) {
-            return params;
-        }
-
-        int i = url.indexOf("?");
-        if (i != -1) {
-            url = url.substring(i + 1);
-        }
-        String[] pairs = url.split("&");
-        for (String pair : pairs) {
-            int idx = pair.indexOf("=");
-            String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
-            String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name())
-                    : null;
-            params.put(key, value);
-        }
-        return params;
-    }
-
-    public static String buildQueryString(String url, Map<String, Object> params) {
-        if (url == null) {
-            url = "";
-        }
-        if (params == null) {
-            return url;
-        }
-
-        Map<String, Object> query = (Map) parseQueryString(url);
-        query.putAll(params);
-        int i = url.indexOf("?");
-        if (i != -1) {
-            url = url.substring(0, i);
-        }
-        StringBuilder sb = new StringBuilder(url);
-        for (Map.Entry<String, Object> entry : query.entrySet()) {
-            Object val = entry.getValue();
-            if (val == null) {
-                continue;
-            }
-            sb.append(sb.length() == url.length() ? "?" : "&")
-                    .append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
-        }
-        return sb.toString();
-    }
-
-    @SneakyThrows
     private static OkHttpClient createClient(int timeoutMillis, boolean cookieJar, Proxy proxy) {
-        X509TrustManager trustManager = new X509TrustManager() {
-            @Override
-            public void checkClientTrusted(X509Certificate[] chain, String authType) {
-            }
-
-            @Override
-            public void checkServerTrusted(X509Certificate[] chain, String authType) {
-            }
-
-            @Override
-            public X509Certificate[] getAcceptedIssuers() {
-                return new X509Certificate[0];
-            }
-        };
         SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+        sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL)
                 .retryOnConnectionFailure(false)
-                .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
+                .sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
                 .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-//                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .proxy(proxy)
                 .proxyAuthenticator(authenticator);

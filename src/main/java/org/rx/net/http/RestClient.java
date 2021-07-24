@@ -68,7 +68,7 @@ public final class RestClient {
                 } else {
                     Map<String, Object> data = getFormData.invoke();
                     args.getParameters()[0] = data;
-                    responseText = args.proceed(() -> client.get(HttpClient.buildQueryString(reqUrl, data)).asString());
+                    responseText = args.proceed(() -> client.get(HttpClient.buildUrl(reqUrl, data)).asString());
                 }
                 if (checkResponse != null && !checkResponse.invoke(responseText)) {
                     throw new InvalidException("Response status error");

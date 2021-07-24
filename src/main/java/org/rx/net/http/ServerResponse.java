@@ -18,7 +18,7 @@ import static org.rx.core.App.toJsonString;
 
 @RequiredArgsConstructor
 @Getter
-public class ResponseBean {
+public class ServerResponse {
     public static final AsciiString APPLICATION_JSON = AsciiString.cached("application/json; charset=UTF-8");
     public static final AsciiString TEXT_HTML = AsciiString.cached("text/html; charset=UTF-8");
     private final HttpHeaders headers = new DefaultHttpHeaders();

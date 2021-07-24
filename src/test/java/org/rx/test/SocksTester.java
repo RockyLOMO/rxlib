@@ -1,15 +1,11 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSONObject;
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.http.QueryStringEncoder;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.MapUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
-import org.rx.bean.DateTime;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
@@ -462,7 +458,7 @@ public class SocksTester {
         });
 
         HttpClient client = new HttpClient();
-        assert hbody.equals(client.post(HttpClient.buildQueryString("https://127.0.0.1:8081/api", qs), f, fi).asString());
+        assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).asString());
 
         String resJson = client.postJson("https://127.0.0.1:8081/json", j).asString();
         System.out.println(jbody);
@@ -489,14 +485,14 @@ public class SocksTester {
     @Test
     public void queryString() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = (Map) HttpClient.parseQueryString(url);
+        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
         assert map.get("userId").equals("ft");
         assert map.get("type").equals("1");
 
         map.put("userId", "newId");
         map.put("ok", "1");
-        System.out.println(HttpClient.buildQueryString(url, map));
-        System.out.println(HttpClient.buildQueryString("http://f-li.cn/blog/1.html", map));
+        System.out.println(HttpClient.buildUrl(url, map));
+        System.out.println(HttpClient.buildUrl("http://f-li.cn/blog/1.html", map));
     }
 
     @Test

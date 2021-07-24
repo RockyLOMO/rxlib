@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.AbstractSequentialIterator;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
@@ -9,6 +10,12 @@ import org.apache.commons.collections4.IteratorUtils;
 import org.rx.bean.$;
 import org.rx.bean.AbstractMap;
 import org.rx.core.Disposable;
+import org.rx.core.Strings;
+import org.rx.core.exception.ExceptionLevel;
+import org.rx.core.exception.InvalidException;
+import org.rx.net.http.HttpServer;
+import org.rx.net.http.ServerRequest;
+import org.rx.util.function.BiAction;
 
 import java.io.*;
 import java.util.*;
@@ -98,6 +105,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     final HashFileIndexer<TK> indexer;
     final Serializer serializer;
     final WriteBehindQueue<TK, TV> queue;
+    final HttpServer apiServer;
 
     File getParentDirectory() {
         parentDirectory.mkdirs();
@@ -163,12 +171,109 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         queue = new WriteBehindQueue<>(config.getWriteBehindDelayed(), config.getWriteBehindHighWaterMark());
+
+        if (config.getApiPort() > 0) {
+            apiServer = new HttpServer(config.getApiPort(), config.isApiSsl())
+                    .requestMapping("/get", ((request, response) -> {
+                        apiCheck(request);
+                        JSONObject reqJson = toJsonObject(request.jsonBody());
+                        JSONObject resJson = new JSONObject();
+
+                        Object key = reqJson.get("key");
+                        if (key == null) {
+                            resJson.put("code", 1);
+                            response.jsonBody(resJson);
+                            return;
+                        }
+                        TK k = apiDeserialize(key);
+
+                        apiSerialize(resJson, get(k));
+                        response.jsonBody(resJson);
+                    })).requestMapping("/set", (request, response) -> {
+                        apiCheck(request);
+                        JSONObject reqJson = toJsonObject(request.jsonBody());
+                        JSONObject resJson = new JSONObject();
+
+                        Object key = reqJson.get("key");
+                        if (key == null) {
+                            resJson.put("code", 1);
+                            response.jsonBody(resJson);
+                            return;
+                        }
+                        TK k = apiDeserialize(key);
+
+                        Object value = reqJson.get("value"), concurrentValue = reqJson.get("concurrentValue");
+                        if (value == null) {
+                            if (concurrentValue == null) {
+                                apiSerialize(resJson, remove(k));
+                            } else {
+                                apiSerialize(resJson, remove(k, apiDeserialize(concurrentValue)));
+                            }
+                            response.jsonBody(resJson);
+                            return;
+                        }
+
+                        TV v = apiDeserialize(value);
+                        if (concurrentValue == null) {
+                            byte flag = isNull(reqJson.getByte("flag"), (byte) 0);
+                            switch (flag) {
+                                case 1:
+                                    apiSerialize(resJson, get(k));
+                                    putBehind(k, v);
+                                    break;
+                                case 2:
+                                    apiSerialize(resJson, putIfAbsent(k, v));
+                                    break;
+                                case 3:
+                                    apiSerialize(resJson, replace(k, v));
+                                    break;
+                                default:
+                                    apiSerialize(resJson, put(k, v));
+                                    break;
+                            }
+                        } else {
+                            apiSerialize(resJson, replace(k, apiDeserialize(concurrentValue), v));
+                        }
+                        response.jsonBody(resJson);
+                    });
+        } else {
+            apiServer = null;
+        }
     }
 
     @Override
     protected void freeObjects() {
         indexer.close();
         wal.close();
+    }
+
+    private void apiCheck(ServerRequest req) {
+        if (Strings.isEmpty(config.getApiPassword())) {
+            return;
+        }
+        if (!eq(config.getApiPassword(), req.getHeaders().get("apiPassword"))) {
+            throw new InvalidException("%s auth fail", req.getRemoteEndpoint()).level(ExceptionLevel.USER_OPERATION);
+        }
+    }
+
+    private <T> T apiDeserialize(Object obj) {
+        if (obj instanceof byte[]) {
+            byte[] bytes = (byte[]) obj;
+            return serializer.deserialize(IOStream.wrap(null, bytes));
+        }
+        return (T) obj;
+    }
+
+    private void apiSerialize(JSONObject resJson, Object v) {
+        resJson.put("code", 0);
+        if (v == null) {
+            return;
+        }
+        if (config.isApiReturnJson()) {
+            resJson.put("value", toJsonString(v));
+        } else {
+            resJson.put("value", serializer.serialize(v).toArray());
+        }
     }
 
     protected void write(TK k, TV v) {

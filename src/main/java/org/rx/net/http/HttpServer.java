@@ -21,11 +21,13 @@ import org.rx.core.Strings;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
+import static org.rx.core.App.isNull;
 
 @Slf4j
 public class HttpServer extends Disposable {
@@ -33,7 +35,7 @@ public class HttpServer extends Disposable {
         HttpRequest request;
         HttpPostRequestDecoder decoder;
         Handler handler;
-        RequestBean req;
+        ServerRequest req;
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
@@ -56,7 +58,7 @@ public class HttpServer extends Disposable {
                     return;
                 }
 
-                req = new RequestBean(request.uri(), request.method());
+                req = new ServerRequest((InetSocketAddress) ctx.channel().remoteAddress(), request.uri(), request.method());
                 req.getHeaders().setAll(request.headers());
 
                 Map<String, List<String>> params = queryStringDecoder.parameters();
@@ -134,7 +136,7 @@ public class HttpServer extends Disposable {
 //                        return;
 //                    }
 
-                    ResponseBean res = new ResponseBean();
+                    ServerResponse res = new ServerResponse();
                     try {
                         handler.handle(req, res);
                     } catch (Throwable e) {
@@ -143,7 +145,7 @@ public class HttpServer extends Disposable {
                         return;
                     }
 
-                    DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, res.getContent());
+                    DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, isNull(res.getContent(), Unpooled.EMPTY_BUFFER));
                     response.headers().setAll(res.getHeaders());
                     sendResponse(ctx, response);
                 }
@@ -203,18 +205,19 @@ public class HttpServer extends Disposable {
             return null;
         }
 
-        void handle(RequestBean request, ResponseBean response);
+        void handle(ServerRequest request, ServerResponse response) throws Throwable;
     }
 
+    public static final String BASE_64_PREFIX = "base64,";
     private static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
     final ServerBootstrap serverBootstrap;
     @Getter
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
 
     @SneakyThrows
-    public HttpServer(int port, boolean SSL) {
+    public HttpServer(int port, boolean ssl) {
         final SslContext sslCtx;
-        if (SSL) {
+        if (ssl) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         } else {

@@ -14,6 +14,7 @@ import lombok.Setter;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Strings;
 
+import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -21,7 +22,8 @@ import java.util.Set;
 import static org.rx.core.App.isNull;
 
 @Getter
-public class RequestBean {
+public final class ServerRequest {
+    private final InetSocketAddress remoteEndpoint;
     private final String uri;
     private final HttpMethod method;
     private final HttpHeaders headers = new DefaultHttpHeaders();
@@ -48,7 +50,8 @@ public class RequestBean {
         return headers.get(HttpHeaderNames.CONTENT_TYPE);
     }
 
-    public RequestBean(@NonNull String uri, HttpMethod method) {
+    public ServerRequest(@NonNull InetSocketAddress remoteEndpoint, @NonNull String uri, HttpMethod method) {
+        this.remoteEndpoint = remoteEndpoint;
         this.uri = uri;
         this.method = isNull(method, HttpMethod.GET);
     }
