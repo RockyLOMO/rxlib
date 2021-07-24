@@ -3,15 +3,16 @@ package org.rx.net.http;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.multipart.*;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.util.CharsetUtil;
 import lombok.Getter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
@@ -210,9 +211,21 @@ public class HttpServer extends Disposable {
     @Getter
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
 
-    public HttpServer(int port) {
-        serverBootstrap = Sockets.serverBootstrap(channel -> {
-            channel.pipeline().addLast(new HttpServerCodec(),
+    @SneakyThrows
+    public HttpServer(int port, boolean SSL) {
+        final SslContext sslCtx;
+        if (SSL) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        } else {
+            sslCtx = null;
+        }
+        serverBootstrap = Sockets.serverBootstrap(ch -> {
+            ChannelPipeline p = ch.pipeline();
+            if (sslCtx != null) {
+                p.addLast(sslCtx.newHandler(ch.alloc()));
+            }
+            p.addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
                     new HttpContentCompressor(),
                     new ChunkedWriteHandler(),

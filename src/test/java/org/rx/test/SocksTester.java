@@ -429,7 +429,7 @@ public class SocksTester {
         String hbody = "<html><body>hello world</body></html>";
         String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
 
-        HttpServer server = new HttpServer(8081);
+        HttpServer server = new HttpServer(8081,true);
         server.requestMapping("/api", (request, response) -> {
             MultiValueMap<String, String> queryString = request.getQueryString();
             for (Map.Entry<String, Object> entry : qs.entrySet()) {
@@ -462,9 +462,9 @@ public class SocksTester {
         });
 
         HttpClient client = new HttpClient();
-        assert hbody.equals(client.post(HttpClient.buildQueryString("http://127.0.0.1:8081/api", qs), f, fi).asString());
+        assert hbody.equals(client.post(HttpClient.buildQueryString("https://127.0.0.1:8081/api", qs), f, fi).asString());
 
-        String resJson = client.postJson("http://127.0.0.1:8081/json", j).asString();
+        String resJson = client.postJson("https://127.0.0.1:8081/json", j).asString();
         System.out.println(jbody);
         System.out.println(resJson);
         assert jbody.equals(resJson);

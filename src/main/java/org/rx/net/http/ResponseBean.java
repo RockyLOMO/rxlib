@@ -32,7 +32,7 @@ public class ResponseBean {
     }
 
     @Setter
-    private ByteBuf content = Unpooled.EMPTY_BUFFER;
+    private ByteBuf content;
 
     public void jsonBody(Object json) {
         setContentType(APPLICATION_JSON.toString());

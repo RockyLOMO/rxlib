@@ -361,7 +361,7 @@ public class HttpClient {
                 .retryOnConnectionFailure(false)
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager).hostnameVerifier((s, sslSession) -> true)
                 .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+//                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .proxy(proxy)
                 .proxyAuthenticator(authenticator);
