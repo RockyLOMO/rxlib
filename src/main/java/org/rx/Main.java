@@ -57,12 +57,14 @@ public final class Main implements SocksSupport {
                 System.out.println("Invalid shadowUser arg");
                 return;
             }
+            SocksUser ssUser = new SocksUser(shadowUser.getUsername());
+            ssUser.setPassword(shadowUser.getPassword());
 
             SocksConfig backConf = new SocksConfig(port);
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
-            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, shadowUser.getUsername()) && eq(p, shadowUser.getPassword()) ? SocksUser.ANONYMOUS : null, null);
+            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS, null);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             RpcServerConfig rpcConf = new RpcServerConfig(port + 1);
@@ -129,7 +131,7 @@ public final class Main implements SocksSupport {
                 if (ipAddress != null && ipAddress.isChina()) {
                     return new DirectUpstream(dstEp);
                 }
-                return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("127.0.0.1:%s", port)));
+                return new Socks5Upstream(dstEp, directConf, new AuthenticEndpoint(String.format("rocky:202002@127.0.0.1:%s", port)));
             });
         }
 
