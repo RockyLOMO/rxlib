@@ -3,12 +3,12 @@ package org.rx.net.socks;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.traffic.ChannelTrafficShapingHandler;
 import io.netty.handler.traffic.TrafficCounter;
-import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.Setter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.net.Sockets;
+import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,9 +21,24 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     private final Authenticator authenticator;
     @Getter
-    @Setter(AccessLevel.PROTECTED)
     private SocksUser user = SocksUser.ANONYMOUS;
     private DateTime onlineTime;
+
+    public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
+        this.user = user;
+        InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
+        InetSocketAddress prevEp = remoteEp;
+        while ((prevEp = SocksSupport.ipTracer().get(prevEp)) != null) {
+
+        }
+        InetSocketAddress realEp = SocksSupport.ipTracer().get(remoteEp);
+        log.info("tracer s5 get {} => {}", remoteEp, realEp);
+        if (realEp == null) {
+            realEp = remoteEp;
+        }
+        AtomicInteger refCnt = user.getLoginIps().computeIfAbsent(realEp.getAddress(), k -> new AtomicInteger());
+        refCnt.incrementAndGet();
+    }
 
     public ProxyManageHandler(Authenticator authenticator, long checkInterval) {
         super(checkInterval);
