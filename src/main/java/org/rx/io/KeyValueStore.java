@@ -15,7 +15,6 @@ import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
-import org.rx.util.function.BiAction;
 
 import java.io.*;
 import java.util.*;
@@ -270,7 +269,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             return;
         }
         if (config.isApiReturnJson()) {
-            resJson.put("value", toJsonString(v));
+            resJson.put("value", v);
         } else {
             resJson.put("value", serializer.serialize(v).toArray());
         }

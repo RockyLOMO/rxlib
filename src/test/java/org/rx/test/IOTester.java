@@ -33,15 +33,17 @@ public class IOTester {
     final String filePathFormat = baseDir + "\\%s.txt";
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
+    @SneakyThrows
     @Test
-    public void recheck() {
-        FileStream stream = new FileStream("D:\\download\\RxKv\\index\\36");
-        stream.setPosition(700);
-        ByteBuf buf = Bytes.directBuffer();
-        int r = stream.read(buf, 12);
-        assert r == 12;
-        System.out.println(buf.readInt());
-        System.out.println(buf.readLong());
+    public void kvApi() {
+        KeyValueStoreConfig conf = tstConf();
+        conf.setApiPort(8070);
+        conf.setApiPassword("wyf");
+        conf.setApiReturnJson(true);
+        KeyValueStore<Integer, Object> kv = new KeyValueStore<>(conf);
+        kv.put(2, PersonBean.girl);
+
+        System.in.read();
     }
 
     @Test
