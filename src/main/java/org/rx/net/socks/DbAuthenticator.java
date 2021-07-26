@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import lombok.NonNull;
+import org.rx.bean.DateTime;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
@@ -8,6 +9,7 @@ import static org.rx.core.App.eq;
 
 final class DbAuthenticator implements Authenticator {
     final KeyValueStore<String, SocksUser> store;
+    final DateTime startTime = DateTime.utcNow();
 
     public int size() {
         return store.size();
@@ -33,7 +35,18 @@ final class DbAuthenticator implements Authenticator {
     @Override
     public SocksUser login(String username, String password) {
         SocksUser user = store.get(username);
-        return user != null && eq(user.getPassword(), password) ? user : null;
+        if (user == null) {
+            return null;
+        }
+        if (!eq(user.getPassword(), password)) {
+            return null;
+        }
+        if (user.getLatestLoginTime() == null || user.getLatestLoginTime().before(startTime)) {
+            user.getLoginIps().clear();
+        }
+        user.setLatestLoginTime(DateTime.utcNow());
+        save(user);
+        return user;
     }
 
     public void save(@NonNull SocksUser user) {

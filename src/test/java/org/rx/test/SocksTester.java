@@ -235,7 +235,7 @@ public class SocksTester {
     @Test
     public void ssProxy() {
         SocksConfig backConf = new SocksConfig(1082);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(null), null);
 
         DnsServer frontDnsSvr = new DnsServer(853);
         UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
@@ -246,7 +246,7 @@ public class SocksTester {
             if (dstEp.equals(loopbackDns)) {
                 return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
             }
-            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("127.0.0.1:1082"));
+            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("rocky:202002@127.0.0.1:1082"));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -425,7 +425,7 @@ public class SocksTester {
         String hbody = "<html><body>hello world</body></html>";
         String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
 
-        HttpServer server = new HttpServer(8081,true);
+        HttpServer server = new HttpServer(8081, true);
         server.requestMapping("/api", (request, response) -> {
             MultiValueMap<String, String> queryString = request.getQueryString();
             for (Map.Entry<String, Object> entry : qs.entrySet()) {
@@ -472,14 +472,6 @@ public class SocksTester {
     public void restClient() {
         HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
         System.out.println(facade.queryIp());
-    }
-
-    @Test
-    public void httpClient() {
-        HttpClient client = new HttpClient();
-//        System.out.println(client.get("https://gitee.com/rx-code/rxlib").toString());
-        System.out.println(IOStream.readString(client.get("https://f-li.cn").asStream().getReader(), StandardCharsets.UTF_8));
-        client.get("https://f-li.cn").asFile("d:\\1.html");
     }
 
     @Test

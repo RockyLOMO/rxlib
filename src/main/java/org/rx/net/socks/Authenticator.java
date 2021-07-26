@@ -3,7 +3,7 @@ package org.rx.net.socks;
 public interface Authenticator {
     Authenticator NON_AUTH = (u, p) -> SocksUser.ANONYMOUS;
 
-    static Authenticator createDbAuth(Integer apiPort) {
+    static Authenticator dbAuth(Integer apiPort) {
         return new DbAuthenticator(apiPort);
     }
 

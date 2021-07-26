@@ -62,6 +62,8 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                     return;
                 }
                 log.info("connect to backend {}[{}]", dstEndpoint, finalDestinationEp);
+
+                SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             }).channel();
         }
 

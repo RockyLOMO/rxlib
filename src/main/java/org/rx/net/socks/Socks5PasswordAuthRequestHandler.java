@@ -11,9 +11,6 @@ import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.net.InetSocketAddress;
-import java.util.concurrent.atomic.AtomicInteger;
-
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5PasswordAuthRequest> {
@@ -31,9 +28,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        AtomicInteger refCnt = user.getLoginIps().computeIfAbsent(((InetSocketAddress) ctx.channel().remoteAddress()).getAddress(), k -> new AtomicInteger());
-        refCnt.incrementAndGet();
-        ProxyManageHandler.get(ctx).setUser(user);
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.SUCCESS));
+        ProxyManageHandler.get(ctx).setUser(user, ctx);
     }
 }

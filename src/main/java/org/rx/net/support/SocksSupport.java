@@ -15,6 +15,7 @@ public interface SocksSupport {
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 5 * 1000;
+    EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<SUID, UnresolvedEndpoint> fakeDict() {
         return Cache.getInstance(Cache.DISTRIBUTED_CACHE);

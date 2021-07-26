@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import lombok.Data;
+import org.rx.bean.DateTime;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -18,6 +19,7 @@ public class SocksUser implements Serializable {
     private final String username;
     private String password;
     private final Map<InetAddress, AtomicInteger> loginIps = new ConcurrentHashMap<>();
+    private DateTime latestLoginTime;
     private final AtomicLong totalReadBytes = new AtomicLong();
     private final AtomicLong totalWriteBytes = new AtomicLong();
 

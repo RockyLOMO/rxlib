@@ -36,11 +36,13 @@ class ComboIPSearcher implements IPSearcher {
         HttpClient client = new HttpClient();
         String text = client.get(url).asString();
         if (Strings.isEmpty(text)) {
-            throw new RestClientException("No response " + url);
+            throw new RestClientException(String.format("Request:\t%s\n" +
+                    "Response:\t%s", url, text));
         }
         JSONObject json = App.toJsonObject(text);
         if (!check.test(json)) {
-            throw new RestClientException("Not success " + url);
+            throw new RestClientException(String.format("Request:\t%s\n" +
+                    "Response:\t%s", url, text));
         }
         return json;
     }

@@ -18,11 +18,8 @@ import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
-import org.rx.net.socks.Authenticator;
-import org.rx.net.socks.SocksConfig;
-import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.*;
 import org.rx.net.TransportFlags;
-import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.upstream.DirectUpstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -87,7 +84,7 @@ public final class Main implements SocksSupport {
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.createDbAuth(port + 2),
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(port + 2),
                     dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
