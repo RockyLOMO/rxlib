@@ -26,16 +26,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
         this.user = user;
-        InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
-        InetSocketAddress prevEp = remoteEp;
-        while ((prevEp = SocksSupport.ipTracer().get(prevEp)) != null) {
-
-        }
-        InetSocketAddress realEp = SocksSupport.ipTracer().get(remoteEp);
-        log.info("tracer s5 get {} => {}", remoteEp, realEp);
-        if (realEp == null) {
-            realEp = remoteEp;
-        }
+        InetSocketAddress realEp = (InetSocketAddress) SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
         AtomicInteger refCnt = user.getLoginIps().computeIfAbsent(realEp.getAddress(), k -> new AtomicInteger());
         refCnt.incrementAndGet();
     }

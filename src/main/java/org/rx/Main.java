@@ -84,7 +84,7 @@ public final class Main implements SocksSupport {
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.createDbAuth(port + 2),
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(port + 2),
                     dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);

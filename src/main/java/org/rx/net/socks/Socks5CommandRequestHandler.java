@@ -16,7 +16,6 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 
-import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Slf4j
@@ -128,9 +127,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(),
                     inbound.channel().localAddress(), outbound.remoteAddress(), destinationEp, realEp, extMsg.toString());
 
-            SocksSupport.ipTracer().put((InetSocketAddress) outbound.localAddress(),
-                    (InetSocketAddress) inbound.channel().remoteAddress());
-            log.info("tracer s5 put {} => {}", outbound.localAddress(), inbound.channel().remoteAddress());
+            SocksSupport.ENDPOINT_TRACER.link(inbound.channel(), outbound);
         });
     }
 }

@@ -63,9 +63,7 @@ public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                 }
                 log.info("connect to backend {}[{}]", dstEndpoint, finalDestinationEp);
 
-                SocksSupport.ipTracer().put((InetSocketAddress) outbound.localAddress(),
-                        (InetSocketAddress) inbound.remoteAddress());
-                log.info("tracer ss put {} => {}", outbound.localAddress(), inbound.remoteAddress());
+                SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             }).channel();
         }
 

@@ -5,7 +5,6 @@ import org.rx.core.Arrays;
 import org.rx.core.Cache;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -16,10 +15,7 @@ public interface SocksSupport {
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 5 * 1000;
-
-    static Cache<InetSocketAddress, InetSocketAddress> ipTracer() {
-        return Cache.getInstance(Cache.LOCAL_CACHE);
-    }
+    EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<SUID, UnresolvedEndpoint> fakeDict() {
         return Cache.getInstance(Cache.DISTRIBUTED_CACHE);
