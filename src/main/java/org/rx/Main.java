@@ -99,10 +99,8 @@ public final class Main implements SocksSupport {
             Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort));
 
             Action fn = () -> {
-                InetAddress addr = InetAddress.getByName(HttpClient.getWanIp());
-                if (!frontConf.getWhiteList().add(addr)) {
-                    return;
-                }
+//                InetAddress addr = InetAddress.getByName(HttpClient.getWanIp());
+                InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.current().getIp());
                 for (UpstreamSupport shadowServer : shadowServers) {
                     shadowServer.getSupport().addWhiteList(addr);
                 }
