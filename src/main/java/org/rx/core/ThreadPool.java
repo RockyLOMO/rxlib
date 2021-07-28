@@ -224,7 +224,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public ThreadPool(int coreThreads, String poolName) {
-        this(coreThreads, computeThreads(1, 2, 1), 30, CPU_THREADS * 32, poolName);
+        this(coreThreads, computeThreads(1, 2, 1), 30, CPU_THREADS * 16, poolName);
     }
 
     /**

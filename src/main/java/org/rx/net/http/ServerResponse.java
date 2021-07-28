@@ -45,4 +45,8 @@ public class ServerResponse {
         content = Bytes.directBuffer();
         content.writeCharSequence(html, CharsetUtil.UTF_8);
     }
+
+    public void redirect(String newUri) {
+        headers.set(HttpHeaderNames.LOCATION, newUri);
+    }
 }

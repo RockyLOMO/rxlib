@@ -139,6 +139,12 @@ public class HttpServer extends Disposable {
                     ServerResponse res = new ServerResponse();
                     try {
                         handler.handle(req, res);
+                        //redirect
+                        if (res.getHeaders().contains(HttpHeaderNames.LOCATION)) {
+                            FullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
+                            sendResponse(ctx, response);
+                            return;
+                        }
                     } catch (Throwable e) {
                         log.error("handle", e);
                         sendError(ctx, INTERNAL_SERVER_ERROR);
@@ -150,12 +156,6 @@ public class HttpServer extends Disposable {
                     sendResponse(ctx, response);
                 }
             }
-        }
-
-        private void sendRedirect(ChannelHandlerContext ctx, String newUri) {
-            FullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
-            response.headers().set(HttpHeaderNames.LOCATION, newUri);
-            sendResponse(ctx, response);
         }
 
         private void sendError(ChannelHandlerContext ctx, HttpResponseStatus status) {
@@ -208,8 +208,29 @@ public class HttpServer extends Disposable {
         void handle(ServerRequest request, ServerResponse response) throws Throwable;
     }
 
-    public static final String BASE_64_PREFIX = "base64,";
     private static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
+
+    public static String normalize(String uri) {
+        // "/" => "/"
+        // "" => "/"
+        // "/a/b/" => "/a/b"
+        // "a/b/" => "/a/b"
+        uri = uri.trim();
+        // 删除后缀的/
+        while (uri.endsWith("/")) {
+            uri = uri.substring(0, uri.length() - 1);
+        }
+        // 删除前缀的/
+        while (uri.startsWith("/")) {
+            uri = uri.substring(1);
+        }
+        // 前缀补充/
+        if (!uri.startsWith("/")) {
+            uri = "/" + uri;
+        }
+        return uri;
+    }
+
     final ServerBootstrap serverBootstrap;
     @Getter
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
@@ -243,7 +264,7 @@ public class HttpServer extends Disposable {
     }
 
     public HttpServer requestMapping(String path, Handler handler) {
-        mapping.put(path, handler);
+        mapping.put(normalize(path), handler);
         return this;
     }
 }
