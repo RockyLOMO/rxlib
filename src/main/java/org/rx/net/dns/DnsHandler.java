@@ -5,6 +5,7 @@ import io.netty.channel.*;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.bean.$;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
 import org.rx.core.NQuery;
@@ -18,6 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 import static org.rx.core.Tasks.awaitQuietly;
 
@@ -88,9 +90,14 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         if (server.support != null) {
             //未命中也缓存
+            $<Boolean> isEmpty = $(false);
             List<InetAddress> addresses = cache().get(DOMAIN_PREFIX + domain,
-                    k -> isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList()),
-                    CacheExpirations.absolute(server.ttl));
+                    k -> {
+                        List<InetAddress> tmp = isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList());
+                        isEmpty.v = tmp.isEmpty();
+                        return tmp;
+                    },
+                    CacheExpirations.absolute(isEmpty.v ? 60 : server.ttl));
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

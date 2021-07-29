@@ -5,7 +5,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.DateTime;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
-import org.rx.util.BeanMapper;
 
 import java.util.List;
 
@@ -33,14 +32,9 @@ final class DbAuthenticator implements Authenticator {
                 SocksUser user = store.computeIfAbsent(usr.getUsername(), SocksUser::new);
                 user.setPassword(usr.getPassword());
                 user.setMaxIpCount(usr.getMaxIpCount());
+                store.putBehind(user.getUsername(), user);
             }
         }
-        String n = "rocky";
-        store.computeIfAbsent(n, k -> {
-            SocksUser r = new SocksUser(n);
-            r.setPassword("202002");
-            return r;
-        });
     }
 
     @Override
