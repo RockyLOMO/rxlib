@@ -235,7 +235,7 @@ public class SocksTester {
     @Test
     public void ssProxy() {
         SocksConfig backConf = new SocksConfig(1082);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(null), null);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(null, null), null);
 
         DnsServer frontDnsSvr = new DnsServer(853);
         UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);

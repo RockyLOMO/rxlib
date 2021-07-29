@@ -36,7 +36,8 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
-    static final Map<String, EventLoopGroup> reactors = new ConcurrentHashMap<>();
+    static final String runtimeReactor = "_RUNTIME";
+    static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
@@ -106,7 +107,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
         WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), config.isUseRuntimeTcpEventLoop() ? reactorEventLoop(runtimeReactor) : newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)

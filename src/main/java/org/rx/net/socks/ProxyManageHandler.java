@@ -29,6 +29,11 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         InetSocketAddress realEp = (InetSocketAddress) SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
         AtomicInteger refCnt = user.getLoginIps().computeIfAbsent(realEp.getAddress(), k -> new AtomicInteger());
         refCnt.incrementAndGet();
+        if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
+            log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
+            refCnt.decrementAndGet();
+            Sockets.closeOnFlushed(ctx.channel());
+        }
     }
 
     public ProxyManageHandler(Authenticator authenticator, long checkInterval) {
@@ -54,10 +59,8 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         long writeByte = trafficCounter.cumulativeWrittenBytes();
 
         AtomicInteger refCnt = user.getLoginIps().get(remoteAddress.getAddress());
-        if (refCnt != null) {
-            if (refCnt.decrementAndGet() <= 0) {
-                user.getLoginIps().remove(remoteAddress.getAddress());
-            }
+        if (refCnt != null && refCnt.decrementAndGet() <= 0) {
+            user.getLoginIps().remove(remoteAddress.getAddress());
         }
         user.getTotalReadBytes().addAndGet(readByte);
         user.getTotalWriteBytes().addAndGet(writeByte);

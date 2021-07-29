@@ -18,6 +18,7 @@ public class SocksUser implements Serializable {
 
     private final String username;
     private String password;
+    private int maxIpCount;
     private final Map<InetAddress, AtomicInteger> loginIps = new ConcurrentHashMap<>();
     private DateTime latestLoginTime;
     private final AtomicLong totalReadBytes = new AtomicLong();

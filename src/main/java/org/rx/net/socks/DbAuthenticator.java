@@ -1,9 +1,13 @@
 package org.rx.net.socks;
 
 import lombok.NonNull;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.DateTime;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
+import org.rx.util.BeanMapper;
+
+import java.util.List;
 
 import static org.rx.core.App.eq;
 
@@ -15,7 +19,7 @@ final class DbAuthenticator implements Authenticator {
         return store.size();
     }
 
-    public DbAuthenticator(Integer apiPort) {
+    public DbAuthenticator(List<SocksUser> initUsers, Integer apiPort) {
         KeyValueStoreConfig config = KeyValueStoreConfig.miniConfig("./data/socks");
         config.setWriteBehindDelayed(15000);
         if (apiPort != null) {
@@ -24,6 +28,13 @@ final class DbAuthenticator implements Authenticator {
         }
         store = new KeyValueStore<>(config);
 
+        if (!CollectionUtils.isEmpty(initUsers)) {
+            for (SocksUser usr : initUsers) {
+                SocksUser user = store.computeIfAbsent(usr.getUsername(), SocksUser::new);
+                user.setPassword(usr.getPassword());
+                user.setMaxIpCount(usr.getMaxIpCount());
+            }
+        }
         String n = "rocky";
         store.computeIfAbsent(n, k -> {
             SocksUser r = new SocksUser(n);
