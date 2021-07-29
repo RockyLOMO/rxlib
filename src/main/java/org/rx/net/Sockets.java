@@ -65,7 +65,7 @@ public final class Sockets {
             if (method.getName().equals("lookupAllHostAddr")) {
                 String host = (String) args[0];
                 //处理不了会交给源对象处理
-                List<InetAddress> addresses = client.resolveAll(host);
+                List<InetAddress> addresses = App.quietly(() -> client.resolveAll(host));
                 if (!CollectionUtils.isEmpty(addresses)) {
                     return addresses.toArray(empty);
                 }
