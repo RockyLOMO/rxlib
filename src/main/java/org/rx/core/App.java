@@ -9,8 +9,6 @@ import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
-import net.sf.cglib.proxy.Enhancer;
-import net.sf.cglib.proxy.MethodInterceptor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
@@ -27,6 +25,8 @@ import org.rx.bean.ProceedEventArgs;
 import org.rx.spring.SpringContext;
 import org.rx.util.function.*;
 import org.slf4j.helpers.MessageFormatter;
+import org.springframework.cglib.proxy.Enhancer;
+import org.springframework.cglib.proxy.MethodInterceptor;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;

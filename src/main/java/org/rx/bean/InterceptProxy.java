@@ -2,7 +2,7 @@ package org.rx.bean;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import net.sf.cglib.proxy.MethodProxy;
+import org.springframework.cglib.proxy.MethodProxy;
 
 @Getter
 @RequiredArgsConstructor
