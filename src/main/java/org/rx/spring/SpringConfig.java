@@ -43,7 +43,7 @@ public class SpringConfig {
     public static class AuthenticEndpointConverter implements Converter<String, AuthenticEndpoint> {
         @Override
         public AuthenticEndpoint convert(String s) {
-            return new AuthenticEndpoint(s);
+            return AuthenticEndpoint.valueOf(s);
         }
     }
 

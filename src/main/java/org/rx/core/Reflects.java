@@ -86,7 +86,6 @@ public class Reflects extends TypeUtils {
 //        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
         registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
-        registerConvert(String.class, AuthenticEndpoint.class, (sv, tt) -> new AuthenticEndpoint(sv));
     }
 
     //region class

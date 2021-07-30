@@ -1,17 +1,39 @@
 package org.rx.net.socks;
 
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.annotation.JSONType;
+import com.alibaba.fastjson.parser.DefaultJSONParser;
+import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
 import lombok.Data;
 import org.rx.bean.DateTime;
+import org.rx.util.BeanMapper;
 
 import java.io.Serializable;
+import java.lang.reflect.Type;
 import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+@JSONType(deserializer = SocksUser.Serializer.class)
 @Data
 public class SocksUser implements Serializable {
+    public static class Serializer implements ObjectDeserializer {
+        @Override
+        public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
+            JSONObject map = parser.parseObject();
+            SocksUser user = new SocksUser(map.getString("username"));
+            BeanMapper.getInstance().map(map, user);
+            return (T) user;
+        }
+
+        @Override
+        public int getFastMatchToken() {
+            return 0;
+        }
+    }
+
     private static final long serialVersionUID = 7845976131633777320L;
 
     public static final SocksUser ANONYMOUS = new SocksUser("anonymous");

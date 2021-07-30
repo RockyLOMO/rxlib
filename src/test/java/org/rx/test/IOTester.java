@@ -8,6 +8,7 @@ import org.rx.bean.DateTime;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.io.*;
+import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.common.TestUtil;
@@ -40,8 +41,11 @@ public class IOTester {
         conf.setApiPort(8070);
         conf.setApiPassword("wyf");
         conf.setApiReturnJson(true);
-        KeyValueStore<Integer, Object> kv = new KeyValueStore<>(conf);
-        kv.put(2, PersonBean.girl);
+        KeyValueStore<String, SocksUser> kv = new KeyValueStore<>(conf);
+        SocksUser r = new SocksUser("rocky");
+        r.setPassword("202002");
+        r.setMaxIpCount(-1);
+        kv.put(r.getUsername(), r);
 
         System.in.read();
     }

@@ -98,7 +98,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     static final int DEFAULT_ITERATOR_SIZE = 50;
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
-    static final String TYPE_FIELD = "_TYPE";
+    static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
@@ -186,9 +186,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                             response.jsonBody(resJson);
                             return;
                         }
-                        TK k = apiDeserialize(reqJson, key);
+                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
 
-                        apiSerialize(resJson, get(k));
+                        apiSerialize(resJson, VALUE_TYPE_FIELD, get(k));
                         response.jsonBody(resJson);
                     })).requestMapping("/set", (request, response) -> {
                         apiCheck(request);
@@ -201,35 +201,35 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                             response.jsonBody(resJson);
                             return;
                         }
-                        TK k = apiDeserialize(reqJson, key);
+                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
 
                         Object value = reqJson.get("value"), concurrentValue = reqJson.get("concurrentValue");
                         if (value == null) {
                             if (concurrentValue == null) {
-                                apiSerialize(resJson, remove(k));
+                                apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k));
                             } else {
-                                apiSerialize(resJson, remove(k, apiDeserialize(reqJson, concurrentValue)));
+                                apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue)));
                             }
                             response.jsonBody(resJson);
                             return;
                         }
 
-                        TV v = apiDeserialize(reqJson, value);
+                        TV v = apiDeserialize(reqJson, VALUE_TYPE_FIELD, value);
                         if (concurrentValue == null) {
                             byte flag = isNull(reqJson.getByte("flag"), (byte) 0);
                             switch (flag) {
                                 case 1:
-                                    apiSerialize(resJson, putIfAbsent(k, v));
+                                    apiSerialize(resJson, VALUE_TYPE_FIELD, putIfAbsent(k, v));
                                     break;
                                 case 2:
-                                    apiSerialize(resJson, replace(k, v));
+                                    apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, v));
                                     break;
                                 default:
-                                    apiSerialize(resJson, put(k, v));
+                                    apiSerialize(resJson, VALUE_TYPE_FIELD, put(k, v));
                                     break;
                             }
                         } else {
-                            apiSerialize(resJson, replace(k, apiDeserialize(reqJson, concurrentValue), v));
+                            apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue), v));
                         }
                         response.jsonBody(resJson);
                     });
@@ -253,25 +253,26 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
     }
 
-    private <T> T apiDeserialize(JSONObject reqJson, Object obj) {
+    @SneakyThrows
+    private <T> T apiDeserialize(JSONObject reqJson, String typeField, Object obj) {
         if (obj instanceof byte[]) {
             byte[] bytes = (byte[]) obj;
             return serializer.deserialize(IOStream.wrap(null, bytes));
         }
-        String type = reqJson.getString(TYPE_FIELD);
+        String type = reqJson.getString(typeField);
         return type == null ? (T) obj : fromJson(obj, Reflects.loadClass(type, false));
     }
 
-    private void apiSerialize(JSONObject resJson, Object v) {
+    private void apiSerialize(JSONObject resJson, String typeField, Object obj) {
         resJson.put("code", 0);
-        if (v == null) {
+        if (obj == null) {
             return;
         }
         if (config.isApiReturnJson()) {
-            resJson.put(TYPE_FIELD, v.getClass().getName());
-            resJson.put("value", v);
+            resJson.put(typeField, obj.getClass().getName());
+            resJson.put("value", obj);
         } else {
-            resJson.put("value", serializer.serialize(v).toArray());
+            resJson.put("value", serializer.serialize(obj).toArray());
         }
     }
 

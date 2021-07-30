@@ -246,7 +246,7 @@ public class SocksTester {
             if (dstEp.equals(loopbackDns)) {
                 return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
             }
-            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint("rocky:202002@127.0.0.1:1082"));
+            return new Socks5Upstream(dstEp, backConf, AuthenticEndpoint.valueOf("rocky:202002@127.0.0.1:1082"));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -270,7 +270,7 @@ public class SocksTester {
         RandomList<UpstreamSupport> supports = new RandomList<>();
         RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:1181", 2);
         rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        supports.add(new UpstreamSupport(new AuthenticEndpoint("127.0.0.1:1081"),
+        supports.add(new UpstreamSupport(AuthenticEndpoint.valueOf("127.0.0.1:1081"),
                 Remoting.create(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(1090);
@@ -498,7 +498,7 @@ public class SocksTester {
 //            client.delete(listDirectory.getPath());
 //        }
 
-        SftpClient client = new SftpClient(new AuthenticEndpoint("rocky:@k8s.f-li.cn:22"));
+        SftpClient client = new SftpClient(AuthenticEndpoint.valueOf("rocky:@k8s.f-li.cn:22"));
         for (SftpFile directory : client.listDirectories("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
         }
@@ -522,7 +522,7 @@ public class SocksTester {
     @Test
     public void authenticEndpoint() {
         String aep = "yf:123456@d.f-li.cn:1080";
-        AuthenticEndpoint endpoint = new AuthenticEndpoint(aep);
+        AuthenticEndpoint endpoint = AuthenticEndpoint.valueOf(aep);
         assert Sockets.toString(endpoint.getEndpoint()).equals("d.f-li.cn:1080");
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
