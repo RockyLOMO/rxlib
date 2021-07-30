@@ -2,13 +2,13 @@ package org.rx.util;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import net.sf.cglib.beans.BeanCopier;
-import net.sf.cglib.proxy.Enhancer;
-import net.sf.cglib.proxy.MethodInterceptor;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
+import org.springframework.cglib.beans.BeanCopier;
+import org.springframework.cglib.proxy.Enhancer;
+import org.springframework.cglib.proxy.MethodInterceptor;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -103,35 +103,53 @@ public class BeanMapper {
         if (flags == null) {
             flags = this.flags;
         }
-
         boolean skipNull = flags.has(BeanMapFlag.SkipNull);
         Class from = source.getClass(), to = target.getClass();
-        MapConfig config = getConfig(source.getClass(), to);
-        NQuery<Mapping> mappings = NQuery.of(method != null ? config.mappings.getOrDefault(method, empty) : empty);
         final NQuery<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
-        config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
-            String propertyName = Reflects.propertyName(methodName.toString());
-            copiedNames.add(propertyName);
-            Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
-            if (mapping != null) {
-                sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
-            }
-            return Reflects.changeType(sourceValue, targetType);
-        });
 
-        for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
-            copiedNames.add(mapping.target());
-            Object sourceValue = null;
-            Reflects.PropertyNode propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, mapping.target()));
-            if (propertyNode == null) {
-                log.warn("Target property {} not found", mapping.target());
-                continue;
+        Map<Object, Object> sourceMap = as(source, Map.class);
+        if (sourceMap != null) {
+            for (Map.Entry<Object, Object> entry : sourceMap.entrySet()) {
+                if (entry.getKey() == null) {
+                    continue;
+                }
+                String propertyName = entry.getKey().toString();
+                Reflects.PropertyNode propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, propertyName));
+                if (propertyNode == null) {
+                    continue;
+                }
+                copiedNames.add(propertyName);
+                Method targetMethod = propertyNode.setter;
+                Class targetType = targetMethod.getParameterTypes()[0];
+                Reflects.invokeMethod(targetMethod, target, Reflects.changeType(entry.getValue(), targetType));
             }
-            Method targetMethod = propertyNode.setter;
-            Class targetType = targetMethod.getParameterTypes()[0];
-            sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), source, target, skipNull, toProperties);
-            Reflects.invokeMethod(targetMethod, target, Reflects.changeType(sourceValue, targetType));
+        } else {
+            MapConfig config = getConfig(from, to);
+            NQuery<Mapping> mappings = NQuery.of(method != null ? config.mappings.getOrDefault(method, empty) : empty);
+            config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
+                String propertyName = Reflects.propertyName(methodName.toString());
+                copiedNames.add(propertyName);
+                Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
+                if (mapping != null) {
+                    sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
+                }
+                return Reflects.changeType(sourceValue, targetType);
+            });
+
+            for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
+                copiedNames.add(mapping.target());
+                Object sourceValue = null;
+                Reflects.PropertyNode propertyNode = toProperties.firstOrDefault(p -> eq(p.propertyName, mapping.target()));
+                if (propertyNode == null) {
+                    log.warn("Target property {} not found", mapping.target());
+                    continue;
+                }
+                Method targetMethod = propertyNode.setter;
+                Class targetType = targetMethod.getParameterTypes()[0];
+                sourceValue = processMapping(mapping, sourceValue, targetType, mapping.target(), source, target, skipNull, toProperties);
+                Reflects.invokeMethod(targetMethod, target, Reflects.changeType(sourceValue, targetType));
+            }
         }
 
         boolean logOnFail = flags.has(BeanMapFlag.LogOnNotAllMapped), throwOnFail = flags.has(BeanMapFlag.ThrowOnNotAllMapped);

@@ -143,7 +143,7 @@ public final class Main implements SocksSupport {
                     }
                     SocksUser user = tuple.right;
                     return new Socks5Upstream(dstEp, directConf,
-                            new AuthenticEndpoint(String.format("%s:%s@127.0.0.1:%s", user.getUsername(), user.getPassword(), port)));
+                            new AuthenticEndpoint(Sockets.localEndpoint(port), user.getUsername(), user.getPassword()));
                 });
             }
         }
