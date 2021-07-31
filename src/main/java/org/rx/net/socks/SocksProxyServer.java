@@ -1,7 +1,11 @@
 package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
@@ -33,6 +37,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     @Getter
     final SocksConfig config;
     final ServerBootstrap bootstrap;
+    final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final BiFunc<UnresolvedEndpoint, Upstream> router;
@@ -63,7 +68,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             }
             //超时处理
             pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
-                    new ProxyChannelIdleHandler());
+                    ProxyChannelIdleHandler.DEFAULT);
 //            SocksPortUnificationServerHandler
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
@@ -77,11 +82,25 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
         });
         bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
+
+        //udp server
+        udpChannel = Sockets.udpBootstrap(true)
+                .option(ChannelOption.SO_RCVBUF, SocksConfig.UDP_BUF_SIZE)
+                .option(ChannelOption.SO_SNDBUF, SocksConfig.UDP_BUF_SIZE)
+                .handler(new ChannelInitializer<NioDatagramChannel>() {
+                    @Override
+                    protected void initChannel(NioDatagramChannel channel) {
+                        ChannelPipeline pipeline = channel.pipeline();
+//                        TransportUtil.addFrontendHandler(channel, config);
+                        pipeline.addLast(Socks5UdpHandler.DEFAULT);
+                    }
+                }).bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
+        udpChannel.close();
     }
 
     @SneakyThrows

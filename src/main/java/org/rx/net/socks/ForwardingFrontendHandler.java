@@ -33,8 +33,9 @@ public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) {
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         Sockets.closeOnFlushed(outbound);
+        super.channelInactive(ctx);
     }
 
     @Override

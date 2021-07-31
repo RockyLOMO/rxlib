@@ -16,6 +16,8 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 
+import java.net.Inet6Address;
+import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Slf4j
@@ -28,7 +30,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     protected void channelRead0(final ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
-        pipeline.remove(this);
+        if (msg.type() != Socks5CommandType.UDP_ASSOCIATE) {
+            pipeline.remove(this);
+        }
         log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -46,16 +50,27 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 dstEp = realEp;
             }
         }
+
         if (msg.type() == Socks5CommandType.CONNECT) {
             Upstream upstream = server.router.invoke(dstEp);
             ReconnectingEventArgs e = new ReconnectingEventArgs(upstream);
             connect(inbound, msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            log.warn("Udp not impl");
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
+            log.info("UDP_ASSOCIATE {} => {}:{}", inbound.channel().remoteAddress(), msg.dstAddr(), msg.dstPort());
+            InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
+            Socks5AddressType bindAddrType = bindEp.getAddress() instanceof Inet6Address ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS,
+                    bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
+            log.warn("Command {} not support", msg.type());
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         }
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        log.info("UDP_ASSOCIATE {} closed", ctx.channel().remoteAddress());
+        super.channelInactive(ctx);
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
