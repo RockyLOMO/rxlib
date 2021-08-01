@@ -56,6 +56,7 @@ public final class Main implements SocksSupport {
             }
             SocksUser ssUser = new SocksUser(shadowUser.getUsername());
             ssUser.setPassword(shadowUser.getPassword());
+            ssUser.setMaxIpCount(-1);
 
             SocksConfig backConf = new SocksConfig(port);
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());

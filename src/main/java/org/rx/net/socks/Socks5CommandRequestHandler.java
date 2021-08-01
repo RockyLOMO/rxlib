@@ -30,9 +30,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     protected void channelRead0(final ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
-        if (msg.type() != Socks5CommandType.UDP_ASSOCIATE) {
-            pipeline.remove(this);
-        }
+        pipeline.remove(this);
         log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -65,12 +63,6 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             log.warn("Command {} not support", msg.type());
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         }
-    }
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        log.info("UDP_ASSOCIATE {} closed", ctx.channel().remoteAddress());
-        super.channelInactive(ctx);
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
