@@ -58,9 +58,11 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         long readByte = trafficCounter.cumulativeReadBytes();
         long writeByte = trafficCounter.cumulativeWrittenBytes();
 
-        AtomicInteger refCnt = user.getLoginIps().get(remoteAddress.getAddress());
-        if (refCnt != null && refCnt.decrementAndGet() <= 0) {
-            user.getLoginIps().remove(remoteAddress.getAddress());
+        if (remoteAddress != null) {
+            AtomicInteger refCnt = user.getLoginIps().get(remoteAddress.getAddress());
+            if (refCnt != null && refCnt.decrementAndGet() <= 0) {
+                user.getLoginIps().remove(remoteAddress.getAddress());
+            }
         }
         user.getTotalReadBytes().addAndGet(readByte);
         user.getTotalWriteBytes().addAndGet(writeByte);
