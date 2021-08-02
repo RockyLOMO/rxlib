@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @Slf4j
 @RequiredArgsConstructor
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
-    final SocksProxyServer server;
+    public static final Socks5CommandRequestHandler DEFAULT = new Socks5CommandRequestHandler();
 
     @SneakyThrows
     @Override
@@ -31,6 +31,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
+        SocksProxyServer server = inbound.attr(SocksProxyServer.CTX_SERVER).get();
         log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -66,6 +67,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
+        SocksProxyServer server = inbound.attr(SocksProxyServer.CTX_SERVER).get();
         Upstream upstream = e.getUpstream();
         Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), upstream::initChannel)
                 .connect(upstream.getEndpoint().toSocketAddress()).addListener((ChannelFutureListener) f -> {
@@ -121,6 +123,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
 
+            SocksProxyServer server = inbound.attr(SocksProxyServer.CTX_SERVER).get();
             SocksConfig config = server.getConfig();
             if (server.aesRouter(destinationEp) && config.getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
                 ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();

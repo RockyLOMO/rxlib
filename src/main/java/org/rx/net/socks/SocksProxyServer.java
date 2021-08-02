@@ -79,10 +79,10 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
             if (isAuthEnabled()) {
                 pipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
-                        .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), new Socks5PasswordAuthRequestHandler(SocksProxyServer.this));
+                        .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), Socks5PasswordAuthRequestHandler.DEFAULT);
             }
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
-                    .addLast(Socks5CommandRequestHandler.class.getSimpleName(), new Socks5CommandRequestHandler(SocksProxyServer.this));
+                    .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
         bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
 
