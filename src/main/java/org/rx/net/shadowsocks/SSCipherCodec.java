@@ -2,10 +2,8 @@ package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 
@@ -45,6 +43,4 @@ public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
 
         out.add(buf.retain());
     }
-
-
 }

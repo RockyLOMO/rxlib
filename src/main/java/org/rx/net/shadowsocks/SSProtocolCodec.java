@@ -66,9 +66,6 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
                 addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
             }
             ByteBuf addrBuff = Unpooled.buffer(128);
-            if (isUdp) {
-                addrBuff.writeZero(3);
-            }
             addrRequest.encode(addrBuff);
 
             buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
@@ -93,9 +90,6 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
 
         if (isUdp || (!isClient && !tcpAddressed)) {
-            if (isUdp) {
-                buf.skipBytes(3);
-            }
             SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
             if (addrRequest == null) {
                 log.warn("fail to decode address request from {}, pls check client's cipher setting", ctx.channel().remoteAddress());

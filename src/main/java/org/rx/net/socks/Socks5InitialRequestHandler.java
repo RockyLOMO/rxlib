@@ -1,12 +1,8 @@
 package org.rx.net.socks;
 
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.handler.codec.socksx.SocksVersion;
 import io.netty.handler.codec.socksx.v5.*;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
@@ -17,9 +13,9 @@ import java.util.Set;
 import static org.rx.core.App.toJsonString;
 
 @Slf4j
-@RequiredArgsConstructor
+@ChannelHandler.Sharable
 public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5InitialRequest> {
-    final SocksProxyServer server;
+    public static final Socks5InitialRequestHandler DEFAULT = new Socks5InitialRequestHandler();
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5InitialRequest msg) {
@@ -28,6 +24,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
+        SocksProxyServer server = ctx.attr(SocksProxyServer.CTX_SERVER).get();
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
         InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
         if (!Sockets.isNatIp(remoteEp.getAddress()) && !whiteList.contains(remoteEp.getAddress())) {

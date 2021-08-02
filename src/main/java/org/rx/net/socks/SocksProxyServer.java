@@ -63,6 +63,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         this.authenticator = authenticator;
         this.router = router;
         bootstrap = Sockets.serverBootstrap(config, channel -> {
+            channel.attr(CTX_SERVER).set(SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //流量统计
@@ -75,7 +76,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
-                    .addLast(Socks5InitialRequestHandler.class.getSimpleName(), new Socks5InitialRequestHandler(SocksProxyServer.this));
+                    .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
             if (isAuthEnabled()) {
                 pipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
                         .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), new Socks5PasswordAuthRequestHandler(SocksProxyServer.this));
@@ -93,7 +94,6 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                     @Override
                     protected void initChannel(NioDatagramChannel channel) {
                         channel.attr(CTX_SERVER).set(SocksProxyServer.this);
-
                         ChannelPipeline pipeline = channel.pipeline();
                         TransportUtil.addFrontendHandler(channel, config);
                         pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);

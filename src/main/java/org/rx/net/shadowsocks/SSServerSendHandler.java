@@ -13,8 +13,10 @@ public class SSServerSendHandler extends ChannelOutboundHandlerAdapter {
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
         if (isUdp) {
+            ByteBuf buf = (ByteBuf) msg;
+            buf.writeZero(3);
             InetSocketAddress clientAddr = ctx.channel().attr(SSCommon.REMOTE_ADDRESS).get();
-            msg = new DatagramPacket((ByteBuf) msg, clientAddr);
+            msg = new DatagramPacket(buf, clientAddr);
         }
         super.write(ctx, msg, promise);
     }
