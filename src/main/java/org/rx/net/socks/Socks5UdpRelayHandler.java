@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.exception.ApplicationException;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
+import org.rx.net.TransportUtil;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -21,12 +22,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Socks5UdpHandler extends SimpleChannelInboundHandler<DatagramPacket> {
-    public static final Socks5UdpHandler DEFAULT = new Socks5UdpHandler();
-    static final int CHANNEL_TIMEOUT = 60 * 20;
+public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
+    static final int CHANNEL_TIMEOUT = 60 * 10;
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     /**
+     * https://datatracker.ietf.org/doc/html/rfc1928
      * +----+------+------+----------+----------+----------+
      * |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
      * +----+------+------+----------+----------+----------+
@@ -44,11 +46,12 @@ public class Socks5UdpHandler extends SimpleChannelInboundHandler<DatagramPacket
             return;
         }
 
+        SocksProxyServer server = inbound.attr(SocksProxyServer.CTX_SERVER).get();
         InetSocketAddress inRemoteEp = in.sender();
         inBuf.skipBytes(3);
         Socks5AddressType addressType = Socks5AddressType.valueOf(inBuf.readByte());
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addressType, inBuf);
-        int dstPort = inBuf.readUnsignedShort();
+        InetSocketAddress dstEp = new InetSocketAddress(dstAddr, inBuf.readUnsignedShort());
 
         Channel outbound = HOLD.computeIfAbsent(inRemoteEp, k -> {
             try {
@@ -56,6 +59,7 @@ public class Socks5UdpHandler extends SimpleChannelInboundHandler<DatagramPacket
                     @Override
                     protected void initChannel(NioDatagramChannel channel) {
                         ChannelPipeline pipeline = channel.pipeline();
+                        TransportUtil.addBackendHandler(channel, server.config, dstEp);
                         pipeline.addLast(
                                 new IdleStateHandler(0, 0, CHANNEL_TIMEOUT),
                                 ProxyChannelIdleHandler.DEFAULT,
@@ -87,7 +91,7 @@ public class Socks5UdpHandler extends SimpleChannelInboundHandler<DatagramPacket
                 throw ApplicationException.sneaky(e);
             }
         });
-        outbound.writeAndFlush(new DatagramPacket(inBuf, new InetSocketAddress(dstAddr, dstPort)).retain());
-        log.info("UDP[{}] OUT {} => {}:{}", in.recipient(), inRemoteEp, dstAddr, dstPort);
+        outbound.writeAndFlush(new DatagramPacket(inBuf, dstEp).retain());
+        log.info("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
     }
 }

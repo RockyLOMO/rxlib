@@ -11,6 +11,7 @@ import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.AttributeKey;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
@@ -28,6 +29,7 @@ import java.util.function.BiConsumer;
 
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
+    public static final AttributeKey<SocksProxyServer> CTX_SERVER = AttributeKey.valueOf("CTX_SERVER");
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = DirectUpstream::new;
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
 //            || dstEp.getPort() == 80
@@ -90,9 +92,11 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override
                     protected void initChannel(NioDatagramChannel channel) {
+                        channel.attr(CTX_SERVER).set(SocksProxyServer.this);
+
                         ChannelPipeline pipeline = channel.pipeline();
-//                        TransportUtil.addFrontendHandler(channel, config);
-                        pipeline.addLast(Socks5UdpHandler.DEFAULT);
+                        TransportUtil.addFrontendHandler(channel, config);
+                        pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
                     }
                 }).bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
