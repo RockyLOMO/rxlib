@@ -7,11 +7,13 @@ import java.net.*;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.bootstrap.ServerBootstrapConfig;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
@@ -25,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
 
@@ -285,6 +288,16 @@ public final class Sockets {
             return;
         }
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    public static ByteBuf getMessageBuf(Object msg) {
+        if (msg instanceof io.netty.channel.socket.DatagramPacket) {
+            return ((DatagramPacket) msg).content();
+        } else if (msg instanceof ByteBuf) {
+            return (ByteBuf) msg;
+        } else {
+            throw new InvalidException("unsupported msg type:" + msg.getClass());
+        }
     }
 
     //region Address

@@ -7,6 +7,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.handler.codec.socks.SocksAddressType;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.Sockets;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -38,14 +39,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf;
-        if (msg instanceof DatagramPacket) {
-            buf = ((DatagramPacket) msg).content();
-        } else if (msg instanceof ByteBuf) {
-            buf = (ByteBuf) msg;
-        } else {
-            throw new Exception("unsupported msg type:" + msg.getClass());
-        }
+        ByteBuf buf = Sockets.getMessageBuf(msg);
 
         //组装ss协议
         //udp [target address][payload]
@@ -72,6 +66,9 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
                 addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
             }
             ByteBuf addrBuff = Unpooled.buffer(128);
+            if (isUdp) {
+                addrBuff.writeZero(3);
+            }
             addrRequest.encode(addrBuff);
 
             buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
@@ -87,14 +84,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf;
-        if (msg instanceof DatagramPacket) {
-            buf = ((DatagramPacket) msg).content();
-        } else if (msg instanceof ByteBuf) {
-            buf = (ByteBuf) msg;
-        } else {
-            throw new Exception("unsupported msg type:" + msg.getClass());
-        }
+        ByteBuf buf = Sockets.getMessageBuf(msg);
 
         if (buf.readableBytes() < 1 + 1 + 2) {// [1-byte type][variable-length host][2-byte port]
             return;
@@ -103,6 +93,9 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
 
         if (isUdp || (!isClient && !tcpAddressed)) {
+            if (isUdp) {
+                buf.skipBytes(3);
+            }
             SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
             if (addrRequest == null) {
                 log.warn("fail to decode address request from {}, pls check client's cipher setting", ctx.channel().remoteAddress());

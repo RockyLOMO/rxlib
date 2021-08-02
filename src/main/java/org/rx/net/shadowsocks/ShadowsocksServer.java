@@ -2,6 +2,7 @@ package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -16,6 +17,7 @@ import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
+import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -28,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class ShadowsocksServer extends Disposable {
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
+    final Channel udpChannel;
     final BiFunc<UnresolvedEndpoint, Upstream> router;
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router) {
@@ -68,9 +71,9 @@ public class ShadowsocksServer extends Disposable {
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        Bootstrap udpBootstrap = Sockets.udpBootstrap(true)
-                .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
-                .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
+        udpChannel = Sockets.udpBootstrap(true)
+                .option(ChannelOption.SO_RCVBUF, SocksConfig.UDP_BUF_SIZE)// 设置UDP读缓冲区为64k
+                .option(ChannelOption.SO_SNDBUF, SocksConfig.UDP_BUF_SIZE)// 设置UDP写缓冲区为64k
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override
                     protected void initChannel(NioDatagramChannel ctx) throws Exception {
@@ -84,12 +87,12 @@ public class ShadowsocksServer extends Disposable {
                                 new SSCipherCodec(), new SSProtocolCodec(),
                                 new SSServerUdpProxyHandler());
                     }
-                });
-        udpBootstrap.bind(config.getServerEndpoint());
+                }).bind(config.getServerEndpoint()).channel();
     }
 
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(bootstrap);
+        udpChannel.close();
     }
 }

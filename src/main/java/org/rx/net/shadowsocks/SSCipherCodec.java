@@ -5,6 +5,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.exception.InvalidException;
+import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 
 import java.util.List;
@@ -13,14 +15,7 @@ import java.util.List;
 public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf;
-        if (msg instanceof DatagramPacket) {
-            buf = ((DatagramPacket) msg).content();
-        } else if (msg instanceof ByteBuf) {
-            buf = (ByteBuf) msg;
-        } else {
-            throw new Exception("unsupported msg type:" + msg.getClass());
-        }
+        ByteBuf buf = Sockets.getMessageBuf(msg);
 
         ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
@@ -32,14 +27,7 @@ public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf;
-        if (msg instanceof DatagramPacket) {
-            buf = ((DatagramPacket) msg).content();
-        } else if (msg instanceof ByteBuf) {
-            buf = (ByteBuf) msg;
-        } else {
-            throw new Exception("unsupported msg type:" + msg.getClass());
-        }
+        ByteBuf buf = Sockets.getMessageBuf(msg);
 
         ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
@@ -57,4 +45,6 @@ public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
 
         out.add(buf.retain());
     }
+
+
 }
