@@ -6,7 +6,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.handler.codec.socks.SocksAddressType;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
 import java.net.Inet4Address;
@@ -25,16 +27,13 @@ import java.util.List;
  * The port number is a 2-byte big-endian unsigned integer.
  **/
 @Slf4j
-public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
-    private boolean isClient;
+@RequiredArgsConstructor
+public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
+    private final boolean isClient;
     private boolean tcpAddressed;
 
-    public SSProtocolCodec() {
+    public ProtocolCodec() {
         this(false);
-    }
-
-    public SSProtocolCodec(boolean isClient) {
-        this.isClient = isClient;
     }
 
     @Override
@@ -65,7 +64,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
             } else {
                 addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
             }
-            ByteBuf addrBuff = Unpooled.buffer(128);
+            ByteBuf addrBuff = Bytes.directBuffer();
             addrRequest.encode(addrBuff);
 
             buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
@@ -98,7 +97,6 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
                 }
                 return;
             }
-            log.debug(ctx.channel().id().toString() + " addressType = " + addrRequest.addressType() + ",host = " + addrRequest.host() + ",port = " + addrRequest.port() + ",dataBuff = " + buf.readableBytes());
 
             InetSocketAddress addr = new InetSocketAddress(addrRequest.host(), addrRequest.port());
             ctx.channel().attr(!isClient ? SSCommon.REMOTE_DEST : SSCommon.REMOTE_SRC).set(addr);

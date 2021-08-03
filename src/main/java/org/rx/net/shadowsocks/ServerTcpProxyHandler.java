@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RequiredArgsConstructor
-public class SSServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
+public class ServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
     final ShadowsocksServer server;
     final ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
     Channel outbound;

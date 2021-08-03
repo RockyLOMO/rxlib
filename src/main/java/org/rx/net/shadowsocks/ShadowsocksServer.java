@@ -1,6 +1,5 @@
 package org.rx.net.shadowsocks;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -63,10 +62,9 @@ public class ShadowsocksServer extends Disposable {
                 }
             }
 
-            //ss
-            ctx.pipeline().addLast(new SSServerReceiveHandler(), new SSServerSendHandler(),
-                    new SSCipherCodec(), new SSProtocolCodec(),
-                    new SSServerTcpProxyHandler(this));
+            ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
+                    CipherCodec.DEFAULT, new ProtocolCodec(),
+                    new ServerTcpProxyHandler(this));
         });
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
@@ -83,9 +81,9 @@ public class ShadowsocksServer extends Disposable {
                         _crypto.setForUdp(true);
                         ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-                        ctx.pipeline().addLast(new SSServerReceiveHandler(), new SSServerSendHandler(),
-                                new SSCipherCodec(), new SSProtocolCodec(),
-                                new SSServerUdpProxyHandler());
+                        ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
+                                CipherCodec.DEFAULT, new ProtocolCodec(),
+                                ServerUdpProxyHandler.DEFAULT);
                     }
                 }).bind(config.getServerEndpoint()).channel();
     }

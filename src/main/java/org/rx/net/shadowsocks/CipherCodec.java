@@ -1,6 +1,7 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
@@ -10,7 +11,10 @@ import org.rx.net.shadowsocks.encryption.ICrypto;
 import java.util.List;
 
 @Slf4j
-public class SSCipherCodec extends MessageToMessageCodec<Object, Object> {
+@ChannelHandler.Sharable
+public class CipherCodec extends MessageToMessageCodec<Object, Object> {
+    public static final CipherCodec DEFAULT = new CipherCodec();
+
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf buf = Sockets.getMessageBuf(msg);

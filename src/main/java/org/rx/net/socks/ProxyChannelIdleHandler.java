@@ -17,7 +17,7 @@ public class ProxyChannelIdleHandler extends ChannelInboundHandlerAdapter {
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
             String ch = ctx.channel() instanceof NioDatagramChannel ? "UDP" : "TCP";
-            log.info("{} {} idle timeout: {}", ch, ctx.channel().remoteAddress(), ((IdleStateEvent) evt).state());
+            log.info("{} {} idle timeout: {}", ch, ctx.channel(), ((IdleStateEvent) evt).state());
             Sockets.closeOnFlushed(ctx.channel());
             return;
         }

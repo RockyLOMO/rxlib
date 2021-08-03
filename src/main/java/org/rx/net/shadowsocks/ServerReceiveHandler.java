@@ -1,14 +1,18 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 
 import java.net.InetSocketAddress;
 
-public class SSServerReceiveHandler extends SimpleChannelInboundHandler<Object> {
-    public SSServerReceiveHandler() {
+@ChannelHandler.Sharable
+public class ServerReceiveHandler extends SimpleChannelInboundHandler<Object> {
+    public static final ServerReceiveHandler DEFAULT = new ServerReceiveHandler();
+
+    public ServerReceiveHandler() {
         super(false);
     }
 
@@ -21,7 +25,6 @@ public class SSServerReceiveHandler extends SimpleChannelInboundHandler<Object> 
             if (buf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
                 return;
             }
-            buf.skipBytes(3);
             ctx.channel().attr(SSCommon.REMOTE_ADDRESS).set(udpRaw.sender());
             ctx.fireChannelRead(buf);
             return;

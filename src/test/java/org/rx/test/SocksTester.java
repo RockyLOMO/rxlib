@@ -234,19 +234,24 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void ssProxy() {
+        String defPwd = "123456";
         SocksConfig backConf = new SocksConfig(1082);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(null, null), null);
+        SocksUser usr = new SocksUser("rocky");
+        usr.setPassword(defPwd);
+        usr.setMaxIpCount(-1);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null), null);
 
         DnsServer frontDnsSvr = new DnsServer(853);
         UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
 
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.parseEndpoint("127.0.0.1:1081"),
-                CipherKind.AES_128_GCM.getCipherName(), "123456");
+                CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
+//            return new DirectUpstream(dstEp);
             if (dstEp.equals(loopbackDns)) {
                 return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
             }
-            return new Socks5Upstream(dstEp, backConf, AuthenticEndpoint.valueOf("rocky:202002@127.0.0.1:1082"));
+            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);

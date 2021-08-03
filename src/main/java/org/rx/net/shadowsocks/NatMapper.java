@@ -1,23 +1,20 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.channel.Channel;
+import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class NatMapper {
+class NatMapper {
     private static final Map<InetSocketAddress, Channel> udpTable = new ConcurrentHashMap<>();
 
-    static void putUdpChannel(InetSocketAddress udpTarget, Channel udpChannel) {
-        udpTable.put(udpTarget, udpChannel);
+    static Channel getChannel(InetSocketAddress udpTarget, BiFunc<InetSocketAddress, Channel> loadFn) {
+        return udpTable.computeIfAbsent(udpTarget, loadFn.toFunction());
     }
 
-    static Channel getUdpChannel(InetSocketAddress udpTarget) {
-        return udpTable.get(udpTarget);
-    }
-
-    static void closeUdpChannel(InetSocketAddress udpTarget) {
+    static void closeChannel(InetSocketAddress udpTarget) {
         Channel udpChannel = udpTable.remove(udpTarget);
         if (udpChannel != null && udpChannel.isActive()) {
             udpChannel.close();

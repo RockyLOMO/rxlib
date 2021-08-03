@@ -45,7 +45,7 @@ public class SSClientTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new SSCipherCodec(), new SSProtocolCodec(true), new ForwardingBackendHandler(ctx, pendingPackages));
+                }, new CipherCodec(), new ProtocolCodec(true), new ForwardingBackendHandler(ctx, pendingPackages));
             }).connect(config.getServerEndpoint()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.error("SsClient connect to backend {} fail", config.getServerEndpoint(), f.cause());
