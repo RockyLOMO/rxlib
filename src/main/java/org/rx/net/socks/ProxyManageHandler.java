@@ -31,7 +31,9 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         refCnt.incrementAndGet();
         if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
             log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
-            refCnt.decrementAndGet();
+            if (refCnt.decrementAndGet() <= 0) {
+                user.getLoginIps().remove(realEp.getAddress());
+            }
             Sockets.closeOnFlushed(ctx.channel());
         }
     }

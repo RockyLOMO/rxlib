@@ -344,7 +344,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     private Entry<TK, TV> findValue(HashFileIndexer.KeyData<TK> key) {
-        require(key, key.logPosition >= 0);
+//        require(key, key.logPosition >= 0);
+        if (key.logPosition == TOMB_MARK) {
+            log.warn("Recheck {}", key);
+            return null;
+        }
         if (key.logPosition > wal.meta.getLogPosition()) {
             key.logPosition = TOMB_MARK;
             indexer.saveKey(key);

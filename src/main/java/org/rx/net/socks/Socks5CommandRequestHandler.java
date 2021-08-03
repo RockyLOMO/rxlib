@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
@@ -21,7 +20,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Slf4j
-@RequiredArgsConstructor
+@ChannelHandler.Sharable
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
     public static final Socks5CommandRequestHandler DEFAULT = new Socks5CommandRequestHandler();
 
