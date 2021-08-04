@@ -79,7 +79,8 @@ public final class Sockets {
     }
 
     static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
-        int threads = RUNTIME_REACTOR.equals(reactorName) ? SHARED_EVENT_LOOP_GROUP_THREADS : 0;
+//        int threads = RUNTIME_REACTOR.equals(reactorName) ? SHARED_EVENT_LOOP_GROUP_THREADS : 0;
+        int threads = 0;
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup(threads) : new NioEventLoopGroup(threads));
     }
 
@@ -202,18 +203,33 @@ public final class Sockets {
     }
 
     public static Bootstrap udpBootstrap() {
-        return udpBootstrap(false);
+        return udpBootstrap(false, null);
     }
 
     //DefaultDatagramChannelConfig
-    public static Bootstrap udpBootstrap(MemoryMode mode, boolean asServer) {
+    public static Bootstrap udpBootstrap(boolean asServer, MemoryMode mode) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
-        int bufSize =
+
+        int bufSize;
+        switch (mode) {
+            case MEDIUM:
+                bufSize = 1024 * 64;
+                break;
+            case HIGH:
+                bufSize = 1024 * 1024;
+                break;
+            default:
+                bufSize = 1024 * 4;
+                break;
+        }
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(getUdpEventLoop()).channel(NioDatagramChannel.class)
                 .option(ChannelOption.SO_BROADCAST, asServer)
+                .option(ChannelOption.SO_RCVBUF, bufSize)
+                .option(ChannelOption.SO_SNDBUF, bufSize)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(bufSize))
                 .handler(new LoggingHandler(LogLevel.INFO));
         return bootstrap;
     }

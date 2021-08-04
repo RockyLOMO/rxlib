@@ -16,6 +16,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.support.SocksSupport;
@@ -87,18 +88,15 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(true)
-                .option(ChannelOption.SO_RCVBUF, SocksConfig.UDP_BUF_SIZE)
-                .option(ChannelOption.SO_SNDBUF, SocksConfig.UDP_BUF_SIZE)
-                .handler(new ChannelInitializer<NioDatagramChannel>() {
-                    @Override
-                    protected void initChannel(NioDatagramChannel channel) {
-                        channel.attr(CTX_SERVER).set(SocksProxyServer.this);
-                        ChannelPipeline pipeline = channel.pipeline();
-                        TransportUtil.addFrontendHandler(channel, config);
-                        pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
-                    }
-                }).bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
+        udpChannel = Sockets.udpBootstrap(true, MemoryMode.HIGH).handler(new ChannelInitializer<NioDatagramChannel>() {
+            @Override
+            protected void initChannel(NioDatagramChannel channel) {
+                channel.attr(CTX_SERVER).set(SocksProxyServer.this);
+                ChannelPipeline pipeline = channel.pipeline();
+                TransportUtil.addFrontendHandler(channel, config);
+                pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
+            }
+        }).bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     @Override

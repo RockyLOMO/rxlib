@@ -12,6 +12,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
@@ -69,23 +70,20 @@ public class ShadowsocksServer extends Disposable {
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(true)
-                .option(ChannelOption.SO_RCVBUF, SocksConfig.UDP_BUF_SIZE)// 设置UDP读缓冲区为64k
-                .option(ChannelOption.SO_SNDBUF, SocksConfig.UDP_BUF_SIZE)// 设置UDP写缓冲区为64k
-                .handler(new ChannelInitializer<NioDatagramChannel>() {
-                    @Override
-                    protected void initChannel(NioDatagramChannel ctx) throws Exception {
-                        ctx.attr(SSCommon.IS_UDP).set(true);
+        udpChannel = Sockets.udpBootstrap(true, MemoryMode.HIGH).handler(new ChannelInitializer<NioDatagramChannel>() {
+            @Override
+            protected void initChannel(NioDatagramChannel ctx) throws Exception {
+                ctx.attr(SSCommon.IS_UDP).set(true);
 
-                        ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
-                        _crypto.setForUdp(true);
-                        ctx.attr(SSCommon.CIPHER).set(_crypto);
+                ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
+                _crypto.setForUdp(true);
+                ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-                        ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
-                                CipherCodec.DEFAULT, new ProtocolCodec(),
-                                ServerUdpProxyHandler.DEFAULT);
-                    }
-                }).bind(config.getServerEndpoint()).channel();
+                ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
+                        CipherCodec.DEFAULT, new ProtocolCodec(),
+                        ServerUdpProxyHandler.DEFAULT);
+            }
+        }).bind(config.getServerEndpoint()).channel();
     }
 
     @Override

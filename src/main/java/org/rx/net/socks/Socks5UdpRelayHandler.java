@@ -11,6 +11,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.exception.ApplicationException;
 import org.rx.io.Bytes;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 
@@ -55,7 +56,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         Channel outbound = HOLD.computeIfAbsent(inRemoteEp, k -> {
             try {
-                return Sockets.udpBootstrap().handler(new ChannelInitializer<NioDatagramChannel>() {
+                return Sockets.udpBootstrap(false, server.config.getMemoryMode()).handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override
                     protected void initChannel(NioDatagramChannel channel) {
                         ChannelPipeline pipeline = channel.pipeline();

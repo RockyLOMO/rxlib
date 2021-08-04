@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.Disposable;
 import org.rx.io.Files;
+import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.support.UpstreamSupport;
 
@@ -42,7 +43,7 @@ public class DnsServer extends Disposable {
         });
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        Bootstrap bootstrap = Sockets.udpBootstrap(true).handler(new ChannelInitializer<NioDatagramChannel>() {
+        Bootstrap bootstrap = Sockets.udpBootstrap(true, MemoryMode.MEDIUM).handler(new ChannelInitializer<NioDatagramChannel>() {
             @Override
             protected void initChannel(NioDatagramChannel channel) {
                 channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),

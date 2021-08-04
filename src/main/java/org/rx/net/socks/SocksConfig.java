@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @EqualsAndHashCode(callSuper = true)
 public class SocksConfig extends SocketConfig {
     private static final long serialVersionUID = 3526543718065617052L;
-    public static final int UDP_BUF_SIZE = 1024 * 1024 * 2;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 60 * 24;
