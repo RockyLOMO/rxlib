@@ -8,12 +8,15 @@ import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.Disposable;
+import org.rx.io.Files;
 import org.rx.net.Sockets;
 import org.rx.net.support.UpstreamSupport;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,5 +55,24 @@ public class DnsServer extends Disposable {
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(serverBootstrap);
+    }
+
+    @SneakyThrows
+    public DnsServer addHosts(String host, String ip) {
+        customHosts.put(host, InetAddress.getByName(ip).getAddress());
+        return this;
+    }
+
+    public DnsServer addHostsFile(String filePath) {
+        Files.readLines(filePath).forEach(line -> {
+            String t = "\t";
+            int s = line.indexOf(t), e = line.lastIndexOf(t);
+            if (s == -1 || e == -1) {
+                log.warn("Invalid line {}", line);
+                return;
+            }
+            addHosts(line.substring(0, s), line.substring(e + t.length()));
+        });
+        return this;
     }
 }

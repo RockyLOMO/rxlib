@@ -107,9 +107,10 @@ public final class Main implements SocksSupport {
             app = new Main(frontSvr);
 
             Integer shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
-            DnsServer frontDnsSvr = new DnsServer(shadowDnsPort);
-            frontDnsSvr.setTtl(60 * 60 * 12); //12 hour
-            frontDnsSvr.setSupport(shadowServers);
+            DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+            dnsSvr.setTtl(60 * 60 * 12); //12 hour
+            dnsSvr.setSupport(shadowServers);
+            dnsSvr.addHostsFile("hosts.txt");
             Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort));
 
             Action fn = () -> {
@@ -119,7 +120,7 @@ public final class Main implements SocksSupport {
                 }
             };
             fn.invoke();
-            Tasks.schedule(fn, 120 * 1000);
+            Tasks.schedule(fn, 60 * 4 * 1000);
 
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
                 ShadowsocksConfig ssConfig = tuple.left;

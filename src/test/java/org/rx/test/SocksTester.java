@@ -347,6 +347,7 @@ public class SocksTester {
             }
         }))));
         server.getCustomHosts().put(domain, hostResult.getAddress());
+        server.addHostsFile("C:\\download\\hosts.txt");
 
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
         Sockets.injectNameService(localNsEp);

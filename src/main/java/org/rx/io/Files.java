@@ -20,7 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
-import java.util.List;
 import java.util.stream.Stream;
 
 public class Files extends FilenameUtils {
@@ -49,20 +48,6 @@ public class Files extends FilenameUtils {
 
     public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
         return curdFile.listFiles(directoryPath, recursive);
-    }
-
-    public static Path path(String root, String... paths) {
-        return Paths.get(root, paths);
-    }
-
-    @SneakyThrows
-    public static List<String> readAllLines(Path filePath) {
-        return readAllLines(filePath, StandardCharsets.UTF_8);
-    }
-
-    @SneakyThrows
-    public static List<String> readAllLines(Path filePath, Charset charset) {
-        return java.nio.file.Files.readAllLines(filePath, charset);
     }
 
     public static String concatPath(@NonNull String root, String... paths) {
@@ -155,5 +140,19 @@ public class Files extends FilenameUtils {
             return MediaType.TEXT_PLAIN_VALUE;
         }
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    }
+
+    public static Path path(String root, String... paths) {
+        return Paths.get(root, paths);
+    }
+
+    @SneakyThrows
+    public static Stream<String> readLines(String filePath) {
+        return readLines(filePath, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static Stream<String> readLines(String filePath, Charset charset) {
+        return java.nio.file.Files.lines(Paths.get(filePath), charset);
     }
 }

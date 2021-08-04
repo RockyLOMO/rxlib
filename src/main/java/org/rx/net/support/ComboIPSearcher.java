@@ -28,6 +28,11 @@ class ComboIPSearcher implements IPSearcher {
     @SneakyThrows
     @Override
     public IPAddress search(@NonNull String ip) {
+        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+            return Tasks.randomRetry(() -> ip_Api(ip), () -> ipGeo(ip),
+                    () -> ipData(ip), () -> ipApi(ip));
+        }
+
         return store.computeIfAbsent(ip, k -> Tasks.randomRetry(() -> ip_Api(ip), () -> ipGeo(ip),
                 () -> ipData(ip), () -> ipApi(ip)));
     }
