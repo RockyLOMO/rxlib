@@ -30,8 +30,6 @@ public class IOTester {
         IOStream.release(buffer);
     }
 
-    final String baseDir = "D:\\download";
-    final String filePathFormat = baseDir + "\\%s.txt";
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @SneakyThrows
@@ -243,7 +241,7 @@ public class IOTester {
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));
 
-        FileStream fs = new FileStream(String.format(filePathFormat, "mmap"));
+        FileStream fs = new FileStream(TConfig.path("mmap.txt"));
         CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
         testMmapStream(mmap);
 
@@ -362,26 +360,26 @@ public class IOTester {
 
     @Test
     public void listFiles() {
-        for (File p : Files.listFiles(baseDir, false)) {
+        for (File p : Files.listFiles(TConfig.baseDir, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listFiles(baseDir, true)) {
+        for (File p : Files.listFiles(TConfig.baseDir, true)) {
             System.out.println(p);
         }
     }
 
     @Test
     public void listDirectories() {
-        Path path = Files.path(baseDir);
+        Path path = Files.path(TConfig.baseDir);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (File p : Files.listDirectories(baseDir, false)) {
+        for (File p : Files.listDirectories(TConfig.baseDir, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listDirectories(baseDir, true)) {
+        for (File p : Files.listDirectories(TConfig.baseDir, true)) {
             System.out.println(p);
         }
     }

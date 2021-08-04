@@ -65,13 +65,17 @@ public class DnsServer extends Disposable {
 
     public DnsServer addHostsFile(String filePath) {
         Files.readLines(filePath).forEach(line -> {
+            if (line.startsWith("#")) {
+                return;
+            }
+
             String t = "\t";
             int s = line.indexOf(t), e = line.lastIndexOf(t);
             if (s == -1 || e == -1) {
                 log.warn("Invalid line {}", line);
                 return;
             }
-            addHosts(line.substring(0, s), line.substring(e + t.length()));
+            addHosts("." + line.substring(0, s), line.substring(e + t.length()));
         });
         return this;
     }

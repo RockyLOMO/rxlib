@@ -39,11 +39,12 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
-    static final String runtimeReactor = "_RUNTIME";
+    static final int SHARED_EVENT_LOOP_GROUP_THREADS = ThreadPool.CPU_THREADS * 3;
+    static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
-    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
+    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup(SHARED_EVENT_LOOP_GROUP_THREADS);
 
     @SneakyThrows
     public static void injectNameService(InetSocketAddress... nameServerList) {
@@ -78,7 +79,8 @@ public final class Sockets {
     }
 
     static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
-        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+        int threads = RUNTIME_REACTOR.equals(reactorName) ? SHARED_EVENT_LOOP_GROUP_THREADS : 0;
+        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup(threads) : new NioEventLoopGroup(threads));
     }
 
     // not executor
@@ -110,7 +112,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
         WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseRuntimeTcpEventLoop() ? reactorEventLoop(runtimeReactor) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), config.isUseRuntimeTcpEventLoop() ? reactorEventLoop(RUNTIME_REACTOR) : newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -156,18 +158,6 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap udpBootstrap() {
-        return udpBootstrap(false);
-    }
-
-    public static Bootstrap udpBootstrap(boolean broadcast) {
-        Bootstrap bootstrap = new Bootstrap();
-        bootstrap.group(getUdpEventLoop()).channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, broadcast)
-                .handler(new LoggingHandler(LogLevel.INFO));
-        return bootstrap;
-    }
-
     public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
         return bootstrap(Strings.EMPTY, null, initChannel);
     }
@@ -209,6 +199,23 @@ public final class Sockets {
             });
         }
         return b;
+    }
+
+    public static Bootstrap udpBootstrap() {
+        return udpBootstrap(false);
+    }
+
+    //DefaultDatagramChannelConfig
+    public static Bootstrap udpBootstrap(MemoryMode mode, boolean asServer) {
+        if (mode == null) {
+            mode = MemoryMode.LOW;
+        }
+        int bufSize =
+        Bootstrap bootstrap = new Bootstrap();
+        bootstrap.group(getUdpEventLoop()).channel(NioDatagramChannel.class)
+                .option(ChannelOption.SO_BROADCAST, asServer)
+                .handler(new LoggingHandler(LogLevel.INFO));
+        return bootstrap;
     }
 
     public static ChannelFutureListener logBind(int port) {
