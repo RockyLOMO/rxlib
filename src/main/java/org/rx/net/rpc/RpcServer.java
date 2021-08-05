@@ -17,7 +17,6 @@ import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
-import org.rx.net.DuplexHandler;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.packet.HandshakePacket;
@@ -176,7 +175,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
-                    DuplexHandler.DEFAULT, new ClientHandler());
+                    new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {

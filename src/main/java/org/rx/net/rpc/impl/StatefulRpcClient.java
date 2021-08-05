@@ -17,7 +17,6 @@ import org.rx.bean.DateTime;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
-import org.rx.net.DuplexHandler;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.*;
@@ -187,7 +186,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(new ObjectEncoder(),
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
-                    DuplexHandler.DEFAULT, new ClientHandler());
+                    new ClientHandler());
         });
         ChannelFuture future = bootstrap.connect(config.getServerEndpoint());
         if (!wait) {

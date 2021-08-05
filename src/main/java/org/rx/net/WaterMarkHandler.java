@@ -5,10 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @ChannelHandler.Sharable
-public final class DuplexHandler extends ChannelDuplexHandler {
-    public static final DuplexHandler DEFAULT = new DuplexHandler();
+final class WaterMarkHandler extends ChannelDuplexHandler {
+    public static final WaterMarkHandler DEFAULT = new WaterMarkHandler();
 
-    private DuplexHandler() {
+    private WaterMarkHandler() {
     }
 
     @Override
@@ -17,7 +17,7 @@ public final class DuplexHandler extends ChannelDuplexHandler {
         if (!channel.isWritable()) {
             synchronized (channel) {
                 if (!channel.isWritable()) {
-                    log.error("Channel {} not writable", channel);
+                    log.warn("{} {} not writable", Sockets.protocolName(channel), channel);
                     channel.wait();
                 }
             }
@@ -30,7 +30,7 @@ public final class DuplexHandler extends ChannelDuplexHandler {
         final Channel channel = ctx.channel();
         if (channel.isWritable()) {
             synchronized (channel) {
-                log.warn("Channel {} writable callback", channel);
+                log.info("{} {} writable", Sockets.protocolName(channel), channel);
                 channel.notifyAll();
             }
         }

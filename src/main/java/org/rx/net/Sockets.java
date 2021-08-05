@@ -39,12 +39,11 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
-    static final int SHARED_EVENT_LOOP_GROUP_THREADS = ThreadPool.CPU_THREADS * 3;
     static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
-    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup(SHARED_EVENT_LOOP_GROUP_THREADS);
+    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
 
     @SneakyThrows
     public static void injectNameService(InetSocketAddress... nameServerList) {
@@ -79,9 +78,7 @@ public final class Sockets {
     }
 
     static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
-//        int threads = RUNTIME_REACTOR.equals(reactorName) ? SHARED_EVENT_LOOP_GROUP_THREADS : 0;
-        int threads = 0;
-        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup(threads) : new NioEventLoopGroup(threads));
+        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
     // not executor
@@ -110,8 +107,8 @@ public final class Sockets {
         boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
         int bossThreadAmount = 1; //等于bind的次数，默认1
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
-        WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
+        WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
                 .group(newEventLoop(bossThreadAmount), config.isUseRuntimeTcpEventLoop() ? reactorEventLoop(RUNTIME_REACTOR) : newEventLoop(0))
                 .channel(serverChannelClass())
@@ -126,7 +123,8 @@ public final class Sockets {
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
+                .handler(WaterMarkHandler.DEFAULT);
         if (config.isEnableNettyLog()) {
             //netty日志
             b.handler(new LoggingHandler(LogLevel.INFO));
@@ -175,8 +173,8 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = new AdaptiveRecvByteBufAllocator(64, 2048, mode.getReceiveBufMaximum());
-        WriteBufferWaterMark writeBufferWaterMark = new WriteBufferWaterMark(mode.getSendBufLowWaterMark(), mode.getSendBufHighWaterMark());
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
+        WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         Bootstrap b = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(channelClass())
@@ -186,7 +184,8 @@ public final class Sockets {
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
+                .handler(WaterMarkHandler.DEFAULT);
         if (config.isEnableNettyLog()) {
             b.handler(new LoggingHandler(LogLevel.INFO));
         }
@@ -212,36 +211,40 @@ public final class Sockets {
             mode = MemoryMode.LOW;
         }
 
-        int bufSize;
-        switch (mode) {
-            case MEDIUM:
-                bufSize = 1024 * 64;
-                break;
-            case HIGH:
-                bufSize = 1024 * 1024;
-                break;
-            default:
-                bufSize = 1024 * 4;
-                break;
-        }
-        Bootstrap bootstrap = new Bootstrap();
-        bootstrap.group(getUdpEventLoop()).channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, asServer)
-                .option(ChannelOption.SO_RCVBUF, bufSize)
-                .option(ChannelOption.SO_SNDBUF, bufSize)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(bufSize))
-                .handler(new LoggingHandler(LogLevel.INFO));
-        return bootstrap;
+        Bootstrap b = new Bootstrap().group(getUdpEventLoop()).channel(NioDatagramChannel.class)
+                .option(ChannelOption.SO_BROADCAST, asServer);
+//        int bufSize;
+//        switch (mode) {
+//            case MEDIUM:
+//                bufSize = 1024 * 128;
+//                break;
+//            case HIGH:
+//                bufSize = 1024 * 1024 * 2;
+//                break;
+//            default:
+//                bufSize = 1024 * 4;
+//                break;
+//        }
+//        b.option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(bufSize))
+//                .option(ChannelOption.SO_SNDBUF, bufSize);
+        b.option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
+                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
+                .handler(WaterMarkHandler.DEFAULT);
+        return b.handler(new LoggingHandler(LogLevel.INFO));
+    }
+
+    public static String protocolName(Channel channel) {
+        return channel instanceof NioDatagramChannel ? "UDP" : "TCP";
     }
 
     public static ChannelFutureListener logBind(int port) {
         return f -> {
-            String ch = f.channel() instanceof NioDatagramChannel ? "UDP" : "TCP";
+            String pn = protocolName(f.channel());
             if (!f.isSuccess()) {
-                log.error("{} Listen on port {} fail", ch, port, f.cause());
+                log.error("{} Listen on port {} fail", pn, port, f.cause());
                 return;
             }
-            log.info("{} Listened on {}", ch, f.channel().localAddress());
+            log.info("{} Listened on {}", pn, f.channel().localAddress());
         };
     }
 
