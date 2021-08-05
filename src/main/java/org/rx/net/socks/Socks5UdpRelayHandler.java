@@ -11,7 +11,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.exception.ApplicationException;
 import org.rx.io.Bytes;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 
@@ -25,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @ChannelHandler.Sharable
 public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
-    static final int CHANNEL_TIMEOUT = 60 * 8;
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     /**
@@ -62,7 +60,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         ChannelPipeline pipeline = channel.pipeline();
                         TransportUtil.addBackendHandler(channel, server.config, dstEp);
                         pipeline.addLast(
-                                new IdleStateHandler(0, 0, CHANNEL_TIMEOUT),
+                                new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()),
                                 ProxyChannelIdleHandler.DEFAULT,
                                 new SimpleChannelInboundHandler<DatagramPacket>() {
                                     @Override
