@@ -16,14 +16,27 @@ public enum MemoryMode {
     private final int backlog;
     private final int receiveBufInitial, receiveBufMaximum;
     private final int sendBufHighWaterMark;
+    private AdaptiveRecvByteBufAllocator tcpRecvByteBufAllocator, udpRecvByteBufAllocator;
+    private WriteBufferWaterMark waterMark;
 
     public AdaptiveRecvByteBufAllocator adaptiveRecvByteBufAllocator(boolean isUdp) {
-        int initial = receiveBufInitial;
-        int minimum = isUdp ? initial : initial / 16;
-        return new AdaptiveRecvByteBufAllocator(minimum, initial, receiveBufMaximum);
+        if (isUdp) {
+            if (udpRecvByteBufAllocator == null) {
+                udpRecvByteBufAllocator = new AdaptiveRecvByteBufAllocator(receiveBufInitial, receiveBufInitial, receiveBufMaximum);
+            }
+            return udpRecvByteBufAllocator;
+        }
+
+        if (tcpRecvByteBufAllocator == null) {
+            tcpRecvByteBufAllocator = new AdaptiveRecvByteBufAllocator(receiveBufInitial / 16, receiveBufInitial, receiveBufMaximum);
+        }
+        return tcpRecvByteBufAllocator;
     }
 
     public WriteBufferWaterMark writeBufferWaterMark() {
-        return new WriteBufferWaterMark(sendBufHighWaterMark / 2, sendBufHighWaterMark);
+        if (waterMark == null) {
+            waterMark = new WriteBufferWaterMark(sendBufHighWaterMark / 2, sendBufHighWaterMark);
+        }
+        return waterMark;
     }
 }

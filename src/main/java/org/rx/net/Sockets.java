@@ -212,22 +212,8 @@ public final class Sockets {
         }
 
         Bootstrap b = new Bootstrap().group(getUdpEventLoop()).channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, asServer);
-//        int bufSize;
-//        switch (mode) {
-//            case MEDIUM:
-//                bufSize = 1024 * 128;
-//                break;
-//            case HIGH:
-//                bufSize = 1024 * 1024 * 2;
-//                break;
-//            default:
-//                bufSize = 1024 * 4;
-//                break;
-//        }
-//        b.option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(bufSize))
-//                .option(ChannelOption.SO_SNDBUF, bufSize);
-        b.option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
+                .option(ChannelOption.SO_BROADCAST, asServer)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
                 .handler(WaterMarkHandler.DEFAULT);
         return b.handler(new LoggingHandler(LogLevel.INFO));

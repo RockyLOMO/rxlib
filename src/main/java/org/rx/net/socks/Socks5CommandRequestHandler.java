@@ -54,7 +54,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             ReconnectingEventArgs e = new ReconnectingEventArgs(upstream);
             connect(inbound, msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            log.info("UDP_ASSOCIATE {} => {}:{}", inbound.channel().remoteAddress(), msg.dstAddr(), msg.dstPort());
+//            log.info("UDP_ASSOCIATE {} => {}:{}", inbound.channel().remoteAddress(), msg.dstAddr(), msg.dstPort());
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
             Socks5AddressType bindAddrType = bindEp.getAddress() instanceof Inet6Address ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS,

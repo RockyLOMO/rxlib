@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ChannelHandler.Sharable
 public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
-    static final int CHANNEL_TIMEOUT = 60 * 10;
+    static final int CHANNEL_TIMEOUT = 60 * 8;
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     /**
