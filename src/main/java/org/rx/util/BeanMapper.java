@@ -181,7 +181,7 @@ public class BeanMapper {
             if (mapping.trim()) {
                 val = val.trim();
             }
-            if (!Strings.isNullOrEmpty(mapping.format())) {
+            if (!Strings.isEmpty(mapping.format())) {
                 val = String.format(mapping.format(), val);
             }
             sourceValue = val;

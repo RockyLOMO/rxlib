@@ -50,6 +50,10 @@ public class Files extends FilenameUtils {
         return curdFile.listFiles(directoryPath, recursive);
     }
 
+    public static boolean isPath(String str) {
+        return str != null && (str.startsWith("/") || str.startsWith("\\") || str.startsWith(":\\", 1));
+    }
+
     public static String concatPath(@NonNull String root, String... paths) {
         StringBuilder p = new StringBuilder(curdFile.padDirectoryPath(root));
         if (!Arrays.isEmpty(paths)) {

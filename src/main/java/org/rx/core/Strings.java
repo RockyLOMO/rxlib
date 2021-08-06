@@ -107,7 +107,7 @@ public class Strings extends StringUtils {
     }
 
     public static String maskPrivacy(String val) {
-        if (isNullOrEmpty(val)) {
+        if (isEmpty(val)) {
             return "";
         }
 
@@ -146,7 +146,7 @@ public class Strings extends StringUtils {
     @ErrorCode("lengthError")
     public static String[] split(String str, String delimiter, int fixedLength) {
         String[] result;
-        if (isNullOrEmpty(str)) {
+        if (isEmpty(str)) {
             result = new String[0];
         } else {
             result = str.split(Pattern.quote(delimiter));
@@ -155,10 +155,6 @@ public class Strings extends StringUtils {
             throw new ApplicationException("lengthError", values(fixedLength));
         }
         return result;
-    }
-
-    public static boolean isNullOrEmpty(String input) {
-        return input == null || input.length() == 0 || "null".equals(input);
     }
 
     //region Nested

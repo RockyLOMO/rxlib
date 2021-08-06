@@ -70,7 +70,7 @@ public class HttpClient {
         public RequestBody toBody() {
             if (MapUtils.isEmpty(files)) {
                 String formString = buildUrl(null, forms);
-                if (!Strings.isNullOrEmpty(formString)) {
+                if (!Strings.isEmpty(formString)) {
                     formString = formString.substring(1);
                 }
                 return RequestBody.create(FORM_TYPE, formString);
@@ -333,7 +333,7 @@ public class HttpClient {
 
     @SneakyThrows
     public static String encodeUrl(String str) {
-        if (Strings.isNullOrEmpty(str)) {
+        if (Strings.isEmpty(str)) {
             return "";
         }
 
@@ -342,7 +342,7 @@ public class HttpClient {
 
     @SneakyThrows
     public static String decodeUrl(String str) {
-        if (Strings.isNullOrEmpty(str)) {
+        if (Strings.isEmpty(str)) {
             return "";
         }
 

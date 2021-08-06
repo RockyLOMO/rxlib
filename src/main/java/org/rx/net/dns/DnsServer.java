@@ -7,6 +7,7 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DnsServer extends Disposable {
     final ServerBootstrap serverBootstrap;
     @Getter
-    final Map<String, byte[]> customHosts = new ConcurrentHashMap<>();
+    final Map<String, byte[]> hosts = new ConcurrentHashMap<>();
     @Setter
     int ttl = 1800;
     @Setter
@@ -60,7 +61,16 @@ public class DnsServer extends Disposable {
 
     @SneakyThrows
     public DnsServer addHosts(String host, String ip) {
-        customHosts.put(host, InetAddress.getByName(ip).getAddress());
+        return addHosts(host, InetAddress.getByName(ip));
+    }
+
+    public DnsServer addHosts(@NonNull String host, InetAddress ip) {
+        if (ip == null) {
+            hosts.remove(host);
+            return this;
+        }
+
+        hosts.put(host, ip.getAddress());
         return this;
     }
 
@@ -76,7 +86,7 @@ public class DnsServer extends Disposable {
                 log.warn("Invalid line {}", line);
                 return;
             }
-            addHosts("." + line.substring(0, s), line.substring(e + t.length()));
+            addHosts(line.substring(e + t.length()), line.substring(0, s));
         });
         return this;
     }

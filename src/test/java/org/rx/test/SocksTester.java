@@ -327,8 +327,8 @@ public class SocksTester {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
 
-        final String domain = "devops.f-li.cn";
-        final InetAddress hostResult = InetAddress.getByName("2.2.2.2");
+        final String host = "devops.f-li.cn";
+        final InetAddress hostIp = InetAddress.getByName("2.2.2.2");
         DnsServer server = new DnsServer(54, nsEp);
         server.setSupport(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
@@ -346,31 +346,33 @@ public class SocksTester {
 
             }
         }))));
-        server.getCustomHosts().put(domain, hostResult.getAddress());
-        server.addHostsFile(TConfig.path("hosts.txt"));
+        server.addHosts(host, hostIp);
 
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
         Sockets.injectNameService(localNsEp);
 
-        List<InetAddress> r0 = DnsClient.inlandClient().resolveAll(domain);
-        InetAddress[] r1 = InetAddress.getAllByName(domain);
-        System.out.println(r0 + "\n" + toJsonArray(r1));
-        assert !r0.get(0).equals(r1[0]);
+        List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host);
+        InetAddress[] localResult = InetAddress.getAllByName(host);
+        System.out.println(wanResult + "\n" + toJsonArray(localResult));
+        assert !wanResult.get(0).equals(localResult[0]);
 
         DnsClient client = new DnsClient(localNsEp);
-        InetAddress result = client.resolve(domain);
-        assert result.equals(hostResult);
+        InetAddress result = client.resolve(host);
+        assert result.equals(hostIp);
 
-        String cacheDomain = "www.baidu.com";
-        InetAddress resolve = client.resolve(cacheDomain);
-        System.out.println(resolve);
+        server.addHostsFile(TConfig.path("hosts.txt"));
+        client.resolve("cloud.f-li.cn").equals(InetAddress.getByName("192.168.31.7"));
 
-        sleep((60 + 10) * 1000);
-        client.clearCache();
-        resolve = client.resolve(cacheDomain);
-        System.out.println(resolve);
+//        String cacheDomain = "www.baidu.com";
+//        InetAddress resolve = client.resolve(cacheDomain);
+//        System.out.println(resolve);
+//
+//        sleep((60 + 10) * 1000);
+//        client.clearCache();
+//        resolve = client.resolve(cacheDomain);
+//        System.out.println(resolve);
 
-        System.in.read();
+//        System.in.read();
     }
 
     @Test

@@ -81,16 +81,18 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                                         outBuf.writeShort(outRemoteEp.getPort());
                                         outBuf.writeBytes(out.content());
                                         inbound.writeAndFlush(new DatagramPacket(outBuf, inRemoteEp));
-                                        log.info("UDP[{}] IN {} => {}", out.recipient(), outRemoteEp, inRemoteEp);
+                                        log.debug("UDP[{}] IN {} => {}", out.recipient(), outRemoteEp, inRemoteEp);
                                     }
                                 });
                     }
                 }).bind(0).addListener(Sockets.logBind(0)).sync().channel();
+
+
             } catch (InterruptedException e) {
                 throw ApplicationException.sneaky(e);
             }
         });
         outbound.writeAndFlush(new DatagramPacket(inBuf, dstEp).retain());
-        log.info("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
+        log.debug("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
     }
 }

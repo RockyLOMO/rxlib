@@ -289,6 +289,24 @@ public class CoreTester extends TestUtil {
         System.in.read();
     }
 
+    @Test
+    public void shellExec() {
+        ShellExecutor executor = new ShellExecutor("ping www.baidu.com", null);
+        executor.start(ShellExecutor.CONSOLE_OUT);
+        executor.waitFor();
+
+        executor = new ShellExecutor(TConfig.path("1.bat"), null);
+        ShellExecutor finalExecutor = executor;
+//        executor.start(l -> {
+//            System.out.println(l.getLine());
+//            finalExecutor.kill();
+//        });
+        executor.start(ShellExecutor.fileOut(TConfig.path("out.txt")));
+        executor.waitFor();
+
+        sleep(5000);
+    }
+
     @SneakyThrows
     @Test
     public void cache() {

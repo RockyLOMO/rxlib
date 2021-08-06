@@ -73,7 +73,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         String domain = question.name().substring(0, question.name().length() - 1);
         log.debug("query domain {}", domain);
 
-        byte[] ip = server.getCustomHosts().get(domain);
+        byte[] ip = server.getHosts().get(domain);
         if (ip != null) {
             ctx.writeAndFlush(newResponse(query, question, 150, ip));
             return;

@@ -19,7 +19,7 @@ public class SocksConfig extends SocketConfig {
     public static final int BUF_SIZE_4K = 1024 * 4;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 60 * 24;
+    private int readTimeoutSeconds = 60 * 60 * 18;
     private int writeTimeoutSeconds;
     private int udpTimeoutSeconds = 60 * 8;
     @Getter(lazy = true)

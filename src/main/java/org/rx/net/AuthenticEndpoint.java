@@ -43,10 +43,10 @@ public class AuthenticEndpoint implements Serializable {
     @Override
     public String toString() {
         StringBuilder s = new StringBuilder();
-        if (!Strings.isNullOrEmpty(username)) {
+        if (!Strings.isEmpty(username)) {
             s.append(username);
         }
-        if (!Strings.isNullOrEmpty(password)) {
+        if (!Strings.isEmpty(password)) {
             s.append(":%s", password);
         }
         s.append("@%s", Sockets.toString(endpoint));

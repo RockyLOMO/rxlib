@@ -136,7 +136,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     }
 
     private String friendlyMessage(ErrorCode errorCode, Map<String, Object> messageSource, String code, Object[] values) {
-        if (!Strings.isNullOrEmpty(errorCode.value())) {
+        if (!Strings.isEmpty(errorCode.value())) {
             code += "[" + errorCode.value() + "]";
         }
         if (!Exception.class.equals(errorCode.cause())) {
