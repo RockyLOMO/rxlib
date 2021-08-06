@@ -34,6 +34,11 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         private static final long serialVersionUID = 4598104225029493537L;
         final int lineNumber;
         final String line;
+
+        @Override
+        public String toString() {
+            return String.format("%s.\t%s\n", lineNumber, line);
+        }
     }
 
     @RequiredArgsConstructor
@@ -63,11 +68,12 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 //            } finally {
 //                buf.release();
 //            }
-            fileStream.write(String.format("%s.\t%s\n", l.lineNumber, l.line).getBytes(StandardCharsets.UTF_8));
+            fileStream.write(l.toString().getBytes(StandardCharsets.UTF_8));
+            fileStream.flush();
         }
     }
 
-    public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.printf("%s.\t%s\n", l.lineNumber, l.line);
+    public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.print(l.toString());
     static final String WIN_CMD = "cmd /c ";
     static final List<ShellExecutor> KILL_LIST = Collections.synchronizedList(new ArrayList<>());
 

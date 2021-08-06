@@ -1,12 +1,22 @@
 package org.rx.net.socks.upstream;
 
-import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.Channel;
 import lombok.Getter;
+import lombok.NonNull;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.support.UnresolvedEndpoint;
 
-public abstract class Upstream {
+public class Upstream {
     @Getter
-    protected volatile UnresolvedEndpoint endpoint;
+    protected volatile UnresolvedEndpoint destination;
+    @Getter
+    protected volatile AuthenticEndpoint proxyServer;
 
-    public abstract void initChannel(SocketChannel channel);
+    public Upstream(@NonNull UnresolvedEndpoint dstEp) {
+        destination = dstEp;
+    }
+
+    public void initChannel(Channel channel) {
+
+    }
 }

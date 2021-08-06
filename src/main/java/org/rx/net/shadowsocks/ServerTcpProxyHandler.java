@@ -32,36 +32,36 @@ public class ServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
     public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
         Channel inbound = ctx.channel();
         if (outbound == null) {
-            InetSocketAddress dstEndpoint = inbound.attr(SSCommon.REMOTE_DEST).get();
-            Upstream upstream = server.router.invoke(new UnresolvedEndpoint(dstEndpoint.getHostString(), dstEndpoint.getPort()));
-            UnresolvedEndpoint destinationEp = upstream.getEndpoint();
+            InetSocketAddress realEp = inbound.attr(SSCommon.REMOTE_DEST).get();
+            Upstream upstream = server.router.invoke(new UnresolvedEndpoint(realEp.getHostString(), realEp.getPort()));
+            UnresolvedEndpoint dstEp = upstream.getDestination();
 
-            if (SocksSupport.FAKE_IPS.contains(destinationEp.getHost()) || !Sockets.isValidIp(destinationEp.getHost())) {
-                SUID hash = SUID.compute(destinationEp.toString());
-                SocksSupport.fakeDict().putIfAbsent(hash, destinationEp);
-                destinationEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
+            if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
+                SUID hash = SUID.compute(dstEp.toString());
+                SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
+                dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
             }
 
-            UnresolvedEndpoint finalDestinationEp = destinationEp;
+            UnresolvedEndpoint finalDestinationEp = dstEp;
             outbound = Sockets.bootstrap(inbound.eventLoop(), server.config, ch -> {
                 ChannelPipeline pipeline = ch.pipeline();
                 pipeline.addLast(new IdleStateHandler(0, 0, server.config.getTcpIdleTime(), TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        log.info("{}[{}] timeout {}", dstEndpoint, finalDestinationEp, state);
+                        log.info("{}[{}] timeout {}", finalDestinationEp, realEp, state);
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
                 });
                 upstream.initChannel(ch);
                 pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
-            }).connect(destinationEp.toSocketAddress()).addListener((ChannelFutureListener) f -> {
+            }).connect(dstEp.toSocketAddress()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("connect to backend {}[{}] fail", dstEndpoint, finalDestinationEp, f.cause());
+                    log.error("connect to backend {}[{}] fail", finalDestinationEp, realEp, f.cause());
                     Sockets.closeOnFlushed(inbound);
                     return;
                 }
-                log.info("connect to backend {}[{}]", dstEndpoint, finalDestinationEp);
+                log.info("connect to backend {}[{}]", finalDestinationEp, realEp);
 
                 SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             }).channel();

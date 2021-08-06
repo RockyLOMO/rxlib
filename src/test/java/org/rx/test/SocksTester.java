@@ -27,7 +27,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
@@ -249,9 +249,9 @@ public class SocksTester {
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
 //            return new DirectUpstream(dstEp);
             if (dstEp.equals(loopbackDns)) {
-                return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
+                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
             }
-            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
+            return new Socks5Upstream(dstEp, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -278,11 +278,11 @@ public class SocksTester {
         supports.add(new UpstreamSupport(AuthenticEndpoint.valueOf("127.0.0.1:1081"),
                 Remoting.create(SocksSupport.class, rpcClientConf)));
 
-        SocksConfig frontConf = new SocksConfig(1090);
+        SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                dstEp -> new Socks5Upstream(dstEp, frontConf, supports));
+                dstEp -> new Socks5Upstream(dstEp, supports));
         frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         sleep(2000);

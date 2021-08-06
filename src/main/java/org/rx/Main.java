@@ -20,7 +20,7 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.TransportFlags;
-import org.rx.net.socks.upstream.DirectUpstream;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
@@ -102,7 +102,7 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf,
                     Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1),
-                    dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers));
+                    dstEp -> new Socks5Upstream(dstEp, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
 
@@ -132,19 +132,19 @@ public final class Main implements SocksSupport {
                 ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                        return new DirectUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
+                        return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
                     }
                     //bypass
                     if (ssConfig.isBypass(dstEp.getHost())) {
-                        return new DirectUpstream(dstEp);
+                        return new Upstream(dstEp);
                     }
                     //gateway
                     IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(dstEp.getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
                     if (ipAddress != null && ipAddress.isChina()) {
-                        return new DirectUpstream(dstEp);
+                        return new Upstream(dstEp);
                     }
                     SocksUser user = tuple.right;
-                    return new Socks5Upstream(dstEp, directConf,
+                    return new Socks5Upstream(dstEp,
                             new AuthenticEndpoint(Sockets.localEndpoint(port), user.getUsername(), user.getPassword()));
                 });
             }
