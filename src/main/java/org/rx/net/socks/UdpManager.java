@@ -4,7 +4,6 @@ import io.netty.channel.Channel;
 import org.rx.bean.Tuple;
 import org.rx.core.ShellExecutor;
 import org.rx.core.exception.ApplicationException;
-import org.rx.net.AuthenticEndpoint;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
@@ -16,21 +15,25 @@ import static org.rx.core.App.tryClose;
 public final class UdpManager {
     static final Map<InetSocketAddress, Tuple<Channel, ShellExecutor>> HOLD = new ConcurrentHashMap<>();
 
-    public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Tuple<Channel, AuthenticEndpoint>> loadFn) {
+    public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
         return HOLD.computeIfAbsent(incomingEp, k -> {
             try {
-                Tuple<Channel, AuthenticEndpoint> tuple = loadFn.invoke(k);
-                ShellExecutor udp2raw = null;
-                if (tuple.right != null) {
-                    udp2raw = new ShellExecutor(String.format("udp2raw_mp.exe -c -l0.0.0.0:%s -r%s -k \"%s\" --raw-mode faketcp --cipher-mode none --auth-mode simple",
-                            ((InetSocketAddress) tuple.left.localAddress()).getPort(),
-                            tuple.right.getEndpoint(), tuple.right.getUsername()));
-                }
-                return Tuple.of(tuple.left, udp2raw);
+                return Tuple.of(loadFn.invoke(k), null);
             } catch (Throwable e) {
                 throw ApplicationException.sneaky(e);
             }
         }).left;
+    }
+
+    public static void tun(InetSocketAddress incomingEp, ShellExecutor udpTun) {
+        Tuple<Channel, ShellExecutor> tuple = HOLD.get(incomingEp);
+        if (tuple == null) {
+            return;
+        }
+        if (tuple.right != null) {
+            tryClose(tuple.right);
+        }
+        tuple.right = udpTun;
     }
 
     public static void closeChannel(InetSocketAddress incomingEp) {

@@ -42,6 +42,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
     }
 
     @RequiredArgsConstructor
+    @Getter
     public static class ExitedEventArgs extends EventArgs {
         private static final long serialVersionUID = 6563058539741657972L;
         final int exitValue;

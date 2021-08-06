@@ -19,6 +19,7 @@ import org.rx.core.Strings;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
+import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
@@ -32,6 +33,7 @@ import static org.rx.core.App.tryClose;
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = Upstream::new;
+    public static final BiFunc<UnresolvedEndpoint, Upstream> UDP_DIRECT_ROUTER = UdpUpstream::new;
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
 //            || dstEp.getPort() == 80
             ;
@@ -41,10 +43,11 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
-    ShellExecutor udpTunnel;
+    ShellExecutor udpTun;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final BiFunc<UnresolvedEndpoint, Upstream> router;
+    final BiFunc<UnresolvedEndpoint, Upstream> udpRouter;
     @Setter
     private PredicateFunc<UnresolvedEndpoint> aesRouter;
 
@@ -56,14 +59,24 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         this(config, null, null);
     }
 
-    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiFunc<UnresolvedEndpoint, Upstream> router) {
+    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator,
+                            BiFunc<UnresolvedEndpoint, Upstream> router) {
+        this(config, authenticator, router, null);
+    }
+
+    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator,
+                            BiFunc<UnresolvedEndpoint, Upstream> router, BiFunc<UnresolvedEndpoint, Upstream> udpRouter) {
         if (router == null) {
             router = DIRECT_ROUTER;
+        }
+        if (udpRouter == null) {
+            udpRouter = UDP_DIRECT_ROUTER;
         }
 
         this.config = config;
         this.authenticator = authenticator;
         this.router = router;
+        this.udpRouter = udpRouter;
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             channel.attr(SocksContext.SERVER).set(SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
@@ -102,14 +115,15 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
         String udpTunnelPwd = config.getUdpTunnelPassword();
         if (!Strings.isEmpty(udpTunnelPwd)) {
-            udpTunnel = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode none --auth-mode simple -a",
-                    udpPort - 1, udpPort, udpTunnelPwd));
+            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode none --auth-mode simple -a",
+                    udpPort - 1, udpPort, udpTunnelPwd))
+                    .start();
         }
     }
 
     @Override
     protected void freeObjects() {
-        tryClose(udpTunnel);
+        tryClose(udpTun);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

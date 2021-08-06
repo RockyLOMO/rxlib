@@ -17,6 +17,5 @@ public class Upstream {
     }
 
     public void initChannel(Channel channel) {
-
     }
 }

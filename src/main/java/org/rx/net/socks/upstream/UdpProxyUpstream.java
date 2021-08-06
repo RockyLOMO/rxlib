@@ -10,10 +10,10 @@ import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
-public class ProxyUdpUpstream extends UdpUpstream {
+public class UdpProxyUpstream extends UdpUpstream {
     final RandomList<UpstreamSupport> servers;
 
-    public ProxyUdpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull RandomList<UpstreamSupport> servers) {
+    public UdpProxyUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull RandomList<UpstreamSupport> servers) {
         super(dstEp);
         this.servers = servers;
     }

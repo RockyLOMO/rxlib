@@ -20,6 +20,7 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.TransportFlags;
+import org.rx.net.socks.upstream.UdpProxyUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -102,7 +103,8 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf,
                     Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1),
-                    dstEp -> new Socks5Upstream(dstEp, shadowServers));
+                    dstEp -> new Socks5Upstream(dstEp, shadowServers),
+                    dstEp -> new UdpProxyUpstream(dstEp, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
 
