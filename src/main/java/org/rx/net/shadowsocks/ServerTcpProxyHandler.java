@@ -33,7 +33,7 @@ public class ServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         Channel inbound = ctx.channel();
         if (outbound == null) {
             InetSocketAddress realEp = inbound.attr(SSCommon.REMOTE_DEST).get();
-            Upstream upstream = server.router.invoke(new UnresolvedEndpoint(realEp.getHostString(), realEp.getPort()));
+            Upstream upstream = server.router.invoke(new UnresolvedEndpoint(realEp));
             UnresolvedEndpoint dstEp = upstream.getDestination();
 
             if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
@@ -55,7 +55,7 @@ public class ServerTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 });
                 upstream.initChannel(ch);
                 pipeline.addLast(new ForwardingBackendHandler(ctx, pendingPackages));
-            }).connect(dstEp.toSocketAddress()).addListener((ChannelFutureListener) f -> {
+            }).connect(dstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.error("connect to backend {}[{}] fail", finalDestinationEp, realEp, f.cause());
                     Sockets.closeOnFlushed(inbound);

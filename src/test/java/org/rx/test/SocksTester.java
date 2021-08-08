@@ -27,7 +27,6 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.UdpProxyUpstream;
 import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;

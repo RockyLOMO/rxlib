@@ -202,17 +202,17 @@ public final class Sockets {
     }
 
     public static Bootstrap udpBootstrap() {
-        return udpBootstrap(false, null, null);
+        return udpBootstrap(null, null);
     }
 
     //DefaultDatagramChannelConfig
-    public static Bootstrap udpBootstrap(boolean asServer, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
 
         Bootstrap b = new Bootstrap().group(getUdpEventLoop()).channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, asServer)
+                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
                 .handler(WaterMarkHandler.DEFAULT);

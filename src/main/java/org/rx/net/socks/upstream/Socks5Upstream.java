@@ -17,7 +17,7 @@ import org.rx.net.support.UpstreamSupport;
 import static org.rx.core.Tasks.awaitQuietly;
 
 public class Socks5Upstream extends Upstream {
-    final SocksConfig config; //可能front 和 back 不同配置
+    final SocksConfig config; //可能 frontend 和 backend 不同配置
     final RandomList<UpstreamSupport> servers;
 
     public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull AuthenticEndpoint... svrEps) {

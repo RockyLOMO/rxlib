@@ -42,7 +42,7 @@ public class DnsServer extends Disposable {
         });
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        Bootstrap bootstrap = Sockets.udpBootstrap(true, MemoryMode.MEDIUM, channel -> {
+        Bootstrap bootstrap = Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> {
             channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
                     new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
         });

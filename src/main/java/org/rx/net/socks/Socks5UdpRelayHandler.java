@@ -3,7 +3,6 @@ package org.rx.net.socks;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
@@ -51,42 +50,45 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addressType, inBuf);
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(dstAddr, inBuf.readUnsignedShort());
 
-        Channel outbound = UdpManager.openChannel(inRemoteEp, k -> Sockets.udpBootstrap(false, server.config.getMemoryMode(), out -> {
-            SocksContext.server(out, server);
-            out.attr(SocksContext.UDP_IN_ENDPOINT).set(inRemoteEp);
-            Upstream upstream = server.udpRouter.invoke(dstEp);
-            upstream.initChannel(out);
+        UnresolvedEndpoint finalDstEp = dstEp;
+        UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(inRemoteEp, k -> {
+            Upstream upstream = server.udpRouter.invoke(finalDstEp);
+            return new UdpManager.UdpChannelUpstream(Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
+                SocksContext.server(outbound, server);
+                SocksContext.udpSource(outbound, inRemoteEp);
+                upstream.initChannel(outbound);
 
-            out.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
-                @Override
-                protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
-                    InetSocketAddress outRemoteEp = out.sender();
-                    Socks5AddressType outAddrType;
-                    if (outRemoteEp.getAddress() instanceof Inet4Address) {
-                        outAddrType = Socks5AddressType.IPv4;
-                    } else if (outRemoteEp.getAddress() instanceof Inet6Address) {
-                        outAddrType = Socks5AddressType.IPv6;
-                    } else {
-                        outAddrType = Socks5AddressType.DOMAIN;
+                outbound.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+                    @Override
+                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
+                        InetSocketAddress outRemoteEp = out.sender();
+                        Socks5AddressType outAddrType;
+                        if (outRemoteEp.getAddress() instanceof Inet4Address) {
+                            outAddrType = Socks5AddressType.IPv4;
+                        } else if (outRemoteEp.getAddress() instanceof Inet6Address) {
+                            outAddrType = Socks5AddressType.IPv6;
+                        } else {
+                            outAddrType = Socks5AddressType.DOMAIN;
+                        }
+                        ByteBuf outBuf = Bytes.directBuffer();
+                        outBuf.writeZero(3);
+                        outBuf.writeByte(outAddrType.byteValue());
+                        Socks5AddressEncoder.DEFAULT.encodeAddress(outAddrType, outRemoteEp.getHostString(), outBuf);
+                        outBuf.writeShort(outRemoteEp.getPort());
+                        outBuf.writeBytes(out.content());
+                        inbound.writeAndFlush(new DatagramPacket(outBuf, inRemoteEp));
+                        log.info("UDP[{}] IN {} => {}", out.recipient(), outRemoteEp, inRemoteEp);
                     }
-                    ByteBuf outBuf = Bytes.directBuffer();
-                    outBuf.writeZero(3);
-                    outBuf.writeByte(outAddrType.byteValue());
-                    Socks5AddressEncoder.DEFAULT.encodeAddress(outAddrType, outRemoteEp.getHostString(), outBuf);
-                    outBuf.writeShort(outRemoteEp.getPort());
-                    outBuf.writeBytes(out.content());
-                    inbound.writeAndFlush(new DatagramPacket(outBuf, inRemoteEp));
-                    log.info("UDP[{}] IN {} => {}", out.recipient(), outRemoteEp, inRemoteEp);
-                }
-            });
-        }).bind(0).addListener(Sockets.logBind(0)).sync().channel());
+                });
+            }).bind(0).addListener(Sockets.logBind(0)).sync().channel(), upstream);
+        });
 
-//        AuthenticEndpoint svrEp = upstream.getProxyServer();
-//        if (svrEp != null) {
-//            dstEp = new UnresolvedEndpoint(svrEp.getEndpoint().getHostString(), svrEp.getEndpoint().getPort());
-//            inBuf.readerIndex(0);
-//        }
-        outbound.writeAndFlush(new DatagramPacket(inBuf, dstEp.toSocketAddress()).retain());
-        log.debug("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
+        AuthenticEndpoint svrEp = outCtx.getUpstream().getSocksServer();
+        if (svrEp != null) {
+            dstEp = new UnresolvedEndpoint(svrEp.getEndpoint());
+            inBuf.readerIndex(0);
+        }
+        outCtx.getChannel().writeAndFlush(new DatagramPacket(inBuf, dstEp.socketAddress()).retain());
+//        log.debug("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
     }
 }

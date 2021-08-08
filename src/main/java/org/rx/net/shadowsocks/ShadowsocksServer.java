@@ -66,7 +66,7 @@ public class ShadowsocksServer extends Disposable {
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(true, MemoryMode.HIGH, ctx -> {
+        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(true);
 
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());

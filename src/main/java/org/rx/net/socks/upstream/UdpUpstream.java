@@ -21,7 +21,7 @@ public class UdpUpstream extends Upstream {
         channel.pipeline().addLast(new IdleStateHandler(0, 0, server.getConfig().getUdpTimeoutSeconds()) {
             @Override
             protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                UdpManager.closeChannel(SocksContext.attr(channel, SocksContext.UDP_IN_ENDPOINT));
+                UdpManager.closeChannel(SocksContext.udpSource(channel));
                 return super.newIdleStateEvent(state, first);
             }
         });

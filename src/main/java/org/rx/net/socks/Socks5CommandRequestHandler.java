@@ -74,7 +74,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), outbound -> {
             SocksContext.server(outbound, server);
             e.getUpstream().initChannel(outbound);
-        }).connect(e.getUpstream().getDestination().toSocketAddress()).addListener((ChannelFutureListener) f -> {
+        }).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             //initChannel 可能会变dstEp
             UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
             if (!f.isSuccess()) {

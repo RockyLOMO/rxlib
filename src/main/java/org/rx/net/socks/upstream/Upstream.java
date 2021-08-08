@@ -10,7 +10,7 @@ public class Upstream {
     @Getter
     protected volatile UnresolvedEndpoint destination;
     @Getter
-    protected volatile AuthenticEndpoint proxyServer;
+    protected volatile AuthenticEndpoint socksServer;
 
     public Upstream(@NonNull UnresolvedEndpoint dstEp) {
         destination = dstEp;

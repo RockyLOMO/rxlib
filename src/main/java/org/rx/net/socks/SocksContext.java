@@ -10,13 +10,21 @@ import java.util.Objects;
 public final class SocksContext {
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
     private static final AttributeKey<UnresolvedEndpoint> REAL_DESTINATION = AttributeKey.valueOf("REAL_DESTINATION");
-
-    public static final AttributeKey<InetSocketAddress> UDP_IN_ENDPOINT = AttributeKey.valueOf("_UDP_IN_ENDPOINT");
+    private static final AttributeKey<InetSocketAddress> UDP_SOURCE = AttributeKey.valueOf("UDP_SOURCE");
     public static final AttributeKey<InetSocketAddress> UDP_OUT_ENDPOINT = AttributeKey.valueOf("_UDP_OUT_ENDPOINT");
 
     public static <T> T attr(Channel channel, AttributeKey<T> key) {
         return Objects.requireNonNull(channel.attr(key).get());
     }
+
+    public static InetSocketAddress udpSource(Channel channel) {
+        return Objects.requireNonNull(channel.attr(UDP_SOURCE).get());
+    }
+
+    public static void udpSource(Channel channel, InetSocketAddress source) {
+        channel.attr(UDP_SOURCE).set(source);
+    }
+
 
     public static SocksProxyServer server(Channel channel) {
         return Objects.requireNonNull(channel.attr(SERVER).get());
