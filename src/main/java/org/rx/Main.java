@@ -103,7 +103,7 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout);
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf,
                     Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1),
-                    dstEp -> new Socks5Upstream(dstEp, shadowServers),
+                    dstEp -> new Socks5Upstream(dstEp, frontConf, shadowServers),
                     dstEp -> new UdpProxyUpstream(dstEp, shadowServers));
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
@@ -146,7 +146,7 @@ public final class Main implements SocksSupport {
                         return new Upstream(dstEp);
                     }
                     SocksUser user = tuple.right;
-                    return new Socks5Upstream(dstEp,
+                    return new Socks5Upstream(dstEp, directConf,
                             new AuthenticEndpoint(Sockets.localEndpoint(port), user.getUsername(), user.getPassword()));
                 });
             }

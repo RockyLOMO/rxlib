@@ -9,8 +9,7 @@ import org.rx.core.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -18,14 +17,16 @@ import org.rx.net.support.UpstreamSupport;
 import static org.rx.core.Tasks.awaitQuietly;
 
 public class Socks5Upstream extends Upstream {
+    final SocksConfig config; //可能front 和 back 不同配置
     final RandomList<UpstreamSupport> servers;
 
-    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull AuthenticEndpoint... svrEps) {
-        this(dstEp, new RandomList<>(NQuery.of(svrEps).select(p -> new UpstreamSupport(p, null)).toList()));
+    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull AuthenticEndpoint... svrEps) {
+        this(dstEp, config, new RandomList<>(NQuery.of(svrEps).select(p -> new UpstreamSupport(p, null)).toList()));
     }
 
-    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull RandomList<UpstreamSupport> servers) {
+    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull RandomList<UpstreamSupport> servers) {
         super(dstEp);
+        this.config = config;
         this.servers = servers;
     }
 
@@ -39,8 +40,7 @@ public class Socks5Upstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
 
-        SocksProxyServer server = SocksContext.server(channel);
-        TransportUtil.addBackendHandler(channel, server.getConfig(), svrEp.getEndpoint());
+        TransportUtil.addBackendHandler(channel, config, svrEp.getEndpoint());
 
         if (support != null
                 && (SocksSupport.FAKE_IPS.contains(destination.getHost()) || SocksSupport.FAKE_PORTS.contains(destination.getPort())
@@ -50,14 +50,14 @@ public class Socks5Upstream extends Upstream {
             //先变更
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> awaitQuietly(() -> {
-                App.logMetric(String.format("socks5[%s]", server.getConfig().getListenPort()), dstEpStr);
+                App.logMetric(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
             }, SocksSupport.ASYNC_TIMEOUT));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
-        proxyHandler.setConnectTimeoutMillis(server.getConfig().getConnectTimeoutMillis());
+        proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }
 }

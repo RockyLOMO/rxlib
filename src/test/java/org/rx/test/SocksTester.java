@@ -253,7 +253,7 @@ public class SocksTester {
             if (dstEp.equals(loopbackDns)) {
                 return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
             }
-            return new Socks5Upstream(dstEp, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
+            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -290,7 +290,7 @@ public class SocksTester {
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                dstEp -> new Socks5Upstream(dstEp, supports),
+                dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
                 dstEp -> {
 //                    log.info("frontend udp {}", dstEp);
 //                    return new UdpProxyUpstream(dstEp, supports);
