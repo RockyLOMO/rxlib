@@ -82,7 +82,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         log.info("UDP[{}] IN {}[{}] => {}", out.recipient(), out.sender(), destinationEp, sourceEp);
                     }
                 });
-            }).bind(0).addListener(Sockets.logBind(0)).sync().channel(), upstream);
+            }).bind(Sockets.anyEndpoint(0)).addListener(Sockets.logBind(0)).sync().channel(), upstream);
         });
 
         AuthenticEndpoint svrEp = outCtx.getUpstream().getSocksServer();

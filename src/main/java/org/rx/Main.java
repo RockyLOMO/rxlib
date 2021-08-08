@@ -64,6 +64,7 @@ public final class Main implements SocksSupport {
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
+            backConf.setUdpTunnelPassword(shadowUser.getUsername());
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS, null);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

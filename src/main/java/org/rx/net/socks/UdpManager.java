@@ -3,8 +3,6 @@ package org.rx.net.socks;
 import io.netty.channel.Channel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.bean.Tuple;
-import org.rx.core.ShellExecutor;
 import org.rx.core.exception.ApplicationException;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.BiFunc;
@@ -34,17 +32,6 @@ public final class UdpManager {
             }
         });
     }
-
-//    public static void tun(InetSocketAddress incomingEp, ShellExecutor udpTun) {
-//        Tuple<Channel, ShellExecutor> tuple = HOLD.get(incomingEp);
-//        if (tuple == null) {
-//            return;
-//        }
-//        if (tuple.right != null) {
-//            tryClose(tuple.right);
-//        }
-//        tuple.right = udpTun;
-//    }
 
     public static void closeChannel(InetSocketAddress incomingEp) {
         UdpChannelUpstream ctx = HOLD.remove(incomingEp);
