@@ -43,29 +43,31 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             return;
         }
 
+//        log.info("UDP[{}] bytes {}[{}]", in.recipient(), inBuf.readableBytes(), inBuf.readerIndex());
         SocksProxyServer server = SocksContext.server(inbound.channel());
-        InetSocketAddress inRemoteEp = in.sender();
+        InetSocketAddress sourceEp = in.sender();
         inBuf.skipBytes(3);
         Socks5AddressType addressType = Socks5AddressType.valueOf(inBuf.readByte());
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addressType, inBuf);
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(dstAddr, inBuf.readUnsignedShort());
 
-        UnresolvedEndpoint finalDstEp = dstEp;
-        UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(inRemoteEp, k -> {
-            Upstream upstream = server.udpRouter.invoke(finalDstEp);
+        UnresolvedEndpoint destinationEp = dstEp;
+        UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(sourceEp, k -> {
+            Upstream upstream = server.udpRouter.invoke(destinationEp);
             return new UdpManager.UdpChannelUpstream(Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
                 SocksContext.server(outbound, server);
-                SocksContext.udpSource(outbound, inRemoteEp);
+                SocksContext.udpSource(outbound, sourceEp);
+                SocksContext.udpDestination(outbound, destinationEp.socketAddress());
                 upstream.initChannel(outbound);
 
                 outbound.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
-                        InetSocketAddress outRemoteEp = out.sender();
+                        InetSocketAddress destinationEp = SocksContext.udpDestination(outbound.channel());
                         Socks5AddressType outAddrType;
-                        if (outRemoteEp.getAddress() instanceof Inet4Address) {
+                        if (destinationEp.getAddress() instanceof Inet4Address) {
                             outAddrType = Socks5AddressType.IPv4;
-                        } else if (outRemoteEp.getAddress() instanceof Inet6Address) {
+                        } else if (destinationEp.getAddress() instanceof Inet6Address) {
                             outAddrType = Socks5AddressType.IPv6;
                         } else {
                             outAddrType = Socks5AddressType.DOMAIN;
@@ -73,11 +75,11 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         ByteBuf outBuf = Bytes.directBuffer();
                         outBuf.writeZero(3);
                         outBuf.writeByte(outAddrType.byteValue());
-                        Socks5AddressEncoder.DEFAULT.encodeAddress(outAddrType, outRemoteEp.getHostString(), outBuf);
-                        outBuf.writeShort(outRemoteEp.getPort());
+                        Socks5AddressEncoder.DEFAULT.encodeAddress(outAddrType, destinationEp.getHostString(), outBuf);
+                        outBuf.writeShort(destinationEp.getPort());
                         outBuf.writeBytes(out.content());
-                        inbound.writeAndFlush(new DatagramPacket(outBuf, inRemoteEp));
-                        log.info("UDP[{}] IN {} => {}", out.recipient(), outRemoteEp, inRemoteEp);
+                        inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));
+                        log.info("UDP[{}] IN {}[{}] => {}", out.recipient(), out.sender(), destinationEp, sourceEp);
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0)).sync().channel(), upstream);
@@ -89,6 +91,6 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             inBuf.readerIndex(0);
         }
         outCtx.getChannel().writeAndFlush(new DatagramPacket(inBuf, dstEp.socketAddress()).retain());
-//        log.debug("UDP[{}] OUT {} => {}", in.recipient(), inRemoteEp, dstEp);
+        log.info("UDP[{}] OUT {} => {}[{}]", in.recipient(), sourceEp, dstEp, destinationEp);
     }
 }

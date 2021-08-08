@@ -106,11 +106,11 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             ChannelPipeline pipeline = channel.pipeline();
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
-        }).bind(udpPort).addListener(Sockets.logBind(config.getListenPort())).channel();
+        }).bind(Sockets.anyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
 
         String udpTunnelPwd = config.getUdpTunnelPassword();
         if (!Strings.isEmpty(udpTunnelPwd)) {
-            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode none --auth-mode simple -a",
+            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -a",
                     udpPort - 1, udpPort, udpTunnelPwd))
                     .start();
         }

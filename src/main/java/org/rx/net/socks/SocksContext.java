@@ -11,11 +11,7 @@ public final class SocksContext {
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
     private static final AttributeKey<UnresolvedEndpoint> REAL_DESTINATION = AttributeKey.valueOf("REAL_DESTINATION");
     private static final AttributeKey<InetSocketAddress> UDP_SOURCE = AttributeKey.valueOf("UDP_SOURCE");
-    public static final AttributeKey<InetSocketAddress> UDP_OUT_ENDPOINT = AttributeKey.valueOf("_UDP_OUT_ENDPOINT");
-
-    public static <T> T attr(Channel channel, AttributeKey<T> key) {
-        return Objects.requireNonNull(channel.attr(key).get());
-    }
+    private static final AttributeKey<InetSocketAddress> UDP_DESTINATION = AttributeKey.valueOf("UDP_DESTINATION");
 
     public static InetSocketAddress udpSource(Channel channel) {
         return Objects.requireNonNull(channel.attr(UDP_SOURCE).get());
@@ -23,6 +19,14 @@ public final class SocksContext {
 
     public static void udpSource(Channel channel, InetSocketAddress source) {
         channel.attr(UDP_SOURCE).set(source);
+    }
+
+    public static InetSocketAddress udpDestination(Channel channel) {
+        return Objects.requireNonNull(channel.attr(UDP_DESTINATION).get());
+    }
+
+    public static void udpDestination(Channel channel, InetSocketAddress source) {
+        channel.attr(UDP_DESTINATION).set(source);
     }
 
 

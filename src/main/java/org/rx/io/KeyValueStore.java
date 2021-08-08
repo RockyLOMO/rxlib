@@ -291,10 +291,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         Entry<TK, TV> val = new Entry<>(k, v);
-        synchronized (this) {
-            saveValue(key, val);
-            indexer.saveKey(key);
-        }
+        HashFileIndexer.KeyData<TK> finalKey = key;
+        wal.lock.writeInvoke(() -> {
+            saveValue(finalKey, val);
+            indexer.saveKey(finalKey);
+        });
         if (incr) {
             wal.meta.incrementSize();
         }
@@ -311,10 +312,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         val.value = null;
-        synchronized (this) {
+        wal.lock.writeInvoke(() -> {
             saveValue(key, val);
             indexer.saveKey(key);
-        }
+        });
         wal.meta.decrementSize();
         return val.value;
     }
