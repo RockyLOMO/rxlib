@@ -2,9 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
@@ -78,7 +76,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         this.router = router;
         this.udpRouter = udpRouter;
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            channel.attr(SocksContext.SERVER).set(SocksProxyServer.this);
+            SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //流量统计
@@ -103,14 +101,11 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
         //udp server
         int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(true, MemoryMode.HIGH).handler(new ChannelInitializer<NioDatagramChannel>() {
-            @Override
-            protected void initChannel(NioDatagramChannel channel) {
-                channel.attr(SocksContext.SERVER).set(SocksProxyServer.this);
-                ChannelPipeline pipeline = channel.pipeline();
-                TransportUtil.addFrontendHandler(channel, config);
-                pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
-            }
+        udpChannel = Sockets.udpBootstrap(true, MemoryMode.HIGH, channel -> {
+            SocksContext.server(channel, SocksProxyServer.this);
+            ChannelPipeline pipeline = channel.pipeline();
+            TransportUtil.addFrontendHandler(channel, config);
+            pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
         }).bind(udpPort).addListener(Sockets.logBind(config.getListenPort())).channel();
 
         String udpTunnelPwd = config.getUdpTunnelPassword();

@@ -25,7 +25,7 @@ public class UdpProxyUpstream extends UdpUpstream {
         UpstreamSupport next = servers.next();
         AuthenticEndpoint svrEp = proxyServer = next.getEndpoint();
 
-        SocksProxyServer server = SocksContext.attr(channel, SocksContext.SERVER);
+        SocksProxyServer server = SocksContext.server(channel);
         TransportUtil.addBackendHandler(channel, server.getConfig(), svrEp.getEndpoint());
     }
 }

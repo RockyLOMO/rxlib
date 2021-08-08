@@ -17,7 +17,7 @@ public class UdpUpstream extends Upstream {
 
     @Override
     public void initChannel(Channel channel) {
-        SocksProxyServer server = SocksContext.attr(channel, SocksContext.SERVER);
+        SocksProxyServer server = SocksContext.server(channel);
         channel.pipeline().addLast(new IdleStateHandler(0, 0, server.getConfig().getUdpTimeoutSeconds()) {
             @Override
             protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {

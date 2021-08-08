@@ -2,8 +2,6 @@ package org.rx.net.dns;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import lombok.Getter;
@@ -44,12 +42,9 @@ public class DnsServer extends Disposable {
         });
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        Bootstrap bootstrap = Sockets.udpBootstrap(true, MemoryMode.MEDIUM).handler(new ChannelInitializer<NioDatagramChannel>() {
-            @Override
-            protected void initChannel(NioDatagramChannel channel) {
-                channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
-                        new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
-            }
+        Bootstrap bootstrap = Sockets.udpBootstrap(true, MemoryMode.MEDIUM, channel -> {
+            channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
+                    new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
         });
         bootstrap.bind(port).addListener(Sockets.logBind(port));
     }

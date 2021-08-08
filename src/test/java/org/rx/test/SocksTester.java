@@ -27,6 +27,8 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
+import org.rx.net.socks.upstream.UdpProxyUpstream;
+import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -262,28 +264,39 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        SocksConfig backConf = new SocksConfig(1081);
+        //backend
+        SocksConfig backConf = new SocksConfig(2080);
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf);
-        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null,
+                dstEp -> {
+                    log.info("backend udp {}", dstEp);
+                    return new UdpUpstream(dstEp);
+                });
+//        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(1181);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(2081);
         rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         Remoting.listen(new Main(backSvr), rpcServerConf);
 
+        //frontend
         RandomList<UpstreamSupport> supports = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:1181", 2);
+        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:2081", 2);
         rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        supports.add(new UpstreamSupport(AuthenticEndpoint.valueOf("127.0.0.1:1081"),
+        supports.add(new UpstreamSupport(AuthenticEndpoint.valueOf("127.0.0.1:2080"),
                 Remoting.create(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                dstEp -> new Socks5Upstream(dstEp, supports));
-        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+                dstEp -> new Socks5Upstream(dstEp, supports),
+                dstEp -> {
+//                    log.info("frontend udp {}", dstEp);
+//                    return new UdpProxyUpstream(dstEp, supports);
+                    return new UdpUpstream(dstEp);
+                });
+//        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         sleep(2000);
         for (UpstreamSupport support : supports) {

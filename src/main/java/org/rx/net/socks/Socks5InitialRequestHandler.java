@@ -24,7 +24,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
-        SocksProxyServer server = SocksContext.attr(ctx.channel(), SocksContext.SERVER);
+        SocksProxyServer server = SocksContext.server(ctx.channel());
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
         InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
         if (!Sockets.isNatIp(remoteEp.getAddress()) && !whiteList.contains(remoteEp.getAddress())) {

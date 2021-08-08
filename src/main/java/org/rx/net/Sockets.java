@@ -202,11 +202,11 @@ public final class Sockets {
     }
 
     public static Bootstrap udpBootstrap() {
-        return udpBootstrap(false, null);
+        return udpBootstrap(false, null, null);
     }
 
     //DefaultDatagramChannelConfig
-    public static Bootstrap udpBootstrap(boolean asServer, MemoryMode mode) {
+    public static Bootstrap udpBootstrap(boolean asServer, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
@@ -216,7 +216,17 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
                 .handler(WaterMarkHandler.DEFAULT);
-        return b.handler(new LoggingHandler(LogLevel.INFO));
+        b.handler(new LoggingHandler(LogLevel.INFO));
+        if (initChannel != null) {
+            b.handler(new ChannelInitializer<NioDatagramChannel>() {
+                @SneakyThrows
+                @Override
+                protected void initChannel(NioDatagramChannel socketChannel) {
+                    initChannel.invoke(socketChannel);
+                }
+            });
+        }
+        return b;
     }
 
     public static String protocolName(Channel channel) {

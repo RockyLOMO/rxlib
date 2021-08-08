@@ -39,7 +39,7 @@ public class Socks5Upstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
 
-        SocksProxyServer server = SocksContext.attr(channel, SocksContext.SERVER);
+        SocksProxyServer server = SocksContext.server(channel);
         TransportUtil.addBackendHandler(channel, server.getConfig(), svrEp.getEndpoint());
 
         if (support != null

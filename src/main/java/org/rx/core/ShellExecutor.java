@@ -23,8 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
-import static org.rx.core.App.quietly;
-import static org.rx.core.App.tryClose;
+import static org.rx.core.App.*;
 
 @Slf4j
 public class ShellExecutor extends Disposable implements EventTarget<ShellExecutor> {
@@ -59,18 +58,18 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 
         @Override
         public void invoke(LineBean l) throws Throwable {
-//            ByteBuf buf = Bytes.directBuffer();
-//            buf.writeCharSequence(String.valueOf(l.lineNumber), StandardCharsets.UTF_8);
-//            buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
-//            buf.writeCharSequence(l.line, StandardCharsets.UTF_8);
-//            buf.writeCharSequence("\n", StandardCharsets.UTF_8);
-//            try {
-//                fileStream.write(buf);
-//            } finally {
-//                buf.release();
-//            }
-            fileStream.write(l.toString().getBytes(StandardCharsets.UTF_8));
-            fileStream.flush();
+            ByteBuf buf = Bytes.directBuffer();
+            buf.writeCharSequence(String.valueOf(l.lineNumber), StandardCharsets.UTF_8);
+            buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
+            buf.writeCharSequence(l.line, StandardCharsets.UTF_8);
+            buf.writeCharSequence("\n", StandardCharsets.UTF_8);
+            try {
+                fileStream.write(buf);
+            } finally {
+                buf.release();
+            }
+//            fileStream.write(l.toString().getBytes(StandardCharsets.UTF_8));
+//            fileStream.flush();
         }
     }
 
@@ -234,5 +233,10 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         log.info("restart {}", shell);
         kill();
         start();
+    }
+
+    public ShellExecutor autoRestart() {
+        Exited = combine((s, e) -> restart(), Exited);
+        return this;
     }
 }
