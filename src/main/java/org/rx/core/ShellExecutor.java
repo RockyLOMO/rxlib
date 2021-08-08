@@ -75,6 +75,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 
     public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.print(l.toString());
     static final String WIN_CMD = "cmd /c ";
+    //    static final String WIN_CMD = "";
     static final List<ShellExecutor> KILL_LIST = Collections.synchronizedList(new ArrayList<>());
 
     static {
@@ -86,6 +87,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
     }
 
     public static BiAction<LineBean> fileOut(String filePath) {
+        Files.createDirectory(filePath);
         return new FileOutHandler(new FileStream(filePath));
     }
 
