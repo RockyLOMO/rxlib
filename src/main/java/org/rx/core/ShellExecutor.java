@@ -58,6 +58,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 
         @Override
         public void invoke(LineBean l) throws Throwable {
+//            System.out.print("[debug]:" + l.toString());
             ByteBuf buf = Bytes.directBuffer();
             buf.writeCharSequence(String.valueOf(l.lineNumber), StandardCharsets.UTF_8);
             buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
@@ -68,8 +69,6 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
             } finally {
                 buf.release();
             }
-//            fileStream.write(l.toString().getBytes(StandardCharsets.UTF_8));
-//            fileStream.flush();
         }
     }
 
@@ -182,7 +181,8 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
                         //ignore
                     }
 
-                    handleIn(reader);
+                    LineNumberReader finalReader = reader;
+                    quietly(() -> handleIn(finalReader));
                     Thread.sleep(intervalPeriod);
                 }
             } finally {
@@ -200,11 +200,10 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
             return;
         }
 
-        String line = reader.readLine();
-        if (Strings.isEmpty(line)) {
-            return;
+        String line;
+        while ((line = reader.readLine()) != null) {
+            outHandler.invoke(new LineBean(reader.getLineNumber(), line));
         }
-        quietly(() -> outHandler.invoke(new LineBean(reader.getLineNumber(), line)));
     }
 
     @SneakyThrows

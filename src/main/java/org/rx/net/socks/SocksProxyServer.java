@@ -110,7 +110,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
         String udpTunnelPwd = config.getUdpTunnelPassword();
         if (!Strings.isEmpty(udpTunnelPwd)) {
-            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -a",
+            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -g",
                     udpPort - 1, udpPort, udpTunnelPwd))
                     .start(ShellExecutor.fileOut("udp2raw_amd64.log"));
         }
