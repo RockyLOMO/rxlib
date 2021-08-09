@@ -64,7 +64,7 @@ public final class Main implements SocksSupport {
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
-            backConf.setUdpTunnelPassword(shadowUser.getUsername());
+//            backConf.setUdpTunnelPassword(shadowUser.getUsername());
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS, null);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
@@ -129,10 +129,12 @@ public final class Main implements SocksSupport {
                             return new UdpUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
                         }
                         //bypass
-                        if (frontConf.isBypass(dstEp.getHost())) {
-                            return new UdpUpstream(dstEp);
-                        }
-                        return new UdpSocksUpstream(dstEp, frontConf, shadowServers);
+//                        if (frontConf.isBypass(dstEp.getHost())) {
+//                            return new UdpUpstream(dstEp);
+//                        }
+//                        return new UdpSocksUpstream(dstEp, frontConf, shadowServers);
+
+                        return SocksProxyServer.UDP_DIRECT_ROUTER.invoke(dstEp);
                     });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);

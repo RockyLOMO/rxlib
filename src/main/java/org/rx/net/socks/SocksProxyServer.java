@@ -104,15 +104,19 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
         udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, channel -> {
             SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
-            TransportUtil.addFrontendHandler(channel, config);
-            pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
+            if (config.isEnableUdp2raw()) {
+                pipeline.addLast(config.getUdp2rawServers() != null ? Udp2rawClientHandler.DEFAULT : Udp2rawServerHandler.DEFAULT);
+            } else {
+                TransportUtil.addFrontendHandler(channel, config);
+                pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
+            }
         }).bind(Sockets.anyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
 
         String udpTunnelPwd = config.getUdpTunnelPassword();
         if (!Strings.isEmpty(udpTunnelPwd)) {
-            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -g",
+            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -a",
                     udpPort - 1, udpPort, udpTunnelPwd))
-                    .start(ShellExecutor.fileOut("udp2raw_amd64.log"));
+                    .start(ShellExecutor.CONSOLE_OUT);
         }
     }
 

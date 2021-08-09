@@ -166,27 +166,20 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
             daemonFuture.cancel(true);
         }
         daemonFuture = Tasks.run(() -> {
-            int exitValue = 0;
             LineNumberReader reader = null;
             try {
                 if (outHandler != null) {
                     reader = new LineNumberReader(new InputStreamReader(tmp.getInputStream(), StandardCharsets.UTF_8));
                 }
 
-                while (true) {
-                    try {
-                        exitValue = tmp.exitValue();
-                        break;
-                    } catch (IllegalThreadStateException e) {
-                        //ignore
-                    }
-
+                while (tmp.isAlive()) {
                     LineNumberReader finalReader = reader;
                     quietly(() -> handleIn(finalReader));
                     Thread.sleep(intervalPeriod);
                 }
             } finally {
                 tryClose(reader);
+                int exitValue = tmp.exitValue();
                 log.info("exit={} {}", exitValue, shell);
                 raiseEvent(Exited, new ExitedEventArgs(exitValue));
             }
