@@ -12,8 +12,7 @@ import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.core.App.NON_WARNING;
-import static org.rx.core.App.require;
+import static org.rx.core.App.*;
 
 @SuppressWarnings(NON_WARNING)
 @Slf4j
@@ -122,7 +121,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
     }
 
     private WeightElement<T> findElement(T element, boolean throwOnEmpty) {
-        WeightElement<T> weightElement = NQuery.of(elements).firstOrDefault(p -> p.element == element);
+        WeightElement<T> weightElement = NQuery.of(elements).firstOrDefault(p -> eq(p.element, element));
         if (throwOnEmpty && weightElement == null) {
             throw new NoSuchElementException();
         }
@@ -204,7 +203,7 @@ public class RandomList<T> implements Collection<T>, Serializable {
 
     @Override
     public boolean remove(Object element) {
-        return change(elements.removeIf(p -> p.element == element));
+        return change(elements.removeIf(p -> eq(p.element, element)));
     }
 
     @Override
@@ -214,13 +213,13 @@ public class RandomList<T> implements Collection<T>, Serializable {
 
     @Override
     public boolean removeAll(Collection<?> c) {
-        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList();
+        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
         return change(elements.removeAll(c));
     }
 
     @Override
     public boolean retainAll(Collection<?> c) {
-        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> p.element == x, (p, x) -> p).toList();
+        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
         elements.clear();
         return change(elements.addAll(items));
     }

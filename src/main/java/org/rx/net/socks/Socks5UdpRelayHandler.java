@@ -14,8 +14,6 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 
 @Slf4j
@@ -68,14 +66,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                             outBuf = out.content().retain();
                         } else {
                             InetSocketAddress destinationEp = SocksContext.udpDestination(outbound.channel());
-                            Socks5AddressType outAddrType;
-                            if (destinationEp.getAddress() instanceof Inet4Address) {
-                                outAddrType = Socks5AddressType.IPv4;
-                            } else if (destinationEp.getAddress() instanceof Inet6Address) {
-                                outAddrType = Socks5AddressType.IPv6;
-                            } else {
-                                outAddrType = Socks5AddressType.DOMAIN;
-                            }
+                            Socks5AddressType outAddrType = UdpManager.valueOf(destinationEp.getAddress());
                             outBuf = Bytes.directBuffer();
                             outBuf.writeZero(3);
                             outBuf.writeByte(outAddrType.byteValue());

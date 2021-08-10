@@ -1,12 +1,16 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
+import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.exception.ApplicationException;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.BiFunc;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,5 +41,17 @@ public final class UdpManager {
         UdpChannelUpstream ctx = HOLD.remove(incomingEp);
         tryClose(ctx.upstream);
         ctx.channel.close();
+    }
+
+    public static Socks5AddressType valueOf(InetAddress address) {
+        Socks5AddressType addrType;
+        if (address instanceof Inet4Address) {
+            addrType = Socks5AddressType.IPv4;
+        } else if (address instanceof Inet6Address) {
+            addrType = Socks5AddressType.IPv6;
+        } else {
+            addrType = Socks5AddressType.DOMAIN;
+        }
+        return addrType;
     }
 }

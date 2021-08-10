@@ -105,7 +105,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
-                pipeline.addLast(config.getUdp2rawServers() != null ? Udp2rawClientHandler.DEFAULT : Udp2rawServerHandler.DEFAULT);
+                pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
                 TransportUtil.addFrontendHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);

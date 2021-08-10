@@ -9,10 +9,8 @@ import org.rx.Main;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
-import org.rx.core.App;
-import org.rx.core.EventArgs;
-import org.rx.core.ManualResetEvent;
-import org.rx.core.Tasks;
+import org.rx.core.*;
+import org.rx.core.Arrays;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
@@ -263,10 +261,13 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void socks5Proxy() {
+        boolean udp2raw = true;
+        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
         //backend
-        SocksConfig backConf = new SocksConfig(2080);
+        SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
+        backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null,
                 dstEp -> {
                     log.info("backend udp {}", dstEp);
@@ -274,20 +275,22 @@ public class SocksTester {
                 });
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(2081);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
         rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         Remoting.listen(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> supports = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode("127.0.0.1:2081", 2);
+        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
         rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        supports.add(new UpstreamSupport(AuthenticEndpoint.valueOf("127.0.0.1:2080"),
+        supports.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp),
                 Remoting.create(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
+        frontConf.setEnableUdp2raw(udp2raw);
+        frontConf.setUdp2rawServers(new RandomList<>(Arrays.toList(backSrvEp)));
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
                 dstEp -> {
@@ -392,7 +395,7 @@ public class SocksTester {
         String content = "This is content";
         byte[] key = "顺风使舵".getBytes(StandardCharsets.UTF_8);
         byte[] encoded = AESUtil.generateKey(key).getEncoded();
-        assert org.rx.core.Arrays.equals(encoded, AESUtil.generateKey(key).getEncoded());
+        assert Arrays.equals(encoded, AESUtil.generateKey(key).getEncoded());
 
         ByteBuf src = Bytes.directBuffer();
         try {
@@ -461,7 +464,7 @@ public class SocksTester {
             for (Map.Entry<String, IOStream<?, ?>> entry : fi.entrySet()) {
                 FileUpload fileUpload = files.getFirst(entry.getKey());
                 try {
-                    org.rx.core.Arrays.equals(fileUpload.get(), entry.getValue().toArray());
+                    Arrays.equals(fileUpload.get(), entry.getValue().toArray());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
