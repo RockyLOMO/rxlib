@@ -33,7 +33,7 @@ public class DnsClient extends Disposable {
     }
 
     public static DnsClient outlandClient() {
-        return new DnsClient(Sockets.parseEndpoint("8.8.8.8:53"), Sockets.parseEndpoint("1.1.1.1:53"));
+        return new DnsClient(Sockets.parseEndpoint("1.1.1.1:53"));
     }
 
     final DnsNameResolver nameResolver;

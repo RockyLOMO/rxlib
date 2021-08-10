@@ -50,7 +50,10 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 String domain = key.substring(DOMAIN_PREFIX.length());
                 List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
                 List<InetAddress> addresses = awaitQuietly(() -> {
-                    List<InetAddress> list = isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList());
+                    List<InetAddress> list = server.support.next().getSupport().resolveHost(domain);
+                    if (CollectionUtils.isEmpty(list)) {
+                        return null;
+                    }
                     cache.put(key, list, CacheExpirations.absolute(server.ttl));
                     log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
                     return list;

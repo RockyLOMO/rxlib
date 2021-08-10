@@ -20,6 +20,7 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.TransportFlags;
+import org.rx.net.socks.upstream.UdpSocks5Upstream;
 import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
@@ -100,7 +101,7 @@ public final class Main implements SocksSupport {
 
             Integer shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-            dnsSvr.setTtl(60 * 60 * 12); //12 hour
+            dnsSvr.setTtl(60 * 60 * 10); //12 hour
             dnsSvr.setSupport(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
             Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort));
@@ -128,12 +129,10 @@ public final class Main implements SocksSupport {
                             return new UdpUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
                         }
                         //bypass
-//                        if (frontConf.isBypass(dstEp.getHost())) {
-//                            return new UdpUpstream(dstEp);
-//                        }
-//                        return new UdpSocksUpstream(dstEp, frontConf, shadowServers);
-
-                        return SocksProxyServer.UDP_DIRECT_ROUTER.invoke(dstEp);
+                        if (frontConf.isBypass(dstEp.getHost())) {
+                            return new UdpUpstream(dstEp);
+                        }
+                        return new UdpSocks5Upstream(dstEp, frontConf, shadowServers);
                     });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
