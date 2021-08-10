@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.exception.ApplicationException;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.BiFunc;
@@ -17,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.tryClose;
 
+@Slf4j
 public final class UdpManager {
     @RequiredArgsConstructor
     @Getter
@@ -39,6 +41,10 @@ public final class UdpManager {
 
     public static void closeChannel(InetSocketAddress incomingEp) {
         UdpChannelUpstream ctx = HOLD.remove(incomingEp);
+        if (ctx == null) {
+            log.error("CloseChannel {} <> {}[{}]", ctx.channel, incomingEp, HOLD.keySet());
+            return;
+        }
         tryClose(ctx.upstream);
         ctx.channel.close();
     }
