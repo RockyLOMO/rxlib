@@ -4,12 +4,12 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.bean.RandomList;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,9 +23,9 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 60 * 18;
     private int writeTimeoutSeconds;
-    private int udpTimeoutSeconds = 60 * 6;
+    private int udpTimeoutSeconds = 60 * 4;
     private boolean enableUdp2raw;
-    private RandomList<InetSocketAddress> udp2rawServers;
+    private List<InetSocketAddress> udp2rawServers;
     private String udpTunnelPassword;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();

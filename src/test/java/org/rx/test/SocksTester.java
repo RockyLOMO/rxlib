@@ -289,7 +289,7 @@ public class SocksTester {
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         frontConf.setEnableUdp2raw(udp2raw);
-        frontConf.setUdp2rawServers(new RandomList<>(Arrays.toList(backSrvEp)));
+        frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
                 dstEp -> {

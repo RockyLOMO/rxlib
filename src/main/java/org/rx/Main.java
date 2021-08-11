@@ -49,6 +49,7 @@ public final class Main implements SocksSupport {
         Main app;
         Integer connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
+        boolean udp2raw = true;
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
             if (shadowUser == null) {
@@ -63,6 +64,7 @@ public final class Main implements SocksSupport {
             backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
+            backConf.setEnableUdp2raw(udp2raw);
 //            backConf.setUdpTunnelPassword(shadowUser.getUsername());
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS, null);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
@@ -109,6 +111,8 @@ public final class Main implements SocksSupport {
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
+            frontConf.setEnableUdp2raw(udp2raw);
+            frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf,
                     Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1),
                     dstEp -> {
@@ -129,6 +133,10 @@ public final class Main implements SocksSupport {
                         }
                         //bypass
                         if (frontConf.isBypass(dstEp.getHost())) {
+                            return new Upstream(dstEp);
+                        }
+                        if (frontConf.isEnableUdp2raw()) {
+//                            return new Upstream(dstEp, shadowServers.next().getEndpoint());
                             return new Upstream(dstEp);
                         }
                         return new UdpSocks5Upstream(dstEp, frontConf, shadowServers);

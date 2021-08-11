@@ -1,16 +1,13 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.RandomList;
 import org.rx.io.Bytes;
 import org.rx.io.Compressible;
 import org.rx.io.GZIPStream;
@@ -21,6 +18,8 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -45,7 +44,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         SocksProxyServer server = SocksContext.server(inbound.channel());
         InetSocketAddress sourceEp = in.sender();
 
-        RandomList<InetSocketAddress> udp2rawServers = server.config.getUdp2rawServers();
+        List<InetSocketAddress> udp2rawServers = server.config.getUdp2rawServers();
         //client
         if (udp2rawServers != null) {
             if (!udp2rawServers.contains(sourceEp) && !clientRoutes.containsKey(sourceEp)) {
@@ -128,11 +127,24 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 //                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, sourceEp, srcEp);
                     }
                 });
-            }).bind(0).addListener(Sockets.logBind(0)).sync().channel(), upstream);
+            }).bind(0).addListener(Sockets.logBind(0)).addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    return;
+                }
+
+                Sockets.writeAndFlush(f.channel(), (Collection) SocksContext.udpPendings(f.channel()));
+            }).channel(), upstream);
         });
 
         ByteBuf outBuf = unzip(inBuf);
-        outCtx.getChannel().writeAndFlush(new DatagramPacket(outBuf, dstEp.socketAddress()));
+        DatagramPacket packet = new DatagramPacket(outBuf, dstEp.socketAddress());
+
+        Channel outbound = outCtx.getChannel();
+        if (!outbound.isRegistered()) {
+            SocksContext.udpPendings(outbound).add(packet);
+            return;
+        }
+        outbound.writeAndFlush(packet);
 //        log.info("UDP2RAW SERVER {}[{}] => {}", sourceEp, srcEp, dstEp);
     }
 
