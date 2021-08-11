@@ -25,7 +25,6 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -271,7 +270,7 @@ public class SocksTester {
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null,
                 dstEp -> {
                     log.info("backend udp {}", dstEp);
-                    return new UdpUpstream(dstEp);
+                    return new Upstream(dstEp);
                 });
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
@@ -294,9 +293,8 @@ public class SocksTester {
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
                 dstEp -> {
-//                    log.info("frontend udp {}", dstEp);
 //                    return new UdpProxyUpstream(dstEp, supports);
-                    return new UdpUpstream(dstEp);
+                    return new Upstream(dstEp, supports.next().getEndpoint());
                 });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

@@ -1,11 +1,13 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.support.UnresolvedEndpoint;
 
+@AllArgsConstructor
 public class Upstream {
     @Getter
     protected volatile UnresolvedEndpoint destination;

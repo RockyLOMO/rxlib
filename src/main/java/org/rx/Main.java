@@ -21,7 +21,6 @@ import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.UdpSocks5Upstream;
-import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -126,11 +125,11 @@ public final class Main implements SocksSupport {
                     dstEp -> {
                         //must first
                         if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                            return new UdpUpstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
+                            return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
                         }
                         //bypass
                         if (frontConf.isBypass(dstEp.getHost())) {
-                            return new UdpUpstream(dstEp);
+                            return new Upstream(dstEp);
                         }
                         return new UdpSocks5Upstream(dstEp, frontConf, shadowServers);
                     });

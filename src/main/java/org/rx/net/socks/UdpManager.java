@@ -1,17 +1,21 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
+import io.netty.util.NetUtil;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.exception.ApplicationException;
+import org.rx.io.Bytes;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,15 +53,33 @@ public final class UdpManager {
         ctx.channel.close();
     }
 
-    public static Socks5AddressType valueOf(InetAddress address) {
+    public static ByteBuf socks5Encode(ByteBuf inBuf, UnresolvedEndpoint dstEp) {
+        ByteBuf outBuf = Bytes.directBuffer(64 + inBuf.readableBytes());
+        outBuf.writeZero(3);
+        UdpManager.encode(outBuf, dstEp);
+        outBuf.writeBytes(inBuf);
+        return outBuf;
+    }
+
+    @SneakyThrows
+    public static void encode(ByteBuf buf, UnresolvedEndpoint ep) {
         Socks5AddressType addrType;
-        if (address instanceof Inet4Address) {
+        if (NetUtil.isValidIpV4Address(ep.getHost())) {
             addrType = Socks5AddressType.IPv4;
-        } else if (address instanceof Inet6Address) {
+        } else if (NetUtil.isValidIpV6Address(ep.getHost())) {
             addrType = Socks5AddressType.IPv6;
         } else {
             addrType = Socks5AddressType.DOMAIN;
         }
-        return addrType;
+        buf.writeByte(addrType.byteValue());
+        Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, ep.getHost(), buf);
+        buf.writeShort(ep.getPort());
+    }
+
+    @SneakyThrows
+    public static UnresolvedEndpoint decode(ByteBuf buf) {
+        Socks5AddressType addrType = Socks5AddressType.valueOf(buf.readByte());
+        String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addrType, buf);
+        return new UnresolvedEndpoint(dstAddr, buf.readUnsignedShort());
     }
 }

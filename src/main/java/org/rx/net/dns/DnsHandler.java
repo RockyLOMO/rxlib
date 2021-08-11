@@ -100,7 +100,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                         isEmpty.v = tmp.isEmpty();
                         return tmp;
                     },
-                    CacheExpirations.absolute(isEmpty.v ? 60 : server.ttl));
+                    CacheExpirations.absolute(isEmpty.v ? 30 : server.ttl));
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

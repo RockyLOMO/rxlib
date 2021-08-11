@@ -9,7 +9,7 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
-public class UdpSocks5Upstream extends UdpUpstream {
+public class UdpSocks5Upstream extends Upstream {
     final SocksConfig config;
     final RandomList<UpstreamSupport> servers;
 

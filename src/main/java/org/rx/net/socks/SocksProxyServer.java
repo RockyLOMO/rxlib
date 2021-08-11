@@ -17,7 +17,6 @@ import org.rx.core.Strings;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.socks.upstream.UdpUpstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.upstream.Upstream;
@@ -31,7 +30,6 @@ import static org.rx.core.App.tryClose;
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = Upstream::new;
-    public static final BiFunc<UnresolvedEndpoint, Upstream> UDP_DIRECT_ROUTER = UdpUpstream::new;
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
 //            || dstEp.getPort() == 80
             ;
@@ -68,7 +66,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             router = DIRECT_ROUTER;
         }
         if (udpRouter == null) {
-            udpRouter = UDP_DIRECT_ROUTER;
+            udpRouter = DIRECT_ROUTER;
         }
 
         this.config = config;

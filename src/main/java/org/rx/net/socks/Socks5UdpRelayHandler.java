@@ -4,8 +4,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
-import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
@@ -58,7 +60,13 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 SocksContext.udpDestination(outbound, destinationEp.socketAddress());
                 upstream.initChannel(outbound);
 
-                outbound.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+                outbound.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
+                    @Override
+                    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
+                        UdpManager.closeChannel(SocksContext.udpSource(outbound));
+                        return super.newIdleStateEvent(state, first);
+                    }
+                }, new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
                         ByteBuf outBuf;
@@ -66,12 +74,9 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                             outBuf = out.content().retain();
                         } else {
                             InetSocketAddress destinationEp = SocksContext.udpDestination(outbound.channel());
-                            Socks5AddressType outAddrType = UdpManager.valueOf(destinationEp.getAddress());
                             outBuf = Bytes.directBuffer();
                             outBuf.writeZero(3);
-                            outBuf.writeByte(outAddrType.byteValue());
-                            Socks5AddressEncoder.DEFAULT.encodeAddress(outAddrType, destinationEp.getHostString(), outBuf);
-                            outBuf.writeShort(destinationEp.getPort());
+                            UdpManager.encode(outBuf, new UnresolvedEndpoint(destinationEp));
                             outBuf.writeBytes(out.content());
                         }
                         inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));

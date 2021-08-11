@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
+import lombok.NonNull;
 import lombok.Setter;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.RxConfig;
@@ -143,7 +144,14 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public MemoryStream(byte[] buffer, int offset, int length) {
-        this.buffer = Bytes.wrap(buffer, offset, length);
+        this(Bytes.wrap(buffer, offset, length), false);
+    }
+
+    public MemoryStream(@NonNull ByteBuf buf, boolean autoPosition) {
+        if (autoPosition) {
+            buf.readerIndex(buf.writerIndex());
+        }
+        this.buffer = buf;
     }
 
     @Override

@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.RxConfig;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
@@ -232,7 +233,12 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public int read(ByteBuf dst) {
-        return read(dst, dst.writableBytes());
+        int total = 0, read;
+        while ((read = read(dst, RxConfig.HEAP_BUF_SIZE)) > 0) {
+            total += read;
+        }
+        return total;
+//        return read(dst, (int)available());
     }
 
     @SneakyThrows
