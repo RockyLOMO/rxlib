@@ -120,7 +120,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
-    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive, onPong;
+    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
+    public volatile BiConsumer<RpcClient, NEventArgs<PingMessage>> onPong;
     public volatile BiConsumer<RpcClient, NEventArgs<Throwable>> onError;
     @Getter
     private final RpcClientConfig config;

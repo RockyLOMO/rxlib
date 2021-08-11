@@ -32,6 +32,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     static final byte STREAM_VERSION = 1;
     //dst, src
     final Map<InetSocketAddress, InetSocketAddress> clientRoutes = new ConcurrentHashMap<>();
+    int gzipMinLength = Compressible.MIN_LENGTH;
 
     @SneakyThrows
     @Override
@@ -136,7 +137,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     }
 
     private void zip(ByteBuf outBuf, ByteBuf inBuf) {
-        if (inBuf.readableBytes() < Compressible.MIN_LENGTH) {
+        if (inBuf.readableBytes() < gzipMinLength) {
             outBuf.writeByte(1);
             outBuf.writeBytes(inBuf);
             return;

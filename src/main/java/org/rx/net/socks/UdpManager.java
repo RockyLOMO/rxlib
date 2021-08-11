@@ -46,7 +46,7 @@ public final class UdpManager {
     public static void closeChannel(InetSocketAddress incomingEp) {
         UdpChannelUpstream ctx = HOLD.remove(incomingEp);
         if (ctx == null) {
-            log.error("CloseChannel {} <> {}[{}]", ctx.channel, incomingEp, HOLD.keySet());
+            log.error("CloseChannel fail {} <> {}", incomingEp, HOLD.keySet());
             return;
         }
         tryClose(ctx.upstream);
