@@ -7,12 +7,13 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
+import org.rx.net.support.UnresolvedEndpoint;
 
 import java.util.Collection;
 
 @Slf4j
 @RequiredArgsConstructor
-public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
+public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final String PIPELINE_NAME = "to-upstream";
     final Channel outbound;
     final Collection<Object> pendingPackages;
@@ -22,13 +23,13 @@ public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         if (!outbound.isActive()) {
             if (pendingPackages != null) {
-                log.debug("{} pending forwarded to {} => {}", outbound.remoteAddress(), outbound.localAddress(), inbound.remoteAddress());
+                log.info("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), outbound);
                 pendingPackages.add(msg);
             }
             return;
         }
 
-        log.debug("{} forwarded to {} => {}", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         outbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
@@ -41,7 +42,7 @@ public class ForwardingFrontendHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel inbound = ctx.channel();
-        log.warn("{} forwarded to {} => {} thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
+        log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
         Sockets.closeOnFlushed(inbound);
     }
 }

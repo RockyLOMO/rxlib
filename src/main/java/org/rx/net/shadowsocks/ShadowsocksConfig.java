@@ -14,7 +14,7 @@ public class ShadowsocksConfig extends SocketConfig {
     private final InetSocketAddress serverEndpoint;
     private final String method;
     private final String password;
-    private int tcpIdleTime = 60 * 4;
+    private int idleTimeout = 60 * 4;
     private String obfs;
     private String obfsParam;
 }

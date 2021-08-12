@@ -25,6 +25,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
+import org.rx.net.socks.upstream.UdpSocks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -233,23 +234,23 @@ public class SocksTester {
     @Test
     public void ssProxy() {
         String defPwd = "123456";
-        SocksConfig backConf = new SocksConfig(1082);
+        SocksConfig backConf = new SocksConfig(2080);
         SocksUser usr = new SocksUser("rocky");
         usr.setPassword(defPwd);
         usr.setMaxIpCount(-1);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null), null);
 
-        DnsServer frontDnsSvr = new DnsServer(853);
-        UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint("127.0.0.1", 53);
+        int dnsPort = 853;
+        DnsServer frontDnsSvr = new DnsServer(dnsPort);
+        UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint(Sockets.localEndpoint(53));
 
-        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.parseEndpoint("127.0.0.1:1081"),
+        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
-//            return new DirectUpstream(dstEp);
             if (dstEp.equals(loopbackDns)) {
-                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), 853));
+                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), dnsPort));
             }
-            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(1082), usr.getUsername(), usr.getPassword()));
+            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword()));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -267,10 +268,7 @@ public class SocksTester {
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         backConf.setEnableUdp2raw(udp2raw);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null,
-                dstEp -> {
-                    return new Upstream(dstEp);
-                });
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null);
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
@@ -292,7 +290,7 @@ public class SocksTester {
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
                 dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
                 dstEp -> {
-//                    return new UdpProxyUpstream(dstEp, supports);
+//                    return new UdpSocks5Upstream(dstEp, frontConf, supports);
                     return new Upstream(dstEp, supports.next().getEndpoint());
                 });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);

@@ -54,7 +54,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             Upstream upstream = server.router.invoke(dstEp);
             ReconnectingEventArgs e = new ReconnectingEventArgs(upstream);
-            connect(inbound, msg.dstAddrType(), e);
+            connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
 //            log.info("UDP_ASSOCIATE {} => {}:{}", inbound.channel().remoteAddress(), msg.dstAddr(), msg.dstPort());
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
@@ -67,11 +67,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
     }
 
-    private void connect(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
-        SocksProxyServer server = SocksContext.server(inbound.channel());
-        UnresolvedEndpoint realEp = SocksContext.realDestination(inbound.channel());
+    private void connect(Channel inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
+        SocksProxyServer server = SocksContext.server(inbound);
+        UnresolvedEndpoint realEp = SocksContext.realDestination(inbound);
 
-        Sockets.bootstrap(inbound.channel().eventLoop(), server.getConfig(), outbound -> {
+        Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             SocksContext.server(outbound, server);
             e.getUpstream().initChannel(outbound);
         }).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
@@ -86,8 +86,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.error("socks5[{}] connect fail, dstEp={}[{}]", server.getConfig().getListenPort(),
-                        dstEp, realEp, f.cause());
+                log.error("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), dstEp, realEp, f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
@@ -115,20 +114,20 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         });
     }
 
-    private void relay(ChannelHandlerContext inbound, Channel outbound, Socks5AddressType dstAddrType,
+    private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType,
                        UnresolvedEndpoint dstEp, StringBuilder extMsg) {
-        UnresolvedEndpoint realEp = SocksContext.realDestination(inbound.channel());
+        UnresolvedEndpoint realEp = SocksContext.realDestination(inbound);
 
         ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
-        outbound.pipeline().addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
-        inbound.pipeline().addLast(ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));
+        inbound.pipeline().addLast(FrontendRelayHandler.PIPELINE_NAME, new FrontendRelayHandler(outbound, pendingPackages));
+        outbound.pipeline().addLast(BackendRelayHandler.PIPELINE_NAME, new BackendRelayHandler(inbound, pendingPackages));
         inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType)).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 Sockets.closeOnFlushed(f.channel());
                 return;
             }
 
-            SocksProxyServer server = SocksContext.server(inbound.channel());
+            SocksProxyServer server = SocksContext.server(inbound);
             SocksConfig config = server.getConfig();
             if (server.aesRouter(realEp) && config.getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
                 ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
@@ -140,9 +139,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 extMsg.append("[FRONTEND_AES]");
             }
             log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(),
-                    inbound.channel().localAddress(), outbound.remoteAddress(), dstEp, realEp, extMsg.toString());
+                    inbound.localAddress(), outbound.remoteAddress(), dstEp, realEp, extMsg.toString());
 
-            SocksSupport.ENDPOINT_TRACER.link(inbound.channel(), outbound);
+            SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
         });
     }
 }

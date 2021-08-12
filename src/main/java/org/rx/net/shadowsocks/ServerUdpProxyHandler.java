@@ -6,12 +6,14 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
+import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.UdpManager;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -19,37 +21,34 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
     public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
 
     @Override
-    protected void channelRead0(ChannelHandlerContext clientCtx, ByteBuf msg) throws Exception {
-        InetSocketAddress clientSender = clientCtx.channel().attr(SSCommon.REMOTE_ADDRESS).get();
-        InetSocketAddress clientRecipient = clientCtx.channel().attr(SSCommon.REMOTE_DEST).get();
-        proxy(clientSender, clientRecipient, clientCtx, msg.retain());
-    }
+    protected void channelRead0(ChannelHandlerContext inbound, ByteBuf msg) throws Exception {
+        InetSocketAddress clientSender = inbound.channel().attr(SSCommon.REMOTE_ADDRESS).get();
+        InetSocketAddress clientRecipient = inbound.channel().attr(SSCommon.REMOTE_DEST).get();
+        ShadowsocksServer server = SocksContext.ssServer(inbound.channel());
 
-    @SneakyThrows
-    private void proxy(InetSocketAddress clientSender, InetSocketAddress clientRecipient, ChannelHandlerContext clientCtx, ByteBuf msg) {
-        Channel udpChannel = NatMapper.getChannel(clientSender, k -> Sockets.udpBootstrap().handler(new ChannelInitializer<Channel>() {
-            @Override
-            protected void initChannel(Channel ch) throws Exception {
-                ch.pipeline().addLast(new IdleStateHandler(0, 0, SSCommon.UDP_PROXY_IDLE_TIME, TimeUnit.SECONDS) {
+        UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(clientSender, k -> {
+            Upstream upstream = server.udpRouter.invoke(new UnresolvedEndpoint(clientRecipient));
+            Channel channel = Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
+                upstream.initChannel(outbound);
+
+                outbound.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getIdleTimeout()) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        NatMapper.closeChannel(clientSender);
+                        UdpManager.closeChannel(clientSender);
                         return super.newIdleStateEvent(state, first);
                     }
                 }, new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) throws Exception {
-                        clientCtx.channel().attr(SSCommon.REMOTE_SRC).set(msg.sender());
-                        clientCtx.channel().writeAndFlush(msg.retain().content());
+                        inbound.attr(SSCommon.REMOTE_SRC).set(msg.sender());
+                        inbound.writeAndFlush(msg.content().retain());
                     }
                 });
-            }
-        }).bind(0).addListener((ChannelFutureListener) future -> {
-            if (future.isSuccess()) {
-                log.debug("channel id {}, {}<->{}<->{} connect {}", clientCtx.channel().id().toString(), clientSender.toString(), future.channel().localAddress().toString(), clientRecipient.toString(), future.isSuccess());
-            }
-        }).sync().channel());
+            }).bind(0).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+            SocksContext.initPendingQueue(channel, clientSender, clientRecipient);
+            return new UdpManager.UdpChannelUpstream(channel, upstream);
+        });
 
-        udpChannel.writeAndFlush(new DatagramPacket(msg, clientRecipient));
+        UdpManager.pendOrWritePacket(outCtx.getChannel(), new DatagramPacket(msg.retain(), clientRecipient));
     }
 }

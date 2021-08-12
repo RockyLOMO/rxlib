@@ -2,8 +2,12 @@ package org.rx.net.socks;
 
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
+import lombok.NonNull;
+import lombok.SneakyThrows;
 import org.rx.net.Sockets;
+import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.util.function.Func;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
@@ -14,23 +18,18 @@ public final class SocksContext {
     private static final AttributeKey<UnresolvedEndpoint> REAL_DESTINATION = AttributeKey.valueOf("REAL_DESTINATION");
     private static final AttributeKey<InetSocketAddress> UDP_SOURCE = AttributeKey.valueOf("UDP_SOURCE");
     private static final AttributeKey<InetSocketAddress> UDP_DESTINATION = AttributeKey.valueOf("UDP_DESTINATION");
+    private static final AttributeKey<Channel> OUTBOUND = AttributeKey.valueOf("OUTBOUND");
     private static final AttributeKey<ConcurrentLinkedQueue<Object>> PENDING_QUEUE = AttributeKey.valueOf("PENDING_QUEUE");
+
+    private static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
 
     public static InetSocketAddress udpSource(Channel channel) {
         return Objects.requireNonNull(channel.attr(UDP_SOURCE).get());
     }
 
-//    public static void udpSource(Channel channel, InetSocketAddress source) {
-//        channel.attr(UDP_SOURCE).set(source);
-//    }
-
     public static InetSocketAddress udpDestination(Channel channel) {
         return Objects.requireNonNull(channel.attr(UDP_DESTINATION).get());
     }
-
-//    public static void udpDestination(Channel channel, InetSocketAddress source) {
-//        channel.attr(UDP_DESTINATION).set(source);
-//    }
 
     /**
      * call this method before bind & connect
@@ -76,5 +75,28 @@ public final class SocksContext {
 
     public static void realDestination(Channel channel, UnresolvedEndpoint destination) {
         channel.attr(REAL_DESTINATION).set(destination);
+    }
+
+    public static Channel outbound(Channel channel) {
+        return Objects.requireNonNull(channel.attr(OUTBOUND).get());
+    }
+
+    @SneakyThrows
+    public static void outbound(@NonNull Channel channel, @NonNull Func<Channel> outboundFn) {
+        synchronized (channel) {
+            Channel val = channel.attr(OUTBOUND).get();
+            if (val == null) {
+                channel.attr(OUTBOUND).set(outboundFn.invoke());
+            }
+        }
+    }
+
+
+    public static ShadowsocksServer ssServer(Channel channel) {
+        return Objects.requireNonNull(channel.attr(SS_SERVER).get());
+    }
+
+    public static void ssServer(Channel channel, ShadowsocksServer server) {
+        channel.attr(SS_SERVER).set(server);
     }
 }

@@ -41,7 +41,6 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             return;
         }
 
-//        log.info("UDP[{}] bytes {}[{}]", in.recipient(), inBuf.readableBytes(), inBuf.readerIndex());
         SocksProxyServer server = SocksContext.server(inbound.channel());
         InetSocketAddress sourceEp = in.sender();
         inBuf.skipBytes(3);

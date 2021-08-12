@@ -34,7 +34,6 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         }
         if (msg.decoderResult().isFailure() || !msg.version().equals(SocksVersion.SOCKS5)) {
             log.warn("socks5[{}] error protocol", server.getConfig().getListenPort(), msg.decoderResult().cause());
-//            ctx.fireChannelRead(msg);
             ctx.writeAndFlush(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED)).addListener(ChannelFutureListener.CLOSE);
             return;
         }

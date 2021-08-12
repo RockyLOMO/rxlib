@@ -9,7 +9,6 @@ import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.*;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.core.ShellExecutor;
@@ -27,7 +26,6 @@ import java.util.function.BiConsumer;
 
 import static org.rx.core.App.tryClose;
 
-@Slf4j
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiFunc<UnresolvedEndpoint, Upstream> DIRECT_ROUTER = Upstream::new;
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
@@ -42,8 +40,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     ShellExecutor udpTun;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
-    final BiFunc<UnresolvedEndpoint, Upstream> router;
-    final BiFunc<UnresolvedEndpoint, Upstream> udpRouter;
+    final BiFunc<UnresolvedEndpoint, Upstream> router, udpRouter;
     @Setter
     private PredicateFunc<UnresolvedEndpoint> aesRouter;
 

@@ -24,7 +24,7 @@ public class ShadowsocksClient extends Disposable {
     public ShadowsocksClient(int localSocksPort, ShadowsocksConfig config) {
         this.config = config;
         tcpBootstrap = Sockets.serverBootstrap(ctx -> {
-            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
+            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getIdleTimeout(), TimeUnit.SECONDS) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent (IdleState state,boolean first){
                     ctx.close();

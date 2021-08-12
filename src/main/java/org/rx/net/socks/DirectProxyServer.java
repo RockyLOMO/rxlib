@@ -24,7 +24,7 @@ public final class DirectProxyServer extends Disposable {
             Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
                 ChannelPipeline pipeline = channel.pipeline();
                 TransportUtil.addBackendHandler(channel, config, proxyEndpoint);
-                pipeline.addLast(ForwardingBackendHandler.PIPELINE_NAME, new ForwardingBackendHandler(inbound, pendingPackages));
+                pipeline.addLast(BackendRelayHandler.PIPELINE_NAME, new BackendRelayHandler(inbound.channel(), pendingPackages));
             });
             bootstrap.connect(proxyEndpoint).addListeners(Sockets.logConnect(proxyEndpoint), (ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
@@ -32,7 +32,7 @@ public final class DirectProxyServer extends Disposable {
                     return;
                 }
                 Channel outbound = f.channel();
-                inbound.pipeline().replace(this, ForwardingFrontendHandler.PIPELINE_NAME, new ForwardingFrontendHandler(outbound, pendingPackages));
+                inbound.pipeline().replace(this, FrontendRelayHandler.PIPELINE_NAME, new FrontendRelayHandler(outbound, pendingPackages));
             });
         }
     }

@@ -14,26 +14,34 @@ import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
+import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class ShadowsocksServer extends Disposable {
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
-    final BiFunc<UnresolvedEndpoint, Upstream> router;
+    final BiFunc<UnresolvedEndpoint, Upstream> router, udpRouter;
 
-    public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router) {
+    public ShadowsocksServer(ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router) {
+        this(config, router, null);
+    }
+
+    public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router, BiFunc<UnresolvedEndpoint, Upstream> udpRouter) {
         if (router == null) {
             router = SocksProxyServer.DIRECT_ROUTER;
         }
+        if (udpRouter == null) {
+            udpRouter = SocksProxyServer.DIRECT_ROUTER;
+        }
         this.router = router;
+        this.udpRouter = udpRouter;
 
         bootstrap = Sockets.serverBootstrap(this.config = config, ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(false);
@@ -42,10 +50,10 @@ public class ShadowsocksServer extends Disposable {
             _crypto.setForUdp(false);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
+            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getIdleTimeout()) {
                 @Override
                 protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                    log.info("{} timeout {}", ctx.remoteAddress(), state);
+                    log.info("{} {}", ctx, state);
                     Sockets.closeOnFlushed(ctx);
                     return super.newIdleStateEvent(state, first);
                 }
@@ -59,9 +67,9 @@ public class ShadowsocksServer extends Disposable {
                 }
             }
 
+            SocksContext.ssServer(ctx, ShadowsocksServer.this);
             ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
-                    CipherCodec.DEFAULT, new ProtocolCodec(),
-                    new ServerTcpProxyHandler(this));
+                    CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
         });
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
@@ -73,9 +81,9 @@ public class ShadowsocksServer extends Disposable {
             _crypto.setForUdp(true);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
+            SocksContext.ssServer(ctx, ShadowsocksServer.this);
             ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
-                    CipherCodec.DEFAULT, new ProtocolCodec(),
-                    ServerUdpProxyHandler.DEFAULT);
+                    CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
         }).bind(config.getServerEndpoint()).channel();
     }
 

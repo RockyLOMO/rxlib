@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
-import org.rx.net.socks.ForwardingBackendHandler;
+import org.rx.net.socks.BackendRelayHandler;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
@@ -39,13 +39,13 @@ public class SSClientTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
                 ch.attr(SSCommon.IS_UDP).set(false);
                 ch.attr(SSCommon.CIPHER).set(CryptoFactory.get(config.getMethod(), config.getPassword()));
 
-                ch.pipeline().addLast(new IdleStateHandler(0, 0, config.getTcpIdleTime(), TimeUnit.SECONDS) {
+                ch.pipeline().addLast(new IdleStateHandler(0, 0, config.getIdleTimeout(), TimeUnit.SECONDS) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
                         Sockets.closeOnFlushed(outbound);
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new CipherCodec(), new ProtocolCodec(true), new ForwardingBackendHandler(ctx, pendingPackages));
+                }, new CipherCodec(), new ProtocolCodec(true), new BackendRelayHandler(ctx.channel(), pendingPackages));
             }).connect(config.getServerEndpoint()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     log.error("SsClient connect to backend {} fail", config.getServerEndpoint(), f.cause());

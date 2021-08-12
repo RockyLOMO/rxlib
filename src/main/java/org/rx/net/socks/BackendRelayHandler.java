@@ -14,36 +14,33 @@ import java.util.Collection;
 
 @Slf4j
 @RequiredArgsConstructor
-public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
+public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final String PIPELINE_NAME = "from-upstream";
-    final ChannelHandlerContext inbound;
+    final Channel inbound;
     final Collection<Object> outboundPendingPackages;
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) {
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
         if (CollectionUtils.isEmpty(outboundPendingPackages)) {
             return;
         }
 
         Channel outbound = ctx.channel();
-        log.debug("{} flush forwarded to {} => {}", inbound.channel().remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        log.info("RELAY {} => {}[{}] flush packets", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         Sockets.writeAndFlush(outbound, outboundPendingPackages);
+        super.channelActive(ctx);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        if (!inbound.channel().isActive()) {
-            return;
-        }
-
         Channel outbound = ctx.channel();
-        log.debug("{} => {} forwarded to {}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress());
+        log.debug("RELAY {}[{}] => {}", outbound.remoteAddress(), outbound.localAddress(), inbound.remoteAddress());
         inbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        Sockets.closeOnFlushed(inbound.channel());
+        Sockets.closeOnFlushed(inbound);
         super.channelInactive(ctx);
     }
 
@@ -51,9 +48,9 @@ public class ForwardingBackendHandler extends ChannelInboundHandlerAdapter {
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel outbound = ctx.channel();
         if (cause instanceof ProxyConnectException) {
-            log.warn("{} => {} forwarded to {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress(), cause.getMessage());
+            log.warn("RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), inbound.remoteAddress(), cause.getMessage());
         } else {
-            log.warn("{} => {} forwarded to {} thrown", outbound.remoteAddress(), outbound.localAddress(), inbound.channel().remoteAddress(), cause);
+            log.warn("RELAY {}[{}] => {} thrown", outbound.remoteAddress(), outbound.localAddress(), inbound.remoteAddress(), cause);
         }
         Sockets.closeOnFlushed(outbound);
     }
