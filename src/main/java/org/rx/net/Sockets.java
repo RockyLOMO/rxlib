@@ -284,8 +284,8 @@ public final class Sockets {
         }
     }
 
-    public static void writeAndFlush(@NonNull Channel channel, @NonNull Collection<Object> packs) {
-        Queue<Object> queue = as(packs, Queue.class);
+    public static void writeAndFlush(@NonNull Channel channel, @NonNull Collection<?> packs) {
+        Queue<?> queue = as(packs, Queue.class);
         if (queue != null) {
             channel.eventLoop().execute(() -> {
                 Object pack;
