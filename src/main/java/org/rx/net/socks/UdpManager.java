@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
@@ -31,7 +32,31 @@ public final class UdpManager {
         private final Upstream upstream;
     }
 
+    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
+        Channel outbound = f.channel();
+        InetSocketAddress srcEp = SocksContext.udpSource(outbound);
+        if (!f.isSuccess()) {
+            closeChannel(srcEp);
+            return;
+        }
+
+        int size = SocksContext.flushPendingQueue(outbound);
+        if (size > 0) {
+            InetSocketAddress dstEp = SocksContext.udpDestination(outbound);
+            log.info("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
+        }
+    };
     static final Map<InetSocketAddress, UdpChannelUpstream> HOLD = new ConcurrentHashMap<>();
+
+    public static void pendOrWritePacket(Channel outbound, Object packet) {
+        if (SocksContext.addPendingPacket(outbound, packet)) {
+            InetSocketAddress srcEp = SocksContext.udpSource(outbound);
+            InetSocketAddress dstEp = SocksContext.udpDestination(outbound);
+            log.info("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
+            return;
+        }
+        outbound.writeAndFlush(packet);
+    }
 
     public static UdpChannelUpstream openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, UdpChannelUpstream> loadFn) {
         return HOLD.computeIfAbsent(incomingEp, k -> {

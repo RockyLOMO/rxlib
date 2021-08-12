@@ -18,7 +18,6 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -102,10 +101,8 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
         UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(srcEp.socketAddress(), k -> {
             Upstream upstream = server.udpRouter.invoke(dstEp);
-            return new UdpManager.UdpChannelUpstream(Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
+            Channel channel = Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
                 SocksContext.server(outbound, server);
-                SocksContext.udpSource(outbound, srcEp.socketAddress());
-                SocksContext.udpDestination(outbound, dstEp.socketAddress());
                 upstream.initChannel(outbound);
 
                 outbound.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
@@ -127,24 +124,16 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 //                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, sourceEp, srcEp);
                     }
                 });
-            }).bind(0).addListener(Sockets.logBind(0)).addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    return;
-                }
-
-                Sockets.writeAndFlush(f.channel(), (Collection) SocksContext.udpPendings(f.channel()));
-            }).channel(), upstream);
+            }).bind(0).addListener(Sockets.logBind(0)).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+            SocksContext.initPendingQueue(channel, srcEp.socketAddress(), dstEp.socketAddress());
+            return new UdpManager.UdpChannelUpstream(channel, upstream);
         });
 
         ByteBuf outBuf = unzip(inBuf);
         DatagramPacket packet = new DatagramPacket(outBuf, dstEp.socketAddress());
 
         Channel outbound = outCtx.getChannel();
-        if (!outbound.isRegistered()) {
-            SocksContext.udpPendings(outbound).add(packet);
-            return;
-        }
-        outbound.writeAndFlush(packet);
+        UdpManager.pendOrWritePacket(outbound, packet);
 //        log.info("UDP2RAW SERVER {}[{}] => {}", sourceEp, srcEp, dstEp);
     }
 

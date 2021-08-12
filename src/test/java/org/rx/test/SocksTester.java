@@ -269,7 +269,6 @@ public class SocksTester {
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null,
                 dstEp -> {
-                    log.info("backend udp {}", dstEp);
                     return new Upstream(dstEp);
                 });
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
