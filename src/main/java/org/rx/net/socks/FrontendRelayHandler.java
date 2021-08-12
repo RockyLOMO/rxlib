@@ -23,7 +23,7 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         if (!outbound.isActive()) {
             if (pendingPackages != null) {
-                log.info("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), outbound);
+                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), outbound);
                 pendingPackages.add(msg);
             }
             return;

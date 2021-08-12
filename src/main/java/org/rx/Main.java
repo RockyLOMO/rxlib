@@ -27,6 +27,7 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,7 +54,7 @@ public final class Main implements SocksSupport {
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
             if (shadowUser == null) {
-                System.out.println("Invalid shadowUser arg");
+                log.info("Invalid shadowUser arg");
                 return;
             }
             SocksUser ssUser = new SocksUser(shadowUser.getUsername());
@@ -105,7 +106,9 @@ public final class Main implements SocksSupport {
             dnsSvr.setTtl(60 * 60 * 10); //12 hour
             dnsSvr.setSupport(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
-            Sockets.injectNameService(Sockets.localEndpoint(shadowDnsPort));
+            InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+            Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+            Sockets.injectNameService(shadowDnsEp);
 
             SocksConfig frontConf = new SocksConfig(port);
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
@@ -118,7 +121,7 @@ public final class Main implements SocksSupport {
                     dstEp -> {
                         //must first
                         if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                            return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
+                            return shadowDnsUpstream;
                         }
                         //bypass
                         if (frontConf.isBypass(dstEp.getHost())) {
@@ -128,9 +131,9 @@ public final class Main implements SocksSupport {
                     },
                     dstEp -> {
                         //must first
-                        if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                            return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
-                        }
+//                        if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+//                            return shadowDnsUpstream;
+//                        }
                         //bypass
                         if (frontConf.isBypass(dstEp.getHost())) {
                             return new Upstream(dstEp);
@@ -163,7 +166,7 @@ public final class Main implements SocksSupport {
                 ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                        return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), shadowDnsPort));
+                        return shadowDnsUpstream;
                     }
                     //bypass
                     if (ssConfig.isBypass(dstEp.getHost())) {
@@ -177,6 +180,12 @@ public final class Main implements SocksSupport {
                     SocksUser user = tuple.right;
                     return new Socks5Upstream(dstEp, directConf,
                             new AuthenticEndpoint(Sockets.localEndpoint(port), user.getUsername(), user.getPassword()));
+                }, dstEp -> {
+                    //must first
+                    if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                        return shadowDnsUpstream;
+                    }
+                    return new Upstream(dstEp);
                 });
             }
         }
