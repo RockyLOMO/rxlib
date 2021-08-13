@@ -36,6 +36,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -241,11 +243,14 @@ public class SocksTester {
 
         String defPwd = "123456";
         SocksConfig backConf = new SocksConfig(2080);
+        backConf.setEnableUdp2raw(true);
+        backConf.setUdp2rawServers(Collections.emptyList());
         SocksUser usr = new SocksUser("rocky");
         usr.setPassword(defPwd);
         usr.setMaxIpCount(-1);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
 
+        AuthenticEndpoint srvEp = new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword());
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
@@ -257,7 +262,7 @@ public class SocksTester {
             if (config.isBypass(dstEp.getHost())) {
                 return new Upstream(dstEp);
             }
-            return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword()));
+            return new Socks5Upstream(dstEp, backConf, srvEp);
         }, dstEp -> {
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
@@ -267,7 +272,8 @@ public class SocksTester {
             if (config.isBypass(dstEp.getHost())) {
                 return new Upstream(dstEp);
             }
-            return new Upstream(new UnresolvedEndpoint(Sockets.localEndpoint(backConf.getListenPort())));
+            return new Upstream(dstEp);
+//            return new Upstream(dstEp, srvEp);
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -275,10 +281,19 @@ public class SocksTester {
         System.in.read();
     }
 
+    @Test
+    @SneakyThrows
+    public void xx() {
+        byte[] bytes = Files.readAllBytes(Paths.get("16288500026551asd.68"));
+        byte[] bytes1 = Files.readAllBytes(Paths.get("asd.68"));
+        assert Arrays.equals(bytes, bytes1);
+    }
+
     @SneakyThrows
     @Test
     public void socks5Proxy() {
         boolean udp2raw = true;
+        boolean udp2rawDirect = false;
         Udp2rawHandler.DEFAULT.setGzipMinLength(20);
 
         InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
@@ -310,7 +325,11 @@ public class SocksTester {
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         frontConf.setEnableUdp2raw(udp2raw);
-        frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
+        if (!udp2rawDirect) {
+            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
+        } else {
+            frontConf.setUdp2rawServers(Collections.emptyList());
+        }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
@@ -337,8 +356,11 @@ public class SocksTester {
             }
             UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
             if (frontConf.isEnableUdp2raw()) {
-                e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
-//                e.setValue(new Upstream(dstEp));
+                if (!udp2rawDirect) {
+                    e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                } else {
+                    e.setValue(new Upstream(dstEp));
+                }
                 return;
             }
             e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));

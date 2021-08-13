@@ -1,6 +1,7 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
@@ -8,6 +9,7 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.GenericChannelInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.UdpManager;
@@ -18,7 +20,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
+public class ServerUdpProxyHandler extends GenericChannelInboundHandler<ByteBuf> {
     public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
 
     @Override
@@ -38,16 +40,19 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                         UdpManager.closeChannel(clientSender);
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new SimpleChannelInboundHandler<DatagramPacket>() {
+                }, new GenericChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
                         ByteBuf outBuf = out.content();
+                        log.info("RECV\n{}", ByteBufUtil.prettyHexDump(outBuf));
                         if (upstream.getSocksServer() != null) {
                             UnresolvedEndpoint dstEp = UdpManager.socks5Decode(outBuf);
+                            log.info("RECV DECODE {}[{}] => {} {}", out.sender(), dstEp, clientSender, outBuf);
+//                            inbound.channel().attr(SSCommon.REMOTE_DEST).set(out.sender());
                         }
-                        outBuf.retain();
-                        inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
-                        inbound.writeAndFlush(outBuf);
+
+                        inbound.channel().attr(SSCommon.REMOTE_SRC).set(out.sender());
+                        inbound.channel().writeAndFlush(outBuf);
                     }
                 });
             }).bind(0).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
@@ -55,12 +60,12 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             return new UdpManager.UdpChannelUpstream(channel, upstream);
         });
 
+        log.info("SEND\n{}", ByteBufUtil.prettyHexDump(inBuf));
         UnresolvedEndpoint dstEp = outCtx.getUpstream().getDestination();
         AuthenticEndpoint svrEp = outCtx.getUpstream().getSocksServer();
         if (svrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
-        } else {
-            inBuf.retain();
+            dstEp = new UnresolvedEndpoint(svrEp.getEndpoint());
         }
         UdpManager.pendOrWritePacket(outCtx.getChannel(), new DatagramPacket(inBuf, dstEp.socketAddress()));
     }

@@ -8,8 +8,8 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.GenericChannelInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -18,7 +18,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+public class Socks5UdpRelayHandler extends GenericChannelInboundHandler<DatagramPacket> {
     public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
 
     /**
@@ -60,18 +60,18 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         UdpManager.closeChannel(SocksContext.udpSource(outbound));
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new SimpleChannelInboundHandler<DatagramPacket>() {
+                }, new GenericChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
                         ByteBuf outBuf;
                         if (upstream.getSocksServer() != null) {
-                            outBuf = out.content().retain();
+                            outBuf = out.content();
                         } else {
                             UnresolvedEndpoint destinationEp = SocksContext.realDestination(outbound.channel());
                             outBuf = UdpManager.socks5Encode(out.content(), destinationEp);
                         }
                         inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));
-                        log.debug("UDP[{}] IN {} => {}", out.recipient(), out.sender(), sourceEp);
+                        log.info("UDP[{}] IN {} => {}", out.recipient(), out.sender(), sourceEp);
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0)).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
@@ -84,10 +84,10 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             destinationEp = new UnresolvedEndpoint(svrEp.getEndpoint());
             inBuf.readerIndex(0);
         }
-        DatagramPacket packet = new DatagramPacket(inBuf.retain(), destinationEp.socketAddress());
+        DatagramPacket packet = new DatagramPacket(inBuf, destinationEp.socketAddress());
 
         Channel outbound = outCtx.getChannel();
         UdpManager.pendOrWritePacket(outbound, packet);
-        log.debug("UDP[{}] OUT {} => {}", in.recipient(), sourceEp, destinationEp);
+        log.info("UDP[{}] OUT {} => {}", in.recipient(), sourceEp, destinationEp);
     }
 }
