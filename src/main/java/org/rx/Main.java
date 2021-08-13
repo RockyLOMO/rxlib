@@ -50,6 +50,7 @@ public final class Main implements SocksSupport {
         Integer connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
         boolean udp2raw = true;
+        Udp2rawHandler.DEFAULT.setGzipMinLength(20);
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
             if (shadowUser == null) {
@@ -140,8 +141,8 @@ public final class Main implements SocksSupport {
                 }
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
                 if (frontConf.isEnableUdp2raw()) {
-//                            return new Upstream(dstEp, shadowServers.next().getEndpoint());
-                    e.setValue(new Upstream(dstEp));
+                    e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+//                    e.setValue(new Upstream(dstEp));
                     return;
                 }
                 e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));

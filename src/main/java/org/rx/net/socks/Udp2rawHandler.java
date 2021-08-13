@@ -6,6 +6,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
@@ -30,6 +31,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     static final byte STREAM_VERSION = 1;
     //dst, src
     final Map<InetSocketAddress, InetSocketAddress> clientRoutes = new ConcurrentHashMap<>();
+    @Setter
     int gzipMinLength = Compressible.MIN_LENGTH;
 
     @SneakyThrows

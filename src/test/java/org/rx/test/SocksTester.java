@@ -264,6 +264,8 @@ public class SocksTester {
     @Test
     public void socks5Proxy() {
         boolean udp2raw = true;
+        Udp2rawHandler.DEFAULT.setGzipMinLength(20);
+
         InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
         int shadowDnsPort = 853;
         //backend
@@ -320,8 +322,8 @@ public class SocksTester {
             }
             UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
             if (frontConf.isEnableUdp2raw()) {
-//                e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
-                e.setValue(new Upstream(dstEp));
+                e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+//                e.setValue(new Upstream(dstEp));
                 return;
             }
             e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
