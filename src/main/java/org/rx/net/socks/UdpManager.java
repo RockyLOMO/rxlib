@@ -7,13 +7,9 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.exception.ApplicationException;
 import org.rx.io.Bytes;
-import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
@@ -25,57 +21,46 @@ import static org.rx.core.App.tryClose;
 
 @Slf4j
 public final class UdpManager {
-    @RequiredArgsConstructor
-    @Getter
-    public static class UdpChannelUpstream {
-        private final Channel channel;
-        private final Upstream upstream;
-    }
-
     public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
         Channel outbound = f.channel();
-        InetSocketAddress srcEp = SocksContext.udpSource(outbound);
+        InetSocketAddress srcEp = SocksContext.realSource(outbound);
         if (!f.isSuccess()) {
             closeChannel(srcEp);
             return;
         }
 
+//        sleep(1000);
+//        System.out.println(outbound.isActive());
         int size = SocksContext.flushPendingQueue(outbound);
         if (size > 0) {
             UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.info("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
+            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
         }
     };
-    static final Map<InetSocketAddress, UdpChannelUpstream> HOLD = new ConcurrentHashMap<>();
+    static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
         if (SocksContext.addPendingPacket(outbound, packet)) {
-            InetSocketAddress srcEp = SocksContext.udpSource(outbound);
+            InetSocketAddress srcEp = SocksContext.realSource(outbound);
             UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.info("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
+            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
             return;
         }
-        outbound.writeAndFlush(packet);
+        outbound.writeAndFlush(packet).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
     }
 
-    public static UdpChannelUpstream openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, UdpChannelUpstream> loadFn) {
-        return HOLD.computeIfAbsent(incomingEp, k -> {
-            try {
-                return loadFn.invoke(k);
-            } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
-            }
-        });
+    public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
+        return HOLD.computeIfAbsent(incomingEp, loadFn.toFunction());
     }
 
     public static void closeChannel(InetSocketAddress incomingEp) {
-        UdpChannelUpstream ctx = HOLD.remove(incomingEp);
-        if (ctx == null) {
+        Channel channel = HOLD.remove(incomingEp);
+        if (channel == null) {
             log.error("CloseChannel fail {} <> {}", incomingEp, HOLD.keySet());
             return;
         }
-        tryClose(ctx.upstream);
-        ctx.channel.close();
+        tryClose(SocksContext.upstream(channel));
+        channel.close();
     }
 
     public static ByteBuf socks5Encode(ByteBuf inBuf, UnresolvedEndpoint dstEp) {

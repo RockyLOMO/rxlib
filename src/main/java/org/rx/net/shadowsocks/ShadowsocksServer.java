@@ -83,7 +83,7 @@ public class ShadowsocksServer extends Disposable {
             SocksContext.ssServer(ctx, ShadowsocksServer.this);
             ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
                     CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
-        }).bind(config.getServerEndpoint()).channel();
+        }).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
     }
 
     @Override

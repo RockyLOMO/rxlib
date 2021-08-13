@@ -264,6 +264,7 @@ public class SocksTester {
             }
             return new Socks5Upstream(dstEp, backConf, srvEp);
         }, dstEp -> {
+            System.out.println(1111111111);
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                 return shadowDnsUpstream;
@@ -272,8 +273,8 @@ public class SocksTester {
             if (config.isBypass(dstEp.getHost())) {
                 return new Upstream(dstEp);
             }
-            return new Upstream(dstEp);
-//            return new Upstream(dstEp, srvEp);
+//            return new Upstream(dstEp);
+            return new Upstream(dstEp, srvEp);
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -281,19 +282,11 @@ public class SocksTester {
         System.in.read();
     }
 
-    @Test
-    @SneakyThrows
-    public void xx() {
-        byte[] bytes = Files.readAllBytes(Paths.get("16288500026551asd.68"));
-        byte[] bytes1 = Files.readAllBytes(Paths.get("asd.68"));
-        assert Arrays.equals(bytes, bytes1);
-    }
-
     @SneakyThrows
     @Test
     public void socks5Proxy() {
-        boolean udp2raw = true;
-        boolean udp2rawDirect = false;
+        boolean udp2raw = false;
+        boolean udp2rawDirect = true;
         Udp2rawHandler.DEFAULT.setGzipMinLength(20);
 
         InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);

@@ -290,7 +290,7 @@ public final class Sockets {
             channel.eventLoop().execute(() -> {
                 Object pack;
                 while ((pack = queue.poll()) != null) {
-                    channel.write(pack);
+                    channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
                 }
                 channel.flush();
             });
@@ -299,7 +299,7 @@ public final class Sockets {
 
         channel.eventLoop().execute(() -> {
             for (Object pack : packs) {
-                channel.write(pack);
+                channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
             }
             channel.flush();
         });

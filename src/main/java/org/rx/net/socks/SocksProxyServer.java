@@ -86,7 +86,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
-//                TransportUtil.addFrontendHandler(channel, config);
+                TransportUtil.addFrontendHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
         }).bind(Sockets.anyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();

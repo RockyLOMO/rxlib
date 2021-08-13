@@ -6,7 +6,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.DatagramPacket;
-import org.rx.core.App;
 
 import java.net.InetSocketAddress;
 
@@ -21,7 +20,6 @@ public class ServerSendHandler extends ChannelOutboundHandlerAdapter {
             ByteBuf buf = (ByteBuf) msg;
             InetSocketAddress clientAddr = ctx.channel().attr(SSCommon.REMOTE_ADDRESS).get();
             msg = new DatagramPacket(buf, clientAddr);
-            App.log("UdpTo {}", msg);
         }
         super.write(ctx, msg, promise);
     }

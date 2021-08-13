@@ -193,7 +193,8 @@ public final class Main implements SocksSupport {
                     if (ssConfig.isBypass(dstEp.getHost())) {
                         return new Upstream(dstEp);
                     }
-                    return new Upstream(dstEp, srvEp);
+                    return new Upstream(dstEp);
+//                    return new Upstream(dstEp, srvEp);
                 });
             }
         }
