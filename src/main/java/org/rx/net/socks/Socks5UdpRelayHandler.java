@@ -48,7 +48,9 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         UnresolvedEndpoint finalDestinationEp = destinationEp;
         UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(sourceEp, k -> {
-            Upstream upstream = server.udpRouter.invoke(finalDestinationEp);
+            RouteEventArgs e = new RouteEventArgs(sourceEp, finalDestinationEp);
+            server.raiseEvent(server.onUdpRoute, e);
+            Upstream upstream = e.getValue();
             Channel channel = Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
                 SocksContext.server(outbound, server);
                 upstream.initChannel(outbound);
@@ -66,10 +68,10 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         if (upstream.getSocksServer() != null) {
                             outBuf = out.content().retain();
                         } else {
-                            InetSocketAddress destinationEp = SocksContext.udpDestination(outbound.channel());
+                            UnresolvedEndpoint destinationEp = SocksContext.realDestination(outbound.channel());
                             outBuf = Bytes.directBuffer();
                             outBuf.writeZero(3);
-                            UdpManager.encode(outBuf, new UnresolvedEndpoint(destinationEp));
+                            UdpManager.encode(outBuf, destinationEp);
                             outBuf.writeBytes(out.content());
                         }
                         inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));
@@ -77,7 +79,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0)).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-            SocksContext.initPendingQueue(channel, sourceEp, finalDestinationEp.socketAddress());
+            SocksContext.initPendingQueue(channel, sourceEp, finalDestinationEp);
             return new UdpManager.UdpChannelUpstream(channel, upstream);
         });
 

@@ -49,7 +49,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (!udp2rawServers.contains(sourceEp) && !clientRoutes.containsKey(sourceEp)) {
                 inBuf.skipBytes(3);
                 UnresolvedEndpoint destinationEp = UdpManager.decode(inBuf);
-                Upstream upstream = server.udpRouter.invoke(destinationEp);
+                RouteEventArgs routeArgs = new RouteEventArgs(sourceEp, destinationEp);
+                server.raiseEvent(server.onUdpRoute, routeArgs);
+                Upstream upstream = routeArgs.getValue();
 
                 AuthenticEndpoint svrEp = upstream.getSocksServer();
                 if (svrEp != null) {
@@ -100,7 +102,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         UnresolvedEndpoint srcEp = UdpManager.decode(inBuf);
         UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
         UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(srcEp.socketAddress(), k -> {
-            Upstream upstream = server.udpRouter.invoke(dstEp);
+            RouteEventArgs routeArgs = new RouteEventArgs(srcEp.socketAddress(), dstEp);
+            server.raiseEvent(server.onUdpRoute, routeArgs);
+            Upstream upstream = routeArgs.getValue();
             Channel channel = Sockets.udpBootstrap(server.config.getMemoryMode(), outbound -> {
                 SocksContext.server(outbound, server);
                 upstream.initChannel(outbound);
@@ -125,7 +129,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0)).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-            SocksContext.initPendingQueue(channel, srcEp.socketAddress(), dstEp.socketAddress());
+            SocksContext.initPendingQueue(channel, srcEp.socketAddress(), dstEp);
             return new UdpManager.UdpChannelUpstream(channel, upstream);
         });
 

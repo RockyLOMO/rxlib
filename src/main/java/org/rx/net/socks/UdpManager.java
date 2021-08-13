@@ -42,8 +42,8 @@ public final class UdpManager {
 
         int size = SocksContext.flushPendingQueue(outbound);
         if (size > 0) {
-            InetSocketAddress dstEp = SocksContext.udpDestination(outbound);
-            log.info("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
+            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
+            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
         }
     };
     static final Map<InetSocketAddress, UdpChannelUpstream> HOLD = new ConcurrentHashMap<>();
@@ -51,8 +51,8 @@ public final class UdpManager {
     public static void pendOrWritePacket(Channel outbound, Object packet) {
         if (SocksContext.addPendingPacket(outbound, packet)) {
             InetSocketAddress srcEp = SocksContext.udpSource(outbound);
-            InetSocketAddress dstEp = SocksContext.udpDestination(outbound);
-            log.info("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
+            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
+            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
             return;
         }
         outbound.writeAndFlush(packet);

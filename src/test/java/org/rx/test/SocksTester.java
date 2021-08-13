@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -233,23 +234,24 @@ public class SocksTester {
     @SneakyThrows
     @Test
     public void ssProxy() {
+        int shadowDnsPort = 853;
+        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+
         String defPwd = "123456";
         SocksConfig backConf = new SocksConfig(2080);
         SocksUser usr = new SocksUser("rocky");
         usr.setPassword(defPwd);
         usr.setMaxIpCount(-1);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null), null);
-
-        int dnsPort = 853;
-        DnsServer frontDnsSvr = new DnsServer(dnsPort);
-        UnresolvedEndpoint loopbackDns = new UnresolvedEndpoint(Sockets.localEndpoint(53));
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
 
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
-            if (dstEp.equals(loopbackDns)) {
-                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), dnsPort));
-            }
+//            if (dstEp.equals(loopbackDns)) {
+//                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), dnsPort));
+//            }
             return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword()));
         });
 
@@ -263,40 +265,71 @@ public class SocksTester {
     public void socks5Proxy() {
         boolean udp2raw = true;
         InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
+        int shadowDnsPort = 853;
         //backend
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         backConf.setEnableUdp2raw(udp2raw);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, null, null);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
         rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         Remoting.listen(new Main(backSvr), rpcServerConf);
 
+        //dns
+        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+//        Sockets.injectNameService(shadowDnsEp);
+
         //frontend
-        RandomList<UpstreamSupport> supports = new RandomList<>();
+        RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
         rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        supports.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp),
-                Remoting.create(SocksSupport.class, rpcClientConf)));
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         frontConf.setEnableUdp2raw(udp2raw);
         frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
-        SocksProxyServer frontSvr = new SocksProxyServer(frontConf, null,
-                dstEp -> new Socks5Upstream(dstEp, frontConf, supports),
-                dstEp -> {
-//                    return new UdpSocks5Upstream(dstEp, frontConf, supports);
-                    return new Upstream(dstEp, supports.next().getEndpoint());
-                });
+        SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
+        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+        BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
+            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+            //must first
+            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                e.setValue(shadowDnsUpstream);
+                return;
+            }
+            //bypass
+            if (frontConf.isBypass(dstEp.getHost())) {
+                e.setValue(new Upstream(dstEp));
+            }
+        };
+        frontSvr.onRoute = combine(firstRoute, (s, e) -> {
+            if (e.getValue() != null) {
+                return;
+            }
+            e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, shadowServers));
+        });
+        frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
+            if (e.getValue() != null) {
+                return;
+            }
+            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+            if (frontConf.isEnableUdp2raw()) {
+//                e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                e.setValue(new Upstream(dstEp));
+                return;
+            }
+            e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
+        });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         sleep(2000);
-        for (UpstreamSupport support : supports) {
+        for (UpstreamSupport support : shadowServers) {
             support.getSupport().addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
         }
 

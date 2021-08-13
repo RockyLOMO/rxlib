@@ -15,7 +15,6 @@ import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
 import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
@@ -35,10 +34,10 @@ public class ShadowsocksServer extends Disposable {
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router, BiFunc<UnresolvedEndpoint, Upstream> udpRouter) {
         if (router == null) {
-            router = SocksProxyServer.DIRECT_ROUTER;
+            router = Upstream::new;
         }
         if (udpRouter == null) {
-            udpRouter = SocksProxyServer.DIRECT_ROUTER;
+            udpRouter = Upstream::new;
         }
         this.router = router;
         this.udpRouter = udpRouter;

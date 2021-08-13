@@ -7,9 +7,7 @@ import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
-import org.rx.net.AuthenticEndpoint;
-import org.rx.net.MemoryMode;
-import org.rx.net.Sockets;
+import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
@@ -19,20 +17,21 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.UdpSocks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
+import org.rx.util.function.TripleFunc;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
-import static org.rx.core.App.eq;
+import static org.rx.core.App.*;
 import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
@@ -67,7 +66,7 @@ public final class Main implements SocksSupport {
             backConf.setConnectTimeoutMillis(connectTimeout);
             backConf.setEnableUdp2raw(udp2raw);
 //            backConf.setUdpTunnelPassword(shadowUser.getUsername());
-            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS, null);
+            SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             //server port + 1 = rpc
@@ -107,7 +106,6 @@ public final class Main implements SocksSupport {
             dnsSvr.setSupport(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
             InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
-            Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
             Sockets.injectNameService(shadowDnsEp);
 
             SocksConfig frontConf = new SocksConfig(port);
@@ -116,34 +114,38 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout);
             frontConf.setEnableUdp2raw(udp2raw);
             frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
-            SocksProxyServer frontSvr = new SocksProxyServer(frontConf,
-                    Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1),
-                    dstEp -> {
-                        //must first
-                        if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                            return shadowDnsUpstream;
-                        }
-                        //bypass
-                        if (frontConf.isBypass(dstEp.getHost())) {
-                            return new Upstream(dstEp);
-                        }
-                        return new Socks5Upstream(dstEp, frontConf, shadowServers);
-                    },
-                    dstEp -> {
-                        //must first
-//                        if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-//                            return shadowDnsUpstream;
-//                        }
-                        //bypass
-                        if (frontConf.isBypass(dstEp.getHost())) {
-                            return new Upstream(dstEp);
-                        }
-                        if (frontConf.isEnableUdp2raw()) {
+            SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1));
+            Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+            BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
+                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+                //must first
+                if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                    e.setValue(shadowDnsUpstream);
+                    return;
+                }
+                //bypass
+                if (frontConf.isBypass(dstEp.getHost())) {
+                    e.setValue(new Upstream(dstEp));
+                }
+            };
+            frontSvr.onRoute = combine(firstRoute, (s, e) -> {
+                if (e.getValue() != null) {
+                    return;
+                }
+                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, shadowServers));
+            });
+            frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
+                if (e.getValue() != null) {
+                    return;
+                }
+                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+                if (frontConf.isEnableUdp2raw()) {
 //                            return new Upstream(dstEp, shadowServers.next().getEndpoint());
-                            return new Upstream(dstEp);
-                        }
-                        return new UdpSocks5Upstream(dstEp, frontConf, shadowServers);
-                    });
+                    e.setValue(new Upstream(dstEp));
+                    return;
+                }
+                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
+            });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
 

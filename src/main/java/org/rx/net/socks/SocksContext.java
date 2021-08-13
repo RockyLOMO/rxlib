@@ -14,21 +14,18 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public final class SocksContext {
+    //common
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
     private static final AttributeKey<UnresolvedEndpoint> REAL_DESTINATION = AttributeKey.valueOf("REAL_DESTINATION");
+    //udp
     private static final AttributeKey<InetSocketAddress> UDP_SOURCE = AttributeKey.valueOf("UDP_SOURCE");
-    private static final AttributeKey<InetSocketAddress> UDP_DESTINATION = AttributeKey.valueOf("UDP_DESTINATION");
     private static final AttributeKey<Channel> OUTBOUND = AttributeKey.valueOf("OUTBOUND");
     private static final AttributeKey<ConcurrentLinkedQueue<Object>> PENDING_QUEUE = AttributeKey.valueOf("PENDING_QUEUE");
-
+    //ss
     private static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
 
     public static InetSocketAddress udpSource(Channel channel) {
         return Objects.requireNonNull(channel.attr(UDP_SOURCE).get());
-    }
-
-    public static InetSocketAddress udpDestination(Channel channel) {
-        return Objects.requireNonNull(channel.attr(UDP_DESTINATION).get());
     }
 
     /**
@@ -36,10 +33,10 @@ public final class SocksContext {
      *
      * @param channel channel
      */
-    public static void initPendingQueue(Channel channel, InetSocketAddress srcEp, InetSocketAddress dstEp) {
+    public static void initPendingQueue(Channel channel, InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         channel.attr(PENDING_QUEUE).set(new ConcurrentLinkedQueue<>());
         channel.attr(UDP_SOURCE).set(srcEp);
-        channel.attr(UDP_DESTINATION).set(dstEp);
+        channel.attr(REAL_DESTINATION).set(dstEp);
     }
 
     public static boolean addPendingPacket(Channel channel, Object packet) {

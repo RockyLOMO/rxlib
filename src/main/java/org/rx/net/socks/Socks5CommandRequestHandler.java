@@ -13,7 +13,6 @@ import org.rx.net.TransportUtil;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.socks.upstream.Upstream;
 
 import java.net.Inet6Address;
 import java.net.InetSocketAddress;
@@ -52,8 +51,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext.realDestination(inbound.channel(), dstEp);
 
-            Upstream upstream = server.router.invoke(dstEp);
-            ReconnectingEventArgs e = new ReconnectingEventArgs(upstream);
+            RouteEventArgs e = new RouteEventArgs((InetSocketAddress) inbound.channel().remoteAddress(), dstEp);
+            server.raiseEvent(server.onRoute, e);
             connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
 //            log.info("UDP_ASSOCIATE {} => {}:{}", inbound.channel().remoteAddress(), msg.dstAddr(), msg.dstPort());
@@ -67,16 +66,16 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
     }
 
-    private void connect(Channel inbound, Socks5AddressType dstAddrType, ReconnectingEventArgs e) {
+    private void connect(Channel inbound, Socks5AddressType dstAddrType, RouteEventArgs e) {
         SocksProxyServer server = SocksContext.server(inbound);
         UnresolvedEndpoint realEp = SocksContext.realDestination(inbound);
 
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             SocksContext.server(outbound, server);
-            e.getUpstream().initChannel(outbound);
-        }).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
+            e.getValue().initChannel(outbound);
+        }).connect(e.getValue().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             //initChannel 可能会变dstEp
-            UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
+            UnresolvedEndpoint dstEp = e.getValue().getDestination();
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);

@@ -45,7 +45,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                     }
                 });
             }).bind(0).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-            SocksContext.initPendingQueue(channel, clientSender, clientRecipient);
+            SocksContext.initPendingQueue(channel, clientSender, new UnresolvedEndpoint(clientRecipient));
             return new UdpManager.UdpChannelUpstream(channel, upstream);
         });
 
