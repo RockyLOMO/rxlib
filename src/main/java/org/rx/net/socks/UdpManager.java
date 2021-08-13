@@ -81,9 +81,14 @@ public final class UdpManager {
     public static ByteBuf socks5Encode(ByteBuf inBuf, UnresolvedEndpoint dstEp) {
         ByteBuf outBuf = Bytes.directBuffer(64 + inBuf.readableBytes());
         outBuf.writeZero(3);
-        UdpManager.encode(outBuf, dstEp);
+        encode(outBuf, dstEp);
         outBuf.writeBytes(inBuf);
         return outBuf;
+    }
+
+    public static UnresolvedEndpoint socks5Decode(ByteBuf inBuf) {
+        inBuf.skipBytes(3);
+        return decode(inBuf);
     }
 
     @SneakyThrows

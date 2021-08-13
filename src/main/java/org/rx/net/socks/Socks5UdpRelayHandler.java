@@ -43,8 +43,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         SocksProxyServer server = SocksContext.server(inbound.channel());
         InetSocketAddress sourceEp = in.sender();
-        inBuf.skipBytes(3);
-        UnresolvedEndpoint destinationEp = UdpManager.decode(inBuf);
+        UnresolvedEndpoint destinationEp = UdpManager.socks5Decode(inBuf);
 
         UnresolvedEndpoint finalDestinationEp = destinationEp;
         UdpManager.UdpChannelUpstream outCtx = UdpManager.openChannel(sourceEp, k -> {
@@ -69,10 +68,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                             outBuf = out.content().retain();
                         } else {
                             UnresolvedEndpoint destinationEp = SocksContext.realDestination(outbound.channel());
-                            outBuf = Bytes.directBuffer();
-                            outBuf.writeZero(3);
-                            UdpManager.encode(outBuf, destinationEp);
-                            outBuf.writeBytes(out.content());
+                            outBuf = UdpManager.socks5Encode(out.content(), destinationEp);
                         }
                         inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));
                         log.debug("UDP[{}] IN {} => {}", out.recipient(), out.sender(), sourceEp);

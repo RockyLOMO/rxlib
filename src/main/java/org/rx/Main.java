@@ -22,7 +22,6 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
-import org.rx.util.function.TripleFunc;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -159,8 +158,12 @@ public final class Main implements SocksSupport {
             fn.invoke();
             Tasks.schedule(fn, 60 * 4 * 1000);
 
+            InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
                 ShadowsocksConfig ssConfig = tuple.left;
+                SocksUser user = tuple.right;
+                AuthenticEndpoint srvEp = new AuthenticEndpoint(frontSvrEp, user.getUsername(), user.getPassword());
+
                 ssConfig.setMemoryMode(MemoryMode.MEDIUM);
                 ssConfig.setConnectTimeoutMillis(connectTimeout);
                 SocksConfig directConf = new SocksConfig(port);
@@ -180,15 +183,17 @@ public final class Main implements SocksSupport {
                     if (ipAddress != null && ipAddress.isChina()) {
                         return new Upstream(dstEp);
                     }
-                    SocksUser user = tuple.right;
-                    return new Socks5Upstream(dstEp, directConf,
-                            new AuthenticEndpoint(Sockets.localEndpoint(port), user.getUsername(), user.getPassword()));
+                    return new Socks5Upstream(dstEp, directConf, srvEp);
                 }, dstEp -> {
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                         return shadowDnsUpstream;
                     }
-                    return new Upstream(dstEp);
+                    //bypass
+                    if (ssConfig.isBypass(dstEp.getHost())) {
+                        return new Upstream(dstEp);
+                    }
+                    return new Upstream(dstEp, srvEp);
                 });
             }
         }

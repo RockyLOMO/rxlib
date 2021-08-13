@@ -249,10 +249,25 @@ public class SocksTester {
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
-//            if (dstEp.equals(loopbackDns)) {
-//                return new Upstream(new UnresolvedEndpoint(dstEp.getHost(), dnsPort));
-//            }
+            //must first
+            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                return shadowDnsUpstream;
+            }
+            //bypass
+            if (config.isBypass(dstEp.getHost())) {
+                return new Upstream(dstEp);
+            }
             return new Socks5Upstream(dstEp, backConf, new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword()));
+        }, dstEp -> {
+            //must first
+            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                return shadowDnsUpstream;
+            }
+            //bypass
+            if (config.isBypass(dstEp.getHost())) {
+                return new Upstream(dstEp);
+            }
+            return new Upstream(new UnresolvedEndpoint(Sockets.localEndpoint(backConf.getListenPort())));
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);

@@ -49,8 +49,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         //client
         if (udp2rawServers != null) {
             if (!udp2rawServers.contains(sourceEp) && !clientRoutes.containsKey(sourceEp)) {
-                inBuf.skipBytes(3);
-                UnresolvedEndpoint destinationEp = UdpManager.decode(inBuf);
+                UnresolvedEndpoint destinationEp = UdpManager.socks5Decode(inBuf);
                 RouteEventArgs routeArgs = new RouteEventArgs(sourceEp, destinationEp);
                 server.raiseEvent(server.onUdpRoute, routeArgs);
                 Upstream upstream = routeArgs.getValue();
