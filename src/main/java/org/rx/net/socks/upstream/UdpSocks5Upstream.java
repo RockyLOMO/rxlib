@@ -26,6 +26,6 @@ public class UdpSocks5Upstream extends Upstream {
 
         UpstreamSupport next = servers.next();
         AuthenticEndpoint svrEp = socksServer = next.getEndpoint();
-        TransportUtil.addBackendHandler(channel, config, svrEp.getEndpoint());
+//        TransportUtil.addBackendHandler(channel, config, svrEp.getEndpoint());
     }
 }

@@ -9,7 +9,7 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.GenericChannelInboundHandler;
+import org.rx.net.GenericInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.UdpManager;
@@ -20,7 +20,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class ServerUdpProxyHandler extends GenericChannelInboundHandler<ByteBuf> {
+public class ServerUdpProxyHandler extends GenericInboundHandler<ByteBuf> {
     public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
 
     @Override
@@ -40,7 +40,7 @@ public class ServerUdpProxyHandler extends GenericChannelInboundHandler<ByteBuf>
                         UdpManager.closeChannel(clientSender);
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new GenericChannelInboundHandler<DatagramPacket>() {
+                }, new GenericInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
                         ByteBuf outBuf = out.content();

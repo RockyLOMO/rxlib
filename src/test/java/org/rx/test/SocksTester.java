@@ -367,10 +367,10 @@ public class SocksTester {
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        sleep(2000);
-        for (UpstreamSupport support : shadowServers) {
-            support.getSupport().addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
-        }
+//        sleep(2000);
+//        for (UpstreamSupport support : shadowServers) {
+//            support.getSupport().addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
+//        }
 
         System.in.read();
     }

@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
@@ -15,7 +14,7 @@ import org.rx.io.Compressible;
 import org.rx.io.GZIPStream;
 import org.rx.io.MemoryStream;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.GenericChannelInboundHandler;
+import org.rx.net.GenericInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -27,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Udp2rawHandler extends GenericChannelInboundHandler<DatagramPacket> {
+public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
     public static final Udp2rawHandler DEFAULT = new Udp2rawHandler();
     static final short STREAM_MAGIC = -21264;
     static final byte STREAM_VERSION = 1;
@@ -130,7 +129,7 @@ public class Udp2rawHandler extends GenericChannelInboundHandler<DatagramPacket>
                         UdpManager.closeChannel(SocksContext.udpSource(outbound));
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new GenericChannelInboundHandler<DatagramPacket>() {
+                }, new GenericInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
                         ByteBuf outBuf = Bytes.directBuffer(64 + out.content().readableBytes());

@@ -5,8 +5,8 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public abstract class GenericChannelInboundHandler<T> extends SimpleChannelInboundHandler<T> {
-    public GenericChannelInboundHandler() {
+public abstract class GenericInboundHandler<T> extends SimpleChannelInboundHandler<T> {
+    public GenericInboundHandler() {
         super(false);
     }
 
