@@ -69,8 +69,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                         } else {
                             outBuf.retain();
                         }
-                        inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-                        log.info("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
+                        inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
+                        log.debug("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0))
@@ -88,6 +88,6 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             inBuf.readerIndex(0);
         }
         UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
-        log.info("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
+        log.debug("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
     }
 }
