@@ -61,10 +61,10 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             file = createTempFile();
         }
         try {
-            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
         } catch (Exception e) {
             log.warn("readObject", e);
-            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
         }
         long pos = in.readLong();
         write(in);
@@ -168,7 +168,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     public FileStream(File file) {
-        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.SMALL_DATA);
+        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
     }
 
     public FileStream(File file, FileMode mode, BufferedRandomAccessFile.BufSize size) {
@@ -201,7 +201,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         ch.position(pos);
 
         int totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.BufSize.SMALL_DATA.value));
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.BufSize.MEDIUM_DATA.value));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
             if (c < b.limit()) {

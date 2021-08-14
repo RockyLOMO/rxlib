@@ -23,7 +23,8 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
     public enum BufSize {
         NON_BUF(0),
         TINY_DATA(1024),
-        SMALL_DATA(1024 * 4),
+        SMALL_DATA(1024 * 2),
+        MEDIUM_DATA(1024 * 4),
         LARGE_DATA(1 << 16);// 64K buffer
 
         final int value;

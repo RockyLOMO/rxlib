@@ -1,13 +1,11 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
 
 import java.util.Collection;
 
@@ -30,7 +28,7 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
         }
 
         log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        outbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        outbound.writeAndFlush(msg);
     }
 
     @Override

@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.proxy.ProxyConnectException;
@@ -35,7 +34,7 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel outbound = ctx.channel();
         log.debug("RELAY {}[{}] => {}", outbound.remoteAddress(), outbound.localAddress(), inbound.remoteAddress());
-        inbound.writeAndFlush(msg).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        inbound.writeAndFlush(msg);
     }
 
     @Override

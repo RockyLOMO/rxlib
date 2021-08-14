@@ -23,8 +23,8 @@ final class WaterMarkHandler extends ChannelDuplexHandler {
                 }
             }
         }
-        super.write(ctx, msg, promise.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE));
         log.info("RELEASE {} => {}", ReferenceCountUtil.refCnt(msg), msg);
+        super.write(ctx, msg, promise.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE));
     }
 
     @Override

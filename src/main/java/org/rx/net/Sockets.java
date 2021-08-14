@@ -44,6 +44,7 @@ public final class Sockets {
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
+    private static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
 
     @SneakyThrows
     public static void injectNameService(InetSocketAddress... nameServerList) {
@@ -128,7 +129,7 @@ public final class Sockets {
                 .handler(WaterMarkHandler.DEFAULT);
         if (config.isEnableNettyLog()) {
             //netty日志
-            b.handler(new LoggingHandler(LogLevel.INFO));
+            b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
             b.childHandler(new ChannelInitializer<SocketChannel>() {
@@ -188,7 +189,7 @@ public final class Sockets {
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .handler(WaterMarkHandler.DEFAULT);
         if (config.isEnableNettyLog()) {
-            b.handler(new LoggingHandler(LogLevel.INFO));
+            b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
             b.handler(new ChannelInitializer<SocketChannel>() {
@@ -217,7 +218,7 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
                 .handler(WaterMarkHandler.DEFAULT);
-        b.handler(new LoggingHandler(LogLevel.INFO));
+        b.handler(DEFAULT_LOG);
         if (initChannel != null) {
             b.handler(new ChannelInitializer<NioDatagramChannel>() {
                 @SneakyThrows

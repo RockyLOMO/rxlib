@@ -46,7 +46,7 @@ public final class UdpManager {
             log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
             return;
         }
-        outbound.writeAndFlush(packet).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        outbound.writeAndFlush(packet);
     }
 
     public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
@@ -64,11 +64,15 @@ public final class UdpManager {
     }
 
     public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
+//        try {
         ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
         outBuf.writeZero(3);
         encode(outBuf, dstEp);
         outBuf.writeBytes(buf);
         return outBuf;
+//        } finally {
+//            buf.release();
+//        }
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
