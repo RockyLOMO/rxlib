@@ -9,7 +9,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.GenericInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -18,7 +17,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Socks5UdpRelayHandler extends GenericInboundHandler<DatagramPacket> {
+public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
 
     /**
@@ -42,11 +41,11 @@ public class Socks5UdpRelayHandler extends GenericInboundHandler<DatagramPacket>
         }
 
         SocksProxyServer server = SocksContext.server(inbound.channel());
-        InetSocketAddress sourceEp = in.sender();
-        UnresolvedEndpoint destinationEp = UdpManager.socks5Decode(inBuf);
+        final InetSocketAddress srcEp = in.sender();
+        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
 
-        Channel outbound = UdpManager.openChannel(sourceEp, k -> {
-            RouteEventArgs e = new RouteEventArgs(sourceEp, destinationEp);
+        Channel outbound = UdpManager.openChannel(srcEp, k -> {
+            RouteEventArgs e = new RouteEventArgs(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getValue();
             return SocksContext.initOutbound(Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
@@ -59,28 +58,25 @@ public class Socks5UdpRelayHandler extends GenericInboundHandler<DatagramPacket>
                         UdpManager.closeChannel(SocksContext.realSource(ob));
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new GenericInboundHandler<DatagramPacket>() {
+                }, new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
+                        InetSocketAddress srcEp = SocksContext.realSource(outbound.channel());
+                        UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound.channel());
                         ByteBuf outBuf = out.content();
                         if (upstream.getSocksServer() == null) {
-                            outBuf = UdpManager.socks5Encode(outBuf, upstream.getDestination());
+                            outBuf = UdpManager.socks5Encode(outBuf, dstEp);
+                        } else {
+                            outBuf.retain();
                         }
-                        InetSocketAddress srcEp = SocksContext.realSource(outbound.channel());
                         inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-                        log.info("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), upstream.getDestination(), srcEp);
-                    }
-
-                    @Override
-                    public void exceptionCaught(ChannelHandlerContext outbound, Throwable cause) throws Exception {
-                        UdpManager.closeChannel(SocksContext.realSource(outbound.channel()));
-                        super.exceptionCaught(outbound, cause);
+                        log.info("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
                     }
                 });
             }).bind(0).addListener(Sockets.logBind(0))
                     //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
-//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), e.getSourceEndpoint(), e.getDestinationEndpoint(), upstream)
-                    .syncUninterruptibly().channel(), e.getSourceEndpoint(), e.getDestinationEndpoint(), upstream, false)
+//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
+                    .syncUninterruptibly().channel(), srcEp, dstEp, upstream, false)
                     ;
         });
 
@@ -91,7 +87,7 @@ public class Socks5UdpRelayHandler extends GenericInboundHandler<DatagramPacket>
             upDstEp = new UnresolvedEndpoint(svrEp.getEndpoint());
             inBuf.readerIndex(0);
         }
-        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf, upDstEp.socketAddress()));
-        log.info("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), sourceEp, upDstEp, destinationEp);
+        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
+        log.info("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
     }
 }

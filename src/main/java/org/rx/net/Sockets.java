@@ -73,6 +73,7 @@ public final class Sockets {
                     return addresses.toArray(empty);
                 }
             }
+            Reflects.setAccess(method);
             return method.invoke(ns, args);
         });
     }

@@ -96,7 +96,9 @@ public final class SocksContext {
 
 
     public static Channel tcpOutbound(Channel channel) {
-        return Objects.requireNonNull(channel.attr(TCP_OUTBOUND).get());
+        synchronized (channel) {
+            return Objects.requireNonNull(channel.attr(TCP_OUTBOUND).get());
+        }
     }
 
     @SneakyThrows

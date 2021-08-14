@@ -264,7 +264,6 @@ public class SocksTester {
             }
             return new Socks5Upstream(dstEp, backConf, srvEp);
         }, dstEp -> {
-            System.out.println(1111111111);
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                 return shadowDnsUpstream;
@@ -273,8 +272,8 @@ public class SocksTester {
             if (config.isBypass(dstEp.getHost())) {
                 return new Upstream(dstEp);
             }
-//            return new Upstream(dstEp);
-            return new Upstream(dstEp, srvEp);
+            return new Upstream(dstEp);
+//            return new Upstream(dstEp, srvEp);
         });
 
 //        ShadowsocksClient client = new ShadowsocksClient(1080, config);
@@ -286,8 +285,8 @@ public class SocksTester {
     @Test
     public void socks5Proxy() {
         boolean udp2raw = false;
-        boolean udp2rawDirect = true;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(20);
+        boolean udp2rawDirect = false;
+        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
 
         InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
         int shadowDnsPort = 853;

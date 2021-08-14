@@ -22,6 +22,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiFunc;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -48,8 +49,11 @@ public final class Main implements SocksSupport {
         Main app;
         Integer connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
+
         boolean udp2raw = true;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(20);
+        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
+        AuthenticEndpoint udp2rawSvrEp = new AuthenticEndpoint(new InetSocketAddress("103.79.76.126", 9900));
+
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
             if (shadowUser == null) {
@@ -140,7 +144,11 @@ public final class Main implements SocksSupport {
                 }
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
                 if (frontConf.isEnableUdp2raw()) {
-                    e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                    if (udp2rawSvrEp != null) {
+                        e.setValue(new Upstream(dstEp, udp2rawSvrEp));
+                    } else {
+                        e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                    }
 //                    e.setValue(new Upstream(dstEp));
                     return;
                 }
@@ -169,7 +177,7 @@ public final class Main implements SocksSupport {
                 SocksConfig directConf = new SocksConfig(port);
                 frontConf.setMemoryMode(MemoryMode.MEDIUM);
                 frontConf.setConnectTimeoutMillis(connectTimeout);
-                ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> {
+                BiFunc<UnresolvedEndpoint, Upstream> first = dstEp -> {
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                         return shadowDnsUpstream;
@@ -178,24 +186,16 @@ public final class Main implements SocksSupport {
                     if (ssConfig.isBypass(dstEp.getHost())) {
                         return new Upstream(dstEp);
                     }
+                    return null;
+                };
+                ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> isNull(first.invoke(dstEp), () -> {
                     //gateway
                     IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(dstEp.getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
                     if (ipAddress != null && ipAddress.isChina()) {
                         return new Upstream(dstEp);
                     }
                     return new Socks5Upstream(dstEp, directConf, srvEp);
-                }, dstEp -> {
-                    //must first
-                    if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                        return shadowDnsUpstream;
-                    }
-                    //bypass
-                    if (ssConfig.isBypass(dstEp.getHost())) {
-                        return new Upstream(dstEp);
-                    }
-                    return new Upstream(dstEp);
-//                    return new Upstream(dstEp, srvEp);
-                });
+                }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
             }
         }
 

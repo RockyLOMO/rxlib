@@ -63,17 +63,17 @@ public final class UdpManager {
         channel.close();
     }
 
-    public static ByteBuf socks5Encode(ByteBuf inBuf, UnresolvedEndpoint dstEp) {
-        ByteBuf outBuf = Bytes.directBuffer(64 + inBuf.readableBytes());
+    public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
+        ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
         outBuf.writeZero(3);
         encode(outBuf, dstEp);
-        outBuf.writeBytes(inBuf);
+        outBuf.writeBytes(buf);
         return outBuf;
     }
 
-    public static UnresolvedEndpoint socks5Decode(ByteBuf inBuf) {
-        inBuf.skipBytes(3);
-        return decode(inBuf);
+    public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
+        buf.skipBytes(3);
+        return decode(buf);
     }
 
     @SneakyThrows

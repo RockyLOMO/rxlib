@@ -9,12 +9,12 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.Tuple;
 import org.rx.io.Bytes;
 import org.rx.io.Compressible;
 import org.rx.io.GZIPStream;
 import org.rx.io.MemoryStream;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.GenericInboundHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -26,12 +26,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
+public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final Udp2rawHandler DEFAULT = new Udp2rawHandler();
     static final short STREAM_MAGIC = -21264;
     static final byte STREAM_VERSION = 1;
     //dst, src
-    final Map<InetSocketAddress, InetSocketAddress> clientRoutes = new ConcurrentHashMap<>();
+    final Map<InetSocketAddress, Tuple<InetSocketAddress, UnresolvedEndpoint>> clientRoutes = new ConcurrentHashMap<>();
     @Setter
     int gzipMinLength = Compressible.MIN_LENGTH;
 
@@ -44,43 +44,43 @@ public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
         }
 
         SocksProxyServer server = SocksContext.server(inbound.channel());
-        InetSocketAddress sourceEp = in.sender();
+        final InetSocketAddress srcEp0 = in.sender();
 
         List<InetSocketAddress> udp2rawServers = server.config.getUdp2rawServers();
         //client
         if (udp2rawServers != null) {
-            if (!udp2rawServers.contains(sourceEp) && !clientRoutes.containsKey(sourceEp)) {
-                UnresolvedEndpoint destinationEp = UdpManager.socks5Decode(inBuf);
-                RouteEventArgs routeArgs = new RouteEventArgs(sourceEp, destinationEp);
-                server.raiseEvent(server.onUdpRoute, routeArgs);
-                Upstream upstream = routeArgs.getValue();
+            if (!udp2rawServers.contains(srcEp0) && !clientRoutes.containsKey(srcEp0)) {
+                final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+                RouteEventArgs e = new RouteEventArgs(srcEp0, dstEp);
+                server.raiseEvent(server.onUdpRoute, e);
+                Upstream upstream = e.getValue();
 
                 AuthenticEndpoint svrEp = upstream.getSocksServer();
                 if (svrEp != null) {
                     ByteBuf outBuf = Bytes.directBuffer(64 + inBuf.readableBytes());
                     outBuf.writeShort(STREAM_MAGIC);
                     outBuf.writeByte(STREAM_VERSION);
-                    UdpManager.encode(outBuf, new UnresolvedEndpoint(sourceEp));
-                    UdpManager.encode(outBuf, destinationEp);
+                    UdpManager.encode(outBuf, new UnresolvedEndpoint(srcEp0));
+                    UdpManager.encode(outBuf, dstEp);
                     zip(outBuf, inBuf);
 
                     inbound.writeAndFlush(new DatagramPacket(outBuf, svrEp.getEndpoint()));
-                    log.info("UDP2RAW CLIENT {} => {}[{}]", sourceEp, svrEp.getEndpoint(), destinationEp);
+                    log.info("UDP2RAW CLIENT {} => {}[{}]", srcEp0, svrEp.getEndpoint(), dstEp);
                     return;
                 }
 
                 UnresolvedEndpoint upDstEp = upstream.getDestination();
-                log.info("UDP2RAW CLIENT DIRECT {} => {}", sourceEp, upDstEp);
-                inbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
-                clientRoutes.put(upDstEp.socketAddress(), sourceEp);
+                log.debug("UDP2RAW[{}] CLIENT DIRECT {} => {}[{}]", server.config.getListenPort(), srcEp0, upDstEp, dstEp);
+                inbound.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstEp.socketAddress())).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+                clientRoutes.put(upDstEp.socketAddress(), Tuple.of(srcEp0, dstEp));
                 return;
             }
 
-            InetSocketAddress upSrcEp = clientRoutes.get(sourceEp);
-            if (upSrcEp != null) {
-                ByteBuf outBuf = UdpManager.socks5Encode(inBuf, new UnresolvedEndpoint(sourceEp));
-                log.info("UDP2RAW CLIENT DIRECT {} => {}", sourceEp, upSrcEp);
-                inbound.writeAndFlush(new DatagramPacket(outBuf, upSrcEp));
+            Tuple<InetSocketAddress, UnresolvedEndpoint> upSrcs = clientRoutes.get(srcEp0);
+            if (upSrcs != null) {
+                ByteBuf outBuf = UdpManager.socks5Encode(inBuf, upSrcs.right);
+                log.debug("UDP2RAW[{}] CLIENT DIRECT {}[{}] => {}", server.config.getListenPort(), srcEp0, upSrcs.right, upSrcs.left);
+                inbound.writeAndFlush(new DatagramPacket(outBuf, upSrcs.left)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
                 return;
             }
 
@@ -92,7 +92,7 @@ public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
             UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
             ByteBuf outBuf = UdpManager.socks5Encode(inBuf, dstEp);
             inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp.socketAddress()));
-            log.info("UDP2RAW CLIENT {}[{}] => {}", sourceEp, dstEp, srcEp);
+            log.info("UDP2RAW CLIENT {}[{}] => {}", srcEp0, dstEp, srcEp);
             return;
         }
 
@@ -101,8 +101,8 @@ public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
             log.warn("discard {} bytes", inBuf.readableBytes());
             return;
         }
-        UnresolvedEndpoint srcEp = UdpManager.decode(inBuf);
-        UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
+        final UnresolvedEndpoint srcEp = UdpManager.decode(inBuf);
+        final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
         Channel outbound = UdpManager.openChannel(srcEp.socketAddress(), k -> {
             RouteEventArgs e = new RouteEventArgs(srcEp.socketAddress(), dstEp);
             server.raiseEvent(server.onUdpRoute, e);
@@ -117,7 +117,7 @@ public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
                         UdpManager.closeChannel(SocksContext.realSource(ob));
                         return super.newIdleStateEvent(state, first);
                     }
-                }, new GenericInboundHandler<DatagramPacket>() {
+                }, new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
                     protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
                         ByteBuf outBuf = Bytes.directBuffer(64 + out.content().readableBytes());
@@ -126,18 +126,19 @@ public class Udp2rawHandler extends GenericInboundHandler<DatagramPacket> {
                         UdpManager.encode(outBuf, srcEp);
                         UdpManager.encode(outBuf, dstEp);
                         outBuf.writeBytes(out.content());
-                        inbound.writeAndFlush(new DatagramPacket(outBuf, sourceEp));
-//                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, sourceEp, srcEp);
+                        inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp0));
+//                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, srcEp0, srcEp);
                     }
                 });
-            }).bind(0).addListener(Sockets.logBind(0)).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp.socketAddress(), dstEp, upstream);
+            }).bind(0).addListener(Sockets.logBind(0))
+                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp.socketAddress(), dstEp, upstream)
+//                    .syncUninterruptibly().channel(), srcEp.socketAddress(), dstEp, upstream, false)
+                    ;
         });
 
         ByteBuf outBuf = unzip(inBuf);
-        DatagramPacket packet = new DatagramPacket(outBuf, dstEp.socketAddress());
-
-        UdpManager.pendOrWritePacket(outbound, packet);
-//        log.info("UDP2RAW SERVER {}[{}] => {}", sourceEp, srcEp, dstEp);
+        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(outBuf, dstEp.socketAddress()));
+//        log.info("UDP2RAW SERVER {}[{}] => {}", srcEp0, srcEp, dstEp);
     }
 
     private void zip(ByteBuf outBuf, ByteBuf inBuf) {
