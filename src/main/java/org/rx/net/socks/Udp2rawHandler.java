@@ -71,7 +71,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 
                 UnresolvedEndpoint upDstEp = upstream.getDestination();
                 log.debug("UDP2RAW[{}] CLIENT DIRECT {} => {}[{}]", server.config.getListenPort(), srcEp0, upDstEp, dstEp);
-                inbound.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstEp.socketAddress())).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+                inbound.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
                 clientRoutes.put(upDstEp.socketAddress(), Tuple.of(srcEp0, dstEp));
                 return;
             }
@@ -80,7 +80,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (upSrcs != null) {
                 ByteBuf outBuf = UdpManager.socks5Encode(inBuf, upSrcs.right);
                 log.debug("UDP2RAW[{}] CLIENT DIRECT {}[{}] => {}", server.config.getListenPort(), srcEp0, upSrcs.right, upSrcs.left);
-                inbound.writeAndFlush(new DatagramPacket(outBuf, upSrcs.left)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+                inbound.writeAndFlush(new DatagramPacket(outBuf, upSrcs.left));
                 return;
             }
 
@@ -92,7 +92,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
             ByteBuf outBuf = UdpManager.socks5Encode(inBuf, dstEp);
             inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp.socketAddress()));
-            log.info("UDP2RAW CLIENT {}[{}] => {}", srcEp0, dstEp, srcEp);
+//            log.info("UDP2RAW CLIENT {}[{}] => {}", srcEp0, dstEp, srcEp);
             return;
         }
 
@@ -159,7 +159,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 
     private ByteBuf unzip(ByteBuf inBuf) {
         if (inBuf.readByte() == 1) {
-            return inBuf;
+            return inBuf.retain();
         }
         ByteBuf outBuf = Bytes.directBuffer(inBuf.readableBytes());
         try (GZIPStream stream = new GZIPStream(new MemoryStream(inBuf, false), true)) {
