@@ -63,7 +63,7 @@ public class SSClientTcpProxyHandler extends SimpleChannelInboundHandler<ByteBuf
         }
 
         log.debug("{} forwarded to {} -> {}", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        outbound.writeAndFlush(msg.retain()).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        outbound.writeAndFlush(msg.retain());
     }
 
     @Override

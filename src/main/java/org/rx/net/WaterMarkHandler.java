@@ -1,6 +1,7 @@
 package org.rx.net;
 
 import io.netty.channel.*;
+import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -23,6 +24,7 @@ final class WaterMarkHandler extends ChannelDuplexHandler {
             }
         }
         super.write(ctx, msg, promise.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE));
+        log.info("RELEASE {} => {}", ReferenceCountUtil.refCnt(msg), msg);
     }
 
     @Override

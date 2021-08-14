@@ -51,7 +51,7 @@ public final class Main implements SocksSupport {
         String mode = options.get("shadowMode");
 
         boolean udp2raw = true;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
+        Udp2rawHandler.DEFAULT.setGzipMinLength(80);
         AuthenticEndpoint udp2rawSvrEp = new AuthenticEndpoint(new InetSocketAddress("103.79.76.126", 9900));
 
         if (eq(mode, "1")) {
