@@ -11,8 +11,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.*;
 import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
-import org.rx.core.ShellExecutor;
-import org.rx.core.Strings;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
@@ -22,8 +20,6 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.PredicateFunc;
 
 import java.util.function.BiConsumer;
-
-import static org.rx.core.App.tryClose;
 
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
     public static final BiConsumer<SocksProxyServer, RouteEventArgs> DIRECT_ROUTER = (s, e) -> e.setValue(new Upstream(e.getDestinationEndpoint()));
@@ -37,7 +33,6 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
-    ShellExecutor udpTun;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     @Setter
@@ -90,18 +85,10 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
         }).bind(Sockets.anyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
-
-        String udpTunnelPwd = config.getUdpTunnelPassword();
-        if (!Strings.isEmpty(udpTunnelPwd)) {
-            udpTun = new ShellExecutor(String.format("./udp2raw_amd64 -s -l0.0.0.0:%s -r127.0.0.1:%s -k \"%s\" --raw-mode faketcp --cipher-mode xor --auth-mode simple -a",
-                    udpPort - 1, udpPort, udpTunnelPwd))
-                    .start(ShellExecutor.CONSOLE_OUT);
-        }
     }
 
     @Override
     protected void freeObjects() {
-        tryClose(udpTun);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

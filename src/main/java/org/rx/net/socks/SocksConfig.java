@@ -26,7 +26,6 @@ public class SocksConfig extends SocketConfig {
     private int udpTimeoutSeconds = 60 * 4;
     private boolean enableUdp2raw;
     private List<InetSocketAddress> udp2rawServers;
-    private String udpTunnelPassword;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
 

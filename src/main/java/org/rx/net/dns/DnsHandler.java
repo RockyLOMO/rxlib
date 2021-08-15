@@ -115,7 +115,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
-            ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp));
         });
     }
 

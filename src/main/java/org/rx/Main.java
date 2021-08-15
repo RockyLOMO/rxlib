@@ -51,8 +51,15 @@ public final class Main implements SocksSupport {
         String mode = options.get("shadowMode");
 
         boolean udp2raw = true;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(140);
-        AuthenticEndpoint udp2rawSvrEp = new AuthenticEndpoint(new InetSocketAddress("103.79.76.126", 9900));
+        Udp2rawHandler.DEFAULT.setGzipMinLength(256);
+        AuthenticEndpoint udp2rawSvrEp;
+        String udp2rawEndpoint = options.get("udp2rawEndpoint");
+        if (!Strings.isEmpty(udp2rawEndpoint)) {
+            log.info("udp2rawEndpoint: {}", udp2rawEndpoint);
+            udp2rawSvrEp = AuthenticEndpoint.valueOf(udp2rawEndpoint);
+        } else {
+            udp2rawSvrEp = null;
+        }
 
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
@@ -97,7 +104,7 @@ public final class Main implements SocksSupport {
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
-                        CipherKind.AES_128_GCM.getCipherName(), sArgs[1]);
+                        CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
                 SocksUser user = new SocksUser(sArgs[2]);
                 user.setPassword("202002");
                 user.setMaxIpCount(Integer.parseInt(sArgs[3]));
@@ -118,6 +125,9 @@ public final class Main implements SocksSupport {
             frontConf.setConnectTimeoutMillis(connectTimeout);
             frontConf.setEnableUdp2raw(udp2raw);
             frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
+            if (udp2rawSvrEp != null) {
+                frontConf.getUdp2rawServers().add(udp2rawSvrEp.getEndpoint());
+            }
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1));
             Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
             BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
