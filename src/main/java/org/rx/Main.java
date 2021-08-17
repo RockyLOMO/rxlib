@@ -77,7 +77,6 @@ public final class Main implements SocksSupport {
             backConf.setMemoryMode(MemoryMode.MEDIUM);
             backConf.setConnectTimeoutMillis(connectTimeout);
             backConf.setEnableUdp2raw(udp2raw);
-//            backConf.setUdpTunnelPassword(shadowUser.getUsername());
             SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

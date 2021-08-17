@@ -138,34 +138,35 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
         indexer = new HashFileIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
 
-        long pos = wal.meta.getLogPosition();
-        log.debug("init logPos={}", pos);
-//        pos = WALFileStream.HEADER_SIZE;
-        Entry<TK, TV> val;
-        $<Long> endPos = $();
-        while ((val = findValue(pos, null, endPos)) != null) {
-            boolean incr = false;
-            TK k = val.key;
-            HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
-            if (key == null) {
-                key = new HashFileIndexer.KeyData<>(k, k.hashCode());
-                incr = true;
-            }
-            if (key.logPosition == TOMB_MARK) {
-                incr = true;
-            }
-            synchronized (this) {
+        wal.lock.writeInvoke(() -> {
+            long pos = wal.meta.getLogPosition();
+            log.debug("init logPos={}", pos);
+//            pos = WALFileStream.HEADER_SIZE;
+            Entry<TK, TV> val;
+            $<Long> endPos = $();
+            while ((val = findValue(pos, null, endPos)) != null) {
+                boolean incr = false;
+                TK k = val.key;
+                HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
+                if (key == null) {
+                    key = new HashFileIndexer.KeyData<>(k, k.hashCode());
+                    incr = true;
+                }
+                if (key.logPosition == TOMB_MARK) {
+                    incr = true;
+                }
+
                 key.logPosition = val.value == null ? TOMB_MARK : pos;
                 wal.meta.setLogPosition(endPos.v);
-
                 indexer.saveKey(key);
+
+                if (incr) {
+                    wal.meta.incrementSize();
+                }
+                log.debug("recover {}", key);
+                pos = endPos.v;
             }
-            if (incr) {
-                wal.meta.incrementSize();
-            }
-            log.debug("recover {}", key);
-            pos = endPos.v;
-        }
+        });
 
         if (wal.meta.extra == null) {
             wal.meta.extra = new AtomicInteger();
@@ -339,6 +340,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int size = (int) (wal.meta.getLogPosition() - key.logPosition);
         wal.writeInt(size);
         if (value.value == null) {
+            log.warn("LogPos auto set TOMB_MARK {}", key);
             key.logPosition = TOMB_MARK;
         }
         log.debug("saveValue {} {}", key, value);
@@ -347,10 +349,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     private Entry<TK, TV> findValue(HashFileIndexer.KeyData<TK> key) {
 //        require(key, key.logPosition >= 0);
         if (key.logPosition == TOMB_MARK) {
-            log.warn("Recheck {}", key);
+            log.warn("LogPosError {} == TOMB_MARK", key);
             return null;
         }
         if (key.logPosition > wal.meta.getLogPosition()) {
+            log.warn("LogPosError {} > {}", key, wal.meta.getLogPosition());
             key.logPosition = TOMB_MARK;
             indexer.saveKey(key);
             return null;
@@ -525,10 +528,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     @Override
-    public synchronized void clear() {
-        queue.reset();
-        indexer.clear();
-        wal.clear();
+    public void clear() {
+        wal.lock.writeInvoke(() -> {
+            queue.reset();
+            indexer.clear();
+            wal.clear();
+        });
     }
 
     @Override
