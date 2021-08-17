@@ -285,11 +285,8 @@ public final class App extends SystemUtils {
         return (T) obj;
     }
 
-    public static <T> boolean eq(T t1, T t2) {
-        if (t1 == null) {
-            return t2 == null;
-        }
-        return t1.equals(t2);
+    public static <T> boolean eq(T a, T b) {
+        return (a == b) || (a != null && a.equals(b));
     }
 
     public static <T> T isNull(T value, T defaultVal) {

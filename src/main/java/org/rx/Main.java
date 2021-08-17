@@ -10,6 +10,7 @@ import org.rx.core.*;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -206,6 +207,8 @@ public final class Main implements SocksSupport {
                     return new Socks5Upstream(dstEp, directConf, srvEp);
                 }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
             }
+
+//            HttpServer server = new HttpServer();
         }
 
         log.info("Server started..");

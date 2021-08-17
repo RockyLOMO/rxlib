@@ -6,6 +6,7 @@ import com.alibaba.fastjson.parser.DefaultJSONParser;
 import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
 import lombok.Data;
 import org.rx.bean.DateTime;
+import org.rx.core.Numbers;
 import org.rx.util.BeanMapper;
 
 import java.io.Serializable;
@@ -48,5 +49,17 @@ public class SocksUser implements Serializable {
 
     public boolean isAnonymous() {
         return ANONYMOUS.getUsername().equals(username);
+    }
+
+    public String humanLatestLoginTime() {
+        return latestLoginTime.toString();
+    }
+
+    public String humanTotalReadBytes() {
+        return Numbers.readableByteCount(totalReadBytes.get());
+    }
+
+    public String humanTotalWriteBytes() {
+        return Numbers.readableByteCount(totalWriteBytes.get());
     }
 }

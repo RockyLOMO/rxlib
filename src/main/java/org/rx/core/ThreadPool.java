@@ -4,10 +4,10 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.IntWaterMark;
 import org.rx.bean.Tuple;
 import org.rx.core.exception.InvalidException;
 
-import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,14 +18,20 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
-    @AllArgsConstructor
-    @NoArgsConstructor
     @Data
-    public static class DynamicConfig implements Serializable {
+    @EqualsAndHashCode(callSuper = true)
+    public static class WaterMarkConfig extends IntWaterMark {
         private static final long serialVersionUID = 435663699833833222L;
         private int variable = CPU_THREADS;
-        private int minThreshold = 40, maxThreshold = 60;
         private int samplingTimes = 8;
+
+        public WaterMarkConfig() {
+            this(40, 60);
+        }
+
+        public WaterMarkConfig(int minThreshold, int maxThreshold) {
+            super(minThreshold, maxThreshold);
+        }
     }
 
     @RequiredArgsConstructor
@@ -180,7 +186,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         log.warn("ignore setRejectedExecutionHandler");
     }
 
-    public synchronized ThreadPool statistics(@NonNull DynamicConfig dynamicConfig) {
+    public synchronized ThreadPool statistics(@NonNull ThreadPool.WaterMarkConfig waterMarkConfig) {
         decrementCounter = new AtomicInteger();
         incrementCounter = new AtomicInteger();
         ManagementMonitor monitor = ManagementMonitor.getInstance();
@@ -188,13 +194,13 @@ public class ThreadPool extends ThreadPoolExecutor {
             String prefix = String.format("%s%sMonitor", POOL_NAME_PREFIX, poolName);
             int cpuLoad = e.getValue().getCpuLoadPercent();
             log.debug("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", prefix, getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),
-                    cpuLoad, dynamicConfig.getMinThreshold(), dynamicConfig.getMaxThreshold());
+                    cpuLoad, waterMarkConfig.getLow(), waterMarkConfig.getHigh());
 
-            if (cpuLoad > dynamicConfig.getMaxThreshold()) {
+            if (cpuLoad > waterMarkConfig.getHigh()) {
                 int c = decrementCounter.incrementAndGet();
-                if (c >= dynamicConfig.getSamplingTimes()) {
-                    log.debug("{} decrement {} ok", prefix, dynamicConfig.getVariable());
-                    setMaximumPoolSize(getMaximumPoolSize() - dynamicConfig.getVariable());
+                if (c >= waterMarkConfig.getSamplingTimes()) {
+                    log.debug("{} decrement {} ok", prefix, waterMarkConfig.getVariable());
+                    setMaximumPoolSize(getMaximumPoolSize() - waterMarkConfig.getVariable());
                     decrementCounter.set(0);
                 } else {
                     log.debug("{} decrementCounter={}", prefix, c);
@@ -207,11 +213,11 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.debug("{} increment disabled", prefix);
                 return;
             }
-            if (cpuLoad < dynamicConfig.getMinThreshold()) {
+            if (cpuLoad < waterMarkConfig.getLow()) {
                 int c = incrementCounter.incrementAndGet();
-                if (c >= dynamicConfig.getSamplingTimes()) {
-                    log.debug("{} increment {} ok", prefix, dynamicConfig.getVariable());
-                    setMaximumPoolSize(getMaximumPoolSize() + dynamicConfig.getVariable());
+                if (c >= waterMarkConfig.getSamplingTimes()) {
+                    log.debug("{} increment {} ok", prefix, waterMarkConfig.getVariable());
+                    setMaximumPoolSize(getMaximumPoolSize() + waterMarkConfig.getVariable());
                     incrementCounter.set(0);
                 } else {
                     log.debug("{} incrementCounter={}", prefix, c);

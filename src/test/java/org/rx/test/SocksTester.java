@@ -548,6 +548,8 @@ public class SocksTester {
         assert jbody.equals(resJson);
 
         wait.waitOne();
+
+        System.in.read();
     }
 
     @Test
