@@ -19,6 +19,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
@@ -42,6 +43,7 @@ public final class Sockets {
     static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
+    public static final LengthFieldPrepender INT_LENGTH_Prepender = new LengthFieldPrepender(4);
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
     private static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);

@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.RequiredArgsConstructor;
 import org.rx.bean.RxConfig;
@@ -19,7 +18,7 @@ public class AESCodec extends MessageToMessageCodec<ByteBuf, ByteBuf> {
     public ChannelHandler[] channelHandlers() {
         return new ChannelHandler[]{
                 new LengthFieldBasedFrameDecoder(RxConfig.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4),
-                new LengthFieldPrepender(4), this
+                Sockets.INT_LENGTH_Prepender, this
         };
     }
 
