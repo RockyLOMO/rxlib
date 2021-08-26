@@ -29,7 +29,7 @@ public class DnsServer extends Disposable {
     @Setter
     int ttl = 1800;
     @Setter
-    RandomList<UpstreamSupport> support;
+    RandomList<UpstreamSupport> shadowServers;
 
     public DnsServer() {
         this(53);

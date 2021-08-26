@@ -36,8 +36,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -404,7 +402,7 @@ public class SocksTester {
         final String host = "devops.f-li.cn";
         final InetAddress hostIp = InetAddress.getByName("2.2.2.2");
         DnsServer server = new DnsServer(54, nsEp);
-        server.setSupport(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
+        server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
             public void fakeEndpoint(SUID hash, String realEndpoint) {
 
