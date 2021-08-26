@@ -304,7 +304,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     protected TV delete(TK k) {
         HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
-        if (key == null) {
+        if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
         Entry<TK, TV> val = findValue(key);
@@ -340,7 +340,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int size = (int) (wal.meta.getLogPosition() - key.logPosition);
         wal.writeInt(size);
         if (value.value == null) {
-            log.warn("LogPos auto set TOMB_MARK {}", key);
+            log.debug("LogPos auto set TOMB_MARK {}", key);
             key.logPosition = TOMB_MARK;
         }
         log.debug("saveValue {} {}", key, value);

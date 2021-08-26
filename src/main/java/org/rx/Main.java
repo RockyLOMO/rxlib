@@ -52,7 +52,7 @@ public final class Main implements SocksSupport {
         String mode = options.get("shadowMode");
 
         boolean udp2raw = true;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(256);
+        Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
         AuthenticEndpoint udp2rawSvrEp;
         String udp2rawEndpoint = options.get("udp2rawEndpoint");
         if (!Strings.isEmpty(udp2rawEndpoint)) {
@@ -152,16 +152,17 @@ public final class Main implements SocksSupport {
                 if (e.getValue() != null) {
                     return;
                 }
-                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-                if (frontConf.isEnableUdp2raw()) {
-                    if (udp2rawSvrEp != null) {
-                        e.setValue(new Upstream(dstEp, udp2rawSvrEp));
-                    } else {
-                        e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
-                    }
-                    return;
-                }
-                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
+                e.setValue(new Upstream(e.getDestinationEndpoint()));
+//                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+//                if (frontConf.isEnableUdp2raw()) {
+//                    if (udp2rawSvrEp != null) {
+//                        e.setValue(new Upstream(dstEp, udp2rawSvrEp));
+//                    } else {
+//                        e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+//                    }
+//                    return;
+//                }
+//                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);

@@ -65,7 +65,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                     zip(outBuf, inBuf);
 
                     inbound.writeAndFlush(new DatagramPacket(outBuf, svrEp.getEndpoint()));
-                    log.info("UDP2RAW CLIENT {} => {}[{}]", srcEp0, svrEp.getEndpoint(), dstEp);
+//                    log.info("UDP2RAW CLIENT {} => {}[{}]", srcEp0, svrEp.getEndpoint(), dstEp);
                     return;
                 }
 
