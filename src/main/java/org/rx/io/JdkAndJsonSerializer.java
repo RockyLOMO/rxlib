@@ -16,6 +16,7 @@ import java.lang.reflect.Type;
 
 import static org.rx.core.App.*;
 
+//https://github.com/RuedigerMoeller/fast-serialization
 public class JdkAndJsonSerializer implements Serializer {
     @RequiredArgsConstructor
     static class JsonWrapper implements Compressible {

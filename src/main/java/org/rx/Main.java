@@ -10,7 +10,6 @@ import org.rx.core.*;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -114,7 +113,7 @@ public final class Main implements SocksSupport {
             Integer shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer dnsSvr = new DnsServer(shadowDnsPort);
             dnsSvr.setTtl(60 * 60 * 10); //12 hour
-            dnsSvr.setSupport(shadowServers);
+            dnsSvr.setShadowServers(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
             InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
             Sockets.injectNameService(shadowDnsEp);

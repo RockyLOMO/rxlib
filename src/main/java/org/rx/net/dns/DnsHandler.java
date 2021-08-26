@@ -6,12 +6,14 @@ import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
+import org.rx.bean.RandomList;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpirations;
 import org.rx.core.NQuery;
 import org.rx.core.cache.HybridCache;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
+import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -35,7 +37,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         this.server = server;
         this.isTcp = isTcp;
         client = new DnsClient(eventLoopGroup, nameServerList);
-        if (server.support == null) {
+        if (server.shadowServers == null) {
             cache = null;
         } else {
             cache = Cache.getInstance(Cache.DISTRIBUTED_CACHE);
@@ -50,7 +52,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 String domain = key.substring(DOMAIN_PREFIX.length());
                 List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
                 List<InetAddress> addresses = awaitQuietly(() -> {
-                    List<InetAddress> list = server.support.next().getSupport().resolveHost(domain);
+                    List<InetAddress> list = server.shadowServers.next().getSupport().resolveHost(domain);
                     if (CollectionUtils.isEmpty(list)) {
                         return null;
                     }
@@ -91,12 +93,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
         }
-        if (server.support != null) {
+        RandomList<UpstreamSupport> shadowServers = server.shadowServers;
+        if (shadowServers != null) {
             //未命中也缓存
             $<Boolean> isEmpty = $(false);
             List<InetAddress> addresses = cache().get(DOMAIN_PREFIX + domain,
                     k -> {
-                        List<InetAddress> tmp = isNull(server.support.next().getSupport().resolveHost(domain), Collections.emptyList());
+                        List<InetAddress> tmp = isNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
                         isEmpty.v = tmp.isEmpty();
                         return tmp;
                     },
