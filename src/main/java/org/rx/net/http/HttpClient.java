@@ -265,7 +265,7 @@ public class HttpClient {
 
     public static String buildUrl(String url, Map<String, Object> queryString) {
         if (url == null) {
-            url = "";
+            url = Strings.EMPTY;
         }
         if (queryString == null) {
             return url;

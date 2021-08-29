@@ -7,6 +7,9 @@ import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
+import org.rx.core.exception.InvalidException;
+import org.rx.io.FileWatcher;
+import org.rx.io.Files;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
@@ -26,6 +29,8 @@ import org.rx.util.function.BiFunc;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -84,22 +89,36 @@ public final class Main implements SocksSupport {
             rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
-            NQuery<AuthenticEndpoint> arg0 = NQuery.of(Strings.split(options.get("shadowServer"), ",")).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
-            if (!arg0.any() || arg0.any(Objects::isNull)) {
-                log.info("Invalid shadowServer arg");
-                return;
-            }
+            String arg0 = "shadowServer.txt";
             String[] arg1 = Strings.split(options.get("shadowUsers"), ",");
             if (arg1.length == 0) {
                 log.info("Invalid shadowUsers arg");
                 return;
             }
 
-            RandomList<UpstreamSupport> shadowServers = new RandomList<>(arg0.select(shadowServer -> {
-                RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
-                rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
-                return new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf));
-            }).toList());
+            RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+            FileWatcher watcher = new FileWatcher(".", p -> p.endsWith(arg0));
+            watcher.Changed = (s, e) -> {
+                if (!e.isModify()) {
+                    return;
+                }
+                NQuery<AuthenticEndpoint> svrs = NQuery.of(Files.readLines(e.getPath().toString())).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
+                if (!svrs.any() || svrs.any(Objects::isNull)) {
+                    throw new InvalidException("Invalid shadowServer arg");
+                }
+                shadowServers.clear();
+                for (AuthenticEndpoint shadowServer : svrs) {
+                    RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
+                    rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+                    String weight = shadowServer.getParameters().get("w");
+                    if (Strings.isEmpty(weight)) {
+                        continue;
+                    }
+                    shadowServers.add(new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
+                }
+                log.info("reload svrs {}", toJsonString(svrs));
+            };
+            watcher.raiseEvent(watcher.Changed, new FileWatcher.FileChangeEventArgs(Paths.get(arg0), StandardWatchEventKinds.ENTRY_MODIFY));
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),

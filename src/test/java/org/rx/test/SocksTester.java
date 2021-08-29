@@ -603,9 +603,17 @@ public class SocksTester {
 
     @Test
     public void authenticEndpoint() {
-        String aep = "yf:123456@d.f-li.cn:1080";
+        String aep = "yf:123456@f-li.cn:1080?w=9";
         AuthenticEndpoint endpoint = AuthenticEndpoint.valueOf(aep);
-        assert Sockets.toString(endpoint.getEndpoint()).equals("d.f-li.cn:1080");
+        assert Sockets.toString(endpoint.getEndpoint()).equals("f-li.cn:1080");
+        assert endpoint.getUsername().equals("yf");
+        assert endpoint.getPassword().equals("123456");
+        assert endpoint.toString().equals(aep);
+        assert endpoint.getParameters().get("w").equals("9");
+
+        aep = "yf:123456@f-li.cn:1080";
+        endpoint = AuthenticEndpoint.valueOf(aep);
+        assert Sockets.toString(endpoint.getEndpoint()).equals("f-li.cn:1080");
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
