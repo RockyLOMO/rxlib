@@ -106,6 +106,9 @@ public final class Main implements SocksSupport {
                 if (!svrs.any() || svrs.any(Objects::isNull)) {
                     throw new InvalidException("Invalid shadowServer arg");
                 }
+                for (UpstreamSupport support : shadowServers) {
+                    tryClose(support.getSupport());
+                }
                 shadowServers.clear();
                 for (AuthenticEndpoint shadowServer : svrs) {
                     RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);

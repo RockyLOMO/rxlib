@@ -196,22 +196,31 @@ public class CoreTester extends TestUtil {
     @Test
     public void redo() {
         log.info("start...");
+        for (int i = 0; i < 5; i++) {
+            int finalI = i;
+            Tasks.schedule(() -> {
+                System.out.println("start:" + finalI);
+                sleep(5000);
+                System.out.println("stop:" + finalI);
+            }, 1000);
+        }
+
 //        Tasks.scheduleOnce(() -> log.info("scheduleOnce"), 1000);
 
-        int max = 2;
-        RedoTimer monitor = new RedoTimer();
-        $<String> va = $.$("a");
-        $<String> vb = $.$("b");
-        Timeout timeout = monitor.runAndSetTimeout(p -> {
-            System.out.println(p.cancel());
-            va.v += va.v;
-            log.info(va.v);
-        }, 2000, max);
-        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
-            vb.v += vb.v;
-            log.info(vb.v);
-            throw new InvalidException("x");
-        }, 2000, max);
+//        int max = 2;
+//        RedoTimer monitor = new RedoTimer();
+//        $<String> va = $.$("a");
+//        $<String> vb = $.$("b");
+//        Timeout timeout = monitor.runAndSetTimeout(p -> {
+//            System.out.println(p.cancel());
+//            va.v += va.v;
+//            log.info(va.v);
+//        }, 2000, max);
+//        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
+//            vb.v += vb.v;
+//            log.info(vb.v);
+//            throw new InvalidException("x");
+//        }, 2000, max);
 
         System.in.read();
     }
