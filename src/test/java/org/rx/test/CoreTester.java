@@ -32,49 +32,12 @@ import static org.rx.core.App.*;
 @Slf4j
 public class CoreTester extends TestUtil {
     //region NQuery
-    @SneakyThrows
     @Test
-    public void runParallelNQuery() {
-        for (BigDecimal bigDecimal : NQuery.of(1, 2, 3, 4).where(p -> {
-            System.out.println("a:" + p);
-            return p > 2;
-        }).select(p -> {
-            System.out.println("b:" + p);
-            return new BigDecimal(p);
-        })) {
-            System.out.println(bigDecimal);
+    public void parallelNQuery() {
+        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+                .groupBy(p -> p > 5, (p, x) -> x.first())) {
+            System.out.println(integer.toString());
         }
-//
-//        List<Integer > a = new ArrayList<>(),b = new ArrayList<>();
-//        a.add(1);
-//        b.add(1);
-        List<Integer> a = Collections.singletonList(1), b = Collections.singletonList(1);
-//        a.add(1);
-//        b.add(1);
-        System.out.println(a.equals(b));
-        Map<List<Integer>, String> x = new HashMap<>();
-        x.put(a, "woshimap");
-        System.out.println(x.get(b));
-
-        for (Integer integer : new Iterable<Integer>() {
-            @NotNull
-            @Override
-            public Iterator<Integer> iterator() {
-                System.out.println("wtf");
-                return Arrays.toList(1, 2, 3, 4).iterator();
-            }
-        }) {
-            System.out.println(integer);
-        }
-//        ManagementMonitor.getInstance().scheduled = (s, e) -> {
-//            System.out.println(toJsonString(e.getValue()));
-//        };
-//
-//        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-//                .groupBy(p -> p > 5, (p, x) -> x.first())) {
-//            System.out.println(integer.toString());
-//        }
-//        System.in.read();
     }
 
     @Test
@@ -152,7 +115,7 @@ public class CoreTester extends TestUtil {
 
         NQuery<PersonBean> set0 = NQuery.of(personSet);
         NQuery<PersonBean> set1 = set0.take(1);
-        System.out.println(String.format("set a=%s,b=%s", set0.count(), set1.count()));
+        System.out.printf("set a=%s,b=%s%n", set0.count(), set1.count());
         assert set0.count() > set1.count();
     }
 
@@ -275,6 +238,10 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void MXBean() {
+        ManagementMonitor.getInstance().scheduled = (s, e) -> {
+            System.out.println(toJsonString(e.getValue()));
+        };
+
         Tasks.schedule(() -> {
             List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
             for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
@@ -282,6 +249,7 @@ public class CoreTester extends TestUtil {
             }
         }, 2000);
         System.out.println("main thread done");
+
         System.in.read();
     }
 
