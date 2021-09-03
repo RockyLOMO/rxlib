@@ -4,7 +4,6 @@ import com.alibaba.fastjson.TypeReference;
 import io.netty.util.Timeout;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -134,31 +133,33 @@ public class CoreTester extends TestUtil {
     }
     //endregion
 
-    @Test
-    public void runNEvent() {
-        UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = new PersonBean();
-        p.index = 1;
-        p.name = "rx";
-        p.age = 6;
-
-        BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-
-        mgr.onCreate = a;
-        mgr.create(p);  //触发事件（a执行）
-
-        mgr.onCreate = combine(mgr.onCreate, b);
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate = remove(mgr.onCreate, b);
-        mgr.create(p); //触发事件（b执行）
-    }
-
     @SneakyThrows
     @Test
     public void redo() {
         log.info("start...");
+
+        int max = 2;
+        RedoTimer monitor = new RedoTimer();
+        $<String> va = $.$("a");
+        $<String> vb = $.$("b");
+        Timeout timeout = monitor.runAndSetTimeout(p -> {
+            System.out.println(p.cancel());
+            va.v += va.v;
+            log.info(va.v);
+        }, 2000, max);
+        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
+            vb.v += vb.v;
+            log.info(vb.v);
+            throw new InvalidException("x");
+        }, 2000, max);
+
+        System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void asyncTask() {
+        //toIncSize
         for (int i = 0; i < 5; i++) {
             int finalI = i;
             Tasks.schedule(() -> {
@@ -168,29 +169,6 @@ public class CoreTester extends TestUtil {
             }, 1000);
         }
 
-//        Tasks.scheduleOnce(() -> log.info("scheduleOnce"), 1000);
-
-//        int max = 2;
-//        RedoTimer monitor = new RedoTimer();
-//        $<String> va = $.$("a");
-//        $<String> vb = $.$("b");
-//        Timeout timeout = monitor.runAndSetTimeout(p -> {
-//            System.out.println(p.cancel());
-//            va.v += va.v;
-//            log.info(va.v);
-//        }, 2000, max);
-//        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
-//            vb.v += vb.v;
-//            log.info(vb.v);
-//            throw new InvalidException("x");
-//        }, 2000, max);
-
-        System.in.read();
-    }
-
-    @SneakyThrows
-    @Test
-    public void asyncTask() {
         ThreadPool.WaterMarkConfig config = new ThreadPool.WaterMarkConfig(40, 60);
         Tasks.pool().statistics(config);
 
@@ -335,6 +313,27 @@ public class CoreTester extends TestUtil {
             o.v++;
             System.out.println(o.v);
         }, 2);
+    }
+
+    @Test
+    public void runNEvent() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        PersonBean p = new PersonBean();
+        p.index = 1;
+        p.name = "rx";
+        p.age = 6;
+
+        BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+
+        mgr.onCreate = a;
+        mgr.create(p);  //触发事件（a执行）
+
+        mgr.onCreate = combine(mgr.onCreate, b);
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate = remove(mgr.onCreate, b);
+        mgr.create(p); //触发事件（b执行）
     }
 
     @Test
