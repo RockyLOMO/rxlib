@@ -4,10 +4,12 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.buffer.ByteBufUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
+import org.rx.core.Tasks;
 import org.rx.core.exception.ExceptionLevel;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.Bytes;
@@ -23,10 +25,13 @@ import java.lang.ref.PhantomReference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 public class UtilTester {
     @Data
     public static class TwoPerson {
@@ -40,6 +45,50 @@ public class UtilTester {
         public String renew(@NotNull @Valid List<PersonBean> person) {
             return null;
         }
+    }
+
+    List<Integer> queue = new ArrayList<>();
+
+    @SneakyThrows
+    @Test
+    public void productAndConsume() {
+        final boolean[] run = {true};
+        Object lock = new Object();
+        int bufSize = 5, max = bufSize * 10;
+        AtomicInteger c = new AtomicInteger();
+        Tasks.run(() -> {
+            while (run[0]) {
+                synchronized (lock) {
+                    if (queue.size() < bufSize) {
+                        int v = c.incrementAndGet();
+                        queue.add(v);
+                        log.info("product {}", v);
+                        if (v == max) {
+                            run[0] = false;
+                        }
+                        continue;
+                    }
+                    lock.notifyAll();
+                    lock.wait();
+                }
+            }
+        });
+        Tasks.run(() -> {
+            while (run[0]) {
+                synchronized (lock) {
+                    if (queue.size() < bufSize) {
+                        lock.wait();
+                        continue;
+                    }
+                    for (Integer v : queue) {
+                        log.info("consume {}", v);
+                    }
+                    queue.clear();
+                    lock.notifyAll();
+                }
+            }
+        });
+        System.in.read();
     }
 
     @Test
@@ -69,14 +118,15 @@ public class UtilTester {
     }
 
     WeakReference<Integer> x = new WeakReference<>(10);
+
     @Test
     public void security() {
 //        SoftReference<Integer> x = new SoftReference<>(10);
         System.out.println(x.get());
-        
+
         for (int i = 0; i < 10; i++) {
             System.gc();
-            System.out.println("x:"+x.get());
+            System.out.println("x:" + x.get());
         }
     }
 }

@@ -16,6 +16,7 @@ import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
+//EventObject EventListener
 public interface EventTarget<TSender extends EventTarget<TSender>> {
     @RequiredArgsConstructor
     enum EventFlags implements NEnum<EventFlags> {
