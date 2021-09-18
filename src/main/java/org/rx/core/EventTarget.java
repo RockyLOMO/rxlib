@@ -10,14 +10,15 @@ import org.rx.bean.NEnum;
 import org.rx.core.exception.InvalidException;
 
 import java.lang.reflect.Field;
+import java.util.EventListener;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
-//EventObject EventListener
-public interface EventTarget<TSender extends EventTarget<TSender>> {
+//EventObject
+public interface EventTarget<TSender extends EventTarget<TSender>> extends EventListener {
     @RequiredArgsConstructor
     enum EventFlags implements NEnum<EventFlags> {
         NONE(0),
@@ -82,7 +83,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
-            EventListener.getInstance().attach(this, eventName, event, combine);
+            EventHost.getInstance().attach(this, eventName, event, combine);
             return;
         }
         field.set(this, combine ? combine((BiConsumer<TSender, TArgs>) field.get(this), event) : event);
@@ -96,7 +97,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
-            EventListener.getInstance().detach(this, eventName, event);
+            EventHost.getInstance().detach(this, eventName, event);
             return;
         }
         field.set(this, remove((BiConsumer<TSender, TArgs>) field.get(this), event));
@@ -110,7 +111,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> {
             if (!eventFlags().has(EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", eventName);
             }
-            EventListener.getInstance().raise(this, eventName, args);
+            EventHost.getInstance().raise(this, eventName, args);
             return;
         }
         raiseEvent((BiConsumer<TSender, TArgs>) field.get(this), args);

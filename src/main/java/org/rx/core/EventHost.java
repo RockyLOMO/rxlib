@@ -15,9 +15,9 @@ import static org.rx.core.App.*;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class EventListener {
+class EventHost {
     @Getter
-    private static final EventListener instance = new EventListener();
+    private static final EventHost instance = new EventHost();
 
     public static void register(Object object) {
         Container.getInstance().getOrRegister(EventBus.class).register(object);
