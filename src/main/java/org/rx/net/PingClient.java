@@ -64,7 +64,7 @@ public final class PingClient {
                 watcher.start();
                 sock.connect(endpoint, connectTimeoutSeconds * 1000);
             } catch (IOException ex) {
-                log.info("Ping error {}", ex.getMessage());
+                log.info("Ping error {} {}", ex.getClass().getName(), ex.getMessage());
                 value[i] = Result.nullVal;
                 continue;
             } finally {
