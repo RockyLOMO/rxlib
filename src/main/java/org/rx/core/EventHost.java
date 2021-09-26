@@ -15,7 +15,7 @@ import static org.rx.core.App.*;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-class EventHost {
+public class EventHost {
     @Getter
     private static final EventHost instance = new EventHost();
 

@@ -621,6 +621,6 @@ public class SocksTester {
 
     @Test
     public void ping() {
-        PingClient.test("cloud.f-li.cn:80", r -> log.info(toJsonString(r)));
+        PingClient.test("cloud.f-li.cn:50112", r -> log.info(toJsonString(r)));
     }
 }
