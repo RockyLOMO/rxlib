@@ -364,14 +364,16 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     @SneakyThrows
     private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
-        Object kStr = k == null ? "NULL" : k.hashCode();
+        String kStr = k == null ? "NULL" : k.toString();
         log.debug("findValue {} {}", kStr, logPosition);
         Entry<TK, TV> val = null;
         try {
             wal.setReaderPosition(logPosition);
             val = serializer.deserialize(wal, true);
         } catch (Exception e) {
-            if (e instanceof StreamCorruptedException) {
+            if (e instanceof StreamCorruptedException
+//                    | e instanceof EOFException
+            ) {
                 log.error("findValue {} {}", kStr, logPosition, e);
             } else {
                 throw e;

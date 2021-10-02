@@ -7,7 +7,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.App;
 import org.rx.core.exception.InvalidException;
-import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -59,7 +58,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             size.set(in.readInt());
         }
 
-        private transient Action writeBack;
+        private transient WALFileStream fileStream;
         private long _logPosition = HEADER_SIZE;
         private AtomicInteger size = new AtomicInteger();
         Object extra;
@@ -96,11 +95,11 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
         @SneakyThrows
         private void writeBack() {
-            if (writeBack == null) {
+            if (fileStream == null) {
                 return;
             }
 //            log.debug("write back {}", this);
-            writeBack.invoke();
+            fileStream.queue.offer(0L, this, x -> fileStream.saveMeta());
         }
     }
 
@@ -200,7 +199,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         meta = loadMeta();
-        meta.writeBack = () -> queue.offer(0L, meta, x -> saveMeta());
+        meta.fileStream = this;
     }
 
     @Override
@@ -280,15 +279,10 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private boolean ensureGrow() {
         return lock.writeInvoke(() -> {
             long length = main.getLength();
-            if (length < growSize) {
-                log.debug("growSize {} 0->{}", getName(), growSize);
-                _setLength(growSize);
-                return true;
-            }
-
-            if (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR) {
+            if (length < growSize
+                    || (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR)) {
                 long resize = length + growSize;
-                log.debug("growSize {} {}->{}", getName(), length, resize);
+                log.info("growSize {} {}->{}", getName(), length, resize);
                 _setLength(resize);
                 return true;
             }
@@ -362,6 +356,8 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             if (logPosition != meta.getLogPosition()) {
                 throw new InvalidException("concurrent error");
             }
+
+            ensureGrow();
 
             writer.setPosition(logPosition);
             action.invoke(writer);

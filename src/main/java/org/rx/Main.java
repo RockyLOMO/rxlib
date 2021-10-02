@@ -191,7 +191,7 @@ public final class Main implements SocksSupport {
             Action fn = () -> {
                 InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.current().getIp());
                 for (UpstreamSupport shadowServer : shadowServers) {
-                    shadowServer.getSupport().addWhiteList(addr);
+                    quietly(() -> shadowServer.getSupport().addWhiteList(addr));
                 }
             };
             fn.invoke();
