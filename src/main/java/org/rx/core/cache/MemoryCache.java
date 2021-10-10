@@ -21,6 +21,7 @@ import static org.rx.core.App.require;
 
 @NoArgsConstructor
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
+    static final int DEFAULT_Insertions = 9999999;  //1.1M
     public static final MemoryCache DEFAULT = new MemoryCache<>();
 
     public static Caffeine<Object, Object> builder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {
@@ -74,7 +75,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
             if (onBuild != null) {
                 quietly(() -> onBuild.invoke(b));
             }
-            return Tuple.of(b.softValues().build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), Integer.MAX_VALUE));
+            return Tuple.of(b.softValues().build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_Insertions));
         });
         if (key != null) {
             tuple.right.put(routeKey(key));

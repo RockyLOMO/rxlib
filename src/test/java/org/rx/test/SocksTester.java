@@ -260,7 +260,7 @@ public class SocksTester {
             if (config.isBypass(dstEp.getHost())) {
                 return new Upstream(dstEp);
             }
-            return new Socks5Upstream(dstEp, backConf, srvEp);
+            return new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null));
         }, dstEp -> {
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
@@ -338,7 +338,7 @@ public class SocksTester {
             if (e.getValue() != null) {
                 return;
             }
-            e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, shadowServers));
+            e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next()));
         });
         frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
             if (e.getValue() != null) {
