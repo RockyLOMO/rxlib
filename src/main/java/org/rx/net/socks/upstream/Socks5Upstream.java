@@ -2,7 +2,7 @@ package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
 import lombok.NonNull;
-import org.rx.bean.RandomList;
+import lombok.SneakyThrows;
 import org.rx.bean.SUID;
 import org.rx.core.*;
 import org.rx.core.exception.InvalidException;
@@ -13,30 +13,28 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
+import org.rx.util.function.Func;
 
 import static org.rx.core.Tasks.awaitQuietly;
 
 public class Socks5Upstream extends Upstream {
     final SocksConfig config; //可能 frontend 和 backend 不同配置
-    final RandomList<UpstreamSupport> servers;
+    final Func<UpstreamSupport> router;
 
-    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull AuthenticEndpoint... svrEps) {
-        this(dstEp, config, new RandomList<>(NQuery.of(svrEps).select(p -> new UpstreamSupport(p, null)).toList()));
-    }
-
-    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull RandomList<UpstreamSupport> servers) {
+    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
         super(dstEp);
         this.config = config;
-        this.servers = servers;
+        this.router = router;
     }
 
+    @SneakyThrows
     @Override
     public void initChannel(Channel channel) {
-        if (servers.isEmpty()) {
+        UpstreamSupport next = router.invoke();
+        if (next == null) {
             throw new InvalidException("ProxyHandlers is empty");
         }
 
-        UpstreamSupport next = servers.next();
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
 

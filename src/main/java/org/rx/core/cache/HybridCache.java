@@ -30,16 +30,9 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
     public static Cache DEFAULT = new HybridCache<>();
 
     public volatile BiConsumer<HybridCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired;
-    final Cache<TK, CacheItem<TV>> cache;
+    final Cache<TK, CacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, CacheItem<TV>> store = KeyValueStore.getInstance();
-
-    public HybridCache() {
-//        long ttl = 5;
-        long ttl = 60 * 2;
-        cache = new CaffeineCache<>(CaffeineCache.builder(ttl)
-                .softValues().maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval).build());
-    }
 
     private void onRemoval(@Nullable TK key, CacheItem<TV> item, @NonNull RemovalCause removalCause) {
 //        log.info("onRemoval {} {}", key, removalCause);
@@ -97,7 +90,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
         }
         if (item.slidingMinutes > 0) {
             item.expire = utc.addMinutes(item.slidingMinutes);
-            cache.put(key, item);
+            cache.put(key, item, CacheExpirations.sliding(item.slidingMinutes));
         }
         return item.value;
     }
@@ -116,7 +109,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
         } else {
             item.expire = DateTime.MAX;
         }
-        CacheItem<TV> old = cache.put(key, item);
+        CacheItem<TV> old = cache.put(key, item, expirations);
         return unwrap(key, old);
     }
 

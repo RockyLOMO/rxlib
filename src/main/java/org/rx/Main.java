@@ -20,7 +20,6 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.UdpSocks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -167,7 +166,8 @@ public final class Main implements SocksSupport {
                 if (e.getValue() != null) {
                     return;
                 }
-                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, shadowServers));
+                int steeringTTL = 60;
+                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
             });
             frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
@@ -225,7 +225,7 @@ public final class Main implements SocksSupport {
                     if (ipAddress != null && ipAddress.isChina()) {
                         return new Upstream(dstEp);
                     }
-                    return new Socks5Upstream(dstEp, directConf, srvEp);
+                    return new Socks5Upstream(dstEp, directConf, () -> new UpstreamSupport(srvEp, null));
                 }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
             }
 

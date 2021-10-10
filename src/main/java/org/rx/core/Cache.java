@@ -13,7 +13,7 @@ import static org.rx.core.App.*;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     String MEMORY_CACHE = "MC";
-    String THREAD_CACHE = "threadCache";
+    String THREAD_CACHE = "TC";
     String DISTRIBUTED_CACHE = "distributedCache";
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {

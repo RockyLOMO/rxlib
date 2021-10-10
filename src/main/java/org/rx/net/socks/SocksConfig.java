@@ -21,7 +21,7 @@ public class SocksConfig extends SocketConfig {
     public static final int BUF_SIZE_4K = 1024 * 4;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 60;
+    private int readTimeoutSeconds = 60 * 30;
     private int writeTimeoutSeconds;
     private int udpTimeoutSeconds = 60 * 4;
     private boolean enableUdp2raw;

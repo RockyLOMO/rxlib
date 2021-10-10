@@ -1,6 +1,7 @@
 package org.rx.test;
 
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
@@ -23,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.rx.core.App.*;
 
+@Slf4j
 public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
@@ -129,6 +131,16 @@ public class BeanTester extends TestUtil {
                 list.add(next);
             });
         }
+
+        Object steeringObj = 1;
+        int ttl = 2;
+        String next = list.next(steeringObj, ttl);
+        assert next.equals(list.next(steeringObj, ttl));
+        log.info("steering {} -> {}", steeringObj, next);
+        sleep(5000);
+        String after = list.next(steeringObj, ttl);
+        log.info("steering {} -> {} | {}", steeringObj, next, after);
+        assert after.equals(list.next(steeringObj, ttl));
     }
 
     @Test

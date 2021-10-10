@@ -6,10 +6,7 @@ import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
 import lombok.NoArgsConstructor;
 import org.rx.bean.Tuple;
-import org.rx.core.Cache;
-import org.rx.core.CacheExpirations;
-import org.rx.core.NQuery;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.util.function.BiAction;
 
 import java.nio.charset.StandardCharsets;
@@ -65,6 +62,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key, CacheExpirations expiration) {
         Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>> tuple = cacheMap.computeIfAbsent(expiration, k -> {
+            App.log("MemoryCache create by {}", expiration);
             Caffeine<Object, Object> b;
             if (k.getSlidingExpiration() >= 0) {
                 b = slidingBuilder(k.getSlidingExpiration());
