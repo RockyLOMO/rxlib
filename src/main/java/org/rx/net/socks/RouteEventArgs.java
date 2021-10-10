@@ -19,17 +19,17 @@ public class RouteEventArgs extends NEventArgs<Upstream> {
 
     private final InetSocketAddress sourceEndpoint;
     private final UnresolvedEndpoint destinationEndpoint;
-    private boolean changed;
+    private boolean upstreamChanged;
     private int failCount;
 
     @Override
     public void setValue(Upstream value) {
-        changed = changed || !eq(super.getValue(), value);
+        upstreamChanged = upstreamChanged || !eq(super.getValue(), value);
         super.setValue(value);
     }
 
     public void reset() {
-        changed = false;
+        upstreamChanged = false;
         failCount++;
     }
 }

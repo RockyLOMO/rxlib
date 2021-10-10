@@ -79,7 +79,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
-                    if (!e.isCancel() && e.isChanged()) {
+                    if (!e.isCancel() && e.isUpstreamChanged()) {
                         e.reset();
                         connect(inbound, dstAddrType, e);
                         return;

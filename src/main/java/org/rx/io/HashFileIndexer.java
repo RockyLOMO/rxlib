@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
-import org.rx.core.cache.CaffeineCache;
+import org.rx.core.cache.MemoryCache;
 
 import java.io.File;
 import java.nio.channels.FileChannel;
@@ -140,9 +140,7 @@ final class HashFileIndexer<TK> extends Disposable {
     private final int growSize;
     private final Slot[] slots;
     private final WriteBehindQueue<String, Integer> queue;
-    private final Cache<TK, KeyData<TK>> cache = new CaffeineCache<>(CaffeineCache
-            .builder(0.2f, 16 * 2 + 8 + 4 + 8)
-            .build());
+    private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.builder(b, 0.2f, 16 * 2 + 8 + 4 + 8));
 
     public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);

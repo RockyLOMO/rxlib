@@ -3,13 +3,9 @@ package org.rx.net.support;
 import io.netty.channel.Channel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Arrays;
 import org.rx.core.Cache;
-import org.rx.core.NQuery;
 
 import java.net.SocketAddress;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 public final class EndpointTracer {
@@ -19,7 +15,7 @@ public final class EndpointTracer {
 //        final List<SocketAddress> nodes = new CopyOnWriteArrayList<>();
     }
 
-    final Cache<SocketAddress, LinkedData> index = Cache.getInstance(Cache.LOCAL_CACHE);
+    final Cache<SocketAddress, LinkedData> index = Cache.getInstance(Cache.MEMORY_CACHE);
 
     public void link(Channel inbound, Channel outbound) {
         LinkedData data = index.get(outbound.remoteAddress(), k -> new LinkedData(inbound.remoteAddress()));

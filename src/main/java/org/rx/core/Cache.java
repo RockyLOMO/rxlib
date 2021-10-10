@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.AbstractMap;
-import org.rx.core.cache.CaffeineCache;
+import org.rx.core.cache.MemoryCache;
 import org.rx.core.cache.HybridCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.core.exception.InvalidException;
@@ -12,7 +12,7 @@ import org.rx.util.function.BiFunc;
 import static org.rx.core.App.*;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
-    String LOCAL_CACHE = "localCache";
+    String MEMORY_CACHE = "MC";
     String THREAD_CACHE = "threadCache";
     String DISTRIBUTED_CACHE = "distributedCache";
 
@@ -35,8 +35,8 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     static <TK, TV> Cache<TK, TV> getInstance(String cacheName) {
         return Container.getInstance().getOrRegister(cacheName, () -> {
             switch (cacheName) {
-                case LOCAL_CACHE:
-                    return (Cache<TK, TV>) CaffeineCache.SLIDING_CACHE;
+                case MEMORY_CACHE:
+                    return (Cache<TK, TV>) MemoryCache.DEFAULT;
                 case DISTRIBUTED_CACHE:
                     return (Cache<TK, TV>) HybridCache.DEFAULT;
                 case THREAD_CACHE:

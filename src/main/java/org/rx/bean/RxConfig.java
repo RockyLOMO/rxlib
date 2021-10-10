@@ -28,7 +28,7 @@ public class RxConfig {
     private int netTimeoutMillis = 16000;
     private int netMaxPoolSize;
     private int netKeepaliveSeconds = 120;
-    private String defaultCache = Cache.LOCAL_CACHE;
+    private String defaultCache = Cache.MEMORY_CACHE;
     private List<Class<?>> jsonSkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class, Model.class, IOStream.class);
     private final Set<Class<?>> jsonSkipTypeSet = ConcurrentHashMap.newKeySet();
     private LogStrategy logStrategy;

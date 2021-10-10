@@ -9,7 +9,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.cache.HybridCache;
+import org.rx.core.cache.MemoryCache;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 import org.rx.io.MemoryStream;
@@ -19,8 +19,6 @@ import org.rx.util.RedoTimer;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
-import java.io.Serializable;
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -263,37 +261,54 @@ public class CoreTester extends TestUtil {
     public void cache() {
         Tuple<Integer, String> key1 = Tuple.of(1, "a");
         Tuple<Integer, String> key2 = Tuple.of(2, "b");
+        Tuple<Integer, String> key3 = Tuple.of(3, "c");
 
-//        Cache<Tuple<?, ?>, Integer> cache = Cache.getInstance(Cache.LOCAL_CACHE);
-//        cache.put(key, 100);
-//        assert cache.get(key).equals(100);
+        Cache<Tuple<?, ?>, Integer> cache = new MemoryCache<>(b -> b.removalListener((k, v, c) -> log.info("REMOVE {} {} {}", k, v, c)));
+        cache.put(key1, 100);
+        assert cache.get(key1).equals(100);
+        cache.put(key2, 100, CacheExpirations.absolute(10));
+        assert cache.get(key2).equals(100);
+        cache.put(key3, 100, CacheExpirations.sliding(5));
+        assert cache.get(key3).equals(100);
+
+        assert cache.containsKey(key1);
+        assert cache.containsKey(key2);
+        assert cache.containsKey(key3);
+        assert cache.size() == 3;
+
+        Tasks.scheduleOnce(() -> {
+            assert cache.get(key3).equals(100);
+            log.info("check sliding ok");
+        }, 4000);
+
+
 //        Tasks.scheduleOnce(() -> {
 //            assert cache.get(Tuple.of(1, "a")) == null;
 //            log.info("LOCAL_CACHE ok");
 //        }, 3 * 60 * 1000);
 
-        HybridCache<Serializable, PersonBean> pCache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-        pCache.put(key1, PersonBean.girl);
-        pCache.put(key2, PersonBean.boy, CacheExpirations.absolute(2 * 60));
-        pCache.put(4, PersonBean.girl);
-        pCache.remove(4);
-        Tasks.scheduleOnce(() -> {
-            sleep(1000);
-            PersonBean v1 = pCache.get(Tuple.of(1, "a"));
-            PersonBean v2 = pCache.get(Tuple.of(2, "b"));
-            log.info("key1={} key2={}", v1, v2);
-            assert v1.equals(PersonBean.girl);
-            assert v2.equals(PersonBean.boy);
-            log.info("pCache ok");
-        }, 60 * 1000 + 10);
-        Tasks.scheduleOnce(() -> {
-            PersonBean v1 = pCache.get(key1);
-            PersonBean v2 = pCache.get(key2);
-            log.info("key1={} key2={}", v1, v2);
-            assert v1.equals(PersonBean.girl);
-            assert v2 == null;
-            log.info("pCache ok");
-        }, 60 * 1000 * 2 + 10);
+//        HybridCache<Serializable, PersonBean> pCache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+//        pCache.put(key1, PersonBean.girl);
+//        pCache.put(key2, PersonBean.boy, CacheExpirations.absolute(2 * 60));
+//        pCache.put(4, PersonBean.girl);
+//        pCache.remove(4);
+//        Tasks.scheduleOnce(() -> {
+//            sleep(1000);
+//            PersonBean v1 = pCache.get(Tuple.of(1, "a"));
+//            PersonBean v2 = pCache.get(Tuple.of(2, "b"));
+//            log.info("key1={} key2={}", v1, v2);
+//            assert v1.equals(PersonBean.girl);
+//            assert v2.equals(PersonBean.boy);
+//            log.info("pCache ok");
+//        }, 60 * 1000 + 10);
+//        Tasks.scheduleOnce(() -> {
+//            PersonBean v1 = pCache.get(key1);
+//            PersonBean v2 = pCache.get(key2);
+//            log.info("key1={} key2={}", v1, v2);
+//            assert v1.equals(PersonBean.girl);
+//            assert v2 == null;
+//            log.info("pCache ok");
+//        }, 60 * 1000 * 2 + 10);
 
         System.in.read();
     }

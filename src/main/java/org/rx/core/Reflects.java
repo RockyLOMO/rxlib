@@ -14,7 +14,6 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
-import org.rx.net.AuthenticEndpoint;
 import org.rx.util.function.BiFunc;
 import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -267,7 +266,7 @@ public class Reflects extends TypeUtils {
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
             NQuery<Tuple<String, Method>> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0).select(p -> Tuple.of(propertyName(p.getName()), p));
             return setters.join(getters.toList(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
-        }, Cache.LOCAL_CACHE);
+        }, Cache.MEMORY_CACHE);
     }
 
     public static String propertyName(@NonNull String getterOrSetterName) {
@@ -327,7 +326,7 @@ public class Reflects extends TypeUtils {
                 setAccess(field);
             }
             return NQuery.of(list);
-        }, Cache.LOCAL_CACHE);
+        }, Cache.MEMORY_CACHE);
     }
 
     public static void setAccess(AccessibleObject member) {

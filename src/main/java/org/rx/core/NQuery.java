@@ -449,6 +449,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return stream().findFirst().orElse(defaultValue);
     }
 
+    public T firstOrDefault(Supplier<T> defaultValue) {
+        return stream().findFirst().orElseGet(defaultValue);
+    }
+
     public T firstOrDefault(PredicateFunc<T> predicate) {
         return stream().filter(predicate.toPredicate()).findFirst().orElse(null);
     }
@@ -468,6 +472,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public T lastOrDefault(T defaultValue) {
         return Streams.findLast(stream()).orElse(defaultValue);
+    }
+
+    public T lastOrDefault(Supplier<T> defaultValue) {
+        return Streams.findLast(stream()).orElseGet(defaultValue);
     }
 
     public T lastOrDefault(PredicateFunc<T> predicate) {
