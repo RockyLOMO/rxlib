@@ -93,7 +93,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int remaining;
     }
 
-    static final String LOG_FILE = "RxKv.log";
+    static final String LOG_FILE = "bin.log";
     static final int TOMB_MARK = -1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     @Getter(lazy = true)

@@ -24,7 +24,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static final int DEFAULT_Insertions = 9999999;  //1.1M
     public static final MemoryCache DEFAULT = new MemoryCache<>();
 
-    public static Caffeine<Object, Object> builder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {
+    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {
         require(memoryPercent, 0 < memoryPercent && memoryPercent <= 1);
 
         return b.maximumWeight((long) (Runtime.getRuntime().maxMemory() * memoryPercent))
@@ -41,12 +41,12 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .expireAfterWrite(expireSeconds, TimeUnit.SECONDS);
     }
 
-    public static Caffeine<Object, Object> rootBuilder() {
+    static Caffeine<Object, Object> rootBuilder() {
         return Caffeine.newBuilder().executor(Tasks.pool())
                 .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
     }
 
-    final Map<CacheExpirations, Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>>> cacheMap = new ConcurrentHashMap<>();
+    final Map<CacheExpiration, Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>>> cacheMap = new ConcurrentHashMap<>();
     BiAction<Caffeine<Object, Object>> onBuild;
 
     public MemoryCache(BiAction<Caffeine<Object, Object>> onBuild) {
@@ -58,10 +58,10 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key) {
-        return NQuery.of(cacheMap.values()).where(p -> p.right.mightContain(routeKey(key))).select(p -> p.left).firstOrDefault(() -> cache(null, CacheExpirations.NON_EXPIRE));
+        return NQuery.of(cacheMap.values()).where(p -> p.right.mightContain(routeKey(key))).select(p -> p.left).firstOrDefault(() -> cache(null, CacheExpiration.NON_EXPIRE));
     }
 
-    com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key, CacheExpirations expiration) {
+    com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key, CacheExpiration expiration) {
         Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>> tuple = cacheMap.computeIfAbsent(expiration, k -> {
             App.log("MemoryCache create by {}", expiration);
             Caffeine<Object, Object> b;
@@ -116,9 +116,9 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public TV put(TK key, TV value, CacheExpirations expiration) {
+    public TV put(TK key, TV value, CacheExpiration expiration) {
         if (expiration == null) {
-            expiration = CacheExpirations.NON_EXPIRE;
+            expiration = CacheExpiration.NON_EXPIRE;
         }
 
         return cache(key, expiration).asMap().put(key, value);

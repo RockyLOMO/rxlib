@@ -3,7 +3,7 @@ package org.rx.core.cache;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import org.rx.core.Cache;
-import org.rx.core.CacheExpirations;
+import org.rx.core.CacheExpiration;
 
 import java.util.Collection;
 import java.util.Map;
@@ -35,7 +35,7 @@ public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public TV put(TK key, TV value, CacheExpirations expiration) {
+    public TV put(TK key, TV value, CacheExpiration expiration) {
         return (TV) local.get().put(key, value);
     }
 

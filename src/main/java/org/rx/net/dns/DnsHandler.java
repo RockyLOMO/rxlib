@@ -8,7 +8,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.RandomList;
 import org.rx.core.Cache;
-import org.rx.core.CacheExpirations;
+import org.rx.core.CacheExpiration;
 import org.rx.core.NQuery;
 import org.rx.core.cache.HybridCache;
 import org.rx.net.Sockets;
@@ -56,7 +56,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     if (CollectionUtils.isEmpty(list)) {
                         return null;
                     }
-                    cache.put(key, list, CacheExpirations.absolute(server.ttl));
+                    cache.put(key, list, CacheExpiration.absolute(server.ttl));
                     log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
                     return list;
                 }, SocksSupport.ASYNC_TIMEOUT);
@@ -103,7 +103,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                         isEmpty.v = tmp.isEmpty();
                         return tmp;
                     },
-                    CacheExpirations.absolute(isEmpty.v ? 30 : server.ttl));
+                    CacheExpiration.absolute(isEmpty.v ? 30 : server.ttl));
             if (CollectionUtils.isEmpty(addresses)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;

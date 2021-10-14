@@ -90,26 +90,26 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
         }
         if (item.slidingMinutes > 0) {
             item.expire = utc.addMinutes(item.slidingMinutes);
-            cache.put(key, item, CacheExpirations.sliding(item.slidingMinutes));
+            cache.put(key, item, CacheExpiration.sliding(item.slidingMinutes));
         }
         return item.value;
     }
 
     @Override
-    public TV put(TK key, TV value, CacheExpirations expirations) {
-        if (expirations == null) {
-            expirations = CacheExpirations.NON_EXPIRE;
+    public TV put(TK key, TV value, CacheExpiration expiration) {
+        if (expiration == null) {
+            expiration = CacheExpiration.NON_EXPIRE;
         }
 
-        CacheItem<TV> item = new CacheItem<>(value, expirations.getSlidingExpiration());
-        if (!eq(expirations.getAbsoluteExpiration(), CacheExpirations.NON_EXPIRE.getAbsoluteExpiration())) {
-            item.expire = expirations.getAbsoluteExpiration();
-        } else if (expirations.getSlidingExpiration() != CacheExpirations.NON_EXPIRE.getSlidingExpiration()) {
-            item.expire = DateTime.utcNow().addMinutes(expirations.getSlidingExpiration());
+        CacheItem<TV> item = new CacheItem<>(value, expiration.getSlidingExpiration());
+        if (!eq(expiration.getAbsoluteExpiration(), CacheExpiration.NON_EXPIRE.getAbsoluteExpiration())) {
+            item.expire = expiration.getAbsoluteExpiration();
+        } else if (expiration.getSlidingExpiration() != CacheExpiration.NON_EXPIRE.getSlidingExpiration()) {
+            item.expire = DateTime.utcNow().addMinutes(expiration.getSlidingExpiration());
         } else {
             item.expire = DateTime.MAX;
         }
-        CacheItem<TV> old = cache.put(key, item, expirations);
+        CacheItem<TV> old = cache.put(key, item, expiration);
         return unwrap(key, old);
     }
 

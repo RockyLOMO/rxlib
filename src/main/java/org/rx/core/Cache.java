@@ -17,19 +17,19 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     String DISTRIBUTED_CACHE = "distributedCache";
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
-        return getOrSet(key, loadingFunc, CacheExpirations.NON_EXPIRE);
+        return getOrSet(key, loadingFunc, CacheExpiration.NON_EXPIRE);
     }
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc, String cacheName) {
-        return getOrSet(key, loadingFunc, CacheExpirations.NON_EXPIRE, cacheName);
+        return getOrSet(key, loadingFunc, CacheExpiration.NON_EXPIRE, cacheName);
     }
 
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpirations expirations) {
-        return getOrSet(key, loadingFunc, expirations, App.getConfig().getDefaultCache());
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
+        return getOrSet(key, loadingFunc, expiration, App.getConfig().getDefaultCache());
     }
 
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpirations expirations, String cacheName) {
-        return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expirations);
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpiration expiration, String cacheName) {
+        return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expiration);
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(String cacheName) {
@@ -52,7 +52,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     @SneakyThrows
-    default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpirations expiration) {
+    default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
         TV v;
         if ((v = get(key)) == null) {
             TV newValue;
@@ -69,7 +69,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
         return put(key, value, null);
     }
 
-    TV put(TK key, TV value, CacheExpirations expiration);
+    TV put(TK key, TV value, CacheExpiration expiration);
 
     default TV remove(TK key, boolean destroy) {
         TV v = remove(key);
