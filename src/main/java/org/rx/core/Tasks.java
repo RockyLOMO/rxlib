@@ -13,6 +13,7 @@ import org.slf4j.helpers.MessageFormatter;
 import java.sql.Time;
 import java.util.Date;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.*;
 
 import static org.rx.bean.$.$;
@@ -74,6 +75,7 @@ public final class Tasks {
     private static final List<TaskScheduler> replicas;
     //HashedWheelTimer
     private static final ScheduledThreadPoolExecutor scheduler;
+    private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
     private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();
 
     static {
@@ -83,6 +85,17 @@ public final class Tasks {
             replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
         }
         scheduler = new ScheduledThreadPool(replicas.get(0).getThreadFactory());
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Action fn;
+            while ((fn = shutdownActions.poll()) != null) {
+                try {
+                    fn.invoke();
+                } catch (Throwable e) {
+                    log.warn("ShutdownHook", e);
+                }
+            }
+        }));
     }
 
     public static TaskScheduler pool() {
@@ -91,6 +104,10 @@ public final class Tasks {
 
     public static ScheduledExecutorService scheduler() {
         return scheduler;
+    }
+
+    public static void addShutdownHook(Action fn) {
+        shutdownActions.offer(fn);
     }
 
     public static UncaughtExceptionContext raisingContext() {

@@ -26,13 +26,11 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
     private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
-        if (removalCause == RemovalCause.REPLACED) {
-            return;
-        }
-
 //        log.info("onRemoval {} {}", key, removalCause);
         if (key == null || item == null || item.value == null
-                || removalCause == RemovalCause.EXPLICIT || item.expire.before(DateTime.utcNow())) {
+                || removalCause == RemovalCause.REPLACED
+//                || removalCause == RemovalCause.EXPLICIT
+                || item.expire.before(DateTime.utcNow())) {
             return;
         }
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {

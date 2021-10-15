@@ -21,7 +21,7 @@ public class KeyValueStoreConfig {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(directoryPath);
         //init 1G
         conf.setLogGrowSize(OneM * 256);
-        conf.setIndexGrowSize(OneM * 8);
+        conf.setIndexGrowSize(OneM * 4);
         return conf;
     }
 
