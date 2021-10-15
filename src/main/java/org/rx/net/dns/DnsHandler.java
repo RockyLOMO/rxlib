@@ -10,7 +10,7 @@ import org.rx.bean.RandomList;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpiration;
 import org.rx.core.NQuery;
-import org.rx.core.cache.HybridCache;
+import org.rx.core.cache.DiskCache;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UpstreamSupport;
@@ -41,7 +41,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             cache = null;
         } else {
             cache = Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-            ((HybridCache<Object, Object>) cache).onExpired = (s, e) -> {
+            ((DiskCache<Object, Object>) cache).onExpired = (s, e) -> {
                 Map.Entry<Object, Object> entry = e.getValue();
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {

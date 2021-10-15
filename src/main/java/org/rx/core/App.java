@@ -124,19 +124,30 @@ public final class App extends SystemUtils {
     //region json
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
+        String js = toJsonString(src);
         try {
-            return JSON.parseObject(toJsonString(src), type, Feature.OrderedField);
+            return JSON.parseObject(js, type, Feature.OrderedField);
         } catch (Exception e) {
-            throw new InvalidException("fromJson %s", new Object[]{toJsonString(src)}, e);
+            throw new InvalidException("fromJson %s", new Object[]{js}, e);
         }
     }
 
     public static JSONObject toJsonObject(Object src) {
-        return JSON.parseObject(toJsonString(src));
+        String js = toJsonString(src);
+        try {
+            return JSON.parseObject(js);
+        } catch (Exception e) {
+            throw new InvalidException("toJsonObject %s", new Object[]{js}, e);
+        }
     }
 
     public static JSONArray toJsonArray(Object src) {
-        return JSON.parseArray(toJsonString(src));
+        String js = toJsonString(src);
+        try {
+            return JSON.parseArray(js);
+        } catch (Exception e) {
+            throw new InvalidException("toJsonArray %s", new Object[]{js}, e);
+        }
     }
 
     public static String toJsonString(Object src) {

@@ -4,7 +4,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.AbstractMap;
 import org.rx.core.cache.MemoryCache;
-import org.rx.core.cache.HybridCache;
+import org.rx.core.cache.DiskCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.BiFunc;
@@ -12,9 +12,9 @@ import org.rx.util.function.BiFunc;
 import static org.rx.core.App.*;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
-    String MEMORY_CACHE = "MC";
-    String THREAD_CACHE = "TC";
-    String DISTRIBUTED_CACHE = "distributedCache";
+    String MEMORY_CACHE = "_MC";
+    String THREAD_CACHE = "_TC";
+    String DISTRIBUTED_CACHE = "_DC";
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
         return getOrSet(key, loadingFunc, CacheExpiration.NON_EXPIRE);
@@ -38,7 +38,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
                 case MEMORY_CACHE:
                     return (Cache<TK, TV>) MemoryCache.DEFAULT;
                 case DISTRIBUTED_CACHE:
-                    return (Cache<TK, TV>) HybridCache.DEFAULT;
+                    return (Cache<TK, TV>) DiskCache.DEFAULT;
                 case THREAD_CACHE:
                     return (Cache<TK, TV>) ThreadCache.getInstance();
                 default:

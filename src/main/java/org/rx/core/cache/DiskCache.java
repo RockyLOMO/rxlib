@@ -2,7 +2,6 @@ package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.checkerframework.checker.nullness.qual.NonNull;
@@ -18,23 +17,19 @@ import java.util.function.BiConsumer;
 import static org.rx.core.App.eq;
 
 @Slf4j
-public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCache<TK, TV>> {
-    @RequiredArgsConstructor
-    static class CacheItem<TV> implements Serializable {
-        private static final long serialVersionUID = -7742074465897857966L;
-        final TV value;
-        final int slidingMinutes;
-        DateTime expire;
-    }
+public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
+    public static Cache DEFAULT = new DiskCache<>();
 
-    public static Cache DEFAULT = new HybridCache<>();
-
-    public volatile BiConsumer<HybridCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired;
-    final Cache<TK, CacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
+    public volatile BiConsumer<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired;
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
-    private final KeyValueStore<TK, CacheItem<TV>> store = KeyValueStore.getInstance();
+    private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
-    private void onRemoval(@Nullable TK key, CacheItem<TV> item, @NonNull RemovalCause removalCause) {
+    private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
+        if (removalCause == RemovalCause.REPLACED) {
+            return;
+        }
+
 //        log.info("onRemoval {} {}", key, removalCause);
         if (key == null || item == null || item.value == null
                 || removalCause == RemovalCause.EXPLICIT || item.expire.before(DateTime.utcNow())) {
@@ -66,14 +61,14 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
 
     @Override
     public TV get(Object key) {
-        CacheItem<TV> item = cache.get(key);
+        DiskCacheItem<TV> item = cache.get(key);
         if (item == null) {
             item = getStore().get(key);
         }
         return unwrap((TK) key, item);
     }
 
-    private TV unwrap(TK key, CacheItem<TV> item) {
+    private TV unwrap(TK key, DiskCacheItem<TV> item) {
         if (item == null) {
             return null;
         }
@@ -88,9 +83,9 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
-        if (item.slidingMinutes > 0) {
-            item.expire = utc.addMinutes(item.slidingMinutes);
-            cache.put(key, item, CacheExpiration.sliding(item.slidingMinutes));
+        if (item.slidingSeconds > 0) {
+            item.expire = utc.addSeconds(item.slidingSeconds);
+            cache.put(key, item, CacheExpiration.sliding(item.slidingSeconds));
         }
         return item.value;
     }
@@ -101,7 +96,7 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
             expiration = CacheExpiration.NON_EXPIRE;
         }
 
-        CacheItem<TV> item = new CacheItem<>(value, expiration.getSlidingExpiration());
+        DiskCacheItem<TV> item = new DiskCacheItem<>(value, expiration.getSlidingExpiration());
         if (!eq(expiration.getAbsoluteExpiration(), CacheExpiration.NON_EXPIRE.getAbsoluteExpiration())) {
             item.expire = expiration.getAbsoluteExpiration();
         } else if (expiration.getSlidingExpiration() != CacheExpiration.NON_EXPIRE.getSlidingExpiration()) {
@@ -109,13 +104,13 @@ public class HybridCache<TK, TV> implements Cache<TK, TV>, EventTarget<HybridCac
         } else {
             item.expire = DateTime.MAX;
         }
-        CacheItem<TV> old = cache.put(key, item, expiration);
+        DiskCacheItem<TV> old = cache.put(key, item, expiration);
         return unwrap(key, old);
     }
 
     @Override
     public TV remove(Object key) {
-        CacheItem<TV> remove = cache.remove(key);
+        DiskCacheItem<TV> remove = cache.remove(key);
         if (remove == null) {
             remove = getStore().remove(key);
         }
