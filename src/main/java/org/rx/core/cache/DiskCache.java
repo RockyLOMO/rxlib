@@ -28,8 +28,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
 //        log.info("onRemoval {} {}", key, removalCause);
         if (key == null || item == null || item.value == null
-                || removalCause == RemovalCause.REPLACED
-//                || removalCause == RemovalCause.EXPLICIT
+                || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT
                 || item.expire.before(DateTime.utcNow())) {
             return;
         }
