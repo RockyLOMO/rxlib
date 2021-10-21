@@ -384,7 +384,7 @@ public final class Sockets {
             throw new InvalidException("Invalid endpoint %s", endpoint);
         }
 
-        String ip = endpoint.substring(0, i - 1);
+        String ip = endpoint.substring(0, i);
         int port = Integer.parseInt(endpoint.substring(i + 1));
         return new InetSocketAddress(ip, port);
 //        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题

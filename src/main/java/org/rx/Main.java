@@ -175,13 +175,15 @@ public final class Main implements SocksSupport {
                 }
 
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-                if (e.getSourceEndpoint().getAddress().isLoopbackAddress()
-                        && Sockets.socketInfos(SocketProtocol.UDP)
-                        .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
-                                && Strings.startsWith(p.getProcessName(), "pcap2socks"))) {
-                    log.info("pcap2socks forward");
-                    e.setValue(new Upstream(dstEp));
-                    return;
+                if (e.getSourceEndpoint().getAddress().isLoopbackAddress()) {
+                    Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+                    if (cache.get(cacheKey("pcap:", e.getSourceEndpoint().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
+                            .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
+                                    && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
+                        log.info("pcap2socks forward");
+                        e.setValue(new Upstream(dstEp));
+                        return;
+                    }
                 }
 //                if (frontConf.isEnableUdp2raw()) {
 //                    if (udp2rawSvrEp != null) {
