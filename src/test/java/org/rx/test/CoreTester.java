@@ -242,17 +242,17 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void shellExec() {
-        ShellExecutor executor = new ShellExecutor("ping www.baidu.com", null);
-        executor.start(ShellExecutor.CONSOLE_OUT);
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.start(ShellCommander.CONSOLE_OUT);
         executor.waitFor();
 
-        executor = new ShellExecutor(TConfig.path("1.bat"), null);
-        ShellExecutor finalExecutor = executor;
+        executor = new ShellCommander(TConfig.path("1.bat"), null);
+        ShellCommander finalExecutor = executor;
 //        executor.start(l -> {
 //            System.out.println(l.getLine());
 //            finalExecutor.kill();
 //        });
-        executor.start(ShellExecutor.fileOut(TConfig.path("out.txt")));
+        executor.start(ShellCommander.fileOut(TConfig.path("out.txt")));
         executor.waitFor();
 
         sleep(5000);

@@ -173,8 +173,15 @@ public final class Main implements SocksSupport {
                 if (e.getValue() != null) {
                     return;
                 }
-                e.setValue(new Upstream(e.getDestinationEndpoint()));
-//                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+
+                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+                if (e.getSourceEndpoint().getAddress().isLoopbackAddress()
+                        && Sockets.socketInfos(SocketProtocol.UDP)
+                        .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
+                                && Strings.startsWith(p.getProcessName(), "pcap2socks"))) {
+                    e.setValue(new Upstream(dstEp));
+                    return;
+                }
 //                if (frontConf.isEnableUdp2raw()) {
 //                    if (udp2rawSvrEp != null) {
 //                        e.setValue(new Upstream(dstEp, udp2rawSvrEp));
@@ -183,7 +190,7 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-//                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
+                e.setValue(new Socks5Upstream(dstEp, frontConf, shadowServers::next));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);

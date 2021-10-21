@@ -26,7 +26,7 @@ import java.util.function.BiConsumer;
 import static org.rx.core.App.*;
 
 @Slf4j
-public class ShellExecutor extends Disposable implements EventTarget<ShellExecutor> {
+public class ShellCommander extends Disposable implements EventTarget<ShellCommander> {
     @RequiredArgsConstructor
     @Getter
     public static class LineBean implements Serializable {
@@ -36,7 +36,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 
         @Override
         public String toString() {
-            return String.format("%s.\t%s\n", lineNumber, line);
+            return String.format("%s.\t%s", lineNumber, line);
         }
     }
 
@@ -74,15 +74,15 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
 
     public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.print(l.toString());
     static final String WIN_CMD = "cmd /c ";
-    //    static final String WIN_CMD = "";
-    static final List<ShellExecutor> KILL_LIST = Collections.synchronizedList(new ArrayList<>());
+    //        static final String WIN_CMD = "";
+    static final List<ShellCommander> KILL_LIST = Collections.synchronizedList(new ArrayList<>());
 
     static {
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            for (ShellExecutor executor : KILL_LIST) {
+        Tasks.addShutdownHook(() -> {
+            for (ShellCommander executor : KILL_LIST) {
                 executor.kill();
             }
-        }));
+        });
     }
 
     public static BiAction<LineBean> fileOut(String filePath) {
@@ -90,7 +90,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         return new FileOutHandler(new FileStream(filePath));
     }
 
-    public volatile BiConsumer<ShellExecutor, ExitedEventArgs> Exited;
+    public volatile BiConsumer<ShellCommander, ExitedEventArgs> Exited;
 
     @Getter
     private final String shell;
@@ -104,15 +104,15 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         return process != null && process.isAlive();
     }
 
-    public ShellExecutor(String shell) {
+    public ShellCommander(String shell) {
         this(shell, null);
     }
 
-    public ShellExecutor(String shell, String workspace) {
+    public ShellCommander(String shell, String workspace) {
         this(shell, workspace, 500, true);
     }
 
-    public ShellExecutor(@NonNull String shell, String workspace, long intervalPeriod, boolean killOnExited) {
+    public ShellCommander(@NonNull String shell, String workspace, long intervalPeriod, boolean killOnExited) {
         boolean isPath = Files.isPath(shell);
         if (!isPath && App.IS_OS_WINDOWS && !shell.startsWith(WIN_CMD)) {
             shell = WIN_CMD + shell;
@@ -138,12 +138,12 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         KILL_LIST.remove(this);
     }
 
-    public ShellExecutor start() {
+    public ShellCommander start() {
         return start(outHandler);
     }
 
     @SneakyThrows
-    public synchronized ShellExecutor start(BiAction<LineBean> outHandler) {
+    public synchronized ShellCommander start(BiAction<LineBean> outHandler) {
         if (isRunning()) {
             throw new InvalidException("already started");
         }
@@ -229,7 +229,7 @@ public class ShellExecutor extends Disposable implements EventTarget<ShellExecut
         start();
     }
 
-    public ShellExecutor autoRestart() {
+    public ShellCommander autoRestart() {
         Exited = combine((s, e) -> restart(), Exited);
         return this;
     }

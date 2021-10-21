@@ -448,6 +448,13 @@ public class SocksTester {
     }
 
     @Test
+    public void findProcess() {
+        for (SocketInfo sock : Sockets.socketInfos(SocketProtocol.TCP)) {
+            System.out.println(sock);
+        }
+    }
+
+    @Test
     public void crypt() {
         String content = "This is content";
         byte[] key = "顺风使舵".getBytes(StandardCharsets.UTF_8);

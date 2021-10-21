@@ -26,6 +26,7 @@ import io.netty.util.NetUtil;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.bean.$;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.exception.InvalidException;
@@ -36,6 +37,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
 @Slf4j
@@ -365,7 +367,6 @@ public final class Sockets {
         if (candidateAddress != null) {
             return candidateAddress;
         }
-//        throw new InvalidException("LAN IP not found");
         return InetAddress.getLocalHost();
     }
 
@@ -378,14 +379,15 @@ public final class Sockets {
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
-        String[] pair = Strings.split(endpoint, ":", 2);
-        String ip = pair[0];
-        int port = Integer.parseInt(pair[1]);
-//        if (isValidIp(ip)) {
-//            return new InetSocketAddress(ip, port);
-//        }
-//        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题
+        int i = endpoint.lastIndexOf(":");
+        if (i == -1) {
+            throw new InvalidException("Invalid endpoint %s", endpoint);
+        }
+
+        String ip = endpoint.substring(0, i - 1);
+        int port = Integer.parseInt(endpoint.substring(i + 1));
         return new InetSocketAddress(ip, port);
+//        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {
@@ -416,6 +418,67 @@ public final class Sockets {
                 }
             }
             socket.close();
+        });
+    }
+
+    public static NQuery<SocketInfo> socketInfos(SocketProtocol protocol) {
+        try (ShellCommander cmd = new ShellCommander("netstat -aon")) {
+            List<SocketInfo> list = new ArrayList<>();
+            cmd.start(l -> {
+                String line = l.getLine();
+                if (!line.contains(protocol.name())) {
+                    return;
+                }
+
+                String[] arr = NQuery.of(Strings.split(line, "  ")).select(String::trim).where(p -> !p.isEmpty()).toArray();
+                try {
+                    SocketProtocol p = SocketProtocol.valueOf(arr[0]);
+                    SocketInfo sockInfo;
+                    if (p == SocketProtocol.TCP) {
+                        sockInfo = new SocketInfo(p, parseEndpoint(arr[1]), parseEndpoint(arr[2]),
+                                TcpStatus.valueOf(arr[3]), Long.parseLong(arr[4]));
+                    } else {
+                        sockInfo = new SocketInfo(p, parseEndpoint(arr[1]), null,
+                                null, Long.parseLong(arr[3]));
+                    }
+//                    list.add(proxy(SocketInfo.class, (m, i) -> {
+//                        Object val = i.fastInvoke(sockInfo);
+//                        if (m.getName().equals("getProcessName")) {
+//                            if (val == null) {
+//                                sockInfo.setProcessName(processName(sockInfo.pid));
+//                                val = sockInfo.getProcessName();
+//                            }
+//                        }
+//                        return val;
+//                    }));
+                    list.add(sockInfo);
+                } catch (Exception e) {
+                    log.error("Parse line {} fail", toJsonString(arr), e);
+                }
+            });
+            cmd.waitFor();
+
+            NQuery<SocketInfo> q = NQuery.of(list, true);
+            q.forEach(p -> p.setProcessName(processName(p.pid)));
+            return q;
+        }
+    }
+
+    static String processName(long pid) {
+        return Cache.getOrSet(cacheKey("processName:", pid), k -> {
+            $<String> name = $();
+            try (ShellCommander cmd = new ShellCommander(String.format("tasklist /fi \"pid eq %s\"", pid))) {
+                String t = String.format(" %s", pid);
+                cmd.start(l -> {
+                    int i = l.getLine().indexOf(t);
+                    if (i == -1) {
+                        return;
+                    }
+                    name.v = l.getLine().substring(0, i).trim();
+                });
+                cmd.waitFor();
+            }
+            return name.v;
         });
     }
     //#endregion
