@@ -110,7 +110,7 @@ public class SocksTester {
 
         //客户端 facade
         RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
-        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, p -> {
+        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (p, c) -> {
             System.out.println("onHandshake: " + p.computeInt(1, 2));
         });
         assert facade1.computeInt(1, 1) == 2; //服务端计算并返回
@@ -150,12 +150,12 @@ public class SocksTester {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint0);
         AtomicBoolean connected = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), p -> {
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), (p, c) -> {
             p.attachEvent(eventName, (s, e) -> {
                 System.out.println("attachEvent callback");
             }, false);
             System.out.println("attachEvent done");
-        }, c -> {
+
             c.onReconnecting = (s, e) -> {
                 InetSocketAddress next;
                 if (e.getValue().equals(endpoint0)) {
@@ -353,7 +353,7 @@ public class SocksTester {
                 }
                 return;
             }
-            e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers));
+            e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

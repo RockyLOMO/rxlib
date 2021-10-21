@@ -21,9 +21,9 @@ public class SocksConfig extends SocketConfig {
     public static final int BUF_SIZE_4K = 1024 * 4;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 30;
+    private int readTimeoutSeconds = 60 * 10;
     private int writeTimeoutSeconds;
-    private int udpTimeoutSeconds = 60 * 4;
+    private int udpTimeoutSeconds = 60 * 20;
     private boolean enableUdp2raw;
     private List<InetSocketAddress> udp2rawServers;
     @Getter(lazy = true)

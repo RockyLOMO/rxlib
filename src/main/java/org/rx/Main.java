@@ -20,6 +20,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
+import org.rx.net.socks.upstream.UdpSocks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -54,7 +55,7 @@ public final class Main implements SocksSupport {
         Integer connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
 
-        boolean udp2raw = true;
+        boolean udp2raw = false;
         Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
         AuthenticEndpoint udp2rawSvrEp;
         String udp2rawEndpoint = options.get("udp2rawEndpoint");
@@ -162,11 +163,11 @@ public final class Main implements SocksSupport {
                     e.setValue(new Upstream(dstEp));
                 }
             };
+            int steeringTTL = 60;
             frontSvr.onRoute = combine(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }
-                int steeringTTL = 60;
                 e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
             });
             frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
@@ -193,7 +194,7 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-                e.setValue(new Socks5Upstream(dstEp, frontConf, shadowServers::next));
+                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
