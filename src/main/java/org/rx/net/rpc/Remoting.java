@@ -17,6 +17,7 @@ import org.rx.core.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.util.BeanMapper;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -68,15 +69,11 @@ public final class Remoting {
     private static final Map<StatefulRpcClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
-        return create(contract, facadeConfig, null, null);
-    }
-
-    public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig, BiAction<T> onInit) {
-        return create(contract, facadeConfig, onInit, null);
+        return create(contract, facadeConfig, null);
     }
 
     @SneakyThrows
-    public static <T> T create(@NonNull Class<T> contract, @NonNull RpcClientConfig facadeConfig, BiAction<T> onInit, BiAction<StatefulRpcClient> onInitClient) {
+    public static <T> T create(@NonNull Class<T> contract, @NonNull RpcClientConfig facadeConfig, TripleAction<T, StatefulRpcClient> onInit) {
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulRpcClient> sync = $();
         //onInit由调用方触发可能spring还没起来的情况
@@ -154,10 +151,7 @@ public final class Remoting {
                     init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                     sync.v.onReconnected = (s, e) -> {
                         if (onInit != null) {
-                            onInit.toConsumer().accept((T) p.getProxyObject());
-                        }
-                        if (onInitClient != null) {
-                            onInitClient.toConsumer().accept((StatefulRpcClient) s);
+                            onInit.toConsumer().accept((T) p.getProxyObject(), (StatefulRpcClient) s);
                         }
                         s.asyncScheduler().run(() -> {
                             for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
@@ -173,7 +167,7 @@ public final class Remoting {
                             }
                         });
                     };
-                    if (onInit != null || onInitClient != null) {
+                    if (onInit != null) {
                         sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
                         //onHandshake returnObject的情况
                         if (sync.v == null) {

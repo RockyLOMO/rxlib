@@ -441,16 +441,6 @@ public final class Sockets {
                         sockInfo = new SocketInfo(p, parseEndpoint(arr[1]), null,
                                 null, Long.parseLong(arr[3]));
                     }
-//                    list.add(proxy(SocketInfo.class, (m, i) -> {
-//                        Object val = i.fastInvoke(sockInfo);
-//                        if (m.getName().equals("getProcessName")) {
-//                            if (val == null) {
-//                                sockInfo.setProcessName(processName(sockInfo.pid));
-//                                val = sockInfo.getProcessName();
-//                            }
-//                        }
-//                        return val;
-//                    }));
                     list.add(sockInfo);
                 } catch (Exception e) {
                     log.error("Parse line {} fail", toJsonString(arr), e);

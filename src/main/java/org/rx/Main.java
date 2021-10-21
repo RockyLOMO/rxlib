@@ -179,6 +179,7 @@ public final class Main implements SocksSupport {
                         && Sockets.socketInfos(SocketProtocol.UDP)
                         .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
                                 && Strings.startsWith(p.getProcessName(), "pcap2socks"))) {
+                    log.info("pcap2socks forward");
                     e.setValue(new Upstream(dstEp));
                     return;
                 }
