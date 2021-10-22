@@ -10,7 +10,9 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
+import org.rx.core.Arrays;
 import org.rx.core.Disposable;
+import org.rx.core.NQuery;
 import org.rx.io.Files;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
@@ -18,16 +20,20 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 public class DnsServer extends Disposable {
     final ServerBootstrap serverBootstrap;
-    @Getter
-    final Map<String, byte[]> hosts = new ConcurrentHashMap<>();
     @Setter
     int ttl = 1800;
+    @Setter
+    int hostsTtl = 180;
+    @Getter
+    final Map<String, List<InetAddress>> hosts = new ConcurrentHashMap<>();
     @Setter
     RandomList<UpstreamSupport> shadowServers;
 
@@ -55,17 +61,21 @@ public class DnsServer extends Disposable {
     }
 
     @SneakyThrows
-    public DnsServer addHosts(String host, String ip) {
-        return addHosts(host, InetAddress.getByName(ip));
-    }
-
-    public DnsServer addHosts(@NonNull String host, InetAddress ip) {
-        if (ip == null) {
-            hosts.remove(host);
+    public DnsServer addHosts(String host, @NonNull String... ips) {
+        if (ips.length == 0) {
             return this;
         }
 
-        hosts.put(host, ip.getAddress());
+        return addHosts(host, NQuery.of(ips).select(InetAddress::getByName).toArray());
+    }
+
+    public DnsServer addHosts(@NonNull String host, @NonNull InetAddress... ips) {
+        hosts.computeIfAbsent(host, k -> new CopyOnWriteArrayList<>()).addAll(Arrays.toList(ips));
+        return this;
+    }
+
+    public DnsServer removeHosts(@NonNull String host, @NonNull InetAddress... ips) {
+        hosts.computeIfAbsent(host, k -> new CopyOnWriteArrayList<>()).removeAll(Arrays.toList(ips));
         return this;
     }
 

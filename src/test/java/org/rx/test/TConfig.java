@@ -8,4 +8,8 @@ public class TConfig {
     public static String path(String... paths) {
         return Files.concatPath(baseDir, paths);
     }
+
+    protected synchronized void _exit() {
+        notify();
+    }
 }

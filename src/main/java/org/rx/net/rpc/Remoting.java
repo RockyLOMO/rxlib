@@ -16,12 +16,12 @@ import org.rx.net.rpc.protocol.MethodPack;
 import org.rx.core.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.util.BeanMapper;
-import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
@@ -310,11 +310,11 @@ public final class Remoting {
         return p.fastInvokeSuper();
     }
 
-    public static ServerBean listen(Object contractInstance, int listenPort) {
+    public static RpcServer listen(Object contractInstance, int listenPort) {
         return listen(contractInstance, new RpcServerConfig(listenPort));
     }
 
-    public static ServerBean listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+    public static RpcServer listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         return serverBeans.computeIfAbsent(contractInstance, k -> {
             ServerBean bean = new ServerBean(new RpcServer(config));
             bean.server.onClosed = (s, e) -> serverBeans.remove(contractInstance);
@@ -330,10 +330,10 @@ public final class Remoting {
                             EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
-                                    ServerBean.EventContext context = new ServerBean.EventContext();
-                                    context.computedArgs = args;
+                                    ServerBean.EventContext eCtx = new ServerBean.EventContext();
+                                    eCtx.computedArgs = args;
                                     if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
-                                        context.computingClient = null;
+                                        eCtx.computingClient = null;
                                     } else {
                                         RpcServerClient computingClient = null;
                                         if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
@@ -350,11 +350,11 @@ public final class Remoting {
                                         if (computingClient == null) {
                                             log.warn("serverSide event {} subscribe empty", p.eventName);
                                         } else {
-                                            context.computingClient = computingClient;
+                                            eCtx.computingClient = computingClient;
                                             EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
                                             pack.computeId = UUID.randomUUID();
                                             pack.eventArgs = args;
-                                            eventBean.contextMap.put(pack.computeId, context);
+                                            eventBean.contextMap.put(pack.computeId, eCtx);
                                             try {
                                                 s.send(computingClient, pack);
                                                 log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getId(), s.getConfig().getConnectTimeoutMillis());
@@ -369,7 +369,7 @@ public final class Remoting {
                                             }
                                         }
                                     }
-                                    broadcast(s, p, eventBean, context);
+                                    broadcast(s, p, eventBean, eCtx);
                                 }
                             }, false); //必须false
                             log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getId());
@@ -403,13 +403,15 @@ public final class Remoting {
                 MethodPack pack = (MethodPack) e.getValue();
                 ProceedEventArgs args = new ProceedEventArgs(contractInstance.getClass(), pack.parameters, false);
                 try {
-                    pack.returnValue = quietly(() -> args.proceed(() -> Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)));
+                    pack.returnValue = RemotingContext.invoke(() -> args.proceed(() ->
+                            Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)
+                    ), e.getClient());
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
                     args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
-                    App.log(args, msg -> {
+                    log(args, msg -> {
                         msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
                         msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
                         if (args.getError() != null) {
@@ -419,12 +421,12 @@ public final class Remoting {
                         }
                     });
                 }
-                java.util.Arrays.fill(pack.parameters, null);
+                Arrays.fill(pack.parameters, null);
                 s.send(e.getClient(), pack);
             };
             bean.server.start();
             return bean;
-        });
+        }).server;
     }
 
     private static void broadcast(RpcServer s, EventPack p, ServerBean.EventBean eventBean, ServerBean.EventContext context) {

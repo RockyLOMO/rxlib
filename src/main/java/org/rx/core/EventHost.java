@@ -27,9 +27,6 @@ public class EventHost {
         Container.getInstance().getOrRegister(EventBus.class).post(event);
     }
 
-    //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
-    private final Map<EventTarget<?>, Map<String, BiConsumer>> weakMap = Collections.synchronizedMap(new WeakHashMap<>());
-
     public void attach(EventTarget<?> target, String method, BiConsumer methodImpl) {
         attach(target, method, methodImpl, true);
     }
@@ -47,7 +44,7 @@ public class EventHost {
     }
 
     private Map<String, BiConsumer> getMap(EventTarget<?> target) {
-        return weakMap.computeIfAbsent(target, k -> new ConcurrentHashMap<>());
+        return Container.<EventTarget<?>, Map<String, BiConsumer>>weakMap().computeIfAbsent(target, k -> new ConcurrentHashMap<>());
     }
 
     @SuppressWarnings(NON_WARNING)

@@ -58,11 +58,8 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     public synchronized T next() {
-        switch (elements.size()) {
-            case 0:
-                throw new NoSuchElementException();
-            case 1:
-                return elements.get(0).element;
+        if (elements.isEmpty()) {
+            throw new NoSuchElementException();
         }
 
         if (maxRandomValue == 0) {
@@ -87,14 +84,14 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         int high = elements.size() - 1;
         while (low <= high) {
             int mid = (low + high) >>> 1;
-            WeightElement<T> weightElement = elements.get(mid);
-            DataRange<Integer> threshold = weightElement.threshold;
+            WeightElement<T> element = elements.get(mid);
+            DataRange<Integer> threshold = element.threshold;
             if (threshold.end <= v) {
                 low = mid + 1;
             } else if (threshold.start > v) {
                 high = mid - 1;
             } else {
-                return weightElement.element;
+                return element.element;
             }
         }
         throw new NoSuchElementException();
@@ -123,6 +120,8 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     public void setWeight(T element, int weight) {
+        require(weight, weight >= 0);
+
         WeightElement<T> node = findElement(element, true);
         synchronized (node) {
             node.weight = weight;

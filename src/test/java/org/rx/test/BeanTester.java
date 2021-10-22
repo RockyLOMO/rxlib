@@ -105,11 +105,16 @@ public class BeanTester extends TestUtil {
         list.add("b", 3);
         list.add("c", 2);
         list.add("d", 1);
+        list.add("e", 0);
+        //basic function
         for (String s : list) {
             System.out.print(s + " ");
         }
         System.out.println();
-
+        for (int i = 0; i < 1000; i++) {
+            assert !list.next().equals("e");
+        }
+        //concurrent function
         CountDownLatch l = new CountDownLatch(10);
         for (int i = 0; i < 10; i++) {
             Tasks.run(() -> {
@@ -122,8 +127,7 @@ public class BeanTester extends TestUtil {
             });
         }
         l.await();
-
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 1000; i++) {
             Tasks.run(() -> {
                 String next = list.next();
                 System.out.println(next);
@@ -131,7 +135,7 @@ public class BeanTester extends TestUtil {
                 list.add(next);
             });
         }
-
+        //steering function
         Object steeringObj = 1;
         int ttl = 2;
         String next = list.next(steeringObj, ttl);

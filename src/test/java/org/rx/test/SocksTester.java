@@ -17,10 +17,7 @@ import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.*;
-import org.rx.net.rpc.Remoting;
-import org.rx.net.rpc.RemotingException;
-import org.rx.net.rpc.RpcClientConfig;
-import org.rx.net.rpc.RpcServerConfig;
+import org.rx.net.rpc.*;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
@@ -44,10 +41,10 @@ import java.util.function.BiConsumer;
 import static org.rx.core.App.*;
 
 @Slf4j
-public class SocksTester {
+public class SocksTester extends TConfig {
     final InetSocketAddress endpoint0 = Sockets.parseEndpoint("127.0.0.1:3307");
     final InetSocketAddress endpoint1 = Sockets.parseEndpoint("127.0.0.1:3308");
-    final Map<Object, Remoting.ServerBean> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
@@ -199,11 +196,11 @@ public class SocksTester {
     }
 
     <T> void restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
-        Remoting.ServerBean bean = serverHost.remove(svcImpl);
-        Objects.requireNonNull(bean);
+        RpcServer rs = serverHost.remove(svcImpl);
+        Objects.requireNonNull(rs);
         sleep(startDelay);
-        bean.getServer().close();
-        System.out.println("Close server on port " + bean.getServer().getConfig().getListenPort());
+        rs.close();
+        System.out.println("Close server on port " + rs.getConfig().getListenPort());
         Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);
     }
 
@@ -394,13 +391,14 @@ public class SocksTester {
 
     @SneakyThrows
     @Test
-    public void dns() {
+    public synchronized void dns() {
         //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
 
         final String host = "devops.f-li.cn";
-        final InetAddress hostIp = InetAddress.getByName("2.2.2.2");
+        final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
+        final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         DnsServer server = new DnsServer(54, nsEp);
         server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
@@ -418,7 +416,22 @@ public class SocksTester {
 
             }
         }))));
-        server.addHosts(host, hostIp);
+        server.setHostsTtl(5);
+        server.addHosts(host, ip2, ip4);
+
+        //hostTtl
+        DnsClient localClient = new DnsClient(localNsEp);
+        List<InetAddress> result = localClient.resolveAll(host);
+        System.out.println(toJsonString(result));
+        assert result.contains(ip2) && result.contains(ip4);
+        Tasks.scheduleOnce(() -> {
+            server.removeHosts(host, ip2);
+
+            List<InetAddress> x = localClient.resolveAll(host);
+            System.out.println(toJsonString(x));
+            assert x.contains(ip4);
+            _exit();
+        }, 6000);
 
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
         Sockets.injectNameService(localNsEp);
@@ -428,12 +441,8 @@ public class SocksTester {
         System.out.println(wanResult + "\n" + toJsonArray(localResult));
         assert !wanResult.get(0).equals(localResult[0]);
 
-        DnsClient client = new DnsClient(localNsEp);
-        InetAddress result = client.resolve(host);
-        assert result.equals(hostIp);
-
-        server.addHostsFile(TConfig.path("hosts.txt"));
-        client.resolve("cloud.f-li.cn").equals(InetAddress.getByName("192.168.31.7"));
+//        server.addHostsFile(TConfig.path("hosts.txt"));
+//        client.resolve("cloud.f-li.cn").equals(InetAddress.getByName("192.168.31.7"));
 
 //        String cacheDomain = "www.baidu.com";
 //        InetAddress resolve = client.resolve(cacheDomain);
@@ -444,7 +453,7 @@ public class SocksTester {
 //        resolve = client.resolve(cacheDomain);
 //        System.out.println(resolve);
 
-//        System.in.read();
+        wait();
     }
 
     @Test

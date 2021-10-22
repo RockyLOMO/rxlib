@@ -6,7 +6,9 @@ import lombok.NoArgsConstructor;
 import org.rx.core.exception.InvalidException;
 import org.rx.util.function.Func;
 
+import java.util.Collections;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.NON_WARNING;
@@ -14,8 +16,15 @@ import static org.rx.core.App.sneakyInvoke;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Container {
+    //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
+    private static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
     @Getter
     private static final Container instance = new Container();
+
+    public static <K, V> Map<K, V> weakMap() {
+        return WEAK_MAP;
+    }
+
     private final Map<String, Object> holder = new ConcurrentHashMap<>(8);
 
     public <T> T getOrRegister(Class<T> type) {
