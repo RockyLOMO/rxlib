@@ -95,13 +95,13 @@ public class SocksTester extends TConfig {
             assert args.getFlag() == 2;
 
             svcImpl.raiseEvent(eventName, args);
-            sleep(200);
+            sleep(50);
             assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
     }
 
     @Test
-    public void rpc_StatefulImpl() {
+    public void rpcStatefulImpl() {
         //服务端监听
         RpcServerConfig serverConfig = new RpcServerConfig(3307);
         serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
@@ -118,7 +118,6 @@ public class SocksTester extends TConfig {
         try {
             facade1.triggerError(); //测试异常
         } catch (RemotingException e) {
-
         }
         assert facade1.computeInt(17, 1) == 18;
 
@@ -135,7 +134,7 @@ public class SocksTester extends TConfig {
 
         //客户端触发事件
         facade1.create(PersonBean.girl);
-        sleep(6000);
+        sleep(5000);
     }
 
     private void attachEvent(UserManagerImpl facade, String id) {
@@ -147,7 +146,7 @@ public class SocksTester extends TConfig {
     }
 
     @Test
-    public void rpc_Reconnect() {
+    public void rpcReconnect() {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint0);
         AtomicBoolean connected = new AtomicBoolean(false);
@@ -173,9 +172,7 @@ public class SocksTester extends TConfig {
         assert userManager.computeInt(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
-//        userManager.close();
-
-        restartServer(svcImpl, endpoint1, 8000); //10秒后开启3308端口实例，重连3308成功
+        restartServer(svcImpl, endpoint1, startDelay); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
             if (!connected.get()) {
@@ -200,7 +197,7 @@ public class SocksTester extends TConfig {
         System.out.println("Start server on port " + ep.getPort());
     }
 
-    <T> Future restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
+    <T> Future<?> restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
         RpcServer rs = serverHost.remove(svcImpl);
         sleep(startDelay);
         rs.close();

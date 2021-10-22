@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -47,8 +48,9 @@
         <java.version>1.8</java.version>
         <shallow>true</shallow>
         <gpg.skip>true</gpg.skip>
-        <lombok.version>1.18.20</lombok.version>
+        <lombok.version>1.18.22</lombok.version>
         <slf4j-api.version>1.7.32</slf4j-api.version>
+        <logback.version>1.2.6</logback.version>
         <fastjson.version>1.2.76</fastjson.version>
         <guava.version>30.1.1-jre</guava.version>
         <caffeine.version>2.9.2</caffeine.version>
@@ -58,7 +60,7 @@
         <commons-io.version>2.11.0</commons-io.version>
         <netty.version>4.1.69.Final</netty.version>
         <bcprov.version>1.69</bcprov.version>
-        <okhttp.version>4.9.1</okhttp.version>
+        <okhttp.version>4.9.2</okhttp.version>
         <jsch.version>0.1.55</jsch.version>
 
         <spring.cloud.version>3.0.2</spring.cloud.version>
@@ -167,11 +169,10 @@
             <artifactId>jsch</artifactId>
             <version>${jsch.version}</version>
         </dependency>
-
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.6</version>
+            <version>${logback.version}</version>
         </dependency>
         <dependency>
             <groupId>javax.validation</groupId>
@@ -197,7 +198,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.7.2</version>
+            <version>5.8.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -205,18 +206,18 @@
     <build>
         <plugins>
             <!--mvn package-->
-<!--            <plugin>-->
-<!--                <groupId>org.springframework.boot</groupId>-->
-<!--                <artifactId>spring-boot-maven-plugin</artifactId>-->
-<!--                <version>2.5.2</version>-->
-<!--                <executions>-->
-<!--                    <execution>-->
-<!--                        <goals>-->
-<!--                            <goal>repackage</goal>-->
-<!--                        </goals>-->
-<!--                    </execution>-->
-<!--                </executions>-->
-<!--            </plugin>-->
+            <!--            <plugin>-->
+            <!--                <groupId>org.springframework.boot</groupId>-->
+            <!--                <artifactId>spring-boot-maven-plugin</artifactId>-->
+            <!--                <version>2.5.2</version>-->
+            <!--                <executions>-->
+            <!--                    <execution>-->
+            <!--                        <goals>-->
+            <!--                            <goal>repackage</goal>-->
+            <!--                        </goals>-->
+            <!--                    </execution>-->
+            <!--                </executions>-->
+            <!--            </plugin>-->
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
