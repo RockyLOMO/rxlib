@@ -45,25 +45,29 @@ public final class Sockets {
     static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
-    public static final LengthFieldPrepender INT_LENGTH_Prepender = new LengthFieldPrepender(4);
+    public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
     private static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
+    private static DnsClient nsClient;
 
     @SneakyThrows
-    public static void injectNameService(InetSocketAddress... nameServerList) {
-        Class<?> type = InetAddress.class;
+    public static synchronized void injectNameService(InetSocketAddress... nameServerList) {
         DnsClient client = Arrays.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
-        try {
-            Field field = type.getDeclaredField("nameService");
-            Reflects.setAccess(field);
-            field.set(null, nsProxy(field.get(null), client));
-        } catch (NoSuchFieldException e) {
-            Field field = type.getDeclaredField("nameServices");
-            Reflects.setAccess(field);
-            List<Object> nsList = (List<Object>) field.get(null);
-            nsList.set(0, nsProxy(nsList.get(0), client));
+        if (nsClient == null) {
+            Class<?> type = InetAddress.class;
+            try {
+                Field field = type.getDeclaredField("nameService");
+                Reflects.setAccess(field);
+                field.set(null, nsProxy(field.get(null), client));
+            } catch (NoSuchFieldException e) {
+                Field field = type.getDeclaredField("nameServices");
+                Reflects.setAccess(field);
+                List<Object> nsList = (List<Object>) field.get(null);
+                nsList.set(0, nsProxy(nsList.get(0), client));
+            }
         }
+        nsClient = client;
     }
 
     private static Object nsProxy(Object ns, DnsClient client) {

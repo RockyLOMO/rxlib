@@ -18,7 +18,7 @@ public class AESCodec extends MessageToMessageCodec<ByteBuf, ByteBuf> {
     public ChannelHandler[] channelHandlers() {
         return new ChannelHandler[]{
                 new LengthFieldBasedFrameDecoder(RxConfig.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4),
-                Sockets.INT_LENGTH_Prepender, this
+                Sockets.INT_LENGTH_PREPENDER, this
         };
     }
 
