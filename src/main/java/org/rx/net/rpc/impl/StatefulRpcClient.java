@@ -4,7 +4,6 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
-import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.Attribute;
@@ -118,7 +117,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
-    private static final ObjectEncoder ENCODER = new ObjectEncoder();
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
@@ -154,7 +152,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     public StatefulRpcClient(@NonNull RpcClientConfig config) {
         this.config = config;
-//        log.info("reconnect status: {} {}", autoReconnect, isShouldReconnect());
     }
 
     protected StatefulRpcClient() {
@@ -181,7 +178,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
-            pipeline.addLast(ENCODER,
+            pipeline.addLast(RpcClientConfig.ENCODER,
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());
         });
@@ -201,7 +198,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
-    private synchronized void doConnect(boolean reconnect, ManualResetEvent waiter) {
+    synchronized void doConnect(boolean reconnect, ManualResetEvent waiter) {
         InetSocketAddress ep;
         if (reconnect) {
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());

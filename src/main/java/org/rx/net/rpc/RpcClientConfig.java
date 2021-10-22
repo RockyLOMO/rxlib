@@ -1,5 +1,6 @@
 package org.rx.net.rpc;
 
+import io.netty.handler.codec.serialization.ObjectEncoder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.rx.net.SocketConfig;
@@ -12,6 +13,7 @@ import java.net.InetSocketAddress;
 @EqualsAndHashCode(callSuper = true)
 public class RpcClientConfig extends SocketConfig {
     public static final String REACTOR_NAME = "℞Rpc";
+    public static final ObjectEncoder ENCODER = new ObjectEncoder();
     public static final int NON_POOL_SIZE = -1;
     public static final int DEFAULT_VERSION = 0;
 

@@ -4,7 +4,6 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
-import io.netty.handler.codec.serialization.ObjectEncoder;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -173,7 +172,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             TransportUtil.addFrontendHandler(channel, config);
-            pipeline.addLast(new ObjectEncoder(),
+            pipeline.addLast(RpcClientConfig.ENCODER,
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
