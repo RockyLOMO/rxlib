@@ -58,7 +58,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
             @Override
             public void passivateObject(PooledObject<StatefulRpcClient> p) throws Exception {
                 StatefulRpcClient client = p.getObject();
-                client.getConfig().setReconnectPeriod(RpcClientConfig.NON_RECONNECT);
+                client.getConfig().setEnableReconnect(false);
                 client.onError = null;
                 client.onReceive = client.onSend = null;
                 client.onDisconnected = client.onConnected = null;
@@ -88,7 +88,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         checkNotClosed();
 
         try {
-            if (!client.isAutoReconnect() && !client.isConnected()) {
+            if (!client.getConfig().isEnableReconnect() && !client.isConnected()) {
                 pool.invalidateObject(client);
                 return null;
             }

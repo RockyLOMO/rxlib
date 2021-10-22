@@ -48,52 +48,56 @@ public class SocksTester extends TConfig {
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
+    @SneakyThrows
     @Test
-    public void rpc_StatefulApi() {
+    public void rpcStatefulApi() {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint0);
 
-        String ep = "127.0.0.1:3307";
         List<UserManager> facadeGroup = new ArrayList<>();
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0)));
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(ep, 0)));
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0)));
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0)));
 
-        for (UserManager facade : facadeGroup) {
-            assert facade.computeInt(1, 1) == 2;
-        }
+        tst(svcImpl, facadeGroup);
         //重启server，客户端自动重连
         restartServer(svcImpl, endpoint0, startDelay);
+        tst(svcImpl, facadeGroup);
+
+//        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
+    }
+
+    private void tst(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
         for (UserManager facade : facadeGroup) {
             try {
                 facade.triggerError();
             } catch (RemotingException e) {
             }
-            assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
-        }
-        //自定义事件（广播）
-        String groupEvent = "onAuth";
-        for (int i = 0; i < facadeGroup.size(); i++) {
-            int x = i;
-            facadeGroup.get(i).<UserEventArgs>attachEvent(groupEvent, (s, e) -> {
-                System.out.println(String.format("!!facade%s - args.flag=%s!!", x, e.getFlag()));
-                e.setFlag(e.getFlag() + 1);
-            });
+            assert facade.computeInt(1, 1) == 2;  //服务端计算并返回
         }
 
+        //自定义事件（广播） 只加1次
+        for (int i = 0; i < facadeGroup.size(); i++) {
+            int x = i;
+            facadeGroup.get(i).<UserEventArgs>attachEvent(eventName, (s, e) -> {
+                System.out.printf("!!facade%s - args.flag=%s!!%n", x, e.getFlag());
+                e.setFlag(e.getFlag() + 1);
+            }, false);
+        }
         for (int i = 0; i < 10; i++) {
             UserEventArgs args = new UserEventArgs(PersonBean.girl);
-            facadeGroup.get(0).raiseEvent(groupEvent, args);
+            facadeGroup.get(0).raiseEvent(eventName, args);
+            System.out.println("flag:" + args.getFlag());
             assert args.getFlag() == 1;
 
             args = new UserEventArgs(PersonBean.girl);
             args.setFlag(1);
-            facadeGroup.get(1).raiseEvent(groupEvent, args);
+            facadeGroup.get(1).raiseEvent(eventName, args);
             assert args.getFlag() == 2;
 
-            svcImpl.raiseEvent(groupEvent, args);
+            svcImpl.raiseEvent(eventName, args);
+            sleep(200);
             assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
-//        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
     }
 
     @Test
@@ -190,23 +194,23 @@ public class SocksTester extends TConfig {
     }
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
-        serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, ep.getPort()));
+        RpcServerConfig svr = new RpcServerConfig(ep.getPort());
+        svr.setUseRuntimeTcpEventLoop(false);
+        serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, svr));
         System.out.println("Start server on port " + ep.getPort());
-        sleep(startDelay);
     }
 
-    <T> void restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
+    <T> Future restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
         RpcServer rs = serverHost.remove(svcImpl);
-        Objects.requireNonNull(rs);
         sleep(startDelay);
         rs.close();
         System.out.println("Close server on port " + rs.getConfig().getListenPort());
-        Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);
+        return Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);
     }
 
     @SneakyThrows
     @Test
-    public void rpc_clientPool() {
+    public void rpcPoolMode() {
         Remoting.listen(HttpUserManager.INSTANCE, endpoint0.getPort());
 
         int tcount = 200;
@@ -223,7 +227,6 @@ public class SocksTester extends TConfig {
             });
         }
         latch.await();
-//        System.in.read();
     }
 
     int connectTimeoutMillis = 30000;

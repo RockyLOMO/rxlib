@@ -27,7 +27,7 @@ import org.rx.net.rpc.packet.PingMessage;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
-import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 
@@ -79,7 +79,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             log.info("clientInactive {}", channel.remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
-            reconnect();
+            channel.eventLoop().schedule(() -> doConnect(true, null), nextReconnectDelay(), TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -118,6 +118,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
+    private static final ObjectEncoder ENCODER = new ObjectEncoder();
     public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
     public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
@@ -126,19 +127,14 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     @Getter
     private final RpcClientConfig config;
     private Bootstrap bootstrap;
+    private int reconnectDelayMs;
     @Getter
     private Date connectedTime;
     private volatile Channel channel;
-    private volatile Future<?> reconnectFuture;
-    private volatile ChannelFuture reconnectChannelFuture;
 
     @Override
     public @NonNull TaskScheduler asyncScheduler() {
         return RpcServer.SCHEDULER;
-    }
-
-    public boolean isAutoReconnect() {
-        return config.getReconnectPeriod() > 0;
     }
 
     public boolean isConnected() {
@@ -146,7 +142,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     protected boolean isShouldReconnect() {
-        return isAutoReconnect() && !isConnected();
+        return config.isEnableReconnect() && !isConnected();
     }
 
     public InetSocketAddress getLocalAddress() {
@@ -167,7 +163,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     @Override
     protected void freeObjects() {
-        config.setReconnectPeriod(RpcClientConfig.NON_RECONNECT); //import
+        config.setEnableReconnect(false); //import
         Sockets.closeOnFlushed(channel);
 //        bootstrap.config().group().shutdownGracefully();
     }
@@ -185,85 +181,70 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
-            pipeline.addLast(new ObjectEncoder(),
+            pipeline.addLast(ENCODER,
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
                     new ClientHandler());
         });
-        ChannelFuture future = bootstrap.connect(config.getServerEndpoint());
-        if (!wait) {
-            future.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+        ManualResetEvent connectWaiter = null;
+        doConnect(false, wait ? connectWaiter = new ManualResetEvent() : null);
+        if (connectWaiter == null) {
             return;
         }
-        ManualResetEvent connectWaiter = new ManualResetEvent();
-        future.addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                f.channel().close();
-                if (isAutoReconnect()) {
-                    reconnect(connectWaiter);
-                    return;
-                }
-            }
-            channel = f.channel();
-            connectedTime = DateTime.now();
-            connectWaiter.set();
-        });
         try {
             connectWaiter.waitOne(config.getConnectTimeoutMillis());
             connectWaiter.reset();
         } catch (TimeoutException e) {
             throw new InvalidException("Client connect fail", e);
         }
-        if (!isAutoReconnect() && !isConnected()) {
+        if (!config.isEnableReconnect() && !isConnected()) {
             throw new InvalidException("Client connect %s fail", config.getServerEndpoint());
         }
     }
 
-    protected void reconnect() {
-        reconnect(null);
-    }
-
-    private synchronized void reconnect(ManualResetEvent mainWaiter) {
-        if (!isShouldReconnect() || reconnectFuture != null) {
-            return;
-        }
-        reconnectFuture = Tasks.scheduleUntil(() -> {
-            log.info("reconnect {} check..", config.getServerEndpoint());
-            if (!isShouldReconnect() || reconnectChannelFuture != null) {
-                return;
-            }
+    private synchronized void doConnect(boolean reconnect, ManualResetEvent waiter) {
+        InetSocketAddress ep;
+        if (reconnect) {
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
             raiseEvent(onReconnecting, args);
-            InetSocketAddress ep = args.getValue();
-            reconnectChannelFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
+            ep = args.getValue();
+        } else {
+            ep = config.getServerEndpoint();
+        }
+
+        bootstrap.connect(ep).addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
+            channel = f.channel();
+            if (!f.isSuccess()) {
+                if (isShouldReconnect()) {
+                    int delay = nextReconnectDelay();
+                    log.info("connection failed will re-attempt in {} ms", delay);
+                    channel.eventLoop().schedule(() -> doConnect(true, waiter), delay, TimeUnit.MILLISECONDS);
+                } else {
                     log.warn("reconnect {} fail", ep);
-                    f.channel().close();
-                    reconnectChannelFuture = null;
-                    return;
                 }
-                log.info("reconnect {} ok", ep);
-                channel = f.channel();
-                config.setServerEndpoint(ep);
-                connectedTime = DateTime.now();
-                raiseEvent(onReconnected, args);
-                reconnectChannelFuture = null;
-            });
-        }, () -> {
-            boolean ok = !isShouldReconnect();
-            if (ok) {
-                if (mainWaiter != null) {
-                    mainWaiter.set();
-                }
-                reconnectFuture = null;
+                return;
             }
-            return ok;
-        }, config.getReconnectPeriod());
+            config.setServerEndpoint(ep);
+            reconnectDelayMs = 50;
+            connectedTime = DateTime.now();
+
+            if (waiter != null) {
+                waiter.set();
+            }
+            if (reconnect) {
+                log.info("reconnect {} ok", ep);
+                raiseEvent(onReconnected, new NEventArgs<>(ep));
+            }
+        });
+    }
+
+    private int nextReconnectDelay() {
+        return Math.min(reconnectDelayMs = reconnectDelayMs * 2, 5000);
     }
 
     @Override
     public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
-            if (reconnectFuture != null) {
+            if (isShouldReconnect()) {
                 try {
                     FluentWait.newInstance(8000).until(s -> isConnected());
                 } catch (TimeoutException e) {

@@ -19,6 +19,7 @@ public class SocketConfig implements DeepCloneable {
 
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
+    //随进程存活设为true
     private boolean useRuntimeTcpEventLoop = true;
     private boolean enableNettyLog;
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();

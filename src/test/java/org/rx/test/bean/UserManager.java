@@ -11,13 +11,8 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
         returnValue;
     }
 
-    @Override
-    default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DYNAMIC_ATTACH.flags();
-    }
-
     default void close() {
-        System.out.println("invoke default close then disconnect");
+        System.out.println("invoke disconnect");
     }
 
     void create(PersonBean person);

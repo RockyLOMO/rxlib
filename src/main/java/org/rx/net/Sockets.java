@@ -162,7 +162,7 @@ public final class Sockets {
             group.shutdownGracefully();
         }
         group = config.childGroup();
-        if (group != null) {
+        if (group != null && !reactors.containsValue(group)) {
             group.shutdownGracefully();
         }
     }

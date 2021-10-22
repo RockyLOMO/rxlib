@@ -202,7 +202,7 @@ public final class Remoting {
                     throw new RemotingException(clientBean.pack.errorMessage);
                 }
             } catch (ClientDisconnectedException e) {
-                if (!client.isAutoReconnect()) {
+                if (!client.getConfig().isEnableReconnect()) {
                     pool.returnClient(client);
                     sync.v = null;
                     throw e;
