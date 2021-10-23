@@ -157,16 +157,16 @@ public class ThreadPool extends ThreadPoolExecutor {
         Thread.setDefaultUncaughtExceptionHandler(ExceptionHandler.INSTANCE);
     }
 
+    static ThreadFactory newThreadFactory(String nameFormat) {
+        return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
+//                .setUncaughtExceptionHandler(ExceptionHandler.INSTANCE) //跟上面重复
+                .setDaemon(true).setNameFormat(nameFormat).build();
+    }
+
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
         return (int) Math.max(CPU_THREADS, Math.floor(CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
-    }
-
-    static ThreadFactory newThreadFactory(String nameFormat) {
-        return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-                .setUncaughtExceptionHandler(ExceptionHandler.INSTANCE)
-                .setDaemon(true).setNameFormat(nameFormat).build();
     }
 
     @Getter
