@@ -11,6 +11,7 @@ import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
@@ -36,14 +37,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
 @Slf4j
 public class SocksTester extends TConfig {
-    final InetSocketAddress endpoint0 = Sockets.parseEndpoint("127.0.0.1:3307");
-    final InetSocketAddress endpoint1 = Sockets.parseEndpoint("127.0.0.1:3308");
     final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
@@ -229,13 +229,25 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public synchronized void udpRpc() {
-        UdpRpcClient c1 = new UdpRpcClient(2000);
-        c1.onReceive = (s, e) -> System.out.println(toJsonString(e));
+        UdpClient c1 = new UdpClient(endpoint0.getPort());
+        c1.onReceive = (s, e) -> System.out.println("c1: " + toJsonString(e));
+        UdpClient c2 = new UdpClient(endpoint1.getPort());
+        AtomicInteger count = new AtomicInteger();
+        c2.onReceive = (s, e) -> {
+            System.out.println("c2:" + toJsonString(e));
+            if (count.incrementAndGet() < 2) {
+                throw new InvalidException("error");
+            }
+        };
 
-        UdpRpcClient c2 = new UdpRpcClient(2001);
-//        sleep(5000);
+        c1.sendAsync(endpoint0, "我是1");
+        for (int i = 0; i < 10; i++) {
+            int finalI = i;
+            Tasks.run(() -> c2.sendAsync(endpoint0, "我是2 + " + finalI));
+        }
 
-        c1.send(Sockets.parseEndpoint("127.0.0.1:2000"), 123);
+        c1.sendAsync(endpoint1, "wlz", 15000, true);
+        System.out.println("done");
         wait();
     }
 

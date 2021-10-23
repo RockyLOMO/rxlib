@@ -1,12 +1,10 @@
-package org.rx.net.rpc.packet;
+package org.rx.net.rpc.protocol;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.Data;
 
 import java.io.Serializable;
 
-@Getter
-@RequiredArgsConstructor
+@Data
 public class ErrorPacket implements Serializable {
     private static final long serialVersionUID = 7990939004009224185L;
     private final String errorMessage;

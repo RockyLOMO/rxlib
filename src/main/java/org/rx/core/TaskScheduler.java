@@ -3,6 +3,7 @@ package org.rx.core;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import org.rx.bean.IdGenerator;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -25,13 +26,15 @@ public class TaskScheduler extends ThreadPool {
             return call();
         }
 
+        @SneakyThrows
         @Override
         public T call() {
             try {
                 return callable.invoke();
             } catch (Throwable e) {
                 Tasks.raiseUncaughtException("RunFlag={}", flag, e);
-                return null;
+//                return null;
+                throw e;
             }
         }
 
@@ -46,9 +49,6 @@ public class TaskScheduler extends ThreadPool {
         }
     }
 
-    @Getter
-    private final IdGenerator generator = new IdGenerator();
-
     public TaskScheduler(String poolName) {
         this(ThreadPool.CPU_THREADS + 1, poolName);
     }
@@ -58,7 +58,7 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public CompletableFuture<Void> run(Action task) {
-        return run(task, String.valueOf(generator.increment()), null);
+        return run(task, String.valueOf(IdGenerator.DEFAULT.increment()), null);
     }
 
     public CompletableFuture<Void> run(@NonNull Action task, @NonNull String taskName, RunFlag runFlag) {
@@ -71,7 +71,7 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, String.valueOf(generator.increment()), null);
+        return run(task, String.valueOf(IdGenerator.DEFAULT.increment()), null);
     }
 
     public <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull String taskName, RunFlag runFlag) {

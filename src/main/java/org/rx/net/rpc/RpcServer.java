@@ -11,14 +11,15 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.IdGenerator;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.rpc.packet.HandshakePacket;
-import org.rx.net.rpc.packet.PingMessage;
+import org.rx.net.rpc.protocol.HandshakePacket;
+import org.rx.net.rpc.protocol.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -146,7 +147,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
         TaskScheduler scheduler = asyncScheduler();
-        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getGenerator().increment()), RunFlag.PRIORITY);
+        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY);
     }
 
     public List<RpcServerClient> getClients() {

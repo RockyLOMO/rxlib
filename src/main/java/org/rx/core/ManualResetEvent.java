@@ -8,6 +8,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.App.TIMEOUT_INFINITE;
 
+//synchronized 没有TimeoutException
 public final class ManualResetEvent {
     private volatile boolean open;
     @Getter

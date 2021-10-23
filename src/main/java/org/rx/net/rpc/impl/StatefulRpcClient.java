@@ -18,9 +18,9 @@ import org.rx.core.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.*;
-import org.rx.net.rpc.packet.ErrorPacket;
-import org.rx.net.rpc.packet.HandshakePacket;
-import org.rx.net.rpc.packet.PingMessage;
+import org.rx.net.rpc.protocol.ErrorPacket;
+import org.rx.net.rpc.protocol.HandshakePacket;
+import org.rx.net.rpc.protocol.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -181,14 +181,14 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                     new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
-        ManualResetEvent connectWaiter = null;
-        doConnect(false, wait ? connectWaiter = new ManualResetEvent() : null);
-        if (connectWaiter == null) {
+        ManualResetEvent syncRoot = null;
+        doConnect(false, wait ? syncRoot = new ManualResetEvent() : null);
+        if (syncRoot == null) {
             return;
         }
         try {
-            connectWaiter.waitOne(config.getConnectTimeoutMillis());
-            connectWaiter.reset();
+            syncRoot.waitOne(config.getConnectTimeoutMillis());
+            syncRoot.reset();
         } catch (TimeoutException e) {
             throw new InvalidException("Client connect fail", e);
         }
@@ -197,7 +197,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
-    synchronized void doConnect(boolean reconnect, ManualResetEvent waiter) {
+    synchronized void doConnect(boolean reconnect, ManualResetEvent syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
@@ -213,7 +213,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 if (isShouldReconnect()) {
                     int delay = nextReconnectDelay();
                     log.info("connection failed will re-attempt in {} ms", delay);
-                    channel.eventLoop().schedule(() -> doConnect(true, waiter), delay, TimeUnit.MILLISECONDS);
+                    channel.eventLoop().schedule(() -> doConnect(true, syncRoot), delay, TimeUnit.MILLISECONDS);
                 } else {
                     log.warn("reconnect {} fail", ep);
                 }
@@ -223,8 +223,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             reconnectDelayMs = 50;
             connectedTime = DateTime.now();
 
-            if (waiter != null) {
-                waiter.set();
+            if (syncRoot != null) {
+                syncRoot.set();
             }
             if (reconnect) {
                 log.info("reconnect {} ok", ep);

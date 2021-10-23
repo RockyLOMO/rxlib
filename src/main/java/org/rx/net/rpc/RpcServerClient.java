@@ -3,7 +3,7 @@ package org.rx.net.rpc;
 import io.netty.channel.ChannelId;
 import lombok.*;
 import org.rx.bean.DateTime;
-import org.rx.net.rpc.packet.HandshakePacket;
+import org.rx.net.rpc.protocol.HandshakePacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;

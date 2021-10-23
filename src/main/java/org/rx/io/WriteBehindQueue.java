@@ -26,7 +26,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
     private final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> sortMap = new ConcurrentSkipListMap<>();
     private final RedoTimer timer = new RedoTimer();
     private volatile Timeout timeout;
-    private final ManualResetEvent event = new ManualResetEvent();
+    private final ManualResetEvent syncRoot = new ManualResetEvent();
     private volatile boolean stop;  //避免consume时又offer 死循环
 
     WriteBehindQueue(long writeDelayed, int highWaterMark) {
@@ -47,7 +47,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
     public void reset() {
         sortMap.clear();
         timeout = null;
-        event.set();
+        syncRoot.set();
     }
 
     public V peek(@NonNull K posKey) {
@@ -69,8 +69,8 @@ final class WriteBehindQueue<K, V> extends Disposable {
             if (timeout == null) {
                 timeout = timer.setTimeout(this::consume, 1);
             }
-            event.waitOne();
-            event.reset();
+            syncRoot.waitOne();
+            syncRoot.reset();
             log.info("below low water mark");
         }
 
@@ -104,7 +104,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
             Map.Entry<K, Tuple<V, BiAction<V>>> entry = sortMap.pollFirstEntry();
             if (sortMap.size() <= waterMark.getLow()) {
                 log.debug("low water mark threshold");
-                event.set();
+                syncRoot.set();
             }
             if (entry == null) {
                 break;

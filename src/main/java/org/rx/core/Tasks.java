@@ -293,10 +293,10 @@ public final class Tasks {
         return schedule(task, initDelay, oneDay, "scheduleDaily");
     }
 
-    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> checkFunc, long delay) {
+    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> preCheckFunc, long delay) {
         $<ScheduledFuture<?>> future = $();
         future.v = schedule(() -> {
-            if (checkFunc.invoke()) {
+            if (preCheckFunc.invoke()) {
                 future.v.cancel(true);
                 return;
             }

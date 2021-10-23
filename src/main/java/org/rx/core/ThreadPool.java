@@ -40,7 +40,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Setter
         private ThreadPool pool;
         private final AtomicInteger counter = new AtomicInteger();
-        private final ManualResetEvent waiter = new ManualResetEvent();
+        private final ManualResetEvent syncRoot = new ManualResetEvent();
 
         @Override
         public boolean isEmpty() {
@@ -73,8 +73,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                 if (counter.incrementAndGet() > queueCapacity) {
                     do {
                         log.debug("Queue is full & Wait poll");
-                        waiter.waitOne();
-                        waiter.reset();
+                        syncRoot.waitOne();
+                        syncRoot.reset();
                     }
                     while (counter.get() > queueCapacity);
                     log.debug("Wait poll ok");
@@ -137,7 +137,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         private void setPoll() {
             counter.decrementAndGet();
-            waiter.set();
+            syncRoot.set();
         }
     }
 
