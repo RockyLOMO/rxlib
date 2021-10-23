@@ -10,6 +10,7 @@ public final class UdpMessage implements Serializable {
     private static final long serialVersionUID = -5893732698305228464L;
     public final int id;
     public final AckSync ack;
+    public final int alive;
 
     public final InetSocketAddress remoteAddress;
     public final Serializable packet;

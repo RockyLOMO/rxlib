@@ -41,7 +41,7 @@ public class UdpClient implements EventTarget<UdpClient> {
         public ScheduledFuture<?> future;
     }
 
-    static final AttributeKey<UdpClient> OWNER = AttributeKey.valueOf("UdpRpcClient");
+    static final AttributeKey<UdpClient> OWNER = AttributeKey.valueOf("UdpClient");
     static final Handler HANDLER = new Handler();
     static final IdGenerator generator = new IdGenerator();
     static final Map<Integer, Context> queue = new ConcurrentHashMap<>();
@@ -68,19 +68,19 @@ public class UdpClient implements EventTarget<UdpClient> {
             UdpMessage message = (UdpMessage) pack;
             if (record.contains(message.id)) {
                 log.debug("Consumed just send Ack {}", message.id);
-                client.sendAck(msg.sender(), new Ack(message.id));
+                client.sendAck(msg.sender(), message);
                 return;
             }
 
             if (message.ack == AckSync.SEMI) {
-                client.sendAck(msg.sender(), new Ack(message.id));
+                client.sendAck(msg.sender(), message);
             }
             client.raiseEventAsync(client.onReceive, new NEventArgs<>(message)).whenComplete((r, e) -> {
                 if (e != null) {
                     return;
                 }
                 if (message.ack == AckSync.FULL) {
-                    client.sendAck(msg.sender(), new Ack(message.id));
+                    client.sendAck(msg.sender(), message);
                 }
             });
         }
@@ -96,7 +96,7 @@ public class UdpClient implements EventTarget<UdpClient> {
     final Channel channel;
     @Getter
     @Setter
-    long waitAckTimeoutMillis = 15 * 1000;
+    int waitAckTimeoutMillis = 15 * 1000;
     @Getter
     @Setter
     boolean fullSync;
@@ -120,10 +120,10 @@ public class UdpClient implements EventTarget<UdpClient> {
         return new DatagramPacket(buf, remoteAddress);
     }
 
-    void sendAck(InetSocketAddress remoteAddress, Ack ack) {
-        record.add(ack.id);
-        Tasks.scheduleOnce(() -> record.remove(ack.id), waitAckTimeoutMillis * 2);
-        channel.writeAndFlush(serialize(remoteAddress, ack)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+    void sendAck(InetSocketAddress remoteAddress, UdpMessage message) {
+        record.add(message.id);
+        Tasks.scheduleOnce(() -> record.remove(message.id), message.alive);
+        channel.writeAndFlush(serialize(remoteAddress, new Ack(message.id)));
     }
 
     @SneakyThrows
@@ -131,17 +131,17 @@ public class UdpClient implements EventTarget<UdpClient> {
         return sendAsync(remoteAddress, packet, waitAckTimeoutMillis, fullSync);
     }
 
-    public <T extends Serializable> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet, long waitAckTimeoutMillis, boolean fullSync) throws TimeoutException {
+    public <T extends Serializable> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet, int waitAckTimeoutMillis, boolean fullSync) throws TimeoutException {
         AckSync as = fullSync ? AckSync.FULL : waitAckTimeoutMillis > 0 ? AckSync.SEMI : AckSync.NONE;
-        UdpMessage message = new UdpMessage(generator.increment(), as, remoteAddress, packet);
+        UdpMessage message = new UdpMessage(generator.increment(), as, waitAckTimeoutMillis, remoteAddress, packet);
 
         if (message.ack != AckSync.NONE) {
             Context ctx = new Context(message);
             queue.put(message.id, ctx);
-            ctx.future = Tasks.scheduleUntil(() -> channel.writeAndFlush(serialize(remoteAddress, message)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE),
+            ctx.future = Tasks.scheduleUntil(() -> channel.writeAndFlush(serialize(remoteAddress, message)),
                     () -> ++ctx.resend > maxResend, waitAckTimeoutMillis / maxResend);
         }
-        ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+        ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message));
         if (message.ack != AckSync.NONE) {
             try {
                 queue.get(message.id).syncRoot.waitOne(waitAckTimeoutMillis);
