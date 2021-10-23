@@ -6,7 +6,7 @@ import org.rx.bean.AbstractMap;
 import org.rx.core.cache.MemoryCache;
 import org.rx.core.cache.DiskCache;
 import org.rx.core.cache.ThreadCache;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import static org.rx.core.App.*;

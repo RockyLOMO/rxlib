@@ -3,7 +3,7 @@ package org.rx.net.socks.upstream;
 import io.netty.channel.*;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.TransportUtil;
 import org.rx.net.socks.SocksConfig;

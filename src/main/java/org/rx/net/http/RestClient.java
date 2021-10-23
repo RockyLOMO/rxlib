@@ -4,7 +4,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;

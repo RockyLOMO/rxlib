@@ -11,7 +11,7 @@ import io.netty.handler.ssl.util.SelfSignedCertificate;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.FlagsEnum;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.net.InetSocketAddress;
 

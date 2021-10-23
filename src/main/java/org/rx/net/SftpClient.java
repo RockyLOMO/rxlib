@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.io.CurdFile;
 import org.rx.io.Files;
 import org.rx.io.IOStream;

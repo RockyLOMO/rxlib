@@ -76,7 +76,6 @@ public final class Tasks {
     //HashedWheelTimer
     private static final ScheduledThreadPoolExecutor scheduler;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
-    private static final FastThreadLocal<UncaughtExceptionContext> raiseFlag = new FastThreadLocal<>();
 
     static {
         int coreSize = Math.max(1, ThreadPool.CPU_THREADS / POOL_COUNT);
@@ -108,33 +107,6 @@ public final class Tasks {
 
     public static void addShutdownHook(Action fn) {
         shutdownActions.offer(fn);
-    }
-
-    public static UncaughtExceptionContext raisingContext() {
-        return raiseFlag.getIfExists();
-    }
-
-    public static boolean raiseUncaughtException(String format, Object... args) {
-        Throwable e = MessageFormatter.getThrowableCandidate(args);
-        if (e == null) {
-            log.warn("ThrowableCandidate is null");
-            return false;
-        }
-        UncaughtExceptionContext context = isNull(raisingContext(), new UncaughtExceptionContext(format, args));
-        if (context.isRaised()) {
-            return true;
-        }
-        context.setRaised(true);
-        raiseFlag.set(context);
-        try {
-            Thread.UncaughtExceptionHandler handler = isNull(Thread.getDefaultUncaughtExceptionHandler(), (p, x) -> log.error(context.getFormat(), context.getArgs()));
-            handler.uncaughtException(Thread.currentThread(), e);
-        } catch (Throwable ie) {
-            log.error("UncaughtException", ie);
-        } finally {
-            raiseFlag.remove();
-        }
-        return true;
     }
 
     @SneakyThrows
@@ -259,19 +231,25 @@ public final class Tasks {
         return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
-    public static ScheduledFuture<?> scheduleOnceAt(@NonNull Action task, @NonNull Date time) {
+    public static ScheduledFuture<?> scheduleOnce(@NonNull Action task, @NonNull Date time) {
         long initDelay = time.getTime() - System.currentTimeMillis();
         return scheduleOnce(task, initDelay);
     }
 
     public static ScheduledFuture<?> scheduleOnce(@NonNull Action task, long delay) {
-        return scheduler.schedule(() -> {
-            try {
-                task.invoke();
-            } catch (Throwable e) {
-                raiseUncaughtException("scheduleOnce", e);
+        return scheduler.schedule((Runnable) wrap(task), delay, TimeUnit.MILLISECONDS);
+    }
+
+    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> preCheckFunc, long delay) {
+        $<ScheduledFuture<?>> future = $();
+        future.v = schedule(() -> {
+            if (preCheckFunc.invoke()) {
+                future.v.cancel(true);
+                return;
             }
-        }, delay, TimeUnit.MILLISECONDS);
+            task.invoke();
+        }, delay);
+        return future.v;
     }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
@@ -290,29 +268,21 @@ public final class Tasks {
         long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 
-        return schedule(task, initDelay, oneDay, "scheduleDaily");
-    }
-
-    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> preCheckFunc, long delay) {
-        $<ScheduledFuture<?>> future = $();
-        future.v = schedule(() -> {
-            if (preCheckFunc.invoke()) {
-                future.v.cancel(true);
-                return;
-            }
-            task.invoke();
-        }, delay);
-        return future.v;
+        return schedule(task, initDelay, oneDay);
     }
 
     public static ScheduledFuture<?> schedule(Action task, long delay) {
-        return schedule(task, delay, delay, null);
+        return schedule(task, delay, delay);
     }
 
-    public static ScheduledFuture<?> schedule(@NonNull Action task, long initialDelay, long delay, String taskName) {
-        return scheduler.scheduleWithFixedDelay(new TaskScheduler.Task<>(isNull(taskName, Strings.EMPTY), null, () -> {
+    public static ScheduledFuture<?> schedule(@NonNull Action task, long initialDelay, long delay) {
+        return scheduler.scheduleWithFixedDelay(wrap(task), initialDelay, delay, TimeUnit.MILLISECONDS);
+    }
+
+    static TaskScheduler.Task<?> wrap(Action task) {
+        return new TaskScheduler.Task<>(null, null, () -> {
             task.invoke();
             return null;
-        }), initialDelay, delay, TimeUnit.MILLISECONDS);
+        });
     }
 }

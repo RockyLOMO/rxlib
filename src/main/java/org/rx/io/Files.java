@@ -10,7 +10,7 @@ import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.springframework.http.MediaType;
 
 import java.io.File;

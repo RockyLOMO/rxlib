@@ -1,4 +1,4 @@
-package org.rx.core.exception;
+package org.rx.exception;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;

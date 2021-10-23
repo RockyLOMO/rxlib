@@ -6,7 +6,8 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.Tuple;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.ExceptionHandler;
+import org.rx.exception.InvalidException;
 
 import java.lang.reflect.Field;
 import java.util.concurrent.*;
@@ -153,7 +154,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     private static final String POOL_NAME_PREFIX = "℞Threads-";
 
     static {
-        Thread.setDefaultUncaughtExceptionHandler((t, e) -> App.log("Global", e));
+        Thread.setDefaultUncaughtExceptionHandler(ExceptionHandler.INSTANCE);
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -164,7 +165,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static ThreadFactory newThreadFactory(String nameFormat) {
         return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-//                .setUncaughtExceptionHandler((thread, e) -> log.error("THREAD", e))
+                .setUncaughtExceptionHandler(ExceptionHandler.INSTANCE)
                 .setDaemon(true).setNameFormat(nameFormat).build();
     }
 

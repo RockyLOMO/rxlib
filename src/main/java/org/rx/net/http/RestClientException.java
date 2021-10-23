@@ -1,7 +1,7 @@
 package org.rx.net.http;
 
 import lombok.Getter;
-import org.rx.core.exception.ApplicationException;
+import org.rx.exception.ApplicationException;
 
 public class RestClientException extends org.springframework.web.client.RestClientException {
     @Getter

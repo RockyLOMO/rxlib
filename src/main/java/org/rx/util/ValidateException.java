@@ -1,8 +1,8 @@
 package org.rx.util;
 
 import lombok.Getter;
-import org.rx.core.exception.ExceptionLevel;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.ExceptionLevel;
+import org.rx.exception.InvalidException;
 
 @Getter
 public class ValidateException extends InvalidException {

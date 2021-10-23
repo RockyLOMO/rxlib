@@ -11,8 +11,8 @@ import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.MemoryCache;
-import org.rx.core.exception.ApplicationException;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
@@ -159,7 +159,7 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void asyncTask() {
-        //toIncSize
+        //autoIncSize
         for (int i = 0; i < 5; i++) {
             int finalI = i;
             Tasks.schedule(() -> {
@@ -248,10 +248,10 @@ public class CoreTester extends TestUtil {
 
         executor = new ShellCommander(TConfig.path("1.bat"), null);
         ShellCommander finalExecutor = executor;
-//        executor.start(l -> {
-//            System.out.println(l.getLine());
-//            finalExecutor.kill();
-//        });
+        executor.start(l -> {
+            System.out.println(l.getLine());
+            finalExecutor.kill();
+        });
         executor.start(ShellCommander.fileOut(TConfig.path("out.txt")));
         executor.waitFor();
 
@@ -326,20 +326,19 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
+    public void exceptionHandle() {
+        Tasks.scheduleOnce(() -> {
+            throw new InvalidException("xx");
+        }, 1000);
+        sleep(3000);
+    }
+
+    @Test
     public void fluentWait() throws TimeoutException {
         FluentWait.newInstance(2000, 200).until(s -> {
             System.out.println(System.currentTimeMillis());
             return false;
         });
-    }
-
-    @Test
-    public void sneaky() {
-        $<Integer> o = $.$(0);
-        sneakyInvoke(() -> {
-            o.v++;
-            System.out.println(o.v);
-        }, 2);
     }
 
     @Test

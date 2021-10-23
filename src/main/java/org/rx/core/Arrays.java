@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.NonNull;
 import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.lang3.ArrayUtils;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;

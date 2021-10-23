@@ -8,7 +8,7 @@ import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
-import org.rx.core.exception.ApplicationException;
+import org.rx.exception.ApplicationException;
 
 import java.io.*;
 import java.lang.reflect.Method;

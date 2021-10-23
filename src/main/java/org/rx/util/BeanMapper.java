@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.springframework.cglib.beans.BeanCopier;
 import org.springframework.cglib.proxy.Enhancer;
 import org.springframework.cglib.proxy.MethodInterceptor;

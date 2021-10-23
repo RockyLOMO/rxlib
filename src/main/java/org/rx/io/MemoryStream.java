@@ -6,7 +6,7 @@ import lombok.Setter;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.io.*;
 

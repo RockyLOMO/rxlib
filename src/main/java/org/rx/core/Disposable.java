@@ -1,7 +1,7 @@
 package org.rx.core;
 
 import org.rx.annotation.ErrorCode;
-import org.rx.core.exception.ApplicationException;
+import org.rx.exception.ApplicationException;
 
 import static org.rx.core.App.values;
 

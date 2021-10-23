@@ -9,8 +9,8 @@ import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
-import org.rx.core.exception.ApplicationException;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.*;
 
 import java.io.Serializable;

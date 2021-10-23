@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.Func;
 
 import java.util.Collections;

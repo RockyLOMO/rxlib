@@ -11,7 +11,7 @@ import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
 import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;

@@ -5,12 +5,15 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.bean.IdGenerator;
+import org.rx.exception.ExceptionHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+
+import static org.rx.core.App.isNull;
 
 public class TaskScheduler extends ThreadPool {
     @RequiredArgsConstructor
@@ -32,7 +35,7 @@ public class TaskScheduler extends ThreadPool {
             try {
                 return callable.invoke();
             } catch (Throwable e) {
-                Tasks.raiseUncaughtException("RunFlag={}", flag, e);
+                ExceptionHandler.INSTANCE.uncaughtException(toString(), e);
 //                return null;
                 throw e;
             }
@@ -45,7 +48,7 @@ public class TaskScheduler extends ThreadPool {
 
         @Override
         public String toString() {
-            return String.format("Task-%s[%s]", name, getFlag());
+            return String.format("Task-%s[%s]", isNull(name, Strings.EMPTY), isNull(flag, RunFlag.CONCURRENT));
         }
     }
 

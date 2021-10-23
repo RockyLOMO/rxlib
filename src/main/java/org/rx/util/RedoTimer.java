@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.core.App;
 import org.rx.core.Tasks;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 
 import java.util.concurrent.TimeUnit;

@@ -1,4 +1,4 @@
-package org.rx.core.exception;
+package org.rx.exception;
 
 import lombok.Getter;
 import org.apache.commons.lang3.exception.ExceptionUtils;

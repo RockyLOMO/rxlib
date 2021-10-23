@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.*;

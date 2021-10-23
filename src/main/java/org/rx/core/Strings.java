@@ -2,7 +2,7 @@ package org.rx.core;
 
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.exception.ApplicationException;
+import org.rx.exception.ApplicationException;
 
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;

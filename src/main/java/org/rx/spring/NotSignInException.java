@@ -1,7 +1,7 @@
 package org.rx.spring;
 
-import org.rx.core.exception.ExceptionLevel;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.ExceptionLevel;
+import org.rx.exception.InvalidException;
 
 public class NotSignInException extends InvalidException {
     public NotSignInException() {

@@ -1,6 +1,6 @@
 package org.rx.net.rpc;
 
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 public class ClientDisconnectedException extends InvalidException {
     public ClientDisconnectedException(Object clientId) {

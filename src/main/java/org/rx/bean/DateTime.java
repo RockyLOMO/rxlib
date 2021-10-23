@@ -5,7 +5,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.NQuery;
-import org.rx.core.exception.ApplicationException;
+import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;

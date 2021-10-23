@@ -10,7 +10,7 @@ import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
 import org.springframework.http.MediaType;

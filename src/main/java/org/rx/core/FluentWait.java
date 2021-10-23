@@ -3,7 +3,7 @@ package org.rx.core;
 import com.google.common.base.Throwables;
 import lombok.*;
 import org.rx.bean.DateTime;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.util.ArrayList;
 import java.util.Iterator;

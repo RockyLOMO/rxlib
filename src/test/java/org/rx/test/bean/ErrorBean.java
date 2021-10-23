@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 @NoArgsConstructor
 @AllArgsConstructor

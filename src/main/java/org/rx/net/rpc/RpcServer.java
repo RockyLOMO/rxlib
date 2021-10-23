@@ -15,7 +15,7 @@ import org.rx.bean.IdGenerator;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.protocol.HandshakePacket;

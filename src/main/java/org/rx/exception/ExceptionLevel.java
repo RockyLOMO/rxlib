@@ -1,4 +1,4 @@
-package org.rx.core.exception;
+package org.rx.exception;
 
 public enum ExceptionLevel {
     SYSTEM,

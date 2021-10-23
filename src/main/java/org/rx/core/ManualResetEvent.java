@@ -2,7 +2,7 @@ package org.rx.core;
 
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.util.concurrent.TimeoutException;
 

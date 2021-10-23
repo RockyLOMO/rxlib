@@ -1,7 +1,7 @@
 package org.rx.test.bean;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 
 import java.util.function.BiConsumer;
 

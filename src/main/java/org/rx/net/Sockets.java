@@ -29,7 +29,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
 

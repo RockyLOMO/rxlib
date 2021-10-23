@@ -5,8 +5,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
-import org.rx.core.exception.InvalidException;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -238,7 +237,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                     return serializer.deserialize(reader, true);
                 } catch (Exception e) {
                     if (e instanceof StreamCorruptedException) {
-                        App.log("loadMeta {}", e.getMessage());
+                        log.info("loadMeta {}", e.getMessage());
                         return new MetaHeader();
                     }
                     throw e;
