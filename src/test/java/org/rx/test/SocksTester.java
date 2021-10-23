@@ -226,6 +226,19 @@ public class SocksTester extends TConfig {
         latch.await();
     }
 
+    @SneakyThrows
+    @Test
+    public synchronized void udpRpc() {
+        UdpRpcClient c1 = new UdpRpcClient(2000);
+        c1.onReceive = (s, e) -> System.out.println(toJsonString(e));
+
+        UdpRpcClient c2 = new UdpRpcClient(2001);
+//        sleep(5000);
+
+        c1.send(Sockets.parseEndpoint("127.0.0.1:2000"), 123);
+        wait();
+    }
+
     int connectTimeoutMillis = 30000;
 
     @SneakyThrows

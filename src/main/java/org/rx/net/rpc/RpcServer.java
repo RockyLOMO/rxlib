@@ -2,7 +2,6 @@ package org.rx.net.rpc;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
@@ -137,7 +136,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     private Channel serverChannel;
     private final Map<ChannelId, ClientHandler> clients = new ConcurrentHashMap<>();
     @Getter
-    private volatile boolean isStarted;
+    private boolean isStarted;
 
     @Override
     public @NonNull TaskScheduler asyncScheduler() {
@@ -147,7 +146,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
         TaskScheduler scheduler = asyncScheduler();
-        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getGenerator().next()), RunFlag.PRIORITY);
+        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", scheduler.getGenerator().increment()), RunFlag.PRIORITY);
     }
 
     public List<RpcServerClient> getClients() {
@@ -172,8 +171,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             TransportUtil.addFrontendHandler(channel, config);
-            pipeline.addLast(RpcClientConfig.ENCODER,
-                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+            pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
+                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {

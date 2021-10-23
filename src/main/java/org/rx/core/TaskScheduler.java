@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import org.rx.bean.IncrementGenerator;
+import org.rx.bean.IdGenerator;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -47,7 +47,7 @@ public class TaskScheduler extends ThreadPool {
     }
 
     @Getter
-    private final IncrementGenerator generator = new IncrementGenerator();
+    private final IdGenerator generator = new IdGenerator();
 
     public TaskScheduler(String poolName) {
         this(ThreadPool.CPU_THREADS + 1, poolName);
@@ -58,7 +58,7 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public CompletableFuture<Void> run(Action task) {
-        return run(task, String.valueOf(generator.next()), null);
+        return run(task, String.valueOf(generator.increment()), null);
     }
 
     public CompletableFuture<Void> run(@NonNull Action task, @NonNull String taskName, RunFlag runFlag) {
@@ -71,7 +71,7 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, String.valueOf(generator.next()), null);
+        return run(task, String.valueOf(generator.increment()), null);
     }
 
     public <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull String taskName, RunFlag runFlag) {

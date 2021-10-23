@@ -2,7 +2,6 @@ package org.rx.net.rpc.impl;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -59,7 +58,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             log.debug("clientRead {} {}", channel.remoteAddress(), msg.getClass());
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
-                log.debug("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
+                log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
                 return;
             }
             if (tryAs(pack, PingMessage.class, p -> {
@@ -178,8 +177,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
-            pipeline.addLast(RpcClientConfig.ENCODER,
-                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, ClassResolvers.weakCachingConcurrentResolver(RpcServer.class.getClassLoader())),
+            pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
+                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
         ManualResetEvent connectWaiter = null;

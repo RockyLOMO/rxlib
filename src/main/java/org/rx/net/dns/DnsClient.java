@@ -3,6 +3,7 @@ package org.rx.net.dns;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.resolver.dns.*;
+import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
@@ -10,7 +11,9 @@ import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.rx.core.Tasks.await;
 
@@ -18,7 +21,7 @@ public class DnsClient extends Disposable {
     static class DnsServerAddressStreamProviderImpl implements DnsServerAddressStreamProvider {
         final DnsServerAddresses nameServer;
 
-        public DnsServerAddressStreamProviderImpl(List<InetSocketAddress> nameServerList) {
+        public DnsServerAddressStreamProviderImpl(Iterable<InetSocketAddress> nameServerList) {
             nameServer = DnsServerAddresses.sequential(nameServerList);
         }
 
@@ -37,14 +40,17 @@ public class DnsClient extends Disposable {
     }
 
     final DnsNameResolver nameResolver;
+    @Getter
+    final Set<InetSocketAddress> serverAddresses;
 
     public DnsClient(@NonNull InetSocketAddress... nameServerList) {
-        this(Sockets.getUdpEventLoop(), nameServerList);
+        this(Sockets.getUdpEventLoop(), Arrays.toList(nameServerList));
     }
 
-    public DnsClient(@NonNull EventLoopGroup eventLoopGroup, @NonNull InetSocketAddress... nameServerList) {
+    public DnsClient(@NonNull EventLoopGroup eventLoopGroup, @NonNull List<InetSocketAddress> nameServerList) {
+        serverAddresses = new LinkedHashSet<>(nameServerList);
         nameResolver = new DnsNameResolverBuilder(eventLoopGroup.next())
-                .nameServerProvider(nameServerList.length > 0 ? new DnsServerAddressStreamProviderImpl(Arrays.toList(nameServerList))
+                .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
                         : DnsServerAddressStreamProviders.platformDefault())
                 .channelType(NioDatagramChannel.class)
                 .socketChannelType(Sockets.channelClass()).build();

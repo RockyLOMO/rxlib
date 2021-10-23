@@ -5,14 +5,14 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
-import org.rx.bean.IncrementGenerator;
+import org.rx.bean.IdGenerator;
 import org.rx.bean.InterceptProxy;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.impl.StatefulRpcClient;
 import org.rx.net.rpc.protocol.EventFlag;
-import org.rx.net.rpc.protocol.EventPack;
-import org.rx.net.rpc.protocol.MethodPack;
+import org.rx.net.rpc.protocol.EventMessage;
+import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.core.*;
 import org.rx.net.rpc.packet.ErrorPacket;
 import org.rx.util.BeanMapper;
@@ -34,7 +34,7 @@ import static org.rx.core.App.*;
 public final class Remoting {
     public static class ClientBean {
         final ManualResetEvent waiter = new ManualResetEvent();
-        MethodPack pack;
+        MethodMessage pack;
     }
 
     @RequiredArgsConstructor
@@ -65,7 +65,6 @@ public final class Remoting {
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
     private static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
-    private static final IncrementGenerator idGenerator = new IncrementGenerator();
     private static final Map<StatefulRpcClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
@@ -102,7 +101,7 @@ public final class Remoting {
                         case 3:
                             setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
-                            pack = new EventPack(eventName, EventFlag.SUBSCRIBE);
+                            pack = new EventMessage(eventName, EventFlag.SUBSCRIBE);
                             log.info("clientSide event {} -> SUBSCRIBE", eventName);
                             break;
                     }
@@ -111,7 +110,7 @@ public final class Remoting {
                     if (args.length == 2) {
                         setReturnValue(clientBean, invokeSuper(m, p));
                         String eventName = (String) args[0];
-                        pack = new EventPack(eventName, EventFlag.UNSUBSCRIBE);
+                        pack = new EventMessage(eventName, EventFlag.UNSUBSCRIBE);
                         log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
                     }
                     break;
@@ -124,10 +123,10 @@ public final class Remoting {
                         isCompute.remove();
 
                         setReturnValue(clientBean, invokeSuper(m, p));
-                        EventPack eventPack = new EventPack((String) args[0], EventFlag.PUBLISH);
-                        eventPack.eventArgs = (EventArgs) args[1];
-                        pack = eventPack;
-                        log.info("clientSide event {} -> PUBLISH", eventPack.eventName);
+                        EventMessage eventMessage = new EventMessage((String) args[0], EventFlag.PUBLISH);
+                        eventMessage.eventArgs = (EventArgs) args[1];
+                        pack = eventMessage;
+                        log.info("clientSide event {} -> PUBLISH", eventMessage.eventName);
                     }
                     break;
                 case "eventFlags":
@@ -139,7 +138,7 @@ public final class Remoting {
             }
 
             if (pack == null) {
-                pack = clientBean.pack = new MethodPack(idGenerator.next(), m.getName(), args);
+                pack = clientBean.pack = new MethodMessage(IdGenerator.DEFAULT.increment(), m.getName(), args);
             }
             RpcClientPool pool = clientPools.computeIfAbsent(facadeConfig, k -> {
                 log.info("RpcClientPool {}", toJsonString(k));
@@ -179,8 +178,8 @@ public final class Remoting {
             StatefulRpcClient client = sync.v;
             Map<Integer, ClientBean> waitBeans = null;
 
-            MethodPack methodPack = as(pack, MethodPack.class);
-            ProceedEventArgs eventArgs = methodPack != null ? new ProceedEventArgs(contract, methodPack.parameters, false) : null;
+            MethodMessage methodMessage = as(pack, MethodMessage.class);
+            ProceedEventArgs eventArgs = methodMessage != null ? new ProceedEventArgs(contract, methodMessage.parameters, false) : null;
             try {
                 client.send(pack);
                 if (eventArgs != null) {
@@ -230,8 +229,8 @@ public final class Remoting {
             } finally {
                 if (eventArgs != null) {
                     App.log(eventArgs, msg -> {
-                        msg.appendLine("Rpc client %s.%s @ %s", contract.getSimpleName(), methodPack.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
-                        msg.appendLine("Request:\t%s", toJsonString(methodPack.parameters));
+                        msg.appendLine("Rpc client %s.%s @ %s", contract.getSimpleName(), methodMessage.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
+                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
                         if (eventArgs.getError() != null) {
                             msg.appendLine("Response:\t%s", eventArgs.getError().getMessage());
                         } else if (clientBean.pack == null) {
@@ -257,7 +256,7 @@ public final class Remoting {
     private static void init(StatefulRpcClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
         client.onError = (s, e) -> e.setCancel(true);
         client.onReceive = (s, e) -> {
-            if (tryAs(e.getValue(), EventPack.class, x -> {
+            if (tryAs(e.getValue(), EventMessage.class, x -> {
                 switch (x.flag) {
                     case BROADCAST:
                     case COMPUTE_ARGS:
@@ -279,7 +278,7 @@ public final class Remoting {
                 return;  //import
             }
 
-            MethodPack svrPack = (MethodPack) e.getValue();
+            MethodMessage svrPack = (MethodMessage) e.getValue();
 //            log.debug("recv: {}", svrPack.returnValue);
             ClientBean clientBean = getClientBeans(client).get(svrPack.id);
             if (clientBean == null) {
@@ -297,7 +296,7 @@ public final class Remoting {
 
     private static void setReturnValue(ClientBean clientBean, Object value) {
         if (clientBean.pack == null) {
-            clientBean.pack = new MethodPack(idGenerator.next(), null, null);
+            clientBean.pack = new MethodMessage(IdGenerator.DEFAULT.increment(), null, null);
         }
         clientBean.pack.returnValue = value;
     }
@@ -323,7 +322,7 @@ public final class Remoting {
                 s.send(e.getClient(), new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
             };
             bean.server.onReceive = (s, e) -> {
-                if (tryAs(e.getValue(), EventPack.class, p -> {
+                if (tryAs(e.getValue(), EventMessage.class, p -> {
                     ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
                     switch (p.flag) {
                         case SUBSCRIBE:
@@ -351,7 +350,7 @@ public final class Remoting {
                                             log.warn("serverSide event {} subscribe empty", p.eventName);
                                         } else {
                                             eCtx.computingClient = computingClient;
-                                            EventPack pack = new EventPack(p.eventName, EventFlag.COMPUTE_ARGS);
+                                            EventMessage pack = new EventMessage(p.eventName, EventFlag.COMPUTE_ARGS);
                                             pack.computeId = UUID.randomUUID();
                                             pack.eventArgs = args;
                                             eventBean.contextMap.put(pack.computeId, eCtx);
@@ -400,7 +399,7 @@ public final class Remoting {
                     return;
                 }
 
-                MethodPack pack = (MethodPack) e.getValue();
+                MethodMessage pack = (MethodMessage) e.getValue();
                 ProceedEventArgs args = new ProceedEventArgs(contractInstance.getClass(), pack.parameters, false);
                 try {
                     pack.returnValue = RemotingContext.invoke(() -> args.proceed(() ->
@@ -429,9 +428,9 @@ public final class Remoting {
         }).server;
     }
 
-    private static void broadcast(RpcServer s, EventPack p, ServerBean.EventBean eventBean, ServerBean.EventContext context) {
+    private static void broadcast(RpcServer s, EventMessage p, ServerBean.EventBean eventBean, ServerBean.EventContext context) {
         List<Integer> allow = s.getConfig().getEventBroadcastVersions();
-        EventPack pack = new EventPack(p.eventName, EventFlag.BROADCAST);
+        EventMessage pack = new EventMessage(p.eventName, EventFlag.BROADCAST);
         pack.eventArgs = context.computedArgs;
         tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
         for (RpcServerClient client : eventBean.subscribe) {

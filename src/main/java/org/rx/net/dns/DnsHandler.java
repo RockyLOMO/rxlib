@@ -33,7 +33,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final DnsClient client;
     final Cache<Object, Object> cache;
 
-    public DnsHandler(DnsServer server, boolean isTcp, EventLoopGroup eventLoopGroup, InetSocketAddress... nameServerList) {
+    public DnsHandler(DnsServer server, boolean isTcp, EventLoopGroup eventLoopGroup, List<InetSocketAddress> nameServerList) {
         this.server = server;
         this.isTcp = isTcp;
         client = new DnsClient(eventLoopGroup, nameServerList);

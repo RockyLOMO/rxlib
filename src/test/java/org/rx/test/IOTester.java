@@ -319,7 +319,7 @@ public class IOTester {
 
     @Test
     public void memoryStream() {
-        MemoryStream stream = new MemoryStream(32, false, true);
+        MemoryStream stream = new MemoryStream(32, false);
         testSeekStream(stream);
 
         stream.setPosition(0L);

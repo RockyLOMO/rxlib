@@ -6,19 +6,15 @@ import lombok.Setter;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.RxConfig;
 import org.rx.bean.SUID;
-import org.rx.core.exception.ApplicationException;
 import org.rx.core.exception.InvalidException;
 
 import java.io.*;
-
-import static org.rx.core.App.values;
 
 public final class MemoryStream extends IOStream<InputStream, OutputStream> implements Serializable {
     private static final long serialVersionUID = 6209361024929311435L;
     @Setter
     private String name;
     private boolean directBuffer;
-    private boolean publiclyVisible;
     private transient ByteBuf buffer;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -127,28 +123,28 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     @ErrorCode
     public ByteBuf getBuffer() {
         checkNotClosed();
-        if (!publiclyVisible) {
-            throw new ApplicationException(values());
-        }
 
         return buffer;
     }
 
     public MemoryStream() {
-        this(RxConfig.HEAP_BUF_SIZE, false, false);
+        this(RxConfig.HEAP_BUF_SIZE, false);
     }
 
-    public MemoryStream(int initialCapacity, boolean directBuffer, boolean publiclyVisible) {
+    public MemoryStream(boolean directBuffer) {
+        this(RxConfig.HEAP_BUF_SIZE, directBuffer);
+    }
+
+    public MemoryStream(int initialCapacity, boolean directBuffer) {
         buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity) : Bytes.heapBuffer(initialCapacity, true);
-        this.publiclyVisible = publiclyVisible;
     }
 
     public MemoryStream(byte[] buffer, int offset, int length) {
         this(Bytes.wrap(buffer, offset, length), false);
     }
 
-    public MemoryStream(@NonNull ByteBuf buf, boolean autoPosition) {
-        if (autoPosition) {
+    public MemoryStream(@NonNull ByteBuf buf, boolean forWrite) {
+        if (forWrite) {
             buf.readerIndex(buf.writerIndex());
         }
         this.buffer = buf;

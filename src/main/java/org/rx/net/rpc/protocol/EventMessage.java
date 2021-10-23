@@ -7,7 +7,7 @@ import java.io.Serializable;
 import java.util.UUID;
 
 @RequiredArgsConstructor
-public class EventPack implements Serializable {
+public class EventMessage implements Serializable {
     private static final long serialVersionUID = 49475184213268784L;
     public final String eventName;
     public final EventFlag flag;

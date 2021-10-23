@@ -2,9 +2,7 @@ package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.socksx.SocksPortUnificationServerHandler;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
@@ -25,13 +23,13 @@ public class ShadowsocksClient extends Disposable {
         this.config = config;
         tcpBootstrap = Sockets.serverBootstrap(ctx -> {
             ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getIdleTimeout(), TimeUnit.SECONDS) {
-                @Override
-                protected IdleStateEvent newIdleStateEvent (IdleState state,boolean first){
-                    ctx.close();
-                    return super.newIdleStateEvent(state, first);
-                }
-            },
-            new SocksPortUnificationServerHandler(), SocksServerHandler.INSTANCE,
+                                       @Override
+                                       protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
+                                           ctx.close();
+                                           return super.newIdleStateEvent(state, first);
+                                       }
+                                   },
+                    new SocksPortUnificationServerHandler(), SocksServerHandler.INSTANCE,
                     new SSClientTcpProxyHandler(config));
         });
         tcpBootstrap.bind(localSocksPort).addListener(f -> {
@@ -40,15 +38,9 @@ public class ShadowsocksClient extends Disposable {
             }
         });
 
-        Bootstrap udpBootstrap = Sockets.udpBootstrap()
-                .option(ChannelOption.SO_RCVBUF, 64 * 1024)// 设置UDP读缓冲区为64k
-                .option(ChannelOption.SO_SNDBUF, 64 * 1024)// 设置UDP写缓冲区为64k
-                .handler(new ChannelInitializer<NioDatagramChannel>() {
-                    @Override
-                    protected void initChannel(NioDatagramChannel ctx) throws Exception {
-                        ctx.pipeline().addLast(new SSClientUdpProxyHandler(config));
-                    }
-                });
+        Bootstrap udpBootstrap = Sockets.udpBootstrap(ch -> ch.pipeline().addLast(new SSClientUdpProxyHandler(config)))
+                .option(ChannelOption.SO_RCVBUF, 64 * 1024)  //设置UDP读缓冲区为64k
+                .option(ChannelOption.SO_SNDBUF, 64 * 1024); //设置UDP写缓冲区为64k
         udpBootstrap.bind(localSocksPort).addListener(f -> {
             if (!f.isSuccess()) {
                 log.error("Udp listened on port {} fail", localSocksPort, f.cause());

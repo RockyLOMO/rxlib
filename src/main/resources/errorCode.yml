@@ -7,8 +7,6 @@ org:
         getPosition: The stream does not support seeking
         setPosition: The stream does not support seeking
         getLength: A class derived from {0} does not support seeking
-      MemoryStream:
-        getBuffer: The MemoryStream instance was not created with a publicly visible buffer
     core:
       Reflects:
         newInstance: Constructor {0} parameter type not match

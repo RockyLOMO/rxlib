@@ -21,4 +21,6 @@ public class RpcServerClient implements Serializable {
     @Getter
     @Setter
     private HandshakePacket handshakePacket;
+
+    public volatile Object userState;
 }

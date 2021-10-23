@@ -42,15 +42,17 @@ public class DnsServer extends Disposable {
     }
 
     public DnsServer(int port, InetSocketAddress... nameServerList) {
+        List<InetSocketAddress> addresses = Arrays.toList(nameServerList);
+
         serverBootstrap = Sockets.serverBootstrap(channel -> {
             channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, true, DnsServer.this.serverBootstrap.config().childGroup(), nameServerList));
+                    new DnsHandler(DnsServer.this, true, DnsServer.this.serverBootstrap.config().childGroup(), addresses));
         });
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
         Bootstrap bootstrap = Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> {
             channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), nameServerList));
+                    new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), addresses));
         });
         bootstrap.bind(port).addListener(Sockets.logBind(port));
     }

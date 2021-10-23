@@ -1,19 +1,20 @@
 package org.rx.bean;
 
-public class IncrementGenerator {
+public class IdGenerator {
+    public static final IdGenerator DEFAULT = new IdGenerator();
     private int val;
     private final int max;
 
-    public IncrementGenerator() {
+    public IdGenerator() {
         this(0, Integer.MAX_VALUE);
     }
 
-    public IncrementGenerator(int val, int max) {
-        this.val = val;
+    public IdGenerator(int min, int max) {
+        this.val = min;
         this.max = max;
     }
 
-    public synchronized int next() {
+    public synchronized int increment() {
         int i = ++val;
         if (i == max) {
             val = 0;
