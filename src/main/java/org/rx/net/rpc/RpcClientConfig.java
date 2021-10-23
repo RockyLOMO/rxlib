@@ -48,7 +48,7 @@ public class RpcClientConfig extends SocketConfig {
     private static final long serialVersionUID = -4952694662640163676L;
     @NotNull
     private InetSocketAddress serverEndpoint;
-    private boolean enableReconnect;
+    private volatile boolean enableReconnect;
     private int eventVersion = DEFAULT_VERSION;
     private int minPoolSize;
     private int maxPoolSize = NON_POOL_SIZE;

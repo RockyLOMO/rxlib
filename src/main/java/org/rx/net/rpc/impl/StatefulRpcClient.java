@@ -200,6 +200,10 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     synchronized void doConnect(boolean reconnect, ManualResetEvent syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
+            if (!isShouldReconnect()) {
+                return;
+            }
+
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
             raiseEvent(onReconnecting, args);
             ep = args.getValue();
