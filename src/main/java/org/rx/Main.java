@@ -199,7 +199,7 @@ public final class Main implements SocksSupport {
                 }
             };
             fn.invoke();
-            Tasks.schedule(fn, 60 * 4 * 1000);
+            Tasks.schedule(fn, conf.autoWhiteListSeconds * 1000L);
 
             InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
@@ -244,8 +244,10 @@ public final class Main implements SocksSupport {
     public static class SSConf {
         public List<String> shadowServer;
         public String socksPwd;
+        public int autoWhiteListSeconds;
         public int steeringTTL;
-        public List<String> godaddyDdns;
+        public int ddnsSeconds;
+        public List<String> ddnsDomains;
         public String godaddyKey;
 
         public boolean pcap2socks;
@@ -263,7 +265,7 @@ public final class Main implements SocksSupport {
             }
 
             InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
-            for (String ddns : conf.getGodaddyDdns()) {
+            for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {
                     continue;
@@ -273,7 +275,7 @@ public final class Main implements SocksSupport {
                 log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
                 HttpClient.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress());
             }
-        }, 60 * 1000);
+        }, conf.ddnsSeconds * 1000L);
     }
 
     @Override
