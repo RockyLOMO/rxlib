@@ -21,7 +21,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.UdpSocks5Upstream;
+import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -31,7 +31,6 @@ import org.rx.util.function.TripleAction;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,15 +55,7 @@ public final class Main implements SocksSupport {
         String mode = options.get("shadowMode");
 
         boolean udp2raw = false;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
-        AuthenticEndpoint udp2rawSvrEp;
-        String udp2rawEndpoint = options.get("udp2rawEndpoint");
-        if (!Strings.isEmpty(udp2rawEndpoint)) {
-            log.info("udp2rawEndpoint: {}", udp2rawEndpoint);
-            udp2rawSvrEp = AuthenticEndpoint.valueOf(udp2rawEndpoint);
-        } else {
-            udp2rawSvrEp = null;
-        }
+//        Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
 
         if (eq(mode, "1")) {
             AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
@@ -89,7 +80,6 @@ public final class Main implements SocksSupport {
             rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
-            String arg0 = "conf.yml";
             String[] arg1 = Strings.split(options.get("shadowUsers"), ",");
             if (arg1.length == 0) {
                 log.info("Invalid shadowUsers arg");
@@ -97,7 +87,7 @@ public final class Main implements SocksSupport {
             }
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-            YamlFileWatcher<SSConf> watcher = new YamlFileWatcher<>(SSConf.class, ".", p -> p.endsWith(arg0));
+            YamlFileWatcher<SSConf> watcher = new YamlFileWatcher<>(SSConf.class);
             watcher.onChanged.combine((s, e) -> {
                 if (e.getConfigObject() == null) {
                     return;
@@ -123,13 +113,13 @@ public final class Main implements SocksSupport {
                 }
                 log.info("reload svrs {}", toJsonString(svrs));
             });
-            watcher.raiseEvent(Paths.get(arg0).toString());
+            watcher.raiseChangeWithDefaultFile();
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
                         CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
                 SocksUser user = new SocksUser(sArgs[2]);
-                user.setPassword("202002");
+                user.setPassword(conf.socksPwd);
                 user.setMaxIpCount(Integer.parseInt(sArgs[3]));
                 return Tuple.of(config, user);
             });
@@ -146,9 +136,11 @@ public final class Main implements SocksSupport {
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
-            frontConf.setEnableUdp2raw(udp2raw);
+            frontConf.setEnableUdp2raw(conf.udp2raw);
             frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
-            if (udp2rawSvrEp != null) {
+            if (frontConf.isEnableUdp2raw() && conf.udp2rawEndpoint != null) {
+                log.info("udp2rawEndpoint: {}", conf.udp2rawEndpoint);
+                AuthenticEndpoint udp2rawSvrEp = AuthenticEndpoint.valueOf(conf.udp2rawEndpoint);
                 frontConf.getUdp2rawServers().add(udp2rawSvrEp.getEndpoint());
             }
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1));
@@ -165,12 +157,11 @@ public final class Main implements SocksSupport {
                     e.setValue(new Upstream(dstEp));
                 }
             };
-            int steeringTTL = 60;
             frontSvr.onRoute.replace(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }
-                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
+                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
             });
             frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
@@ -178,7 +169,7 @@ public final class Main implements SocksSupport {
                 }
 
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-                if (e.getSourceEndpoint().getAddress().isLoopbackAddress()) {
+                if (conf.pcap2socks && e.getSourceEndpoint().getAddress().isLoopbackAddress()) {
                     Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
                     if (cache.get(cacheKey("pcap:", e.getSourceEndpoint().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
                             .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
@@ -196,7 +187,7 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-                e.setValue(new UdpSocks5Upstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
+                e.setValue(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
@@ -252,8 +243,14 @@ public final class Main implements SocksSupport {
     @Data
     public static class SSConf {
         public List<String> shadowServer;
+        public String socksPwd;
+        public int steeringTTL;
         public List<String> godaddyDdns;
         public String godaddyKey;
+
+        public boolean pcap2socks;
+        public boolean udp2raw;
+        public String udp2rawEndpoint;
     }
 
     static SSConf conf;

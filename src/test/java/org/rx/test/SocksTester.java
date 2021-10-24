@@ -23,7 +23,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.UdpSocks5Upstream;
+import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
@@ -375,7 +375,7 @@ public class SocksTester extends TConfig {
                 }
                 return;
             }
-            e.setValue(new UdpSocks5Upstream(dstEp, frontConf, shadowServers::next));
+            e.setValue(new Socks5UdpUpstream(dstEp, frontConf, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

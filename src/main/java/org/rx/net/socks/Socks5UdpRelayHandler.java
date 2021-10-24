@@ -6,7 +6,6 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -32,7 +31,6 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
      * @param in
      * @throws Exception
      */
-    @SneakyThrows
     @Override
     protected void channelRead0(ChannelHandlerContext inbound, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
@@ -76,15 +74,15 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             }).bind(0).addListener(Sockets.logBind(0))
                     //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
 //                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
-                    .syncUninterruptibly().channel(), srcEp, dstEp, upstream, false)
-                    ;
+                    .sync().channel(), srcEp, dstEp, upstream, false);
         });
 
         Upstream upstream = SocksContext.upstream(outbound);
-        UnresolvedEndpoint upDstEp = upstream.getDestination();
-        AuthenticEndpoint svrEp = upstream.getSocksServer();
-        if (svrEp != null) {
-            upDstEp = new UnresolvedEndpoint(svrEp.getEndpoint());
+//        UnresolvedEndpoint upDstEp = upstream.getDestination();  //udp dstEp可能多个，但upstream只有一个，所以直接用dstEp。
+        UnresolvedEndpoint upDstEp = dstEp;
+        AuthenticEndpoint socksServer = upstream.getSocksServer();
+        if (socksServer != null) {
+            upDstEp = new UnresolvedEndpoint(socksServer.getEndpoint());
             inBuf.readerIndex(0);
         }
         UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));

@@ -50,7 +50,8 @@
     </appender>
 
     <!--    <logger name="org.rx.io" level="DEBUG"/>-->
-    <!--    <logger name="org.rx.net" level="DEBUG"/>-->
+<!--    <logger name="org.rx.net.socks.Socks5UdpRelayHandler" level="DEBUG"/>-->
+<!--    <logger name="org.rx.net.socks.UdpManager" level="DEBUG"/>-->
 
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>

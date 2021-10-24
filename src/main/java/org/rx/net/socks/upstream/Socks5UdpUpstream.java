@@ -11,11 +11,11 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
-public class UdpSocks5Upstream extends Upstream {
+public class Socks5UdpUpstream extends Upstream {
     final SocksConfig config;
     final Func<UpstreamSupport> router;
 
-    public UdpSocks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
+    public Socks5UdpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
         super(dstEp);
         this.config = config;
         this.router = router;
