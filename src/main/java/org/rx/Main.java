@@ -164,13 +164,13 @@ public final class Main implements SocksSupport {
                 }
             };
             int steeringTTL = 60;
-            frontSvr.onRoute.combine(firstRoute, (s, e) -> {
+            frontSvr.onRoute.replace(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }
                 e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
             });
-            frontSvr.onUdpRoute.combine(firstRoute, (s, e) -> {
+            frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }

@@ -50,7 +50,7 @@
     </appender>
 
     <!--    <logger name="org.rx.io" level="DEBUG"/>-->
-    <logger name="org.rx.net" level="DEBUG"/>
+    <!--    <logger name="org.rx.net" level="DEBUG"/>-->
 
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>
