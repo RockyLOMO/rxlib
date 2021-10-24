@@ -443,11 +443,6 @@ public final class App extends SystemUtils {
         }
     }
 
-    public static <T> T loadYaml(@NonNull String yamlContent, @NonNull Class<T> beanType) {
-        Yaml yaml = new Yaml();
-        return yaml.loadAs(yamlContent, beanType);
-    }
-
     public static <T> String dumpYaml(@NonNull T bean) {
         Yaml yaml = new Yaml();
         return yaml.dump(bean);

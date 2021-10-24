@@ -39,7 +39,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -53,15 +52,15 @@ public class SocksTester extends TConfig {
     @Test
     public void rpcStatefulApi() {
         UserManagerImpl svcImpl = new UserManagerImpl();
-        startServer(svcImpl, endpoint0);
+        startServer(svcImpl, endpoint_3307);
 
         List<UserManager> facadeGroup = new ArrayList<>();
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0)));
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0)));
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
         tst(svcImpl, facadeGroup);
         //重启server，客户端自动重连
-        restartServer(svcImpl, endpoint0, startDelay);
+        restartServer(svcImpl, endpoint_3307, startDelay);
         tst(svcImpl, facadeGroup);
 
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
@@ -149,9 +148,9 @@ public class SocksTester extends TConfig {
     @Test
     public void rpcReconnect() {
         UserManagerImpl svcImpl = new UserManagerImpl();
-        startServer(svcImpl, endpoint0);
+        startServer(svcImpl, endpoint_3307);
         AtomicBoolean connected = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint0, 0), (p, c) -> {
+        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0), (p, c) -> {
             p.attachEvent(eventName, (s, e) -> {
                 System.out.println("attachEvent callback");
             }, false);
@@ -159,10 +158,10 @@ public class SocksTester extends TConfig {
 
             c.onReconnecting.combine((s, e) -> {
                 InetSocketAddress next;
-                if (e.getValue().equals(endpoint0)) {
-                    next = endpoint1;
+                if (e.getValue().equals(endpoint_3307)) {
+                    next = endpoint_3308;
                 } else {
-                    next = endpoint0;  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
+                    next = endpoint_3307;  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
                 }
                 log.debug("reconnect {}", next);
                 e.setValue(next);
@@ -173,7 +172,7 @@ public class SocksTester extends TConfig {
         assert userManager.computeInt(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
-        restartServer(svcImpl, endpoint1, startDelay); //10秒后开启3308端口实例，重连3308成功
+        restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
         for (int i = 0; i < max; ) {
             if (!connected.get()) {
@@ -209,13 +208,13 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void rpcPoolMode() {
-        Remoting.listen(HttpUserManager.INSTANCE, endpoint0.getPort());
+        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort());
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint0, 1, threadCount));
+        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
@@ -230,9 +229,9 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public synchronized void udpRpc() {
-        UdpClient c1 = new UdpClient(endpoint0.getPort());
+        UdpClient c1 = new UdpClient(endpoint_3307.getPort());
         c1.onReceive.combine((s, e) -> System.out.println("c1: " + toJsonString(e)));
-        UdpClient c2 = new UdpClient(endpoint1.getPort());
+        UdpClient c2 = new UdpClient(endpoint_3308.getPort());
         AtomicInteger count = new AtomicInteger();
         c2.onReceive.combine((s, e) -> {
             System.out.println("c2:" + toJsonString(e));
@@ -241,13 +240,13 @@ public class SocksTester extends TConfig {
             }
         });
 
-        c1.sendAsync(endpoint0, "我是1");
+        c1.sendAsync(endpoint_3307, "我是1");
         for (int i = 0; i < 10; i++) {
             int finalI = i;
-            Tasks.run(() -> c2.sendAsync(endpoint0, "我是2 + " + finalI));
+            Tasks.run(() -> c2.sendAsync(endpoint_3307, "我是2 + " + finalI));
         }
 
-        c1.sendAsync(endpoint1, "wlz", 15000, true);
+        c1.sendAsync(endpoint_3308, "wlz", 15000, true);
         System.out.println("done");
         wait();
     }
@@ -422,7 +421,6 @@ public class SocksTester extends TConfig {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
 
-        final String host = "devops.f-li.cn";
         final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         DnsServer server = new DnsServer(54, nsEp);
@@ -443,41 +441,37 @@ public class SocksTester extends TConfig {
             }
         }))));
         server.setHostsTtl(5);
-        server.addHosts(host, ip2, ip4);
+        server.addHosts(host_devops, ip2, ip4);
 
         //hostTtl
-        DnsClient localClient = new DnsClient(localNsEp);
-        List<InetAddress> result = localClient.resolveAll(host);
-        System.out.println(toJsonString(result));
+        DnsClient client = new DnsClient(localNsEp);
+        List<InetAddress> result = client.resolveAll(host_devops);
+        System.out.println("eq: " + result);
         assert result.contains(ip2) && result.contains(ip4);
         Tasks.scheduleOnce(() -> {
-            server.removeHosts(host, ip2);
+            server.removeHosts(host_devops, ip2);
 
-            List<InetAddress> x = localClient.resolveAll(host);
+            List<InetAddress> x = client.resolveAll(host_devops);
             System.out.println(toJsonString(x));
             assert x.contains(ip4);
             _exit();
         }, 6000);
 
+        InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
+//        IPAddress current = IPSearcher.DEFAULT.current();
+//        System.out.println(current);
+        List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
+        System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
         Sockets.injectNameService(localNsEp);
 
-        List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host);
-        InetAddress[] localResult = InetAddress.getAllByName(host);
-        System.out.println(wanResult + "\n" + toJsonArray(localResult));
+        List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host_devops);
+        InetAddress[] localResult = InetAddress.getAllByName(host_devops);
+        System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
         assert !wanResult.get(0).equals(localResult[0]);
 
-//        server.addHostsFile(TConfig.path("hosts.txt"));
-//        client.resolve("cloud.f-li.cn").equals(InetAddress.getByName("192.168.31.7"));
-
-//        String cacheDomain = "www.baidu.com";
-//        InetAddress resolve = client.resolve(cacheDomain);
-//        System.out.println(resolve);
-//
-//        sleep((60 + 10) * 1000);
-//        client.clearCache();
-//        resolve = client.resolve(cacheDomain);
-//        System.out.println(resolve);
+        server.addHostsFile(path("hosts.txt"));
+        assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
 
         wait();
     }

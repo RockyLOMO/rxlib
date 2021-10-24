@@ -1,5 +1,6 @@
 package org.rx;
 
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -8,11 +9,11 @@ import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.io.FileWatcher;
-import org.rx.io.Files;
+import org.rx.io.YamlFileWatcher;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.HttpClient;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -31,7 +32,6 @@ import org.rx.util.function.TripleAction;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
-import java.nio.file.StandardWatchEventKinds;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -89,7 +89,7 @@ public final class Main implements SocksSupport {
             rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
             Remoting.listen(app = new Main(backSvr), rpcConf);
         } else {
-            String arg0 = "shadowServer.txt";
+            String arg0 = "conf.yml";
             String[] arg1 = Strings.split(options.get("shadowUsers"), ",");
             if (arg1.length == 0) {
                 log.info("Invalid shadowUsers arg");
@@ -97,12 +97,14 @@ public final class Main implements SocksSupport {
             }
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-            FileWatcher watcher = new FileWatcher(".", p -> p.endsWith(arg0));
+            YamlFileWatcher<SSConf> watcher = new YamlFileWatcher<>(SSConf.class, ".", p -> p.endsWith(arg0));
             watcher.onChanged.combine((s, e) -> {
-                if (!e.isModify()) {
+                if (e.getConfigObject() == null) {
                     return;
                 }
-                NQuery<AuthenticEndpoint> svrs = NQuery.of(Files.readLines(e.getPath().toString())).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
+
+                conf = e.getConfigObject();
+                NQuery<AuthenticEndpoint> svrs = NQuery.of(conf.shadowServer).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
                 if (!svrs.any() || svrs.any(Objects::isNull)) {
                     throw new InvalidException("Invalid shadowServer arg");
                 }
@@ -121,7 +123,7 @@ public final class Main implements SocksSupport {
                 }
                 log.info("reload svrs {}", toJsonString(svrs));
             });
-            watcher.raiseEvent(watcher.onChanged, new FileWatcher.FileChangeEventArgs(Paths.get(arg0), StandardWatchEventKinds.ENTRY_MODIFY));
+            watcher.raiseEvent(Paths.get(arg0).toString());
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
@@ -239,14 +241,43 @@ public final class Main implements SocksSupport {
                     return new Socks5Upstream(dstEp, directConf, () -> new UpstreamSupport(srvEp, null));
                 }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
             }
+
+            app.ddns();
         }
 
         log.info("Server started..");
         app.await();
     }
 
+    @Data
+    public static class SSConf {
+        public List<String> shadowServer;
+        public List<String> godaddyDdns;
+        public String godaddyKey;
+    }
+
+    static SSConf conf;
     final SocksProxyServer proxyServer;
-    final DnsClient outlandClient = DnsClient.outlandClient();
+
+    void ddns() {
+        Tasks.schedule(() -> {
+            if (conf == null) {
+                log.warn("conf is null");
+            }
+
+            InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
+            for (String ddns : conf.getGodaddyDdns()) {
+                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
+                if (currentIps.contains(wanIp)) {
+                    continue;
+                }
+                int i = ddns.indexOf(".");
+                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
+                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
+                HttpClient.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress());
+            }
+        }, 60 * 1000);
+    }
 
     @Override
     public void fakeEndpoint(SUID hash, String endpoint) {
@@ -255,7 +286,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public List<InetAddress> resolveHost(String host) {
-        return outlandClient.resolveAll(host);
+        return DnsClient.outlandClient().resolveAll(host);
     }
 
     @Override
