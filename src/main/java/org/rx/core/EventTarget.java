@@ -44,7 +44,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
             d.combine(event);
             return;
         }
-        d.set(event);
+        d.single(event);
     }
 
     default <TArgs extends EventArgs> void detachEvent(@NonNull String eventName, TripleAction<TSender, TArgs> event) {

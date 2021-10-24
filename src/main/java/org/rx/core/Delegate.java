@@ -34,15 +34,6 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return new Delegate<TSender, TArgs>().combine(delegates);
     }
 
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(TripleAction<TSender, TArgs> fn) {
-        if (fn instanceof Delegate) {
-            return (Delegate<TSender, TArgs>) fn;
-        }
-        Delegate<TSender, TArgs> delegate = new Delegate<>();
-        delegate.invocationList.add(fn);
-        return delegate;
-    }
-
     @SneakyThrows
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(@NonNull EventTarget<TSender> target, @NonNull String fnName) {
         Delegate<TSender, TArgs> d;
@@ -62,17 +53,12 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return d;
     }
 
-    @Getter
-    private final Set<TripleAction<TSender, TArgs>> invocationList = new CopyOnWriteArraySet<>();
+    private final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
 
     @SafeVarargs
-    public final Delegate<TSender, TArgs> set(TripleAction<TSender, TArgs>... delegates) {
-        invocationList.clear();
+    public final Delegate<TSender, TArgs> single(TripleAction<TSender, TArgs>... delegates) {
+        invocations.clear();
         return combine(delegates);
-    }
-
-    public void reset() {
-        invocationList.clear();
     }
 
     @SafeVarargs
@@ -84,8 +70,8 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (delegate == null) {
                 continue;
             }
-            if (!tryAs(delegate, Delegate.class, d -> invocationList.addAll(d.invocationList))) {
-                invocationList.add(delegate);
+            if (!tryAs(delegate, Delegate.class, d -> invocations.addAll(d.invocations))) {
+                invocations.add(delegate);
             }
         }
         return this;
@@ -100,10 +86,15 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (delegate == null) {
                 continue;
             }
-            if (!tryAs(delegate, Delegate.class, d -> invocationList.removeAll(d.invocationList))) {
-                invocationList.remove(delegate);
+            if (!tryAs(delegate, Delegate.class, d -> invocations.removeAll(d.invocations))) {
+                invocations.remove(delegate);
             }
         }
+        return this;
+    }
+
+    public Delegate<TSender, TArgs> removeAll() {
+        invocations.clear();
         return this;
     }
 
@@ -120,7 +111,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     }
 
     private void innerRaise(TSender target, TArgs args, FlagsEnum<EventTarget.EventFlags> flags) throws Throwable {
-        for (TripleAction<TSender, TArgs> delegate : invocationList) {
+        for (TripleAction<TSender, TArgs> delegate : invocations) {
             try {
                 delegate.invoke(target, args);
                 if (args.isCancel()) {
