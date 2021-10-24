@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.io.Serializable;
 
+//EventObject
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class EventArgs implements Serializable {
     public static final EventArgs EMPTY = new EventArgs();

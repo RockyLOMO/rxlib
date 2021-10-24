@@ -3,6 +3,7 @@ package org.rx.io;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventArgs;
 import org.rx.core.EventTarget;
@@ -10,7 +11,6 @@ import org.rx.core.Tasks;
 
 import java.nio.file.*;
 import java.util.concurrent.Future;
-import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import static org.rx.core.App.*;
@@ -36,8 +36,7 @@ public class FileWatcher extends Disposable implements EventTarget<FileWatcher> 
         }
     }
 
-    public volatile BiConsumer<FileWatcher, FileChangeEventArgs> Changed;
-
+    public final Delegate<FileWatcher, FileChangeEventArgs> onChanged = Delegate.create();
     @Getter
     private final String directoryPath;
     private final WatchService service;
@@ -89,6 +88,6 @@ public class FileWatcher extends Disposable implements EventTarget<FileWatcher> 
         if (filter != null && !filter.test(absolutePath)) {
             return;
         }
-        raiseEvent(Changed, new FileChangeEventArgs(absolutePath, event.kind()));
+        raiseEvent(onChanged, new FileChangeEventArgs(absolutePath, event.kind()));
     }
 }

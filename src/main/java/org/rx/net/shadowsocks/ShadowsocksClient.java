@@ -29,7 +29,7 @@ public class ShadowsocksClient extends Disposable {
                                            return super.newIdleStateEvent(state, first);
                                        }
                                    },
-                    new SocksPortUnificationServerHandler(), SocksServerHandler.INSTANCE,
+                    new SocksPortUnificationServerHandler(), SocksServerHandler.DEFAULT,
                     new SSClientTcpProxyHandler(config));
         });
         tcpBootstrap.bind(localSocksPort).addListener(f -> {

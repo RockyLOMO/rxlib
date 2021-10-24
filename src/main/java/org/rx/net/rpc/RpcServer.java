@@ -20,6 +20,7 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.protocol.HandshakePacket;
 import org.rx.net.rpc.protocol.PingMessage;
+import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -27,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -126,10 +126,13 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     }
 
     public static final TaskScheduler SCHEDULER = new TaskScheduler("Rpc");
-    public volatile BiConsumer<RpcServer, RpcServerEventArgs<Serializable>> onConnected, onDisconnected, onSend, onReceive;
-    public volatile BiConsumer<RpcServer, RpcServerEventArgs<PingMessage>> onPing;
-    public volatile BiConsumer<RpcServer, RpcServerEventArgs<Throwable>> onError;
-    public volatile BiConsumer<RpcServer, EventArgs> onClosed;
+    public final Delegate<RpcServer, RpcServerEventArgs<Serializable>> onConnected = Delegate.create(),
+            onDisconnected = Delegate.create(),
+            onSend = Delegate.create(),
+            onReceive = Delegate.create();
+    public final Delegate<RpcServer, RpcServerEventArgs<PingMessage>> onPing = Delegate.create();
+    public final Delegate<RpcServer, RpcServerEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<RpcServer, EventArgs> onClosed = Delegate.create();
 
     @Getter
     private final RpcServerConfig config;
@@ -145,7 +148,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     }
 
     @Override
-    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(BiConsumer<RpcServer, TArgs> event, TArgs args) {
+    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(TripleAction<RpcServer, TArgs> event, TArgs args) {
         TaskScheduler scheduler = asyncScheduler();
         return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY);
     }

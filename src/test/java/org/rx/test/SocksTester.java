@@ -29,6 +29,7 @@ import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
+import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -156,7 +157,7 @@ public class SocksTester extends TConfig {
             }, false);
             System.out.println("attachEvent done");
 
-            c.onReconnecting = (s, e) -> {
+            c.onReconnecting.combine((s, e) -> {
                 InetSocketAddress next;
                 if (e.getValue().equals(endpoint0)) {
                     next = endpoint1;
@@ -165,7 +166,7 @@ public class SocksTester extends TConfig {
                 }
                 log.debug("reconnect {}", next);
                 e.setValue(next);
-            };
+            });
             log.debug("init ok");
             connected.set(true);
         });
@@ -230,15 +231,15 @@ public class SocksTester extends TConfig {
     @Test
     public synchronized void udpRpc() {
         UdpClient c1 = new UdpClient(endpoint0.getPort());
-        c1.onReceive = (s, e) -> System.out.println("c1: " + toJsonString(e));
+        c1.onReceive.combine((s, e) -> System.out.println("c1: " + toJsonString(e)));
         UdpClient c2 = new UdpClient(endpoint1.getPort());
         AtomicInteger count = new AtomicInteger();
-        c2.onReceive = (s, e) -> {
+        c2.onReceive.combine((s, e) -> {
             System.out.println("c2:" + toJsonString(e));
             if (count.incrementAndGet() < 2) {
                 throw new InvalidException("error");
             }
-        };
+        });
 
         c1.sendAsync(endpoint0, "我是1");
         for (int i = 0; i < 10; i++) {
@@ -344,7 +345,7 @@ public class SocksTester extends TConfig {
         }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-        BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
+        TripleAction<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
@@ -356,13 +357,13 @@ public class SocksTester extends TConfig {
                 e.setValue(new Upstream(dstEp));
             }
         };
-        frontSvr.onRoute = combine(firstRoute, (s, e) -> {
+        frontSvr.onRoute.combine(firstRoute, (s, e) -> {
             if (e.getValue() != null) {
                 return;
             }
             e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next()));
         });
-        frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
+        frontSvr.onUdpRoute.combine(firstRoute, (s, e) -> {
             if (e.getValue() != null) {
                 return;
             }

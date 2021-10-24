@@ -148,7 +148,7 @@ public final class Remoting {
             synchronized (sync) {
                 if (sync.v == null) {
                     init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
-                    sync.v.onReconnected = (s, e) -> {
+                    sync.v.onReconnected.combine((s, e) -> {
                         if (onInit != null) {
                             onInit.toConsumer().accept((T) p.getProxyObject(), (StatefulRpcClient) s);
                         }
@@ -165,7 +165,7 @@ public final class Remoting {
                                 }
                             }
                         });
-                    };
+                    });
                     if (onInit != null) {
                         sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
                         //onHandshake returnObject的情况
@@ -254,8 +254,8 @@ public final class Remoting {
     }
 
     private static void init(StatefulRpcClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
-        client.onError = (s, e) -> e.setCancel(true);
-        client.onReceive = (s, e) -> {
+        client.onError.combine((s, e) -> e.setCancel(true));
+        client.onReceive.combine((s, e) -> {
             if (tryAs(e.getValue(), EventMessage.class, x -> {
                 switch (x.flag) {
                     case BROADCAST:
@@ -287,7 +287,7 @@ public final class Remoting {
             }
             clientBean.pack = svrPack;
             clientBean.syncRoot.set();
-        };
+        });
     }
 
     private static Map<Integer, ClientBean> getClientBeans(StatefulRpcClient client) {
@@ -316,12 +316,12 @@ public final class Remoting {
     public static RpcServer listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         return serverBeans.computeIfAbsent(contractInstance, k -> {
             ServerBean bean = new ServerBean(new RpcServer(config));
-            bean.server.onClosed = (s, e) -> serverBeans.remove(contractInstance);
-            bean.server.onError = (s, e) -> {
+            bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
+            bean.server.onError.combine((s, e) -> {
                 e.setCancel(true);
                 s.send(e.getClient(), new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
-            };
-            bean.server.onReceive = (s, e) -> {
+            });
+            bean.server.onReceive.combine((s, e) -> {
                 if (tryAs(e.getValue(), EventMessage.class, p -> {
                     ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
                     switch (p.flag) {
@@ -419,7 +419,7 @@ public final class Remoting {
                 }
                 Arrays.fill(pack.parameters, null);
                 s.send(e.getClient(), pack);
-            };
+            });
             bean.server.start();
             return bean;
         }).server;

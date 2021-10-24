@@ -18,7 +18,7 @@ import java.net.InetSocketAddress;
 @Slf4j
 @ChannelHandler.Sharable
 public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksMessage> {
-    public static final SocksServerHandler INSTANCE = new SocksServerHandler();
+    public static final SocksServerHandler DEFAULT = new SocksServerHandler();
 
     private SocksServerHandler() {
     }

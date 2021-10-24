@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.StringTokenizer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -90,7 +89,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         return new FileOutHandler(new FileStream(filePath));
     }
 
-    public volatile BiConsumer<ShellCommander, ExitedEventArgs> Exited;
+    public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
     @Getter
     private final String shell;
@@ -181,7 +180,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                 tryClose(reader);
                 int exitValue = tmp.exitValue();
                 log.info("exit={} {}", exitValue, shell);
-                raiseEvent(Exited, new ExitedEventArgs(exitValue));
+                raiseEvent(onExited, new ExitedEventArgs(exitValue));
             }
         });
         return this;
@@ -220,7 +219,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         log.info("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
-        raiseEvent(Exited, new ExitedEventArgs(process.exitValue()));
+        raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
     }
 
     public synchronized void restart() {
@@ -230,7 +229,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     public ShellCommander autoRestart() {
-        Exited = combine((s, e) -> restart(), Exited);
+        onExited.combine((s, e) -> restart());
         return this;
     }
 }

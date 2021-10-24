@@ -59,10 +59,13 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
             public void passivateObject(PooledObject<StatefulRpcClient> p) throws Exception {
                 StatefulRpcClient client = p.getObject();
                 client.getConfig().setEnableReconnect(false);
-                client.onError = null;
-                client.onReceive = client.onSend = null;
-                client.onDisconnected = client.onConnected = null;
-                client.onReconnected = client.onReconnecting = null;
+                client.onError.reset();
+                client.onReceive.reset();
+                client.onSend.reset();
+                client.onDisconnected.reset();
+                client.onConnected.reset();
+                client.onReconnected.reset();
+                client.onReconnecting.reset();
             }
         }, config);
     }

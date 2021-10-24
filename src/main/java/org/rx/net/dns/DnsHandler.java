@@ -41,7 +41,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             cache = null;
         } else {
             cache = Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-            ((DiskCache<Object, Object>) cache).onExpired = (s, e) -> {
+            ((DiskCache<Object, Object>) cache).onExpired.combine((s, e) -> {
                 Map.Entry<Object, Object> entry = e.getValue();
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
@@ -64,7 +64,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     entry.setValue(addresses);
                 }
                 log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
-            };
+            });
         }
     }
 

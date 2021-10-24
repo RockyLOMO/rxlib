@@ -13,7 +13,6 @@ import java.lang.reflect.Field;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -174,7 +173,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Tuple<ReentrantLock, AtomicInteger>> syncRoot = new ConcurrentHashMap<>(8);
-    private BiConsumer<ManagementMonitor, NEventArgs<ManagementMonitor.MonitorInfo>> scheduled;
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
 
@@ -191,7 +189,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         decrementCounter = new AtomicInteger();
         incrementCounter = new AtomicInteger();
         ManagementMonitor monitor = ManagementMonitor.getInstance();
-        monitor.scheduled = combine(App.remove(monitor.scheduled, scheduled), scheduled = (s, e) -> {
+        monitor.onScheduled.combine((s, e) -> {
             String prefix = String.format("%s%sMonitor", POOL_NAME_PREFIX, poolName);
             int cpuLoad = e.getValue().getCpuLoadPercent();
             log.debug("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}%", prefix, getPoolSize(), getMaximumPoolSize(), getQueue().size(), getSubmittedTaskCount(),

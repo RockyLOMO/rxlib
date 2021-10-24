@@ -27,7 +27,6 @@ import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
@@ -116,11 +115,14 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
-    public volatile BiConsumer<RpcClient, EventArgs> onConnected, onDisconnected;
-    public volatile BiConsumer<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting, onReconnected;
-    public volatile BiConsumer<RpcClient, NEventArgs<Serializable>> onSend, onReceive;
-    public volatile BiConsumer<RpcClient, NEventArgs<PingMessage>> onPong;
-    public volatile BiConsumer<RpcClient, NEventArgs<Throwable>> onError;
+    public final Delegate<RpcClient, EventArgs> onConnected = Delegate.create(),
+            onDisconnected = Delegate.create();
+    public final Delegate<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
+            onReconnected = Delegate.create();
+    public final Delegate<RpcClient, NEventArgs<Serializable>> onSend = Delegate.create(),
+            onReceive = Delegate.create();
+    public final Delegate<RpcClient, NEventArgs<PingMessage>> onPong = Delegate.create();
+    public final Delegate<RpcClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
     private final RpcClientConfig config;
     private Bootstrap bootstrap;

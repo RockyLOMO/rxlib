@@ -13,7 +13,6 @@ import java.io.Serializable;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.util.List;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.cacheKey;
 
@@ -137,7 +136,10 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         return (int) Math.ceil(val * PERCENT);
     }
 
-    public volatile BiConsumer<ManagementMonitor, NEventArgs<MonitorInfo>> scheduled, cpuWarning, memoryWarning, diskWarning;
+    public final Delegate<ManagementMonitor, NEventArgs<MonitorInfo>> onScheduled = Delegate.create(),
+            onCpuWarning = Delegate.create(),
+            onMemoryWarning = Delegate.create(),
+            onDiskWarning = Delegate.create();
     @Setter
     private int cpuWarningThreshold;
     @Setter
@@ -156,16 +158,16 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     private ManagementMonitor() {
         Tasks.schedule(() -> {
             NEventArgs<MonitorInfo> args = new NEventArgs<>(getInfo());
-            raiseEvent(scheduled, args);
+            raiseEvent(onScheduled, args);
             if (args.getValue().getCpuLoad() >= cpuWarningThreshold) {
-                raiseEvent(cpuWarning, args);
+                raiseEvent(onCpuWarning, args);
             }
             if (args.getValue().getUsedMemoryPercent() >= memoryWarningThreshold) {
-                raiseEvent(memoryWarning, args);
+                raiseEvent(onMemoryWarning, args);
             }
             for (DiskMonitorInfo disk : args.getValue().getDisks()) {
                 if (disk.getUsedPercent() >= diskWarningThreshold) {
-                    raiseEvent(diskWarning, args);
+                    raiseEvent(onDiskWarning, args);
                 }
             }
         }, 5000);

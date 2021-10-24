@@ -1,6 +1,7 @@
 package org.rx.test.bean;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Delegate;
 import org.rx.exception.InvalidException;
 
 import java.util.function.BiConsumer;
@@ -9,7 +10,7 @@ import static org.rx.core.App.toJsonString;
 
 @Slf4j
 public class UserManagerImpl implements UserManager {
-    public volatile BiConsumer<UserManager, UserEventArgs> onCreate;
+    public final Delegate<UserManager, UserEventArgs> onCreate = Delegate.create();
 
     @Override
     public void create(PersonBean person) {

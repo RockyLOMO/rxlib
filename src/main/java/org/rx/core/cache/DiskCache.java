@@ -12,7 +12,6 @@ import org.rx.io.*;
 
 import java.io.Serializable;
 import java.util.*;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.eq;
 
@@ -20,7 +19,7 @@ import static org.rx.core.App.eq;
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
     public static Cache DEFAULT = new DiskCache<>();
 
-    public volatile BiConsumer<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired;
+    public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
     final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();

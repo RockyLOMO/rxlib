@@ -19,14 +19,12 @@ import org.rx.net.rpc.protocol.Ack;
 import org.rx.net.rpc.protocol.AckSync;
 import org.rx.net.rpc.protocol.UdpMessage;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeoutException;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.tryAs;
 
@@ -52,7 +50,7 @@ public class UdpClient implements EventTarget<UdpClient> {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) throws Exception {
             UdpClient client = ctx.channel().attr(OWNER).get();
-            Serializable pack = Serializer.DEFAULT.deserialize(new MemoryStream(msg.content().retain(), false));
+            Object pack = Serializer.DEFAULT.deserialize(new MemoryStream(msg.content().retain(), false));
             if (tryAs(pack, Ack.class, ack -> {
                 Context sr = queue.remove(ack.id);
                 if (sr == null) {
@@ -91,7 +89,7 @@ public class UdpClient implements EventTarget<UdpClient> {
         }
     }
 
-    public volatile BiConsumer<UdpClient, NEventArgs<UdpMessage>> onReceive;
+    public final Delegate<UdpClient, NEventArgs<UdpMessage>> onReceive = Delegate.create();
     final Bootstrap bootstrap;
     final Channel channel;
     @Getter
@@ -127,11 +125,11 @@ public class UdpClient implements EventTarget<UdpClient> {
     }
 
     @SneakyThrows
-    public <T extends Serializable> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet) {
+    public <T> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet) {
         return sendAsync(remoteAddress, packet, waitAckTimeoutMillis, fullSync);
     }
 
-    public <T extends Serializable> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet, int waitAckTimeoutMillis, boolean fullSync) throws TimeoutException {
+    public <T> ChannelFuture sendAsync(InetSocketAddress remoteAddress, T packet, int waitAckTimeoutMillis, boolean fullSync) throws TimeoutException {
         AckSync as = fullSync ? AckSync.FULL : waitAckTimeoutMillis > 0 ? AckSync.SEMI : AckSync.NONE;
         UdpMessage message = new UdpMessage(generator.increment(), as, waitAckTimeoutMillis, remoteAddress, packet);
 

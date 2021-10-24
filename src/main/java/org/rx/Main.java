@@ -26,6 +26,7 @@ import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleAction;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -34,7 +35,6 @@ import java.nio.file.StandardWatchEventKinds;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 import static org.rx.core.Tasks.awaitQuietly;
@@ -98,7 +98,7 @@ public final class Main implements SocksSupport {
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
             FileWatcher watcher = new FileWatcher(".", p -> p.endsWith(arg0));
-            watcher.Changed = (s, e) -> {
+            watcher.onChanged.combine((s, e) -> {
                 if (!e.isModify()) {
                     return;
                 }
@@ -120,8 +120,8 @@ public final class Main implements SocksSupport {
                     shadowServers.add(new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
                 }
                 log.info("reload svrs {}", toJsonString(svrs));
-            };
-            watcher.raiseEvent(watcher.Changed, new FileWatcher.FileChangeEventArgs(Paths.get(arg0), StandardWatchEventKinds.ENTRY_MODIFY));
+            });
+            watcher.raiseEvent(watcher.onChanged, new FileWatcher.FileChangeEventArgs(Paths.get(arg0), StandardWatchEventKinds.ENTRY_MODIFY));
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
@@ -151,7 +151,7 @@ public final class Main implements SocksSupport {
             }
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1));
             Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-            BiConsumer<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
+            TripleAction<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
                 //must first
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
@@ -164,13 +164,13 @@ public final class Main implements SocksSupport {
                 }
             };
             int steeringTTL = 60;
-            frontSvr.onRoute = combine(firstRoute, (s, e) -> {
+            frontSvr.onRoute.combine(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }
                 e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), steeringTTL, true)));
             });
-            frontSvr.onUdpRoute = combine(firstRoute, (s, e) -> {
+            frontSvr.onUdpRoute.combine(firstRoute, (s, e) -> {
                 if (e.getValue() != null) {
                     return;
                 }
@@ -239,8 +239,6 @@ public final class Main implements SocksSupport {
                     return new Socks5Upstream(dstEp, directConf, () -> new UpstreamSupport(srvEp, null));
                 }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
             }
-
-//            HttpServer server = new HttpServer();
         }
 
         log.info("Server started..");

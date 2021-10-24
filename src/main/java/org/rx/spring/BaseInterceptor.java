@@ -11,12 +11,13 @@ import org.rx.util.function.TripleFunc;
 
 import javax.annotation.Resource;
 import java.util.List;
-import java.util.function.BiConsumer;
 
 import static org.rx.core.App.*;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
-    public volatile BiConsumer<BaseInterceptor, ProceedEventArgs> onProcessing, onProceed, onError;
+    public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
+            onProceed = Delegate.create(),
+            onError = Delegate.create();
     protected TripleFunc<Signature, Object, Object> argShortSelector;
     @Resource
     protected RxConfig rxConfig;

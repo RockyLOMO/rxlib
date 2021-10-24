@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
@@ -8,7 +7,6 @@ import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
-import org.slf4j.helpers.MessageFormatter;
 
 import java.sql.Time;
 import java.util.Date;
@@ -17,21 +15,11 @@ import java.util.Queue;
 import java.util.concurrent.*;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 @Slf4j
 public final class Tasks {
-    @RequiredArgsConstructor
-    @Getter
-    public static class UncaughtExceptionContext {
-        private final String format;
-        private final Object[] args;
-        @Setter
-        private boolean raised;
-    }
-
     static class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
         final int minSize, maxSize;
 

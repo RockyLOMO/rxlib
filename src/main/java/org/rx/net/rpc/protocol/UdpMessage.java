@@ -13,5 +13,5 @@ public final class UdpMessage implements Serializable {
     public final int alive;
 
     public final InetSocketAddress remoteAddress;
-    public final Serializable packet;
+    public final Object packet;
 }

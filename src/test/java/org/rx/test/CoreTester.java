@@ -18,6 +18,7 @@ import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.RedoTimer;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
@@ -225,9 +226,9 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void MXBean() {
-        ManagementMonitor.getInstance().scheduled = (s, e) -> {
+        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
             System.out.println(toJsonString(e.getValue()));
-        };
+        });
 
         Tasks.schedule(() -> {
             List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
@@ -349,17 +350,20 @@ public class CoreTester extends TestUtil {
         p.name = "rx";
         p.age = 6;
 
-        BiConsumer<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        BiConsumer<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
 
-        mgr.onCreate = a;
+        mgr.onCreate.combine(a);
         mgr.create(p);  //触发事件（a执行）
 
-        mgr.onCreate = combine(mgr.onCreate, b);
+        mgr.onCreate.combine(b);
         mgr.create(p); //触发事件（a, b执行）
 
-        mgr.onCreate = remove(mgr.onCreate, b);
-        mgr.create(p); //触发事件（b执行）
+        mgr.onCreate.combine(a, b);  //会去重
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.remove(b);
+        mgr.create(p); //触发事件（a执行）
     }
 
     @Test
