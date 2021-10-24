@@ -56,7 +56,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     private final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
 
     @SafeVarargs
-    public final Delegate<TSender, TArgs> single(TripleAction<TSender, TArgs>... delegates) {
+    public final Delegate<TSender, TArgs> replace(TripleAction<TSender, TArgs>... delegates) {
         invocations.clear();
         return combine(delegates);
     }
@@ -93,7 +93,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return this;
     }
 
-    public Delegate<TSender, TArgs> removeAll() {
+    public Delegate<TSender, TArgs> purge() {
         invocations.clear();
         return this;
     }

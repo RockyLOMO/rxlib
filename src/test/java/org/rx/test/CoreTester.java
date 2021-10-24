@@ -24,7 +24,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.function.BiConsumer;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -352,6 +351,7 @@ public class CoreTester extends TestUtil {
 
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
 
         mgr.onCreate.combine(a);
         mgr.create(p);  //触发事件（a执行）
@@ -364,6 +364,9 @@ public class CoreTester extends TestUtil {
 
         mgr.onCreate.remove(b);
         mgr.create(p); //触发事件（a执行）
+
+        mgr.onCreate.replace(c);
+        mgr.create(p); //触发事件（c执行）
     }
 
     @Test
