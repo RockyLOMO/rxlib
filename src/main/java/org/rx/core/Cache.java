@@ -33,7 +33,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(String cacheName) {
-        return Container.getInstance().getOrRegister(cacheName, () -> {
+        return Container.INSTANCE.getOrRegister(cacheName, () -> {
             switch (cacheName) {
                 case MEMORY_CACHE:
                     return (Cache<TK, TV>) MemoryCache.DEFAULT;

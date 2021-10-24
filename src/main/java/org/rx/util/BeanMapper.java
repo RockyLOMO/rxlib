@@ -26,8 +26,7 @@ public class BeanMapper {
         private FlagsEnum<BeanMapFlag> flags;
     }
 
-    @Getter
-    private static final BeanMapper instance = new BeanMapper();
+    public static final BeanMapper INSTANCE = new BeanMapper();
     private static final Mapping[] empty = new Mapping[0];
 
     private final Map<String, MapConfig> config = new ConcurrentHashMap<>();

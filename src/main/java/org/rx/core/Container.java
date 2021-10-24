@@ -1,7 +1,6 @@
 package org.rx.core;
 
 import lombok.AccessLevel;
-import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.Func;
@@ -16,10 +15,9 @@ import static org.rx.core.App.sneakyInvoke;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Container {
+    public static final Container INSTANCE = new Container();
     //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
     private static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
-    @Getter
-    private static final Container instance = new Container();
 
     public static <K, V> Map<K, V> weakMap() {
         return WEAK_MAP;

@@ -386,7 +386,7 @@ public final class Remoting {
                             synchronized (eventBean) {
                                 ServerBean.EventContext context = eventBean.context(p.computeId);
                                 //赋值原引用对象
-                                BeanMapper.getInstance().map(p.eventArgs, context.computedArgs);
+                                BeanMapper.INSTANCE.map(p.eventArgs, context.computedArgs);
                                 log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, context.computingClient.getId(), toJsonString(context.computedArgs));
                                 eventBean.notifyAll();
                             }

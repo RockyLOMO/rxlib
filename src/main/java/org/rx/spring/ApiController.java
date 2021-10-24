@@ -24,7 +24,7 @@ public class ApiController {
 
     @PostMapping("config")
     public RxConfig config(@RequestBody RxConfig config) {
-        return BeanMapper.getInstance().map(config, rxConfig);
+        return BeanMapper.INSTANCE.map(config, rxConfig);
     }
 
     @PostMapping("directOffer")

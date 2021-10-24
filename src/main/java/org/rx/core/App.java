@@ -113,11 +113,11 @@ public final class App extends SystemUtils {
     }
 
     public static <T> T getBean(@NonNull Class<T> type) {
-        return Container.getInstance().get(type);
+        return Container.INSTANCE.get(type);
     }
 
     public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
-        Container.getInstance().register(type, instance);
+        Container.INSTANCE.register(type, instance);
     }
 
     //region json

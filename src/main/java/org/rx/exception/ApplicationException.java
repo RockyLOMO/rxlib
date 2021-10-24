@@ -19,7 +19,7 @@ public class ApplicationException extends InvalidException {
     public static final String DEFAULT_MESSAGE = "网络繁忙，请稍后再试。";
 
     static {
-        Container.getInstance().register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
+        Container.INSTANCE.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
     }
 
     public static String getMessage(Throwable e) {
@@ -96,7 +96,7 @@ public class ApplicationException extends InvalidException {
         } else {
             stacks = null;
         }
-        ExceptionCodeHandler handler = Container.getInstance().get(ExceptionCodeHandler.class);
+        ExceptionCodeHandler handler = Container.INSTANCE.get(ExceptionCodeHandler.class);
         handler.handle(this);
     }
 }

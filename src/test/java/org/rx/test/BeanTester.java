@@ -28,7 +28,7 @@ import static org.rx.core.App.*;
 public class BeanTester extends TestUtil {
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
-        PersonMapper INSTANCE = BeanMapper.getInstance().define(PersonMapper.class);
+        PersonMapper INSTANCE = BeanMapper.INSTANCE.define(PersonMapper.class);
 
         //该interface下所有map方法的执行flags
         default FlagsEnum<BeanMapFlag> getFlags() {
@@ -90,7 +90,7 @@ public class BeanTester extends TestUtil {
         t.setKids(10L);
 
         //普通用法，属性名一致
-        BeanMapper mapper = BeanMapper.getInstance();
+        BeanMapper mapper = BeanMapper.INSTANCE;
 //        mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
         mapper.map(f, t, BeanMapFlag.LogOnNotAllMapped.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));

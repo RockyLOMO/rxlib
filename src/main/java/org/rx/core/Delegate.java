@@ -18,11 +18,11 @@ import static org.rx.core.App.tryAs;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
     public static void register(Object eventListener) {
-        Container.getInstance().getOrRegister(EventBus.class).register(eventListener);
+        Container.INSTANCE.getOrRegister(EventBus.class).register(eventListener);
     }
 
     public static void post(Object eventObject) {
-        Container.getInstance().getOrRegister(EventBus.class).post(eventObject);
+        Container.INSTANCE.getOrRegister(EventBus.class).post(eventObject);
     }
 
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create() {
