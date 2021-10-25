@@ -93,7 +93,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return of(iterable, false);
     }
 
-    public static <T> NQuery<T> of(@NonNull Iterable<T> iterable, boolean isParallel) {
+    public static <T> NQuery<T> of(Iterable<T> iterable, boolean isParallel) {
+        if (iterable == null) {
+            iterable = Collections.emptyList();
+        }
         return new NQuery<>(iterable, isParallel);
     }
     //endregion
