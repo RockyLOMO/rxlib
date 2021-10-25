@@ -40,6 +40,10 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         SocksProxyServer server = SocksContext.server(inbound.channel());
         final InetSocketAddress srcEp = in.sender();
+        if (!server.config.getWhiteList().contains(srcEp.getAddress())) {
+            log.warn("security error, package from {}", srcEp);
+            return;
+        }
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
 
         Channel outbound = UdpManager.openChannel(srcEp, k -> {

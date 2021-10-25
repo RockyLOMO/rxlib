@@ -399,6 +399,9 @@ public final class Sockets {
     }
 
     public static InetSocketAddress newEndpoint(@NonNull InetSocketAddress endpoint, int port) {
+        if (endpoint.getPort() == port) {
+            return endpoint;
+        }
         return new InetSocketAddress(endpoint.getAddress(), port);
     }
 

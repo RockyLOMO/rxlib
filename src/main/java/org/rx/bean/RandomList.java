@@ -9,7 +9,10 @@ import org.rx.core.NQuery;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.App.*;
 
@@ -18,7 +21,7 @@ import static org.rx.core.App.*;
 @NoArgsConstructor
 public class RandomList<T> extends AbstractList<T> implements RandomAccess, Serializable {
     private static final long serialVersionUID = 675332324858046587L;
-    private static final int DEFAULT_WEIGHT = 2;
+    public static final int DEFAULT_WEIGHT = 2;
 
     @AllArgsConstructor
     static class WeightElement<T> implements Serializable {
@@ -43,6 +46,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     private final List<WeightElement<T>> elements = new ArrayList<>();
     private int maxRandomValue;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public RandomList(Collection<T> elements) {
         addAll(elements);
@@ -57,44 +61,78 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         return cache.get(steeringObj, k -> next(), isSliding ? CacheExpiration.sliding(ttl) : CacheExpiration.absolute(ttl));
     }
 
-    public synchronized T next() {
-        if (elements.isEmpty()) {
-            throw new NoSuchElementException();
-        }
+    public T next() {
+        lock.writeLock().lock();
+        try {
+            if (elements.isEmpty()) {
+                throw new NoSuchElementException();
+            }
 
-        if (maxRandomValue == 0) {
-            WeightElement<T> hold = null;
-            for (int i = 0; i < elements.size(); i++) {
-                WeightElement<T> element = elements.get(i);
-                if (i == 0) {
-                    element.threshold.start = 0;
-                    element.threshold.end = element.weight;
-                } else {
-                    element.threshold.start = hold.threshold.end;
-                    element.threshold.end = element.threshold.start + element.weight;
+            if (maxRandomValue == 0) {
+                WeightElement<T> hold = null;
+                for (int i = 0; i < elements.size(); i++) {
+                    WeightElement<T> element = elements.get(i);
+                    if (i == 0) {
+                        element.threshold.start = 0;
+                        element.threshold.end = element.weight;
+                    } else {
+                        element.threshold.start = hold.threshold.end;
+                        element.threshold.end = element.threshold.start + element.weight;
+                    }
+                    hold = element;
                 }
-                hold = element;
+                maxRandomValue = hold.threshold.end;
             }
-            maxRandomValue = hold.threshold.end;
-        }
 
-        int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-        //二分法查找
-        int low = 0;
-        int high = elements.size() - 1;
-        while (low <= high) {
-            int mid = (low + high) >>> 1;
-            WeightElement<T> element = elements.get(mid);
-            DataRange<Integer> threshold = element.threshold;
-            if (threshold.end <= v) {
-                low = mid + 1;
-            } else if (threshold.start > v) {
-                high = mid - 1;
-            } else {
-                return element.element;
+            int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
+            //二分法查找
+            int low = 0;
+            int high = elements.size() - 1;
+            while (low <= high) {
+                int mid = (low + high) >>> 1;
+                WeightElement<T> element = elements.get(mid);
+                DataRange<Integer> threshold = element.threshold;
+                if (threshold.end <= v) {
+                    low = mid + 1;
+                } else if (threshold.start > v) {
+                    high = mid - 1;
+                } else {
+                    return element.element;
+                }
             }
+            throw new NoSuchElementException();
+        } finally {
+            lock.writeLock().unlock();
         }
-        throw new NoSuchElementException();
+    }
+
+    public List<T> aliveList() {
+        lock.readLock().lock();
+        try {
+            return NQuery.of(elements).where(p -> p.weight > 0).select(p -> p.element).toList();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public int getWeight(T element) {
+        lock.readLock().lock();
+        try {
+            return findElement(element, true).weight;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public void setWeight(T element, int weight) {
+        require(weight, weight >= 0);
+
+        lock.writeLock().lock();
+        try {
+            findElement(element, true).weight = weight;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     private boolean change(boolean changed) {
@@ -112,30 +150,24 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         return node;
     }
 
-    public int getWeight(T element) {
-        WeightElement<T> node = findElement(element, true);
-        synchronized (node) {
-            return node.weight;
-        }
-    }
-
-    public void setWeight(T element, int weight) {
-        require(weight, weight >= 0);
-
-        WeightElement<T> node = findElement(element, true);
-        synchronized (node) {
-            node.weight = weight;
+    @Override
+    public int size() {
+        lock.readLock().lock();
+        try {
+            return elements.size();
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
     @Override
-    public synchronized int size() {
-        return elements.size();
-    }
-
-    @Override
-    public synchronized T get(int index) {
-        return elements.get(index).element;
+    public T get(int index) {
+        lock.readLock().lock();
+        try {
+            return elements.get(index).element;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -143,21 +175,24 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         return add(element, DEFAULT_WEIGHT);
     }
 
-    public synchronized boolean add(T element, int weight) {
+    public boolean add(T element, int weight) {
         require(weight, weight >= 0);
 
-        boolean changed;
-        WeightElement<T> node = findElement(element, false);
-        if (node == null) {
-            changed = elements.add(new WeightElement<>(element, weight));
-        } else {
-            synchronized (node) {
+        lock.writeLock().lock();
+        try {
+            boolean changed;
+            WeightElement<T> node = findElement(element, false);
+            if (node == null) {
+                changed = elements.add(new WeightElement<>(element, weight));
+            } else {
                 if (changed = node.weight != weight) {
                     node.weight = weight;
                 }
             }
+            return change(changed);
+        } finally {
+            lock.writeLock().unlock();
         }
-        return change(changed);
     }
 
     @Override
@@ -165,95 +200,131 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         add(index, element, DEFAULT_WEIGHT);
     }
 
-    public synchronized boolean add(int index, T element, int weight) {
+    public boolean add(int index, T element, int weight) {
         require(weight, weight >= 0);
 
-        boolean changed;
-        WeightElement<T> node = findElement(element, false);
-        if (node == null) {
-            elements.add(index, new WeightElement<>(element, weight));
-            changed = true;
-        } else {
-            synchronized (node) {
+        lock.writeLock().lock();
+        try {
+            boolean changed;
+            WeightElement<T> node = findElement(element, false);
+            if (node == null) {
+                elements.add(index, new WeightElement<>(element, weight));
+                changed = true;
+            } else {
                 if (changed = node.weight != weight) {
                     node.weight = weight;
                 }
             }
+            return change(changed);
+        } finally {
+            lock.writeLock().unlock();
         }
-        return change(changed);
     }
 
     @Override
-    public synchronized T set(int index, T element) {
-        boolean changed;
-        WeightElement<T> node = findElement(element, false);
-        if (node == null) {
-            elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
-            changed = true;
-        } else {
-            changed = false;
-        }
-        change(changed);
-        return null;
-    }
-
-    @Override
-    public synchronized boolean remove(Object element) {
-        return change(elements.removeIf(p -> eq(p.element, element)));
-    }
-
-    @Override
-    public synchronized T remove(int index) {
-        WeightElement<T> item = elements.remove(index);
-        if (item == null) {
+    public T set(int index, T element) {
+        lock.writeLock().lock();
+        try {
+            boolean changed;
+            WeightElement<T> node = findElement(element, false);
+            if (node == null) {
+                elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
+                changed = true;
+            } else {
+                changed = false;
+            }
+            change(changed);
             return null;
+        } finally {
+            lock.writeLock().unlock();
         }
-        change(true);
-        return item.element;
     }
 
     @Override
-    public synchronized boolean contains(Object element) {
-        return findElement((T) element, false) != null;
+    public boolean remove(Object element) {
+        lock.writeLock().lock();
+        try {
+            return change(elements.removeIf(p -> eq(p.element, element)));
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
-    public synchronized Iterator<T> iterator() {
-//        return NQuery.of(elements, true).select(p -> p.element).iterator();
-        Iterator<WeightElement<T>> iterator = elements.iterator();
-        return new Iterator<T>() {
-            @Override
-            public boolean hasNext() {
-                return iterator.hasNext();
+    public T remove(int index) {
+        lock.writeLock().lock();
+        try {
+            WeightElement<T> item = elements.remove(index);
+            if (item == null) {
+                return null;
             }
-
-            @Override
-            public T next() {
-                return iterator.next().element;
-            }
-        };
+            change(true);
+            return item.element;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
-    public synchronized boolean addAll(Collection<? extends T> c) {
-        return change(elements.addAll(NQuery.of(c).select(p -> new WeightElement<T>(p, DEFAULT_WEIGHT)).toList()));
+    public boolean contains(Object element) {
+        lock.readLock().lock();
+        try {
+            return findElement((T) element, false) != null;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
-    public synchronized boolean removeAll(Collection<?> c) {
-        return change(elements.removeAll(NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList()));
+    public Iterator<T> iterator() {
+        lock.readLock().lock();
+        try {
+            return new CopyOnWriteArrayList<T>(NQuery.of(elements).select(p -> p.element).toList()).iterator();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
-    public synchronized boolean retainAll(Collection<?> c) {
-        List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
-        elements.clear();
-        return change(elements.addAll(items));
+    public boolean addAll(Collection<? extends T> c) {
+        lock.writeLock().lock();
+        try {
+            return change(elements.addAll(NQuery.of(c).select(p -> new WeightElement<T>(p, DEFAULT_WEIGHT)).toList()));
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
-    public synchronized void clear() {
-        elements.clear();
-        change(true);
+    public boolean removeAll(Collection<?> c) {
+        lock.writeLock().lock();
+        try {
+            return change(elements.removeAll(NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList()));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public boolean retainAll(Collection<?> c) {
+        lock.writeLock().lock();
+        try {
+            List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
+            elements.clear();
+            return change(elements.addAll(items));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public void clear() {
+        lock.writeLock().lock();
+        try {
+            elements.clear();
+            change(true);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 }
