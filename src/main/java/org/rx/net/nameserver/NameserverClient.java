@@ -24,6 +24,7 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class NameserverClient extends Disposable {
+    static final int DEFAULT_RETRY_PERIOD = 500;
     static final int DEFAULT_RETRY = 2;
     static final List<RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>>> LISTS = new CopyOnWriteArrayList<>();
     static final ManualResetEvent syncRoot = new ManualResetEvent();
@@ -92,8 +93,11 @@ public final class NameserverClient extends Disposable {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
                         hold.add(tuple);
                         Action doReg = () -> {
-                            tuple.right = sneakyInvoke(() -> tuple.middle.register(appName, registerEndpoints), DEFAULT_RETRY);
-                            reInject();
+                            tuple.right = null;
+                            Tasks.scheduleUntil(() -> {
+                                tuple.right = tuple.middle.register(appName, registerEndpoints);
+                                reInject();
+                            }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
                         };
                         tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
                                 (ns, rc) -> {
