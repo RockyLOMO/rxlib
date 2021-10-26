@@ -18,6 +18,7 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.App.isNull;
 import static org.rx.core.App.tryAs;
 
 public class NameserverImpl implements Nameserver {
@@ -39,7 +40,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupBy(p -> (String) p.userState, (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
+        return NQuery.of(rs.getClients()).groupBy(p -> isNull((String) p.userState, "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {

@@ -10,6 +10,7 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.util.function.Action;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -90,7 +91,11 @@ public final class NameserverClient extends Disposable {
                     if (!NQuery.of(hold).any(p -> eq(p.left, regEp))) {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
                         hold.add(tuple);
-                        tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, appName.hashCode()),
+                        Action doReg = () -> {
+                            tuple.right = sneakyInvoke(() -> tuple.middle.register(appName, registerEndpoints), DEFAULT_RETRY);
+                            reInject();
+                        };
+                        tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
                                 (ns, rc) -> {
                                     rc.onConnected.combine((s, e) -> {
                                         hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
@@ -100,6 +105,7 @@ public final class NameserverClient extends Disposable {
                                         hold.setWeight(tuple, 0);
                                         reInject();
                                     });
+                                    rc.onReconnected.combine((s, e) -> doReg.invoke());
                                     ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
                                         log.info("sync server endpoints: {}", toJsonString(e.getValue()));
                                         if (e.getValue().isEmpty()) {
@@ -109,8 +115,7 @@ public final class NameserverClient extends Disposable {
                                         registerAsync(NQuery.of(e.getValue()).toArray());
                                     }, false);
                                 });
-                        tuple.right = sneakyInvoke(() -> tuple.middle.register(appName, registerEndpoints), DEFAULT_RETRY);
-                        reInject();
+                        doReg.invoke();
                     }
                 }
             }
