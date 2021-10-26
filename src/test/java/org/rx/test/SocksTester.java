@@ -444,7 +444,7 @@ public class SocksTester extends TConfig {
         server.addHosts(host_devops, ip2, ip4);
 
         //hostTtl
-        DnsClient client = new DnsClient(localNsEp);
+        DnsClient client = new DnsClient(Collections.singletonList(localNsEp));
         List<InetAddress> result = client.resolveAll(host_devops);
         System.out.println("eq: " + result);
         assert result.contains(ip2) && result.contains(ip4);

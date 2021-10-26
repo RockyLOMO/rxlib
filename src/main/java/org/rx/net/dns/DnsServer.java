@@ -46,13 +46,13 @@ public class DnsServer extends Disposable {
 
         serverBootstrap = Sockets.serverBootstrap(channel -> {
             channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, true, DnsServer.this.serverBootstrap.config().childGroup(), addresses));
+                    new DnsHandler(DnsServer.this, true, addresses));
         });
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
         Bootstrap bootstrap = Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> {
             channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, false, serverBootstrap.config().childGroup(), addresses));
+                    new DnsHandler(DnsServer.this, false, addresses));
         });
         bootstrap.bind(port).addListener(Sockets.logBind(port));
     }
