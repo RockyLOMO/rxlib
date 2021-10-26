@@ -53,7 +53,7 @@ public final class Sockets {
 
     @SneakyThrows
     public static synchronized void injectNameService(InetSocketAddress... nameServerList) {
-        DnsClient client = Arrays.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
+        DnsClient client = Arrays.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(Arrays.toList(nameServerList));
         if (nsClient == null) {
             Class<?> type = InetAddress.class;
             try {
