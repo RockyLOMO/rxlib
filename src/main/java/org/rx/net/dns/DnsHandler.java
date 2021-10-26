@@ -85,11 +85,11 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
 
-        if (!domain.contains(".")) {
-            log.warn("Invalid domain {}", domain);
-            ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-            return;
-        }
+//        if (!domain.contains(".")) {
+//            log.warn("Invalid domain {}", domain);
+//            ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+//            return;
+//        }
         if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
             ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Sockets.LOOPBACK_ADDRESS.getAddress()));
             return;
