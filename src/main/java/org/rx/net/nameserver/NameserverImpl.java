@@ -3,22 +3,21 @@ package org.rx.net.nameserver;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.rx.bean.Tuple;
 import org.rx.core.Arrays;
 import org.rx.core.NEventArgs;
 import org.rx.core.NQuery;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.rpc.Remoting;
-import org.rx.net.rpc.RemotingContext;
-import org.rx.net.rpc.RpcServer;
-import org.rx.net.rpc.UdpClient;
+import org.rx.net.rpc.*;
 
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +31,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     final NameserverConfig config;
+    final RpcServer rs;
     @Getter
     final DnsServer dnsServer;
     final UdpClient ss;
@@ -41,13 +41,17 @@ public class NameserverImpl implements Nameserver {
         return config.getRegisterPort();
     }
 
+    public Map<String, List<InetAddress>> getInstances() {
+        return NQuery.of(rs.getClients()).groupBy(p -> (String) p.userState, (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
+    }
+
     public NameserverImpl(@NonNull NameserverConfig config) {
         this.config = config;
         dnsServer = new DnsServer(config.getDnsPort());
         dnsServer.setTtl(config.getDnsTtl());
         regEps.addAll(NQuery.of(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).toList());
 
-        RpcServer rs = Remoting.listen(this, config.getRegisterPort());
+        rs = Remoting.listen(this, config.getRegisterPort());
         rs.onDisconnected.combine((s, e) -> {
             String appName = (String) e.getClient().userState;
             if (appName == null) {

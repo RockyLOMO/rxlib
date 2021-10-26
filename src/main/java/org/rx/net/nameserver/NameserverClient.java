@@ -27,11 +27,6 @@ public final class NameserverClient extends Disposable {
     static final List<RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>>> LISTS = new CopyOnWriteArrayList<>();
     static final ManualResetEvent syncRoot = new ManualResetEvent();
 
-    public void wait4Inject(long timeout) throws TimeoutException {
-        syncRoot.waitOne(timeout);
-        syncRoot.set();
-    }
-
     static void reInject() {
         NQuery<BiTuple<InetSocketAddress, Nameserver, Integer>> q = NQuery.of(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
         if (!q.any()) {
@@ -69,6 +64,11 @@ public final class NameserverClient extends Disposable {
         for (BiTuple<InetSocketAddress, Nameserver, Integer> tuple : hold) {
             tryClose(tuple.middle);
         }
+    }
+
+    public void wait4Inject(long timeout) throws TimeoutException {
+        syncRoot.waitOne(timeout);
+        syncRoot.set();
     }
 
     public CompletableFuture<?> registerAsync(@NonNull String... registerEndpoints) {
