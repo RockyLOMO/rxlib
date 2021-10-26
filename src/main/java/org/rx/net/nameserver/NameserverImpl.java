@@ -15,10 +15,7 @@ import org.rx.net.rpc.*;
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.tryAs;
@@ -115,6 +112,6 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
-        return dnsServer.getHosts().get(appName);
+        return new ArrayList<>(dnsServer.getHosts().get(appName));
     }
 }

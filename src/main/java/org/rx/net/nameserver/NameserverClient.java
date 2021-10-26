@@ -110,6 +110,7 @@ public final class NameserverClient extends Disposable {
                                     }, false);
                                 });
                         tuple.right = sneakyInvoke(() -> tuple.middle.register(appName, registerEndpoints), DEFAULT_RETRY);
+                        reInject();
                     }
                 }
             }

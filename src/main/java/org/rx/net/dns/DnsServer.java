@@ -22,8 +22,9 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 @Slf4j
 public class DnsServer extends Disposable {
@@ -33,7 +34,7 @@ public class DnsServer extends Disposable {
     @Setter
     int hostsTtl = 180;
     @Getter
-    final Map<String, List<InetAddress>> hosts = new ConcurrentHashMap<>();
+    final Map<String, Set<InetAddress>> hosts = new ConcurrentHashMap<>();
     @Setter
     RandomList<UpstreamSupport> shadowServers;
 
@@ -72,12 +73,12 @@ public class DnsServer extends Disposable {
     }
 
     public DnsServer addHosts(@NonNull String host, @NonNull InetAddress... ips) {
-        hosts.computeIfAbsent(host, k -> new CopyOnWriteArrayList<>()).addAll(Arrays.toList(ips));
+        hosts.computeIfAbsent(host, k -> new CopyOnWriteArraySet<>()).addAll(Arrays.toList(ips));
         return this;
     }
 
     public DnsServer removeHosts(@NonNull String host, @NonNull InetAddress... ips) {
-        hosts.computeIfAbsent(host, k -> new CopyOnWriteArrayList<>()).removeAll(Arrays.toList(ips));
+        hosts.computeIfAbsent(host, k -> new CopyOnWriteArraySet<>()).removeAll(Arrays.toList(ips));
         return this;
     }
 
