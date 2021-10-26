@@ -5,10 +5,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.BiTuple;
 import org.rx.bean.RandomList;
-import org.rx.core.Disposable;
-import org.rx.core.NEventArgs;
-import org.rx.core.NQuery;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
@@ -20,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.App.*;
 
@@ -27,6 +25,12 @@ import static org.rx.core.App.*;
 public final class NameserverClient extends Disposable {
     static final int DEFAULT_RETRY = 2;
     static final List<RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>>> LISTS = new CopyOnWriteArrayList<>();
+    static final ManualResetEvent syncRoot = new ManualResetEvent();
+
+    public void wait4Inject(long timeout) throws TimeoutException {
+        syncRoot.waitOne(timeout);
+        syncRoot.set();
+    }
 
     static void reInject() {
         NQuery<BiTuple<InetSocketAddress, Nameserver, Integer>> q = NQuery.of(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
@@ -39,6 +43,7 @@ public final class NameserverClient extends Disposable {
         InetSocketAddress[] ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toArray();
         log.info("inject ns {}", toJsonString(ns));
         Sockets.injectNameService(ns);
+        syncRoot.set();
     }
 
     @Getter
