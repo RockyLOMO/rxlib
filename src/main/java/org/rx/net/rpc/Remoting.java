@@ -228,8 +228,10 @@ public final class Remoting {
                 throw e;
             } finally {
                 if (eventArgs != null) {
-                    App.log(eventArgs, msg -> {
-                        msg.appendLine("Rpc client %s.%s @ %s", contract.getSimpleName(), methodMessage.methodName, client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()));
+                    log(eventArgs, msg -> {
+                        msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
+                                client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()),
+                                Sockets.toString(client.getConfig().getServerEndpoint()));
                         msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
                         if (eventArgs.getError() != null) {
                             msg.appendLine("Response:\t%s", eventArgs.getError().getMessage());
@@ -408,7 +410,7 @@ public final class Remoting {
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
                     log(args, msg -> {
-                        msg.appendLine("Rpc server %s.%s -> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
+                        msg.appendLine("Server invoke %s.%s |-> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
                         msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
                         if (args.getError() != null) {
                             msg.appendLine("Response:\t%s", pack.errorMessage);

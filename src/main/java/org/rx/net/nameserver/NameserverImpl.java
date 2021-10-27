@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.rx.bean.Tuple;
+import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.NEventArgs;
 import org.rx.core.NQuery;
@@ -90,6 +91,8 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public int register(@NonNull String appName, InetSocketAddress... registerEndpoints) {
+        App.logMetric("clientSize", rs.getClients().size());
+        
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().userState = appName;
         dnsServer.addHosts(appName, ctx.getClient().getRemoteAddress().getAddress());
