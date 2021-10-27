@@ -16,9 +16,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 import static org.rx.core.App.*;
 
@@ -38,14 +36,15 @@ public final class NameserverClient extends Disposable {
         }
 
         InetSocketAddress[] ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toArray();
-        log.info("inject ns {}", toJsonString(ns));
         Sockets.injectNameService(ns);
+        log.info("inject ns {}", toJsonString(ns));
         syncRoot.set();
     }
 
     @Getter
     final String appName;
     final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
+    volatile Future<?> redoFuture;
 
     public Set<InetSocketAddress> registerEndpoints() {
         return NQuery.of(hold).select(p -> p.left).toSet();
@@ -93,8 +92,11 @@ public final class NameserverClient extends Disposable {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
                         hold.add(tuple);
                         Action doReg = () -> {
+                            if (redoFuture != null) {
+                                return;
+                            }
                             tuple.right = null;
-                            Tasks.scheduleUntil(() -> {
+                            redoFuture = Tasks.scheduleUntil(() -> {
                                 tuple.right = tuple.middle.register(appName, registerEndpoints);
                                 reInject();
                             }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);

@@ -92,7 +92,7 @@ public class NameserverImpl implements Nameserver {
     @Override
     public int register(@NonNull String appName, InetSocketAddress... registerEndpoints) {
         App.logMetric("clientSize", rs.getClients().size());
-        
+
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().userState = appName;
         dnsServer.addHosts(appName, ctx.getClient().getRemoteAddress().getAddress());
