@@ -56,9 +56,7 @@ public class NameserverImpl implements Nameserver {
                 return;
             }
 
-            InetAddress ip = e.getClient().getRemoteAddress().getAddress();
-            dnsServer.removeHosts(appName, ip);
-            syncDeregister(new DeregisterInfo(appName, ip));
+            doDeregister(e.getClient(), true);
         });
 
         ss = new UdpClient(getSyncPort());
@@ -110,9 +108,17 @@ public class NameserverImpl implements Nameserver {
             throw new InvalidException("Must register first");
         }
 
-        InetAddress ip = ctx.getClient().getRemoteAddress().getAddress();
-        dnsServer.removeHosts(appName, ip);
-        syncDeregister(new DeregisterInfo(appName, ip));
+        doDeregister(ctx.getClient(), false);
+    }
+
+    private void doDeregister(RpcServerClient client, boolean isDisconnected) {
+        String appName = (String) client.userState;
+        InetAddress ip = client.getRemoteAddress().getAddress();
+        //同app同ip多实例，比如k8s滚动更新
+        if (NQuery.of(rs.getClients()).count(p -> eq(p.userState, appName) && p.getRemoteAddress().getAddress().equals(ip)) == (isDisconnected ? 0 : 1)) {
+            dnsServer.removeHosts(appName, ip);
+            syncDeregister(new DeregisterInfo(appName, ip));
+        }
     }
 
     @Override
