@@ -410,7 +410,8 @@ public final class Remoting {
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
                     log(args, msg -> {
-                        msg.appendLine("Server invoke %s.%s |-> %s", contractInstance.getClass().getSimpleName(), pack.methodName, Sockets.toString(e.getClient().getRemoteAddress()));
+                        msg.appendLine("Server invoke %s.%s [%s]|-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
+                                s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteAddress()));
                         msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
                         if (args.getError() != null) {
                             msg.appendLine("Response:\t%s", pack.errorMessage);

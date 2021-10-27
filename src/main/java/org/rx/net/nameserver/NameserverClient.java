@@ -92,14 +92,19 @@ public final class NameserverClient extends Disposable {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
                         hold.add(tuple);
                         Action doReg = () -> {
-                            if (redoFuture != null) {
+                            if (redoFuture != null && !redoFuture.isDone()) {
                                 return;
                             }
-                            tuple.right = null;
-                            redoFuture = Tasks.scheduleUntil(() -> {
+                            try {
                                 tuple.right = tuple.middle.register(appName, registerEndpoints);
                                 reInject();
-                            }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
+                            } catch (Throwable e) {
+                                tuple.right = null;
+                                redoFuture = Tasks.scheduleUntil(() -> {
+                                    tuple.right = tuple.middle.register(appName, registerEndpoints);
+                                    reInject();
+                                }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
+                            }
                         };
                         tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
                                 (ns, rc) -> {

@@ -116,6 +116,10 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
-        return new ArrayList<>(dnsServer.getHosts().get(appName));
+        Set<InetAddress> set = dnsServer.getHosts().get(appName);
+        if (set == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(set);
     }
 }
