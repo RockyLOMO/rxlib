@@ -19,8 +19,7 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.App.isNull;
-import static org.rx.core.App.tryAs;
+import static org.rx.core.App.*;
 
 public class NameserverImpl implements Nameserver {
     @RequiredArgsConstructor
@@ -65,7 +64,7 @@ public class NameserverImpl implements Nameserver {
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
-//            System.out.println("udp" + packet);
+            log("[{}] Replica {}", getSyncPort(), packet);
             if (!tryAs(packet, DeregisterInfo.class, p -> dnsServer.removeHosts(p.appName, p.ip))) {
                 syncRegister((Collection<InetSocketAddress>) packet);
             }
@@ -95,7 +94,9 @@ public class NameserverImpl implements Nameserver {
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().userState = appName;
-        dnsServer.addHosts(appName, ctx.getClient().getRemoteAddress().getAddress());
+        InetAddress addr = ctx.getClient().getRemoteAddress().getAddress();
+        App.logMetric("remoteAddr", addr);
+        dnsServer.addHosts(appName, addr);
 
         syncRegister(Arrays.toList(registerEndpoints));
         return config.getDnsPort();
