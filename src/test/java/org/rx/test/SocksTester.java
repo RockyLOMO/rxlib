@@ -416,6 +416,21 @@ public class SocksTester extends TConfig {
 
     @SneakyThrows
     @Test
+    public void dnsInject() {
+        Sockets.injectNameService(Collections.singletonList(Sockets.parseEndpoint("192.168.137.2:853")));
+
+        InetAddress localHost = InetAddress.getLocalHost();
+        System.out.println(localHost);
+
+        InetAddress loopbackAddress = InetAddress.getLoopbackAddress();
+        System.out.println(loopbackAddress.equals(Sockets.LOOPBACK_ADDRESS));
+
+        InetAddress[] all = InetAddress.getAllByName(host_devops);
+        System.out.println(java.util.Arrays.toString(all));
+    }
+
+    @SneakyThrows
+    @Test
     public synchronized void dns() {
         //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
@@ -463,7 +478,7 @@ public class SocksTester extends TConfig {
         List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
-        Sockets.injectNameService(localNsEp);
+        Sockets.injectNameService(Collections.singletonList(localNsEp));
 
         List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host_devops);
         InetAddress[] localResult = InetAddress.getAllByName(host_devops);

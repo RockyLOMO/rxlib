@@ -31,6 +31,7 @@ import org.rx.util.function.TripleAction;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -130,7 +131,7 @@ public final class Main implements SocksSupport {
             dnsSvr.setShadowServers(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
             InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
-            Sockets.injectNameService(shadowDnsEp);
+            Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
             SocksConfig frontConf = new SocksConfig(port);
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());

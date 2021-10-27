@@ -36,7 +36,7 @@ public final class NameserverClient extends Disposable {
             return;
         }
 
-        InetSocketAddress[] ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toArray();
+        List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toList();
         Sockets.injectNameService(ns);
         log.info("inject ns {}", toJsonString(ns));
         syncRoot.set();

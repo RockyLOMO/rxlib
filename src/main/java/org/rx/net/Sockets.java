@@ -28,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.core.*;
-import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
@@ -52,8 +51,8 @@ public final class Sockets {
     private static DnsClient nsClient;
 
     @SneakyThrows
-    public static synchronized void injectNameService(InetSocketAddress... nameServerList) {
-        DnsClient client = Arrays.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(Arrays.toList(nameServerList));
+    public static synchronized void injectNameService(List<InetSocketAddress> nameServerList) {
+        DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
         if (nsClient == null) {
             Class<?> type = InetAddress.class;
             try {
@@ -77,9 +76,13 @@ public final class Sockets {
             if (method.getName().equals("lookupAllHostAddr")) {
                 String host = (String) args[0];
                 //处理不了会交给源对象处理
-                List<InetAddress> addresses = App.quietly(() -> client.resolveAll(host));
-                if (!CollectionUtils.isEmpty(addresses)) {
-                    return addresses.toArray(empty);
+                try {
+                    List<InetAddress> addresses = client.resolveAll(host);
+                    if (!CollectionUtils.isEmpty(addresses)) {
+                        return addresses.toArray(empty);
+                    }
+                } catch (Exception e) {
+                    log.info("nsProxy {}", e.getMessage());
                 }
             }
             Reflects.setAccess(method);

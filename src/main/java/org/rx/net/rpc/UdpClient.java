@@ -141,8 +141,13 @@ public class UdpClient implements EventTarget<UdpClient> {
         }
         ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message));
         if (message.ack != AckSync.NONE) {
+            Context ctx = queue.get(message.id);
+            if (ctx == null) {
+                //已ack
+                return future;
+            }
             try {
-                queue.get(message.id).syncRoot.waitOne(waitAckTimeoutMillis);
+                ctx.syncRoot.waitOne(waitAckTimeoutMillis);
             } finally {
                 queue.remove(message.id);
             }
