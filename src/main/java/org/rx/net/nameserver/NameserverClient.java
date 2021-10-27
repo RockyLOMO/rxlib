@@ -15,6 +15,7 @@ import org.rx.util.function.Action;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
 
@@ -44,7 +45,7 @@ public final class NameserverClient extends Disposable {
     @Getter
     final String appName;
     final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
-    volatile Future<?> redoFuture;
+    final Map<String, Future<?>> delayTasks = new ConcurrentHashMap<>();
 
     public Set<InetSocketAddress> registerEndpoints() {
         return NQuery.of(hold).select(p -> p.left).toSet();
@@ -92,18 +93,18 @@ public final class NameserverClient extends Disposable {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
                         hold.add(tuple);
                         Action doReg = () -> {
-                            if (redoFuture != null && !redoFuture.isDone()) {
-                                return;
-                            }
                             try {
                                 tuple.right = tuple.middle.register(appName, registerEndpoints);
                                 reInject();
                             } catch (Throwable e) {
-                                tuple.right = null;
-                                redoFuture = Tasks.scheduleUntil(() -> {
-                                    tuple.right = tuple.middle.register(appName, registerEndpoints);
-                                    reInject();
-                                }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
+                                delayTasks.computeIfAbsent(appName, k -> {
+                                    tuple.right = null;
+                                    return Tasks.scheduleUntil(() -> {
+                                        tuple.right = tuple.middle.register(appName, registerEndpoints);
+                                        reInject();
+                                        delayTasks.remove(appName);
+                                    }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
+                                });
                             }
                         };
                         tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
