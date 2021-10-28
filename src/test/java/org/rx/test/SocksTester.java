@@ -34,7 +34,6 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
-import org.springframework.web.bind.annotation.GetMapping;
 
 import java.io.IOException;
 import java.net.InetAddress;

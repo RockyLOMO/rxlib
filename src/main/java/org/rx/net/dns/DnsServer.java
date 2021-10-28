@@ -20,6 +20,7 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,7 +67,7 @@ public class DnsServer extends Disposable {
         return addHosts(host, RandomList.DEFAULT_WEIGHT, NQuery.of(ips).select(InetAddress::getByName).toList());
     }
 
-    public DnsServer addHosts(@NonNull String host, int weight, @NonNull List<InetAddress> ips) {
+    public DnsServer addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
         for (InetAddress ip : ips) {
             list.add(ip, weight);
@@ -74,7 +75,7 @@ public class DnsServer extends Disposable {
         return this;
     }
 
-    public DnsServer removeHosts(@NonNull String host, List<InetAddress> ips) {
+    public DnsServer removeHosts(@NonNull String host, Collection<InetAddress> ips) {
         hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
         return this;
     }

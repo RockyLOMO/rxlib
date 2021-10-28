@@ -30,6 +30,7 @@ public class NameserverImpl implements Nameserver {
         final InetAddress ip;
     }
 
+    static final String NAME = "nameserver";
     final NameserverConfig config;
     final RpcServer rs;
     @Getter
@@ -71,13 +72,14 @@ public class NameserverImpl implements Nameserver {
         });
     }
 
-    public void syncRegister(@NonNull Set<InetSocketAddress> registerEndpoints) {
+    public synchronized void syncRegister(@NonNull Set<InetSocketAddress> registerEndpoints) {
         if (!regEps.addAll(registerEndpoints)
-//                && !registerEndpoints.containsAll(regEps)
+                && registerEndpoints.containsAll(regEps)
         ) {
             return;
         }
 
+        dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(regEps).select(InetSocketAddress::getAddress).toList());
         raiseEventAsync(Nameserver.EVENT_CLIENT_SYNC, new NEventArgs<>(regEps));
         for (InetSocketAddress ssAddr : registerEndpoints) {
             ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), regEps);
