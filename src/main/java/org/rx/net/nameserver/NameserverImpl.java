@@ -66,19 +66,21 @@ public class NameserverImpl implements Nameserver {
             Object packet = e.getValue().packet;
             log("[{}] Replica {}", getSyncPort(), packet);
             if (!tryAs(packet, DeregisterInfo.class, p -> dnsServer.removeHosts(p.appName, Collections.singletonList(p.ip)))) {
-                syncRegister((Collection<InetSocketAddress>) packet);
+                syncRegister((Set<InetSocketAddress>) packet);
             }
         });
     }
 
-    public void syncRegister(@NonNull Collection<InetSocketAddress> registerEndpoints) {
-        if (!regEps.addAll(registerEndpoints) || registerEndpoints.containsAll(regEps)) {
+    public void syncRegister(@NonNull Set<InetSocketAddress> registerEndpoints) {
+        if (!regEps.addAll(registerEndpoints)
+//                && !registerEndpoints.containsAll(regEps)
+        ) {
             return;
         }
 
         raiseEventAsync(Nameserver.EVENT_CLIENT_SYNC, new NEventArgs<>(regEps));
         for (InetSocketAddress ssAddr : registerEndpoints) {
-            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), registerEndpoints);
+            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), regEps);
         }
     }
 
@@ -98,7 +100,7 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("remoteAddr", addr);
         dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
 
-        syncRegister(Arrays.toList(registerEndpoints));
+        syncRegister(new HashSet<>(Arrays.toList(registerEndpoints)));
         return config.getDnsPort();
     }
 

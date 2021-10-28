@@ -68,6 +68,10 @@ public final class NameserverClient extends Disposable {
         }
     }
 
+    public void wait4Inject() throws TimeoutException {
+        wait4Inject(30 * 1000);
+    }
+
     public void wait4Inject(long timeout) throws TimeoutException {
         syncRoot.waitOne(timeout);
         syncRoot.set();

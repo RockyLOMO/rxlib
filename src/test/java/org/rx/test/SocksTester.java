@@ -36,7 +36,6 @@ import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
 import org.springframework.web.bind.annotation.GetMapping;
 
-import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -92,8 +91,8 @@ public class SocksTester extends TConfig {
         assert CollectionUtils.isEmpty(discover);
     }
 
-    @GetMapping("/multiNode1")
-    public String multiNode1() {
+    @Test
+    public void multiNode1() {
         NameserverClient c1 = new NameserverClient(appUsercenter);
         NameserverClient c2 = new NameserverClient(appOrder);
 
@@ -101,15 +100,13 @@ public class SocksTester extends TConfig {
         c2.registerAsync(node2, node1).join();
         sleep4Sync();
 
-        System.out.println(toJsonString(c1.registerEndpoints()));
+        System.out.println("c1: " + toJsonString(c1.registerEndpoints()));
         assert c1.registerEndpoints().containsAll(c2.registerEndpoints());
 
         c2.deregisterAsync().join();
         sleep4Sync();
         List<InetAddress> discover = c1.discover(appOrder);
         assert CollectionUtils.isEmpty(discover);
-
-        return "ok";
     }
 
     private void sleep4Sync() {
@@ -117,8 +114,8 @@ public class SocksTester extends TConfig {
         System.out.println("-等待异步同步-");
     }
 
-    @GetMapping("/multiNode2")
-    public String multiNode2() {
+    @Test
+    public void multiNode2() {
         NameserverClient c1 = new NameserverClient(appUsercenter);
         NameserverClient c2 = new NameserverClient(appOrder);
 
@@ -132,23 +129,19 @@ public class SocksTester extends TConfig {
 
         System.out.println(toJsonString(c1.registerEndpoints()));
         assert c1.registerEndpoints().containsAll(c2.registerEndpoints());
-
-        return "ok";
     }
 
     @SneakyThrows
-    @GetMapping("/singleClient")
-    public String singleClient() {
+    @Test
+    public void singleClient() {
         NameserverClient c1 = new NameserverClient(appUsercenter);
 
         c1.registerAsync(node1, node2);
-        c1.wait4Inject(30 * 1000);
+        c1.wait4Inject();
 
         sleep4Sync();
         System.out.println("x:" + ns1.getDnsServer().getHosts());
         System.out.println("x2:" + ns2.getDnsServer().getHosts());
-
-        return "ok";
     }
 
     @SneakyThrows
