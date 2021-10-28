@@ -5,14 +5,14 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.Container;
+import org.rx.core.Attributes;
 import org.rx.util.function.Func;
 
 import java.util.Objects;
 
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public final class RemotingContext {
+public final class RemotingContext implements Attributes {
     static final FastThreadLocal<RemotingContext> tl = new FastThreadLocal<>();
 
     public static RemotingContext context() {
@@ -32,12 +32,4 @@ public final class RemotingContext {
     }
 
     final RpcServerClient client;
-
-    public <T> T attr() {
-        return Container.<RpcServerClient, T>weakMap().get(client);
-    }
-
-    public <T> T attr(T val) {
-        return Container.<RpcServerClient, T>weakMap().put(client, val);
-    }
 }

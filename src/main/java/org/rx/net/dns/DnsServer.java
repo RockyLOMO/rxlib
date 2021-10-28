@@ -22,9 +22,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 
 @Slf4j
 public class DnsServer extends Disposable {
@@ -34,7 +32,7 @@ public class DnsServer extends Disposable {
     @Setter
     int hostsTtl = 180;
     @Getter
-    final Map<String, Set<InetAddress>> hosts = new ConcurrentHashMap<>();
+    final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
     @Setter
     RandomList<UpstreamSupport> shadowServers;
 
@@ -65,20 +63,19 @@ public class DnsServer extends Disposable {
 
     @SneakyThrows
     public DnsServer addHosts(String host, @NonNull String... ips) {
-        if (ips.length == 0) {
-            return this;
-        }
-
-        return addHosts(host, NQuery.of(ips).select(InetAddress::getByName).toArray());
+        return addHosts(host, RandomList.DEFAULT_WEIGHT, NQuery.of(ips).select(InetAddress::getByName).toList());
     }
 
-    public DnsServer addHosts(@NonNull String host, @NonNull InetAddress... ips) {
-        hosts.computeIfAbsent(host, k -> new CopyOnWriteArraySet<>()).addAll(Arrays.toList(ips));
+    public DnsServer addHosts(@NonNull String host, int weight, @NonNull List<InetAddress> ips) {
+        RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
+        for (InetAddress ip : ips) {
+            list.add(ip, weight);
+        }
         return this;
     }
 
-    public DnsServer removeHosts(@NonNull String host, @NonNull InetAddress... ips) {
-        hosts.computeIfAbsent(host, k -> new CopyOnWriteArraySet<>()).removeAll(Arrays.toList(ips));
+    public DnsServer removeHosts(@NonNull String host, List<InetAddress> ips) {
+        hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
         return this;
     }
 

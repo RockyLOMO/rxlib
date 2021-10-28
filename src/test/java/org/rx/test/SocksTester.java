@@ -456,7 +456,7 @@ public class SocksTester extends TConfig {
             }
         }))));
         server.setHostsTtl(5);
-        server.addHosts(host_devops, ip2, ip4);
+        server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
 
         //hostTtl
         DnsClient client = new DnsClient(Collections.singletonList(localNsEp));
@@ -464,7 +464,7 @@ public class SocksTester extends TConfig {
         System.out.println("eq: " + result);
         assert result.contains(ip2) && result.contains(ip4);
         Tasks.scheduleOnce(() -> {
-            server.removeHosts(host_devops, ip2);
+            server.removeHosts(host_devops, Collections.singletonList(ip2));
 
             List<InetAddress> x = client.resolveAll(host_devops);
             System.out.println(toJsonString(x));

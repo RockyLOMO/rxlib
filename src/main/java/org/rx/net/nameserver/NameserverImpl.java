@@ -3,6 +3,8 @@ package org.rx.net.nameserver;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.collections4.CollectionUtils;
+import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.App;
 import org.rx.core.Arrays;
@@ -22,6 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.rx.core.App.*;
 
 public class NameserverImpl implements Nameserver {
+    static final String APP_NAME = "APP_NAME";
+
     @RequiredArgsConstructor
     static class DeregisterInfo implements Serializable {
         final String appName;
@@ -40,7 +44,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupBy(p -> isNull((String) p.userState, "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
+        return NQuery.of(rs.getClients()).groupBy(p -> isNull(p.attr(APP_NAME), "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -51,7 +55,7 @@ public class NameserverImpl implements Nameserver {
 
         rs = Remoting.listen(this, config.getRegisterPort());
         rs.onDisconnected.combine((s, e) -> {
-            String appName = (String) e.getClient().userState;
+            String appName = e.getClient().attr(APP_NAME);
             if (appName == null) {
                 return;
             }
@@ -63,7 +67,7 @@ public class NameserverImpl implements Nameserver {
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
             log("[{}] Replica {}", getSyncPort(), packet);
-            if (!tryAs(packet, DeregisterInfo.class, p -> dnsServer.removeHosts(p.appName, p.ip))) {
+            if (!tryAs(packet, DeregisterInfo.class, p -> dnsServer.removeHosts(p.appName, Collections.singletonList(p.ip)))) {
                 syncRegister((Collection<InetSocketAddress>) packet);
             }
         });
@@ -87,14 +91,14 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public int register(@NonNull String appName, InetSocketAddress... registerEndpoints) {
+    public int register(@NonNull String appName, int weight, InetSocketAddress... registerEndpoints) {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
-        ctx.getClient().userState = appName;
+        ctx.getClient().attr(APP_NAME, appName);
         InetAddress addr = ctx.getClient().getRemoteAddress().getAddress();
         App.logMetric("remoteAddr", addr);
-        dnsServer.addHosts(appName, addr);
+        dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
 
         syncRegister(Arrays.toList(registerEndpoints));
         return config.getDnsPort();
@@ -103,7 +107,7 @@ public class NameserverImpl implements Nameserver {
     @Override
     public void deregister() {
         RemotingContext ctx = RemotingContext.context();
-        String appName = (String) ctx.getClient().userState;
+        String appName = ctx.getClient().attr(APP_NAME);
         if (appName == null) {
             throw new InvalidException("Must register first");
         }
@@ -112,21 +116,22 @@ public class NameserverImpl implements Nameserver {
     }
 
     private void doDeregister(RpcServerClient client, boolean isDisconnected) {
-        String appName = (String) client.userState;
+        String appName = client.attr(APP_NAME);
         InetAddress ip = client.getRemoteAddress().getAddress();
         //同app同ip多实例，比如k8s滚动更新
-        if (NQuery.of(rs.getClients()).count(p -> eq(p.userState, appName) && p.getRemoteAddress().getAddress().equals(ip)) == (isDisconnected ? 0 : 1)) {
-            dnsServer.removeHosts(appName, ip);
+        if (NQuery.of(rs.getClients()).count(p -> eq(p.attr(APP_NAME), appName) && p.getRemoteAddress().getAddress().equals(ip)) == (isDisconnected ? 0 : 1)) {
+            dnsServer.removeHosts(appName, Collections.singletonList(ip));
             syncDeregister(new DeregisterInfo(appName, ip));
         }
     }
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
-        Set<InetAddress> set = dnsServer.getHosts().get(appName);
-        if (set == null) {
+        RandomList<InetAddress> list = dnsServer.getHosts().get(appName);
+        if (CollectionUtils.isEmpty(list)) {
             return Collections.emptyList();
         }
-        return new ArrayList<>(set);
+        //根据权重取2个
+        return NQuery.of(list.next(), list.next()).distinct().toList();
     }
 }

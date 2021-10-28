@@ -74,7 +74,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 Sockets.closeOnFlushed(channel);
                 return;
             }
-            if (tryAs(pack, HandshakePacket.class, p -> client.setHandshakePacket(p))) {
+            if (tryAs(pack, HandshakePacket.class, p -> client.getHandshakePacket().setEventVersion(p.getEventVersion()))) {
                 log.debug("Handshake: {}", toJsonString(client.getHandshakePacket()));
                 return;
             }

@@ -20,7 +20,6 @@ import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -79,7 +78,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         String domain = question.name().substring(0, question.name().length() - 1);
         log.debug("query domain {}", domain);
 
-        Set<InetAddress> ips = server.getHosts().get(domain);
+        List<InetAddress> ips = server.getHosts().get(domain);
         if (!CollectionUtils.isEmpty(ips)) {
             ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips).select(InetAddress::getAddress).toArray()));
             return;
