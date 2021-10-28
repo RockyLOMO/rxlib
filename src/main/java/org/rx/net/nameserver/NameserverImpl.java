@@ -24,8 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.rx.core.App.*;
 
 public class NameserverImpl implements Nameserver {
-    static final String APP_NAME = "APP_NAME";
-
     @RequiredArgsConstructor
     static class DeregisterInfo implements Serializable {
         final String appName;
@@ -44,7 +42,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupBy(p -> isNull(p.attr(APP_NAME), "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
+        return NQuery.of(rs.getClients()).groupBy(p -> isNull(p.attr(), "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -55,7 +53,7 @@ public class NameserverImpl implements Nameserver {
 
         rs = Remoting.listen(this, config.getRegisterPort());
         rs.onDisconnected.combine((s, e) -> {
-            String appName = e.getClient().attr(APP_NAME);
+            String appName = e.getClient().attr();
             if (appName == null) {
                 return;
             }
@@ -95,7 +93,7 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
-        ctx.getClient().attr(APP_NAME, appName);
+        ctx.getClient().attr(appName);
         InetAddress addr = ctx.getClient().getRemoteAddress().getAddress();
         App.logMetric("remoteAddr", addr);
         dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
@@ -107,7 +105,7 @@ public class NameserverImpl implements Nameserver {
     @Override
     public void deregister() {
         RemotingContext ctx = RemotingContext.context();
-        String appName = ctx.getClient().attr(APP_NAME);
+        String appName = ctx.getClient().attr();
         if (appName == null) {
             throw new InvalidException("Must register first");
         }
@@ -116,10 +114,11 @@ public class NameserverImpl implements Nameserver {
     }
 
     private void doDeregister(RpcServerClient client, boolean isDisconnected) {
-        String appName = client.attr(APP_NAME);
+        String appName = client.attr();
         InetAddress ip = client.getRemoteAddress().getAddress();
         //同app同ip多实例，比如k8s滚动更新
-        if (NQuery.of(rs.getClients()).count(p -> eq(p.attr(APP_NAME), appName) && p.getRemoteAddress().getAddress().equals(ip)) == (isDisconnected ? 0 : 1)) {
+        int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
+        if (c == (isDisconnected ? 0 : 1)) {
             dnsServer.removeHosts(appName, Collections.singletonList(ip));
             syncDeregister(new DeregisterInfo(appName, ip));
         }

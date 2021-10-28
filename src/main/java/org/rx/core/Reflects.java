@@ -239,7 +239,7 @@ public class Reflects extends TypeUtils {
     @ErrorCode
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
-        Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
+        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
         if (method == null) {
             throw new ApplicationException(values(type.getName(), name));
         }

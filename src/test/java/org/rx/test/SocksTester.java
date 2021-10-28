@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
 import org.rx.bean.MultiValueMap;
@@ -18,6 +19,9 @@ import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.*;
+import org.rx.net.nameserver.NameserverClient;
+import org.rx.net.nameserver.NameserverConfig;
+import org.rx.net.nameserver.NameserverImpl;
 import org.rx.net.rpc.*;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
@@ -30,7 +34,9 @@ import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.security.AESUtil;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
+import org.springframework.web.bind.annotation.GetMapping;
 
+import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -47,6 +53,103 @@ public class SocksTester extends TConfig {
     final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
+
+    final NameserverConfig conf1 = new NameserverConfig() {{
+        setDnsPort(1853);
+        setRegisterPort(1854);
+    }};
+    final NameserverImpl ns1 = new NameserverImpl(conf1);
+    final NameserverConfig conf2 = new NameserverConfig() {{
+        setDnsPort(1953);
+        setRegisterPort(1954);
+    }};
+    final NameserverImpl ns2 = new NameserverImpl(conf2);
+    String appUsercenter = "usercenter";
+    String appOrder = "order";
+    String node1 = String.format("127.0.0.1:%s", conf1.getRegisterPort());
+    String node2 = String.format("127.0.0.1:%s", conf2.getRegisterPort());
+
+    @Test
+    public void singleNode() {
+        NameserverClient c1 = new NameserverClient(appUsercenter);
+        NameserverClient c2 = new NameserverClient(appOrder);
+
+        c1.registerAsync(node1).join();
+        List<InetAddress> discover = c1.discover(appUsercenter);
+        System.out.println(toJsonString(discover));
+        assert discover.contains(Sockets.LOOPBACK_ADDRESS);
+
+        discover = c1.discover(appOrder);
+        assert CollectionUtils.isEmpty(discover);
+
+        c2.registerAsync(node1).join();
+
+        discover = c1.discover(appOrder);
+        assert discover.contains(Sockets.LOOPBACK_ADDRESS);
+
+        c2.deregisterAsync().join();
+        discover = c1.discover(appOrder);
+        assert CollectionUtils.isEmpty(discover);
+    }
+
+    @GetMapping("/multiNode1")
+    public String multiNode1() {
+        NameserverClient c1 = new NameserverClient(appUsercenter);
+        NameserverClient c2 = new NameserverClient(appOrder);
+
+        c1.registerAsync(node1).join();
+        c2.registerAsync(node2, node1).join();
+        sleep4Sync();
+
+        System.out.println(toJsonString(c1.registerEndpoints()));
+        assert c1.registerEndpoints().containsAll(c2.registerEndpoints());
+
+        c2.deregisterAsync().join();
+        sleep4Sync();
+        List<InetAddress> discover = c1.discover(appOrder);
+        assert CollectionUtils.isEmpty(discover);
+
+        return "ok";
+    }
+
+    private void sleep4Sync() {
+        sleep(5000);
+        System.out.println("-等待异步同步-");
+    }
+
+    @GetMapping("/multiNode2")
+    public String multiNode2() {
+        NameserverClient c1 = new NameserverClient(appUsercenter);
+        NameserverClient c2 = new NameserverClient(appOrder);
+
+        c1.registerAsync(node1).join();
+        c2.registerAsync(node2).join();
+        assert !c1.registerEndpoints().containsAll(c2.registerEndpoints());
+
+        ns2.syncRegister(c1.registerEndpoints());
+
+        sleep4Sync();
+
+        System.out.println(toJsonString(c1.registerEndpoints()));
+        assert c1.registerEndpoints().containsAll(c2.registerEndpoints());
+
+        return "ok";
+    }
+
+    @SneakyThrows
+    @GetMapping("/singleClient")
+    public String singleClient() {
+        NameserverClient c1 = new NameserverClient(appUsercenter);
+
+        c1.registerAsync(node1, node2);
+        c1.wait4Inject(30 * 1000);
+
+        sleep4Sync();
+        System.out.println("x:" + ns1.getDnsServer().getHosts());
+        System.out.println("x2:" + ns2.getDnsServer().getHosts());
+
+        return "ok";
+    }
 
     @SneakyThrows
     @Test

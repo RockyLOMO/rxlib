@@ -19,6 +19,7 @@ public final class Container {
     //ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才会回收
     private static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
 
+    //不要放值类型
     public static <K, V> Map<K, V> weakMap() {
         return WEAK_MAP;
     }

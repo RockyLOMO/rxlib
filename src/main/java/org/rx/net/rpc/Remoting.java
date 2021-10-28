@@ -117,7 +117,7 @@ public final class Remoting {
                 case "raiseEvent":
                 case "raiseEventAsync":
                     if (args.length == 2) {
-                        if (BooleanUtils.isTrue(isCompute.get())) {
+                        if (!(args[0] instanceof String) || BooleanUtils.isTrue(isCompute.get())) {
                             return invokeSuper(m, p);
                         }
                         isCompute.remove();
@@ -128,6 +128,7 @@ public final class Remoting {
                         pack = eventMessage;
                         log.info("clientSide event {} -> PUBLISH", eventMessage.eventName);
                     }
+                    log.warn("xxx:", args);
                     break;
                 case "eventFlags":
                 case "asyncScheduler":
@@ -150,7 +151,7 @@ public final class Remoting {
                     init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                     sync.v.onReconnected.combine((s, e) -> {
                         if (onInit != null) {
-                            onInit.toConsumer().accept((T) p.getProxyObject(), (StatefulRpcClient) s);
+                            onInit.invoke((T) p.getProxyObject(), (StatefulRpcClient) s);
                         }
                         s.asyncScheduler().run(() -> {
                             for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
@@ -167,7 +168,7 @@ public final class Remoting {
                         });
                     });
                     if (onInit != null) {
-                        sync.v.raiseEvent(sync.v.onReconnected, new NEventArgs<>(facadeConfig.getServerEndpoint()));
+                        onInit.invoke((T) p.getProxyObject(), sync.v);
                         //onHandshake returnObject的情况
                         if (sync.v == null) {
                             init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
@@ -405,7 +406,7 @@ public final class Remoting {
                             Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)
                     ), e.getClient());
                 } catch (Exception ex) {
-                    Throwable cause = ex.getCause();
+                    Throwable cause = isNull(ex.getCause(), ex);
                     args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
