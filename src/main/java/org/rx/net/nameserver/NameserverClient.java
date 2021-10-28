@@ -97,14 +97,11 @@ public final class NameserverClient extends Disposable {
                                 tuple.right = tuple.middle.register(appName, registerEndpoints);
                                 reInject();
                             } catch (Throwable e) {
-                                delayTasks.computeIfAbsent(appName, k -> {
-                                    tuple.right = null;
-                                    return Tasks.scheduleUntil(() -> {
-                                        tuple.right = tuple.middle.register(appName, registerEndpoints);
-                                        reInject();
-                                        delayTasks.remove(appName);
-                                    }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD);
-                                });
+                                delayTasks.computeIfAbsent(appName, k -> Tasks.scheduleUntil(() -> {
+                                    tuple.right = tuple.middle.register(appName, registerEndpoints);
+                                    delayTasks.remove(appName); //优先
+                                    reInject();
+                                }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD));
                             }
                         };
                         tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
@@ -117,7 +114,10 @@ public final class NameserverClient extends Disposable {
                                         hold.setWeight(tuple, 0);
                                         reInject();
                                     });
-                                    rc.onReconnected.combine((s, e) -> doReg.invoke());
+                                    rc.onReconnected.combine((s, e) -> {
+                                        tuple.right = null;
+                                        doReg.invoke();
+                                    });
                                     ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
                                         log.info("sync server endpoints: {}", toJsonString(e.getValue()));
                                         if (e.getValue().isEmpty()) {

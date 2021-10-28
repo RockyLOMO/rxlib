@@ -74,7 +74,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public void syncRegister(@NonNull Collection<InetSocketAddress> registerEndpoints) {
-        if (!regEps.addAll(registerEndpoints) || !registerEndpoints.containsAll(regEps)) {
+        if (!regEps.addAll(registerEndpoints) || registerEndpoints.containsAll(regEps)) {
             return;
         }
 
