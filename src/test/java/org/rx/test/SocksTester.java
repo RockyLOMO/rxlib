@@ -75,7 +75,7 @@ public class SocksTester extends TConfig {
         c1.registerAsync(node1).join();
         List<InetAddress> discover = c1.discover(appUsercenter);
         System.out.println(toJsonString(discover));
-        assert discover.contains(Sockets.LOOPBACK_ADDRESS);
+        assert discover.contains(Sockets.loopbackAddress());
 
         discover = c1.discover(appOrder);
         assert CollectionUtils.isEmpty(discover);
@@ -83,7 +83,7 @@ public class SocksTester extends TConfig {
         c2.registerAsync(node1).join();
 
         discover = c1.discover(appOrder);
-        assert discover.contains(Sockets.LOOPBACK_ADDRESS);
+        assert discover.contains(Sockets.loopbackAddress());
 
         c2.deregisterAsync().join();
         discover = c1.discover(appOrder);
@@ -518,7 +518,7 @@ public class SocksTester extends TConfig {
         System.out.println(localHost);
 
         InetAddress loopbackAddress = InetAddress.getLoopbackAddress();
-        System.out.println(loopbackAddress.equals(Sockets.LOOPBACK_ADDRESS));
+        System.out.println(loopbackAddress.equals(Sockets.loopbackAddress()));
 
         InetAddress[] all = InetAddress.getAllByName(host_devops);
         System.out.println(java.util.Arrays.toString(all));

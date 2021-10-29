@@ -34,6 +34,7 @@ import org.rx.util.function.BiAction;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import static org.rx.bean.$.$;
@@ -41,32 +42,38 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class Sockets {
+    public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
+    static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
-    public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
-    private static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    private static DnsClient nsClient;
+    static final ReentrantLock nsLock = new ReentrantLock(true);
+    static DnsClient nsClient;
 
     @SneakyThrows
-    public static synchronized void injectNameService(List<InetSocketAddress> nameServerList) {
+    public static void injectNameService(List<InetSocketAddress> nameServerList) {
         DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
-        if (nsClient == null) {
-            Class<?> type = InetAddress.class;
-            try {
-                Field field = type.getDeclaredField("nameService");
-                Reflects.setAccess(field);
-                field.set(null, nsProxy(field.get(null), client));
-            } catch (NoSuchFieldException e) {
-                Field field = type.getDeclaredField("nameServices");
-                Reflects.setAccess(field);
-                List<Object> nsList = (List<Object>) field.get(null);
-                nsList.set(0, nsProxy(nsList.get(0), client));
+        nsLock.lock();
+        try {
+            if (nsClient == null) {
+                Class<?> type = InetAddress.class;
+                try {
+                    Field field = type.getDeclaredField("nameService");
+                    Reflects.setAccess(field);
+                    field.set(null, nsProxy(field.get(null), client));
+                } catch (NoSuchFieldException e) {
+                    Field field = type.getDeclaredField("nameServices");
+                    Reflects.setAccess(field);
+                    List<Object> nsList = (List<Object>) field.get(null);
+                    nsList.set(0, nsProxy(nsList.get(0), client));
+                }
             }
+            nsClient = client;
+        } finally {
+            nsLock.unlock();
         }
-        nsClient = client;
     }
 
     private static Object nsProxy(Object ns, DnsClient client) {
@@ -336,12 +343,18 @@ public final class Sockets {
     }
 
     //region Address
-    public static final InetAddress LOOPBACK_ADDRESS = InetAddress.getLoopbackAddress(),
-            ANY_ADDRESS = quietly(() -> InetAddress.getByName("0.0.0.0"));
+    public static InetAddress loopbackAddress() {
+        return InetAddress.getLoopbackAddress();
+    }
+
+    @SneakyThrows
+    public static InetAddress anyLocalAddress() {
+        return InetAddress.getByName("0.0.0.0");
+    }
 
     @SneakyThrows
     public static boolean isNatIp(InetAddress address) {
-        return eq(LOOPBACK_ADDRESS, address) || eq(InetAddress.getLocalHost(), address)
+        return eq(loopbackAddress(), address) || eq(InetAddress.getLocalHost(), address)
                 || address.getHostAddress().startsWith("192.168.");
     }
 
@@ -378,11 +391,11 @@ public final class Sockets {
     }
 
     public static InetSocketAddress localEndpoint(int port) {
-        return new InetSocketAddress(LOOPBACK_ADDRESS, port);
+        return new InetSocketAddress(loopbackAddress(), port);
     }
 
     public static InetSocketAddress anyEndpoint(int port) {
-        return new InetSocketAddress(ANY_ADDRESS, port);
+        return new InetSocketAddress(anyLocalAddress(), port);
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {

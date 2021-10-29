@@ -31,7 +31,7 @@ public class SocksConfig extends SocketConfig {
 
     private Set<InetAddress> whiteList() {
         Set<InetAddress> list = ConcurrentHashMap.newKeySet(1);
-        list.add(Sockets.LOOPBACK_ADDRESS);
+        list.add(Sockets.loopbackAddress());
         return list;
     }
 }

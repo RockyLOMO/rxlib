@@ -17,7 +17,6 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -85,13 +84,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
 
-//        if (!domain.contains(".")) {
-//            log.warn("Invalid domain {}", domain);
-//            ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-//            return;
-//        }
         if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
-            ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Sockets.LOOPBACK_ADDRESS.getAddress()));
+            ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Sockets.loopbackAddress().getAddress()));
             return;
         }
         RandomList<UpstreamSupport> shadowServers = server.shadowServers;

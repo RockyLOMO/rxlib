@@ -22,13 +22,13 @@ class ComboIPSearcher implements IPSearcher {
 
     @Override
     public IPAddress current() {
-        return search(Sockets.LOOPBACK_ADDRESS.getHostAddress());
+        return search(Sockets.loopbackAddress().getHostAddress());
     }
 
     @SneakyThrows
     @Override
     public IPAddress search(@NonNull String ip) {
-        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
             return Tasks.randomRetry(() -> ip_Api(ip), () -> ipGeo(ip),
                     () -> ipData(ip), () -> ipApi(ip));
         }
@@ -53,7 +53,7 @@ class ComboIPSearcher implements IPSearcher {
     }
 
     IPAddress ip_Api(String ip) {
-        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
             ip = Strings.EMPTY;
         }
         String url = String.format("http://ip-api.com/json/%s", ip);
@@ -67,7 +67,7 @@ class ComboIPSearcher implements IPSearcher {
     //1.5k/d
     @SneakyThrows
     IPAddress ipData(String ip) {
-        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -86,7 +86,7 @@ class ComboIPSearcher implements IPSearcher {
 
     //1k/d
     IPAddress ipGeo(String ip) {
-        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
             ip = Strings.EMPTY;
         }
         String url = String.format("https://api.ipgeolocation.io/ipgeo?apiKey=e96493e9280e4a4fae1b8744ad688272&ip=%s", ip);
@@ -98,7 +98,7 @@ class ComboIPSearcher implements IPSearcher {
 
     //1k/m
     IPAddress ipApi(String ip) {
-        if (ip.equals(Sockets.LOOPBACK_ADDRESS.getHostAddress())) {
+        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
             ip = "check";
         }
         String url = String.format("http://api.ipapi.com/%s?access_key=8da5fe816dba52150d4c40ba72705954", ip);

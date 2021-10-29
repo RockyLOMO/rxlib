@@ -47,14 +47,8 @@ public final class Remoting {
         }
 
         static class EventBean {
-            Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
-            Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
-
-            EventContext context(UUID id) {
-                EventContext context = contextMap.get(id);
-                Objects.requireNonNull(context);
-                return context;
-            }
+            final Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
+            final Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
         }
 
         @Getter
@@ -387,10 +381,14 @@ public final class Remoting {
                             break;
                         case COMPUTE_ARGS:
                             synchronized (eventBean) {
-                                ServerBean.EventContext context = eventBean.context(p.computeId);
-                                //赋值原引用对象
-                                BeanMapper.INSTANCE.map(p.eventArgs, context.computedArgs);
-                                log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, context.computingClient.getId(), toJsonString(context.computedArgs));
+                                ServerBean.EventContext ctx = eventBean.contextMap.get(p.computeId);
+                                if (ctx == null) {
+                                    log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
+                                } else {
+                                    //赋值原引用对象
+                                    BeanMapper.INSTANCE.map(p.eventArgs, ctx.computedArgs);
+                                    log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getId(), toJsonString(ctx.computedArgs));
+                                }
                                 eventBean.notifyAll();
                             }
                             break;
