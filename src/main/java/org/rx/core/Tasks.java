@@ -268,9 +268,7 @@ public final class Tasks {
     }
 
     static TaskScheduler.Task<?> wrap(Action task) {
-        return new TaskScheduler.Task<>(null, null, () -> {
-            task.invoke();
-            return null;
-        });
+        //schedule 抛出异常会终止
+        return new TaskScheduler.Task<>(null, null, () -> App.quietly(task));
     }
 }

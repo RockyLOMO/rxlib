@@ -327,10 +327,14 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void exceptionHandle() {
-        Tasks.scheduleOnce(() -> {
-            throw new InvalidException("xx");
+        Tasks.schedule(() -> {
+            try {
+                throw new InvalidException("xx");
+            } catch (Exception e) {
+                log.error("x", e);
+            }
         }, 1000);
-        sleep(3000);
+        sleep(5000);
     }
 
     @Test
