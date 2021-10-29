@@ -76,11 +76,11 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = question.name().substring(0, question.name().length() - 1);
-        log.debug("query domain {}", domain);
 
-        List<InetAddress> ips = server.getHosts().get(domain);
+        RandomList<InetAddress> ips = server.getHosts().get(domain);
+        log.info("query domain {} -> {} hosts", domain, CollectionUtils.size(ips));
         if (!CollectionUtils.isEmpty(ips)) {
-            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips).select(InetAddress::getAddress).toArray()));
+            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips.next(), ips.next()).distinct().select(InetAddress::getAddress).toArray()));
             return;
         }
 
