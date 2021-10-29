@@ -3,7 +3,6 @@ package org.rx.net.nameserver;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.App;
@@ -130,11 +129,6 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
-        RandomList<InetAddress> list = dnsServer.getHosts().get(appName);
-        if (CollectionUtils.isEmpty(list)) {
-            return Collections.emptyList();
-        }
-        //根据权重取2个
-        return NQuery.of(list.next(), list.next()).distinct().toList();
+        return dnsServer.getHosts(appName);
     }
 }

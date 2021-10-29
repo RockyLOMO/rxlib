@@ -240,7 +240,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     private int nextReconnectDelay() {
-        return Math.min(reconnectDelayMs = reconnectDelayMs * 2, 5000);
+        return Math.min(reconnectDelayMs = Math.max(reconnectDelayMs * 2, 50), 5000);
     }
 
     @Override

@@ -23,7 +23,7 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public final class NameserverClient extends Disposable {
-    static final int DEFAULT_RETRY_PERIOD = 500;
+    static final int DEFAULT_RETRY_PERIOD = 1000;
     static final int DEFAULT_RETRY = 2;
     static final List<RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>>> LISTS = new CopyOnWriteArrayList<>();
     static final ManualResetEvent syncRoot = new ManualResetEvent();

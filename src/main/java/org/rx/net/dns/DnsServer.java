@@ -9,6 +9,7 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
@@ -21,6 +22,7 @@ import org.rx.net.support.UpstreamSupport;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,6 +62,15 @@ public class DnsServer extends Disposable {
     @Override
     protected void freeObjects() {
         Sockets.closeBootstrap(serverBootstrap);
+    }
+
+    public List<InetAddress> getHosts(String host) {
+        RandomList<InetAddress> ips = hosts.get(host);
+        if (CollectionUtils.isEmpty(ips)) {
+            return Collections.emptyList();
+        }
+        //根据权重取2个
+        return NQuery.of(ips.next(), ips.next()).distinct().toList();
     }
 
     @SneakyThrows

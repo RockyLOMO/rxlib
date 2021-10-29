@@ -17,6 +17,7 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -77,10 +78,10 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = question.name().substring(0, question.name().length() - 1);
 
-        RandomList<InetAddress> ips = server.getHosts().get(domain);
-        log.info("query domain {} -> {} hosts", domain, CollectionUtils.size(ips));
-        if (!CollectionUtils.isEmpty(ips)) {
-            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips.next(), ips.next()).distinct().select(InetAddress::getAddress).toArray()));
+        List<InetAddress> ips = server.getHosts(domain);
+        log.info("query domain {} -> {} hosts", domain, ips.size());
+        if (!ips.isEmpty()) {
+            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips).select(InetAddress::getAddress).toArray()));
             return;
         }
 
