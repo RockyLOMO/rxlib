@@ -17,6 +17,7 @@ import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
 
 /**
+ * GMT: UTC +0
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
 public final class DateTime extends Date {
