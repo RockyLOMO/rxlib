@@ -16,7 +16,7 @@ public class DnsMessageUtil {
                 .setRecursionDesired(response.isRecursionDesired())
                 .setZ(response.z());
         for (DnsSection section : DnsSection.values()) {
-            setRecord(section, response, newResponse);
+            setRecords(section, response, newResponse);
         }
         return newResponse;
     }
@@ -31,18 +31,18 @@ public class DnsMessageUtil {
         return response;
     }
 
-    @Nonnull
-    public static DatagramDnsQuery newUdpQuery(@Nonnull InetSocketAddress sender,
-                                               @Nonnull InetSocketAddress recipient,
-                                               @Nonnull DnsQuery dnsQuery) {
-        final DatagramDnsQuery newQuery = new DatagramDnsQuery(sender, recipient, dnsQuery.id(), dnsQuery.opCode())
-                .setRecursionDesired(dnsQuery.isRecursionDesired())
-                .setZ(dnsQuery.z());
-        if (dnsQuery.count(DnsSection.QUESTION) > 0) {
-            setRecord(DnsSection.QUESTION, dnsQuery, newQuery);
-        }
-        return newQuery;
-    }
+//    @Nonnull
+//    public static DatagramDnsQuery newUdpQuery(@Nonnull InetSocketAddress sender,
+//                                               @Nonnull InetSocketAddress recipient,
+//                                               @Nonnull DnsQuery dnsQuery) {
+//        final DatagramDnsQuery newQuery = new DatagramDnsQuery(sender, recipient, dnsQuery.id(), dnsQuery.opCode())
+//                .setRecursionDesired(dnsQuery.isRecursionDesired())
+//                .setZ(dnsQuery.z());
+//        if (dnsQuery.count(DnsSection.QUESTION) > 0) {
+//            setRecords(DnsSection.QUESTION, dnsQuery, newQuery);
+//        }
+//        return newQuery;
+//    }
 
     public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsQuery dnsQuery, @Nonnull DnsResponseCode rCode) {
         if (dnsQuery instanceof DatagramDnsQuery) {
@@ -66,19 +66,21 @@ public class DnsMessageUtil {
         } else {
             response = new DefaultDnsResponse(dnsMessage.id(), dnsMessage.opCode(), rCode);
         }
-        if (dnsMessage.count(DnsSection.QUESTION) > 0) {
-            setRecord(DnsSection.QUESTION, dnsMessage, response);
-        }
+        setRecords(DnsSection.QUESTION, dnsMessage, response);
+        setRecords(DnsSection.ANSWER, dnsMessage, response);
+        setRecords(DnsSection.AUTHORITY, dnsMessage, response);
+        setRecords(DnsSection.ADDITIONAL, dnsMessage, response);
         return response;
     }
 
-    private static void setRecord(DnsSection dnsSection, DnsMessage oldDnsMessage, DnsMessage newDnsMessage) {
-        for (int i = 0; i < oldDnsMessage.count(dnsSection); i++) {
-            DnsRecord dnsRecord = oldDnsMessage.recordAt(dnsSection, i);
+    private static void setRecords(DnsSection section, DnsMessage oldDnsMessage, DnsMessage newDnsMessage) {
+        int count = oldDnsMessage.count(section);
+        for (int i = 0; i < count; i++) {
+            DnsRecord dnsRecord = oldDnsMessage.recordAt(section, i);
             if (dnsRecord instanceof ReferenceCounted) {
                 ((ReferenceCounted) dnsRecord).retain();
             }
-            newDnsMessage.addRecord(dnsSection, dnsRecord);
+            newDnsMessage.addRecord(section, dnsRecord);
         }
     }
 }
