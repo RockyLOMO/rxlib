@@ -3,6 +3,7 @@ package org.rx.net.nameserver;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.App;
@@ -24,6 +25,7 @@ import static org.rx.core.App.*;
 
 public class NameserverImpl implements Nameserver {
     @RequiredArgsConstructor
+    @ToString
     static class DeregisterInfo implements Serializable {
         final String appName;
         final InetAddress ip;
@@ -122,6 +124,7 @@ public class NameserverImpl implements Nameserver {
         //同app同ip多实例，比如k8s滚动更新
         int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
         if (c == (isDisconnected ? 0 : 1)) {
+            App.log("deregister {}", appName);
             dnsServer.removeHosts(appName, Collections.singletonList(ip));
             syncDeregister(new DeregisterInfo(appName, ip));
         }
