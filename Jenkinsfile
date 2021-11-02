@@ -14,8 +14,8 @@ pipeline {
     stages {
         stage ('build') {
             steps {
-                echo "${SHADOW_USER_PASSWORD}"
-                echo "env: ${PARAMS}"
+                sh 'echo ${SHADOW_USER_PASSWORD}'
+                sh 'echo "env: ${PARAMS}"'
                 container ('maven') {
                     sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install'
                 }
