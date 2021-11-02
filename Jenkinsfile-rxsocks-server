@@ -1,0 +1,59 @@
+pipeline {
+    agent {
+        node {
+            label 'maven-jdk-11'
+        }
+    }
+
+    environment {
+        APP_NAME = 'rxsocks-server'
+        JAR_NAME = 'rxsocks-server-1.0.jar'
+
+        APP_HOST = '103.79.76.126'
+        APP_HOST2 = '103.79.76.207'
+        REMOTE_PATH = '/root/'
+
+        U0 = 'root'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                container ('maven-jdk-11') {
+                    sh 'mvn -B clean package -am -Dmaven.test.skip=true'
+                    sh 'cp -f ${PWD}/rxlib/target/rxlib-2.17.6-SNAPSHOT.jar ${PWD}/${JAR_NAME}'
+                }
+            }
+        }
+
+        stage('Deploy Node0') {
+            steps {
+                container ('maven-jdk-11') {
+                    sh '/home/scpx.sh ${JAR_NAME} ${APP_HOST} ${REMOTE_PATH}${JAR_NAME} ${U0}'
+                    script {
+                        sleep(2)
+                    }
+                    sh '/home/sshx.sh ${APP_HOST} "${REMOTE_PATH}socks-server.sh" ${U0}'
+                    script {
+                        println("Publish ok!")
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Node1') {
+            steps {
+                container ('maven-jdk-11') {
+                    sh '/home/scpx.sh ${JAR_NAME} ${APP_HOST2} ${REMOTE_PATH}${JAR_NAME} ${U0}'
+                    script {
+                        sleep(2)
+                    }
+                    sh '/home/sshx.sh ${APP_HOST2} "${REMOTE_PATH}socks-server.sh" ${U0}'
+                    script {
+                        println("Publish ok!")
+                    }
+                }
+            }
+        }
+    }
+}
