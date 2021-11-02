@@ -12,6 +12,12 @@ pipeline {
     }
 
     stages {
+        stage("Env Variables") {
+            steps {
+                sh "printenv"
+            }
+        }
+
         stage ('build') {
             steps {
                 sh 'echo ${SHADOW_USER_PASSWORD}'
