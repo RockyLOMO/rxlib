@@ -21,7 +21,9 @@ pipeline {
                 branch 'master'
             }
             steps {
-                sh 'echo ${SHADOW_USER_PASSWORD}'
+                withCredentials([usernamePassword(usernameVariable: 'SU_USR', passwordVariable: 'SU_PWD', credentialsId: "$SHADOW_USER_CREDENTIAL_ID")]) {
+                    sh 'echo "$SU_USR : SU_PWD"'
+                }
                 container ('maven') {
                     sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install'
                 }
