@@ -61,7 +61,7 @@ public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final List<TaskScheduler> replicas;
-    //HashedWheelTimer
+    private static final WheelTimer wheelTimer = new WheelTimer();
     private static final ScheduledThreadPoolExecutor scheduler;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
@@ -87,6 +87,10 @@ public final class Tasks {
 
     public static TaskScheduler pool() {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
+    }
+
+    public static WheelTimer timer() {
+        return wheelTimer;
     }
 
     public static ScheduledExecutorService scheduler() {
