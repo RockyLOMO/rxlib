@@ -60,14 +60,14 @@ public class NameserverImpl implements Nameserver {
                 return;
             }
 
-            doDeregister(e.getClient(), true);
+            doDeregister(appName, e.getClient().getRemoteAddress().getAddress(), true);
         });
 
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
             log("[{}] Replica {}", getSyncPort(), packet);
-            if (!tryAs(packet, DeregisterInfo.class, p -> dnsServer.removeHosts(p.appName, Collections.singletonList(p.ip)))) {
+            if (!tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.ip, false))) {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
@@ -115,12 +115,10 @@ public class NameserverImpl implements Nameserver {
             throw new InvalidException("Must register first");
         }
 
-        doDeregister(ctx.getClient(), false);
+        doDeregister(appName, ctx.getClient().getRemoteAddress().getAddress(), false);
     }
 
-    private void doDeregister(RpcServerClient client, boolean isDisconnected) {
-        String appName = client.attr();
-        InetAddress ip = client.getRemoteAddress().getAddress();
+    private void doDeregister(String appName, InetAddress ip, boolean isDisconnected) {
         //同app同ip多实例，比如k8s滚动更新
         int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
         if (c == (isDisconnected ? 0 : 1)) {
