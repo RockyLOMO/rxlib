@@ -55,9 +55,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
-            NamedRunnable p = pool.getAs((Runnable) t, false);
-            if (p != null && p.getFlag() != null) {
-                switch (p.getFlag()) {
+            IdentityRunnable p = pool.getAs((Runnable) t, false);
+            if (p != null && p.flag() != null) {
+                switch (p.flag()) {
                     case TRANSFER:
                         log.debug("Block caller thread until queue take");
                         transfer(t);
@@ -141,10 +141,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    public interface NamedRunnable extends Runnable {
-        String getName();
+    public interface IdentityRunnable extends Runnable {
+        Object id();
 
-        default RunFlag getFlag() {
+        default RunFlag flag() {
             return RunFlag.CONCURRENT;
         }
     }
@@ -172,7 +172,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     private final String poolName;
     private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Tuple<ReentrantLock, AtomicInteger>> syncRoot = new ConcurrentHashMap<>(8);
+    private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
     private AtomicInteger decrementCounter;
     private AtomicInteger incrementCounter;
 
@@ -256,7 +256,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        NamedRunnable p = null;
+        IdentityRunnable p = null;
         if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
             Object fn = Reflects.readField(r.getClass(), r, "fn");
             if (fn == null) {
@@ -265,27 +265,27 @@ public class ThreadPool extends ThreadPoolExecutor {
             } else {
                 funcMap.put(r, (Runnable) fn);
             }
-            p = as(fn, NamedRunnable.class);
+            p = as(fn, IdentityRunnable.class);
         }
         if (p == null) {
-            p = as(r, NamedRunnable.class);
+            p = as(r, IdentityRunnable.class);
         }
-        if (p != null && p.getFlag() != null) {
-            switch (p.getFlag()) {
+        if (p != null && p.flag() != null) {
+            switch (p.flag()) {
                 case SINGLE: {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.getName());
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.id());
                     if (!locker.left.tryLock()) {
-                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", p.getName()));
+                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", p.id()));
                     }
                     locker.right.incrementAndGet();
-                    log.debug("{} {} tryLock", p.getFlag(), p.getName());
+                    log.debug("{} {} tryLock", p.flag(), p.id());
                 }
                 break;
                 case SYNCHRONIZED: {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.getName());
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.id());
                     locker.right.incrementAndGet();
                     locker.left.lock();
-                    log.debug("{} {} lock", p.getFlag(), p.getName());
+                    log.debug("{} {} lock", p.flag(), p.id());
                 }
                 break;
             }
@@ -294,25 +294,25 @@ public class ThreadPool extends ThreadPoolExecutor {
         super.beforeExecute(t, r);
     }
 
-    private Tuple<ReentrantLock, AtomicInteger> getLocker(String name) {
-        return syncRoot.computeIfAbsent(name, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
+    private Tuple<ReentrantLock, AtomicInteger> getLocker(Object id) {
+        return syncRoots.computeIfAbsent(id, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
     }
 
-    private NamedRunnable getAs(Runnable command, boolean remove) {
+    private IdentityRunnable getAs(Runnable command, boolean remove) {
         Runnable r = remove ? funcMap.remove(command) : funcMap.get(command);
-        return as(r, NamedRunnable.class);
+        return as(r, IdentityRunnable.class);
     }
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
-        NamedRunnable p = getAs(r, true);
+        IdentityRunnable p = getAs(r, true);
         if (p != null) {
-            Tuple<ReentrantLock, AtomicInteger> locker = syncRoot.get(p.getName());
+            Tuple<ReentrantLock, AtomicInteger> locker = syncRoots.get(p.id());
             if (locker != null) {
-                log.debug("{} {} unlock", p.getFlag(), p.getName());
+                log.debug("{} {} unlock", p.flag(), p.id());
                 locker.left.unlock();
                 if (locker.right.decrementAndGet() <= 0) {
-                    syncRoot.remove(p.getName());
+                    syncRoots.remove(p.id());
                 }
             }
         }

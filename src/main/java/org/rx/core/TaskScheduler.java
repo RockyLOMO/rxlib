@@ -17,7 +17,7 @@ import static org.rx.core.App.isNull;
 
 public class TaskScheduler extends ThreadPool {
     @RequiredArgsConstructor
-    protected static class Task<T> implements ThreadPool.NamedRunnable, Callable<T>, Supplier<T> {
+    protected static class Task<T> implements IdentityRunnable, Callable<T>, Supplier<T> {
         @Getter
         private final String name;
         @Getter
