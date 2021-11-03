@@ -10,8 +10,9 @@ public enum RunFlag implements NEnum<RunFlag> {
     CONCURRENT(0),
     SYNCHRONIZED(1),
     SINGLE(2),
-    TRANSFER(3),
-    PRIORITY(4);
+    OVERRIDE(3),
+    TRANSFER(4),
+    PRIORITY(5);
 
     final int value;
 }

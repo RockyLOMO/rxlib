@@ -122,7 +122,6 @@ public final class Remoting {
                         pack = eventMessage;
                         log.info("clientSide event {} -> PUBLISH", eventMessage.eventName);
                     }
-                    log.warn("xxx:", args);
                     break;
                 case "eventFlags":
                 case "asyncScheduler":
@@ -140,32 +139,34 @@ public final class Remoting {
                 return RpcClientPool.createPool(k);
             });
 
-            synchronized (sync) {
-                if (sync.v == null) {
-                    init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
-                    sync.v.onReconnected.combine((s, e) -> {
-                        if (onInit != null) {
-                            onInit.invoke((T) p.getProxyObject(), (StatefulRpcClient) s);
-                        }
-                        s.asyncScheduler().run(() -> {
-                            for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
-                                if (value.syncRoot.getHoldCount() == 0) {
-                                    continue;
-                                }
-                                log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
-                                try {
-                                    s.send(value.pack);
-                                } catch (ClientDisconnectedException ex) {
-                                    log.warn("clientSide resent pack[{}] fail", value.pack.id);
-                                }
+            if (sync.v == null) {
+                synchronized (sync) {
+                    if (sync.v == null) {
+                        init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                        sync.v.onReconnected.combine((s, e) -> {
+                            if (onInit != null) {
+                                onInit.invoke((T) p.getProxyObject(), (StatefulRpcClient) s);
                             }
+                            s.asyncScheduler().run(() -> {
+                                for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
+                                    if (value.syncRoot.getHoldCount() == 0) {
+                                        continue;
+                                    }
+                                    log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
+                                    try {
+                                        s.send(value.pack);
+                                    } catch (ClientDisconnectedException ex) {
+                                        log.warn("clientSide resent pack[{}] fail", value.pack.id);
+                                    }
+                                }
+                            });
                         });
-                    });
-                    if (onInit != null) {
-                        onInit.invoke((T) p.getProxyObject(), sync.v);
-                        //onHandshake returnObject的情况
-                        if (sync.v == null) {
-                            init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                        if (onInit != null) {
+                            onInit.invoke((T) p.getProxyObject(), sync.v);
+                            //onHandshake returnObject的情况
+                            if (sync.v == null) {
+                                init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
+                            }
                         }
                     }
                 }
@@ -237,10 +238,10 @@ public final class Remoting {
                         }
                     });
                 }
-                synchronized (sync) {
-                    if (waitBeans != null) {
-                        waitBeans.remove(clientBean.pack.id);
-                        if (waitBeans.isEmpty()) {
+                if (waitBeans != null) {
+                    waitBeans.remove(clientBean.pack.id);
+                    if (waitBeans.isEmpty()) {
+                        synchronized (sync) {
                             sync.v = pool.returnClient(client);
                         }
                     }
