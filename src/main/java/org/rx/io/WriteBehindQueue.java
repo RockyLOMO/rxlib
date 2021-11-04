@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -8,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
-import org.rx.util.RedoTimer;
 import org.rx.util.function.BiAction;
 
 import java.util.*;
@@ -24,8 +22,6 @@ final class WriteBehindQueue<K, V> extends Disposable {
     private final IntWaterMark waterMark;
     //sequential
     private final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> sortMap = new ConcurrentSkipListMap<>();
-    private final RedoTimer timer = new RedoTimer();
-    private volatile Timeout timeout;
     private final ManualResetEvent syncRoot = new ManualResetEvent();
     private volatile boolean stop;  //避免consume时又offer 死循环
 
@@ -46,7 +42,6 @@ final class WriteBehindQueue<K, V> extends Disposable {
 
     public void reset() {
         sortMap.clear();
-        timeout = null;
         syncRoot.set();
     }
 
@@ -66,18 +61,16 @@ final class WriteBehindQueue<K, V> extends Disposable {
 
         if (sortMap.size() > waterMark.getHigh()) {
             log.warn("high water mark threshold");
-            if (timeout == null) {
-                timeout = timer.setTimeout(this::consume, 1);
-            }
+            Tasks.timer().setTimeout(() -> {
+                consume();
+                return false;
+            }, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE);
             syncRoot.waitOne();
             syncRoot.reset();
             log.info("below low water mark");
         }
 
-        if (timeout != null) {
-            timeout.cancel();
-        }
-        timeout = timer.setTimeout(this::consume, writeDelayed);
+        Tasks.setTimeout(this::consume, writeDelayed, this, TimeoutFlag.SINGLE);
         log.debug("offer {} {} delay={}", posKey, writeVal, writeDelayed);
     }
 
@@ -95,10 +88,6 @@ final class WriteBehindQueue<K, V> extends Disposable {
     }
 
     public void consume() {
-        consume(timeout);
-    }
-
-    private void consume(Timeout t) {
         int size = sortMap.size();
         while (size > 0) {
             Map.Entry<K, Tuple<V, BiAction<V>>> entry = sortMap.pollFirstEntry();

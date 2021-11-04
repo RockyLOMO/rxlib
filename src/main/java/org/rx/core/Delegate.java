@@ -55,6 +55,10 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
 
     private final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
 
+    public boolean isEmpty() {
+        return invocations.isEmpty();
+    }
+
     @SafeVarargs
     public final Delegate<TSender, TArgs> replace(TripleAction<TSender, TArgs>... delegates) {
         invocations.clear();
