@@ -23,7 +23,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.App.tryAs;
@@ -36,7 +36,7 @@ public class UdpClient implements EventTarget<UdpClient> {
         public final ManualResetEvent syncRoot = new ManualResetEvent();
 
         public int resend;
-        public ScheduledFuture<?> future;
+        public Future<?> future;
     }
 
     static final AttributeKey<UdpClient> OWNER = AttributeKey.valueOf("UdpClient");
@@ -136,8 +136,10 @@ public class UdpClient implements EventTarget<UdpClient> {
         if (message.ack != AckSync.NONE) {
             Context ctx = new Context(message);
             queue.put(message.id, ctx);
-            ctx.future = Tasks.scheduleUntil(() -> channel.writeAndFlush(serialize(remoteAddress, message)),
-                    () -> ++ctx.resend > maxResend, waitAckTimeoutMillis / maxResend);
+            ctx.future = Tasks.setTimeout(() -> {
+                channel.writeAndFlush(serialize(remoteAddress, message));
+                return ++ctx.resend <= maxResend;
+            }, waitAckTimeoutMillis / maxResend);
         }
         ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message));
         if (message.ack != AckSync.NONE) {

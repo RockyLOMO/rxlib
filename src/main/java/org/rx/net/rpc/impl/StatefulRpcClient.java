@@ -27,7 +27,6 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.TimeoutException;
-import java.util.function.LongUnaryOperator;
 
 import static org.rx.core.App.*;
 
@@ -77,10 +76,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             log.info("clientInactive {}", channel.remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
-            connFuture = Tasks.timer().setTimeout(() -> {
-                doConnect(true, null);
-                return true;
-            }, NEXT_CONNECT_DELAY, StatefulRpcClient.this, TimeoutFlag.SINGLE);
+            doConnect(true, null);
         }
 
         @Override
@@ -119,11 +115,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
-    static final LongUnaryOperator NEXT_CONNECT_DELAY = d -> {
-        long delay = d >= 5000 ? 5000 : Math.max(d * 2, 50);
-        log.info("connection failed will re-attempt in {} ms", delay);
-        return delay;
-    };
     public final Delegate<RpcClient, EventArgs> onConnected = Delegate.create(),
             onDisconnected = Delegate.create();
     public final Delegate<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
@@ -226,10 +217,16 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             channel = f.channel();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
-                    connFuture = Tasks.timer().setTimeout(() -> {
-                        doConnect(true, syncRoot);
-                        return true;
-                    }, NEXT_CONNECT_DELAY, this, TimeoutFlag.SINGLE);
+                    if (connFuture == null) {
+                        connFuture = Tasks.timer().setTimeout(() -> {
+                            doConnect(true, syncRoot);
+                            return true;
+                        }, d -> {
+                            long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
+                            log.info("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
+                            return delay;
+                        }, this, TimeoutFlag.SINGLE);
+                    }
                 } else {
                     if (reconnect) {
                         log.warn("reconnect {} fail", ep);

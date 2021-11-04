@@ -33,7 +33,7 @@ public final class NameserverClient extends Disposable {
             NQuery<BiTuple<InetSocketAddress, Nameserver, Integer>> q = NQuery.of(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
-                return ;
+                return;
             }
 
             List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toList();
@@ -102,11 +102,12 @@ public final class NameserverClient extends Disposable {
                                 tuple.right = tuple.middle.register(appName, registerEndpoints);
                                 reInject();
                             } catch (Throwable e) {
-                                delayTasks.computeIfAbsent(appName, k -> Tasks.scheduleUntil(() -> {
+                                delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
                                     tuple.right = tuple.middle.register(appName, registerEndpoints);
                                     delayTasks.remove(appName); //优先
                                     reInject();
-                                }, () -> tuple.right != null, DEFAULT_RETRY_PERIOD));
+                                    return false;
+                                }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
                             }
                         };
                         tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
