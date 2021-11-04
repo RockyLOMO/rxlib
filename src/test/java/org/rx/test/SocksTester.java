@@ -234,6 +234,10 @@ public class SocksTester extends TConfig {
 
     private void attachEvent(UserManagerImpl facade, String id) {
         facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
+//          Tasks.run(()->  facade.computeInt(0, -1));
+            System.out.println("xxx111");
+            facade.computeInt(0, -1);
+            System.out.println("xxx222");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
             e.getStatefulList().add(id + ":" + SUID.randomSUID());
             e.setCancel(false); //是否取消事件

@@ -2,7 +2,6 @@ package org.rx.core;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.$;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
@@ -14,8 +13,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
-
-import static org.rx.bean.$.$;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
@@ -247,18 +244,6 @@ public final class Tasks {
     public static Future<Void> setTimeout(PredicateAction task, long delay, Object taskId, TimeoutFlag flag) {
         return wheelTimer.setTimeout(task, delay, taskId, flag);
     }
-
-//    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> preCheckFunc, long delay) {
-//        $<ScheduledFuture<?>> future = $();
-//        future.v = schedule(() -> {
-//            if (preCheckFunc.invoke()) {
-//                future.v.cancel(true);
-//                return;
-//            }
-//            task.invoke();
-//        }, delay);
-//        return future.v;
-//    }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
         return NQuery.of(timeArray).select(p -> scheduleDaily(task, Time.valueOf(p))).toList();

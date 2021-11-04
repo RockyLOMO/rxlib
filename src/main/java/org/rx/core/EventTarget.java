@@ -18,8 +18,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
     enum EventFlags implements NEnum<EventFlags> {
         NONE(0),
         DYNAMIC_ATTACH(1),
-        THREAD_SAFE(1 << 1),
-        QUIETLY(1 << 2);
+        QUIETLY(1 << 1);
 
         @Getter
         private final int value;
