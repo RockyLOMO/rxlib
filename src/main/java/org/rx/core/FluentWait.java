@@ -15,7 +15,7 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.App.TIMEOUT_INFINITE;
 import static org.rx.core.App.require;
 
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class FluentWait {
     @Data
     public static class UntilState {
@@ -34,30 +34,21 @@ public class FluentWait {
     }
 
     public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {
-        return new FluentWait().timeout(timeoutMillis).interval(intervalMillis);
+        require(timeoutMillis, timeoutMillis > TIMEOUT_INFINITE);
+        require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
+
+        return new FluentWait(timeoutMillis, intervalMillis);
     }
 
     @Getter
-    private long timeout = defaultTimeout;
+    private final long timeout;
     @Getter
-    private long interval = defaultTimeout;
+    private final long interval;
+    private long retryMillis = TIMEOUT_INFINITE;
+    private boolean retryCallFirst;
+    private boolean throwOnFail = true;
     private String message;
     private final List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
-    private boolean throwOnFail = true;
-    private long retryMillis = TIMEOUT_INFINITE;
-    private boolean retryFirstCall;
-
-    public FluentWait timeout(long timeoutMillis) {
-        require(timeoutMillis, timeoutMillis > TIMEOUT_INFINITE);
-        this.timeout = timeoutMillis;
-        return this;
-    }
-
-    public FluentWait interval(long intervalMillis) {
-        require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
-        this.interval = intervalMillis;
-        return this;
-    }
 
     public FluentWait retryMillis(long retryMillis) {
         require(retryMillis, retryMillis >= TIMEOUT_INFINITE);
@@ -65,8 +56,13 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait retryFirstCall(boolean retryFirstCall) {
-        this.retryFirstCall = retryFirstCall;
+    public FluentWait retryCallFirst(boolean retryFirstCall) {
+        this.retryCallFirst = retryFirstCall;
+        return this;
+    }
+
+    public FluentWait throwOnFail(boolean throwOnFail) {
+        this.throwOnFail = throwOnFail;
         return this;
     }
 
@@ -78,11 +74,6 @@ public class FluentWait {
     @SafeVarargs
     public final FluentWait ignoredExceptions(Class<? extends Throwable>... exceptions) {
         ignoredExceptions.addAll(Arrays.toList(exceptions));
-        return this;
-    }
-
-    public FluentWait throwOnFail(boolean throwOnFail) {
-        this.throwOnFail = throwOnFail;
         return this;
     }
 
@@ -111,7 +102,7 @@ public class FluentWait {
         Throwable lastException;
         T lastResult = null;
         UntilState state = new UntilState(DateTime.now().addMilliseconds((int) timeout));
-        if (retryFirstCall && retryFunc != null) {
+        if (retryCallFirst && retryFunc != null) {
             retryFunc.invoke(state);
         }
 

@@ -21,7 +21,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
         QUIETLY(1 << 1);
 
         @Getter
-        private final int value;
+        final int value;
     }
 
     default FlagsEnum<EventFlags> eventFlags() {
@@ -51,9 +51,10 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
         d.remove(event);
     }
 
+    @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(@NonNull String eventName, TArgs args) {
         Delegate<TSender, TArgs> d = Delegate.wrap(this, eventName);
-        raiseEvent(d, args);
+        d.invoke((TSender) this, args);
     }
 
     @SuppressWarnings(NON_WARNING)

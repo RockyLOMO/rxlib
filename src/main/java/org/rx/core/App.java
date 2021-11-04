@@ -17,6 +17,7 @@ import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
@@ -170,7 +171,7 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypeSet = getConfig().getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            log("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            ExceptionHandler.INSTANCE.uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

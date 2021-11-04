@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
+import static org.rx.core.App.quietly;
+
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 @Slf4j
@@ -274,6 +276,6 @@ public final class Tasks {
 
     static TaskScheduler.Task<?> wrap(Action task) {
         //schedule 抛出异常会终止
-        return new TaskScheduler.Task<>(null, null, () -> App.quietly(task));
+        return new TaskScheduler.Task<>(null, null, () -> quietly(task));
     }
 }
