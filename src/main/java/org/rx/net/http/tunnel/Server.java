@@ -70,7 +70,7 @@ public class Server {
 
         public void closeBackend() {
             outboundReady = false;
-            Tasks.scheduleOnce(() -> {
+            Tasks.setTimeout(() -> {
                 Map<String, SocksContext> contextMap = holds.get(appName);
                 if (contextMap == null) {
                     return;

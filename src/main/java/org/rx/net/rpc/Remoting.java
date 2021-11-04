@@ -360,7 +360,7 @@ public final class Remoting {
                                                 log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
                                             } finally {
                                                 //delay purge
-                                                Tasks.scheduleOnce(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
+                                                Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
                                             }
                                         }
                                     }

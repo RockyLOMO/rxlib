@@ -29,19 +29,18 @@ public final class NameserverClient extends Disposable {
     static final ManualResetEvent syncRoot = new ManualResetEvent();
 
     static void reInject() {
-        Tasks.timer().setTimeout(() -> {
+        Tasks.setTimeout(() -> {
             NQuery<BiTuple<InetSocketAddress, Nameserver, Integer>> q = NQuery.of(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
-                return false;
+                return ;
             }
 
             List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toList();
             Sockets.injectNameService(ns);
             log.info("inject ns {}", toJsonString(ns));
             syncRoot.set();
-            return false;
-        }, 500, NameserverClient.class, RunFlag.OVERRIDE);
+        }, 500, NameserverClient.class, TimeoutFlag.REPLACE);
     }
 
     @Getter

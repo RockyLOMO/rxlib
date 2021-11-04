@@ -120,7 +120,7 @@ public class UdpClient implements EventTarget<UdpClient> {
 
     void sendAck(InetSocketAddress remoteAddress, UdpMessage message) {
         record.add(message.id);
-        Tasks.scheduleOnce(() -> record.remove(message.id), message.alive);
+        Tasks.setTimeout(() -> record.remove(message.id), message.alive);
         channel.writeAndFlush(serialize(remoteAddress, new Ack(message.id)));
     }
 

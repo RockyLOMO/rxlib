@@ -16,7 +16,6 @@ import org.rx.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
-import org.rx.util.RedoTimer;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
@@ -24,6 +23,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -135,23 +135,54 @@ public class CoreTester extends TestUtil {
 
     @SneakyThrows
     @Test
-    public void redo() {
+    public void timer() {
         log.info("start...");
 
-        int max = 2;
-        RedoTimer monitor = new RedoTimer();
-        $<String> va = $.$("a");
-        $<String> vb = $.$("b");
-        Timeout timeout = monitor.runAndSetTimeout(p -> {
-            System.out.println(p.cancel());
-            va.v += va.v;
-            log.info(va.v);
-        }, 2000, max);
-        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
-            vb.v += vb.v;
-            log.info(vb.v);
-            throw new InvalidException("x");
-        }, 2000, max);
+        Tasks.timer().setTimeout(() -> {
+            System.out.println(DateTime.now());
+            return false;
+        }, d -> Math.max(d, 100) * 2);
+
+        Timeout t = Tasks.timer().setTimeout(s -> {
+            System.out.println("loop: " + DateTime.now());
+            int i = s.incrementAndGet();
+            if (i > 4) {
+                return false;
+            }
+            if (i > 1) {
+                throw new InvalidException("max exec");
+            }
+            return true;
+        }, d -> Math.max(d, 100) * 2, new AtomicInteger());
+
+        sleep(1000);
+        t.cancel();
+
+        Tasks.timer().setTimeout(() -> {
+            System.out.println("c: " + DateTime.now());
+            sleep(2000);
+            return true;
+        }, 500);
+        Tasks.timer().setTimeout(() -> {
+            System.out.println("d: " + DateTime.now());
+            sleep(2000);
+            return true;
+        }, 50);
+
+//        int max = 2;
+//        RedoTimer monitor = new RedoTimer();
+//        $<String> va = $.$("a");
+//        $<String> vb = $.$("b");
+//        Timeout timeout = monitor.runAndSetTimeout(p -> {
+//            System.out.println(p.cancel());
+//            va.v += va.v;
+//            log.info(va.v);
+//        }, 2000, max);
+//        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
+//            vb.v += vb.v;
+//            log.info(vb.v);
+//            throw new InvalidException("x");
+//        }, 2000, max);
 
         System.in.read();
     }
@@ -319,7 +350,7 @@ public class CoreTester extends TestUtil {
         assert cache.containsKey(key3);
         assert cache.size() == 3;
 
-        Tasks.scheduleOnce(() -> {
+        Tasks.setTimeout(() -> {
             assert cache.get(key3).equals(100);
             log.info("check sliding ok");
         }, 4000);

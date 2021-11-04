@@ -80,7 +80,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             connFuture = Tasks.timer().setTimeout(() -> {
                 doConnect(true, null);
                 return true;
-            }, NEXT_CONNECT_DELAY, StatefulRpcClient.this, RunFlag.SINGLE);
+            }, NEXT_CONNECT_DELAY, StatefulRpcClient.this, TimeoutFlag.SINGLE);
         }
 
         @Override
@@ -229,7 +229,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                     connFuture = Tasks.timer().setTimeout(() -> {
                         doConnect(true, syncRoot);
                         return true;
-                    }, NEXT_CONNECT_DELAY, this, RunFlag.SINGLE);
+                    }, NEXT_CONNECT_DELAY, this, TimeoutFlag.SINGLE);
                 } else {
                     if (reconnect) {
                         log.warn("reconnect {} fail", ep);

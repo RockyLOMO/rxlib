@@ -4,42 +4,57 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.util.function.PredicateAction;
 import org.rx.util.function.PredicateFunc;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.LongUnaryOperator;
 
+import static org.rx.core.App.isNull;
+
 public class WheelTimer {
+    public interface TimeoutFuture extends Timeout, Future<Void> {
+    }
+
     @RequiredArgsConstructor
-    class Task<T> implements TimerTask, Timeout {
+    class Task<T> implements TimerTask, TimeoutFuture {
         final Object id;
+        final TimeoutFlag flag;
         final PredicateFunc<T> fn;
         long delay;
-        Timeout timeout;
         final T state;
         final LongUnaryOperator nextDelayFn;
-        boolean prevContinue = true;
+        Timeout timeout;
+        CompletableFuture<Void> future;
 
         @SneakyThrows
         @Override
-        public void run(Timeout timeout) throws Exception {
-            try {
-                prevContinue = fn.invoke(state);
-            } finally {
-                if (prevContinue) {
-                    if (nextDelayFn != null) {
-                        delay = nextDelayFn.applyAsLong(delay);
+        public synchronized void run(Timeout timeout) throws Exception {
+            future = Tasks.run(() -> {
+                boolean doContinue = flag == TimeoutFlag.PERIOD;
+                try {
+                    doContinue = fn.invoke(state);
+                } finally {
+                    if (doContinue) {
+                        if (nextDelayFn != null) {
+                            delay = nextDelayFn.applyAsLong(delay);
+                        }
+                        this.timeout = timeout.timer().newTimeout(this, delay, TimeUnit.MILLISECONDS);
+                    } else if (id != null) {
+                        hold.remove(id);
                     }
-                    this.timeout = timeout.timer().newTimeout(this, delay, TimeUnit.MILLISECONDS);
-                } else if (id != null) {
-                    hold.remove(id);
                 }
-            }
+            });
+            notifyAll();
+        }
+
+        @Override
+        public String toString() {
+            return String.format("WheelTask-%s[%s]", isNull(id, Strings.EMPTY), isNull(flag, TimeoutFlag.SINGLE));
         }
 
         @Override
@@ -66,66 +81,106 @@ public class WheelTimer {
         public boolean cancel() {
             return timeout.cancel();
         }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            if (future != null) {
+                future.cancel(mayInterruptIfRunning);
+            }
+            return timeout.cancel();
+        }
+
+        @Override
+        public boolean isDone() {
+            return future != null && future.isDone();
+        }
+
+        @Override
+        public Void get() throws InterruptedException, ExecutionException {
+            synchronized (this) {
+                if (future == null) {
+                    wait();
+                }
+            }
+            if (future == null) {
+                throw new InterruptedException();
+            }
+            return future.get();
+        }
+
+        @Override
+        public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            synchronized (this) {
+                if (future == null) {
+                    wait(unit.toMillis(timeout));
+                }
+            }
+            if (future == null) {
+                throw new TimeoutException();
+            }
+            return future.get(timeout, unit);
+        }
     }
 
     final HashedWheelTimer timer = new HashedWheelTimer(Tasks.pool().getThreadFactory());
-    final Map<Object, Timeout> hold = new ConcurrentHashMap<>();
+    final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
 
-    public Timeout setTimeout(PredicateAction fn, LongUnaryOperator nextDelay) {
+    public TimeoutFuture setTimeout(PredicateAction fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null, null);
     }
 
-    public Timeout setTimeout(PredicateAction fn, LongUnaryOperator nextDelay, Object taskId, RunFlag flag) {
-        Task<?> task = new Task<>(taskId, s -> fn.invoke(), null, nextDelay);
+    public TimeoutFuture setTimeout(@NonNull PredicateAction fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
+        Task<?> task = new Task<>(taskId, flag, s -> fn.invoke(), null, nextDelay);
         task.delay = nextDelay.applyAsLong(0);
-        return setTimeout(task, flag);
+        return setTimeout(task);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, LongUnaryOperator nextDelay) {
+    public <T> TimeoutFuture setTimeout(PredicateFunc<T> fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, LongUnaryOperator nextDelay, T state) {
+    public <T> TimeoutFuture setTimeout(PredicateFunc<T> fn, LongUnaryOperator nextDelay, T state) {
         return setTimeout(fn, nextDelay, state, null, null);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, LongUnaryOperator nextDelay, T state, Object taskId, RunFlag flag) {
-        Task<T> task = new Task<>(taskId, fn, state, nextDelay);
+    public <T> TimeoutFuture setTimeout(@NonNull PredicateFunc<T> fn, LongUnaryOperator nextDelay, T state, Object taskId, TimeoutFlag flag) {
+        Task<T> task = new Task<>(taskId, flag, fn, state, nextDelay);
         task.delay = nextDelay.applyAsLong(0);
-        return setTimeout(task, flag);
+        return setTimeout(task);
     }
 
-    public Timeout setTimeout(PredicateAction fn, long delay) {
+    public TimeoutFuture setTimeout(PredicateAction fn, long delay) {
         return setTimeout(fn, delay, null, null);
     }
 
-    public Timeout setTimeout(PredicateAction fn, long delay, Object taskId, RunFlag flag) {
-        Task<?> task = new Task<>(taskId, s -> fn.invoke(), null, null);
+    public TimeoutFuture setTimeout(@NonNull PredicateAction fn, long delay, Object taskId, TimeoutFlag flag) {
+        Task<?> task = new Task<>(taskId, flag, s -> fn.invoke(), null, null);
         task.delay = delay;
-        return setTimeout(task, flag);
+        return setTimeout(task);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, long delay) {
+    public <T> TimeoutFuture setTimeout(PredicateFunc<T> fn, long delay) {
         return setTimeout(fn, delay, null);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, long delay, T state) {
+    public <T> TimeoutFuture setTimeout(PredicateFunc<T> fn, long delay, T state) {
         return setTimeout(fn, delay, state, null, null);
     }
 
-    public <T> Timeout setTimeout(PredicateFunc<T> fn, long delay, T state, Object taskId, RunFlag flag) {
-        Task<T> task = new Task<>(taskId, fn, state, null);
+    public <T> TimeoutFuture setTimeout(@NonNull PredicateFunc<T> fn, long delay, T state, Object taskId, TimeoutFlag flag) {
+        Task<T> task = new Task<>(taskId, flag, fn, state, null);
         task.delay = delay;
-        return setTimeout(task, flag);
+        return setTimeout(task);
     }
 
-    private <T> Timeout setTimeout(Task<T> task, RunFlag flag) {
+    private <T> TimeoutFuture setTimeout(Task<T> task) {
+        TimeoutFlag flag = task.flag;
         if (flag == null) {
-            flag = RunFlag.OVERRIDE;
+            flag = TimeoutFlag.SINGLE;
         }
 
-        if (flag == RunFlag.SINGLE && task.id != null) {
-            Timeout ot = hold.get(task.id);
+        if (flag == TimeoutFlag.SINGLE && task.id != null) {
+            TimeoutFuture ot = hold.get(task.id);
             if (ot != null) {
                 return ot;
             }
@@ -136,8 +191,8 @@ public class WheelTimer {
             return task;
         }
 
-        Timeout ot = hold.put(task.id, task);
-        if (ot != null) {
+        TimeoutFuture ot = hold.put(task.id, task);
+        if (flag == TimeoutFlag.REPLACE && ot != null) {
             ot.cancel();
         }
         return task;
