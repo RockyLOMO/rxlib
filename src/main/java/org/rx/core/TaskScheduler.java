@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -17,23 +16,26 @@ import static org.rx.core.App.isNull;
 
 public class TaskScheduler extends ThreadPool {
     @RequiredArgsConstructor
-    protected static class Task<T> implements ThreadPool.NamedRunnable, Callable<T>, Supplier<T> {
-        @Getter
-        private final String name;
-        @Getter
-        private final RunFlag flag;
-        private final Func<T> callable;
+    static class Task<T> implements IdentityRunnable, Callable<T>, Supplier<T> {
+        final Object id;
+        final RunFlag flag;
+        final Func<T> fn;
 
         @Override
-        public T get() {
-            return call();
+        public Object id() {
+            return id;
+        }
+
+        @Override
+        public RunFlag flag() {
+            return flag;
         }
 
         @SneakyThrows
         @Override
         public T call() {
             try {
-                return callable.invoke();
+                return fn.invoke();
             } catch (Throwable e) {
                 ExceptionHandler.INSTANCE.uncaughtException(toString(), e);
 //                return null;
@@ -47,8 +49,13 @@ public class TaskScheduler extends ThreadPool {
         }
 
         @Override
+        public T get() {
+            return call();
+        }
+
+        @Override
         public String toString() {
-            return String.format("Task-%s[%s]", isNull(name, Strings.EMPTY), isNull(flag, RunFlag.CONCURRENT));
+            return String.format("Task-%s[%s]", isNull(id, Strings.EMPTY), isNull(flag, RunFlag.CONCURRENT));
         }
     }
 
@@ -61,11 +68,11 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public CompletableFuture<Void> run(Action task) {
-        return run(task, String.valueOf(IdGenerator.DEFAULT.increment()), null);
+        return run(task, IdGenerator.DEFAULT.increment(), null);
     }
 
-    public CompletableFuture<Void> run(@NonNull Action task, @NonNull String taskName, RunFlag runFlag) {
-        Task<Void> t = new Task<>(taskName, runFlag, () -> {
+    public CompletableFuture<Void> run(@NonNull Action task, @NonNull Object taskId, RunFlag runFlag) {
+        Task<Void> t = new Task<>(taskId, runFlag, () -> {
             task.invoke();
             return null;
         });
@@ -74,11 +81,11 @@ public class TaskScheduler extends ThreadPool {
     }
 
     public <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, String.valueOf(IdGenerator.DEFAULT.increment()), null);
+        return run(task, IdGenerator.DEFAULT.increment(), null);
     }
 
-    public <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull String taskName, RunFlag runFlag) {
-        Task<T> t = new Task<>(taskName, runFlag, task);
+    public <T> CompletableFuture<T> run(@NonNull Func<T> task, @NonNull Object taskId, RunFlag runFlag) {
+        Task<T> t = new Task<>(taskId, runFlag, task);
         return CompletableFuture.supplyAsync(t, this);
 //        return executor.submit((Callable<T>) t);
     }

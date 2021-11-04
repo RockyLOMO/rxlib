@@ -3,7 +3,6 @@ package org.rx.core;
 import com.google.common.eventbus.EventBus;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.FlagsEnum;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.TripleAction;
 
@@ -55,6 +54,10 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
 
     private final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
 
+    public boolean isEmpty() {
+        return invocations.isEmpty();
+    }
+
     @SafeVarargs
     public final Delegate<TSender, TArgs> replace(TripleAction<TSender, TArgs>... delegates) {
         invocations.clear();
@@ -100,25 +103,14 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
 
     @Override
     public void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
-        FlagsEnum<EventTarget.EventFlags> flags = target.eventFlags();
-        if (flags.has(EventTarget.EventFlags.THREAD_SAFE)) {
-            synchronized (target) {
-                innerRaise(target, args, flags);
-            }
-            return;
-        }
-        innerRaise(target, args, flags);
-    }
-
-    private void innerRaise(TSender target, TArgs args, FlagsEnum<EventTarget.EventFlags> flags) throws Throwable {
-        for (TripleAction<TSender, TArgs> delegate : invocations) {
+        for (TripleAction<TSender, TArgs> delegate : new ArrayList<>(invocations)) {
             try {
                 delegate.invoke(target, args);
                 if (args.isCancel()) {
                     return;
                 }
             } catch (Throwable e) {
-                if (!flags.has(EventTarget.EventFlags.QUIETLY)) {
+                if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
                     throw e;
                 }
                 log.warn("innerRaise", e);

@@ -4,28 +4,28 @@ import com.google.common.base.Throwables;
 import lombok.*;
 import org.rx.bean.DateTime;
 import org.rx.exception.InvalidException;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.PredicateFunc;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
 import static org.rx.core.App.TIMEOUT_INFINITE;
 import static org.rx.core.App.require;
 
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class FluentWait {
     @Data
-    @RequiredArgsConstructor
     public static class UntilState {
         private final DateTime endTime;
-        private int checkCount;
+        private int invokedCount;
     }
 
     private static final long defaultTimeout = 500L;
 
-    public static UntilState StateNull() {
+    public static UntilState emptyState() {
         return new UntilState(DateTime.now());
     }
 
@@ -34,33 +34,21 @@ public class FluentWait {
     }
 
     public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {
-        return new FluentWait().timeout(timeoutMillis).interval(intervalMillis);
-    }
-
-    @Getter
-    private long timeout = defaultTimeout;
-    @Getter
-    private long interval = defaultTimeout;
-    private String message;
-    private List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
-    private boolean throwOnFail = true;
-    private long retryMillis = TIMEOUT_INFINITE;
-    private boolean retryFirstCall;
-
-    private FluentWait() {
-    }
-
-    public FluentWait timeout(long timeoutMillis) {
         require(timeoutMillis, timeoutMillis > TIMEOUT_INFINITE);
-        this.timeout = timeoutMillis;
-        return this;
+        require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
+
+        return new FluentWait(timeoutMillis, intervalMillis);
     }
 
-    public FluentWait interval(long intervalMillis) {
-        require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
-        this.interval = intervalMillis;
-        return this;
-    }
+    @Getter
+    private final long timeout;
+    @Getter
+    private final long interval;
+    private long retryMillis = TIMEOUT_INFINITE;
+    private boolean retryCallFirst;
+    private boolean throwOnFail = true;
+    private String message;
+    private final List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
 
     public FluentWait retryMillis(long retryMillis) {
         require(retryMillis, retryMillis >= TIMEOUT_INFINITE);
@@ -68,8 +56,13 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait retryFirstCall(boolean retryFirstCall) {
-        this.retryFirstCall = retryFirstCall;
+    public FluentWait retryCallFirst(boolean retryFirstCall) {
+        this.retryCallFirst = retryFirstCall;
+        return this;
+    }
+
+    public FluentWait throwOnFail(boolean throwOnFail) {
+        this.throwOnFail = throwOnFail;
         return this;
     }
 
@@ -84,11 +77,6 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait throwOnFail(boolean throwOnFail) {
-        this.throwOnFail = throwOnFail;
-        return this;
-    }
-
     public FluentWait sleep() {
         if (interval > 0) {
             App.sleep(interval);
@@ -96,31 +84,32 @@ public class FluentWait {
         return this;
     }
 
-    public <T> T until(Function<UntilState, T> supplier) throws TimeoutException {
-        return until(supplier, null);
+    public <T> T until(BiFunc<UntilState, T> func) throws TimeoutException {
+        return until(func, null);
     }
 
     /**
      * until
      *
-     * @param supplier  renew
+     * @param func      renew
      * @param retryFunc return true continue, false break
      * @param <T>       result
      * @return result
      * @throws TimeoutException timeout
      */
-    public <T> T until(@NonNull Function<UntilState, T> supplier, Predicate<UntilState> retryFunc) throws TimeoutException {
+    @SneakyThrows
+    public <T> T until(@NonNull BiFunc<UntilState, T> func, PredicateFunc<UntilState> retryFunc) throws TimeoutException {
         Throwable lastException;
         T lastResult = null;
         UntilState state = new UntilState(DateTime.now().addMilliseconds((int) timeout));
-        if (retryFirstCall && retryFunc != null) {
-            retryFunc.test(state);
+        if (retryCallFirst && retryFunc != null) {
+            retryFunc.invoke(state);
         }
 
         int retryCount = retryMillis == TIMEOUT_INFINITE ? TIMEOUT_INFINITE : (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
         do {
             try {
-                lastResult = supplier.apply(state);
+                lastResult = func.invoke(state);
                 if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
                     return lastResult;
                 }
@@ -128,13 +117,13 @@ public class FluentWait {
             } catch (Throwable e) {
                 lastException = propagateIfNotIgnored(e);
             } finally {
-                state.checkCount++;
+                state.invokedCount++;
             }
 
             sleep();
 
-            if (retryMillis > TIMEOUT_INFINITE && (retryCount == 0 || state.checkCount % retryCount == 0)) {
-                if (retryFunc != null && !retryFunc.test(state)) {
+            if (retryMillis > TIMEOUT_INFINITE && (retryCount == 0 || state.invokedCount % retryCount == 0)) {
+                if (retryFunc != null && !retryFunc.invoke(state)) {
                     break;
                 }
             }
@@ -145,7 +134,7 @@ public class FluentWait {
         }
 
         String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval%s)",
-                message == null ? "waiting for " + supplier : message,
+                message == null ? "waiting for " + func : message,
                 timeout, interval, lastException == null ? "" : " with ignoredException " + lastException);
         throw new TimeoutException(timeoutMessage);
     }

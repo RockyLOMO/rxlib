@@ -266,6 +266,9 @@ public final class Main implements SocksSupport {
             }
 
             InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
+            if (Sockets.isNatIp(wanIp)) {
+                return;
+            }
             for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {

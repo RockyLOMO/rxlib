@@ -7,8 +7,6 @@ pipeline {
 
     environment {
         SHADOW_USER_CREDENTIAL_ID = 'shadow-user'
-        PORT = '9900'
-        PARAMS = '-shadowMode=1 -port=${PORT} -connectTimeout=40000 "-shadowUser=${SHADOW_USER_PASSWORD}"'
     }
 
     stages {
@@ -19,9 +17,13 @@ pipeline {
         }
 
         stage ('build') {
+            when {
+                branch 'master'
+            }
             steps {
-                sh 'echo ${SHADOW_USER_PASSWORD}'
-                sh 'echo "env: ${PARAMS}"'
+                withCredentials([usernamePassword(usernameVariable: 'SU_USR', passwordVariable: 'SU_PWD', credentialsId: "$SHADOW_USER_CREDENTIAL_ID")]) {
+                    sh 'echo "$SU_USR : $SU_PWD"'
+                }
                 container ('maven') {
                     sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install'
                 }

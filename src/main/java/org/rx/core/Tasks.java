@@ -2,11 +2,11 @@ package org.rx.core;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.$;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
+import org.rx.util.function.PredicateAction;
 
 import java.sql.Time;
 import java.util.Date;
@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
-import static org.rx.bean.$.$;
+import static org.rx.core.App.quietly;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
@@ -61,8 +61,8 @@ public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final List<TaskScheduler> replicas;
-    //HashedWheelTimer
     private static final ScheduledThreadPoolExecutor scheduler;
+    private static final WheelTimer wheelTimer;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
     static {
@@ -72,6 +72,7 @@ public final class Tasks {
             replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
         }
         scheduler = new ScheduledThreadPool(replicas.get(0).getThreadFactory());
+        wheelTimer = new WheelTimer();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Action fn;
@@ -91,6 +92,10 @@ public final class Tasks {
 
     public static ScheduledExecutorService scheduler() {
         return scheduler;
+    }
+
+    public static WheelTimer timer() {
+        return wheelTimer;
     }
 
     public static void addShutdownHook(Action fn) {
@@ -167,16 +172,16 @@ public final class Tasks {
         return pool().run(task);
     }
 
-    public static CompletableFuture<Void> run(Action task, String taskName, RunFlag runFlag) {
-        return pool().run(task, taskName, runFlag);
+    public static CompletableFuture<Void> run(Action task, Object taskId, RunFlag runFlag) {
+        return pool().run(task, taskId, runFlag);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
         return pool().run(task);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task, String taskName, RunFlag runFlag) {
-        return pool().run(task, taskName, runFlag);
+    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, RunFlag runFlag) {
+        return pool().run(task, taskId, runFlag);
     }
 
     public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> anyOf(Action... tasks) {
@@ -219,25 +224,27 @@ public final class Tasks {
         return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
-    public static ScheduledFuture<?> scheduleOnce(@NonNull Action task, @NonNull Date time) {
-        long initDelay = time.getTime() - System.currentTimeMillis();
-        return scheduleOnce(task, initDelay);
+    public static long getDelay(@NonNull Date time) {
+        return time.getTime() - System.currentTimeMillis();
     }
 
-    public static ScheduledFuture<?> scheduleOnce(@NonNull Action task, long delay) {
-        return scheduler.schedule((Runnable) wrap(task), delay, TimeUnit.MILLISECONDS);
+    public static Future<Void> setTimeout(Action task, long delay) {
+        return setTimeout(task, delay, null, null);
     }
 
-    public static ScheduledFuture<?> scheduleUntil(@NonNull Action task, @NonNull Func<Boolean> preCheckFunc, long delay) {
-        $<ScheduledFuture<?>> future = $();
-        future.v = schedule(() -> {
-            if (preCheckFunc.invoke()) {
-                future.v.cancel(true);
-                return;
-            }
+    public static Future<Void> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
+        return setTimeout(() -> {
             task.invoke();
-        }, delay);
-        return future.v;
+            return false;
+        }, delay, taskId, flag);
+    }
+
+    public static Future<Void> setTimeout(PredicateAction task, long delay) {
+        return wheelTimer.setTimeout(task, delay);
+    }
+
+    public static Future<Void> setTimeout(PredicateAction task, long delay, Object taskId, TimeoutFlag flag) {
+        return wheelTimer.setTimeout(task, delay, taskId, flag);
     }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
@@ -269,6 +276,6 @@ public final class Tasks {
 
     static TaskScheduler.Task<?> wrap(Action task) {
         //schedule 抛出异常会终止
-        return new TaskScheduler.Task<>(null, null, () -> App.quietly(task));
+        return new TaskScheduler.Task<>(null, null, () -> quietly(task));
     }
 }

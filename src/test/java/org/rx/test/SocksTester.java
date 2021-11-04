@@ -234,6 +234,10 @@ public class SocksTester extends TConfig {
 
     private void attachEvent(UserManagerImpl facade, String id) {
         facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
+//          Tasks.run(()->  facade.computeInt(0, -1));
+            System.out.println("xxx111");
+            facade.computeInt(0, -1);
+            System.out.println("xxx222");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
             e.getStatefulList().add(id + ":" + SUID.randomSUID());
             e.setCancel(false); //是否取消事件
@@ -297,7 +301,7 @@ public class SocksTester extends TConfig {
         sleep(startDelay);
         rs.close();
         System.out.println("Close server on port " + rs.getConfig().getListenPort());
-        return Tasks.scheduleOnce(() -> startServer(svcImpl, ep), startDelay);
+        return Tasks.setTimeout(() -> startServer(svcImpl, ep), startDelay);
     }
 
     @SneakyThrows
@@ -558,7 +562,7 @@ public class SocksTester extends TConfig {
         List<InetAddress> result = client.resolveAll(host_devops);
         System.out.println("eq: " + result);
         assert result.contains(ip2) && result.contains(ip4);
-        Tasks.scheduleOnce(() -> {
+        Tasks.setTimeout(() -> {
             server.removeHosts(host_devops, Collections.singletonList(ip2));
 
             List<InetAddress> x = client.resolveAll(host_devops);

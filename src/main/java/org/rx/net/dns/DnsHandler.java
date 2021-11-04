@@ -110,7 +110,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         client.nameResolver.query(question).addListener(f -> {
             if (!f.isSuccess()) {
                 log.error("query domain {} fail", domain, f.cause());
-                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+//                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+                ctx.writeAndFlush(newResponse(query, question, server.ttl));
                 return;
             }
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
