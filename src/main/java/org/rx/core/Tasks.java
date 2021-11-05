@@ -20,44 +20,6 @@ import static org.rx.core.App.quietly;
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 @Slf4j
 public final class Tasks {
-    static class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
-        final int minSize, maxSize;
-
-        public ScheduledThreadPool(ThreadFactory threadFactory) {
-            this(0, ThreadPool.CPU_THREADS * 4, threadFactory);
-        }
-
-        public ScheduledThreadPool(int minSize, int maxSize, ThreadFactory threadFactory) {
-            super(minSize, threadFactory, (r, executor) -> log.error("scheduler reject"));
-            this.minSize = minSize;
-            this.maxSize = maxSize;
-        }
-
-        @Override
-        protected void beforeExecute(Thread t, Runnable r) {
-            int size = getCorePoolSize();
-            if (size < maxSize && getActiveCount() >= size) {
-                size = Math.max(2, ++size);
-                setCorePoolSize(size);
-                log.debug("grow pool size {}", size);
-            }
-
-            super.beforeExecute(t, r);
-        }
-
-        @Override
-        protected void afterExecute(Runnable r, Throwable t) {
-            super.afterExecute(r, t);
-
-            int size = getCorePoolSize();
-            float idle;
-            if (size > minSize && (idle = (float) getActiveCount() / size) <= 0.5f) {
-                setCorePoolSize(--size);
-                log.debug("reduce pool size {}, idle={}", size, idle);
-            }
-        }
-    }
-
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final List<TaskScheduler> replicas;
@@ -71,7 +33,7 @@ public final class Tasks {
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
         }
-        scheduler = new ScheduledThreadPool(replicas.get(0).getThreadFactory());
+        scheduler = new ScheduledThreadPool();
         wheelTimer = new WheelTimer();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

@@ -146,7 +146,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         static final int SAMPLING_TIMES = 5;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(800L, TimeUnit.MILLISECONDS, 8);
-        final Map<ThreadPool, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
+        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
         DynamicSizer() {
             timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
@@ -155,17 +155,17 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public void run(Timeout timeout) throws Exception {
             double cpuLoad = os.getSystemCpuLoad() * 100;
-            for (Map.Entry<ThreadPool, BiTuple<IntWaterMark, Integer, Integer>> entry : hold.entrySet()) {
-                ThreadPool pool = entry.getKey();
+            for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : hold.entrySet()) {
+                ThreadPoolExecutor pool = entry.getKey();
                 BiTuple<IntWaterMark, Integer, Integer> tuple = entry.getValue();
                 IntWaterMark waterMark = tuple.left;
                 int decrementCounter = tuple.middle;
                 int incrementCounter = tuple.right;
 
-                String prefix = String.format("%s%s-DynamicSizer", POOL_NAME_PREFIX, pool.poolName);
+                String prefix = String.format("%sDynamicSizer %s", POOL_NAME_PREFIX, pool.toString());
                 int maxSize = pool.getMaximumPoolSize();
-                log.info("{} PoolSize={}/{} QueueSize={} SubmittedTaskCount={} CpuLoad={}% Threshold={}-{}% de/incrementCounter={}/{}", prefix,
-                        pool.getPoolSize(), maxSize, pool.getQueue().size(), pool.getSubmittedTaskCount(),
+                log.info("{} PoolSize={}/{} QueueSize={} CpuLoad={}% Threshold={}-{}% de/incrementCounter={}/{}", prefix,
+                        pool.getPoolSize(), maxSize, pool.getQueue().size(),
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
 
                 if (cpuLoad > waterMark.getHigh()) {
@@ -204,7 +204,11 @@ public class ThreadPool extends ThreadPoolExecutor {
             timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
         }
 
-        public void register(ThreadPool pool, IntWaterMark cpuWaterMark) {
+        public void register(ThreadPoolExecutor pool, IntWaterMark cpuWaterMark) {
+            if (cpuWaterMark == null) {
+                return;
+            }
+
             hold.put(pool, BiTuple.of(cpuWaterMark, 0, 0));
         }
     }
@@ -219,10 +223,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         Thread.setDefaultUncaughtExceptionHandler(ExceptionHandler.INSTANCE);
     }
 
-    static ThreadFactory newThreadFactory(String nameFormat) {
+    static ThreadFactory newThreadFactory(String name) {
         return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
 //                .setUncaughtExceptionHandler(ExceptionHandler.INSTANCE) //跟上面重复
-                .setDaemon(true).setNameFormat(nameFormat).build();
+                .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -264,7 +268,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
-                newThreadFactory(String.format("%s%s-%%d", POOL_NAME_PREFIX, poolName)), (r, executor) -> {
+                newThreadFactory(poolName), (r, executor) -> {
                     if (executor.isShutdown()) {
                         throw new InvalidException("ThreadPool %s is shutdown", poolName);
                     }
@@ -278,9 +282,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public void setDynamicSize(IntWaterMark cpuWaterMark) {
-        if (cpuWaterMark == null) {
-            return;
-        }
         SIZER.register(this, cpuWaterMark);
     }
 
@@ -367,5 +368,11 @@ public class ThreadPool extends ThreadPoolExecutor {
     public void transfer(Runnable command) {
         log.debug("Block caller thread until queue take");
         ((ThreadQueue<Runnable>) getQueue()).transfer(command);
+    }
+
+    @Override
+    public String toString() {
+        return poolName;
+//        return super.toString();
     }
 }

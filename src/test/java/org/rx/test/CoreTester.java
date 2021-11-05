@@ -136,7 +136,9 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void timer() {
-        log.info("start...");
+        //jdk默认的ScheduledExecutorService只会创建coreSize的线程，当执行的任务blocking wait多时，任务都堆积不能按时处理。
+        //ScheduledThreadPool现改写maxSize会生效，再依据cpuLoad动态调整maxSize解决上面痛点问题。
+        //WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内存。单线程的HashedWheelTimer也使blocking wait痛点放大，好在动态调整maxSize的ThreadPool存在，WheelTimer只做调度，执行全交给ThreadPool异步执行，完美解决痛点。
 
         Tasks.timer().setTimeout(() -> {
             System.out.println(DateTime.now());
@@ -168,21 +170,6 @@ public class CoreTester extends TestUtil {
             sleep(2000);
             return true;
         }, 50);
-
-//        int max = 2;
-//        RedoTimer monitor = new RedoTimer();
-//        $<String> va = $.$("a");
-//        $<String> vb = $.$("b");
-//        Timeout timeout = monitor.runAndSetTimeout(p -> {
-//            System.out.println(p.cancel());
-//            va.v += va.v;
-//            log.info(va.v);
-//        }, 2000, max);
-//        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
-//            vb.v += vb.v;
-//            log.info(vb.v);
-//            throw new InvalidException("x");
-//        }, 2000, max);
 
         System.in.read();
     }
