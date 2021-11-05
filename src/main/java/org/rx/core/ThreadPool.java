@@ -158,53 +158,108 @@ public class ThreadPool extends ThreadPoolExecutor {
                 double cpuLoad = os.getSystemCpuLoad() * 100;
                 for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : hold.entrySet()) {
                     ThreadPoolExecutor pool = entry.getKey();
-                    BiTuple<IntWaterMark, Integer, Integer> tuple = entry.getValue();
-                    IntWaterMark waterMark = tuple.left;
-                    int decrementCounter = tuple.middle;
-                    int incrementCounter = tuple.right;
-
-                    String prefix = String.format("DynamicSizer %s", pool.toString());
-                    int maxSize = pool.getMaximumPoolSize();
-                    log.info("{} PoolSize={}/{} QueueSize={} CpuLoad={}% Threshold={}-{}% de/incrementCounter={}/{}", prefix,
-                            pool.getPoolSize(), maxSize, pool.getQueue().size(),
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
-
-                    if (cpuLoad > waterMark.getHigh()) {
-                        if (++decrementCounter >= SAMPLING_TIMES) {
-                            maxSize -= RESIZE_QUANTITY;
-                            if (maxSize >= pool.getCorePoolSize()) {
-                                log.info("{} CpuLoad={}% Threshold={}-{}% decrement to {}", prefix,
-                                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
-                                pool.setMaximumPoolSize(maxSize);
-                                decrementCounter = 0;
-                            }
-                        }
-                    } else {
-                        decrementCounter = 0;
-                    }
-
-                    if (pool.getQueue().isEmpty()) {
-                        log.debug("{} increment disabled", prefix);
+                    if (pool instanceof ScheduledExecutorService) {
+                        scheduledThread(cpuLoad, pool, entry.getValue());
                         continue;
                     }
-                    if (cpuLoad < waterMark.getLow()) {
-                        if (++incrementCounter >= SAMPLING_TIMES) {
-                            maxSize += RESIZE_QUANTITY;
-                            log.info("{} CpuLoad={}% Threshold={}-{}% increment to {}", prefix,
-                                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
-                            pool.setMaximumPoolSize(maxSize);
-                            incrementCounter = 0;
-                        }
-                    } else {
-                        incrementCounter = 0;
-                    }
-
-                    tuple.middle = decrementCounter;
-                    tuple.right = incrementCounter;
+                    thread(cpuLoad, pool, entry.getValue());
                 }
             } finally {
                 timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
             }
+        }
+
+        private void thread(double cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
+            IntWaterMark waterMark = tuple.left;
+            int decrementCounter = tuple.middle;
+            int incrementCounter = tuple.right;
+
+            String prefix = pool.toString();
+            int maxSize = pool.getMaximumPoolSize();
+            log.info("{} PoolSize={}/{} QueueSize={} CpuLoad={}% Threshold={}-{}% de/incrementCounter={}/{}", prefix,
+                    pool.getPoolSize(), maxSize, pool.getQueue().size(),
+                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
+
+            if (cpuLoad > waterMark.getHigh()) {
+                if (++decrementCounter >= SAMPLING_TIMES) {
+                    maxSize -= RESIZE_QUANTITY;
+                    if (maxSize >= pool.getCorePoolSize()) {
+                        log.info("{} CpuLoad={}% Threshold={}-{}% decrement to {}", prefix,
+                                cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
+                        pool.setMaximumPoolSize(maxSize);
+                        decrementCounter = 0;
+                    }
+                }
+            } else {
+                decrementCounter = 0;
+            }
+
+            if (pool.getQueue().isEmpty()) {
+                log.debug("{} increment disabled", prefix);
+                return;
+            }
+            if (cpuLoad < waterMark.getLow()) {
+                if (++incrementCounter >= SAMPLING_TIMES) {
+                    maxSize += RESIZE_QUANTITY;
+                    log.info("{} CpuLoad={}% Threshold={}-{}% increment to {}", prefix,
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
+                    pool.setMaximumPoolSize(maxSize);
+                    incrementCounter = 0;
+                }
+            } else {
+                incrementCounter = 0;
+            }
+
+            tuple.middle = decrementCounter;
+            tuple.right = incrementCounter;
+        }
+
+        private void scheduledThread(double cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
+            IntWaterMark waterMark = tuple.left;
+            int decrementCounter = tuple.middle;
+            int incrementCounter = tuple.right;
+
+            String prefix = pool.toString();
+            int maxSize = pool.getMaximumPoolSize();
+            log.info("{} PoolSize={}/{} QueueSize={} CpuLoad={}% Threshold={}-{}% de/incrementCounter={}/{}", prefix,
+                    pool.getPoolSize(), maxSize, pool.getQueue().size(),
+                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
+
+            int size = pool.getCorePoolSize();
+            int active = pool.getActiveCount();
+            float idle;
+            if (cpuLoad > waterMark.getHigh() | (idle = (float) active / size * 100) <= waterMark.getHigh()) {
+                if (++decrementCounter >= SAMPLING_TIMES) {
+                    maxSize -= RESIZE_QUANTITY;
+                    if (maxSize >= pool.getCorePoolSize()) {
+                        log.info("{} CpuLoad={}% Threshold={}-{}% idle={} decrement to {}", prefix,
+                                cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, maxSize);
+                        pool.setMaximumPoolSize(maxSize);
+                        decrementCounter = 0;
+                    }
+                }
+            } else {
+                decrementCounter = 0;
+            }
+
+            if (active < size) {
+                log.debug("{} increment disabled", prefix);
+                return;
+            }
+            if (cpuLoad < waterMark.getLow()) {
+                if (++incrementCounter >= SAMPLING_TIMES) {
+                    maxSize += RESIZE_QUANTITY;
+                    log.info("{} CpuLoad={}% Threshold={}-{}% increment to {}", prefix,
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
+                    pool.setCorePoolSize(maxSize);
+                    incrementCounter = 0;
+                }
+            } else {
+                incrementCounter = 0;
+            }
+
+            tuple.middle = decrementCounter;
+            tuple.right = incrementCounter;
         }
 
         public void register(ThreadPoolExecutor pool, IntWaterMark cpuWaterMark) {
