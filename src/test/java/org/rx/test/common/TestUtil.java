@@ -26,7 +26,8 @@ public class TestUtil {
                 action.invoke(i);
             }
         } finally {
-            log.info("Invoke {} times={} elapsed={}ms", name, count, stopwatch.elapsed(TimeUnit.MILLISECONDS));
+            double elapsed = stopwatch.elapsed(TimeUnit.MILLISECONDS);
+            log.info("Invoke {} times={} elapsed={}ms avg={}ms", name, count, elapsed, elapsed / count);
         }
     }
 
