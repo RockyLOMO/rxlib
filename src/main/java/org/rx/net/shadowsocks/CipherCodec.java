@@ -38,7 +38,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             crypt.decrypt(data, buf);
         } catch (Exception e) {
             if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
-                log.warn("decode fail {}", e.getMessage());
+                log.warn("decode fail {}", e.getMessage()); //可能是密码错误
                 ctx.close();
                 return;
             }
