@@ -9,7 +9,7 @@ pipeline {
         APP_NAME = 'socks-client'
         JAR_NAME = 'rxlib-2.17.6-SNAPSHOT.jar'
 
-        APP_HOST = '192.168.31.5'
+        APP_HOST = 's.f-li.cn'
         REMOTE_PATH = '/home/rxsocks/'
         U0 = 'root'
     }
@@ -36,6 +36,7 @@ pipeline {
                     sh '/home/scpx.sh ${JAR_NAME} ${APP_HOST} ${REMOTE_PATH}${JAR_NAME} ${U0}'
                     sh '/home/sshx.sh ${APP_HOST} "${REMOTE_PATH}${APP_NAME}.sh" ${U0}'
                     script {
+                        sleep(10)
                         println("Publish ok!")
                     }
                 }
