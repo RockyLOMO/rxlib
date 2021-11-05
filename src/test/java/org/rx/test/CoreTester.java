@@ -136,7 +136,9 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void timer() {
-        log.info("start...");
+        //jdk默认的ScheduledExecutorService只会创建coreSize的线程，当执行的任务blocking wait多时，任务都堆积不能按时处理。
+        //ScheduledThreadPool现改写maxSize会生效，再依据cpuLoad动态调整maxSize解决上面痛点问题。
+        //WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内存。单线程的HashedWheelTimer也使blocking wait痛点放大，好在动态调整maxSize的ThreadPool存在，WheelTimer只做调度，执行全交给ThreadPool异步执行，完美解决痛点。
 
         Tasks.timer().setTimeout(() -> {
             System.out.println(DateTime.now());
@@ -169,21 +171,6 @@ public class CoreTester extends TestUtil {
             return true;
         }, 50);
 
-//        int max = 2;
-//        RedoTimer monitor = new RedoTimer();
-//        $<String> va = $.$("a");
-//        $<String> vb = $.$("b");
-//        Timeout timeout = monitor.runAndSetTimeout(p -> {
-//            System.out.println(p.cancel());
-//            va.v += va.v;
-//            log.info(va.v);
-//        }, 2000, max);
-//        Timeout timeout1 = monitor.runAndSetTimeout(p -> {
-//            vb.v += vb.v;
-//            log.info(vb.v);
-//            throw new InvalidException("x");
-//        }, 2000, max);
-
         System.in.read();
     }
 
@@ -200,8 +187,8 @@ public class CoreTester extends TestUtil {
             }, 1000);
         }
 
-        ThreadPool.WaterMarkConfig config = new ThreadPool.WaterMarkConfig(40, 60);
-        Tasks.pool().statistics(config);
+        IntWaterMark config = new IntWaterMark(20, 40);
+        Tasks.pool().setDynamicSize(config);
 
         for (int i = 0; i < 6; i++) {
             int x = i;
@@ -233,13 +220,12 @@ public class CoreTester extends TestUtil {
 
         //最佳线程数=CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)，由于执行任务的不同，CPU 等待时间和执行时间无法确定，
         //因此换一种思路，当列队满的情况下，如果CPU使用率小于40%，则会动态增大线程池maxThreads 最大线程数的值来提高吞吐量。如果CPU使用率大于60%，则会动态减小maxThreads 值来降低生产者的任务生产速度。
-        ThreadPool.WaterMarkConfig config = new ThreadPool.WaterMarkConfig(40, 60);
+        IntWaterMark config = new IntWaterMark(20, 40);
         //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //FastThreadLocal 支持netty FastThreadLocal
-        ExecutorService pool = new ThreadPool(1, 1, 1, 8, "")
-                .statistics(config);
+        ExecutorService pool = new ThreadPool(1, 1, 1, 8, config, "");
         for (int i = 0; i < 100; i++) {
             int n = i;
             pool.execute(() -> {
@@ -256,19 +242,27 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void MXBean() {
-        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
-            System.out.println(toJsonString(e.getValue()));
-        });
+//        TestUtil.invoke("systemLoad", i -> {
+//            ThreadPool.os.getSystemCpuLoad();
+//        }, 10);
 
-        Tasks.schedule(() -> {
-            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
-            for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
-                log.info("{}", thread.toString());
-            }
-        }, 2000);
-        System.out.println("main thread done");
+//        TestUtil.invoke("processLoad", i -> {
+//            ThreadPool.os.getProcessCpuLoad();
+//        }, 10);
 
-        System.in.read();
+//        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
+//            System.out.println(toJsonString(e.getValue()));
+//        });
+//
+//        Tasks.schedule(() -> {
+//            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
+//            for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
+//                log.info("{}", thread.toString());
+//            }
+//        }, 2000);
+//        System.out.println("main thread done");
+
+//        System.in.read();
     }
 
     @Test

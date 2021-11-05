@@ -4,9 +4,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import org.rx.util.function.PredicateAction;
 import org.rx.util.function.PredicateFunc;
 
@@ -16,6 +14,7 @@ import java.util.function.LongUnaryOperator;
 
 import static org.rx.core.App.isNull;
 
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer {
     public interface TimeoutFuture extends Timeout, Future<Void> {
     }
@@ -122,7 +121,7 @@ public class WheelTimer {
         }
     }
 
-    final HashedWheelTimer timer = new HashedWheelTimer(Tasks.pool().getThreadFactory());
+    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"));
     final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
 
     public TimeoutFuture setTimeout(PredicateAction fn, LongUnaryOperator nextDelay) {
