@@ -353,13 +353,13 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static boolean isNatIp(InetAddress address) {
-        return eq(loopbackAddress(), address) || eq(InetAddress.getLocalHost(), address)
-                || address.getHostAddress().startsWith("192.168.");
+    public static boolean isNatIp(InetAddress ip) {
+        return eq(loopbackAddress(), ip) || eq(InetAddress.getLocalHost(), ip)
+                || ip.getHostAddress().startsWith("192.168.");
     }
 
-    public static boolean isValidIp(String ipV4OrIpV6) {
-        return NetUtil.isValidIpV4Address(ipV4OrIpV6) || NetUtil.isValidIpV6Address(ipV4OrIpV6);
+    public static boolean isValidIp(String ip) {
+        return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
 
     //InetAddress.getLocalHost(); 可能会返回127.0.0.1

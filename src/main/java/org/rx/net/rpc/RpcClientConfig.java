@@ -14,7 +14,6 @@ import java.net.InetSocketAddress;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class RpcClientConfig extends SocketConfig {
-    public static final String REACTOR_NAME = "℞Rpc";
     public static final ObjectEncoder DEFAULT_ENCODER = new ObjectEncoder();
     public static final ClassResolver DEFAULT_CLASS_RESOLVER = ClassResolvers.softCachingConcurrentResolver(RpcClientConfig.class.getClassLoader());
     public static final int NON_POOL_SIZE = -1;

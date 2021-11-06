@@ -40,7 +40,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         SocksProxyServer server = SocksContext.server(inbound.channel());
         final InetSocketAddress srcEp = in.sender();
-        if (!server.config.getWhiteList().contains(srcEp.getAddress())) {
+        if (!Sockets.isNatIp(srcEp.getAddress()) && !server.config.getWhiteList().contains(srcEp.getAddress())) {
             log.warn("security error, package from {}", srcEp);
             return;
         }

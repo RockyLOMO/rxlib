@@ -10,6 +10,7 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class RpcServerConfig extends SocketConfig {
+    public static final String REACTOR_NAME = "℞Rpc";
     public static final int HEARTBEAT_TIMEOUT = 60;
     public static final int DISABLE_VERSION = -1;
     public static final int LATEST_COMPUTE = 0;
