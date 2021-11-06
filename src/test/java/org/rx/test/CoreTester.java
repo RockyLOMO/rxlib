@@ -226,12 +226,18 @@ public class CoreTester extends TestUtil {
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //FastThreadLocal 支持netty FastThreadLocal
         ExecutorService pool = new ThreadPool(1, 1, 1, 8, config, "");
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 10; i++) {
             int n = i;
             pool.execute(() -> {
                 log.info("exec {} begin..", n);
-                sleep(15 * 1000);
+                sleep(5 * 1000);
                 log.info("exec {} end..", n);
+            });
+        }
+
+        sleep(10000);
+        for (int i = 0; i < 10; i++) {
+            pool.execute(() -> {
             });
         }
 
@@ -250,6 +256,12 @@ public class CoreTester extends TestUtil {
 //            ThreadPool.os.getProcessCpuLoad();
 //        }, 10);
 
+        for (int i = 0; i < 10; i++) {
+            Tasks.schedule(() -> {
+                sleep(2000);
+            }, 1000);
+        }
+
 //        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
 //            System.out.println(toJsonString(e.getValue()));
 //        });
@@ -262,7 +274,7 @@ public class CoreTester extends TestUtil {
 //        }, 2000);
 //        System.out.println("main thread done");
 
-//        System.in.read();
+        System.in.read();
     }
 
     @Test

@@ -7,21 +7,28 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 @Slf4j
 public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
+    final String poolName;
 //    final int minSize;
 
     public ScheduledThreadPool() {
-        this(0, ThreadPool.DEFAULT_CPU_WATER_MARK, "schedule");
+        this(ThreadPool.DEFAULT_CPU_WATER_MARK, "schedule");
     }
 
-    public ScheduledThreadPool(int minSize, IntWaterMark cpuWaterMark, String poolName) {
-        super(minSize, ThreadPool.newThreadFactory(poolName), (r, executor) -> log.error("scheduler reject"));
+    public ScheduledThreadPool(IntWaterMark cpuWaterMark, String poolName) {
+        super(0, ThreadPool.newThreadFactory(poolName), (r, executor) -> log.error("scheduler reject"));
 //        setMaximumPoolSize(maxSize);
 //        this.minSize = minSize;
+        this.poolName = poolName;
 
         ThreadPool.SIZER.register(this, cpuWaterMark);
     }
 
 //    @Override
+//    public String toString() {
+//        return poolName;
+//    }
+
+    //    @Override
 //    protected void beforeExecute(Thread t, Runnable r) {
 //        int size = getCorePoolSize();
 //        if (size < getMaximumPoolSize() && getActiveCount() >= size) {
