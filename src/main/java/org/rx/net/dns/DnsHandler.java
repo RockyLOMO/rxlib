@@ -112,8 +112,10 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             if (!f.isSuccess()) {
                 log.error("query domain fail {} -> {}", domain, envelope, f.cause());
 //                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                ctx.writeAndFlush(newResponse(query, question, server.ttl));
-                return;
+//                ctx.writeAndFlush(newResponse(query, question, server.ttl));
+                if (envelope == null) {
+                    return;
+                }
             }
             ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp));
         });

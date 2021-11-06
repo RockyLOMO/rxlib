@@ -9,9 +9,7 @@ import io.netty.util.concurrent.Future;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Arrays;
-import org.rx.core.Disposable;
-import org.rx.core.Strings;
+import org.rx.core.*;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -38,7 +36,7 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static final int MAX_FAIL_COUNT = 2;
+    static final int MAX_FAIL_COUNT = 4;
 
     public static DnsClient inlandClient() {
         return new DnsClient(Arrays.toList(Sockets.parseEndpoint("114.114.114.114:53")));
@@ -72,7 +70,7 @@ public class DnsClient extends Disposable {
             }
 
             if (failCount.incrementAndGet() > MAX_FAIL_COUNT) {
-                renewResolver();
+                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
                 log.warn("renewResolver 4 {}", question);
             }
         });
