@@ -125,7 +125,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
     }
 
-    public static final TaskScheduler SCHEDULER = new TaskScheduler("Rpc");
+    public static final TaskScheduler SCHEDULER = new TaskScheduler(RpcServerConfig.REACTOR_NAME);
     public final Delegate<RpcServer, RpcServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),

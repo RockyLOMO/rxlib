@@ -176,7 +176,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             throw new InvalidException("Client has connected");
         }
 
-        bootstrap = Sockets.bootstrap(RpcClientConfig.REACTOR_NAME, config, channel -> {
+        bootstrap = Sockets.bootstrap(RpcServerConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
