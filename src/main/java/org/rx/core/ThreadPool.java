@@ -221,7 +221,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             int incrementCounter = tuple.right;
 
             String prefix = pool.toString();
-            log.info("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
                     pool.getPoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
 
