@@ -10,12 +10,12 @@ public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
 //    final int minSize;
 
     public ScheduledThreadPool() {
-        this(0, ThreadPool.CPU_THREADS * 4, ThreadPool.DEFAULT_CPU_WATER_MARK, "schedule");
+        this(0, ThreadPool.DEFAULT_CPU_WATER_MARK, "schedule");
     }
 
-    public ScheduledThreadPool(int minSize, int maxSize, IntWaterMark cpuWaterMark, String poolName) {
+    public ScheduledThreadPool(int minSize, IntWaterMark cpuWaterMark, String poolName) {
         super(minSize, ThreadPool.newThreadFactory(poolName), (r, executor) -> log.error("scheduler reject"));
-        setMaximumPoolSize(maxSize);
+//        setMaximumPoolSize(maxSize);
 //        this.minSize = minSize;
 
         ThreadPool.SIZER.register(this, cpuWaterMark);
