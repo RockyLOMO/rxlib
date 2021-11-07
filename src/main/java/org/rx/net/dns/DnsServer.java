@@ -4,6 +4,8 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
+import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
+import io.netty.handler.codec.dns.TcpDnsResponseEncoder;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;

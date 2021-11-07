@@ -57,7 +57,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        UdpManager.closeChannel(SocksContext.realSource(ob));
+//                        UdpManager.closeChannel(SocksContext.realSource(ob));
+                        UdpManager.closeChannel(srcEp);
                         return super.newIdleStateEvent(state, first);
                     }
                 }, new SimpleChannelInboundHandler<DatagramPacket>() {
@@ -80,6 +81,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 //                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
                     .sync().channel(), srcEp, dstEp, upstream, false);
         });
+        //todo sync改eventcallback
 
         Upstream upstream = SocksContext.upstream(outbound);
 //        UnresolvedEndpoint upDstEp = upstream.getDestination();  //udp dstEp可能多个，但upstream只有一个，所以直接用dstEp。

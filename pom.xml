@@ -58,7 +58,7 @@
         <commons-collections4.version>4.4</commons-collections4.version>
         <commons-pool2.version>2.11.1</commons-pool2.version>
         <commons-io.version>2.11.0</commons-io.version>
-        <netty.version>4.1.69.Final</netty.version>
+        <netty.version>4.1.70.Final</netty.version>
         <bcprov.version>1.69</bcprov.version>
         <okhttp.version>4.9.2</okhttp.version>
         <jsch.version>0.1.55</jsch.version>

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.rx.core.App.tryClose;
 import static org.rx.core.Tasks.await;
 
 @Slf4j
@@ -70,13 +71,14 @@ public class DnsClient extends Disposable {
             }
 
             if (failCount.incrementAndGet() > MAX_FAIL_COUNT) {
-                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
+//                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
                 log.warn("renewResolver 4 {}", question);
             }
         });
     }
 
     void renewResolver() {
+        tryClose(nameResolver);
         nameResolver = new DnsNameResolverBuilder(Sockets.getUdpEventLoop().next())
                 .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
                         : DnsServerAddressStreamProviders.platformDefault())
