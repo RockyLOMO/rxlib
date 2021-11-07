@@ -77,6 +77,7 @@ public class DnsClient extends Disposable {
     }
 
     void renewResolver() {
+        nameResolver.close();
         nameResolver = new DnsNameResolverBuilder(Sockets.getUdpEventLoop().next())
                 .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
                         : DnsServerAddressStreamProviders.platformDefault())
