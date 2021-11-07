@@ -256,7 +256,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         if (!isConnected()) {
             if (isShouldReconnect()) {
                 try {
-                    FluentWait.newInstance(8000).until(s -> isConnected());
+                    FluentWait.newInstance(6000).until(s -> isConnected());
                 } catch (TimeoutException e) {
                     throw new ClientDisconnectedException(e);
                 }
