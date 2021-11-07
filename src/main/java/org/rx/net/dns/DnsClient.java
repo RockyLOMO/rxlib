@@ -70,7 +70,7 @@ public class DnsClient extends Disposable {
             }
 
             if (failCount.incrementAndGet() > MAX_FAIL_COUNT) {
-                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
+//                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
                 log.warn("renewResolver 4 {}", question);
             }
         });
