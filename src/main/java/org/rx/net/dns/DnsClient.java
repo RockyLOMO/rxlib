@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.rx.core.App.tryClose;
 import static org.rx.core.Tasks.await;
 
 @Slf4j
@@ -77,7 +78,7 @@ public class DnsClient extends Disposable {
     }
 
     void renewResolver() {
-        nameResolver.close();
+        tryClose(nameResolver);
         nameResolver = new DnsNameResolverBuilder(Sockets.getUdpEventLoop().next())
                 .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
                         : DnsServerAddressStreamProviders.platformDefault())
