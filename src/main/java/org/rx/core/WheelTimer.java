@@ -180,7 +180,7 @@ public class WheelTimer {
 
         if (flag == TimeoutFlag.SINGLE && task.id != null) {
             TimeoutFuture ot = hold.get(task.id);
-            if (ot != null) {
+            if (ot != null && !ot.isDone()) {
                 return ot;
             }
         }

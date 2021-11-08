@@ -127,6 +127,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private final RpcClientConfig config;
     private Bootstrap bootstrap;
     private volatile Channel channel;
+    private volatile InetSocketAddress reconnectingEp;
     private volatile Timeout connFuture;
     @Getter
     private Date connectedTime;
@@ -207,9 +208,9 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
-            NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(isNull(reconnectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
-            ep = args.getValue();
+            ep = reconnectingEp = args.getValue();
         } else {
             ep = config.getServerEndpoint();
         }
@@ -237,6 +238,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 connFuture.cancel();
                 connFuture = null;
             }
+            reconnectingEp = null;
             config.setServerEndpoint(ep);
             connectedTime = DateTime.now();
 
