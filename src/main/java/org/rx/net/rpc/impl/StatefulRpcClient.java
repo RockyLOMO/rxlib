@@ -76,7 +76,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             log.info("clientInactive {}", channel.remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
-            doConnect(true, null);
+            Tasks.setTimeout(() -> doConnect(true, null), 1000);
         }
 
         @Override
@@ -203,6 +203,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {
+                log.warn("reconnect skip");
                 return;
             }
 
@@ -228,9 +229,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         }, this, TimeoutFlag.SINGLE);
                     }
                 } else {
-                    if (reconnect) {
-                        log.warn("reconnect {} fail", ep);
-                    }
+                    log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
             }
