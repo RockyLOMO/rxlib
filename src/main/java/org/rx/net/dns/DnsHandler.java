@@ -117,7 +117,11 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     return;
                 }
             }
-            ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp));
+            try {
+                ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp));
+            } finally {
+                envelope.release();
+            }
         });
     }
 
