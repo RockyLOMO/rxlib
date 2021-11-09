@@ -76,7 +76,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             log.info("clientInactive {}", channel.remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
-            doConnect(true, null);
+            Tasks.setTimeout(() -> doConnect(true, null), 1000);
         }
 
         @Override
@@ -127,6 +127,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private final RpcClientConfig config;
     private Bootstrap bootstrap;
     private volatile Channel channel;
+    private volatile InetSocketAddress reconnectingEp;
     private volatile Timeout connFuture;
     @Getter
     private Date connectedTime;
@@ -203,12 +204,13 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {
+                log.warn("reconnect skip");
                 return;
             }
 
-            NEventArgs<InetSocketAddress> args = new NEventArgs<>(config.getServerEndpoint());
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(isNull(reconnectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
-            ep = args.getValue();
+            ep = reconnectingEp = args.getValue();
         } else {
             ep = config.getServerEndpoint();
         }
@@ -228,9 +230,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         }, this, TimeoutFlag.SINGLE);
                     }
                 } else {
-                    if (reconnect) {
-                        log.warn("reconnect {} fail", ep);
-                    }
+                    log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
             }
@@ -238,6 +238,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 connFuture.cancel();
                 connFuture = null;
             }
+            reconnectingEp = null;
             config.setServerEndpoint(ep);
             connectedTime = DateTime.now();
 
@@ -256,7 +257,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         if (!isConnected()) {
             if (isShouldReconnect()) {
                 try {
-                    FluentWait.newInstance(8000).until(s -> isConnected());
+                    FluentWait.newInstance(4000).until(s -> isConnected());
                 } catch (TimeoutException e) {
                     throw new ClientDisconnectedException(e);
                 }

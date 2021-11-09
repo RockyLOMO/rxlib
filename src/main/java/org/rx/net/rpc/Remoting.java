@@ -317,7 +317,7 @@ public final class Remoting {
             bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
             bean.server.onError.combine((s, e) -> {
                 e.setCancel(true);
-                s.send(e.getClient(), new ErrorPacket(String.format("Rpc error: %s", e.getValue().getMessage())));
+                s.send(e.getClient(), new ErrorPacket(String.format("server error: %s", e.getValue().toString())));
             });
             bean.server.onReceive.combine((s, e) -> {
                 if (tryAs(e.getValue(), EventMessage.class, p -> {

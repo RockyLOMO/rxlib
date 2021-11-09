@@ -49,7 +49,7 @@ import static org.rx.core.App.*;
 @Slf4j
 public class SocksTester extends TConfig {
     final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
-    final long startDelay = 4000;
+    final long startDelay = 2000;
     final String eventName = "onCallback";
 
     final NameserverConfig conf1 = new NameserverConfig() {{
@@ -257,12 +257,12 @@ public class SocksTester extends TConfig {
 
             c.onReconnecting.combine((s, e) -> {
                 InetSocketAddress next;
-                if (e.getValue().equals(endpoint_3307)) {
+                if (eq(e.getValue().getPort(), endpoint_3307.getPort())) {
                     next = endpoint_3308;
                 } else {
                     next = endpoint_3307;  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
                 }
-                log.debug("reconnect {}", next);
+                System.out.println("reconnect " + next);
                 e.setValue(next);
             });
             log.debug("init ok");
@@ -287,6 +287,17 @@ public class SocksTester extends TConfig {
         }
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
+
+        restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
+        max = 10;
+        for (int i = 0; i < max; ) {
+            assert userManager.computeInt(i, 1) == i + 1;
+            i++;
+        }
+        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+
+        sleep(5000);
     }
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
