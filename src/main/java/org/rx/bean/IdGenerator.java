@@ -14,6 +14,14 @@ public class IdGenerator {
         this.max = max;
     }
 
+    public synchronized int get() {
+        return val;
+    }
+
+    public synchronized void set(int value) {
+        val = value;
+    }
+
     public synchronized int increment() {
         int i = ++val;
         if (i == max) {
