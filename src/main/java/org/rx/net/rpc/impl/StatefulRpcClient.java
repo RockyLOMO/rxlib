@@ -7,7 +7,6 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
-import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -128,7 +127,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private Bootstrap bootstrap;
     private volatile Channel channel;
     private volatile InetSocketAddress reconnectingEp;
-    private volatile Timeout connFuture;
     @Getter
     private Date connectedTime;
 
@@ -204,7 +202,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {
-                log.warn("reconnect skip");
+                log.debug("reconnect skip");
                 return;
             }
 
@@ -219,24 +217,18 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             channel = f.channel();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
-                    if (connFuture == null) {
-                        connFuture = Tasks.timer().setTimeout(() -> {
-                            doConnect(true, syncRoot);
-                            return true;
-                        }, d -> {
-                            long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
-                            log.info("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
-                            return delay;
-                        }, this, TimeoutFlag.SINGLE);
-                    }
+                    Tasks.timer().setTimeout(() -> {
+                        doConnect(true, syncRoot);
+                        return true;
+                    }, d -> {
+                        long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
+                        log.info("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
+                        return delay;
+                    }, this, TimeoutFlag.SINGLE);
                 } else {
                     log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
-            }
-            if (connFuture != null) {
-                connFuture.cancel();
-                connFuture = null;
             }
             reconnectingEp = null;
             config.setServerEndpoint(ep);
