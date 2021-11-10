@@ -28,14 +28,30 @@ final class WaterMarkHandler extends ChannelDuplexHandler {
     }
 
     @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        doNotify(ctx.channel());
+        super.channelInactive(ctx);
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        doNotify(ctx.channel());
+        super.exceptionCaught(ctx, cause);
+    }
+
+    @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
         final Channel channel = ctx.channel();
         if (channel.isWritable()) {
-            synchronized (channel) {
-                log.info("{} {} writable", Sockets.protocolName(channel), channel);
-                channel.notifyAll();
-            }
+            doNotify(channel);
         }
         super.channelWritabilityChanged(ctx);
+    }
+
+    private void doNotify(Channel channel) {
+        synchronized (channel) {
+            log.info("{} {} writable", Sockets.protocolName(channel), channel);
+            channel.notifyAll();
+        }
     }
 }
