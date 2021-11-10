@@ -130,7 +130,7 @@ public class WheelTimer {
 
     public TimeoutFuture setTimeout(@NonNull PredicateAction fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
         Task<?> task = new Task<>(taskId, flag, s -> fn.invoke(), null, nextDelay);
-        task.delay = nextDelay.applyAsLong(0);
+//        task.delay = nextDelay.applyAsLong(0);
         return setTimeout(task);
     }
 
@@ -144,7 +144,7 @@ public class WheelTimer {
 
     public <T> TimeoutFuture setTimeout(@NonNull PredicateFunc<T> fn, LongUnaryOperator nextDelay, T state, Object taskId, TimeoutFlag flag) {
         Task<T> task = new Task<>(taskId, flag, fn, state, nextDelay);
-        task.delay = nextDelay.applyAsLong(0);
+//        task.delay = nextDelay.applyAsLong(0);
         return setTimeout(task);
     }
 
@@ -173,24 +173,30 @@ public class WheelTimer {
     }
 
     private <T> TimeoutFuture setTimeout(Task<T> task) {
+        if (task.id == null) {
+            if (task.nextDelayFn != null) {
+                task.delay = task.nextDelayFn.applyAsLong(0);
+            }
+            task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+            return task;
+        }
+
         TimeoutFlag flag = task.flag;
         if (flag == null) {
             flag = TimeoutFlag.SINGLE;
         }
-
-        if (flag == TimeoutFlag.SINGLE && task.id != null) {
+        if (flag == TimeoutFlag.SINGLE) {
             TimeoutFuture ot = hold.get(task.id);
-            if (ot != null && !ot.isDone()) {
+            if (ot != null) {
                 return ot;
             }
         }
 
-        task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
-        if (task.id == null) {
-            return task;
-        }
-
         TimeoutFuture ot = hold.put(task.id, task);
+        if (task.nextDelayFn != null) {
+            task.delay = task.nextDelayFn.applyAsLong(0);
+        }
+        task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
         if (flag == TimeoutFlag.REPLACE && ot != null) {
             ot.cancel();
         }
