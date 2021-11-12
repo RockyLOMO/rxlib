@@ -117,7 +117,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     private <TR> List<TR> newList() {
         int count = count();
-        return isParallel ? new Vector<>(count) : new ArrayList<>(count);//CopyOnWriteArrayList 写性能差
+        return isParallel ? newConcurrentList(count, false) : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {

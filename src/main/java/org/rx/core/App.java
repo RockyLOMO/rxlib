@@ -37,6 +37,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -85,7 +86,6 @@ public final class App extends SystemUtils {
         return config;
     }
 
-    //region Contract
     public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
         return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
     }
@@ -120,6 +120,21 @@ public final class App extends SystemUtils {
     public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
         Container.INSTANCE.register(type, instance);
     }
+
+    //region Collection
+    public static <T> List<T> newConcurrentList(boolean readMore) {
+        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
+    }
+
+    public static <T> List<T> newConcurrentList(int initialCapacity) {
+        return newConcurrentList(initialCapacity, false);
+    }
+
+    public static <T> List<T> newConcurrentList(int initialCapacity, boolean readMore) {
+        //CopyOnWriteArrayList 写性能差
+        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
+    }
+    //endregion
 
     //region json
     //final 字段不会覆盖

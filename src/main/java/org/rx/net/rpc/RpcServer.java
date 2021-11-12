@@ -79,7 +79,6 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
             if (tryAs(pack, PingMessage.class, p -> {
-                p.setReplyTimestamp(System.currentTimeMillis());
                 ctx.writeAndFlush(p);
                 raiseEventAsync(onPing, new RpcServerEventArgs<>(client, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());

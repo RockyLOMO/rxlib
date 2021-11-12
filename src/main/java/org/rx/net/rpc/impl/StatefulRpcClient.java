@@ -60,7 +60,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
             if (tryAs(pack, PingMessage.class, p -> {
-                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), p.getReplyTimestamp() - p.getTimestamp());
+                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p.getTimestamp());
                 raiseEventAsync(onPong, new NEventArgs<>(p));
             })) {
                 return;
