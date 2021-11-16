@@ -15,8 +15,6 @@ import org.rx.util.function.BiAction;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.StringTokenizer;
 import java.util.concurrent.CompletableFuture;
@@ -74,7 +72,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.print(l.toString());
     static final String WIN_CMD = "cmd /c ";
     //        static final String WIN_CMD = "";
-    static final List<ShellCommander> KILL_LIST = Collections.synchronizedList(new ArrayList<>());
+    static final List<ShellCommander> KILL_LIST = newConcurrentList(true);
 
     static {
         Tasks.addShutdownHook(() -> {
