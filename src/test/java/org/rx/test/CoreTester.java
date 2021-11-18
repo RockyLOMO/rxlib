@@ -140,6 +140,9 @@ public class CoreTester extends TestUtil {
         //ScheduledThreadPool现改写maxSize会生效，再依据cpuLoad动态调整maxSize解决上面痛点问题。
         //WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内存。单线程的HashedWheelTimer也使blocking wait痛点放大，好在动态调整maxSize的ThreadPool存在，WheelTimer只做调度，执行全交给ThreadPool异步执行，完美解决痛点。
 
+        Tasks.setTimeout(() -> System.out.println("delay <= 0"), -1);
+//        Tasks.schedule(() -> System.out.println("java delay <= 0"), 0);
+
         Tasks.timer().setTimeout(() -> {
             System.out.println(DateTime.now());
             return false;
