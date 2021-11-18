@@ -464,6 +464,24 @@ public final class App extends SystemUtils {
         return yaml.dump(bean);
     }
 
+    public static Object[] getMessageCandidate(Object... args) {
+        if (args != null && args.length != 0) {
+            int lastIndex = args.length - 1;
+            Object last = args[lastIndex];
+            if (last instanceof Throwable) {
+                if (lastIndex == 0) {
+                    return Arrays.EMPTY_OBJECT_ARRAY;
+                }
+                return NQuery.of(args).take(lastIndex).toArray();
+            }
+        }
+        return args;
+    }
+
+    public static Throwable getThrowableCandidate(Object... args) {
+        return MessageFormatter.getThrowableCandidate(args);
+    }
+
     public static boolean isIgnoringException(Throwable e) {
         if (e == null) {
             return false;
