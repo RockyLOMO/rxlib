@@ -74,6 +74,11 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return this;
     }
 
+    public FlagsEnum<T> add(FlagsEnum<T> flagsEnum) {
+        flags |= flagsEnum.flags;
+        return this;
+    }
+
     @SuppressWarnings(NON_WARNING)
     public FlagsEnum<T> remove(@NonNull T... nEnum) {
         for (T t : nEnum) {

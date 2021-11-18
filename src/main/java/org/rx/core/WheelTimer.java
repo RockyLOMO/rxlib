@@ -16,9 +16,6 @@ import static org.rx.core.App.isNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer {
-    public interface TimeoutFuture extends Timeout, Future<Void> {
-    }
-
     @RequiredArgsConstructor
     class Task<T> implements TimerTask, TimeoutFuture {
         final Object id;
@@ -78,7 +75,7 @@ public class WheelTimer {
 
         @Override
         public boolean cancel() {
-            return timeout.cancel();
+            return cancel(true);
         }
 
         @Override
@@ -121,8 +118,40 @@ public class WheelTimer {
         }
     }
 
+    class EmptyTimeout implements Timeout, TimerTask {
+        @Override
+        public Timer timer() {
+            return timer;
+        }
+
+        @Override
+        public TimerTask task() {
+            return this;
+        }
+
+        @Override
+        public boolean isExpired() {
+            return true;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return true;
+        }
+
+        @Override
+        public boolean cancel() {
+            return true;
+        }
+
+        @Override
+        public void run(Timeout timeout) throws Exception {
+        }
+    }
+
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"));
     final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
+    final EmptyTimeout nonTask = new EmptyTimeout();
 
     public TimeoutFuture setTimeout(PredicateAction fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null, null);
@@ -177,7 +206,11 @@ public class WheelTimer {
             if (task.nextDelayFn != null) {
                 task.delay = task.nextDelayFn.applyAsLong(0);
             }
-            task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+            if (task.delay <= 0) {
+                task.timeout = nonTask;
+            } else {
+                task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+            }
             return task;
         }
 
@@ -196,7 +229,11 @@ public class WheelTimer {
         if (task.nextDelayFn != null) {
             task.delay = task.nextDelayFn.applyAsLong(0);
         }
-        task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+        if (task.delay <= 0) {
+            task.timeout = nonTask;
+        } else {
+            task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+        }
         if (flag == TimeoutFlag.REPLACE && ot != null) {
             ot.cancel();
         }
