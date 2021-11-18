@@ -92,7 +92,7 @@ public final class NameserverClient extends Disposable {
         }
 
         return Tasks.run(() -> {
-            for (InetSocketAddress regEp : registerEndpoints) {
+            for (InetSocketAddress regEp : NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints)) {
                 synchronized (hold) {
                     if (!NQuery.of(hold).any(p -> eq(p.left, regEp))) {
                         BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);

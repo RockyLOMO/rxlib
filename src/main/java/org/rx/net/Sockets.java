@@ -46,7 +46,6 @@ public final class Sockets {
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String RUNTIME_REACTOR = "_RUNTIME";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
-    //    static final TaskScheduler scheduler = new TaskScheduler("EventLoop");
     @Getter(lazy = true)
     private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
     static final ReentrantLock nsLock = new ReentrantLock(true);
@@ -419,6 +418,11 @@ public final class Sockets {
             return endpoint;
         }
         return new InetSocketAddress(endpoint.getAddress(), port);
+    }
+
+    @SneakyThrows
+    public static List<InetSocketAddress> allEndpoints(@NonNull InetSocketAddress endpoint) {
+        return NQuery.of(InetAddress.getAllByName(endpoint.getHostString())).select(p -> new InetSocketAddress(p, endpoint.getPort())).toList();
     }
 
     public static String toString(InetSocketAddress endpoint) {
