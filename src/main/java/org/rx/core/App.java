@@ -77,6 +77,7 @@ public final class App extends SystemUtils {
 
     public static synchronized RxConfig getConfig() {
         if (SpringContext.isInitiated()) {
+            config = null;
             return SpringContext.getBean(RxConfig.class);
         }
         if (config == null) {

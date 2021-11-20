@@ -22,7 +22,10 @@ import static org.rx.core.App.require;
 @NoArgsConstructor
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static final int DEFAULT_Insertions = 9999999;  //1.1M
-    public static final MemoryCache DEFAULT = new MemoryCache<>();
+
+    static {
+        Container.INSTANCE.register(MemoryCache.class, new MemoryCache<>());
+    }
 
     public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {
         require(memoryPercent, 0 < memoryPercent && memoryPercent <= 1);

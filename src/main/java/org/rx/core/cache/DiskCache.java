@@ -17,7 +17,9 @@ import static org.rx.core.App.eq;
 
 @Slf4j
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
-    public static Cache DEFAULT = new DiskCache<>();
+    static {
+        Container.INSTANCE.register(DiskCache.class, new DiskCache<>());
+    }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
     final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));

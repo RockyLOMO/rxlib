@@ -16,12 +16,16 @@ import static org.rx.core.App.tryAs;
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
+    static {
+        Container.INSTANCE.register(EventBus.class, new EventBus());
+    }
+
     public static void register(Object eventListener) {
-        Container.INSTANCE.getOrRegister(EventBus.class).register(eventListener);
+        Container.INSTANCE.get(EventBus.class).register(eventListener);
     }
 
     public static void post(Object eventObject) {
-        Container.INSTANCE.getOrRegister(EventBus.class).post(eventObject);
+        Container.INSTANCE.get(EventBus.class).post(eventObject);
     }
 
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create() {

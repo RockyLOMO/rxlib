@@ -302,7 +302,7 @@ public class SocksTester extends TConfig {
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
         RpcServerConfig svr = new RpcServerConfig(ep.getPort());
-        svr.setUseRuntimeTcpEventLoop(false);
+        svr.setUseSharedTcpEventLoop(false);
         serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, svr));
         System.out.println("Start server on port " + ep.getPort());
     }
