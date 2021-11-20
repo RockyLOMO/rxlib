@@ -1,11 +1,17 @@
 package org.rx.exception;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Container;
 import org.slf4j.helpers.MessageFormatter;
 
 @Slf4j
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
-    public static final ExceptionHandler INSTANCE = new ExceptionHandler();
+    static {
+        Container.register(ExceptionHandler.class, new ExceptionHandler());
+    }
 
     public void uncaughtException(String format, Object... args) {
         Throwable e = MessageFormatter.getThrowableCandidate(args);

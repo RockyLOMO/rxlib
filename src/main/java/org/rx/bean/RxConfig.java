@@ -43,8 +43,7 @@ public class RxConfig {
             jsonSkipTypeSet.addAll(jsonSkipTypes);
         }
         if (mainCache != null) {
-            Container container = Container.INSTANCE;
-            container.register(Cache.MAIN_CACHE, container.<Cache>get(mainCache));
+            Container.register(Cache.MAIN_CACHE, Container.<Cache>get(mainCache));
         }
         if (netMaxPoolSize <= 0) {
             netMaxPoolSize = ThreadPool.CPU_THREADS;

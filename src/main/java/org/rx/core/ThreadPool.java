@@ -268,7 +268,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final DynamicSizer SIZER = new DynamicSizer();
 
     static {
-        Thread.setDefaultUncaughtExceptionHandler(ExceptionHandler.INSTANCE);
+        Thread.setDefaultUncaughtExceptionHandler(Container.get(ExceptionHandler.class));
     }
 
     static ThreadFactory newThreadFactory(String name) {

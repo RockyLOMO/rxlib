@@ -37,7 +37,7 @@ public class TaskScheduler extends ThreadPool {
             try {
                 return fn.invoke();
             } catch (Throwable e) {
-                ExceptionHandler.INSTANCE.uncaughtException(toString(), e);
+                Container.get(ExceptionHandler.class).uncaughtException(toString(), e);
 //                return null;
                 throw e;
             }

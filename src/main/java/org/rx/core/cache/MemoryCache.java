@@ -24,7 +24,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static final int DEFAULT_Insertions = 9999999;  //1.1M
 
     static {
-        Container.INSTANCE.register(MemoryCache.class, new MemoryCache<>());
+        Container.register(MemoryCache.class, new MemoryCache<>());
     }
 
     public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {

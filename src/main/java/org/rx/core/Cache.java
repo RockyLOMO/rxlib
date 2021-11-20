@@ -33,7 +33,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance(Class<?> cacheName) {
-        return (Cache<TK, TV>) Container.INSTANCE.get(cacheName);
+        return (Cache<TK, TV>) Container.getOrDefault(cacheName, (Class) MemoryCache.class);
     }
 
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {

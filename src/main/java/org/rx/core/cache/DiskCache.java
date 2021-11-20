@@ -18,7 +18,7 @@ import static org.rx.core.App.eq;
 @Slf4j
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
     static {
-        Container.INSTANCE.register(DiskCache.class, new DiskCache<>());
+        Container.register(DiskCache.class, new DiskCache<>());
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
