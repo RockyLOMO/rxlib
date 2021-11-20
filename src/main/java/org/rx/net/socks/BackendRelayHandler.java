@@ -9,14 +9,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.net.Sockets;
 
-import java.util.Collection;
+import java.util.Queue;
 
 @Slf4j
 @RequiredArgsConstructor
 public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final String PIPELINE_NAME = "from-upstream";
     final Channel inbound;
-    final Collection<Object> outboundPendingPackages;
+    final Queue<Object> outboundPendingPackages;
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {

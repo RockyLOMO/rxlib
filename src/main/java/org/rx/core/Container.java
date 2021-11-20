@@ -14,10 +14,12 @@ public final class Container {
     //不要放值类型, ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才回收
     static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
 
-    public static <T> T getOrDefault(Class<T> type, Class<? extends T> defInstance) {
+    @SneakyThrows
+    public static <T> T getOrDefault(Class<T> type, Class<? extends T> defType) {
+        Class.forName(type.getName());
         T instance = (T) holder.get(type);
         if (instance == null) {
-            return get(defInstance);
+            return get(defType);
         }
         return instance;
     }

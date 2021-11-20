@@ -251,6 +251,43 @@ public final class Sockets {
         return b;
     }
 
+    public static void writeAndFlush(@NonNull Channel channel, @NonNull Queue<?> packs) {
+        EventLoop eventLoop = channel.eventLoop();
+        if (eventLoop.inEventLoop()) {
+            Object pack;
+            while ((pack = packs.poll()) != null) {
+                channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            }
+            channel.flush();
+            return;
+        }
+
+        eventLoop.execute(() -> {
+            Object pack;
+            while ((pack = packs.poll()) != null) {
+                channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            }
+            channel.flush();
+        });
+    }
+
+    public static void closeOnFlushed(@NonNull Channel channel) {
+        if (!channel.isActive()) {
+            return;
+        }
+        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    public static ByteBuf getMessageBuf(Object msg) {
+        if (msg instanceof io.netty.channel.socket.DatagramPacket) {
+            return ((DatagramPacket) msg).content();
+        } else if (msg instanceof ByteBuf) {
+            return (ByteBuf) msg;
+        } else {
+            throw new InvalidException("unsupported msg type:" + msg.getClass());
+        }
+    }
+
     public static String protocolName(Channel channel) {
         return channel instanceof NioDatagramChannel ? "UDP" : "TCP";
     }
@@ -303,44 +340,6 @@ public final class Sockets {
             for (ChannelOutboundHandler handler : outboundHandlers) {
                 log.trace(String.format("out %s", handler));
             }
-        }
-    }
-
-    public static void writeAndFlush(@NonNull Channel channel, @NonNull Collection<?> packs) {
-        Queue<?> queue = as(packs, Queue.class);
-        if (queue != null) {
-            channel.eventLoop().execute(() -> {
-                Object pack;
-                while ((pack = queue.poll()) != null) {
-                    channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-                }
-                channel.flush();
-            });
-            return;
-        }
-
-        channel.eventLoop().execute(() -> {
-            for (Object pack : packs) {
-                channel.write(pack).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
-            }
-            channel.flush();
-        });
-    }
-
-    public static void closeOnFlushed(@NonNull Channel channel) {
-        if (!channel.isActive()) {
-            return;
-        }
-        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
-    }
-
-    public static ByteBuf getMessageBuf(Object msg) {
-        if (msg instanceof io.netty.channel.socket.DatagramPacket) {
-            return ((DatagramPacket) msg).content();
-        } else if (msg instanceof ByteBuf) {
-            return (ByteBuf) msg;
-        } else {
-            throw new InvalidException("unsupported msg type:" + msg.getClass());
         }
     }
 
