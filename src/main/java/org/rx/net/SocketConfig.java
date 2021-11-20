@@ -19,11 +19,12 @@ public class SocketConfig implements DeepCloneable {
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
     public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
 
+    private boolean enableNettyLog;
+    //随进程存活设为true
+    private boolean useSharedTcpEventLoop = true;
+    private int workThreadAmount;
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
-    //随进程存活设为true
-    private boolean useRuntimeTcpEventLoop = true;
-    private boolean enableNettyLog;
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
     private byte[] aesKey;
     @Getter(lazy = true)

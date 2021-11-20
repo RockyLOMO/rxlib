@@ -44,10 +44,9 @@ import static org.rx.core.App.*;
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    static final String RUNTIME_REACTOR = "_RUNTIME";
+    static final String SERVER_REACTOR = "_SHARED";
+    static final String UDP_REACTOR = "_UDP";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
-    @Getter(lazy = true)
-    private static final NioEventLoopGroup udpEventLoop = new NioEventLoopGroup();
     static final ReentrantLock nsLock = new ReentrantLock(true);
     static DnsClient nsClient;
 
@@ -96,8 +95,12 @@ public final class Sockets {
         });
     }
 
-    static EventLoopGroup reactorEventLoop(@NonNull String reactorName) {
+    static EventLoopGroup reactor(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+    }
+
+    static EventLoopGroup udpReactor() {
+        return reactors.computeIfAbsent(UDP_REACTOR, k -> new NioEventLoopGroup());
     }
 
     // not executor
@@ -129,7 +132,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseRuntimeTcpEventLoop() ? reactorEventLoop(RUNTIME_REACTOR) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(config.getWorkThreadAmount()))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -177,11 +180,11 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
-        return bootstrap(Strings.EMPTY, null, initChannel);
+        return bootstrap(SERVER_REACTOR, null, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactorEventLoop(reactorName), config, initChannel);
+        return bootstrap(reactor(reactorName), config, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
@@ -230,7 +233,7 @@ public final class Sockets {
             mode = MemoryMode.LOW;
         }
 
-        Bootstrap b = new Bootstrap().group(getUdpEventLoop()).channel(NioDatagramChannel.class)
+        Bootstrap b = new Bootstrap().group(udpReactor()).channel(NioDatagramChannel.class)
 //                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
