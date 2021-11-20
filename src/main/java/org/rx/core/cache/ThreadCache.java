@@ -23,7 +23,7 @@ public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     };
 
     static {
-        Container.INSTANCE.register(ThreadCache.class, new ThreadCache<>());
+        Container.register(ThreadCache.class, new ThreadCache<>());
     }
 
     @Override

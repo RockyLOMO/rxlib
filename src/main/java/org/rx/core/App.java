@@ -114,14 +114,6 @@ public final class App extends SystemUtils {
         Thread.sleep(millis);
     }
 
-    public static <T> T getBean(@NonNull Class<T> type) {
-        return Container.INSTANCE.get(type);
-    }
-
-    public static <T> void registerBean(@NonNull Class<T> type, @NonNull T instance) {
-        Container.INSTANCE.register(type, instance);
-    }
-
     //region Collection
     public static <T> List<T> newConcurrentList(boolean readMore) {
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
@@ -187,7 +179,7 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypeSet = getConfig().getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            Container.get(ExceptionHandler.class).uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
