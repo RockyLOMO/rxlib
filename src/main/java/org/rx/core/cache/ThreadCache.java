@@ -1,18 +1,19 @@
 package org.rx.core.cache;
 
 import io.netty.util.concurrent.FastThreadLocal;
-import lombok.Getter;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import org.rx.core.Cache;
 import org.rx.core.CacheExpiration;
+import org.rx.core.Container;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
-    @Getter
-    static ThreadCache instance = new ThreadCache<>();
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException
     static final FastThreadLocal<Map> local = new FastThreadLocal<Map>() {
         @Override
@@ -21,7 +22,8 @@ public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
         }
     };
 
-    private ThreadCache() {
+    static {
+        Container.INSTANCE.register(ThreadCache.class, new ThreadCache<>());
     }
 
     @Override

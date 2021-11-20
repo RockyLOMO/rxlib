@@ -79,7 +79,7 @@ public class DnsClient extends Disposable {
 
     void renewResolver() {
         tryClose(nameResolver);
-        nameResolver = new DnsNameResolverBuilder(Sockets.getUdpEventLoop().next())
+        nameResolver = new DnsNameResolverBuilder(Sockets.udpReactor().next())
                 .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
                         : DnsServerAddressStreamProviders.platformDefault())
                 .channelType(NioDatagramChannel.class)

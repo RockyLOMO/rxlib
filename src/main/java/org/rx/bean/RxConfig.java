@@ -31,7 +31,7 @@ public class RxConfig {
     private List<String> logTypeWhitelist;
     private List<Class<?>> jsonSkipTypes = Arrays.asList(ServletRequest.class, ServletResponse.class, Model.class, IOStream.class);
     private final Set<Class<?>> jsonSkipTypeSet = ConcurrentHashMap.newKeySet();
-    private String defaultCache = Cache.MEMORY_CACHE;
+    private Class mainCache = Cache.MEMORY_CACHE;
     private int netTimeoutMillis = 16000;
     private int netMaxPoolSize;
     private int netKeepaliveSeconds = 120;
@@ -41,6 +41,10 @@ public class RxConfig {
     public void init() {
         if (jsonSkipTypes != null) {
             jsonSkipTypeSet.addAll(jsonSkipTypes);
+        }
+        if (mainCache != null) {
+            Container container = Container.INSTANCE;
+            container.register(Cache.MAIN_CACHE, container.<Cache>get(mainCache));
         }
         if (netMaxPoolSize <= 0) {
             netMaxPoolSize = ThreadPool.CPU_THREADS;

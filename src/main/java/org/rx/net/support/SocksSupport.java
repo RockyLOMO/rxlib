@@ -18,7 +18,7 @@ public interface SocksSupport extends AutoCloseable {
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<SUID, UnresolvedEndpoint> fakeDict() {
-        return Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+        return Cache.getInstance(Cache.DISK_CACHE);
     }
 
     void fakeEndpoint(SUID hash, String realEndpoint);

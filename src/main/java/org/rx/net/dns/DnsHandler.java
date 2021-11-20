@@ -40,7 +40,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         if (server.shadowServers == null) {
             cache = null;
         } else {
-            cache = Cache.getInstance(Cache.DISTRIBUTED_CACHE);
+            cache = Cache.getInstance(Cache.DISK_CACHE);
             ((DiskCache<Object, Object>) cache).onExpired.combine((s, e) -> {
                 Map.Entry<Object, Object> entry = e.getValue();
                 String key;

@@ -99,7 +99,7 @@ public final class Sockets {
         return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
     }
 
-    static EventLoopGroup udpReactor() {
+    public static EventLoopGroup udpReactor() {
         return reactors.computeIfAbsent(UDP_REACTOR, k -> new NioEventLoopGroup());
     }
 
