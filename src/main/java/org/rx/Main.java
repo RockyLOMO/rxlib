@@ -153,7 +153,6 @@ public final class Main implements SocksSupport {
                     return;
                 }
                 //bypass
-                log.info("s5 bypass: {}", dstEp);
                 if (frontConf.isBypass(dstEp.getHost())) {
                     e.setValue(new Upstream(dstEp));
                 }
@@ -222,8 +221,8 @@ public final class Main implements SocksSupport {
                         return;
                     }
                     //bypass
-                    log.info("ss bypass: {}", dstEp);
                     if (ssConfig.isBypass(dstEp.getHost())) {
+                        log.info("ss bypass: {}", dstEp);
                         e.setValue(new Upstream(dstEp));
                     }
                 };
@@ -279,9 +278,9 @@ public final class Main implements SocksSupport {
             }
 
             InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
-            if (Sockets.isNatIp(wanIp)) {
-                return;
-            }
+//            if (Sockets.isNatIp(wanIp)) {
+//                return;
+//            }
             for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {
