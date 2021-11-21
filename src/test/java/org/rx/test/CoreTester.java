@@ -409,8 +409,8 @@ public class CoreTester extends TestUtil {
         mgr.onCreate.remove(b);
         mgr.create(p); //触发事件（a执行）
 
-        mgr.onCreate.replace(c);
-        mgr.create(p); //触发事件（c执行）
+        mgr.onCreate.replace(a, c);
+        mgr.create(p); //触发事件（a, c执行）
     }
 
     @Test
