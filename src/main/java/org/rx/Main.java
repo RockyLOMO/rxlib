@@ -153,6 +153,7 @@ public final class Main implements SocksSupport {
                     return;
                 }
                 //bypass
+                log.info("s5 bypass: {}", dstEp);
                 if (frontConf.isBypass(dstEp.getHost())) {
                     e.setValue(new Upstream(dstEp));
                 }
@@ -221,7 +222,7 @@ public final class Main implements SocksSupport {
                         return;
                     }
                     //bypass
-                    log.info("bypass: {}", dstEp);
+                    log.info("ss bypass: {}", dstEp);
                     if (ssConfig.isBypass(dstEp.getHost())) {
                         e.setValue(new Upstream(dstEp));
                     }
