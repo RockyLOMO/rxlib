@@ -10,7 +10,9 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
+import org.rx.bean.RxConfig;
 import org.rx.core.App;
+import org.rx.core.Container;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.io.Files;
@@ -187,7 +189,7 @@ public class HttpClient {
     }
 
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
-    private static final ConnectionPool POOL = new ConnectionPool(App.getConfig().getNetMaxPoolSize(), App.getConfig().getNetKeepaliveSeconds(), TimeUnit.SECONDS);
+    private static final ConnectionPool POOL = new ConnectionPool(Container.get(RxConfig.class).getNetMaxPoolSize(), Container.get(RxConfig.class).getNetKeepaliveSeconds(), TimeUnit.SECONDS);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
     private static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
         final X509Certificate[] empty = new X509Certificate[0];
@@ -376,11 +378,11 @@ public class HttpClient {
     private ResponseContent responseContent;
 
     public HttpClient() {
-        this(App.getConfig().getNetTimeoutMillis(), null, null);
+        this(Container.get(RxConfig.class).getNetTimeoutMillis(), null, null);
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        headers.set(HttpHeaderNames.USER_AGENT, App.getConfig().getNetUserAgent());
+        headers.set(HttpHeaderNames.USER_AGENT, Container.get(RxConfig.class).getNetUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
             headers.set(HttpHeaderNames.COOKIE, rawCookie);

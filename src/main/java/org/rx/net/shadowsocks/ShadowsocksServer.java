@@ -8,40 +8,31 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Delegate;
 import org.rx.core.Disposable;
+import org.rx.core.EventTarget;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
+import org.rx.net.socks.RouteEventArgs;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleAction;
 
 import java.util.List;
 
 @Slf4j
-public class ShadowsocksServer extends Disposable {
+public class ShadowsocksServer extends Disposable implements EventTarget<ShadowsocksServer> {
+    public static final TripleAction<ShadowsocksServer, RouteEventArgs> DIRECT_ROUTER = (s, e) -> e.setValue(new Upstream(e.getDestinationEndpoint()));
+    public final Delegate<ShadowsocksServer, RouteEventArgs> onRoute = Delegate.create(DIRECT_ROUTER),
+            onUdpRoute = Delegate.create(DIRECT_ROUTER);
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
-    final BiFunc<UnresolvedEndpoint, Upstream> router, udpRouter;
 
-    public ShadowsocksServer(ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router) {
-        this(config, router, null);
-    }
-
-    public ShadowsocksServer(@NonNull ShadowsocksConfig config, BiFunc<UnresolvedEndpoint, Upstream> router, BiFunc<UnresolvedEndpoint, Upstream> udpRouter) {
-        if (router == null) {
-            router = Upstream::new;
-        }
-        if (udpRouter == null) {
-            udpRouter = Upstream::new;
-        }
-        this.router = router;
-        this.udpRouter = udpRouter;
-
+    public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         bootstrap = Sockets.serverBootstrap(this.config = config, ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(false);
 

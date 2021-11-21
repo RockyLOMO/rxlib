@@ -383,26 +383,32 @@ public class SocksTester extends TConfig {
         AuthenticEndpoint srvEp = new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword());
         ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
-        ShadowsocksServer server = new ShadowsocksServer(config, dstEp -> {
+        ShadowsocksServer server = new ShadowsocksServer(config);
+        server.onRoute.combine((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                return shadowDnsUpstream;
+                e.setValue(shadowDnsUpstream);
+                return;
             }
             //bypass
             if (config.isBypass(dstEp.getHost())) {
-                return new Upstream(dstEp);
+                e.setValue(new Upstream(dstEp));
+                return;
             }
-            return new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null));
-        }, dstEp -> {
+            e.setValue(new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null)));
+        });
+        server.onUdpRoute.combine((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
             //must first
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                return shadowDnsUpstream;
+                e.setValue(shadowDnsUpstream);
             }
             //bypass
             if (config.isBypass(dstEp.getHost())) {
-                return new Upstream(dstEp);
+                e.setValue(new Upstream(dstEp));
             }
-            return new Upstream(dstEp);
+            e.setValue(new Upstream(dstEp));
 //            return new Upstream(dstEp, srvEp);
         });
 

@@ -10,6 +10,7 @@ import org.slf4j.helpers.MessageFormatter;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     static {
+        Container.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
         Container.register(ExceptionHandler.class, new ExceptionHandler());
     }
 

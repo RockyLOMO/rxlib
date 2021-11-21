@@ -10,6 +10,7 @@ import org.rx.core.NQuery;
 import org.rx.core.Tasks;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
+import org.rx.net.SocketConfig;
 import org.rx.test.bean.PersonBean;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.validation.annotation.Validated;
@@ -20,6 +21,7 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 @Slf4j
 public class UtilTester {
@@ -107,16 +109,9 @@ public class UtilTester {
         System.out.println("log:" + App.log("hello {}!", 1, new InvalidException("a").level(ExceptionLevel.USER_OPERATION)));
     }
 
-    WeakReference<Integer> x = new WeakReference<>(10);
-
     @Test
-    public void security() {
-//        SoftReference<Integer> x = new SoftReference<>(10);
-        System.out.println(x.get());
-
-        for (int i = 0; i < 10; i++) {
-            System.gc();
-            System.out.println("x:" + x.get());
-        }
+    public void netIp() {
+        String s = SocketConfig.DEFAULT_NAT_IPS.get(3);
+        System.out.println(Pattern.matches(s, "192.168.31.7"));
     }
 }

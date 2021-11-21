@@ -23,7 +23,6 @@ import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.spring.SpringContext;
 import org.rx.util.function.*;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.cglib.proxy.Enhancer;
@@ -56,8 +55,7 @@ public final class App extends SystemUtils {
         @Override
         public Object process(Object o, String k, Object v) {
             if (v != null) {
-                //import do not invoke getConfig()
-                NQuery<Class<?>> q = config == null ? NQuery.of() : NQuery.of(config.getJsonSkipTypeSet());
+                NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
                 if (v.getClass().isArray() || v instanceof Iterable) {
                     List<Object> list = NQuery.asList(v);
                     list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
@@ -73,18 +71,9 @@ public final class App extends SystemUtils {
     @Setter
     static volatile Predicate<Throwable> ignoreExceptionHandler;
     static final String LOG_METRIC_PREFIX = "LM:";
-    private static RxConfig config;
 
-    public static synchronized RxConfig getConfig() {
-        if (SpringContext.isInitiated()) {
-            config = null;
-            return SpringContext.getBean(RxConfig.class);
-        }
-        if (config == null) {
-            config = readSetting("app", RxConfig.class);
-            config.init();
-        }
-        return config;
+    static {
+        Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
     }
 
     public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
@@ -177,7 +166,7 @@ public final class App extends SystemUtils {
             } else {
                 q = NQuery.of(src);
             }
-            Set<Class<?>> jsonSkipTypeSet = getConfig().getJsonSkipTypeSet();
+            Set<Class<?>> jsonSkipTypeSet = Container.get(RxConfig.class).getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
             Container.get(ExceptionHandler.class).uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
