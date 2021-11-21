@@ -26,7 +26,6 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.util.function.Action;
-import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetAddress;
@@ -213,25 +212,38 @@ public final class Main implements SocksSupport {
                 SocksConfig directConf = new SocksConfig(port);
                 frontConf.setMemoryMode(MemoryMode.MEDIUM);
                 frontConf.setConnectTimeoutMillis(connectTimeout);
-                BiFunc<UnresolvedEndpoint, Upstream> first = dstEp -> {
+                ShadowsocksServer server = new ShadowsocksServer(ssConfig);
+                TripleAction<ShadowsocksServer, RouteEventArgs> ssFirstRoute = (s, e) -> {
+                    UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                        return shadowDnsUpstream;
+                        e.setValue(shadowDnsUpstream);
+                        return;
                     }
                     //bypass
+                    log.info("bypass: {}", dstEp);
                     if (ssConfig.isBypass(dstEp.getHost())) {
-                        return new Upstream(dstEp);
+                        e.setValue(new Upstream(dstEp));
                     }
-                    return null;
                 };
-                ShadowsocksServer server = new ShadowsocksServer(ssConfig, dstEp -> isNull(first.invoke(dstEp), () -> {
-                    //gateway
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(dstEp.getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
-                    if (ipAddress != null && ipAddress.isChina()) {
-                        return new Upstream(dstEp);
+                server.onRoute.replace(ssFirstRoute, (s, e) -> {
+                    if (e.getValue() != null) {
+                        return;
                     }
-                    return new Socks5Upstream(dstEp, directConf, () -> new UpstreamSupport(srvEp, null));
-                }), dstEp -> isNull(first.invoke(dstEp), () -> new Upstream(dstEp, srvEp)));
+                    //gateway
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getDestinationEndpoint().getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
+                    if (ipAddress != null && ipAddress.isChina()) {
+                        e.setValue(new Upstream(e.getDestinationEndpoint()));
+                        return;
+                    }
+                    e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), directConf, () -> new UpstreamSupport(srvEp, null)));
+                });
+                server.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
+                    if (e.getValue() != null) {
+                        return;
+                    }
+                    e.setValue(new Upstream(e.getDestinationEndpoint(), srvEp));
+                });
             }
 
             app.ddns();

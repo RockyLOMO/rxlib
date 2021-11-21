@@ -9,6 +9,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.RouteEventArgs;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.upstream.Upstream;
@@ -28,7 +29,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         ShadowsocksServer server = SocksContext.ssServer(inbound.channel());
 
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
-            Upstream upstream = server.udpRouter.invoke(dstEp);
+            RouteEventArgs e = new RouteEventArgs(srcEp, dstEp);
+            server.raiseEvent(server.onUdpRoute, e);
+            Upstream upstream = e.getValue();
             return SocksContext.initOutbound(Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                 upstream.initChannel(ob);
 

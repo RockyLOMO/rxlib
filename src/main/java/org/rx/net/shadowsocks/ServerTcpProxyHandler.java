@@ -7,6 +7,7 @@ import org.rx.core.Arrays;
 import org.rx.net.Sockets;
 import org.rx.net.socks.BackendRelayHandler;
 import org.rx.net.socks.FrontendRelayHandler;
+import org.rx.net.socks.RouteEventArgs;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
@@ -14,8 +15,6 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
-
-import static org.rx.core.App.quietly;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -28,7 +27,10 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         SocksContext.tcpOutbound(inbound, () -> {
             ShadowsocksServer server = SocksContext.ssServer(inbound);
             InetSocketAddress realEp = inbound.attr(SSCommon.REMOTE_DEST).get();
-            Upstream upstream = quietly(() -> server.router.invoke(new UnresolvedEndpoint(realEp)));
+
+            RouteEventArgs e = new RouteEventArgs((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(realEp));
+            server.raiseEvent(server.onRoute, e);
+            Upstream upstream = e.getValue();
             UnresolvedEndpoint dstEp = upstream.getDestination();
 
             if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
