@@ -27,6 +27,10 @@ public class RxConfig {
     public static final int HEAP_BUF_SIZE = 256;
     public static final int MAX_HEAP_BUF_SIZE = 1024 * 1024 * 16;
 
+    static {
+        Container.register(RxConfig.class, new RxConfig());
+    }
+
     private LogStrategy logStrategy;
     private List<String> logTypeWhitelist;
     private List<Class<?>> jsonSkipTypes;

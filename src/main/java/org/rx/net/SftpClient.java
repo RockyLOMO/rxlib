@@ -5,6 +5,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
@@ -64,7 +65,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     private final ChannelSftp channel;
 
     public SftpClient(AuthenticEndpoint endpoint) {
-        this(endpoint, App.getConfig().getNetTimeoutMillis());
+        this(endpoint, Container.get(RxConfig.class).getNetTimeoutMillis());
     }
 
     @SneakyThrows

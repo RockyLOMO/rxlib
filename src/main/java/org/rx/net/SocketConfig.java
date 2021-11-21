@@ -4,8 +4,9 @@ import lombok.Data;
 import lombok.Getter;
 import org.rx.bean.DeepCloneable;
 import org.rx.bean.FlagsEnum;
-import org.rx.core.App;
+import org.rx.bean.RxConfig;
 import org.rx.core.Arrays;
+import org.rx.core.Container;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,7 +25,7 @@ public class SocketConfig implements DeepCloneable {
     private boolean useSharedTcpEventLoop = true;
     private int workThreadAmount;
     private MemoryMode memoryMode = MemoryMode.LOW;
-    private int connectTimeoutMillis = App.getConfig().getNetTimeoutMillis();
+    private int connectTimeoutMillis = Container.get(RxConfig.class).getNetTimeoutMillis();
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
     private byte[] aesKey;
     @Getter(lazy = true)

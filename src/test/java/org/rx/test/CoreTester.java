@@ -549,7 +549,7 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void appSetting() {
-        System.out.println(App.getConfig());
+        System.out.println(Container.get(RxConfig.class));
 
         Map<String, Object> map = loadYaml("application.yml");
         System.out.println(map);

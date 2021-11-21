@@ -47,13 +47,11 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     public static class ThreadMonitorInfo {
         private final ThreadInfo threadInfo;
         private final long cpuTime;
-//        private final long userTime;
 
         @Override
         public String toString() {
             StringBuilder s = new StringBuilder(threadInfo.toString());
             int i = s.indexOf("\n");
-//            s.insert(i, String.format(" cpuTime=%s userTime=%s", cpuTime, userTime));
             s.insert(i, String.format(" cpuTime=%s", cpuTime));
             return s.toString();
         }
