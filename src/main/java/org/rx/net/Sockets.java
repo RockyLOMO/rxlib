@@ -27,7 +27,9 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
+import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
@@ -36,6 +38,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -43,6 +46,7 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
+    static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SERVER_REACTOR = "_SHARED";
     static final String UDP_REACTOR = "_UDP";
@@ -96,7 +100,10 @@ public final class Sockets {
     }
 
     static EventLoopGroup reactor(@NonNull String reactorName) {
-        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+        return reactors.computeIfAbsent(reactorName, k -> {
+            int amount = Container.get(RxConfig.class).getSharedReactorThreadAmount();
+            return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
+        });
     }
 
     public static EventLoopGroup udpReactor() {
@@ -132,7 +139,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(config.getWorkThreadAmount()))
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -355,8 +362,17 @@ public final class Sockets {
 
     @SneakyThrows
     public static boolean isNatIp(InetAddress ip) {
-        return eq(loopbackAddress(), ip) || eq(InetAddress.getLocalHost(), ip)
-                || ip.getHostAddress().startsWith("192.168.");
+        if (eq(loopbackAddress(), ip)) {
+            return true;
+        }
+
+        String hostAddress = ip.getHostAddress();
+        for (String regex : DEFAULT_NAT_IPS) {
+            if (Pattern.matches(regex, hostAddress)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean isValidIp(String ip) {
