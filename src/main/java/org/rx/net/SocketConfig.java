@@ -23,7 +23,6 @@ public class SocketConfig implements DeepCloneable {
     private boolean enableNettyLog;
     //随进程存活设为true
     private boolean useSharedTcpEventLoop = true;
-    private int workThreadAmount;
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis = Container.get(RxConfig.class).getNetTimeoutMillis();
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();

@@ -27,6 +27,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
@@ -96,7 +97,10 @@ public final class Sockets {
     }
 
     static EventLoopGroup reactor(@NonNull String reactorName) {
-        return reactors.computeIfAbsent(reactorName, k -> Epoll.isAvailable() ? new EpollEventLoopGroup() : new NioEventLoopGroup());
+        return reactors.computeIfAbsent(reactorName, k -> {
+            int amount = Container.get(RxConfig.class).getSharedReactorThreadAmount();
+            return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
+        });
     }
 
     public static EventLoopGroup udpReactor() {
@@ -132,7 +136,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(config.getWorkThreadAmount()))
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
