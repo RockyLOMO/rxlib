@@ -29,8 +29,8 @@ public final class SnowFlake {
     private static final long MACHINE_LEFT = SEQUENCE_BIT;
     private static final long TIMESTAMP_LEFT = DATACENTER_LEFT + DATACENTER_BIT;
 
-    private long datacenterId;  //数据中心
-    private long machineId;     //机器标识
+    private final long datacenterId;  //数据中心
+    private final long machineId;     //机器标识
     private long sequence = 0L; //序列号
     private long lastStamp = -1L;//上一次时间戳
     /**
