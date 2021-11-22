@@ -87,6 +87,7 @@ public final class Main implements SocksSupport {
             }
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+            SocksConfig frontConf = new SocksConfig(port);
             YamlFileWatcher<SSConf> watcher = new YamlFileWatcher<>(SSConf.class);
             watcher.onChanged.combine((s, e) -> {
                 if (e.getConfigObject() == null) {
@@ -112,6 +113,10 @@ public final class Main implements SocksSupport {
                     shadowServers.add(new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
                 }
                 log.info("reload svrs {}", toJsonString(svrs));
+
+                if (conf.bypassHosts != null) {
+                    frontConf.getBypassList().addAll(conf.bypassHosts);
+                }
             });
             watcher.raiseChangeWithDefaultFile();
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
@@ -132,7 +137,6 @@ public final class Main implements SocksSupport {
             InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
             Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
-            SocksConfig frontConf = new SocksConfig(port);
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
@@ -258,6 +262,7 @@ public final class Main implements SocksSupport {
         public List<String> shadowServer;
         public String socksPwd;
         public int autoWhiteListSeconds;
+        public List<String> bypassHosts;
         public int steeringTTL;
         public int ddnsSeconds;
         public List<String> ddnsDomains;
@@ -278,9 +283,6 @@ public final class Main implements SocksSupport {
             }
 
             InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
-//            if (Sockets.isNatIp(wanIp)) {
-//                return;
-//            }
             for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {

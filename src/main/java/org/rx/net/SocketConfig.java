@@ -5,11 +5,9 @@ import lombok.Getter;
 import org.rx.bean.DeepCloneable;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.RxConfig;
-import org.rx.core.Arrays;
 import org.rx.core.Container;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.regex.Pattern;
@@ -18,7 +16,6 @@ import java.util.regex.Pattern;
 public class SocketConfig implements DeepCloneable {
     private static final long serialVersionUID = 5312790348211652335L;
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
-    public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
 
     private boolean enableNettyLog;
     //随进程存活设为true
@@ -38,7 +35,7 @@ public class SocketConfig implements DeepCloneable {
     }
 
     private Set<String> bypassList() {
-        return new CopyOnWriteArraySet<>(DEFAULT_NAT_IPS);
+        return new CopyOnWriteArraySet<>(Sockets.DEFAULT_NAT_IPS);
     }
 
     public boolean isBypass(String host) {
