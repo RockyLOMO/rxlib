@@ -32,7 +32,7 @@ public class BeanTester extends TestUtil {
 
         //该interface下所有map方法的执行flags
         default FlagsEnum<BeanMapFlag> getFlags() {
-            return BeanMapFlag.LogOnNotAllMapped.flags();
+            return BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
         }
 
         class DateToIntConvert implements BeanMapConverter<Date, Integer> {
@@ -92,7 +92,7 @@ public class BeanTester extends TestUtil {
         //普通用法，属性名一致
         BeanMapper mapper = BeanMapper.INSTANCE;
 //        mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
-        mapper.map(f, t, BeanMapFlag.LogOnNotAllMapped.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
+        mapper.map(f, t, BeanMapFlag.LOG_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
     }

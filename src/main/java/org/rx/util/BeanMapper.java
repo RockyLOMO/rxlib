@@ -28,7 +28,7 @@ public class BeanMapper {
     private static final Mapping[] empty = new Mapping[0];
 
     private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
-    private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LogOnNotAllMapped.flags();
+    private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
 
     public <T> T define(@NonNull Class<T> type) {
         require(type, type.isInterface());
@@ -100,7 +100,7 @@ public class BeanMapper {
         if (flags == null) {
             flags = this.flags;
         }
-        boolean skipNull = flags.has(BeanMapFlag.SkipNull);
+        boolean skipNull = flags.has(BeanMapFlag.SKIP_NULL);
         Class from = source.getClass(), to = target.getClass();
         final NQuery<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
@@ -149,7 +149,7 @@ public class BeanMapper {
             }
         }
 
-        boolean logOnFail = flags.has(BeanMapFlag.LogOnNotAllMapped), throwOnFail = flags.has(BeanMapFlag.ThrowOnNotAllMapped);
+        boolean logOnFail = flags.has(BeanMapFlag.LOG_ON_MISS_MAPPING), throwOnFail = flags.has(BeanMapFlag.THROW_ON_MISS_MAPPING);
         if (logOnFail || throwOnFail) {
             NQuery<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
             if (missedProperties.any()) {
@@ -157,11 +157,13 @@ public class BeanMapper {
                 if (throwOnFail) {
                     throw new BeanMapException(failMsg, missedProperties.toSet());
                 }
-                log.warn(failMsg);
+                if (logOnFail) {
+                    log.warn(failMsg);
+                }
             }
         }
 
-        if (flags.has(BeanMapFlag.ValidateBean)) {
+        if (flags.has(BeanMapFlag.VALIDATE_BEAN)) {
             Validator.validateBean(target);
         }
         return target;
