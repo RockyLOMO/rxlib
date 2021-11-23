@@ -77,11 +77,14 @@ public final class App extends SystemUtils {
     }
 
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
-        return (T) Enhancer.create(type, new DynamicProxy(func));
+        return proxy(type, func, false);
     }
 
-    public static <T> T jdkProxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
-        return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+    public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+        if (jdkProxy) {
+            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+        }
+        return (T) Enhancer.create(type, new DynamicProxy(func));
     }
 
     public static String cacheKey(String methodName, Object... args) {
