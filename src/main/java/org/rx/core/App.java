@@ -44,12 +44,9 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static java.lang.Math.pow;
-
 @SuppressWarnings(App.NON_WARNING)
 public final class App extends SystemUtils {
-    public static final String NON_WARNING = "all", CACHE_KEY_SUFFIX = ":";
-    public static final int TIMEOUT_INFINITE = -1;
+    public static final String NON_WARNING = "all";
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -89,10 +86,10 @@ public final class App extends SystemUtils {
 
     public static String cacheKey(String methodName, Object... args) {
         StringBuilder k = new StringBuilder();
-        if (Strings.endsWith(methodName, CACHE_KEY_SUFFIX)) {
+        if (Strings.endsWith(methodName, Constants.CACHE_KEY_SUFFIX)) {
             k.append(methodName);
         } else {
-            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(CACHE_KEY_SUFFIX);
+            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(Constants.CACHE_KEY_SUFFIX);
         }
         return k.append(SUID.compute(toJsonString(args))).toString();
     }
@@ -641,7 +638,7 @@ public final class App extends SystemUtils {
                     x = Double.parseDouble(expression.substring(startPos, this.pos));
                 } else throw new RuntimeException("Unexpected: " + (char) ch);
 
-                if (eat('^')) x = pow(x, parseFactor()); // exponentiation
+                if (eat('^')) x = Math.pow(x, parseFactor()); // exponentiation
 
                 return x;
             }

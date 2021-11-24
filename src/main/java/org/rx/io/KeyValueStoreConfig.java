@@ -2,6 +2,7 @@ package org.rx.io;
 
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.rx.core.Constants;
 
 /**
  * log 1G
@@ -11,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 @Data
 public class KeyValueStoreConfig {
     public static final String DEFAULT_DIRECTORY = "./data/def";
-    static final int OneM = 1024 * 1024;
 
     public static KeyValueStoreConfig defaultConfig() {
         return miniConfig(DEFAULT_DIRECTORY);
@@ -20,8 +20,8 @@ public class KeyValueStoreConfig {
     public static KeyValueStoreConfig miniConfig(String directoryPath) {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(directoryPath);
         //init 1G
-        conf.setLogGrowSize(OneM * 256);
-        conf.setIndexGrowSize(OneM * 4);
+        conf.setLogGrowSize(Constants.MB * 256);
+        conf.setIndexGrowSize(Constants.MB * 4);
         return conf;
     }
 
@@ -29,7 +29,7 @@ public class KeyValueStoreConfig {
     /**
      * init big file for sequential write
      */
-    private long logGrowSize = OneM * 1024; //1G
+    private long logGrowSize = Constants.GB; //1G
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
@@ -38,8 +38,8 @@ public class KeyValueStoreConfig {
     private int logReaderCount = 1;
     private int iteratorPrefetchCount = 2;
 
-    private int indexSlotSize = OneM * 128; //128M
-    private int indexGrowSize = OneM * 32; //32M
+    private int indexSlotSize = Constants.MB * 128; //128M
+    private int indexGrowSize = Constants.MB * 32; //32M
 
     private long writeBehindDelayed = 1000;
     private int writeBehindHighWaterMark = 8;

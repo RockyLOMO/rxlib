@@ -46,7 +46,7 @@ import static org.rx.core.App.*;
 @Slf4j
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
-    static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
+    public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SERVER_REACTOR = "_SHARED";
     static final String UDP_REACTOR = "_UDP";

@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.bean.FlagsEnum;
+import org.rx.io.Bytes;
 
 import java.io.File;
 import java.io.Serializable;
@@ -15,10 +16,10 @@ import java.lang.management.ThreadInfo;
 import java.util.List;
 
 import static org.rx.core.App.cacheKey;
+import static org.rx.core.Constants.PERCENT;
 
 //JMX监控JVM，K8S监控网络，这里简单处理Thread相关
 public class ManagementMonitor implements EventTarget<ManagementMonitor> {
-    private static final double PERCENT = 100.0D, k = 1024, m = k * 1024, g = m * 1024, t = g * 1024;
     @Getter
     private static final ManagementMonitor instance = new ManagementMonitor();
 
@@ -34,11 +35,11 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         }
 
         public String getUsedString() {
-            return formatSize(usedSpace);
+            return Bytes.readableByteSize(usedSpace);
         }
 
         public String getTotalString() {
-            return formatSize(totalSpace);
+            return Bytes.readableByteSize(totalSpace);
         }
     }
 
@@ -81,11 +82,11 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         }
 
         public String getUsedMemoryString() {
-            return formatSize(usedMemory);
+            return Bytes.readableByteSize(usedMemory);
         }
 
         public String getTotalMemoryString() {
-            return formatSize(totalMemory);
+            return Bytes.readableByteSize(totalMemory);
         }
 
         public DiskMonitorInfo getSummedDisk() {
@@ -96,24 +97,8 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     public static String formatCpu(double val) {
         String p = String.valueOf(val * PERCENT);
         int ix = p.indexOf(".") + 1;
-        String percent = p.substring(0, ix) + p.substring(ix, ix + 1);
+        String percent = p.substring(0, ix) + p.charAt(ix);
         return percent + "%";
-    }
-
-    public static String formatSize(double val) {
-        if (val < k) {
-            return String.valueOf(val);
-        }
-        if (val < m) {
-            return String.format("%.1fKB", val / k);
-        }
-        if (val < g) {
-            return String.format("%.1fMB", val / m);
-        }
-        if (val < t) {
-            return String.format("%.1fGB", val / g);
-        }
-        return String.format("%.1fTB", val / t);
     }
 
 //    /**

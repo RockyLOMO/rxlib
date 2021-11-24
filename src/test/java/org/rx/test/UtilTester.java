@@ -11,6 +11,7 @@ import org.rx.core.Tasks;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 import org.rx.test.bean.PersonBean;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.validation.annotation.Validated;
@@ -111,7 +112,7 @@ public class UtilTester {
 
     @Test
     public void netIp() {
-        String s = SocketConfig.DEFAULT_NAT_IPS.get(3);
+        String s = Sockets.DEFAULT_NAT_IPS.get(3);
         System.out.println(Pattern.matches(s, "192.168.31.7"));
     }
 }

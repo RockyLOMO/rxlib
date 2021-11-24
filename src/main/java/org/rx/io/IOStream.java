@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
@@ -53,7 +54,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         boolean readFully = length != NON_READ_FULLY;
         long copyLen = 0;
         int read;
-        while ((!readFully || copyLen < length) && (read = in.read(buffer, 0, buffer.length)) != -1) {
+        while ((!readFully || copyLen < length) && (read = in.read(buffer, 0, buffer.length)) != Constants.IO_EOF) {
             out.write(buffer, 0, read);
             copyLen += read;
         }
