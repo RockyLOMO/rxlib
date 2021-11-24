@@ -4,10 +4,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
-import org.rx.bean.$;
-import org.rx.bean.IdGenerator;
-import org.rx.bean.InterceptProxy;
-import org.rx.bean.ProceedEventArgs;
+import org.rx.bean.*;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.impl.StatefulRpcClient;
 import org.rx.net.rpc.protocol.EventFlag;
@@ -300,7 +297,7 @@ public final class Remoting {
     }
 
     @SneakyThrows
-    private static Object invokeSuper(Method m, InterceptProxy p) {
+    private static Object invokeSuper(Method m, DynamicProxy p) {
         if (m.isDefault()) {
             return Reflects.invokeDefaultMethod(m, p.getProxyObject(), p.arguments);
         }

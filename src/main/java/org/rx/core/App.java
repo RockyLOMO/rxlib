@@ -26,12 +26,12 @@ import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.cglib.proxy.Enhancer;
-import org.springframework.cglib.proxy.MethodInterceptor;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -76,8 +76,15 @@ public final class App extends SystemUtils {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
     }
 
-    public static <T> T proxy(@NonNull Class<T> type, @NonNull TripleFunc<Method, InterceptProxy, Object> func) {
-        return (T) Enhancer.create(type, (MethodInterceptor) (proxyObject, method, args, methodProxy) -> func.invoke(method, new InterceptProxy(proxyObject, methodProxy, args)));
+    public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
+        return proxy(type, func, false);
+    }
+
+    public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+        if (jdkProxy) {
+            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+        }
+        return (T) Enhancer.create(type, new DynamicProxy(func));
     }
 
     public static String cacheKey(String methodName, Object... args) {
