@@ -11,7 +11,6 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.UUID;
 
 import static org.rx.core.App.*;
 

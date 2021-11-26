@@ -37,7 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
+import io.netty.util.internal.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -510,9 +510,9 @@ public final class App extends SystemUtils {
             msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
             if (eventArgs.getError() != null) {
-                msg.append("Error:\t%s", eventArgs.getError());
+                msg.appendLine("Error:\t%s", eventArgs.getError());
             } else {
-                msg.append("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+                msg.appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
             }
         });
     }
@@ -558,7 +558,7 @@ public final class App extends SystemUtils {
                     continue;
                 }
                 if (first) {
-                    msg.append("\nMetrics:\t");
+                    msg.append("Metrics:\t");
                     first = false;
                 }
                 msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
