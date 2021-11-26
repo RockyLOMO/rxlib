@@ -1,10 +1,20 @@
-package org.rx.bean;
+package org.rx.util;
+
+import io.netty.util.internal.ThreadLocalRandom;
+import org.rx.bean.DateTime;
 
 /**
  * 1位标识部分    -      41位时间戳部分        -         10位节点部分     12位序列号部分
  * 0 - 0000000000 0000000000 0000000000 0000000000 0 - 00000 - 00000 - 000000000000
  */
 public final class SnowFlake {
+    public static final SnowFlake DEFAULT = nextInstance();
+
+    public static SnowFlake nextInstance() {
+        return new SnowFlake(ThreadLocalRandom.current().nextInt(0, (int) MAX_DATACENTER_NUM),
+                ThreadLocalRandom.current().nextInt(0, (int) MAX_MACHINE_NUM));
+    }
+
     /**
      * 起始的时间戳
      */
@@ -13,9 +23,9 @@ public final class SnowFlake {
     /**
      * 每一部分占用的位数
      */
-    private static final long SEQUENCE_BIT = 12; //序列号占用的位数
     private static final long DATACENTER_BIT = 5;//数据中心占用的位数
     private static final long MACHINE_BIT = 5;   //机器标识占用的位数
+    private static final long SEQUENCE_BIT = 12; //序列号占用的位数
     /**
      * 每一部分的最大值
      */
@@ -28,19 +38,19 @@ public final class SnowFlake {
     private static final long DATACENTER_LEFT = SEQUENCE_BIT + MACHINE_BIT;
     private static final long MACHINE_LEFT = SEQUENCE_BIT;
     private static final long TIMESTAMP_LEFT = DATACENTER_LEFT + DATACENTER_BIT;
-
-    private final long datacenterId;  //数据中心
-    private final long machineId;     //机器标识
-    private long sequence = 0L; //序列号
-    private long lastStamp = -1L;//上一次时间戳
     /**
      * 步长, 1024
      */
-    private static final long stepSize = 2 << 9;
+    private static final long STEP_SIZE = 2 << 9;
+
+    private final long datacenterId;
+    private final long machineId;
+    private long sequence;
+    private long lastStamp = -1L;
     /**
-     * 基础序列号, 每发生一次时钟回拨, basicSequence += stepSize
+     * 基础序列号, 每发生一次时钟回拨, basicSequence += STEP_SIZE
      */
-    private long basicSequence = 0L;
+    private long basicSequence;
 
     public SnowFlake(long datacenterId, long machineId) {
         if (datacenterId > MAX_DATACENTER_NUM || datacenterId < 0) {
@@ -53,15 +63,10 @@ public final class SnowFlake {
         this.machineId = machineId;
     }
 
-    /**
-     * 产生下一个ID
-     *
-     * @return
-     */
     public synchronized long nextId() {
         long currStmp = System.currentTimeMillis();
         if (currStmp < lastStamp) {
-//            throw new RuntimeException("Clock moved backwards.  Refusing to generate id");
+//            throw new RuntimeException("Clock moved backwards. Refusing to generate id");
             return handleClockBackwards(currStmp);
         }
 
@@ -75,7 +80,7 @@ public final class SnowFlake {
         } else {
             //不同毫秒内，序列号置为0
 //            sequence = 0L;
-            // 不同毫秒内，序列号置为 basicSequence
+            //不同毫秒内，序列号置为 basicSequence
             sequence = basicSequence;
         }
 
@@ -87,11 +92,8 @@ public final class SnowFlake {
                 | sequence;                                 //序列号部分
     }
 
-    /**
-     * 处理时钟回拨
-     */
     private long handleClockBackwards(long currStmp) {
-        basicSequence += stepSize;
+        basicSequence += STEP_SIZE;
         if (basicSequence == MAX_SEQUENCE + 1) {
             basicSequence = 0;
             currStmp = getNextMill();

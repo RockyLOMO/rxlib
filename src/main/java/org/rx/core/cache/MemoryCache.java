@@ -21,7 +21,7 @@ import static org.rx.core.App.require;
 
 @NoArgsConstructor
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
-    static final int DEFAULT_Insertions = 9999999;  //1.1M
+    static final int DEFAULT_INSERTIONS = 9999999;  //1.1M
 
     static {
         Container.register(MemoryCache.class, new MemoryCache<>());
@@ -78,7 +78,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
             if (onBuild != null) {
                 quietly(() -> onBuild.invoke(b));
             }
-            return Tuple.of(b.softValues().build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_Insertions));
+            return Tuple.of(b.softValues().build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_INSERTIONS));
         });
         if (key != null) {
             tuple.right.put(routeKey(key));

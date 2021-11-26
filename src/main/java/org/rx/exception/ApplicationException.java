@@ -4,8 +4,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.rx.core.*;
-
-import java.util.UUID;
+import org.rx.util.SnowFlake;
 
 import static org.rx.core.App.*;
 
@@ -30,7 +29,7 @@ public class ApplicationException extends InvalidException {
         return applicationException.getFriendlyMessage();
     }
 
-    private final UUID id = UUID.randomUUID();
+    private final long id = SnowFlake.DEFAULT.nextId();
     private final Object errorCode;
     private final Object[] codeValues;
     @Setter

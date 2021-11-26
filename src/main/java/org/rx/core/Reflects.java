@@ -31,6 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 @Slf4j
 public class Reflects extends TypeUtils {
@@ -236,10 +237,11 @@ public class Reflects extends TypeUtils {
         return invokeMethod(instance.getClass(), instance, name, args);
     }
 
+    @SneakyThrows
     @ErrorCode
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         Class<?>[] parameterTypes = ClassUtils.toClass(args);
-        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
+        Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
         if (method == null) {
             throw new ApplicationException(values(type.getName(), name));
         }
@@ -252,11 +254,6 @@ public class Reflects extends TypeUtils {
         setAccess(method);
         return (T) method.invoke(instance, args);
     }
-
-//    @SuppressWarnings(NonWarning)
-//    private static Object[] checkArgs(Class[] parameterTypes, Object... args) {
-//        return NQuery.of(args).select((p, i) -> changeType(p, parameterTypes[i])).toArray();
-//    }
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class to) {

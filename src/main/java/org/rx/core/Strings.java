@@ -4,7 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 
-import java.util.concurrent.ThreadLocalRandom;
+import io.netty.util.internal.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
 import static org.rx.core.App.values;

@@ -10,11 +10,12 @@ import org.rx.core.NQuery;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
+import io.netty.util.internal.ThreadLocalRandom;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 @SuppressWarnings(NON_WARNING)
 @Slf4j

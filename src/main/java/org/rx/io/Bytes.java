@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.*;
 import lombok.SneakyThrows;
 import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -166,6 +167,22 @@ public class Bytes {
         byte[] bytes = new byte[size];
         new SecureRandom().nextBytes(bytes);
         return bytes;
+    }
+
+    public static String readableByteSize(double val) {
+        if (val < Constants.KB) {
+            return String.valueOf(val);
+        }
+        if (val < Constants.MB) {
+            return String.format("%.1fKB", val / Constants.KB);
+        }
+        if (val < Constants.GB) {
+            return String.format("%.1fMB", val / Constants.MB);
+        }
+        if (val < Constants.TB) {
+            return String.format("%.1fGB", val / Constants.GB);
+        }
+        return String.format("%.1fTB", val / Constants.TB);
     }
     //endregion
 

@@ -7,7 +7,6 @@ import org.rx.core.Tasks;
 import org.rx.io.IOStream;
 import org.rx.io.Bytes;
 import org.rx.net.http.HttpClient;
-import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 
 import java.util.Collections;
@@ -19,8 +18,8 @@ public class Client {
     class SocksContext {
         private final Channel inboundChannel;
         private final Map<String, Object> outboundForms = new ConcurrentHashMap<>();
-        private final HttpClient outboundOfferClient = new HttpClient(timeWaitSeconds * 2, null, null);
-        private final HttpClient outboundPollClient = new HttpClient(timeWaitSeconds * 2, null, null);
+        private final HttpClient outboundOfferClient = new HttpClient(timeWaitSeconds * 2);
+        private final HttpClient outboundPollClient = new HttpClient(timeWaitSeconds * 2);
 
         public SocksContext(String appName, String inboundSocksId, String remoteEndpoint, Channel inboundChannel) {
             this.inboundChannel = inboundChannel;
@@ -32,7 +31,7 @@ public class Client {
 
         public void backendOffer(IOStream<?, ?> binary) {
             outboundOfferClient.post(String.format("%s/apix/directOffer", serverUrl),
-                    outboundForms, Collections.singletonMap("binary", binary)).asString();
+                    outboundForms, Collections.singletonMap("binary", binary)).toString();
         }
 
         protected void backendPoll() {

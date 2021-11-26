@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -78,7 +79,7 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
         long pos = getPosition();
         setPosition(0);
         ByteBuf buf = Bytes.heapBuffer();
-        while (read(buf, RxConfig.HEAP_BUF_SIZE) != -1) {
+        while (read(buf, RxConfig.HEAP_BUF_SIZE) != Constants.IO_EOF) {
         }
         setPosition(pos);
         return Bytes.getBytes(buf);

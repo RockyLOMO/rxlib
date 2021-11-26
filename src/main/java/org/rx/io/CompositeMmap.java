@@ -5,7 +5,8 @@ import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
-import org.rx.core.Lazy;
+import org.rx.core.Constants;
+import org.rx.util.Lazy;
 import org.rx.core.NQuery;
 
 import java.io.*;
@@ -73,7 +74,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
                 ByteBuf buf = Bytes.directBuffer(1);
                 try {
                     int read = CompositeMmap.this.read(position, buf, 1);
-                    if (read == -1) {
+                    if (read == Constants.IO_EOF) {
                         return read;
                     }
                     position += read;

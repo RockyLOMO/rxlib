@@ -12,7 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.App.TIMEOUT_INFINITE;
+import static org.rx.core.Constants.TIMEOUT_INFINITE;
 import static org.rx.core.App.require;
 
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
@@ -23,14 +23,14 @@ public class FluentWait {
         private int invokedCount;
     }
 
-    private static final long defaultTimeout = 500L;
+    private static final long DEFAULT_TIMEOUT = 500L;
 
     public static UntilState emptyState() {
         return new UntilState(DateTime.now());
     }
 
     public static FluentWait newInstance(long timeoutMillis) {
-        return newInstance(timeoutMillis, defaultTimeout);
+        return newInstance(timeoutMillis, DEFAULT_TIMEOUT);
     }
 
     public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {

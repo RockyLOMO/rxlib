@@ -12,11 +12,8 @@ import org.rx.core.Tasks;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
-import org.rx.util.BeanMapConverter;
-import org.rx.util.BeanMapFlag;
-import org.rx.util.BeanMapper;
+import org.rx.util.*;
 import org.rx.test.bean.GirlBean;
-import org.rx.util.BeanMapNullValueStrategy;
 
 import java.sql.Timestamp;
 import java.util.*;

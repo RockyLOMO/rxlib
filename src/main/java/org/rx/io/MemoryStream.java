@@ -5,8 +5,8 @@ import lombok.NonNull;
 import lombok.Setter;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.RxConfig;
-import org.rx.bean.SUID;
 import org.rx.exception.InvalidException;
+import org.rx.util.SnowFlake;
 
 import java.io.*;
 
@@ -38,7 +38,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     @Override
     public String getName() {
         if (name == null) {
-            name = SUID.randomSUID().toString();
+            name = String.valueOf(SnowFlake.DEFAULT.nextId());
         }
         return name;
     }

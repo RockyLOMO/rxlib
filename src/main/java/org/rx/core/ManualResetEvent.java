@@ -6,7 +6,7 @@ import org.rx.exception.InvalidException;
 
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.App.TIMEOUT_INFINITE;
+import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
 //synchronized 没有TimeoutException
 public final class ManualResetEvent {

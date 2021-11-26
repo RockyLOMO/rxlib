@@ -9,9 +9,9 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import io.netty.util.internal.ThreadLocalRandom;
 
-import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.Constants.NON_WARNING;
 
 /**
  * System.arraycopy();

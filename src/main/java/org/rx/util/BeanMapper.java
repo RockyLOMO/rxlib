@@ -95,7 +95,6 @@ public class BeanMapper {
         return map(source, target, flags, null);
     }
 
-    @SuppressWarnings(NON_WARNING)
     private <T> T map(@NonNull Object source, @NonNull T target, FlagsEnum<BeanMapFlag> flags, Method method) {
         if (flags == null) {
             flags = this.flags;
@@ -169,7 +168,6 @@ public class BeanMapper {
         return target;
     }
 
-    @SuppressWarnings(NON_WARNING)
     private Object processMapping(Mapping mapping, Object sourceValue, Class targetType, String propertyName, Object source, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
                 || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore)))) {

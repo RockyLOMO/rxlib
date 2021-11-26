@@ -37,19 +37,15 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
+import io.netty.util.internal.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static java.lang.Math.pow;
-
-@SuppressWarnings(App.NON_WARNING)
+@SuppressWarnings(Constants.NON_WARNING)
 public final class App extends SystemUtils {
-    public static final String NON_WARNING = "all", CACHE_KEY_SUFFIX = ":";
-    public static final int TIMEOUT_INFINITE = -1;
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -89,10 +85,10 @@ public final class App extends SystemUtils {
 
     public static String cacheKey(String methodName, Object... args) {
         StringBuilder k = new StringBuilder();
-        if (Strings.endsWith(methodName, CACHE_KEY_SUFFIX)) {
+        if (Strings.endsWith(methodName, Constants.CACHE_KEY_SUFFIX)) {
             k.append(methodName);
         } else {
-            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(CACHE_KEY_SUFFIX);
+            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(Constants.CACHE_KEY_SUFFIX);
         }
         return k.append(SUID.compute(toJsonString(args))).toString();
     }
@@ -509,11 +505,15 @@ public final class App extends SystemUtils {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
-    public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {
+    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
         log(eventArgs, msg -> {
-            msg.appendLine("CallApi:\t%s %s", eventArgs.getTraceId(), url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
-                    .append("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
+                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
+            if (eventArgs.getError() != null) {
+                msg.appendLine("Error:\t%s", eventArgs.getError());
+            } else {
+                msg.appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+            }
         });
     }
 
@@ -522,18 +522,21 @@ public final class App extends SystemUtils {
         Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
         boolean doWrite = !MapUtils.isEmpty(metrics);
         if (!doWrite) {
-            switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
-                case WriteOnNull:
+            if (eventArgs.getLogStrategy() == null) {
+                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
+            }
+            switch (eventArgs.getLogStrategy()) {
+                case WRITE_ON_NULL:
                     doWrite = eventArgs.getError() != null
                             || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
                             || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
                     break;
-                case WriteOnError:
+                case WRITE_ON_ERROR:
                     if (eventArgs.getError() != null) {
                         doWrite = true;
                     }
                     break;
-                case Always:
+                case ALWAYS:
                     doWrite = true;
                     break;
             }
@@ -641,7 +644,7 @@ public final class App extends SystemUtils {
                     x = Double.parseDouble(expression.substring(startPos, this.pos));
                 } else throw new RuntimeException("Unexpected: " + (char) ch);
 
-                if (eat('^')) x = pow(x, parseFactor()); // exponentiation
+                if (eat('^')) x = Math.pow(x, parseFactor()); // exponentiation
 
                 return x;
             }

@@ -13,10 +13,9 @@ import java.util.Objects;
 @ToString
 public final class CacheExpiration {
     public static final CacheExpiration NON_EXPIRE = new CacheExpiration(0, null, -1);
-    public static final int ONE_DAY_EXPIRE = 60 * 60 * 24;
 
     public static CacheExpiration today() {
-        return today(ONE_DAY_EXPIRE);
+        return today(Constants.ONE_DAY_EXPIRE_SECONDS);
     }
 
     public static CacheExpiration today(int expireSeconds) {

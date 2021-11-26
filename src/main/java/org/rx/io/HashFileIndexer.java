@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
+import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
 import org.rx.core.cache.MemoryCache;
@@ -26,7 +27,7 @@ final class HashFileIndexer<TK> extends Disposable {
     @ToString
     static class KeyData<TK> {
         final TK key;
-        private long position = -1;
+        private long position = Constants.IO_EOF;
 
         final int hashCode;
         long logPosition;
@@ -190,14 +191,14 @@ final class HashFileIndexer<TK> extends Disposable {
 
     public void saveKey(KeyData<TK> key) {
         checkNotClosed();
-        require(key, key.position >= -1);
+        require(key, key.position >= Constants.IO_EOF);
 
         Slot slot = slot(key.hashCode);
         slot.lock.writeInvoke(() -> {
             slot.ensureGrow();
 
             IOStream<?, ?> out = slot.writer;
-            long pos = key.position == -1 ? slot.getWroteBytes() : key.position;
+            long pos = key.position == Constants.IO_EOF ? slot.getWroteBytes() : key.position;
             out.setPosition(pos);
 
             ByteBuf buf = Bytes.directBuffer(KEY_SIZE);
@@ -211,7 +212,7 @@ final class HashFileIndexer<TK> extends Disposable {
             }
 //            log.info("saveKey {} -> {} pos={}{}", slot.main.getName(), key, pos, dump(buf));
 
-            if (key.position == -1) {
+            if (key.position == Constants.IO_EOF) {
                 slot.incrementWroteBytes();
 //                log.info("wroteBytes {} -> {} pos={}/{}", slot.main.getName(), key, pos, slot.getWroteBytes());
             }
