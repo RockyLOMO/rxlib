@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import com.alibaba.fastjson.JSONObject;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
@@ -707,17 +708,16 @@ public class SocksTester extends TConfig {
 
         HttpClient client = new HttpClient();
         client.setLogStrategy(LogStrategy.ALWAYS);
-        String resHtml = client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString();
-        System.out.println(resHtml);
         assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString());
 
         String resJson = client.postJson("https://127.0.0.1:8081/json", j).toString();
-        wait.waitOne();
+        JSONObject jobj = client.postJson("https://127.0.0.1:8081/json", j).toJson();
+        System.out.println(jobj);
 
         System.out.println(resJson);
         assert jbody.equals(resJson);
 
-        System.in.read();
+        wait.waitOne();
     }
 
     @Test

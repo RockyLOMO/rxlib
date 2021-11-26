@@ -1,5 +1,6 @@
 package org.rx.net.http;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -194,6 +195,10 @@ public class HttpClient {
                 handle(in -> string = IOStream.readString(in, getCharset()));
             }
             return string;
+        }
+
+        public <T extends JSON> T toJson() {
+            return (T) JSON.parse(toString());
         }
     }
 
