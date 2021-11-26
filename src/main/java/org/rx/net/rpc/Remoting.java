@@ -214,7 +214,7 @@ public final class Remoting {
                         throw e;
                     }
                 }
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 if (eventArgs != null) {
                     eventArgs.setError(e);
                 }
@@ -401,7 +401,7 @@ public final class Remoting {
                     pack.returnValue = RemotingContext.invoke(() -> args.proceed(() ->
                             Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)
                     ), e.getClient());
-                } catch (Exception ex) {
+                } catch (Throwable ex) {
                     Throwable cause = isNull(ex.getCause(), ex);
                     args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());

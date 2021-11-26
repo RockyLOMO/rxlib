@@ -1,8 +1,8 @@
 package org.rx.bean;
 
 public enum LogStrategy {
-    None,
-    WriteOnNull,
-    WriteOnError,
-    Always
+    NONE,
+    WRITE_ON_NULL,
+    WRITE_ON_ERROR,
+    ALWAYS
 }

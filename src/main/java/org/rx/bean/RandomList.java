@@ -15,6 +15,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 @SuppressWarnings(NON_WARNING)
 @Slf4j

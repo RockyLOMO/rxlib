@@ -39,7 +39,7 @@ class ComboIPSearcher implements IPSearcher {
 
     private JSONObject getJson(String url, Predicate<JSONObject> check) {
         HttpClient client = new HttpClient();
-        String text = client.get(url).asString();
+        String text = client.get(url).toString();
         if (Strings.isEmpty(text)) {
             throw new RestClientException(String.format("Request:\t%s\n" +
                     "Response:\t%s", url, text));

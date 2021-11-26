@@ -26,6 +26,7 @@ import java.util.stream.StreamSupport;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx

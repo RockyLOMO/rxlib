@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
+import org.rx.bean.LogStrategy;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.SUID;
@@ -705,14 +706,16 @@ public class SocksTester extends TConfig {
         });
 
         HttpClient client = new HttpClient();
-        assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).asString());
+        client.setLogStrategy(LogStrategy.ALWAYS);
+        String resHtml = client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString();
+        System.out.println(resHtml);
+        assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString());
 
-        String resJson = client.postJson("https://127.0.0.1:8081/json", j).asString();
-        System.out.println(jbody);
+        String resJson = client.postJson("https://127.0.0.1:8081/json", j).toString();
+        wait.waitOne();
+
         System.out.println(resJson);
         assert jbody.equals(resJson);
-
-        wait.waitOne();
 
         System.in.read();
     }

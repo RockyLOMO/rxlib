@@ -15,6 +15,7 @@ import java.io.*;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Objects;
@@ -63,7 +64,11 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     @SneakyThrows
-    public static String readString(@NonNull InputStream in, @NonNull Charset charset) {
+    public static String readString(@NonNull InputStream in, Charset charset) {
+        if (charset == null) {
+            charset = StandardCharsets.UTF_8;
+        }
+
         StringBuilder result = new StringBuilder();
         byte[] buffer = Bytes.arrayBuffer();
         int read;

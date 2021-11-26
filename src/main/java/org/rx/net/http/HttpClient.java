@@ -1,5 +1,6 @@
 package org.rx.net.http;
 
+import com.alibaba.fastjson.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
@@ -10,9 +11,12 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
+import org.rx.bean.LogStrategy;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.RxConfig;
-import org.rx.core.App;
 import org.rx.core.Container;
+import org.rx.core.Reflects;
+import org.rx.util.Lazy;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.io.Files;
@@ -31,6 +35,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
 import java.net.*;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -55,11 +60,18 @@ public class HttpClient {
 
     @RequiredArgsConstructor
     static class JsonContent implements RequestContent {
+        @Getter(value = AccessLevel.PRIVATE)
         final Object json;
+        Lazy<String> body = new Lazy<>(() -> toJsonString(getJson()));
 
         @Override
         public RequestBody toBody() {
-            return RequestBody.create(JSON_TYPE, toJsonString(json));
+            return RequestBody.create(JSON_TYPE, body.getValue());
+        }
+
+        @Override
+        public String toString() {
+            return body.getValue();
         }
     }
 
@@ -107,15 +119,24 @@ public class HttpClient {
             }
             return builder.build();
         }
+
+        @Override
+        public String toString() {
+            return "FormContent{" +
+                    "forms=" + forms +
+                    ", files=" + files +
+                    '}';
+        }
     }
 
     @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
     public static class ResponseContent {
         @Getter
-        private final Response response;
-        private String string;
-        private HybridStream stream;
-        private File file;
+        @JSONField(serialize = false)
+        final Response response;
+        HybridStream stream;
+        File file;
+        String string;
 
         public String getResponseUrl() {
             return response.request().url().toString();
@@ -125,11 +146,21 @@ public class HttpClient {
             return response.headers();
         }
 
+        @JSONField(serialize = false)
+        public Charset getCharset() {
+            return Reflects.invokeMethod(response.body(), "charset");
+        }
+
         @SneakyThrows
         public synchronized void handle(BiAction<InputStream> action) {
+            if (stream != null) {
+                action.invoke(toStream().getReader());
+                return;
+            }
+
             ResponseBody body = response.body();
             if (body == null) {
-                return;
+                throw new EmptyResponseException("Empty response from url %s", getResponseUrl());
             }
             try {
                 action.invoke(body.byteStream());
@@ -138,51 +169,29 @@ public class HttpClient {
             }
         }
 
-        public synchronized File asFile(String filePath) {
+        public synchronized HybridStream toStream() {
+            if (stream == null) {
+                //tmp 4 handle()
+                HybridStream tmp = new HybridStream();
+                handle(tmp::write);
+                stream = tmp;
+            }
+            stream.setPosition(0);
+            return stream;
+        }
+
+        public synchronized File toFile(String filePath) {
             if (file == null) {
-                ResponseBody body = response.body();
-                if (body == null) {
-                    return new File(filePath);
-                }
-                try {
-                    Files.saveFile(filePath, body.byteStream());
-                    file = new File(filePath);
-                } finally {
-                    body.close();
-                }
+                handle(in -> Files.saveFile(filePath, in));
+                file = new File(filePath);
             }
             return file;
         }
 
-        public synchronized HybridStream asStream() {
-            if (stream == null) {
-                stream = new HybridStream();
-                ResponseBody body = response.body();
-                if (body == null) {
-                    return stream;
-                }
-                try {
-                    stream.write(body.byteStream());
-                    stream.setPosition(0);
-                } finally {
-                    body.close();
-                }
-            }
-            return stream;
-        }
-
-        @SneakyThrows
-        public synchronized String asString() {
+        public synchronized String toString() {
+            toStream();
             if (string == null) {
-                ResponseBody body = response.body();
-                if (body == null) {
-                    return string = "";
-                }
-                try {
-                    string = body.string();
-                } finally {
-                    body.close();
-                }
+                handle(in -> string = IOStream.readString(in, getCharset()));
             }
             return string;
         }
@@ -208,10 +217,10 @@ public class HttpClient {
         }
     };
 
-    static {
+//    static {
 //        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2Hello");
 //        System.setProperty("jsse.enableSNIExtension", "false");
-    }
+//    }
 
     //region StaticMembers
     public static String godaddyDns(String ssoKey, String domain, String name) {
@@ -227,12 +236,12 @@ public class HttpClient {
                 "    \"data\": \"%s\",\n" +
                 "    \"ttl\": 600\n" +
                 "  }\n" +
-                "]", ip)).asString();
+                "]", ip)).toString();
     }
 
     public static String getWanIp() {
         HttpClient client = new HttpClient();
-        return client.get("https://api.ipify.org").asString();
+        return client.get("https://api.ipify.org").toString();
     }
 
     public static void saveRawCookies(@NonNull String url, @NonNull String raw) {
@@ -371,14 +380,20 @@ public class HttpClient {
     }
     //endregion
 
-    //不是线程安全
-    private final OkHttpClient client;
+    //Not thread safe
+    final OkHttpClient client;
     @Getter
-    private final HttpHeaders headers = new DefaultHttpHeaders();
-    private ResponseContent responseContent;
+    final HttpHeaders headers = new DefaultHttpHeaders();
+    @Setter
+    LogStrategy logStrategy;
+    ResponseContent responseContent;
 
     public HttpClient() {
-        this(Container.get(RxConfig.class).getNetTimeoutMillis(), null, null);
+        this(Container.get(RxConfig.class).getNetTimeoutMillis());
+    }
+
+    public HttpClient(int timeoutMillis) {
+        this(timeoutMillis, null, null);
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
@@ -400,32 +415,46 @@ public class HttpClient {
 
     @SneakyThrows
     private ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        Request.Builder request = createRequest(url);
-        RequestBody requestBody = content.toBody();
-        switch (method) {
-            case POST:
-                request = request.post(requestBody);
-                break;
-            case HEAD:
-                request = request.head();
-                break;
-            case PUT:
-                request = request.put(requestBody);
-                break;
-            case PATCH:
-                request = request.patch(requestBody);
-                break;
-            case DELETE:
-                request = request.delete(requestBody);
-                break;
-            default:
-                request = request.get();
-                break;
+        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content}, false);
+        try {
+            Request.Builder request = createRequest(url);
+            RequestBody requestBody = content.toBody();
+            switch (method) {
+                case POST:
+                    request.post(requestBody);
+                    break;
+                case HEAD:
+                    request.head();
+                    break;
+                case PUT:
+                    request.put(requestBody);
+                    break;
+                case PATCH:
+                    request.patch(requestBody);
+                    break;
+                case DELETE:
+                    request.delete(requestBody);
+                    break;
+                default:
+                    request.get();
+                    break;
+            }
+            if (responseContent != null) {
+                responseContent.response.close();
+            }
+            return responseContent = args.proceed(() -> new ResponseContent(client.newCall(request.build()).execute()));
+        } catch (Throwable e) {
+            args.setError(e);
+            throw e;
+        } finally {
+            if (logStrategy != null) {
+                RxConfig rxConfig = Container.get(RxConfig.class);
+                args.setLogStrategy(logStrategy);
+                args.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
+                logMetric("body", responseContent.toString());
+                logHttp(args, url);
+            }
         }
-        if (responseContent != null) {
-            responseContent.response.close();
-        }
-        return responseContent = new ResponseContent(client.newCall(request.build()).execute());
     }
 
     public ResponseContent head(@NonNull String url) {

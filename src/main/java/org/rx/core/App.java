@@ -44,9 +44,8 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@SuppressWarnings(App.NON_WARNING)
+@SuppressWarnings(Constants.NON_WARNING)
 public final class App extends SystemUtils {
-    public static final String NON_WARNING = "all";
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter skipTypesFilter = new ValueFilter() {
         @Override
@@ -506,11 +505,15 @@ public final class App extends SystemUtils {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
-    public static void logApi(@NonNull ProceedEventArgs eventArgs, String url) {
+    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
         log(eventArgs, msg -> {
-            msg.appendLine("CallApi:\t%s %s", eventArgs.getTraceId(), url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
-                    .append("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
+                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
+            if (eventArgs.getError() != null) {
+                msg.append("Error:\t%s", eventArgs.getError());
+            } else {
+                msg.append("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+            }
         });
     }
 
@@ -519,18 +522,21 @@ public final class App extends SystemUtils {
         Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
         boolean doWrite = !MapUtils.isEmpty(metrics);
         if (!doWrite) {
-            switch (isNull(eventArgs.getLogStrategy(), LogStrategy.WriteOnNull)) {
-                case WriteOnNull:
+            if (eventArgs.getLogStrategy() == null) {
+                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
+            }
+            switch (eventArgs.getLogStrategy()) {
+                case WRITE_ON_NULL:
                     doWrite = eventArgs.getError() != null
                             || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
                             || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
                     break;
-                case WriteOnError:
+                case WRITE_ON_ERROR:
                     if (eventArgs.getError() != null) {
                         doWrite = true;
                     }
                     break;
-                case Always:
+                case ALWAYS:
                     doWrite = true;
                     break;
             }
@@ -552,7 +558,7 @@ public final class App extends SystemUtils {
                     continue;
                 }
                 if (first) {
-                    msg.append("Metrics:\t");
+                    msg.append("\nMetrics:\t");
                     first = false;
                 }
                 msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));

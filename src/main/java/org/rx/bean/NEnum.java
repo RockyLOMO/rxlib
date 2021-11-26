@@ -7,6 +7,7 @@ import org.rx.core.App;
 import java.io.Serializable;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
     static <T extends Enum<T> & NEnum<T>> T valueOf(@NonNull Class<T> type, int value) {

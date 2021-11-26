@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.SUID;
-import org.rx.core.Lazy;
+import org.rx.util.Lazy;
 import org.rx.util.function.TripleFunc;
 
 import javax.activation.MimetypesFileTypeMap;

@@ -6,7 +6,7 @@ import lombok.SneakyThrows;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
-import org.rx.core.Lazy;
+import org.rx.util.Lazy;
 import org.rx.core.NQuery;
 
 import java.io.*;

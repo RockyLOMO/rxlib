@@ -12,6 +12,7 @@ import java.util.EventListener;
 import java.util.concurrent.*;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_WARNING;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> extends EventListener {
     @RequiredArgsConstructor

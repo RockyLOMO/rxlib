@@ -1,6 +1,7 @@
 package org.rx.core;
 
 public interface Constants {
+    String NON_WARNING = "all";
     String CACHE_KEY_SUFFIX = ":";
     int ONE_DAY_EXPIRE_SECONDS = 60 * 60 * 24;
 

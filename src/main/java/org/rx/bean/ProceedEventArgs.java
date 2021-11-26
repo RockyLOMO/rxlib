@@ -1,6 +1,5 @@
 package org.rx.bean;
 
-import com.google.common.base.Stopwatch;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.NonNull;
@@ -12,12 +11,12 @@ import org.rx.util.function.Func;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 @Getter
 @RequiredArgsConstructor
 public class ProceedEventArgs extends EventArgs {
-    FastThreadLocal<UUID> traceIdLocal = new FastThreadLocal<UUID>() {
+    private static final long serialVersionUID = -2969747570419733673L;
+    static final FastThreadLocal<UUID> traceIdLocal = new FastThreadLocal<UUID>() {
         @Override
         protected UUID initialValue() throws Exception {
             return App.combId();
@@ -42,10 +41,13 @@ public class ProceedEventArgs extends EventArgs {
     }
 
     public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {
-        Stopwatch watcher = Stopwatch.createStarted();
-        T retVal = proceed.invoke();
-        elapsedMillis = watcher.elapsed(TimeUnit.MILLISECONDS);
-        returnValue = retVal;
-        return retVal;
+        long start = System.currentTimeMillis();
+        try {
+            T retVal = proceed.invoke();
+            returnValue = retVal;
+            return retVal;
+        } finally {
+            elapsedMillis = System.currentTimeMillis() - start;
+        }
     }
 }

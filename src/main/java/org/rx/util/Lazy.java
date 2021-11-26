@@ -1,23 +1,24 @@
-package org.rx.core;
+package org.rx.util;
 
 import lombok.RequiredArgsConstructor;
-
-import java.util.function.Supplier;
+import lombok.SneakyThrows;
+import org.rx.util.function.Func;
 
 @RequiredArgsConstructor
 public final class Lazy<T> {
+    final Func<T> func;
     private volatile T value;
-    private final Supplier<T> supplier;
 
     public boolean isValueCreated() {
         return value != null;
     }
 
+    @SneakyThrows
     public T getValue() {
         if (value == null) {
-            synchronized (supplier) {
+            synchronized (func) {
                 if (value == null) {
-                    value = supplier.get();
+                    value = func.invoke();
                 }
             }
         }

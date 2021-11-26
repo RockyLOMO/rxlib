@@ -11,7 +11,7 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.rx.core.App.NON_WARNING;
+import static org.rx.core.Constants.NON_WARNING;
 
 /**
  * System.arraycopy();
