@@ -12,6 +12,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 
+import static org.rx.core.Constants.NON_UNCHECKED;
+
+@SuppressWarnings(NON_UNCHECKED)
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ThreadCache<TK, TV> implements Cache<TK, TV> {
     //Java 11 HashMap.computeIfAbsent java.util.ConcurrentModificationException

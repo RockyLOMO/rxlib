@@ -30,6 +30,7 @@ import static org.rx.core.App.*;
 public class ThreadPool extends ThreadPoolExecutor {
     @RequiredArgsConstructor
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
+        private static final long serialVersionUID = -1832603760465558822L;
         private final int queueCapacity;
         @Setter
         private ThreadPool pool;

@@ -7,8 +7,10 @@ import org.rx.exception.InvalidException;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+
 import io.netty.util.internal.ThreadLocalRandom;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -29,7 +31,6 @@ public class Arrays extends ArrayUtils {
         return toList(arr);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @SafeVarargs
     public static <T> List<T> toList(T... items) {
         if (items == null) {
@@ -37,9 +38,7 @@ public class Arrays extends ArrayUtils {
         }
 
         List<T> list = new ArrayList<>(items.length);
-        for (T t : items) {
-            list.add(t);
-        }
+        Collections.addAll(list, items);
         return list;
     }
 

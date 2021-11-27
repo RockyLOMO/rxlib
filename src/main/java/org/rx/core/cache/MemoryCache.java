@@ -18,7 +18,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.quietly;
 import static org.rx.core.App.require;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
+@SuppressWarnings(NON_UNCHECKED)
 @NoArgsConstructor
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static final int DEFAULT_INSERTIONS = 9999999;  //1.1M

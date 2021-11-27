@@ -14,6 +14,7 @@ import java.io.Serializable;
 import java.util.*;
 
 import static org.rx.core.App.eq;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
@@ -57,6 +58,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
                 ;
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
         DiskCacheItem<TV> item = cache.get(key);

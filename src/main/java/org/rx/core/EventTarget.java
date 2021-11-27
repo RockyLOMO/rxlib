@@ -51,6 +51,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
         d.remove(event);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(@NonNull String eventName, TArgs args) {
         Delegate<TSender, TArgs> d = Delegate.wrap(this, eventName);
