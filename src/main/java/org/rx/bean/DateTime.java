@@ -15,7 +15,7 @@ import java.util.TimeZone;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 /**
  * GMT: UTC +0
@@ -76,37 +76,37 @@ public final class DateTime extends Date {
         return DateTime.valueOf(this.toString(format), format);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH) + 1;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);
@@ -148,7 +148,7 @@ public final class DateTime extends Date {
         this(year, month, day, 0, 0, 0);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public DateTime(int year, int month, int day, int hour, int minute, int second) {
         Calendar c = getCalendar();
         c.set(year, month - 1, day, hour, minute, second);

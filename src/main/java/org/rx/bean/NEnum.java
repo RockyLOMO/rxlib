@@ -6,8 +6,7 @@ import org.rx.core.App;
 
 import java.io.Serializable;
 
-import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
     static <T extends Enum<T> & NEnum<T>> T valueOf(@NonNull Class<T> type, int value) {
@@ -25,14 +24,14 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
         return new FlagsEnum<>(this);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     default FlagsEnum<T> flags(@NonNull T... nEnum) {
         FlagsEnum<T> flagsEnum = flags();
         flagsEnum.add(nEnum);
         return flagsEnum;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     default String description() {
         Class type = this.getClass();

@@ -31,7 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class Reflects extends TypeUtils {
@@ -154,7 +154,7 @@ public class Reflects extends TypeUtils {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode
     @SneakyThrows
     public static <T> T newInstance(@NonNull Class<T> type, Object... args) {
@@ -206,7 +206,7 @@ public class Reflects extends TypeUtils {
         return Tuple.of(declaredClass, fieldName);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T invokeDefaultMethod(@NonNull Method method, Object instance, Object... args) {
         require(method, method.isDefault());
@@ -248,7 +248,7 @@ public class Reflects extends TypeUtils {
         return invokeMethod(method, instance, args);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T invokeMethod(Method method, TT instance, Object... args) {
         setAccess(method);
@@ -299,7 +299,7 @@ public class Reflects extends TypeUtils {
         return readField(instance.getClass(), instance, name);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T readField(Class<? extends TT> type, TT instance, String name) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();

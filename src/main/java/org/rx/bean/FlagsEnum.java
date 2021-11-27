@@ -10,10 +10,10 @@ import org.rx.util.function.BiFunc;
 import java.util.EnumMap;
 import java.util.EnumSet;
 
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, int flags) {
         FlagsEnum<T> flagsEnum = null;
         for (T constant : type.getEnumConstants()) {
@@ -60,13 +60,13 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return String.join(", ", NQuery.of(toSet()).select(NEnum::description));
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     FlagsEnum(NEnum<T> nEnum) {
         type = (Class<T>) nEnum.getClass();
         flags = nEnum.getValue();
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public FlagsEnum<T> add(@NonNull T... nEnum) {
         for (T t : nEnum) {
             flags |= t.getValue();
@@ -79,7 +79,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return this;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public FlagsEnum<T> remove(@NonNull T... nEnum) {
         for (T t : nEnum) {
             flags &= ~t.getValue();
@@ -87,7 +87,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return this;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public boolean has(@NonNull T... nEnum) {
         int val = 0;
         for (T t : nEnum) {
@@ -96,7 +96,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return (flags & val) == val;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public EnumSet<T> toSet() {
         EnumSet<T> set = EnumSet.noneOf(type);
         for (T constant : type.getEnumConstants()) {
@@ -107,7 +107,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         return set;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public <V> EnumMap<T, V> toMap(@NonNull BiFunc<T, V> compute) {
         EnumMap<T, V> map = new EnumMap<>(type);

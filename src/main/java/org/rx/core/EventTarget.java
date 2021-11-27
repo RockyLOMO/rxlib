@@ -11,8 +11,7 @@ import org.rx.util.function.TripleAction;
 import java.util.EventListener;
 import java.util.concurrent.*;
 
-import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 public interface EventTarget<TSender extends EventTarget<TSender>> extends EventListener {
     @RequiredArgsConstructor
@@ -58,7 +57,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
         d.invoke((TSender) this, args);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     default <TArgs extends EventArgs> void raiseEvent(TripleAction<TSender, TArgs> event, @NonNull TArgs args) {
         if (event == null) {

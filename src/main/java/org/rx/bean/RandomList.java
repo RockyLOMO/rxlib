@@ -15,9 +15,9 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
-@SuppressWarnings(NON_WARNING)
+@SuppressWarnings(NON_UNCHECKED)
 @Slf4j
 @NoArgsConstructor
 public class RandomList<T> extends AbstractList<T> implements RandomAccess, Serializable {
