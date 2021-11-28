@@ -393,6 +393,7 @@ public class CoreTester extends TestUtil {
         p.name = "rx";
         p.age = 6;
 
+        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
         TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
