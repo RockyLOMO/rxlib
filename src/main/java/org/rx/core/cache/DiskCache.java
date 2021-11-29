@@ -100,7 +100,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         if (!eq(expiration.getAbsoluteExpiration(), CacheExpiration.NON_EXPIRE.getAbsoluteExpiration())) {
             item.expire = expiration.getAbsoluteExpiration();
         } else if (expiration.getSlidingExpiration() != CacheExpiration.NON_EXPIRE.getSlidingExpiration()) {
-            item.expire = DateTime.utcNow().addMinutes(expiration.getSlidingExpiration());
+            item.expire = DateTime.utcNow().addSeconds(expiration.getSlidingExpiration());
         } else {
             item.expire = DateTime.MAX;
         }
