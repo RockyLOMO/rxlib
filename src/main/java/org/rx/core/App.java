@@ -44,25 +44,22 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@SuppressWarnings(Constants.NON_WARNING)
+@SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
-    static final ValueFilter skipTypesFilter = new ValueFilter() {
-        @Override
-        public Object process(Object o, String k, Object v) {
-            if (v != null) {
-                NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
-                if (v.getClass().isArray() || v instanceof Iterable) {
-                    List<Object> list = NQuery.asList(v);
-                    list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
-                    return list;
-                }
-                if (q.any(t -> Reflects.isInstance(v, t))) {
-                    return v.getClass().getName();
-                }
+    static final ValueFilter skipTypesFilter = (o, k, v) -> {
+        if (v != null) {
+            NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
+            if (v.getClass().isArray() || v instanceof Iterable) {
+                List<Object> list = NQuery.asList(v);
+                list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
+                return list;
             }
-            return v;
+            if (q.any(t -> Reflects.isInstance(v, t))) {
+                return v.getClass().getName();
+            }
         }
+        return v;
     };
     @Setter
     static volatile Predicate<Throwable> ignoreExceptionHandler;
@@ -418,7 +415,7 @@ public final class App extends SystemUtils {
             }
             File file = new File(p);
             return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
-        }).selectMany(p -> yaml.loadAll(p))) {
+        }).selectMany(yaml::loadAll)) {
             Map<String, Object> one = (Map<String, Object>) data;
             fillDeep(one, result);
         }

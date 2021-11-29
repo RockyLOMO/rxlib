@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 import static org.rx.core.App.tryAs;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -37,6 +38,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return new Delegate<TSender, TArgs>().combine(delegates);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(@NonNull EventTarget<TSender> target, @NonNull String fnName) {
         Delegate<TSender, TArgs> d;
@@ -56,10 +58,22 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return d;
     }
 
-    private final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
+    final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
+    TripleAction<TSender, TArgs> headInvocation;
+    TripleAction<TSender, TArgs> tailInvocation;
 
     public boolean isEmpty() {
         return invocations.isEmpty();
+    }
+
+    public Delegate<TSender, TArgs> head(TripleAction<TSender, TArgs> delegate) {
+        headInvocation = delegate;
+        return this;
+    }
+
+    public Delegate<TSender, TArgs> tail(TripleAction<TSender, TArgs> delegate) {
+        tailInvocation = delegate;
+        return this;
     }
 
     @SafeVarargs
@@ -102,23 +116,38 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
 
     public Delegate<TSender, TArgs> purge() {
         invocations.clear();
+        headInvocation = tailInvocation = null;
         return this;
     }
 
     @Override
     public void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
-        for (TripleAction<TSender, TArgs> delegate : new ArrayList<>(invocations)) {
-            try {
-                delegate.invoke(target, args);
-                if (args.isCancel()) {
-                    return;
-                }
-            } catch (Throwable e) {
-                if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
-                    throw e;
-                }
-                log.warn("innerRaise", e);
+        if (!innerInvoke(headInvocation, target, args)) {
+            return;
+        }
+        for (TripleAction<TSender, TArgs> delegate : invocations) {
+            if (!innerInvoke(delegate, target, args)) {
+                break;
             }
         }
+        innerInvoke(tailInvocation, target, args);
+    }
+
+    boolean innerInvoke(TripleAction<TSender, TArgs> delegate, TSender target, TArgs args) throws Throwable {
+        if (delegate == null) {
+            return true;
+        }
+        try {
+            delegate.invoke(target, args);
+            if (args.isCancel()) {
+                return false;
+            }
+        } catch (Throwable e) {
+            if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
+                throw e;
+            }
+            log.warn("innerRaise", e);
+        }
+        return true;
     }
 }

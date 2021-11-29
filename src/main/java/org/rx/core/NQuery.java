@@ -26,7 +26,8 @@ import java.util.stream.StreamSupport;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_RAW_TYPES;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
@@ -36,15 +37,17 @@ import static org.rx.core.Constants.NON_WARNING;
 @Slf4j
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class NQuery<T> implements Iterable<T>, Serializable {
+    private static final long serialVersionUID = -7167070585936243198L;
+
     //region staticMembers
     public static <T> List<T> asList(Object arrayOrIterable) {
         return asList(arrayOrIterable, true);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode("argError")
     public static <T> List<T> asList(@NonNull Object arrayOrIterable, boolean throwOnEmpty) {
-        Class type = arrayOrIterable.getClass();
+        Class<?> type = arrayOrIterable.getClass();
         if (type.isArray()) {
             int length = Array.getLength(arrayOrIterable);
             List<T> list = new ArrayList<>(length);
@@ -158,10 +161,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             public boolean tryAdvance(Consumer<? super T> action) {
                 return spliterator.tryAdvance(p -> {
                     int flags = func.each(p, counter.getAndIncrement());
-                    if ((flags & EachFunc.Accept) == EachFunc.Accept) {
+                    if ((flags & EachFunc.ACCEPT) == EachFunc.ACCEPT) {
                         action.accept(p);
                     }
-                    if ((flags & EachFunc.Break) == EachFunc.Break) {
+                    if ((flags & EachFunc.BREAK) == EachFunc.BREAK) {
                         breaker.set(true);
                     }
                 }) && !breaker.get();
@@ -172,10 +175,9 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     @FunctionalInterface
     interface EachFunc<T> {
-        int None = 0;
-        int Accept = 1;
-        int Break = 1 << 1;
-        int All = Accept | Break;
+        int NONE = 0;
+        int ACCEPT = 1;
+        int BREAK = 1 << 1;
 
         int each(T item, int index);
     }
@@ -229,7 +231,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return join(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    @SuppressWarnings(NON_WARNING)
     public <TI, TR> NQuery<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
             if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
@@ -271,7 +272,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().distinct());
     }
 
-    @SuppressWarnings(NON_WARNING)
     public NQuery<T> except(Iterable<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
@@ -289,7 +289,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparator(keySelector)));
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_RAW_TYPES)
     public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector) {
         return (p1, p2) -> sneakyInvoke(() -> {
             Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
@@ -309,7 +309,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_RAW_TYPES)
     public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector) {
         return (p1, p2) -> sneakyInvoke(() -> {
             List<Object> k1s = keySelector.invoke(p1), k2s = keySelector.invoke(p2);
@@ -333,7 +333,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public NQuery<T> reverse() {
         try {
             return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
@@ -355,11 +355,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public <TR> NQuery<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, NQuery<T>, TR> resultSelector) {
-//        Map<String, Tuple<Object[], List<T>>> map = newMap();
-//        stream().forEach(t -> {
-//            Object[] ks = sneakyInvoke(() -> keySelector.invoke(t));
-//            map.computeIfAbsent(toJsonString(ks), p -> Tuple.of(ks, newList())).right.add(t);
-//        });
         Map<List<Object>, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<List<Object>, List<T>> entry : map.entrySet()) {
@@ -388,7 +383,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return max(stream());
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     private <TR> TR max(Stream<TR> stream) {
         return stream.max((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
@@ -401,7 +396,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return min(stream());
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     private <TR> TR min(Stream<TR> stream) {
         return stream.min((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
@@ -426,17 +421,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return sumValue.v;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public <TR> NQuery<TR> cast() {
         return (NQuery<TR>) this;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public <TR> NQuery<TR> ofType(Class<TR> type) {
         return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
-    @SuppressWarnings(NON_WARNING)
     public T first() {
         return stream().findFirst().get();
     }
@@ -461,7 +455,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return stream().filter(predicate.toPredicate()).findFirst().orElse(null);
     }
 
-    @SuppressWarnings(NON_WARNING)
     public T last() {
         return Streams.findLast(stream()).get();
     }
@@ -531,14 +524,14 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     public NQuery<T> skipWhile(PredicateFuncWithIndex<T> predicate) {
         AtomicBoolean doAccept = new AtomicBoolean();
         return me((p, i) -> {
-            int flags = EachFunc.None;
+            int flags = EachFunc.NONE;
             if (doAccept.get()) {
-                flags |= EachFunc.Accept;
+                flags |= EachFunc.ACCEPT;
                 return flags;
             }
             if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
                 doAccept.set(true);
-                flags |= EachFunc.Accept;
+                flags |= EachFunc.ACCEPT;
             }
             return flags;
         }, "skipWhile");
@@ -554,12 +547,12 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public NQuery<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
         return me((p, i) -> {
-            int flags = EachFunc.None;
+            int flags = EachFunc.NONE;
             if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
-                flags |= EachFunc.Break;
+                flags |= EachFunc.BREAK;
                 return flags;
             }
-            flags |= EachFunc.Accept;
+            flags |= EachFunc.ACCEPT;
             return flags;
         }, "takeWhile");
     }
@@ -568,10 +561,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return String.join(delimiter, select(selector));
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public T[] toArray() {
         List<T> result = toList();
-        Class type = null;
+        Class<?> type = null;
         for (T t : result) {
             if (t == null) {
                 continue;
@@ -580,14 +573,15 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             break;
         }
         if (type == null) {
-            throw new InvalidException("Empty Result");
+//            throw new InvalidException("Empty Result");
+            type = Object.class;
         }
         T[] array = (T[]) Array.newInstance(type, result.size());
         result.toArray(array);
         return array;
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     public T[] toArray(Class<T> type) {
         List<T> result = toList();
         T[] array = (T[]) Array.newInstance(type, result.size());

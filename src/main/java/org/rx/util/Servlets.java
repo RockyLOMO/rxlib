@@ -104,7 +104,7 @@ public class Servlets extends ServletRequestUtils {
     public static void cacheResponse(int cacheSeconds, String contentType, InputStream in) {
         HttpServletResponse response = currentRequest().right;
         response.setHeader(HttpHeaders.CACHE_CONTROL, String.format("max-age=%s", cacheSeconds));
-        response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.utcNow().addSeconds(cacheSeconds).getTime()).toString());
+        response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.now().addSeconds(cacheSeconds).getTime()).toString());
         response.setContentType(contentType);
         if (in != null) {
             IOStream.copy(in, IOStream.NON_READ_FULLY, response.getOutputStream());

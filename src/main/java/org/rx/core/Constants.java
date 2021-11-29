@@ -1,7 +1,9 @@
 package org.rx.core;
 
 public interface Constants {
-    String NON_WARNING = "all";
+    String NON_UNCHECKED = "unchecked";
+    String NON_RAW_TYPES = "unchecked,rawtypes";
+
     String CACHE_KEY_SUFFIX = ":";
     int ONE_DAY_EXPIRE_SECONDS = 60 * 60 * 24;
 

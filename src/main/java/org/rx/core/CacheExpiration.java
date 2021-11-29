@@ -9,7 +9,6 @@ import java.util.Objects;
 
 @RequiredArgsConstructor
 @Getter
-//@EqualsAndHashCode
 @ToString
 public final class CacheExpiration {
     public static final CacheExpiration NON_EXPIRE = new CacheExpiration(0, null, -1);
@@ -21,7 +20,7 @@ public final class CacheExpiration {
     public static CacheExpiration today(int expireSeconds) {
         DateTime now = DateTime.now(), expire = now.addSeconds(expireSeconds);
         DateTime max = DateTime.valueOf(String.format("%s 23:59:59", now.toDateString()), DateTime.FORMATS.first());
-        return new CacheExpiration(0, (expire.before(max) ? expire : max).asUniversalTime(), NON_EXPIRE.slidingExpiration);
+        return new CacheExpiration(0, (expire.before(max) ? expire : max), NON_EXPIRE.slidingExpiration);
     }
 
     public static CacheExpiration absolute(int expireSeconds) {

@@ -15,6 +15,8 @@ import java.util.Queue;
 import java.util.concurrent.*;
 
 import static org.rx.core.App.quietly;
+import static org.rx.core.Constants.NON_RAW_TYPES;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
@@ -146,6 +148,7 @@ public final class Tasks {
         return pool().run(task, taskId, runFlag);
     }
 
+    @SuppressWarnings(NON_RAW_TYPES)
     public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> anyOf(Action... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return nullReturn();
@@ -155,10 +158,12 @@ public final class Tasks {
         return Tuple.of((CompletableFuture) CompletableFuture.anyOf(futures), futures);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     private static <T1, T2> Tuple<CompletableFuture<T1>, CompletableFuture<T2>[]> nullReturn() {
         return Tuple.of(CompletableFuture.completedFuture(null), new CompletableFuture[0]);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     public static <T> Tuple<CompletableFuture<T>, CompletableFuture<T>[]> anyOf(Func<T>... tasks) {
         if (Arrays.isEmpty(tasks)) {
             return nullReturn();

@@ -9,6 +9,8 @@ import org.rx.core.cache.ThreadCache;
 import org.rx.util.function.BiFunc;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Constants.NON_RAW_TYPES;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<MemoryCache> MEMORY_CACHE = MemoryCache.class;
@@ -32,6 +34,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
         return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expiration);
     }
 
+    @SuppressWarnings(NON_RAW_TYPES)
     static <TK, TV> Cache<TK, TV> getInstance(Class<?> cacheName) {
         return (Cache<TK, TV>) Container.getOrDefault(cacheName, (Class) MemoryCache.class);
     }

@@ -31,7 +31,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 import static org.rx.core.App.*;
-import static org.rx.core.Constants.NON_WARNING;
+import static org.rx.core.Constants.NON_RAW_TYPES;
+import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class Reflects extends TypeUtils {
@@ -124,11 +125,7 @@ public class Reflects extends TypeUtils {
         return NQuery.of(resolver.getResources("classpath*:" + namePattern)).select(InputStreamSource::getInputStream);
     }
 
-    /**
-     * ClassLoader.getSystemClassLoader()
-     *
-     * @return
-     */
+    //ClassLoader.getSystemClassLoader()
     public static ClassLoader getClassLoader() {
         ClassLoader loader = Thread.currentThread().getContextClassLoader();
         return loader != null ? loader : Reflects.class.getClassLoader();
@@ -139,6 +136,7 @@ public class Reflects extends TypeUtils {
     }
 
     //ClassPath.from(classloader).getTopLevelClasses(packageDirName)
+    @SuppressWarnings(NON_UNCHECKED)
     public static <T> Class<T> loadClass(String className, boolean initialize, boolean throwOnEmpty) {
         try {
             return (Class<T>) Class.forName(className, initialize, getClassLoader());
@@ -154,7 +152,7 @@ public class Reflects extends TypeUtils {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode
     @SneakyThrows
     public static <T> T newInstance(@NonNull Class<T> type, Object... args) {
@@ -167,7 +165,7 @@ public class Reflects extends TypeUtils {
         } catch (Exception e) {
             log.warn("Not match any accessible constructors. {}", e.getMessage());
             for (Constructor<?> constructor : type.getDeclaredConstructors()) {
-                Class[] paramTypes = constructor.getParameterTypes();
+                Class<?>[] paramTypes = constructor.getParameterTypes();
                 if (paramTypes.length != args.length) {
                     continue;
                 }
@@ -206,7 +204,7 @@ public class Reflects extends TypeUtils {
         return Tuple.of(declaredClass, fieldName);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T invokeDefaultMethod(@NonNull Method method, Object instance, Object... args) {
         require(method, method.isDefault());
@@ -248,7 +246,7 @@ public class Reflects extends TypeUtils {
         return invokeMethod(method, instance, args);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T invokeMethod(Method method, TT instance, Object... args) {
         setAccess(method);
@@ -256,7 +254,7 @@ public class Reflects extends TypeUtils {
     }
 
     //region fields
-    public static NQuery<PropertyNode> getProperties(Class to) {
+    public static NQuery<PropertyNode> getProperties(Class<?> to) {
         return Cache.getOrSet(Tuple.of("getProperties", to), k -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
             NQuery<Method> q = NQuery.of(to.getMethods());
@@ -299,7 +297,7 @@ public class Reflects extends TypeUtils {
         return readField(instance.getClass(), instance, name);
     }
 
-    @SuppressWarnings(NON_WARNING)
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T readField(Class<? extends TT> type, TT instance, String name) {
         Field field = getFields(type).where(p -> p.getName().equals(name)).first();
@@ -316,7 +314,7 @@ public class Reflects extends TypeUtils {
         field.set(instance, changeType(value, field.getType()));
     }
 
-    public static NQuery<Field> getFields(Class type) {
+    public static NQuery<Field> getFields(Class<?> type) {
         return Cache.getOrSet(Tuple.of("getFields", type), k -> {
             List<Field> list = FieldUtils.getAllFieldsList(type);
             for (Field field : list) {
@@ -363,10 +361,11 @@ public class Reflects extends TypeUtils {
         }
     }
 
-    public static Object defaultValue(Class type) {
+    public static Object defaultValue(Class<?> type) {
         return changeType(null, type);
     }
 
+    @SuppressWarnings(NON_RAW_TYPES)
     @ErrorCode("notSupported")
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)

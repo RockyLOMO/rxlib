@@ -12,12 +12,15 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.Constants.NON_UNCHECKED;
+
 public final class Container {
     static final Map<Class<?>, Object> holder = new ConcurrentHashMap<>(8);
     static final BloomFilter<Integer> spring = BloomFilter.create(Funnels.integerFunnel(), 100);
     //不要放值类型, ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准, soft 内存不够时才回收
     static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
 
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T getOrDefault(Class<T> type, Class<? extends T> defType) {
         Class.forName(type.getName());
@@ -28,6 +31,7 @@ public final class Container {
         return instance;
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T get(Class<T> type) {
         T instance;
@@ -61,6 +65,7 @@ public final class Container {
         holder.remove(type);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     public static <K, V> Map<K, V> weakMap() {
         return WEAK_MAP;
     }
