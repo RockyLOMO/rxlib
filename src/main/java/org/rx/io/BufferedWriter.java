@@ -1,14 +1,15 @@
 package org.rx.io;
 
+import org.rx.core.Constants;
 import org.rx.core.Tasks;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
 final class BufferedWriter {
-    ByteBuffer byteBuffer = ByteBuffer.allocateDirect(1024 * 4);
+    ByteBuffer byteBuffer = ByteBuffer.allocateDirect(Constants.SIZE_4K);
     // 申请 64KB 的二级缓存
-    ByteBuffer flushBuffer = ByteBuffer.allocateDirect(1024 * 64);
+    ByteBuffer flushBuffer = ByteBuffer.allocateDirect(Constants.KB * 64);
 
     public void write(FileChannel channel, byte[] bytesLine) {
         int remain = byteBuffer.remaining();

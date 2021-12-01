@@ -4,12 +4,12 @@ import io.netty.channel.AdaptiveRecvByteBufAllocator;
 import io.netty.channel.WriteBufferWaterMark;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.net.socks.SocksConfig;
+import org.rx.core.Constants;
 
 @RequiredArgsConstructor
 @Getter
 public enum MemoryMode {
-    LOW(1024, SocksConfig.BUF_SIZE_4K, SocksConfig.BUF_SIZE_4K * 1024, SocksConfig.BUF_SIZE_4K * 1024),
+    LOW(1024, Constants.SIZE_4K, Constants.SIZE_4K * 1024, Constants.SIZE_4K * 1024),
     MEDIUM(2048, LOW.receiveBufInitial * 4, LOW.receiveBufMaximum * 4, LOW.sendBufHighWaterMark * 4),
     HIGH(4096, MEDIUM.receiveBufInitial * 4, MEDIUM.receiveBufMaximum * 4, MEDIUM.sendBufHighWaterMark * 4);
 

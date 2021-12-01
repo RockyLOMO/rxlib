@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.RequiredArgsConstructor;
+import org.rx.core.Constants;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,7 +24,7 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
     public enum BufSize {
         NON_BUF(0),
         SMALL_DATA(1024),
-        MEDIUM_DATA(1024 * 4),
+        MEDIUM_DATA(Constants.SIZE_4K),
         LARGE_DATA(1 << 16);// 64K buffer
 
         final int value;

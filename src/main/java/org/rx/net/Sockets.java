@@ -392,7 +392,7 @@ public final class Sockets {
             Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
             while (addresses.hasMoreElements()) {
                 InetAddress address = addresses.nextElement();
-                if (address.isLoopbackAddress() || !(address instanceof Inet4Address)) {
+                if (address.isLoopbackAddress() || address.isAnyLocalAddress() || !(address instanceof Inet4Address)) {
                     continue;
                 }
                 if (address.isSiteLocalAddress()) {
