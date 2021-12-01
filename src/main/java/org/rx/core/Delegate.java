@@ -62,8 +62,8 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     TripleAction<TSender, TArgs> headInvocation;
     TripleAction<TSender, TArgs> tailInvocation;
 
-    public boolean isEmpty() {
-        return invocations.isEmpty();
+    public synchronized boolean isEmpty() {
+        return invocations.isEmpty() && headInvocation == null && tailInvocation == null;
     }
 
     public Delegate<TSender, TArgs> head(TripleAction<TSender, TArgs> delegate) {
@@ -114,14 +114,23 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return this;
     }
 
-    public Delegate<TSender, TArgs> purge() {
+    public synchronized Delegate<TSender, TArgs> tryClose() {
+        App.tryClose(headInvocation);
+        for (TripleAction<TSender, TArgs> invocation : invocations) {
+            App.tryClose(invocation);
+        }
+        App.tryClose(tailInvocation);
+        return purge();
+    }
+
+    public synchronized Delegate<TSender, TArgs> purge() {
         invocations.clear();
         headInvocation = tailInvocation = null;
         return this;
     }
 
     @Override
-    public void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
+    public synchronized void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
         if (!innerInvoke(headInvocation, target, args)) {
             return;
         }

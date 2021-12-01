@@ -6,11 +6,13 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.rx.exception.InvalidException;
 
+import java.util.Collections;
+
 @NoArgsConstructor
 @AllArgsConstructor
-public class ErrorBean {
-    private static void theStatic(int hint, String nullable) {
-        System.out.println("hint3-" + nullable);
+public class ErrorBean implements NestedDefMethod {
+    private static void staticCall(int hint, String nullable) {
+        System.out.println("staticCall:" + Collections.singletonMap(hint, nullable));
     }
 
     @Getter
@@ -25,7 +27,19 @@ public class ErrorBean {
         error = "hint-" + nullable;
     }
 
-    private void theMethod(int hint, String nullable) {
-        this.error = "hint2-" + nullable;
+    private void instanceCall(int hint, String nullable) {
+        System.out.println("instanceCall:" + Collections.singletonMap(hint, nullable));
+    }
+}
+
+interface DefMethod {
+    default void defCall(int hint, String nullable) {
+        System.out.println("defCall:" + Collections.singletonMap(hint, nullable));
+    }
+}
+
+interface NestedDefMethod extends DefMethod {
+    default void nestedDefCall(int hint, String nullable) {
+        System.out.println("nestedDefCall:" + Collections.singletonMap(hint, nullable));
     }
 }

@@ -392,7 +392,7 @@ public final class Sockets {
             Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
             while (addresses.hasMoreElements()) {
                 InetAddress address = addresses.nextElement();
-                if (address.isLoopbackAddress() || !(address instanceof Inet4Address)) {
+                if (address.isLoopbackAddress() || address.isAnyLocalAddress() || !(address instanceof Inet4Address)) {
                     continue;
                 }
                 if (address.isSiteLocalAddress()) {
@@ -469,8 +469,8 @@ public final class Sockets {
     public static NQuery<SocketInfo> socketInfos(SocketProtocol protocol) {
         try (ShellCommander cmd = new ShellCommander("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
-            cmd.start(l -> {
-                String line = l.getLine();
+            cmd.onOutPrint.combine((s, e) -> {
+                String line = e.getLine();
                 if (!line.contains(protocol.name())) {
                     return;
                 }
@@ -487,11 +487,11 @@ public final class Sockets {
                                 null, Long.parseLong(arr[3]));
                     }
                     list.add(sockInfo);
-                } catch (Exception e) {
-                    log.error("Parse line {} fail", toJsonString(arr), e);
+                } catch (Exception ex) {
+                    log.error("Parse line {} fail", toJsonString(arr), ex);
                 }
             });
-            cmd.waitFor();
+            cmd.start().waitFor();
 
             NQuery<SocketInfo> q = NQuery.of(list, true);
             q.forEach(p -> p.setProcessName(processName(p.pid)));
@@ -504,14 +504,14 @@ public final class Sockets {
             $<String> name = $();
             try (ShellCommander cmd = new ShellCommander(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);
-                cmd.start(l -> {
-                    int i = l.getLine().indexOf(t);
+                cmd.onOutPrint.combine((s, e) -> {
+                    int i = e.getLine().indexOf(t);
                     if (i == -1) {
                         return;
                     }
-                    name.v = l.getLine().substring(0, i).trim();
+                    name.v = e.getLine().substring(0, i).trim();
                 });
-                cmd.waitFor();
+                cmd.start().waitFor();
             }
             return name.v;
         });

@@ -27,6 +27,7 @@ public class NameserverImpl implements Nameserver {
     @RequiredArgsConstructor
     @ToString
     static class DeregisterInfo implements Serializable {
+        private static final long serialVersionUID = 713672672746841635L;
         final String appName;
         final InetAddress ip;
     }
@@ -40,6 +41,9 @@ public class NameserverImpl implements Nameserver {
     final Set<InetSocketAddress> regEps = ConcurrentHashMap.newKeySet();
 
     int getSyncPort() {
+        if (config.getSyncPort() > 0) {
+            return config.getSyncPort();
+        }
         return config.getRegisterPort();
     }
 

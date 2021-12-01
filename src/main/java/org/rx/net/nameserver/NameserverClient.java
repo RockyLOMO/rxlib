@@ -40,7 +40,7 @@ public final class NameserverClient extends Disposable {
             Sockets.injectNameService(ns);
             log.info("inject ns {}", toJsonString(ns));
             syncRoot.set();
-        }, 500, NameserverClient.class, TimeoutFlag.REPLACE);
+        }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE);
     }
 
     @Getter

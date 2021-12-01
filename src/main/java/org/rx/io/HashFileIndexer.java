@@ -150,7 +150,7 @@ final class HashFileIndexer<TK> extends Disposable {
 
         int slotCount = (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / slotSize);
         slots = new Slot[slotCount];
-        queue = new WriteBehindQueue<>(500, slotCount + 1);
+        queue = new WriteBehindQueue<>(Constants.DEFAULT_INTERVAL, slotCount + 1);
     }
 
     @Override
