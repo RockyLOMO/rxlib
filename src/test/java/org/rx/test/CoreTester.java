@@ -21,6 +21,7 @@ import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -454,19 +455,20 @@ public class CoreTester extends TestUtil {
         assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
 
         assert Reflects.stackClass(0) == this.getClass();
+//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
+//            System.out.println(traceElement);
+//        }
         System.out.println(cacheKey("reflect"));
         System.out.println(cacheKey("reflect:", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
-        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
-            System.out.println(traceElement);
-        }
+
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
         System.out.println(bean.getError());
 
-        Reflects.invokeMethod(ErrorBean.class, "theStatic", 0, null);
-        Reflects.invokeMethod(bean, "theMethod", 2, null);
-//        Object v = MethodUtils.invokeMethod(bean, true, "theMethod", 0, null);
-//        System.out.println(bean.getError());
+        Reflects.invokeMethod(ErrorBean.class, "staticCall", 1, null);
+        Reflects.invokeMethod(bean, "instanceCall", 2, null);
+        Reflects.invokeMethod(bean, "defCall", 3, null);
+        Reflects.invokeMethod(bean, "nestedDefCall", 4, null);
     }
 
     @Test

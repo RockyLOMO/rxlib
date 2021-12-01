@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -232,18 +231,41 @@ public class Reflects extends TypeUtils {
     }
 
     public static <T, TT> T invokeMethod(TT instance, String name, Object... args) {
-        return invokeMethod(instance.getClass(), instance, name, args);
+        return invokeMethod(null, instance, name, args);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     @ErrorCode
-    public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
-        Class<?>[] parameterTypes = ClassUtils.toClass(args);
-        Method method = MethodUtils.getMatchingMethod(type, name, parameterTypes);
+    static <T> T invokeMethod(Class<?> type, Object instance, String name, Object... args) {
+        Class<?> searchType = type != null ? type : instance.getClass();
+//        Modifier.isStatic()
+        Method method = getMethods(searchType).firstOrDefault(p -> {
+            if (!(p.getName().equals(name) && p.getParameterCount() == args.length)) {
+                return false;
+            }
+            Class<?>[] parameterTypes = p.getParameterTypes();
+            for (int i = 0; i < parameterTypes.length; i++) {
+                Class<?> parameterType = parameterTypes[i];
+                Object arg = args[i];
+                if (arg == null) {
+                    if (parameterType.isPrimitive()) {
+                        return false;
+                    }
+                    continue;
+                }
+                if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+//        Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
+//        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
         if (method == null) {
-            throw new ApplicationException(values(type.getName(), name));
+            throw new ApplicationException(values(searchType.getName(), name));
         }
-        return invokeMethod(method, instance, args);
+        return (T) method.invoke(instance, args);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -251,6 +273,29 @@ public class Reflects extends TypeUtils {
     public static <T, TT> T invokeMethod(Method method, TT instance, Object... args) {
         setAccess(method);
         return (T) method.invoke(instance, args);
+    }
+
+    public static NQuery<Method> getMethods(@NonNull Class<?> type) {
+        return Cache.getOrSet(Tuple.of("getMethods", type), k -> {
+            List<Method> all = new ArrayList<>();
+            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+                Method[] declared = type.getDeclaredMethods();
+                for (Method method : declared) {
+                    setAccess(method);
+                }
+                Collections.addAll(all, declared);
+            }
+
+            NQuery<Method> defMethods = NQuery.of(type.getInterfaces()).selectMany(p -> NQuery.of(p.getMethods())).where(p -> {
+                boolean d = p.isDefault();
+                if (d) {
+                    setAccess(p);
+                }
+                return d;
+            });
+            all.addAll(defMethods.toList());
+            return NQuery.of(all);
+        }, Cache.MEMORY_CACHE);
     }
 
     //region fields
@@ -314,13 +359,13 @@ public class Reflects extends TypeUtils {
         field.set(instance, changeType(value, field.getType()));
     }
 
-    public static NQuery<Field> getFields(Class<?> type) {
+    public static NQuery<Field> getFields(@NonNull Class<?> type) {
         return Cache.getOrSet(Tuple.of("getFields", type), k -> {
-            List<Field> list = FieldUtils.getAllFieldsList(type);
-            for (Field field : list) {
+            List<Field> all = FieldUtils.getAllFieldsList(type);
+            for (Field field : all) {
                 setAccess(field);
             }
-            return NQuery.of(list);
+            return NQuery.of(all);
         }, Cache.MEMORY_CACHE);
     }
 
