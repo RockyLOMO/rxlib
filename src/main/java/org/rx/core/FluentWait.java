@@ -23,14 +23,12 @@ public class FluentWait {
         private int invokedCount;
     }
 
-    private static final long DEFAULT_TIMEOUT = 500L;
-
     public static UntilState emptyState() {
         return new UntilState(DateTime.now());
     }
 
     public static FluentWait newInstance(long timeoutMillis) {
-        return newInstance(timeoutMillis, DEFAULT_TIMEOUT);
+        return newInstance(timeoutMillis, Constants.DEFAULT_INTERVAL);
     }
 
     public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {

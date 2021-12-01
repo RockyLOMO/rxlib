@@ -5,13 +5,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.util.Timeout;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.MediaType;
-import okhttp3.ResponseBody;
-import okio.BufferedSource;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -291,17 +286,17 @@ public class CoreTester extends TestUtil {
     @Test
     public void shellExec() {
         ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.start(ShellCommander.CONSOLE_OUT);
-        executor.waitFor();
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
 
         executor = new ShellCommander(TConfig.path("1.bat"), null);
         ShellCommander finalExecutor = executor;
-        executor.start(l -> {
-            System.out.println(l.getLine());
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
             finalExecutor.kill();
         });
-        executor.start(ShellCommander.fileOut(TConfig.path("out.txt")));
-        executor.waitFor();
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
 
         sleep(5000);
     }

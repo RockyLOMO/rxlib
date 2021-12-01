@@ -5,6 +5,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -115,7 +116,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final WriteBehindQueue<Long, MetaHeader> queue = new WriteBehindQueue<>(500, 2);
+    private final WriteBehindQueue<Long, MetaHeader> queue = new WriteBehindQueue<>(Constants.DEFAULT_INTERVAL, 2);
 
     @Override
     public String getName() {

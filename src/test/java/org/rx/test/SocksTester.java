@@ -791,6 +791,10 @@ public class SocksTester extends TConfig {
 
     @Test
     public void ping() {
-        PingClient.test("cloud.f-li.cn:50112", r -> log.info(toJsonString(r)));
+        PingClient client = new PingClient();
+        assert client.isReachable("192.168.31.1");
+        PingClient.Result result = client.ping("www.baidu.com:80");
+        System.out.println(toJsonString(result));
+//        PingClient.test("cloud.f-li.cn:50112", r -> log.info(toJsonString(r)));
     }
 }

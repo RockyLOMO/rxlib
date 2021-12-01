@@ -11,7 +11,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 import org.rx.io.Files;
-import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleAction;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -26,14 +26,14 @@ import static org.rx.core.App.*;
 public class ShellCommander extends Disposable implements EventTarget<ShellCommander> {
     @RequiredArgsConstructor
     @Getter
-    public static class LineBean implements Serializable {
+    public static class OutPrintEventArgs extends EventArgs {
         private static final long serialVersionUID = 4598104225029493537L;
         final int lineNumber;
         final String line;
 
         @Override
         public String toString() {
-            return String.format("%s.\t%s", lineNumber, line);
+            return String.format("%s.\t%s\n", lineNumber, line);
         }
     }
 
@@ -44,9 +44,13 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         final int exitValue;
     }
 
-    @RequiredArgsConstructor
-    static class FileOutHandler extends Disposable implements BiAction<LineBean> {
+    public static class FileOutHandler extends Disposable implements TripleAction<ShellCommander, OutPrintEventArgs> {
         final FileStream fileStream;
+
+        public FileOutHandler(String filePath) {
+            Files.createDirectory(filePath);
+            fileStream = new FileStream(filePath);
+        }
 
         @Override
         protected void freeObjects() {
@@ -54,12 +58,12 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
 
         @Override
-        public void invoke(LineBean l) throws Throwable {
-//            System.out.print("[debug]:" + l.toString());
+        public void invoke(ShellCommander s, OutPrintEventArgs e) throws Throwable {
+            //            System.out.print("[debug]:" + l.toString());
             ByteBuf buf = Bytes.directBuffer();
-            buf.writeCharSequence(String.valueOf(l.lineNumber), StandardCharsets.UTF_8);
+            buf.writeCharSequence(String.valueOf(e.lineNumber), StandardCharsets.UTF_8);
             buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
-            buf.writeCharSequence(l.line, StandardCharsets.UTF_8);
+            buf.writeCharSequence(e.line, StandardCharsets.UTF_8);
             buf.writeCharSequence("\n", StandardCharsets.UTF_8);
             try {
                 fileStream.write(buf);
@@ -69,9 +73,8 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
     }
 
-    public static final BiAction<LineBean> CONSOLE_OUT = l -> System.out.print(l.toString());
+    public static final TripleAction<ShellCommander, OutPrintEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
     static final String WIN_CMD = "cmd /c ";
-    //        static final String WIN_CMD = "";
     static final List<ShellCommander> KILL_LIST = newConcurrentList(true);
 
     static {
@@ -82,11 +85,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         });
     }
 
-    public static BiAction<LineBean> fileOut(String filePath) {
-        Files.createDirectory(filePath);
-        return new FileOutHandler(new FileStream(filePath));
-    }
-
+    public final Delegate<ShellCommander, OutPrintEventArgs> onOutPrint = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
     @Getter
@@ -94,11 +93,15 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     private final File workspace;
     private final long intervalPeriod;
     private volatile Process process;
-    private BiAction<LineBean> outHandler;
     private CompletableFuture<Void> daemonFuture;
 
     public boolean isRunning() {
         return process != null && process.isAlive();
+    }
+
+    public ShellCommander setAutoRestart() {
+        onExited.tail((s, e) -> restart());
+        return this;
     }
 
     public ShellCommander(String shell) {
@@ -106,7 +109,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     public ShellCommander(String shell, String workspace) {
-        this(shell, workspace, 500, true);
+        this(shell, workspace, Constants.DEFAULT_INTERVAL, true);
     }
 
     public ShellCommander(@NonNull String shell, String workspace, long intervalPeriod, boolean killOnExited) {
@@ -130,22 +133,16 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
     @Override
     protected void freeObjects() {
-        tryClose(outHandler);
+        onOutPrint.tryClose();
         kill();
         KILL_LIST.remove(this);
     }
 
-    public ShellCommander start() {
-        return start(outHandler);
-    }
-
     @SneakyThrows
-    public synchronized ShellCommander start(BiAction<LineBean> outHandler) {
+    public synchronized ShellCommander start() {
         if (isRunning()) {
             throw new InvalidException("already started");
         }
-
-        this.outHandler = outHandler;
 
         //Runtime.getRuntime().exec(shell, null, workspace)
         StringTokenizer st = new StringTokenizer(shell);
@@ -165,13 +162,21 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         daemonFuture = Tasks.run(() -> {
             LineNumberReader reader = null;
             try {
-                if (outHandler != null) {
+                if (!onOutPrint.isEmpty()) {
                     reader = new LineNumberReader(new InputStreamReader(tmp.getInputStream(), StandardCharsets.UTF_8));
                 }
 
                 while (tmp.isAlive()) {
-                    LineNumberReader finalReader = reader;
-                    quietly(() -> handleIn(finalReader));
+                    try {
+                        if (reader != null) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                raiseEvent(onOutPrint, new OutPrintEventArgs(reader.getLineNumber(), line));
+                            }
+                        }
+                    } catch (Throwable e) {
+                        App.log("onOutPrint", e);
+                    }
                     Thread.sleep(intervalPeriod);
                 }
             } finally {
@@ -182,18 +187,6 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             }
         });
         return this;
-    }
-
-    @SneakyThrows
-    private void handleIn(LineNumberReader reader) {
-        if (reader == null) {
-            return;
-        }
-
-        String line;
-        while ((line = reader.readLine()) != null) {
-            outHandler.invoke(new LineBean(reader.getLineNumber(), line));
-        }
     }
 
     @SneakyThrows
@@ -224,10 +217,5 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         log.info("restart {}", shell);
         kill();
         start();
-    }
-
-    public ShellCommander autoRestart() {
-        onExited.combine((s, e) -> restart());
-        return this;
     }
 }
