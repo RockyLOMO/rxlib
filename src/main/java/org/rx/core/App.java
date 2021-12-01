@@ -21,6 +21,7 @@ import org.rx.exception.ExceptionHandler;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
+import org.rx.net.Sockets;
 import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
@@ -37,7 +38,9 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 import io.netty.util.internal.ThreadLocalRandom;
+
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -67,6 +70,8 @@ public final class App extends SystemUtils {
 
     static {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
+
+        log("RxMeta {} @ {}", JAVA_VERSION, Sockets.getLocalAddress());
     }
 
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
