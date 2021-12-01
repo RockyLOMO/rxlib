@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.ConstructorUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -238,7 +239,8 @@ public class Reflects extends TypeUtils {
     @SneakyThrows
     @ErrorCode
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
-        Class<?> searchType = type != null ? type : instance.getClass();
+        boolean isStatic = type != null;
+        Class<?> searchType = isStatic ? type : instance.getClass();
         Method method = getMethods(searchType).firstOrDefault(p -> {
             if (!(p.getName().equals(name) && p.getParameterCount() == args.length)) {
                 return false;
@@ -259,9 +261,19 @@ public class Reflects extends TypeUtils {
             }
             return true;
         });
-//        Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
 //        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
         if (method == null) {
+            try {
+                if (isStatic) {
+                    Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
+                    method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
+                    return invokeMethod(method, args);
+                } else {
+                    return (T) MethodUtils.invokeMethod(instance, true, name, args);
+                }
+            } catch (NoSuchMethodException e) {
+                //ignore
+            }
             throw new ApplicationException(values(searchType.getName(), name));
         }
         return (T) method.invoke(instance, args);
@@ -278,7 +290,7 @@ public class Reflects extends TypeUtils {
         return Cache.getOrSet(Tuple.of("getMethods", type), k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                Method[] declared = type.getDeclaredMethods();
+                Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
                 for (Method method : declared) {
                     setAccess(method);
                 }

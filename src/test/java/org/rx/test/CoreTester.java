@@ -5,6 +5,13 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.util.Timeout;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.MediaType;
+import okhttp3.ResponseBody;
+import okio.BufferedSource;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.reflect.MethodUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -469,6 +476,18 @@ public class CoreTester extends TestUtil {
         Reflects.invokeMethod(bean, "instanceCall", 2, null);
         Reflects.invokeMethod(bean, "defCall", 3, null);
         Reflects.invokeMethod(bean, "nestedDefCall", 4, null);
+
+//        MethodUtils.invokeMethod(ErrorBean.class, "staticCall", 10, null);
+        Class<?>[] classes = ClassUtils.toClass(10, null);
+        Method staticCall = MethodUtils.getMatchingMethod(ErrorBean.class, "staticCall", classes);
+        assert staticCall != null;
+        Reflects.invokeMethod(staticCall, (Object) null, 10, null);
+//        ErrorBean.class.getDeclaredMethod("staticCall", int.class, String.class);
+
+//        Method charset1 = ResponseBody.class.getDeclaredMethod("charset");
+//        Method charset = MethodUtils.getMatchingAccessibleMethod(ResponseBody.class, "charset");
+//        charset = MethodUtils.getAccessibleMethod(ResponseBody.class, "charset");
+//        charset = MethodUtils.getMatchingMethod(ResponseBody.class, "charset");
     }
 
     @Test
