@@ -237,9 +237,8 @@ public class Reflects extends TypeUtils {
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     @ErrorCode
-    static <T> T invokeMethod(Class<?> type, Object instance, String name, Object... args) {
+    public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         Class<?> searchType = type != null ? type : instance.getClass();
-//        Modifier.isStatic()
         Method method = getMethods(searchType).firstOrDefault(p -> {
             if (!(p.getName().equals(name) && p.getParameterCount() == args.length)) {
                 return false;
