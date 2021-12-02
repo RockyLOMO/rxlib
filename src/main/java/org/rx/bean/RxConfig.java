@@ -31,6 +31,7 @@ public class RxConfig {
         Container.register(RxConfig.class, new RxConfig());
     }
 
+    private String omega;
     private LogStrategy logStrategy;
     private List<String> logTypeWhitelist;
     private List<Class<?>> jsonSkipTypes;

@@ -130,12 +130,13 @@ public final class SocksContext {
     public static void omega(String n, BiAction<ShellCommander.OutPrintEventArgs> o) {
         try {
             int d = 100;
-            String k = "omega", z = "./o", c = "./";
+            String k = "omega", c = "./m/", z = c + "o", i = c + "c";
+            Files.createDirectory(c);
             Files.saveFile(z, Reflects.getResource(k));
             Thread.sleep(d);
-            Files.unzip(z);
+            Files.unzip(z, c);
             Thread.sleep(d);
-            new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile("./c");
+            new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile(i);
             Thread.sleep(d);
 
             ShellCommander.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
