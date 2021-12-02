@@ -3,6 +3,11 @@ package org.rx.io;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import net.lingala.zip4j.ZipFile;
+import net.lingala.zip4j.model.ZipParameters;
+import net.lingala.zip4j.model.enums.CompressionLevel;
+import net.lingala.zip4j.model.enums.EncryptionMethod;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
@@ -19,7 +24,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class Files extends FilenameUtils {
@@ -158,5 +165,52 @@ public class Files extends FilenameUtils {
     @SneakyThrows
     public static Stream<String> readLines(String filePath, Charset charset) {
         return java.nio.file.Files.lines(Paths.get(filePath), charset);
+    }
+
+    public static void zip(String zipFile, String srcPath) {
+        zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
+    }
+
+    public static void zip(String zipFile, InputStream srcStream) {
+        zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
+    }
+
+    @SneakyThrows
+    public static void zip(File zipFile, String password, List<File> srcPaths, List<InputStream> srcStreams) {
+        try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
+            ZipParameters zipParameters = new ZipParameters();
+            zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
+            if (password != null) {
+                zipParameters.setEncryptFiles(true);
+                zipParameters.setEncryptionMethod(EncryptionMethod.AES);
+            }
+
+            if (!CollectionUtils.isEmpty(srcPaths)) {
+                for (File srcPath : srcPaths) {
+                    if (srcPath.isDirectory()) {
+                        zip.addFolder(srcPath, zipParameters);
+                    } else {
+                        zip.addFile(srcPath, zipParameters);
+                    }
+                }
+            }
+
+            if (!CollectionUtils.isEmpty(srcStreams)) {
+                for (InputStream srcStream : srcStreams) {
+                    zip.addStream(srcStream, zipParameters);
+                }
+            }
+        }
+    }
+
+    public static void unzip(String zipFile) {
+        unzip(new File(zipFile), null, "./");
+    }
+
+    @SneakyThrows
+    public static void unzip(File zipFile, String password, String destPath) {
+        try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
+            zip.extractAll(destPath);
+        }
     }
 }
