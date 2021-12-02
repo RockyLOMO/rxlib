@@ -154,7 +154,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                 .directory(workspace)
                 .redirectErrorStream(true)  //合并getInputStream和getErrorStream
                 .start();
-        log.info("start {}", shell);
+        log.debug("start {}", shell);
 
         if (daemonFuture != null) {
             daemonFuture.cancel(true);
@@ -182,7 +182,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             } finally {
                 tryClose(reader);
                 int exitValue = tmp.exitValue();
-                log.info("exit={} {}", exitValue, shell);
+                log.debug("exit={} {}", exitValue, shell);
                 raiseEvent(onExited, new ExitedEventArgs(exitValue));
             }
         });
@@ -207,14 +207,14 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             return;
         }
 
-        log.info("kill {}", shell);
+        log.debug("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
         raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
     }
 
     public synchronized void restart() {
-        log.info("restart {}", shell);
+        log.debug("restart {}", shell);
         kill();
         start();
     }

