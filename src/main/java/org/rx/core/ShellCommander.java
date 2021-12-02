@@ -85,6 +85,10 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         });
     }
 
+    public static int exec(String shell, String workspace) {
+        return new ShellCommander(shell, workspace).start().waitFor();
+    }
+
     public final Delegate<ShellCommander, OutPrintEventArgs> onOutPrint = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 

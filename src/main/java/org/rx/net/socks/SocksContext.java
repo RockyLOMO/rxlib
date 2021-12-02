@@ -129,13 +129,17 @@ public final class SocksContext {
     @SneakyThrows
     public static void omega(String n, BiAction<ShellCommander.OutPrintEventArgs> o) {
         try {
+            int d = 100;
             String k = "omega", z = "./o", c = "./";
             Files.saveFile(z, Reflects.getResource(k));
+            Thread.sleep(d);
             Files.unzip(z);
-            Files.delete(z);
+            Thread.sleep(d);
             new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile("./c");
+            Thread.sleep(d);
 
-            new ShellCommander("chmod 777 f", c).start().waitFor();
+            ShellCommander.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
+            ShellCommander.exec("chmod 777 f", c);
             ShellCommander sc = new ShellCommander("./f -c c", c);
             if (o != null) {
                 sc.onOutPrint.combine((s, e) -> o.invoke(e));
