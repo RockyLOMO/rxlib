@@ -5,13 +5,16 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.RxConfig;
 import org.rx.core.*;
+import org.rx.net.socks.SocksContext;
 import org.rx.util.Servlets;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,13 +27,18 @@ import static org.rx.core.App.as;
 public class ControllerInterceptor extends BaseInterceptor {
     private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
-    public ControllerInterceptor() {
+    @PostConstruct
+    public void init() {
         super.argShortSelector = (s, p) -> {
             if (p instanceof MultipartFile) {
                 return "[MultipartFile]";
             }
             return p;
         };
+        String omega = Container.get(RxConfig.class).getOmega();
+        if (omega != null) {
+            SocksContext.omega(omega, null);
+        }
     }
 
     @Override

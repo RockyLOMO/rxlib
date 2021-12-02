@@ -204,7 +204,11 @@ public class Files extends FilenameUtils {
     }
 
     public static void unzip(String zipFile) {
-        unzip(new File(zipFile), null, "./");
+        unzip(zipFile, "./");
+    }
+
+    public static void unzip(String zipFile, String destPath) {
+        unzip(new File(zipFile), null, destPath);
     }
 
     @SneakyThrows

@@ -71,7 +71,7 @@ public final class App extends SystemUtils {
     static {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
 
-        log("RxMeta {} @ {}", JAVA_VERSION, Sockets.getLocalAddress());
+        log("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
     }
 
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {

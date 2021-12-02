@@ -379,32 +379,40 @@ public final class Sockets {
         return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
 
-    //InetAddress.getLocalHost(); 可能会返回127.0.0.1
     @SneakyThrows
     public static InetAddress getLocalAddress() {
-        Inet4Address candidateAddress = null;
-        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-        while (interfaces.hasMoreElements()) {
-            NetworkInterface networkInterface = interfaces.nextElement();
-            if (networkInterface.isLoopback() || networkInterface.isVirtual() || !networkInterface.isUp()) {
+        Inet4Address first = NQuery.of(getLocalAddresses()).orderByDescending(p -> p.isSiteLocalAddress()).firstOrDefault();
+        if (first != null) {
+            return first;
+        }
+        return InetAddress.getLocalHost(); //可能返回127.0.0.1
+    }
+
+    @SneakyThrows
+    public static List<Inet4Address> getLocalAddresses() {
+        List<Inet4Address> ips = new ArrayList<>();
+        Enumeration<NetworkInterface> networks = NetworkInterface.getNetworkInterfaces();
+        while (networks.hasMoreElements()) {
+            NetworkInterface network = networks.nextElement();
+            if (network.isLoopback() || network.isVirtual() || !network.isUp()) {
                 continue;
             }
-            Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+            Enumeration<InetAddress> addresses = network.getInetAddresses();
             while (addresses.hasMoreElements()) {
-                InetAddress address = addresses.nextElement();
-                if (address.isLoopbackAddress() || address.isAnyLocalAddress() || !(address instanceof Inet4Address)) {
+                InetAddress addr = addresses.nextElement();
+                if (addr.isLoopbackAddress() || addr.isAnyLocalAddress()
+//                        || !addr.isSiteLocalAddress() //k8s会获取不到
+                        || !(addr instanceof Inet4Address)) {
                     continue;
                 }
-                if (address.isSiteLocalAddress()) {
-                    return address;
-                }
-                candidateAddress = (Inet4Address) address;
+//                log.info("DUMP: {} - {} {} - {} {} - {} {} {}", addr.isMulticastAddress(),
+//                        addr.isSiteLocalAddress(), addr.isLinkLocalAddress(),
+//                        addr.isMCSiteLocal(), addr.isMCLinkLocal(),
+//                        addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
+                ips.add((Inet4Address) addr);
             }
         }
-        if (candidateAddress != null) {
-            return candidateAddress;
-        }
-        return InetAddress.getLocalHost();
+        return ips;
     }
 
     public static InetSocketAddress localEndpoint(int port) {

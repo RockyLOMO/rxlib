@@ -4,7 +4,6 @@ import lombok.Setter;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
 import org.rx.util.function.TripleFunc;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.Ordered;
@@ -19,7 +18,7 @@ import java.util.Objects;
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-public class SpringContext implements InitializingBean, ApplicationContextAware {
+public class SpringContext implements ApplicationContextAware {
     private static ApplicationContext applicationContext;
 
     public static boolean isInitiated() {
@@ -55,11 +54,6 @@ public class SpringContext implements InitializingBean, ApplicationContextAware 
 
     public void setApplicationContext(ApplicationContext applicationContext) {
         SpringContext.applicationContext = applicationContext;
-    }
-
-    @Override
-    public void afterPropertiesSet() {
-
     }
 
     @Setter
