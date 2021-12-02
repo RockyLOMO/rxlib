@@ -1,5 +1,7 @@
 package org.rx.spring;
 
+import io.netty.util.concurrent.FastThreadLocal;
+import org.apache.commons.lang3.BooleanUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -15,6 +17,7 @@ import java.util.List;
 import static org.rx.core.App.*;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
+    static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
             onError = Delegate.create();
@@ -28,6 +31,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+        if (BooleanUtils.isTrue(idempotent.get())) {
+            return joinPoint.proceed();
+        }
+        idempotent.set(Boolean.TRUE);
+
         Signature signature = joinPoint.getSignature();
         MethodSignature methodSignature = as(signature, MethodSignature.class);
         boolean isVoid = methodSignature == null || methodSignature.getReturnType().equals(void.class);

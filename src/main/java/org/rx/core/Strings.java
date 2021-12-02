@@ -5,6 +5,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 
 import io.netty.util.internal.ThreadLocalRandom;
+
 import java.util.regex.Pattern;
 
 import static org.rx.core.App.values;
@@ -53,7 +54,7 @@ public class Strings extends StringUtils {
      * @return 处理后
      */
     public static String removeInNumeric(String string) {
-        if (string == null || string.equals("")) return "";
+        if (isEmpty(string)) return EMPTY;
 
         java.lang.StringBuilder output = new java.lang.StringBuilder();
         for (Character aChar : string.toCharArray()) {
@@ -108,7 +109,7 @@ public class Strings extends StringUtils {
 
     public static String maskPrivacy(String val) {
         if (isEmpty(val)) {
-            return "";
+            return EMPTY;
         }
 
         val = val.trim();
