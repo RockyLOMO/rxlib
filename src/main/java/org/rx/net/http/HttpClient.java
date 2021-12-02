@@ -420,7 +420,7 @@ public class HttpClient {
 
     @SneakyThrows
     private ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content}, false);
+        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content.toString()}, false);
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();
