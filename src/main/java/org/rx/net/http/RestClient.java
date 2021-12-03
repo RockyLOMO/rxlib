@@ -75,7 +75,7 @@ public final class RestClient {
                 }
             } catch (Exception e) {
                 args.setError(e);
-                throw new RestClientException(args.getTraceId().toString(), args.getError());
+                throw e;
             } finally {
                 App.log(args, msg -> {
                     if (doPost) {
