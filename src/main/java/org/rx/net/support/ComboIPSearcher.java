@@ -6,11 +6,11 @@ import lombok.SneakyThrows;
 import org.rx.core.App;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
+import org.rx.exception.InvalidException;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
-import org.rx.net.http.RestClientException;
 
 import java.net.InetAddress;
 import java.util.function.Predicate;
@@ -41,12 +41,11 @@ class ComboIPSearcher implements IPSearcher {
         HttpClient client = new HttpClient();
         String text = client.get(url).toString();
         if (Strings.isEmpty(text)) {
-            throw new RestClientException(String.format("Request:\t%s\n" +
-                    "Response:\t%s", url, text));
+            throw new InvalidException(String.format("Empty Response from %s", url));
         }
         JSONObject json = App.toJsonObject(text);
         if (!check.test(json)) {
-            throw new RestClientException(String.format("Request:\t%s\n" +
+            throw new InvalidException(String.format("Request:\t%s\n" +
                     "Response:\t%s", url, text));
         }
         return json;

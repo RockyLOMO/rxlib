@@ -38,6 +38,7 @@ import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.handler.proxy.ProxyHandler;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import org.rx.core.Strings;
 import org.rx.util.function.Action;
 
 import java.net.InetSocketAddress;
@@ -146,7 +147,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
-                        username != null ? username : "", password != null ? password : ""));
+                        username != null ? username : Strings.EMPTY, password != null ? password : ""));
             } else {
                 // Should never reach here.
                 throw new Error();

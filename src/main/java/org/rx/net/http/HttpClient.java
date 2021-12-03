@@ -52,7 +52,12 @@ public class HttpClient {
         RequestContent NONE = new RequestContent() {
             @Override
             public RequestBody toBody() {
-                return RequestBody.create(FORM_TYPE, "");
+                return RequestBody.create(FORM_TYPE, Strings.EMPTY);
+            }
+
+            @Override
+            public String toString() {
+                return Strings.EMPTY;
             }
         };
 
@@ -143,6 +148,7 @@ public class HttpClient {
             return response.request().url().toString();
         }
 
+        @JSONField(serialize = false)
         public Headers getHeaders() {
             return response.headers();
         }
@@ -256,7 +262,7 @@ public class HttpClient {
 
     public static String encodeCookie(List<Cookie> cookies) {
         if (cookies == null) {
-            return "";
+            return Strings.EMPTY;
         }
 
         return String.join("; ", NQuery.of(cookies).select(p -> p.name() + "=" + p.value()));
@@ -341,7 +347,7 @@ public class HttpClient {
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
             String value = idx > 0 && pair.length() > idx + 1
                     ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim()
-                    : "";
+                    : Strings.EMPTY;
             map.put(key, value);
         }
         return map;
@@ -350,7 +356,7 @@ public class HttpClient {
     @SneakyThrows
     public static String encodeUrl(String str) {
         if (Strings.isEmpty(str)) {
-            return "";
+            return Strings.EMPTY;
         }
 
         return URLEncoder.encode(str, StandardCharsets.UTF_8.name()).replace("+", "%20");
@@ -359,7 +365,7 @@ public class HttpClient {
     @SneakyThrows
     public static String decodeUrl(String str) {
         if (Strings.isEmpty(str)) {
-            return "";
+            return Strings.EMPTY;
         }
 
         return URLDecoder.decode(str, StandardCharsets.UTF_8.name()).replace("%20", "+");
@@ -420,7 +426,7 @@ public class HttpClient {
 
     @SneakyThrows
     private ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content}, false);
+        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content.toString()}, false);
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();
@@ -538,9 +544,9 @@ public class HttpClient {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
                 if (servletRequest.getContentType() != null) {
-                    requestBody = RequestBody.create(IOStream.wrap("", inStream).toArray(), MediaType.parse(servletRequest.getContentType()));
+                    requestBody = RequestBody.create(IOStream.wrap(Strings.EMPTY, inStream).toArray(), MediaType.parse(servletRequest.getContentType()));
                 } else {
-                    requestBody = RequestBody.create(IOStream.wrap("", inStream).toArray());
+                    requestBody = RequestBody.create(IOStream.wrap(Strings.EMPTY, inStream).toArray());
                 }
             }
         }
