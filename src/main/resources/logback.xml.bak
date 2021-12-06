@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="false" debug="false">
-    <!--    <springProperty scope="context" name="logLevel" source="logging.pattern.level"/>-->
-    <!--    <springProperty scope="context" name="logPath" source="logging.file.path"/>-->
-    <!--    <springProperty scope="context" name="appName" source="spring.application.name"/>-->
+<!--    <springProperty scope="context" name="appName" source="spring.application.name" default="RxSocks"/>-->
     <property name="logLevel" value="INFO"/>
     <property name="logPath" value="./logs"/>
     <property name="appName" value="RxSocks"/>
