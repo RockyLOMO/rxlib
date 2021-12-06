@@ -80,7 +80,9 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
             if (onBuild != null) {
                 quietly(() -> onBuild.invoke(b));
             }
-            return Tuple.of(b.softValues().build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_INSERTIONS));
+            return Tuple.of(b
+//                    .softValues()
+                    .build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_INSERTIONS));
         });
         if (key != null) {
             tuple.right.put(routeKey(key));

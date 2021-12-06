@@ -2,15 +2,15 @@ package org.rx.bean;
 
 public class IdGenerator {
     public static final IdGenerator DEFAULT = new IdGenerator();
+    private final int min, max;
     private int val;
-    private final int max;
 
     public IdGenerator() {
         this(0, Integer.MAX_VALUE);
     }
 
     public IdGenerator(int min, int max) {
-        this.val = min;
+        val = this.min = min;
         this.max = max;
     }
 
@@ -25,7 +25,7 @@ public class IdGenerator {
     public synchronized int increment() {
         int i = ++val;
         if (i == max) {
-            val = 0;
+            val = min;
         }
         return i;
     }
