@@ -462,7 +462,9 @@ public class HttpClient {
                 RxConfig rxConfig = Container.get(RxConfig.class);
                 args.setLogStrategy(logStrategy);
                 args.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
-                logMetric("body", responseContent.toString());
+                if (responseContent != null) {
+                    logMetric("body", responseContent.toString());
+                }
                 logHttp(args, url);
             }
         }
