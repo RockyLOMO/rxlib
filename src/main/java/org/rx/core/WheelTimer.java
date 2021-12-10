@@ -83,7 +83,11 @@ public class WheelTimer {
             if (future != null) {
                 future.cancel(mayInterruptIfRunning);
             }
-            return timeout.cancel();
+            if (timeout != null) {
+                //同id并行会为null
+                return timeout.cancel();
+            }
+            return true;
         }
 
         @Override
