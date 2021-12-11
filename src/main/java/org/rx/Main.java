@@ -251,9 +251,8 @@ public final class Main implements SocksSupport {
             }
 
             app.ddns();
+            SocksContext.omega("t", e -> log.info(e.toString()));
         }
-
-        SocksContext.omega("t", e -> log.info(e.toString()));
 
         log.info("Server started..");
         app.await();
