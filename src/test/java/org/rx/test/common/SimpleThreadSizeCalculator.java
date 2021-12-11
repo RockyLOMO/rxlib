@@ -17,7 +17,7 @@ public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
 
     @Override
     protected BlockingQueue createWorkQueue() {
-        return new ThreadPool.ThreadQueue(Integer.MAX_VALUE);
+        return new ThreadPool.ThreadQueue<>();
     }
 
     public static void main(String[] args) {

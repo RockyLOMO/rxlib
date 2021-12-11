@@ -256,17 +256,17 @@ public class CoreTester extends TestUtil {
     public synchronized void MXBean() {
         int productCount = 4;
         ExecutorService fix = Executors.newFixedThreadPool(productCount);
-        ThreadPool pool = new ThreadPool(1, 1, 1, 1, "rx");
+        ThreadPool pool = new ThreadPool(1, 1, 1, "rx");
 
         for (int i = 0; i < productCount; i++) {
             int finalI = i;
             fix.execute(() -> {
-                while (true) {
-                    pool.execute(() -> {
-                        System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
-                        sleep(500);
-                    });
-                }
+//                while (true) {
+                pool.execute(() -> {
+                    System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
+                    sleep(500);
+                });
+//                }
             });
         }
 

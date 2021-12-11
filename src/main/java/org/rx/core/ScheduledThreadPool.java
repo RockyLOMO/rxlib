@@ -14,7 +14,7 @@ public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
     }
 
     public ScheduledThreadPool(IntWaterMark cpuWaterMark, String poolName) {
-        super(ThreadPool.RESIZE_QUANTITY, ThreadPool.newThreadFactory(poolName), (r, executor) -> log.error("scheduler reject"));
+        super(ThreadPool.getResizeQuantity(), ThreadPool.newThreadFactory(poolName), (r, executor) -> log.error("scheduler reject"));
         this.poolName = poolName;
 
         ThreadPool.SIZER.register(this, cpuWaterMark);
