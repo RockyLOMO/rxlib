@@ -84,7 +84,7 @@ public class WheelTimer {
                 future.cancel(mayInterruptIfRunning);
             }
             if (timeout != null) {
-                //同id并行会为null
+                //Timeout maybe null when parallel invoke tasks of the same id
                 return timeout.cancel();
             }
             return true;

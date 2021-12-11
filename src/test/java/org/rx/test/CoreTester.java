@@ -253,20 +253,28 @@ public class CoreTester extends TestUtil {
 
     @SneakyThrows
     @Test
-    public void MXBean() {
-//        TestUtil.invoke("systemLoad", i -> {
-//            ThreadPool.os.getSystemCpuLoad();
-//        }, 10);
+    public synchronized void MXBean() {
+        int productCount = 4;
+        ExecutorService fix = Executors.newFixedThreadPool(productCount);
+        ThreadPool pool = new ThreadPool(1, 1, 1, 1, "rx");
 
-//        TestUtil.invoke("processLoad", i -> {
-//            ThreadPool.os.getProcessCpuLoad();
-//        }, 10);
-
-        for (int i = 0; i < 10; i++) {
-            Tasks.schedule(() -> {
-                sleep(2000);
-            }, 1000);
+        for (int i = 0; i < productCount; i++) {
+            int finalI = i;
+            fix.execute(() -> {
+                while (true) {
+                    pool.execute(() -> {
+                        System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
+                        sleep(500);
+                    });
+                }
+            });
         }
+
+//        for (int i = 0; i < 10; i++) {
+//            Tasks.schedule(() -> {
+//                sleep(2000);
+//            }, 1000);
+//        }
 
 //        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
 //            System.out.println(toJsonString(e.getValue()));
@@ -280,7 +288,7 @@ public class CoreTester extends TestUtil {
 //        }, 2000);
 //        System.out.println("main thread done");
 
-        System.in.read();
+        wait();
     }
 
     @Test
