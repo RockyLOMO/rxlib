@@ -83,7 +83,11 @@ public class WheelTimer {
             if (future != null) {
                 future.cancel(mayInterruptIfRunning);
             }
-            return timeout.cancel();
+            if (timeout != null) {
+                //Timeout maybe null when parallel invoke tasks of the same id
+                return timeout.cancel();
+            }
+            return true;
         }
 
         @Override

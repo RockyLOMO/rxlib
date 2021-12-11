@@ -13,7 +13,6 @@ import org.rx.bean.Decimal;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.Tuple;
 import org.rx.exception.ExceptionHandler;
-import org.rx.exception.InvalidException;
 
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
@@ -35,7 +34,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Setter
         private ThreadPool pool;
         private final AtomicInteger counter = new AtomicInteger();
-        private final ManualResetEvent syncRoot = new ManualResetEvent();
 
         @Override
         public boolean isEmpty() {
@@ -58,22 +56,22 @@ public class ThreadPool extends ThreadPoolExecutor {
                         transfer(t);
                         return true;
                     case PRIORITY:
-                        pool.setMaximumPoolSize(pool.getMaximumPoolSize() + RESIZE_QUANTITY);
+                        incrSize(pool, pool.getMaximumPoolSize() + RESIZE_QUANTITY);
                         return false;
                 }
             }
 
             int poolSize = pool.getPoolSize();
             if (poolSize == pool.getMaximumPoolSize()) {
-                if (counter.incrementAndGet() > queueCapacity) {
-                    do {
-                        log.debug("Queue is full & Wait poll");
-                        syncRoot.waitOne();
-                        syncRoot.reset();
+                while (counter.get() >= queueCapacity) {
+                    log.warn("Block caller thread[{}] until queue[{}/{}] polled", Thread.currentThread().getName(),
+                            counter.get(), queueCapacity);
+                    synchronized (this) {
+                        wait();
                     }
-                    while (counter.get() > queueCapacity);
-                    log.debug("Wait poll ok");
                 }
+                log.debug("Wait poll ok");
+                counter.incrementAndGet();
                 return super.offer(t);
             }
 
@@ -132,7 +130,9 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         private void setPoll() {
             counter.decrementAndGet();
-            syncRoot.set();
+            synchronized (this) {
+                notify();
+            }
         }
     }
 
@@ -201,7 +201,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     maxSize += RESIZE_QUANTITY;
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
-                    pool.setMaximumPoolSize(maxSize);
+                    incrSize(pool, maxSize);
                     incrementCounter = 0;
                 }
             } else {
@@ -278,6 +278,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                 .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
     }
 
+    private static void incrSize(ThreadPoolExecutor pool, int maxSize) {
+        pool.setMaximumPoolSize(maxSize);
+        pool.execute(() -> {
+        });
+    }
+
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
@@ -316,14 +322,8 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)),
-                newThreadFactory(poolName), (r, executor) -> {
-                    if (executor.isShutdown()) {
-                        throw new InvalidException("ThreadPool %s is shutdown", poolName);
-                    }
-                    log.debug("Block caller thread until queue offer");
-                    executor.getQueue().offer(r);
-                });
+        //RejectedExecutionHandler will never raise
+        super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName));
         ((ThreadQueue<Runnable>) getQueue()).setPool(this);
         this.poolName = poolName;
 
