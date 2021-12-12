@@ -329,7 +329,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
+        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
             if (executor.isShutdown()) {
                 log.warn("ThreadPool {} is shutdown", poolName);
                 return;
@@ -348,6 +348,12 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public void setDynamicSize(IntWaterMark cpuWaterMark) {
+        if (cpuWaterMark.getLow() < 0) {
+            cpuWaterMark.setLow(0);
+        }
+        if (cpuWaterMark.getHigh() > 100) {
+            cpuWaterMark.setHigh(100);
+        }
         SIZER.register(this, cpuWaterMark);
     }
 
