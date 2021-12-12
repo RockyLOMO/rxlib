@@ -144,7 +144,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        static final int SAMPLING_TIMES = 5;
+        static final int SAMPLING_TIMES = 4;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
@@ -329,8 +329,13 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        //RejectedExecutionHandler will never raise
-        super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName));
+        super(coreThreads, maxThreads, keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
+            if (executor.isShutdown()) {
+                log.warn("ThreadPool {} is shutdown", poolName);
+                return;
+            }
+            executor.getQueue().offer(r);
+        });
         ((ThreadQueue<Runnable>) getQueue()).pool = this;
         this.poolName = poolName;
 
