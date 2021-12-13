@@ -16,7 +16,6 @@ import org.rx.bean.Tuple;
 import org.rx.exception.ExceptionHandler;
 
 import java.lang.management.ManagementFactory;
-import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -364,8 +363,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
             Object fn = Reflects.readField(r.getClass(), r, "fn");
             if (fn == null) {
-                Field field = Reflects.getFields(r.getClass()).firstOrDefault(x -> Runnable.class.isAssignableFrom(x.getType()));
-                log.warn("{}.fn is null, field={}", r, field);
+                log.warn("{}.fn is null", r);
             } else {
                 funcMap.put(r, (Runnable) fn);
             }

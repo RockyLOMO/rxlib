@@ -341,7 +341,7 @@ public class Reflects extends TypeUtils {
 
     @SneakyThrows
     public static <T> void copyPublicFields(T from, T to) {
-        for (Field field : getFields(to.getClass())) {
+        for (Field field : getFieldMap(to.getClass()).values()) {
             if (!Modifier.isPublic(field.getModifiers())) {
                 continue;
             }
@@ -356,7 +356,10 @@ public class Reflects extends TypeUtils {
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T readField(Class<? extends TT> type, TT instance, String name) {
-        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        Field field = getFieldMap(type).get(name);
+        if (field == null) {
+            throw new NoSuchFieldException(name);
+        }
         return (T) field.get(instance);
     }
 
@@ -366,17 +369,20 @@ public class Reflects extends TypeUtils {
 
     @SneakyThrows
     public static <T, TT> void writeField(Class<? extends TT> type, TT instance, String name, T value) {
-        Field field = getFields(type).where(p -> p.getName().equals(name)).first();
+        Field field = getFieldMap(type).get(name);
+        if (field == null) {
+            throw new NoSuchFieldException(name);
+        }
         field.set(instance, changeType(value, field.getType()));
     }
 
-    public static NQuery<Field> getFields(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.of("getFields", type), k -> {
+    public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
+        return Cache.getOrSet(Tuple.of("fieldMap", type), k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
             }
-            return NQuery.of(all);
+            return Collections.unmodifiableMap(NQuery.of(all).toMap(Field::getName, p -> p));
         }, Cache.MEMORY_CACHE);
     }
 
