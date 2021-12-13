@@ -23,11 +23,11 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
+import io.netty.util.internal.SystemPropertyUtil;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
@@ -48,8 +48,8 @@ public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    static final String SERVER_REACTOR = "_SHARED";
-    static final String UDP_REACTOR = "_UDP";
+    static final String SHARED_TCP_REACTOR = "_TCP";
+    static final String SHARED_UDP_REACTOR = "_UDP";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static final ReentrantLock nsLock = new ReentrantLock(true);
     static DnsClient nsClient;
@@ -101,13 +101,13 @@ public final class Sockets {
 
     static EventLoopGroup reactor(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> {
-            int amount = Container.get(RxConfig.class).getSharedReactorThreadAmount();
+            int amount = SystemPropertyUtil.getInt(Constants.REACTOR_THREAD_AMOUNT, 0);
             return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
         });
     }
 
     public static EventLoopGroup udpReactor() {
-        return reactors.computeIfAbsent(UDP_REACTOR, k -> new NioEventLoopGroup());
+        return reactors.computeIfAbsent(SHARED_UDP_REACTOR, k -> new NioEventLoopGroup(SystemPropertyUtil.getInt(Constants.REACTOR_THREAD_AMOUNT, 0)));
     }
 
     // not executor
@@ -139,7 +139,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SERVER_REACTOR) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SHARED_TCP_REACTOR) : newEventLoop(0))
                 .channel(serverChannelClass())
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -187,7 +187,7 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
-        return bootstrap(SERVER_REACTOR, null, initChannel);
+        return bootstrap(SHARED_TCP_REACTOR, null, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {

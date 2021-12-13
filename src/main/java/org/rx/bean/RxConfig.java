@@ -37,7 +37,6 @@ public class RxConfig {
     private List<Class<?>> jsonSkipTypes;
     private final Set<Class<?>> jsonSkipTypeSet = ConcurrentHashMap.newKeySet();
     private Class mainCache = Cache.MEMORY_CACHE;
-    private int sharedReactorThreadAmount;
     private int netTimeoutMillis = 16000;
     private int netMaxPoolSize;
     private int netKeepaliveSeconds = 120;

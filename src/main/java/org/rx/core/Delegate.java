@@ -42,7 +42,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     @SneakyThrows
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(@NonNull EventTarget<TSender> target, @NonNull String fnName) {
         Delegate<TSender, TArgs> d;
-        Field field = Reflects.getFields(target.getClass()).firstOrDefault(p -> p.getName().equals(fnName));
+        Field field = Reflects.getFieldMap(target.getClass()).get(fnName);
         if (field != null) {
             d = (Delegate<TSender, TArgs>) field.get(target);
             if (d == null) {

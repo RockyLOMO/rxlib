@@ -1,14 +1,21 @@
 package org.rx.util.function;
 
-import java.util.function.Predicate;
+import org.rx.exception.ApplicationException;
 
-import static org.rx.core.App.sneakyInvoke;
+import java.util.function.Predicate;
 
 @FunctionalInterface
 public interface PredicateFunc<T> {
     boolean invoke(T t) throws Throwable;
 
+    //sneakyInvoke has box/unbox issue
     default Predicate<T> toPredicate() {
-        return p -> sneakyInvoke(() -> invoke(p));
+        return p -> {
+            try {
+                return invoke(p);
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        };
     }
 }

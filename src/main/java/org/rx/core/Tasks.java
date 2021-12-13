@@ -30,10 +30,9 @@ public final class Tasks {
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
     static {
-        int coreSize = Math.max(1, ThreadPool.CPU_THREADS / POOL_COUNT);
         replicas = new CopyOnWriteArrayList<>();
         for (int i = 0; i < POOL_COUNT; i++) {
-            replicas.add(new TaskScheduler(coreSize, String.valueOf(i)));
+            replicas.add(new TaskScheduler(String.valueOf(i)));
         }
         scheduler = new ScheduledThreadPool();
         wheelTimer = new WheelTimer();
