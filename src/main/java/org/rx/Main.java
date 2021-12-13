@@ -191,7 +191,8 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-                e.setValue(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
+//                e.setValue(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
+                e.setValue(new Upstream(dstEp));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
