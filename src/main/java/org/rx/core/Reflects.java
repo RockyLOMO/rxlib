@@ -289,7 +289,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, NQuery<Method>> getMethodMap(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.unsafeReadOnly("methodMap", type), k -> {
+        return Cache.getOrSet(cacheKey("methodMap", type), k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
                 Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
@@ -313,7 +313,7 @@ public class Reflects extends TypeUtils {
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
-        return Cache.getOrSet(Tuple.unsafeReadOnly("properties", to), k -> {
+        return Cache.getOrSet(cacheKey("properties", to), k -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
             NQuery<Method> q = NQuery.of(to.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
@@ -323,7 +323,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static String propertyName(@NonNull String getterOrSetterName) {
-        return Cache.getOrSet(Tuple.unsafeReadOnly("propertyName", getterOrSetterName), k -> {
+        return Cache.getOrSet(cacheKey("propertyName", getterOrSetterName), k -> {
             String name;
             if (getterOrSetterName.startsWith(getProperty)) {
                 name = getterOrSetterName.substring(getProperty.length());
@@ -381,7 +381,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.unsafeReadOnly("fieldMap", type), k -> {
+        return Cache.getOrSet(cacheKey("fieldMap", type), k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
