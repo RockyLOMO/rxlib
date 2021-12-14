@@ -87,12 +87,14 @@ public final class App extends SystemUtils {
 
     public static String cacheKey(String methodName, Object... args) {
         StringBuilder k = new StringBuilder();
-        if (Strings.endsWith(methodName, Constants.CACHE_KEY_SUFFIX)) {
-            k.append(methodName);
-        } else {
-            k.append("%s.%s", Reflects.stackClass(1).getSimpleName(), methodName).append(Constants.CACHE_KEY_SUFFIX);
+        if (methodName == null) {
+            methodName = Reflects.stackClass(1).getSimpleName();
         }
-        return k.append(SUID.compute(toJsonString(args))).toString();
+        k.append(methodName).append(Constants.CACHE_KEY_SUFFIX);
+        if (!Arrays.isEmpty(args)) {
+            k.append(java.util.Arrays.hashCode(args));
+        }
+        return k.toString().intern();
     }
 
     public static String description(@NonNull AnnotatedElement annotatedElement) {
@@ -276,11 +278,7 @@ public final class App extends SystemUtils {
     }
 
     public static boolean tryClose(Object obj) {
-        return tryClose(obj, true);
-    }
-
-    public static boolean tryClose(Object obj, boolean quietly) {
-        return tryAs(obj, AutoCloseable.class, quietly ? p -> quietly(p::close) : AutoCloseable::close);
+        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
     }
 
     //todo checkerframework

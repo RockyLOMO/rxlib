@@ -15,7 +15,6 @@ import org.rx.core.Arrays;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
-import org.rx.io.Bytes;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
@@ -474,7 +473,7 @@ public class CoreTester extends TestUtil {
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
         System.out.println(bean.getError());
 
-        Reflects.invokeMethod(ErrorBean.class, "staticCall", 1, null);
+        Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", 1, null);
         Reflects.invokeMethod(bean, "instanceCall", 2, null);
         Reflects.invokeMethod(bean, "defCall", 3, null);
         Reflects.invokeMethod(bean, "nestedDefCall", 4, null);

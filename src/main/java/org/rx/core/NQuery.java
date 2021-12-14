@@ -380,6 +380,15 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(result);
     }
 
+    public <TK, TR> Map<TK, TR> groupByIntoMap(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
+        Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
+        Map<TK, TR> result = newMap();
+        for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
+            result.put(entry.getKey(), resultSelector.apply(entry.getKey(), NQuery.of(entry.getValue())));
+        }
+        return result;
+    }
+
     public <TR> NQuery<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, NQuery<T>, TR> resultSelector) {
         Map<List<Object>, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();

@@ -18,7 +18,7 @@ import static org.rx.core.App.*;
 @Slf4j
 public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     protected Map<String, Object> getMessageSource() {
-        return Cache.getOrSet(cacheKey("getMessageSource"), k -> {
+        return Cache.getOrSet("getMessageSource", k -> {
             Map<String, Object> codes = loadYaml("errorCode.yml");
             if (codes.isEmpty()) {
                 log.warn("load errorCode.yml fail");

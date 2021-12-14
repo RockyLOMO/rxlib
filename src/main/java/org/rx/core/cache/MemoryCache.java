@@ -58,6 +58,9 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     long routeKey(TK key) {
+        if (key instanceof String) {
+            return key.hashCode();
+        }
 //        long l = (((long) x) << 32) | (y & 0xffffffffL);
 //        int x = (int) (l >> 32);
 //        int y = (int) l;

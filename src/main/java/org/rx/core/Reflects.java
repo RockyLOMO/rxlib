@@ -225,7 +225,7 @@ public class Reflects extends TypeUtils {
         return method.getName().hashCode() == CLOSE_METHOD_HASH && method.getParameterCount() == 0;
     }
 
-    public static <T, TT> T invokeMethod(Class<? extends TT> type, String name, Object... args) {
+    public static <T, TT> T invokeStaticMethod(Class<? extends TT> type, String name, Object... args) {
         return invokeMethod(type, null, name, args);
     }
 
@@ -239,26 +239,30 @@ public class Reflects extends TypeUtils {
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         boolean isStatic = type != null;
         Class<?> searchType = isStatic ? type : instance.getClass();
-        Method method = getMethods(searchType).firstOrDefault(p -> {
-            if (!(p.getName().equals(name) && p.getParameterCount() == args.length)) {
-                return false;
-            }
-            Class<?>[] parameterTypes = p.getParameterTypes();
-            for (int i = 0; i < parameterTypes.length; i++) {
-                Class<?> parameterType = parameterTypes[i];
-                Object arg = args[i];
-                if (arg == null) {
-                    if (parameterType.isPrimitive()) {
-                        return false;
-                    }
-                    continue;
-                }
-                if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
+        Method method = null;
+        NQuery<Method> methods = getMethodMap(searchType).get(name);
+        if (methods != null) {
+            method = methods.firstOrDefault(p -> {
+                if (p.getParameterCount() != args.length) {
                     return false;
                 }
-            }
-            return true;
-        });
+                Class<?>[] parameterTypes = p.getParameterTypes();
+                for (int i = 0; i < parameterTypes.length; i++) {
+                    Class<?> parameterType = parameterTypes[i];
+                    Object arg = args[i];
+                    if (arg == null) {
+                        if (parameterType.isPrimitive()) {
+                            return false;
+                        }
+                        continue;
+                    }
+                    if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
 //        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
         if (method == null) {
             try {
@@ -284,8 +288,8 @@ public class Reflects extends TypeUtils {
         return (T) method.invoke(instance, args);
     }
 
-    public static NQuery<Method> getMethods(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.of("getMethods", type), k -> {
+    public static Map<String, NQuery<Method>> getMethodMap(@NonNull Class<?> type) {
+        return Cache.getOrSet(Tuple.unsafeReadOnly("methodMap", type), k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
                 Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
@@ -303,13 +307,13 @@ public class Reflects extends TypeUtils {
                 return d;
             });
             all.addAll(defMethods.toList());
-            return NQuery.of(all);
+            return Collections.unmodifiableMap(NQuery.of(all).groupByIntoMap(Method::getName, (p, x) -> x));
         }, Cache.MEMORY_CACHE);
     }
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
-        return Cache.getOrSet(Tuple.of("getProperties", to), k -> {
+        return Cache.getOrSet(Tuple.unsafeReadOnly("properties", to), k -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
             NQuery<Method> q = NQuery.of(to.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
@@ -319,22 +323,24 @@ public class Reflects extends TypeUtils {
     }
 
     public static String propertyName(@NonNull String getterOrSetterName) {
-        String name;
-        if (getterOrSetterName.startsWith(getProperty)) {
-            name = getterOrSetterName.substring(getProperty.length());
-        } else if (getterOrSetterName.startsWith(getBoolProperty)) {
-            name = getterOrSetterName.substring(getBoolProperty.length());
-        } else if (getterOrSetterName.startsWith(setProperty)) {
-            name = getterOrSetterName.substring(setProperty.length());
-        } else {
-            name = getterOrSetterName;
-        }
+        return Cache.getOrSet(Tuple.unsafeReadOnly("propertyName", getterOrSetterName), k -> {
+            String name;
+            if (getterOrSetterName.startsWith(getProperty)) {
+                name = getterOrSetterName.substring(getProperty.length());
+            } else if (getterOrSetterName.startsWith(getBoolProperty)) {
+                name = getterOrSetterName.substring(getBoolProperty.length());
+            } else if (getterOrSetterName.startsWith(setProperty)) {
+                name = getterOrSetterName.substring(setProperty.length());
+            } else {
+                name = getterOrSetterName;
+            }
 
-        //Introspector.decapitalize
-        if (Character.isLowerCase(name.charAt(0))) {
-            return name;
-        }
-        return name.substring(0, 1).toLowerCase() + name.substring(1);
+            //Introspector.decapitalize
+            if (Character.isLowerCase(name.charAt(0))) {
+                return name;
+            }
+            return name.substring(0, 1).toLowerCase() + name.substring(1);
+        }, Cache.MEMORY_CACHE);
     }
 
     @SneakyThrows
@@ -375,7 +381,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.of("fieldMap", type), k -> {
+        return Cache.getOrSet(Tuple.unsafeReadOnly("fieldMap", type), k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
@@ -438,33 +444,24 @@ public class Reflects extends TypeUtils {
                 return null;
             }
             if (boolean.class.equals(toType)) {
-                value = false;
+                return (T) Boolean.FALSE;
             } else {
                 value = 0;
             }
         }
-        //isInstance int to long ok
-        if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
-            return (T) value;
-        }
-        if (toType.equals(String.class)) {
-            return (T) value.toString();
-        }
-        final Class<?> fromType = value.getClass();
-        Object fValue = value;
-        Class<T> fType = toType;
-        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(fType));
-        if (convertBean != null) {
-            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
-        }
 
-        if (toType.equals(UUID.class)) {
+        Class<?> fromType = value.getClass();
+        Object fValue = value;
+        if (toType.equals(String.class)) {
+            value = value.toString();
+        } else if (toType.equals(UUID.class)) {
             value = UUID.fromString(value.toString());
         } else if (toType.equals(BigDecimal.class)) {
             value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
             if (NEnum.class.isAssignableFrom(toType) && ClassUtils.isAssignable(fromType, Number.class)) {
-                value = NEnum.valueOf((Class) toType, (int) value);
+                int val = ((Number) value).intValue();
+                value = NEnum.valueOf((Class) toType, val);
             } else {
                 String val = value.toString();
                 value = NQuery.of(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
@@ -472,35 +469,49 @@ public class Reflects extends TypeUtils {
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
+        } else if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
+            //isInstance int to long ok, do nothing
         } else {
             try {
                 toType = (Class) ClassUtils.primitiveToWrapper(toType);
-                String val = value.toString();
                 if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
-                    if ("0".equals(val)) {
+                    int val = ((Number) value).intValue();
+                    if (val == 0) {
                         value = Boolean.FALSE;
-                    } else if ("1".equals(val)) {
+                    } else if (val == 1) {
                         value = Boolean.TRUE;
                     } else {
                         throw new InvalidException("Value should be 0 or 1");
                     }
                 } else {
-                    if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
-                        if (Boolean.FALSE.toString().equals(val)) {
-                            val = "0";
-                        } else if (Boolean.TRUE.toString().equals(val)) {
-                            val = "1";
-                        } else {
-                            throw new InvalidException("Value should be true or false");
+                    NQuery<Method> valueOf = getMethodMap(toType).get("valueOf");
+                    if (valueOf == null) {
+                        Class<T> fType = toType;
+                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(fType));
+                        if (convertBean != null) {
+                            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
                         }
                     }
-                    Method m = toType.getDeclaredMethod("valueOf", String.class);
-                    value = m.invoke(null, val);
+
+                    if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
+                        boolean val = (boolean) value;
+                        if (!val) {
+                            value = "0";
+                        } else {
+                            value = "1";
+                        }
+                    }
+                    value = invokeStaticMethod(toType, "valueOf", value.toString());
+//                    Method m = toType.getDeclaredMethod("valueOf", String.class);
+//                    value = m.invoke(null, value.toString());
                 }
-            } catch (NoSuchMethodException ex) {
-                throw new ApplicationException(values(toType), ex);
-            } catch (ReflectiveOperationException ex) {
-                throw new ApplicationException(values(fromType, toType, value), ex);
+//            } catch (NoSuchMethodException ex) {
+//                throw new ApplicationException(values(toType), ex);
+//            } catch (ReflectiveOperationException ex) {
+//                throw new ApplicationException(values(fromType, toType, value), ex);
+//            }
+            } catch (Exception e) {
+                throw new ApplicationException(values(fromType, toType, value), e);
             }
         }
         return (T) value;
