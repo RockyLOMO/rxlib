@@ -80,7 +80,7 @@ public class BeanMapper {
     }
 
     private MapConfig getConfig(Class from, Class to) {
-        return config.computeIfAbsent(cacheKey(from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
+        return config.computeIfAbsent(String.format("%s->%s", from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
     }
 
     public <T> T map(Object source, Class<T> targetType) {

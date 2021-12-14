@@ -3,6 +3,7 @@ package org.rx.exception;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.util.SnowFlake;
 
@@ -77,6 +78,7 @@ public class ApplicationException extends InvalidException {
         this((Object) errorCode, codeValues, cause);
     }
 
+    @SneakyThrows
     protected ApplicationException(@NonNull Object errorCode, Object[] codeValues, Throwable cause) {
         super(cause != null ? cause.getMessage() : null, cause);
         require(errorCode, NQuery.of(Enum.class, String.class).any(p -> Reflects.isInstance(errorCode, p)));
@@ -91,6 +93,7 @@ public class ApplicationException extends InvalidException {
         } else {
             stacks = null;
         }
+        Class.forName(ExceptionHandler.class.getName());
         Container.get(ExceptionCodeHandler.class).handle(this);
     }
 }

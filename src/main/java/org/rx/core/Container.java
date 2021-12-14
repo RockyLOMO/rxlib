@@ -23,10 +23,13 @@ public final class Container {
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T getOrDefault(Class<T> type, Class<? extends T> defType) {
-        Class.forName(type.getName());
         T instance = (T) holder.get(type);
         if (instance == null) {
-            return get(defType);
+            Class.forName(type.getName());
+            instance = (T) holder.get(type);
+            if (instance == null) {
+                return get(defType);
+            }
         }
         return instance;
     }

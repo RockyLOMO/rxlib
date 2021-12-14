@@ -65,10 +65,10 @@ public class Reflects extends TypeUtils {
     public static final NQuery<String> COLLECTION_WRITE_METHOD_NAMES = NQuery.of("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final NQuery<Method> OBJECT_METHODS = NQuery.of(Object.class.getMethods());
-    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
+    static final int CLOSE_METHOD_HASH = "close".hashCode();
+    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set";
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
     private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
-    private static final List<Class<?>> supportTypes;
     private static final List<ConvertBean<?, ?>> typeConverter;
 
     static {
@@ -79,12 +79,9 @@ public class Reflects extends TypeUtils {
             throw InvalidException.sneaky(e);
         }
 
-        supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class));
         typeConverter = new CopyOnWriteArrayList<>();
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
-//        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
         registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
     }
@@ -224,7 +221,8 @@ public class Reflects extends TypeUtils {
     }
 
     public static boolean isCloseMethod(Method method) {
-        return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
+        //String hashcode has cached
+        return method.getName().hashCode() == CLOSE_METHOD_HASH && method.getParameterCount() == 0;
     }
 
     public static <T, TT> T invokeMethod(Class<? extends TT> type, String name, Object... args) {
@@ -418,9 +416,6 @@ public class Reflects extends TypeUtils {
 
     public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
         typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
-        if (!supportTypes.contains(baseFromType)) {
-            supportTypes.add(baseFromType);
-        }
     }
 
     public static Object defaultValue(Class<?> type) {
@@ -428,7 +423,6 @@ public class Reflects extends TypeUtils {
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
-    @ErrorCode("notSupported")
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)
     @ErrorCode(cause = ReflectiveOperationException.class)
@@ -453,37 +447,35 @@ public class Reflects extends TypeUtils {
         if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
             return (T) value;
         }
-        NQuery<Class<?>> typeQuery = NQuery.of(supportTypes);
-        Class<?> strType = typeQuery.first();
-        if (toType.equals(strType)) {
+        if (toType.equals(String.class)) {
             return (T) value.toString();
         }
         final Class<?> fromType = value.getClass();
-        if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
-            throw new ApplicationException("notSupported", values(fromType, toType));
-        }
         Object fValue = value;
-        Class<T> tType = toType;
-        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(tType));
+        Class<T> fType = toType;
+        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(fType));
         if (convertBean != null) {
             return (T) convertBean.getConverter().apply(value, convertBean.getToType());
         }
 
-        String val = value.toString();
         if (toType.equals(UUID.class)) {
-            value = UUID.fromString(val);
+            value = UUID.fromString(value.toString());
         } else if (toType.equals(BigDecimal.class)) {
-            value = new BigDecimal(val);
+            value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
-            NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
-            String fVal = val;
-            value = q.where(p -> p.equals(fVal)).singleOrDefault();
+            if (NEnum.class.isAssignableFrom(toType) && ClassUtils.isAssignable(fromType, Number.class)) {
+                value = NEnum.valueOf((Class) toType, (int) value);
+            } else {
+                String val = value.toString();
+                value = NQuery.of(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
+            }
             if (value == null) {
-                throw new ApplicationException("enumError", values(val, String.join(",", q), toType.getSimpleName()));
+                throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
         } else {
             try {
                 toType = (Class) ClassUtils.primitiveToWrapper(toType);
+                String val = value.toString();
                 if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
                     if ("0".equals(val)) {
                         value = Boolean.FALSE;
@@ -502,13 +494,13 @@ public class Reflects extends TypeUtils {
                             throw new InvalidException("Value should be true or false");
                         }
                     }
-                    Method m = toType.getDeclaredMethod("valueOf", strType);
+                    Method m = toType.getDeclaredMethod("valueOf", String.class);
                     value = m.invoke(null, val);
                 }
             } catch (NoSuchMethodException ex) {
                 throw new ApplicationException(values(toType), ex);
             } catch (ReflectiveOperationException ex) {
-                throw new ApplicationException(values(fromType, toType, val), ex);
+                throw new ApplicationException(values(fromType, toType, value), ex);
             }
         }
         return (T) value;

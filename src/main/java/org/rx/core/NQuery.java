@@ -198,7 +198,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public <TR> NQuery<TR> select(BiFuncWithIndex<T, TR> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().map(p -> sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement()))));
+        return me(stream().map(p -> {
+            try {
+                return selector.invoke(p, counter.getAndIncrement());
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        }));
     }
 
     public <TR> NQuery<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
@@ -211,12 +217,24 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public NQuery<T> where(PredicateFunc<T> predicate) {
-        return me(stream().filter(predicate.toPredicate()));
+        return me(stream().filter(p -> {
+            try {
+                return predicate.invoke(p);
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        }));
     }
 
     public NQuery<T> where(PredicateFuncWithIndex<T> predicate) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().filter(p -> sneakyInvoke(() -> predicate.invoke(p, counter.getAndIncrement()))));
+        return me(stream().filter(p -> {
+            try {
+                return predicate.invoke(p, counter.getAndIncrement());
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        }));
     }
 
     public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
@@ -291,14 +309,18 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_RAW_TYPES)
     public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector) {
-        return (p1, p2) -> sneakyInvoke(() -> {
-            Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
-            Comparable c2 = as(keySelector.invoke(p2), Comparable.class);
-            if (c1 == null || c2 == null) {
-                return c1 == null ? (c2 == null ? 0 : 1) : -1;
+        return (p1, p2) -> {
+            try {
+                Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
+                Comparable c2 = as(keySelector.invoke(p2), Comparable.class);
+                if (c1 == null || c2 == null) {
+                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
+                }
+                return c1.compareTo(c2);
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
             }
-            return c1.compareTo(c2);
-        });
+        };
     }
 
     public <TK> NQuery<T> orderByDescending(BiFunc<T, TK> keySelector) {
@@ -311,22 +333,26 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_RAW_TYPES)
     public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector) {
-        return (p1, p2) -> sneakyInvoke(() -> {
-            List<Object> k1s = keySelector.invoke(p1), k2s = keySelector.invoke(p2);
-            for (int i = 0; i < k1s.size(); i++) {
-                Comparable c1 = as(k1s.get(i), Comparable.class);
-                Comparable c2 = as(k2s.get(i), Comparable.class);
-                if (c1 == null || c2 == null) {
-                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
+        return (p1, p2) -> {
+            try {
+                List<Object> k1s = keySelector.invoke(p1), k2s = keySelector.invoke(p2);
+                for (int i = 0; i < k1s.size(); i++) {
+                    Comparable c1 = as(k1s.get(i), Comparable.class);
+                    Comparable c2 = as(k2s.get(i), Comparable.class);
+                    if (c1 == null || c2 == null) {
+                        return c1 == null ? (c2 == null ? 0 : 1) : -1;
+                    }
+                    int r = c1.compareTo(c2);
+                    if (r == 0) {
+                        continue;
+                    }
+                    return r;
                 }
-                int r = c1.compareTo(c2);
-                if (r == 0) {
-                    continue;
-                }
-                return r;
+                return 0;
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
             }
-            return 0;
-        });
+        };
     }
 
     public NQuery<T> orderByDescendingMany(BiFunc<T, List<Object>> keySelector) {
@@ -376,7 +402,13 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     public int count(PredicateFunc<T> predicate) {
-        return (int) stream().filter(predicate.toPredicate()).count();
+        return (int) stream().filter(p -> {
+            try {
+                return predicate.invoke(p);
+            } catch (Throwable e) {
+                throw ApplicationException.sneaky(e);
+            }
+        }).count();
     }
 
     public T max() {
@@ -573,7 +605,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             break;
         }
         if (type == null) {
-//            throw new InvalidException("Empty Result");
             type = Object.class;
         }
         T[] array = (T[]) Array.newInstance(type, result.size());

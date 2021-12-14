@@ -15,6 +15,7 @@ import org.rx.core.Arrays;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
+import org.rx.io.Bytes;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
@@ -204,9 +205,9 @@ public class CoreTester extends TestUtil {
             //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
             //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
             Tasks.run(() -> {
-                log.info("Exec: " + x);
-                sleep(2000);
-            }, "myTaskId", RunFlag.TRANSFER)
+                        log.info("Exec: " + x);
+                        sleep(2000);
+                    }, "myTaskId", RunFlag.TRANSFER)
                     .whenCompleteAsync((r, e) -> log.info("Done: " + x));
         }
 
@@ -427,8 +428,6 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void convert() {
-        Reflects.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
-
         int val = Reflects.changeType(PersonGender.Boy, Integer.class);
         assert val == 1;
 

@@ -9,7 +9,6 @@ import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.util.function.BiAction;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -51,23 +50,28 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
     }
 
-    final Map<CacheExpiration, Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>>> cacheMap = new ConcurrentHashMap<>();
+    final Map<CacheExpiration, Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<Long>>> cacheMap = new ConcurrentHashMap<>();
     BiAction<Caffeine<Object, Object>> onBuild;
 
     public MemoryCache(BiAction<Caffeine<Object, Object>> onBuild) {
         this.onBuild = onBuild;
     }
 
-    String routeKey(TK key) {
-        return key.getClass().hashCode() + ":" + key.hashCode();
+    long routeKey(TK key) {
+//        long l = (((long) x) << 32) | (y & 0xffffffffL);
+//        int x = (int) (l >> 32);
+//        int y = (int) l;
+        int x = key.getClass().hashCode();
+        int y = key.hashCode();
+        return (((long) x) << 32) | (y & 0xffffffffL);
     }
 
     com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key) {
-        return NQuery.of(cacheMap.values()).where(p -> p.right.mightContain(routeKey(key))).select(p -> p.left).firstOrDefault(() -> cache(null, CacheExpiration.NON_EXPIRE));
+        return NQuery.of(cacheMap.values()).where(p -> p.right.mightContain(routeKey(key))).firstOrDefault(() -> cache(null, CacheExpiration.NON_EXPIRE)).left;
     }
 
-    com.github.benmanes.caffeine.cache.Cache<TK, TV> cache(TK key, CacheExpiration expiration) {
-        Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<CharSequence>> tuple = cacheMap.computeIfAbsent(expiration, k -> {
+    Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<Long>> cache(TK key, CacheExpiration expiration) {
+        Tuple<com.github.benmanes.caffeine.cache.Cache<TK, TV>, BloomFilter<Long>> tuple = cacheMap.computeIfAbsent(expiration, k -> {
             App.log("MemoryCache create by {}", expiration);
             Caffeine<Object, Object> b;
             if (k.getSlidingExpiration() >= 0) {
@@ -80,14 +84,12 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
             if (onBuild != null) {
                 quietly(() -> onBuild.invoke(b));
             }
-            return Tuple.of(b
-//                    .softValues()
-                    .build(), BloomFilter.create(Funnels.stringFunnel(StandardCharsets.UTF_8), DEFAULT_INSERTIONS));
+            return Tuple.of(b.build(), BloomFilter.create(Funnels.longFunnel(), DEFAULT_INSERTIONS));
         });
         if (key != null) {
             tuple.right.put(routeKey(key));
         }
-        return tuple.left;
+        return tuple;
     }
 
     NQuery<com.github.benmanes.caffeine.cache.Cache<TK, TV>> caches() {
@@ -101,7 +103,6 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public boolean containsKey(Object key) {
-//        return caches().any(cache -> cache.getIfPresent(key) != null);
         return cache((TK) key).getIfPresent(key) != null;
     }
 
@@ -112,13 +113,6 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV get(Object key) {
-//        for (com.github.benmanes.caffeine.cache.Cache<TK, TV> cache : caches()) {
-//            TV val = cache.getIfPresent(key);
-//            if (val != null) {
-//                return val;
-//            }
-//        }
-//        return null;
         return cache((TK) key).getIfPresent(key);
     }
 
@@ -128,7 +122,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
             expiration = CacheExpiration.NON_EXPIRE;
         }
 
-        return cache(key, expiration).asMap().put(key, value);
+        return cache(key, expiration).left.asMap().put(key, value);
     }
 
     @Override
