@@ -242,43 +242,49 @@ public class Reflects extends TypeUtils {
         Method method = null;
         NQuery<Method> methods = getMethodMap(searchType).get(name);
         if (methods != null) {
-            method = methods.firstOrDefault(p -> {
+            for (Method p : methods) {
                 if (p.getParameterCount() != args.length) {
-                    return false;
+                    continue;
                 }
+
+                boolean find = true;
                 Class<?>[] parameterTypes = p.getParameterTypes();
                 for (int i = 0; i < parameterTypes.length; i++) {
                     Class<?> parameterType = parameterTypes[i];
                     Object arg = args[i];
                     if (arg == null) {
                         if (parameterType.isPrimitive()) {
-                            return false;
+                            find = false;
+                            break;
                         }
                         continue;
                     }
                     if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
-                        return false;
+                        find = false;
+                        break;
                     }
                 }
-                return true;
-            });
-        }
-//        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
-        if (method == null) {
-            try {
-                if (isStatic) {
-                    Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
-                    method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
-                    return invokeMethod(method, args);
-                } else {
-                    return (T) MethodUtils.invokeMethod(instance, true, name, args);
+                if (find) {
+                    method = p;
+                    break;
                 }
-            } catch (NoSuchMethodException e) {
-                //ignore
             }
-            throw new ApplicationException(values(searchType.getName(), name));
         }
-        return (T) method.invoke(instance, args);
+        if (method != null) {
+            return (T) method.invoke(instance, args);
+        }
+
+        try {
+            if (isStatic) {
+                Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
+                method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
+                return invokeMethod(method, args);
+            } else {
+                return (T) MethodUtils.invokeMethod(instance, true, name, args);
+            }
+        } catch (Exception e) {
+            throw new ApplicationException(values(searchType.getName(), name), e);
+        }
     }
 
     @SuppressWarnings(NON_UNCHECKED)

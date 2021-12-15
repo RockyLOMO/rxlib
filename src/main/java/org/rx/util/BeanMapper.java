@@ -27,7 +27,7 @@ public class BeanMapper {
     public static final BeanMapper INSTANCE = new BeanMapper();
     private static final Mapping[] empty = new Mapping[0];
 
-    private final Map<String, MapConfig> config = new ConcurrentHashMap<>();
+    private final Map<Integer, MapConfig> config = new ConcurrentHashMap<>();
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
 
     public <T> T define(@NonNull Class<T> type) {
@@ -80,7 +80,7 @@ public class BeanMapper {
     }
 
     private MapConfig getConfig(Class from, Class to) {
-        return config.computeIfAbsent(String.format("%s->%s", from.getName(), to.getName()), k -> new MapConfig(BeanCopier.create(from, to, true)));
+        return config.computeIfAbsent(Objects.hash(from, to), k -> new MapConfig(BeanCopier.create(from, to, true)));
     }
 
     public <T> T map(Object source, Class<T> targetType) {
@@ -126,10 +126,17 @@ public class BeanMapper {
             config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
                 String propertyName = Reflects.propertyName(methodName.toString());
                 copiedNames.add(propertyName);
-                Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
-                if (mapping != null) {
+                for (Mapping mapping : mappings) {
+                    if (mapping.target().hashCode() != propertyName.hashCode()) {
+                        continue;
+                    }
                     sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
+                    break;
                 }
+//                Mapping mapping = mappings.firstOrDefault(p -> eq(p.target(), propertyName));
+//                if (mapping != null) {
+//                    sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
+//                }
                 return Reflects.changeType(sourceValue, targetType);
             });
 

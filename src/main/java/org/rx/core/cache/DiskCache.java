@@ -23,7 +23,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache.MultiExpireCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 

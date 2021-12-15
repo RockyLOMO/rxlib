@@ -86,15 +86,16 @@ public final class App extends SystemUtils {
     }
 
     public static String cacheKey(String methodName, Object... args) {
-        StringBuilder k = new StringBuilder();
         if (methodName == null) {
             methodName = Reflects.stackClass(1).getSimpleName();
         }
-        k.append(methodName).append(Constants.CACHE_KEY_SUFFIX);
-        if (!Arrays.isEmpty(args)) {
-            k.append(java.util.Arrays.hashCode(args));
+        if (Arrays.isEmpty(args)) {
+            return methodName;
+//            return methodName.intern();
         }
-        return k.toString().intern();
+
+        return methodName + Constants.CACHE_KEY_SUFFIX + java.util.Arrays.hashCode(args);
+//        return (methodName + Constants.CACHE_KEY_SUFFIX + java.util.Arrays.hashCode(args)).intern();
     }
 
     public static String description(@NonNull AnnotatedElement annotatedElement) {
