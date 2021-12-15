@@ -116,7 +116,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     @Override
     public Iterator<T> iterator() {
         return data.iterator();
-//        return stream().iterator();
     }
 
     private <TR> List<TR> newList() {

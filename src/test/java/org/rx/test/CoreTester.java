@@ -254,7 +254,7 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public synchronized void MXBean() {
-        int productCount = 4;
+        int productCount = 10;
         ExecutorService fix = Executors.newFixedThreadPool(productCount);
         ThreadPool pool = new ThreadPool(1, 1, 1, "rx");
 
@@ -313,7 +313,7 @@ public class CoreTester extends TestUtil {
     @Test
     public void cache() {
         BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
-        testCache(new MemoryCache<>(dump));
+        testCache(new MemoryCache.MultiExpireCache<>(dump));
 
 //        Tuple<Integer, String> key1 = Tuple.of(1, "a");
 //        Tuple<Integer, String> key2 = Tuple.of(2, "b");

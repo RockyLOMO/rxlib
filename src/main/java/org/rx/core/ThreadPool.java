@@ -100,8 +100,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                 throw e;
             } finally {
                 if (ok) {
-                    log.debug("setPoll() poll");
-                    setPoll();
+                    log.debug("Notify poll");
+                    doNotify();
                 }
             }
         }
@@ -111,8 +111,8 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return super.take();
             } finally {
-                log.debug("setPoll() take");
-                setPoll();
+                log.debug("Notify take");
+                doNotify();
             }
         }
 
@@ -120,13 +120,13 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
-                log.debug("setPoll() remove");
-                setPoll();
+                log.debug("Notify remove");
+                doNotify();
             }
             return ok;
         }
 
-        private void setPoll() {
+        private void doNotify() {
             counter.decrementAndGet();
             synchronized (this) {
                 notify();
@@ -267,6 +267,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final int DEFAULT_KEEP_ALIVE_MINUTES = 20;
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(40, 60);
     static final DynamicSizer SIZER = new DynamicSizer();
+    static final Runnable EMPTY = () -> {
+    };
 
     static int getResizeQuantity() {
         return SystemPropertyUtil.getInt(Constants.THREAD_POOL_RESIZE_QUANTITY, 2);
@@ -284,8 +286,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static void incrSize(ThreadPoolExecutor pool, int maxSize) {
         pool.setMaximumPoolSize(maxSize);
-        pool.execute(() -> {
-        });
+        pool.execute(EMPTY);
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {

@@ -69,12 +69,16 @@ public class Reflects extends TypeUtils {
     static final String CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
-    @Getter
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
     static final Lazy<Cache<Class, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
     private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
     private static final List<ConvertBean<?, ?>> typeConverter;
+
+    public static <T> Cache<String, T> cache() {
+        return (Cache<String, T>) LAZY_CACHE.getValue();
+    }
 
     static {
         try {
@@ -389,7 +393,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return (Map<String, Field>) LAZY_CACHE.getValue().get(cacheKey("fieldMap", type), k -> {
+        return (Map<String, Field>) FIELD_CACHE.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
