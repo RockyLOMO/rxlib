@@ -46,6 +46,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
+            if (t == EMPTY) {
+                return true;
+            }
+
             IdentityRunnable p = pool.getAs((Runnable) t, false);
             if (p != null && p.flag() != null) {
                 switch (p.flag()) {
@@ -285,6 +289,11 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static void incrSize(ThreadPoolExecutor pool, int maxSize) {
+        int corePoolSize = pool.getCorePoolSize();
+        if (corePoolSize >= maxSize) {
+            return;
+        }
+
         pool.setMaximumPoolSize(maxSize);
         pool.execute(EMPTY);
     }
