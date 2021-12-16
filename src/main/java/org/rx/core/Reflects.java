@@ -328,7 +328,7 @@ public class Reflects extends TypeUtils {
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
-        return (NQuery<PropertyNode>) LAZY_CACHE.getValue().get(cacheKey("properties", to), k -> {
+        return (NQuery<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
             Method getClass = OBJECT_METHODS.first(p -> p.getName().hashCode() == OBJECT_GET_CLASS_HASH);
             NQuery<Method> q = NQuery.of(to.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));

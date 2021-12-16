@@ -204,9 +204,9 @@ public class CoreTester extends TestUtil {
             //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
             //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
             Tasks.run(() -> {
-                        log.info("Exec: " + x);
-                        sleep(2000);
-                    }, "myTaskId", RunFlag.TRANSFER)
+                log.info("Exec: " + x);
+                sleep(2000);
+            }, "myTaskId", RunFlag.TRANSFER)
                     .whenCompleteAsync((r, e) -> log.info("Done: " + x));
         }
 
@@ -466,8 +466,8 @@ public class CoreTester extends TestUtil {
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
-        System.out.println(cacheKey("reflect"));
-        System.out.println(cacheKey("reflect:", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(hashKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(cacheKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
 
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);

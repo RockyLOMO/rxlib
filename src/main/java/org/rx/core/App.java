@@ -85,17 +85,25 @@ public final class App extends SystemUtils {
         return (T) Enhancer.create(type, new DynamicProxy(func));
     }
 
-    public static String cacheKey(String methodName, Object... args) {
-        if (methodName == null) {
-            methodName = Reflects.stackClass(1).getSimpleName();
+    public static String hashKey(String method, Object... args) {
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
         }
-        if (Arrays.isEmpty(args)) {
-            return methodName;
-//            return methodName.intern();
+        if (!Arrays.isEmpty(args)) {
+            method += java.util.Arrays.hashCode(args);
         }
+        return method;
+//        return method.intern();
+    }
 
-        return methodName + Constants.CACHE_KEY_SUFFIX + java.util.Arrays.hashCode(args);
-//        return (methodName + Constants.CACHE_KEY_SUFFIX + java.util.Arrays.hashCode(args)).intern();
+    public static String cacheKey(String method, Object... args) {
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
+        }
+        if (!Arrays.isEmpty(args)) {
+            method += Constants.CACHE_KEY_SUFFIX + toJsonString(args);
+        }
+        return method;
     }
 
     public static String description(@NonNull AnnotatedElement annotatedElement) {
@@ -111,6 +119,132 @@ public final class App extends SystemUtils {
         Thread.sleep(millis);
     }
 
+    public static Object[] getMessageCandidate(Object... args) {
+        if (args != null && args.length != 0) {
+            int lastIndex = args.length - 1;
+            Object last = args[lastIndex];
+            if (last instanceof Throwable) {
+                if (lastIndex == 0) {
+                    return Arrays.EMPTY_OBJECT_ARRAY;
+                }
+                return NQuery.of(args).take(lastIndex).toArray();
+            }
+        }
+        return args;
+    }
+
+    public static Throwable getThrowableCandidate(Object... args) {
+        return MessageFormatter.getThrowableCandidate(args);
+    }
+
+    public static boolean isIgnoringException(Throwable e) {
+        if (e == null) {
+            return false;
+        }
+        return ignoreExceptionHandler != null && ignoreExceptionHandler.test(e);
+    }
+
+    public static String log(@NonNull String format, Object... args) {
+        if (args == null) {
+            args = Arrays.EMPTY_OBJECT_ARRAY;
+        }
+        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
+        Throwable e = MessageFormatter.getThrowableCandidate(args);
+        boolean isIgnoring = e == null;
+        if (!isIgnoring && (isIgnoring = isIgnoringException(e))) {
+            format += "\t{}";
+            args[args.length - 1] = e.getMessage();
+        }
+        if (isIgnoring) {
+            log.info(format, args);
+            return ApplicationException.getMessage(e);
+        }
+
+        InvalidException invalidException = as(e, InvalidException.class);
+        if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
+            log.error(format, args);
+        } else {
+            format += "\t{}";
+            args[args.length - 1] = e.getMessage();
+            log.warn(format, args);
+        }
+        return ApplicationException.getMessage(e);
+    }
+
+    public static void logMetric(String name, Object value) {
+        Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
+    }
+
+    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
+        log(eventArgs, msg -> {
+            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
+                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
+            if (eventArgs.getError() != null) {
+                msg.appendLine("Error:\t%s", eventArgs.getError());
+            } else {
+                msg.appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+            }
+        });
+    }
+
+    @SneakyThrows
+    public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
+        Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
+        boolean doWrite = !MapUtils.isEmpty(metrics);
+        if (!doWrite) {
+            if (eventArgs.getLogStrategy() == null) {
+                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
+            }
+            switch (eventArgs.getLogStrategy()) {
+                case WRITE_ON_NULL:
+                    doWrite = eventArgs.getError() != null
+                            || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
+                            || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
+                    break;
+                case WRITE_ON_ERROR:
+                    if (eventArgs.getError() != null) {
+                        doWrite = true;
+                    }
+                    break;
+                case ALWAYS:
+                    doWrite = true;
+                    break;
+            }
+        }
+        if (doWrite) {
+            List<String> whitelist = eventArgs.getLogTypeWhitelist();
+            if (!CollectionUtils.isEmpty(whitelist)) {
+                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
+            }
+        }
+        if (doWrite) {
+            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
+            StringBuilder msg = new StringBuilder(RxConfig.HEAP_BUF_SIZE);
+            formatMessage.invoke(msg);
+            boolean first = true;
+            for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
+                String key;
+                if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
+                    continue;
+                }
+                if (first) {
+                    msg.append("Metrics:\t");
+                    first = false;
+                }
+                msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
+            }
+            if (!first) {
+                msg.appendLine();
+            }
+            if (eventArgs.getError() != null) {
+//                log.error(msg.toString(), eventArgs.getError());
+                log(msg.toString(), eventArgs.getError());
+            } else {
+                log.info(msg.toString());
+            }
+        }
+    }
+
     //region Collection
     public static <T> List<T> newConcurrentList(boolean readMore) {
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
@@ -124,9 +258,7 @@ public final class App extends SystemUtils {
         //CopyOnWriteArrayList 写性能差
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
     }
-    //endregion
 
-    //region json
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
@@ -262,6 +394,10 @@ public final class App extends SystemUtils {
         return null;
     }
 
+    public static boolean tryClose(Object obj) {
+        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
+    }
+
     public static <T> boolean tryAs(Object obj, Class<T> type) {
         return tryAs(obj, type, null);
     }
@@ -278,27 +414,12 @@ public final class App extends SystemUtils {
         return true;
     }
 
-    public static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
-    }
-
     //todo checkerframework
     @ErrorCode("test")
     public static void require(Object arg, boolean testResult) {
         if (!testResult) {
             throw new ApplicationException("test", values(arg));
         }
-    }
-
-    public static <T> T as(Object obj, Class<T> type) {
-        if (!Reflects.isInstance(obj, type)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> boolean eq(T a, T b) {
-        return (a == b) || (a != null && a.equals(b));
     }
 
     public static <T> T isNull(T value, T defaultVal) {
@@ -319,6 +440,17 @@ public final class App extends SystemUtils {
 
     public static Object[] values(Object... args) {
         return args;
+    }
+
+    public static <T> T as(Object obj, Class<T> type) {
+        if (!Reflects.isInstance(obj, type)) {
+            return null;
+        }
+        return (T) obj;
+    }
+
+    public static <T> boolean eq(T a, T b) {
+        return (a == b) || (a != null && a.equals(b));
     }
     //endregion
 
@@ -450,132 +582,6 @@ public final class App extends SystemUtils {
         return yaml.dump(bean);
     }
 
-    public static Object[] getMessageCandidate(Object... args) {
-        if (args != null && args.length != 0) {
-            int lastIndex = args.length - 1;
-            Object last = args[lastIndex];
-            if (last instanceof Throwable) {
-                if (lastIndex == 0) {
-                    return Arrays.EMPTY_OBJECT_ARRAY;
-                }
-                return NQuery.of(args).take(lastIndex).toArray();
-            }
-        }
-        return args;
-    }
-
-    public static Throwable getThrowableCandidate(Object... args) {
-        return MessageFormatter.getThrowableCandidate(args);
-    }
-
-    public static boolean isIgnoringException(Throwable e) {
-        if (e == null) {
-            return false;
-        }
-        return ignoreExceptionHandler != null && ignoreExceptionHandler.test(e);
-    }
-
-    public static String log(@NonNull String format, Object... args) {
-        if (args == null) {
-            args = Arrays.EMPTY_OBJECT_ARRAY;
-        }
-        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
-        Throwable e = MessageFormatter.getThrowableCandidate(args);
-        boolean isIgnoring = e == null;
-        if (!isIgnoring && (isIgnoring = isIgnoringException(e))) {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-        }
-        if (isIgnoring) {
-            log.info(format, args);
-            return ApplicationException.getMessage(e);
-        }
-
-        InvalidException invalidException = as(e, InvalidException.class);
-        if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-            log.error(format, args);
-        } else {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-            log.warn(format, args);
-        }
-        return ApplicationException.getMessage(e);
-    }
-
-    public static void logMetric(String name, Object value) {
-        Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
-    }
-
-    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
-        log(eventArgs, msg -> {
-            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
-            if (eventArgs.getError() != null) {
-                msg.appendLine("Error:\t%s", eventArgs.getError());
-            } else {
-                msg.appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
-            }
-        });
-    }
-
-    @SneakyThrows
-    public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
-        boolean doWrite = !MapUtils.isEmpty(metrics);
-        if (!doWrite) {
-            if (eventArgs.getLogStrategy() == null) {
-                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
-            }
-            switch (eventArgs.getLogStrategy()) {
-                case WRITE_ON_NULL:
-                    doWrite = eventArgs.getError() != null
-                            || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
-                            || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
-                    break;
-                case WRITE_ON_ERROR:
-                    if (eventArgs.getError() != null) {
-                        doWrite = true;
-                    }
-                    break;
-                case ALWAYS:
-                    doWrite = true;
-                    break;
-            }
-        }
-        if (doWrite) {
-            List<String> whitelist = eventArgs.getLogTypeWhitelist();
-            if (!CollectionUtils.isEmpty(whitelist)) {
-                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
-            }
-        }
-        if (doWrite) {
-            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(RxConfig.HEAP_BUF_SIZE);
-            formatMessage.invoke(msg);
-            boolean first = true;
-            for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
-                String key;
-                if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
-                    continue;
-                }
-                if (first) {
-                    msg.append("Metrics:\t");
-                    first = false;
-                }
-                msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
-            }
-            if (!first) {
-                msg.appendLine();
-            }
-            if (eventArgs.getError() != null) {
-//                log.error(msg.toString(), eventArgs.getError());
-                log(msg.toString(), eventArgs.getError());
-            } else {
-                log.info(msg.toString());
-            }
-        }
-    }
-
     /**
      * 简单的计算字符串
      *
@@ -651,7 +657,9 @@ public final class App extends SystemUtils {
             }
         }.parse();
     }
+    //endregion
 
+    //region codec
     public static UUID hash(Object... args) {
         return hash(Strings.joinWith(Strings.EMPTY, args));
     }
@@ -691,12 +699,10 @@ public final class App extends SystemUtils {
         }
         return new UUID(mostSigBits, leastSigBits);
     }
-    //endregion
 
-    //region Base64
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
     @SneakyThrows
-    public static String convertToBase64String(@NonNull byte[] data) {
+    public static String convertToBase64String(byte[] data) {
         byte[] ret = Base64.getEncoder().encode(data);
         return new String(ret, StandardCharsets.UTF_8);
     }
