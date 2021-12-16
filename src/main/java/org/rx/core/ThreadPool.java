@@ -269,7 +269,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final int DEFAULT_KEEP_ALIVE_MINUTES = 20;
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(40, 60);
+    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(50, 70);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };

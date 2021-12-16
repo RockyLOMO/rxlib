@@ -8,6 +8,7 @@ import io.netty.util.internal.SystemPropertyUtil;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 
 import java.util.*;
 import java.util.Arrays;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import static org.rx.core.App.quietly;
 import static org.rx.core.App.require;
 
+@SuppressWarnings(Constants.NON_UNCHECKED)
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     public static class MultiExpireCache<TK, TV> extends MemoryCache<TK, TV> {
         static final int DEFAULT_INSERTIONS = 9999999;  //1.1M
@@ -187,6 +189,118 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
     }
 
+//    final org.cache2k.Cache<TK, TV> cache = (org.cache2k.Cache<TK, TV>) Cache2kBuilder.forUnknownTypes()
+//            .executor(Tasks.pool()).scheduler(new org.cache2k.operation.Scheduler() {
+//                @Override
+//                public void schedule(Runnable runnable, long l) {
+//                    Tasks.scheduler().schedule(runnable, l, TimeUnit.MILLISECONDS);
+//                }
+//
+//                @Override
+//                public void execute(Runnable runnable) {
+//                    Tasks.pool().execute(runnable);
+//                }
+//            })
+//            .expireAfterWrite(60, TimeUnit.SECONDS)
+//            .build();
+//    final ConcurrentMap<TK, TV> map = cache.asMap();
+//
+//    @Override
+//    public int size() {
+//        return map.size();
+//    }
+//
+//    @Override
+//    public boolean containsKey(Object key) {
+//        return cache.containsKey((TK) key);
+//    }
+//
+//    @Override
+//    public boolean containsValue(Object value) {
+//        return map.containsValue(value);
+//    }
+//
+//    @Override
+//    public TV get(Object key) {
+////        return cache.invoke((TK) key, e -> {
+////            if (!e.exists()) {
+////                return null;
+////            }
+////            return e.setExpiryTime(60000).getValue();
+////        });
+//        return cache.get((TK) key);
+//    }
+//
+//    @Override
+//    public TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
+////        return cache.invoke(key, e -> {
+////            if (!e.exists()) {
+////                try {
+////                    e.setValue(loadingFunc.invoke(key));
+////                } catch (Throwable ex) {
+////                    throw ApplicationException.sneaky(ex);
+////                }
+////            }
+////            return e.setExpiryTime(60000).getValue();
+////        });
+//        return cache.computeIfAbsent(key, loadingFunc.toFunction());
+//    }
+//
+//    @Override
+//    public TV put(TK key, TV value, CacheExpiration expiration) {
+//        return cache.peekAndPut(key, value);
+//    }
+//
+//    @Override
+//    public void putAll(Map<? extends TK, ? extends TV> m) {
+//        cache.putAll(m);
+//    }
+//
+//    @Override
+//    public TV putIfAbsent(TK key, TV value) {
+//        return map.putIfAbsent(key, value);
+//    }
+//
+//    @Override
+//    public TV replace(TK key, TV value) {
+//        return cache.peekAndReplace(key, value);
+//    }
+//
+//    @Override
+//    public boolean replace(TK key, TV oldValue, TV newValue) {
+//        return cache.replaceIfEquals(key, oldValue, newValue);
+//    }
+//
+//    @Override
+//    public TV remove(Object key) {
+//        return cache.peekAndRemove((TK) key);
+//    }
+//
+//    @Override
+//    public boolean remove(Object key, Object value) {
+//        return cache.removeIfEquals((TK) key, (TV) value);
+//    }
+//
+//    @Override
+//    public void clear() {
+//        cache.clear();
+//    }
+//
+//    @Override
+//    public Set<TK> keySet() {
+//        return cache.keys();
+//    }
+//
+//    @Override
+//    public Collection<TV> values() {
+//        return map.values();
+//    }
+//
+//    @Override
+//    public Set<Entry<TK, TV>> entrySet() {
+//        return map.entrySet();
+//    }
+
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache = slidingBuilder(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_SLIDING_SECONDS, 60)).build();
 
     @Override
@@ -210,15 +324,18 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
+    public TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
+        return cache.get(key, loadingFunc.toFunction());
+    }
+
+    @Override
     public TV put(TK key, TV value, CacheExpiration expiration) {
         return cache.asMap().put(key, value);
     }
 
     @Override
     public void putAll(Map<? extends TK, ? extends TV> m) {
-        for (Entry<? extends TK, ? extends TV> entry : m.entrySet()) {
-            cache.put(entry.getKey(), entry.getValue());
-        }
+        cache.putAll(m);
     }
 
     @Override
@@ -227,13 +344,13 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     @Override
-    public boolean replace(TK key, TV oldValue, TV newValue) {
-        return cache.asMap().replace(key, oldValue, newValue);
+    public TV replace(TK key, TV value) {
+        return cache.asMap().replace(key, value);
     }
 
     @Override
-    public TV replace(TK key, TV value) {
-        return cache.asMap().replace(key, value);
+    public boolean replace(TK key, TV oldValue, TV newValue) {
+        return cache.asMap().replace(key, oldValue, newValue);
     }
 
     @Override
