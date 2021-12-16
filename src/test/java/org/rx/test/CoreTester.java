@@ -467,7 +467,8 @@ public class CoreTester extends TestUtil {
 //            System.out.println(traceElement);
 //        }
         System.out.println(hashKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        System.out.println(cacheKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(cacheKey("prefix", "12345"));
+        System.out.println(cacheKey("prefix", 12345));
 
 
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);

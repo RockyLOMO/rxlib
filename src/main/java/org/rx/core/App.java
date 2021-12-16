@@ -101,7 +101,7 @@ public final class App extends SystemUtils {
             method = Reflects.stackClass(1).getSimpleName();
         }
         if (!Arrays.isEmpty(args)) {
-            method += Constants.CACHE_KEY_SUFFIX + toJsonString(args);
+            method += Constants.CACHE_KEY_SUFFIX + toJsonString(args.length == 1 ? args[0] : args);
         }
         return method;
     }
