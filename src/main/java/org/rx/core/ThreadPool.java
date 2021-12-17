@@ -1,6 +1,7 @@
 package org.rx.core;
 
-import com.conversantmedia.util.concurrent.DisruptorBlockingQueue;
+//import com.conversantmedia.util.concurrent.DisruptorBlockingQueue;
+
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
@@ -29,14 +30,15 @@ import static org.rx.core.App.*;
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
     public static class ThreadQueue<T>
-//            extends LinkedTransferQueue<T>
-            extends BlockingQueueProxyObject<T> {
+            extends LinkedTransferQueue<T>
+//            extends BlockingQueueProxyObject<T>
+    {
         private ThreadPool pool;
         private final int queueCapacity;
         private final AtomicInteger counter = new AtomicInteger();
 
         public ThreadQueue(int queueCapacity) {
-            super(new DisruptorBlockingQueue<>(queueCapacity));
+//            super(new DisruptorBlockingQueue<>(queueCapacity));
             this.queueCapacity = queueCapacity;
         }
 
@@ -56,18 +58,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (t == EMPTY) {
                 return false;
             }
-
             IdentityRunnable p = pool.getAs((Runnable) t, false);
-            if (p != null && p.flag() != null) {
-                switch (p.flag()) {
-//                    case TRANSFER:
-//                        log.debug("Block caller thread until queue take");
-//                        transfer(t);
-//                        return true;
-                    case PRIORITY:
-                        incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
-                        return false;
-                }
+            if (p != null && eq(p.flag(), RunFlag.PRIORITY)) {
+                incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
+                return false;
             }
 
             int poolSize = pool.getPoolSize();
@@ -141,7 +135,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         Object id();
 
         default RunFlag flag() {
-            return RunFlag.CONCURRENT;
+            return RunFlag.DEFAULT;
         }
     }
 
@@ -438,12 +432,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         log.debug("Block caller thread until queue offer");
         getQueue().offer(command);
     }
-
-//    @SneakyThrows
-//    public void transfer(Runnable command) {
-//        log.debug("Block caller thread until queue take");
-//        ((ThreadQueue<Runnable>) getQueue()).transfer(command);
-//    }
 
     @Override
     public String toString() {
