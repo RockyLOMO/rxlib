@@ -200,7 +200,7 @@ public class CoreTester extends TestUtil {
         //FastThreadLocal 支持netty FastThreadLocal
         ExecutorService pool = new ThreadPool(1, 1, 1,
                 8, new IntWaterMark(20, 40), "DEV");
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100; i++) {
             int x = i;
             pool.execute(() -> {
                 log.info("exec {} begin..", x);
@@ -209,20 +209,20 @@ public class CoreTester extends TestUtil {
             });
         }
 
-        for (int i = 0; i < 10; i++) {
-            int x = i;
-            //RunFlag.CONCURRENT    默认无锁
-            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
-            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-            Tasks.run(() -> {
-                        log.info("exec {} begin..", x);
-                        sleep(delayMillis);
-                        log.info("exec {} end..", x);
-                    }, "myTaskId", RunFlag.TRANSFER)
-                    .whenCompleteAsync((r, e) -> log.info("Done: " + x));
-        }
+//        for (int i = 0; i < 10; i++) {
+//            int x = i;
+//            //RunFlag.CONCURRENT    默认无锁
+//            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
+//            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+//            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
+//            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+//            Tasks.run(() -> {
+//                        log.info("exec {} begin..", x);
+//                        sleep(delayMillis);
+//                        log.info("exec {} end..", x);
+//                    }, "myTaskId", RunFlag.TRANSFER)
+//                    .whenCompleteAsync((r, e) -> log.info("Done: " + x));
+//        }
 
 //        for (int i = 0; i < 5; i++) {
 //            int x = i;

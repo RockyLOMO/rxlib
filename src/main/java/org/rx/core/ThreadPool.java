@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import com.conversantmedia.util.concurrent.DisruptorBlockingQueue;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
@@ -27,11 +28,17 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
-    public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
-        private static final long serialVersionUID = -1832603760465558822L;
+    public static class ThreadQueue<T>
+//            extends LinkedTransferQueue<T>
+            extends BlockingQueueProxyObject<T> {
         private ThreadPool pool;
-        private int queueCapacity = Integer.MAX_VALUE;
+        private final int queueCapacity;
         private final AtomicInteger counter = new AtomicInteger();
+
+        public ThreadQueue(int queueCapacity) {
+            super(new DisruptorBlockingQueue<>(queueCapacity));
+            this.queueCapacity = queueCapacity;
+        }
 
         @Override
         public boolean isEmpty() {
@@ -53,10 +60,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             IdentityRunnable p = pool.getAs((Runnable) t, false);
             if (p != null && p.flag() != null) {
                 switch (p.flag()) {
-                    case TRANSFER:
-                        log.debug("Block caller thread until queue take");
-                        transfer(t);
-                        return true;
+//                    case TRANSFER:
+//                        log.debug("Block caller thread until queue take");
+//                        transfer(t);
+//                        return true;
                     case PRIORITY:
                         incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
                         return false;
@@ -333,7 +340,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
+        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
             if (r == EMPTY) {
                 return;
             }
@@ -346,12 +353,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         ((ThreadQueue<Runnable>) getQueue()).pool = this;
         this.poolName = poolName;
 
-        setQueueCapacity(queueCapacity);
         setDynamicSize(cpuWaterMark);
-    }
-
-    public void setQueueCapacity(int queueCapacity) {
-        ((ThreadQueue<Runnable>) getQueue()).queueCapacity = Math.max(1, queueCapacity);
     }
 
     public void setDynamicSize(IntWaterMark cpuWaterMark) {
@@ -437,11 +439,11 @@ public class ThreadPool extends ThreadPoolExecutor {
         getQueue().offer(command);
     }
 
-    @SneakyThrows
-    public void transfer(Runnable command) {
-        log.debug("Block caller thread until queue take");
-        ((ThreadQueue<Runnable>) getQueue()).transfer(command);
-    }
+//    @SneakyThrows
+//    public void transfer(Runnable command) {
+//        log.debug("Block caller thread until queue take");
+//        ((ThreadQueue<Runnable>) getQueue()).transfer(command);
+//    }
 
     @Override
     public String toString() {
