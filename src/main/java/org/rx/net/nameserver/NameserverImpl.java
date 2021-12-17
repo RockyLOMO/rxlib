@@ -5,7 +5,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 import org.rx.bean.RandomList;
-import org.rx.bean.Tuple;
 import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.NEventArgs;
@@ -48,7 +47,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupBy(p -> isNull(p.attr(), "NOT_REG"), (k, p) -> Tuple.of(k, p.select(x -> x.getRemoteAddress().getAddress()).toList())).toMap(p -> p.left, p -> p.right);
+        return NQuery.of(rs.getClients()).groupByIntoMap(p -> isNull(p.attr(), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteAddress().getAddress()).toList());
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {

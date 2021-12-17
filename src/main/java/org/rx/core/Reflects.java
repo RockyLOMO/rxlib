@@ -1,9 +1,6 @@
 package org.rx.core;
 
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.ConstructorUtils;
@@ -12,8 +9,10 @@ import org.apache.commons.lang3.reflect.MethodUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
+import org.rx.util.Lazy;
 import org.rx.util.function.BiFunc;
 import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -34,6 +33,7 @@ import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
+@SuppressWarnings(NON_UNCHECKED)
 @Slf4j
 public class Reflects extends TypeUtils {
     //region NestedTypes
@@ -65,11 +65,20 @@ public class Reflects extends TypeUtils {
     public static final NQuery<String> COLLECTION_WRITE_METHOD_NAMES = NQuery.of("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final NQuery<Method> OBJECT_METHODS = NQuery.of(Object.class.getMethods());
-    private static final String getProperty = "get", getBoolProperty = "is", setProperty = "set", closeMethod = "close";
+    static final int OBJECT_GET_CLASS_HASH = "getClass".hashCode(), CLOSE_METHOD_HASH = "close".hashCode();
+    static final String CHANGE_TYPE_METHOD = "valueOf";
+    static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
+    //must lazy before thread pool init.
+    static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
+    static final Lazy<Cache<Class, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
     private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
-    private static final List<Class<?>> supportTypes;
     private static final List<ConvertBean<?, ?>> typeConverter;
+
+    public static <T> Cache<String, T> cache() {
+        return (Cache<String, T>) LAZY_CACHE.getValue();
+    }
 
     static {
         try {
@@ -79,12 +88,9 @@ public class Reflects extends TypeUtils {
             throw InvalidException.sneaky(e);
         }
 
-        supportTypes = new CopyOnWriteArrayList<>(Arrays.toList(String.class, Boolean.class, Byte.class, Short.class, Integer.class, Long.class,
-                Float.class, Double.class, Enum.class, Date.class, UUID.class, BigDecimal.class));
         typeConverter = new CopyOnWriteArrayList<>();
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
-//        registerConvert(Integer.class, NEnum.class, (sv, tt) -> Reflects.invokeMethod(NEnum.class, null, "valueOf", tt, sv));
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
         registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
     }
@@ -224,10 +230,11 @@ public class Reflects extends TypeUtils {
     }
 
     public static boolean isCloseMethod(Method method) {
-        return method.getName().equals(closeMethod) && method.getParameterCount() == 0;
+        //String hashcode has cached
+        return method.getName().hashCode() == CLOSE_METHOD_HASH && method.getParameterCount() == 0;
     }
 
-    public static <T, TT> T invokeMethod(Class<? extends TT> type, String name, Object... args) {
+    public static <T, TT> T invokeStaticMethod(Class<? extends TT> type, String name, Object... args) {
         return invokeMethod(type, null, name, args);
     }
 
@@ -241,42 +248,52 @@ public class Reflects extends TypeUtils {
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         boolean isStatic = type != null;
         Class<?> searchType = isStatic ? type : instance.getClass();
-        Method method = getMethods(searchType).firstOrDefault(p -> {
-            if (!(p.getName().equals(name) && p.getParameterCount() == args.length)) {
-                return false;
-            }
-            Class<?>[] parameterTypes = p.getParameterTypes();
-            for (int i = 0; i < parameterTypes.length; i++) {
-                Class<?> parameterType = parameterTypes[i];
-                Object arg = args[i];
-                if (arg == null) {
-                    if (parameterType.isPrimitive()) {
-                        return false;
-                    }
+        Method method = null;
+        NQuery<Method> methods = getMethodMap(searchType).get(name);
+        if (methods != null) {
+            for (Method p : methods) {
+                if (p.getParameterCount() != args.length) {
                     continue;
                 }
-                if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
-                    return false;
+
+                boolean find = true;
+                Class<?>[] parameterTypes = p.getParameterTypes();
+                for (int i = 0; i < parameterTypes.length; i++) {
+                    Class<?> parameterType = parameterTypes[i];
+                    Object arg = args[i];
+                    if (arg == null) {
+                        if (parameterType.isPrimitive()) {
+                            find = false;
+                            break;
+                        }
+                        continue;
+                    }
+                    if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
+                        find = false;
+                        break;
+                    }
+                }
+                if (find) {
+                    method = p;
+                    break;
                 }
             }
-            return true;
-        });
-//        Method method = MethodUtils.getMatchingAccessibleMethod(type, name, parameterTypes);
-        if (method == null) {
-            try {
-                if (isStatic) {
-                    Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
-                    method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
-                    return invokeMethod(method, args);
-                } else {
-                    return (T) MethodUtils.invokeMethod(instance, true, name, args);
-                }
-            } catch (NoSuchMethodException e) {
-                //ignore
-            }
-            throw new ApplicationException(values(searchType.getName(), name));
         }
-        return (T) method.invoke(instance, args);
+        if (method != null) {
+            return (T) method.invoke(instance, args);
+        }
+
+        try {
+            if (isStatic) {
+                Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
+                method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
+                return invokeMethod(method, args);
+            } else {
+                return (T) MethodUtils.invokeMethod(instance, true, name, args);
+            }
+        } catch (Exception e) {
+            throw new ApplicationException(values(searchType.getName(), name), e);
+        }
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -286,8 +303,8 @@ public class Reflects extends TypeUtils {
         return (T) method.invoke(instance, args);
     }
 
-    public static NQuery<Method> getMethods(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.of("getMethods", type), k -> {
+    public static Map<String, NQuery<Method>> getMethodMap(@NonNull Class<?> type) {
+        return METHOD_CACHE.getValue().get(type, k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
                 Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
@@ -305,33 +322,32 @@ public class Reflects extends TypeUtils {
                 return d;
             });
             all.addAll(defMethods.toList());
-            return NQuery.of(all);
-        }, Cache.MEMORY_CACHE);
+            return Collections.unmodifiableMap(NQuery.of(all).groupByIntoMap(Method::getName, (p, x) -> x));
+        });
     }
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
-        return Cache.getOrSet(Tuple.of("getProperties", to), k -> {
-            Method getClass = OBJECT_METHODS.first(p -> p.getName().equals("getClass"));
+        return (NQuery<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
+            Method getClass = OBJECT_METHODS.first(p -> p.getName().hashCode() == OBJECT_GET_CLASS_HASH);
             NQuery<Method> q = NQuery.of(to.getMethods());
-            NQuery<Tuple<String, Method>> setters = q.where(p -> p.getName().startsWith(setProperty) && p.getParameterCount() == 1).select(p -> Tuple.of(propertyName(p.getName()), p));
-            NQuery<Tuple<String, Method>> getters = q.where(p -> p != getClass && (p.getName().startsWith(getProperty) || p.getName().startsWith(getBoolProperty)) && p.getParameterCount() == 0).select(p -> Tuple.of(propertyName(p.getName()), p));
+            NQuery<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
+            NQuery<Tuple<String, Method>> getters = q.where(p -> p.getParameterCount() == 0 && p != getClass && (p.getName().startsWith(GET_PROPERTY) || p.getName().startsWith(GET_BOOL_PROPERTY))).select(p -> Tuple.of(propertyName(p.getName()), p));
             return setters.join(getters.toList(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
-        }, Cache.MEMORY_CACHE);
+        });
     }
 
     public static String propertyName(@NonNull String getterOrSetterName) {
         String name;
-        if (getterOrSetterName.startsWith(getProperty)) {
-            name = getterOrSetterName.substring(getProperty.length());
-        } else if (getterOrSetterName.startsWith(getBoolProperty)) {
-            name = getterOrSetterName.substring(getBoolProperty.length());
-        } else if (getterOrSetterName.startsWith(setProperty)) {
-            name = getterOrSetterName.substring(setProperty.length());
+        if (getterOrSetterName.startsWith(GET_PROPERTY)) {
+            name = getterOrSetterName.substring(GET_PROPERTY.length());
+        } else if (getterOrSetterName.startsWith(GET_BOOL_PROPERTY)) {
+            name = getterOrSetterName.substring(GET_BOOL_PROPERTY.length());
+        } else if (getterOrSetterName.startsWith(SET_PROPERTY)) {
+            name = getterOrSetterName.substring(SET_PROPERTY.length());
         } else {
             name = getterOrSetterName;
         }
-
         //Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
@@ -377,13 +393,13 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return Cache.getOrSet(Tuple.of("fieldMap", type), k -> {
+        return (Map<String, Field>) FIELD_CACHE.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
             }
             return Collections.unmodifiableMap(NQuery.of(all).toMap(Field::getName, p -> p));
-        }, Cache.MEMORY_CACHE);
+        });
     }
 
     public static void setAccess(AccessibleObject member) {
@@ -418,9 +434,6 @@ public class Reflects extends TypeUtils {
 
     public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
         typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
-        if (!supportTypes.contains(baseFromType)) {
-            supportTypes.add(baseFromType);
-        }
     }
 
     public static Object defaultValue(Class<?> type) {
@@ -428,7 +441,6 @@ public class Reflects extends TypeUtils {
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
-    @ErrorCode("notSupported")
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)
     @ErrorCode(cause = ReflectiveOperationException.class)
@@ -444,71 +456,82 @@ public class Reflects extends TypeUtils {
                 return null;
             }
             if (boolean.class.equals(toType)) {
-                value = false;
+                return (T) Boolean.FALSE;
             } else {
                 value = 0;
             }
         }
-        //isInstance int to long ok
-        if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
-            return (T) value;
-        }
-        NQuery<Class<?>> typeQuery = NQuery.of(supportTypes);
-        Class<?> strType = typeQuery.first();
-        if (toType.equals(strType)) {
-            return (T) value.toString();
-        }
-        final Class<?> fromType = value.getClass();
-        if (!(typeQuery.any(p -> ClassUtils.isAssignable(fromType, p)))) {
-            throw new ApplicationException("notSupported", values(fromType, toType));
-        }
-        Object fValue = value;
-        Class<T> tType = toType;
-        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(tType));
-        if (convertBean != null) {
-            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
-        }
 
-        String val = value.toString();
-        if (toType.equals(UUID.class)) {
-            value = UUID.fromString(val);
+        Class<?> fromType = value.getClass();
+        Object fValue = value;
+        if (toType.equals(String.class)) {
+            value = value.toString();
+        } else if (toType.equals(UUID.class)) {
+            value = UUID.fromString(value.toString());
         } else if (toType.equals(BigDecimal.class)) {
-            value = new BigDecimal(val);
+            value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
-            NQuery<String> q = NQuery.of(toType.getEnumConstants()).select(p -> ((Enum) p).name());
-            String fVal = val;
-            value = q.where(p -> p.equals(fVal)).singleOrDefault();
-            if (value == null) {
-                throw new ApplicationException("enumError", values(val, String.join(",", q), toType.getSimpleName()));
+            if (NEnum.class.isAssignableFrom(toType) && ClassUtils.isAssignable(fromType, Number.class)) {
+                int val = ((Number) value).intValue();
+                value = NEnum.valueOf((Class) toType, val);
+            } else {
+                String val = value.toString();
+                value = NQuery.of(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
             }
+            if (value == null) {
+                throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
+            }
+        } else if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
+            //isInstance int to long ok, do nothing
         } else {
             try {
                 toType = (Class) ClassUtils.primitiveToWrapper(toType);
                 if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
-                    if ("0".equals(val)) {
+                    int val = ((Number) value).intValue();
+                    if (val == 0) {
                         value = Boolean.FALSE;
-                    } else if ("1".equals(val)) {
+                    } else if (val == 1) {
                         value = Boolean.TRUE;
                     } else {
                         throw new InvalidException("Value should be 0 or 1");
                     }
                 } else {
+                    NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
+                    if (methods == null) {
+                        Class<T> fType = toType;
+                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(fType));
+                        if (convertBean != null) {
+                            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
+                        }
+                        throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
+                    }
+
                     if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
-                        if (Boolean.FALSE.toString().equals(val)) {
-                            val = "0";
-                        } else if (Boolean.TRUE.toString().equals(val)) {
-                            val = "1";
+                        boolean val = (boolean) value;
+                        if (!val) {
+                            value = "0";
                         } else {
-                            throw new InvalidException("Value should be true or false");
+                            value = "1";
                         }
                     }
-                    Method m = toType.getDeclaredMethod("valueOf", strType);
-                    value = m.invoke(null, val);
+
+                    Method m = null;
+                    for (Method p : methods) {
+                        if (!(p.getParameterCount() == 1 && p.getParameterTypes()[0].equals(String.class))) {
+                            continue;
+                        }
+                        m = p;
+                        break;
+                    }
+                    if (m == null) {
+                        m = toType.getDeclaredMethod(CHANGE_TYPE_METHOD, String.class);
+                    }
+                    value = m.invoke(null, value.toString());
                 }
-            } catch (NoSuchMethodException ex) {
-                throw new ApplicationException(values(toType), ex);
-            } catch (ReflectiveOperationException ex) {
-                throw new ApplicationException(values(fromType, toType, val), ex);
+            } catch (NoSuchMethodException e) {
+                throw new ApplicationException(values(toType), e);
+            } catch (ReflectiveOperationException e) {
+                throw new ApplicationException(values(fromType, toType, value), e);
             }
         }
         return (T) value;

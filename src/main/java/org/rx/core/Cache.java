@@ -8,9 +8,7 @@ import org.rx.core.cache.MemoryCache;
 import org.rx.core.cache.ThreadCache;
 import org.rx.util.function.BiFunc;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
-import static org.rx.core.Constants.NON_UNCHECKED;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<MemoryCache> MEMORY_CACHE = MemoryCache.class;
@@ -62,12 +60,4 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     TV put(TK key, TV value, CacheExpiration expiration);
-
-    default TV remove(TK key, boolean destroy) {
-        TV v = remove(key);
-        if (destroy) {
-            tryClose(v);
-        }
-        return v;
-    }
 }

@@ -1,5 +1,7 @@
 package org.rx.core;
 
+//import com.conversantmedia.util.concurrent.DisruptorBlockingQueue;
+
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
@@ -27,15 +29,22 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
-    public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
-        private static final long serialVersionUID = -1832603760465558822L;
+    public static class ThreadQueue<T>
+            extends LinkedTransferQueue<T>
+//            extends BlockingQueueProxyObject<T>
+    {
         private ThreadPool pool;
-        private int queueCapacity = Integer.MAX_VALUE;
+        private final int queueCapacity;
         private final AtomicInteger counter = new AtomicInteger();
+
+        public ThreadQueue(int queueCapacity) {
+//            super(new DisruptorBlockingQueue<>(queueCapacity));
+            this.queueCapacity = queueCapacity;
+        }
 
         @Override
         public boolean isEmpty() {
-            return size() == 0;
+            return counter.get() == 0;
         }
 
         @Override
@@ -46,21 +55,23 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
+            if (t == EMPTY) {
+                return false;
+            }
             IdentityRunnable p = pool.getAs((Runnable) t, false);
-            if (p != null && p.flag() != null) {
-                switch (p.flag()) {
-                    case TRANSFER:
-                        log.debug("Block caller thread until queue take");
-                        transfer(t);
-                        return true;
-                    case PRIORITY:
-                        incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
-                        return false;
-                }
+            if (p != null && eq(p.flag(), RunFlag.PRIORITY)) {
+                incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
+                return false;
             }
 
             int poolSize = pool.getPoolSize();
-            if (poolSize == pool.getMaximumPoolSize()) {
+            int maxPoolSize = pool.getMaximumPoolSize();
+            if (poolSize < maxPoolSize) {
+                log.debug("{}/{} New thread to execute", poolSize, maxPoolSize);
+                return false;
+            }
+            boolean isFull = counter.get() >= queueCapacity;
+            if (isFull) {
                 while (counter.get() >= queueCapacity) {
                     log.warn("Block caller thread[{}] until queue[{}/{}] polled", Thread.currentThread().getName(),
                             counter.get(), queueCapacity);
@@ -69,21 +80,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     }
                 }
                 log.debug("Wait poll ok");
-                counter.incrementAndGet();
-                return super.offer(t);
             }
-
-            if (pool.getSubmittedTaskCount() < poolSize) {
-                log.debug("Idle thread to execute");
-                counter.incrementAndGet();
-                return super.offer(t);
-            }
-
-            if (poolSize < pool.getMaximumPoolSize()) {
-                log.debug("{}/{} New thread to execute", poolSize, pool.getMaximumPoolSize());
-                return false;
-            }
-
             counter.incrementAndGet();
             return super.offer(t);
         }
@@ -100,8 +97,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                 throw e;
             } finally {
                 if (ok) {
-                    log.debug("setPoll() poll");
-                    setPoll();
+                    log.debug("Notify poll");
+                    doNotify();
                 }
             }
         }
@@ -111,8 +108,8 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return super.take();
             } finally {
-                log.debug("setPoll() take");
-                setPoll();
+                log.debug("Notify take");
+                doNotify();
             }
         }
 
@@ -120,13 +117,13 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
-                log.debug("setPoll() remove");
-                setPoll();
+                log.debug("Notify remove");
+                doNotify();
             }
             return ok;
         }
 
-        private void setPoll() {
+        private void doNotify() {
             counter.decrementAndGet();
             synchronized (this) {
                 notify();
@@ -138,18 +135,19 @@ public class ThreadPool extends ThreadPoolExecutor {
         Object id();
 
         default RunFlag flag() {
-            return RunFlag.CONCURRENT;
+            return RunFlag.DEFAULT;
         }
     }
 
     static class DynamicSizer implements TimerTask {
+        static final long SAMPLING_PERIOD = 1500L;
         static final int SAMPLING_TIMES = 4;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
         DynamicSizer() {
-            timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
+            timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -165,7 +163,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     thread(cpuLoad, pool, entry.getValue());
                 }
             } finally {
-                timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
+                timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
             }
         }
 
@@ -265,8 +263,12 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final int DEFAULT_KEEP_ALIVE_MINUTES = 20;
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(40, 60);
+    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
+            SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
+            SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
     static final DynamicSizer SIZER = new DynamicSizer();
+    static final Runnable EMPTY = () -> {
+    };
 
     static int getResizeQuantity() {
         return SystemPropertyUtil.getInt(Constants.THREAD_POOL_RESIZE_QUANTITY, 2);
@@ -283,9 +285,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static void incrSize(ThreadPoolExecutor pool, int maxSize) {
+        int corePoolSize = pool.getCorePoolSize();
+        if (corePoolSize >= maxSize) {
+            return;
+        }
+
         pool.setMaximumPoolSize(maxSize);
-        pool.execute(() -> {
-        });
+        pool.execute(EMPTY);
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -328,7 +334,10 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
+        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+            if (r == EMPTY) {
+                return;
+            }
             if (executor.isShutdown()) {
                 log.warn("ThreadPool {} is shutdown", poolName);
                 return;
@@ -338,12 +347,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         ((ThreadQueue<Runnable>) getQueue()).pool = this;
         this.poolName = poolName;
 
-        setQueueCapacity(queueCapacity);
         setDynamicSize(cpuWaterMark);
-    }
-
-    public void setQueueCapacity(int queueCapacity) {
-        ((ThreadQueue<Runnable>) getQueue()).queueCapacity = Math.max(1, queueCapacity);
     }
 
     public void setDynamicSize(IntWaterMark cpuWaterMark) {
@@ -366,8 +370,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.warn("{}.fn is null", r);
             } else {
                 funcMap.put(r, (Runnable) fn);
+                p = as(fn, IdentityRunnable.class);
             }
-            p = as(fn, IdentityRunnable.class);
         }
         if (p == null) {
             p = as(r, IdentityRunnable.class);
@@ -393,6 +397,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 
+        submittedTaskCounter.incrementAndGet();
         super.beforeExecute(t, r);
     }
 
@@ -423,21 +428,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         submittedTaskCounter.decrementAndGet();
     }
 
-    @Override
-    public void execute(Runnable command) {
-        submittedTaskCounter.incrementAndGet();
-        super.execute(command);
-    }
-
     public void offer(Runnable command) {
         log.debug("Block caller thread until queue offer");
         getQueue().offer(command);
-    }
-
-    @SneakyThrows
-    public void transfer(Runnable command) {
-        log.debug("Block caller thread until queue take");
-        ((ThreadQueue<Runnable>) getQueue()).transfer(command);
     }
 
     @Override

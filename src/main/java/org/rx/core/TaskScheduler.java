@@ -55,7 +55,7 @@ public class TaskScheduler extends ThreadPool {
 
         @Override
         public String toString() {
-            return String.format("Task-%s[%s]", isNull(id, Strings.EMPTY), isNull(flag, RunFlag.CONCURRENT));
+            return String.format("Task-%s[%s]", isNull(id, Strings.EMPTY), isNull(flag, RunFlag.DEFAULT));
         }
     }
 

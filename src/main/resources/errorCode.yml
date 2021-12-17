@@ -11,8 +11,7 @@ org:
       Reflects:
         newInstance: Constructor {0} parameter type not match
         invokeMethod: Method {0}.{1} parameter type not match
-        changeType[notSupported]: Not supported convert {0} to {1}
-        changeType[enumError]: Not found {0} in {1} of $eType enum
+        changeType[enumError]: Not found {0} of {1} enum
         changeType<NoSuchMethodException>: Not found ValueOf method of {0}
         changeType<ReflectiveOperationException>: Convert {0} from {1} to {2} error
       Strings:

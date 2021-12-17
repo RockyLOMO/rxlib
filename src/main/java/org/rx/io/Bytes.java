@@ -63,6 +63,14 @@ public class Bytes {
         return buf;
     }
 
+    public static long wrap(int a, int b) {
+        return (((long) a) << 32) | (b & 0xffffffffL);
+    }
+
+    public static int[] unwrap(long l) {
+        return new int[]{(int) (l >> 32), (int) l};
+    }
+
     public static int findText(ByteBuf byteBuf, String str) {
         byte[] text = str.getBytes();
         int matchIndex = 0;
@@ -184,9 +192,7 @@ public class Bytes {
         }
         return String.format("%.1fTB", val / Constants.TB);
     }
-    //endregion
 
-    //region value
     public static <E extends Enum<E>> int toEnumVector(Set<E> set) {
         int vector = 0;
         for (E e : set) {

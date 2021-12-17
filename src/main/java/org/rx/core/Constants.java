@@ -4,8 +4,12 @@ public interface Constants {
     String THREAD_POOL_MIN_SIZE = "app.threadPool.minSize";
     String THREAD_POOL_MAX_SIZE = "app.threadPool.maxSize";
     String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
+    String CPU_LOW_WATER_MARK = "app.cpu.lowWaterMark";
+    String CPU_HIGH_WATER_MARK = "app.cpu.highWaterMark";
     String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
     String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
+    String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
+    String CACHE_MULTI_EXPIRATION = "app.cache.enableMultiExpiration";
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";

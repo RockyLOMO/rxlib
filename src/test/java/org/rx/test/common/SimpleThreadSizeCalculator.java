@@ -1,10 +1,10 @@
 package org.rx.test.common;
 
-import org.rx.core.ThreadPool;
 import org.rx.net.http.HttpClient;
 
 import java.math.BigDecimal;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedTransferQueue;
 
 public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
     @Override
@@ -17,7 +17,7 @@ public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
 
     @Override
     protected BlockingQueue createWorkQueue() {
-        return new ThreadPool.ThreadQueue<>();
+        return new LinkedTransferQueue<>();
     }
 
     public static void main(String[] args) {

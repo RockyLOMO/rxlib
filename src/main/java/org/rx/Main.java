@@ -175,7 +175,7 @@ public final class Main implements SocksSupport {
                 UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
                 if (conf.pcap2socks && e.getSourceEndpoint().getAddress().isLoopbackAddress()) {
                     Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-                    if (cache.get(cacheKey("pcap:", e.getSourceEndpoint().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
+                    if (cache.get(hashKey("pcap", e.getSourceEndpoint().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
                             .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
                                     && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
                         log.info("pcap2socks forward");

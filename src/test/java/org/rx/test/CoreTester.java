@@ -180,39 +180,7 @@ public class CoreTester extends TestUtil {
         System.in.read();
     }
 
-    @SneakyThrows
-    @Test
-    public void asyncTask() {
-        //autoIncSize
-        for (int i = 0; i < 5; i++) {
-            int finalI = i;
-            Tasks.schedule(() -> {
-                System.out.println("start:" + finalI);
-                sleep(5000);
-                System.out.println("stop:" + finalI);
-            }, 1000);
-        }
-
-        IntWaterMark config = new IntWaterMark(20, 40);
-        Tasks.pool().setDynamicSize(config);
-
-        for (int i = 0; i < 6; i++) {
-            int x = i;
-            //RunFlag.CONCURRENT    默认无锁
-            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
-            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-            Tasks.run(() -> {
-                log.info("Exec: " + x);
-                sleep(2000);
-            }, "myTaskId", RunFlag.TRANSFER)
-                    .whenCompleteAsync((r, e) -> log.info("Done: " + x));
-        }
-
-        System.out.println("main thread done");
-        System.in.read();
-    }
+    static final long delayMillis = 5000;
 
     @SneakyThrows
     @Test
@@ -226,26 +194,44 @@ public class CoreTester extends TestUtil {
 
         //最佳线程数=CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)，由于执行任务的不同，CPU 等待时间和执行时间无法确定，
         //因此换一种思路，当列队满的情况下，如果CPU使用率小于40%，则会动态增大线程池maxThreads 最大线程数的值来提高吞吐量。如果CPU使用率大于60%，则会动态减小maxThreads 值来降低生产者的任务生产速度。
-        IntWaterMark config = new IntWaterMark(20, 40);
         //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //FastThreadLocal 支持netty FastThreadLocal
-        ExecutorService pool = new ThreadPool(1, 1, 1, 8, config, "");
-        for (int i = 0; i < 10; i++) {
-            int n = i;
+        ExecutorService pool = new ThreadPool(1, 1, 1,
+                8, new IntWaterMark(20, 40), "DEV");
+        for (int i = 0; i < 100; i++) {
+            int x = i;
             pool.execute(() -> {
-                log.info("exec {} begin..", n);
-                sleep(5 * 1000);
-                log.info("exec {} end..", n);
+                log.info("exec {} begin..", x);
+                sleep(delayMillis);
+                log.info("exec {} end..", x);
             });
         }
 
-        sleep(10000);
-        for (int i = 0; i < 10; i++) {
-            pool.execute(() -> {
-            });
-        }
+//        for (int i = 0; i < 10; i++) {
+//            int x = i;
+//            //RunFlag.CONCURRENT    默认无锁
+//            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
+//            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+//            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
+//            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+//            Tasks.run(() -> {
+//                        log.info("exec {} begin..", x);
+//                        sleep(delayMillis);
+//                        log.info("exec {} end..", x);
+//                    }, "myTaskId", RunFlag.TRANSFER)
+//                    .whenCompleteAsync((r, e) -> log.info("Done: " + x));
+//        }
+
+//        for (int i = 0; i < 5; i++) {
+//            int x = i;
+//            Tasks.schedule(() -> {
+//                log.info("exec {} begin..", x);
+//                sleep(delayMillis);
+//                log.info("exec {} end..", x);
+//            }, 1000);
+//        }
 
         System.out.println("main thread done");
         System.in.read();
@@ -254,7 +240,7 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public synchronized void MXBean() {
-        int productCount = 4;
+        int productCount = 10;
         ExecutorService fix = Executors.newFixedThreadPool(productCount);
         ThreadPool pool = new ThreadPool(1, 1, 1, "rx");
 
@@ -313,7 +299,7 @@ public class CoreTester extends TestUtil {
     @Test
     public void cache() {
         BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
-        testCache(new MemoryCache<>(dump));
+        testCache(new MemoryCache.MultiExpireCache<>(dump));
 
 //        Tuple<Integer, String> key1 = Tuple.of(1, "a");
 //        Tuple<Integer, String> key2 = Tuple.of(2, "b");
@@ -427,8 +413,6 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void convert() {
-        Reflects.registerConvert(Integer.class, PersonGender.class, (fromValue, toType) -> NEnum.valueOf(toType, fromValue));
-
         int val = Reflects.changeType(PersonGender.Boy, Integer.class);
         assert val == 1;
 
@@ -468,14 +452,15 @@ public class CoreTester extends TestUtil {
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
-        System.out.println(cacheKey("reflect"));
-        System.out.println(cacheKey("reflect:", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(hashKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(cacheKey("prefix", "12345"));
+        System.out.println(cacheKey("prefix", 12345));
 
 
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
         System.out.println(bean.getError());
 
-        Reflects.invokeMethod(ErrorBean.class, "staticCall", 1, null);
+        Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", 1, null);
         Reflects.invokeMethod(bean, "instanceCall", 2, null);
         Reflects.invokeMethod(bean, "defCall", 3, null);
         Reflects.invokeMethod(bean, "nestedDefCall", 4, null);
