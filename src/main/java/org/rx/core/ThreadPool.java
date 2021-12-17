@@ -35,7 +35,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public boolean isEmpty() {
-            return size() == 0;
+            return counter.get() == 0;
         }
 
         @Override
@@ -47,7 +47,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public boolean offer(T t) {
             if (t == EMPTY) {
-                return true;
+                return false;
             }
 
             IdentityRunnable p = pool.getAs((Runnable) t, false);
@@ -64,7 +64,13 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             int poolSize = pool.getPoolSize();
-            if (poolSize == pool.getMaximumPoolSize()) {
+            int maxPoolSize = pool.getMaximumPoolSize();
+            if (poolSize < maxPoolSize) {
+                log.debug("{}/{} New thread to execute", poolSize, maxPoolSize);
+                return false;
+            }
+            boolean isFull = counter.get() >= queueCapacity;
+            if (isFull) {
                 while (counter.get() >= queueCapacity) {
                     log.warn("Block caller thread[{}] until queue[{}/{}] polled", Thread.currentThread().getName(),
                             counter.get(), queueCapacity);
@@ -73,21 +79,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     }
                 }
                 log.debug("Wait poll ok");
-                counter.incrementAndGet();
-                return super.offer(t);
             }
-
-            if (pool.getSubmittedTaskCount() < poolSize) {
-                log.debug("Idle thread to execute");
-                counter.incrementAndGet();
-                return super.offer(t);
-            }
-
-            if (poolSize < pool.getMaximumPoolSize()) {
-                log.debug("{}/{} New thread to execute", poolSize, pool.getMaximumPoolSize());
-                return false;
-            }
-
             counter.incrementAndGet();
             return super.offer(t);
         }
@@ -147,13 +139,14 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
+        static final long SAMPLING_PERIOD = 1500L;
         static final int SAMPLING_TIMES = 4;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
         DynamicSizer() {
-            timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
+            timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -169,7 +162,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     thread(cpuLoad, pool, entry.getValue());
                 }
             } finally {
-                timer.newTimeout(this, 1000L, TimeUnit.MILLISECONDS);
+                timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
             }
         }
 
@@ -269,7 +262,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final int DEFAULT_KEEP_ALIVE_MINUTES = 20;
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(50, 70);
+    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
+            SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
+            SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };
@@ -339,6 +334,9 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(), newThreadFactory(poolName), (r, executor) -> {
+            if (r == EMPTY) {
+                return;
+            }
             if (executor.isShutdown()) {
                 log.warn("ThreadPool {} is shutdown", poolName);
                 return;
@@ -376,8 +374,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.warn("{}.fn is null", r);
             } else {
                 funcMap.put(r, (Runnable) fn);
+                p = as(fn, IdentityRunnable.class);
             }
-            p = as(fn, IdentityRunnable.class);
         }
         if (p == null) {
             p = as(r, IdentityRunnable.class);
@@ -403,6 +401,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 
+        submittedTaskCounter.incrementAndGet();
         super.beforeExecute(t, r);
     }
 
@@ -431,12 +430,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         super.afterExecute(r, t);
         submittedTaskCounter.decrementAndGet();
-    }
-
-    @Override
-    public void execute(Runnable command) {
-        submittedTaskCounter.incrementAndGet();
-        super.execute(command);
     }
 
     public void offer(Runnable command) {
