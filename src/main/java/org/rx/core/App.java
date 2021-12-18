@@ -96,6 +96,7 @@ public final class App extends SystemUtils {
 //        return method.intern();
     }
 
+    //注意arg类型区分String和Number
     public static String cacheKey(String method, Object... args) {
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();

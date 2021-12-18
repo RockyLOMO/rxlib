@@ -60,8 +60,8 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    default <TArgs extends EventArgs> void raiseEvent(TripleAction<TSender, TArgs> event, @NonNull TArgs args) {
-        if (event == null) {
+    default <TArgs extends EventArgs> void raiseEvent(Delegate<TSender, TArgs> event, @NonNull TArgs args) {
+        if (event.isEmpty()) {
             return;
         }
         event.invoke((TSender) this, args);
@@ -71,7 +71,10 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
         return asyncScheduler().run(() -> raiseEvent(eventName, args));
     }
 
-    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(TripleAction<TSender, TArgs> event, TArgs args) {
+    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TSender, TArgs> event, TArgs args) {
+        if (event.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
         return asyncScheduler().run(() -> raiseEvent(event, args));
     }
 }
