@@ -398,6 +398,14 @@ public final class App extends SystemUtils {
         return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
     }
 
+    public static boolean tryClose(AutoCloseable obj) {
+        if (obj == null) {
+            return false;
+        }
+        quietly(obj::close);
+        return true;
+    }
+
     public static <T> boolean tryAs(Object obj, Class<T> type) {
         return tryAs(obj, type, null);
     }
