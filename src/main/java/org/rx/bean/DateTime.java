@@ -164,7 +164,7 @@ public final class DateTime extends Date {
     }
 
     @Override
-    public synchronized void setTime(long time) {
+    public void setTime(long time) {
         super.setTime(time);
         if (calendar != null) {
             calendar.setTimeInMillis(time);

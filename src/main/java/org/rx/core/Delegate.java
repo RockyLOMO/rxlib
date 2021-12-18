@@ -62,7 +62,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     TripleAction<TSender, TArgs> headInvocation;
     TripleAction<TSender, TArgs> tailInvocation;
 
-    public synchronized boolean isEmpty() {
+    public boolean isEmpty() {
         return invocations.isEmpty() && headInvocation == null && tailInvocation == null;
     }
 
@@ -130,7 +130,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     }
 
     @Override
-    public synchronized void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
+    public void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
         if (!innerInvoke(headInvocation, target, args)) {
             return;
         }
