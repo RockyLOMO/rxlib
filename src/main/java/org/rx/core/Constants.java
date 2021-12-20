@@ -9,6 +9,7 @@ public interface Constants {
     String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
     String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
     String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
+    String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
     String CACHE_MULTI_EXPIRATION = "app.cache.enableMultiExpiration";
 
     String NON_UNCHECKED = "unchecked";

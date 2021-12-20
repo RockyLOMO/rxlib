@@ -189,7 +189,8 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .scheduler(Scheduler.forScheduledExecutorService(Tasks.scheduler()));
     }
 
-    final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache = slidingBuilder(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_SLIDING_SECONDS, 60)).build();
+    final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache = slidingBuilder(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_SLIDING_SECONDS, 60))
+            .maximumSize(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_MAX_SIZE, 10000)).build();
 
     @Override
     public int size() {

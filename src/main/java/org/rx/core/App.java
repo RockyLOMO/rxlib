@@ -65,7 +65,7 @@ public final class App extends SystemUtils {
         return v;
     };
     @Setter
-    static volatile Predicate<Throwable> ignoreExceptionHandler;
+    static Predicate<Throwable> ignoreExceptionHandler;
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
