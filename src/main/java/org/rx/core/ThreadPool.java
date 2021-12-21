@@ -302,13 +302,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Getter
     private final String poolName;
-    private final AtomicInteger submittedTaskCounter = new AtomicInteger();
     private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
-
-    public int getSubmittedTaskCount() {
-        return submittedTaskCounter.get();
-    }
 
     @Override
     public void setRejectedExecutionHandler(RejectedExecutionHandler handler) {
@@ -318,7 +313,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public ThreadPool(String poolName) {
         this(SystemPropertyUtil.getInt(Constants.THREAD_POOL_MIN_SIZE, CPU_THREADS + 1),
                 SystemPropertyUtil.getInt(Constants.THREAD_POOL_MAX_SIZE, computeThreads(1, 2, 1)),
-                SystemPropertyUtil.getInt(Constants.THREAD_POOL_QUEUE_CAPACITY, CPU_THREADS * 16), poolName);
+                SystemPropertyUtil.getInt(Constants.THREAD_POOL_QUEUE_CAPACITY, CPU_THREADS * 32), poolName);
     }
 
     public ThreadPool(int coreThreads, int maxThreads, int queueCapacity, String poolName) {
@@ -397,7 +392,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 
-        submittedTaskCounter.incrementAndGet();
         super.beforeExecute(t, r);
     }
 
@@ -425,12 +419,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         super.afterExecute(r, t);
-        submittedTaskCounter.decrementAndGet();
-    }
-
-    public void offer(Runnable command) {
-        log.debug("Block caller thread until queue offer");
-        getQueue().offer(command);
     }
 
     @Override

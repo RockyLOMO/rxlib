@@ -65,7 +65,7 @@ public final class App extends SystemUtils {
         return v;
     };
     @Setter
-    static volatile Predicate<Throwable> ignoreExceptionHandler;
+    static Predicate<Throwable> ignoreExceptionHandler;
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
@@ -96,6 +96,7 @@ public final class App extends SystemUtils {
 //        return method.intern();
     }
 
+    //注意arg类型区分String和Number
     public static String cacheKey(String method, Object... args) {
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();
@@ -396,6 +397,14 @@ public final class App extends SystemUtils {
 
     public static boolean tryClose(Object obj) {
         return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
+    }
+
+    public static boolean tryClose(AutoCloseable obj) {
+        if (obj == null) {
+            return false;
+        }
+        quietly(obj::close);
+        return true;
     }
 
     public static <T> boolean tryAs(Object obj, Class<T> type) {

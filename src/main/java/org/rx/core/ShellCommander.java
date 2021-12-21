@@ -96,10 +96,10 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     private final String shell;
     private final File workspace;
     private final long intervalPeriod;
-    private volatile Process process;
+    private Process process;
     private CompletableFuture<Void> daemonFuture;
 
-    public boolean isRunning() {
+    public synchronized boolean isRunning() {
         return process != null && process.isAlive();
     }
 
@@ -194,7 +194,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     @SneakyThrows
-    public int waitFor() {
+    public synchronized int waitFor() {
         if (!isRunning()) {
             return 0;
         }
@@ -202,7 +202,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     @SneakyThrows
-    public boolean waitFor(int timeoutSeconds) {
+    public synchronized boolean waitFor(int timeoutSeconds) {
         return isRunning() && process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
     }
 

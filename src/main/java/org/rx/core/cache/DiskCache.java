@@ -1,9 +1,11 @@
 package org.rx.core.cache;
 
+import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
+import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.bean.DateTime;
@@ -23,7 +25,24 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache.MultiExpireCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache.MultiExpireCache<>(b -> b
+//            .expireAfter(new Expiry<Object, Object>() {
+//        @Override
+//        public long expireAfterCreate(@NonNull Object o, @NonNull Object o2, long l) {
+//            return 0;
+//        }
+//
+//        @Override
+//        public long expireAfterUpdate(@NonNull Object o, @NonNull Object o2, long l, @NonNegative long l1) {
+//            return 0;
+//        }
+//
+//        @Override
+//        public long expireAfterRead(@NonNull Object o, @NonNull Object o2, long l, @NonNegative long l1) {
+//            return 0;
+//        }
+//    })
+            .maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 

@@ -6,7 +6,7 @@ import org.rx.exception.ApplicationException;
 import static org.rx.core.App.values;
 
 public abstract class Disposable implements AutoCloseable {
-    private volatile boolean closed;
+    private boolean closed;
 
     public boolean isClosed() {
         return closed;

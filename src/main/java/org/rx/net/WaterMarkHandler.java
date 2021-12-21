@@ -18,12 +18,13 @@ final class WaterMarkHandler extends ChannelDuplexHandler {
         if (!channel.isWritable()) {
             synchronized (channel) {
                 if (!channel.isWritable()) {
+                    channel.flush();
                     log.warn("{} {} not writable", Sockets.protocolName(channel), channel);
                     channel.wait();
                 }
             }
         }
-        log.info("RELEASE {} => {}", ReferenceCountUtil.refCnt(msg), msg);
+//        log.info("RELEASE {} => {}", ReferenceCountUtil.refCnt(msg), msg);
         super.write(ctx, msg, promise.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE));
     }
 
