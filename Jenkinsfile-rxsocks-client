@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         APP_NAME = 'socks-client'
-        JAR_NAME = 'rxlib-2.17.7-SNAPSHOT.jar'
+        JAR_NAME = 'rxlib-2.17.8-SNAPSHOT.jar'
 
         APP_HOST = 's.f-li.cn'
         REMOTE_PATH = '/home/rxsocks/'
