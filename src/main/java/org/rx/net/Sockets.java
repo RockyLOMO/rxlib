@@ -153,7 +153,7 @@ public final class Sockets {
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .handler(WaterMarkHandler.DEFAULT);
+                .childHandler(WaterMarkHandler.DEFAULT);
         if (config.isEnableNettyLog()) {
             //netty日志
             b.handler(DEFAULT_LOG);
