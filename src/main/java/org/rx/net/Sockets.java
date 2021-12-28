@@ -94,8 +94,7 @@ public final class Sockets {
                     log.info("nsProxy {}", e.getMessage());
                 }
             }
-            Reflects.setAccess(method);
-            return method.invoke(ns, args);
+            return Reflects.invokeMethod(method, ns, args);
         });
     }
 
