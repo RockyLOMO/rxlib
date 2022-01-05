@@ -2,7 +2,6 @@ package org.rx.core;
 
 public interface Constants {
     String THREAD_POOL_MIN_SIZE = "app.threadPool.minSize";
-    String THREAD_POOL_MAX_SIZE = "app.threadPool.maxSize";
     String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
     String CPU_LOW_WATER_MARK = "app.cpu.lowWaterMark";
     String CPU_HIGH_WATER_MARK = "app.cpu.highWaterMark";

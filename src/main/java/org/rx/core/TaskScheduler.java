@@ -63,8 +63,8 @@ public class TaskScheduler extends ThreadPool {
         super(poolName);
     }
 
-    public TaskScheduler(int coreThreads, int maxThreads, int queueCapacity, String poolName) {
-        super(coreThreads, maxThreads, queueCapacity, poolName);
+    public TaskScheduler(int coreThreads, int queueCapacity, String poolName) {
+        super(coreThreads, queueCapacity, poolName);
     }
 
     public CompletableFuture<Void> run(Action task) {
