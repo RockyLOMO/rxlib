@@ -1,10 +1,7 @@
 package org.rx.core;
 
 import io.netty.buffer.ByteBuf;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.rx.exception.InvalidException;
@@ -74,7 +71,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     public static final TripleAction<ShellCommander, OutPrintEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
-    static final String WIN_CMD = "cmd /c ";
+    static final String LINUX_BASH = "bash -c ", WIN_CMD = "cmd /c ";
     static final List<ShellCommander> KILL_LIST = newConcurrentList(true);
 
     static {
@@ -93,7 +90,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
     @Getter
-    private final String shell;
+    private String shell;
     private final File workspace;
     private final long intervalPeriod;
     private Process process;
@@ -101,6 +98,17 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();
+    }
+
+    public ShellCommander setReadThenExit() {
+        if (!Files.isPath(shell)) {
+            if (App.IS_OS_WINDOWS && !Strings.startsWithIgnoreCase(shell, WIN_CMD)) {
+                shell = WIN_CMD + shell;
+            } else {
+                shell = LINUX_BASH + shell;
+            }
+        }
+        return this;
     }
 
     public ShellCommander setAutoRestart() {
@@ -117,19 +125,13 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     public ShellCommander(@NonNull String shell, String workspace, long intervalPeriod, boolean killOnExited) {
-        boolean isPath = Files.isPath(shell);
-        if (!isPath && App.IS_OS_WINDOWS && !shell.startsWith(WIN_CMD)) {
-            shell = WIN_CMD + shell;
-        }
-        this.shell = shell;
-
-        if (isPath) {
+        this.shell = shell = shell.trim();
+        if (Files.isPath(shell)) {
             workspace = FilenameUtils.getFullPathNoEndSeparator(shell);
         }
         this.workspace = workspace == null ? null : new File(workspace);
 
         this.intervalPeriod = Math.max(1, intervalPeriod);
-
         if (killOnExited) {
             KILL_LIST.add(this);
         }

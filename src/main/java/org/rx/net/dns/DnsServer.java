@@ -23,10 +23,7 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -73,6 +70,10 @@ public class DnsServer extends Disposable {
         }
         //根据权重取2个
         return NQuery.of(ips.next(), ips.next()).distinct().toList();
+    }
+
+    public List<InetAddress> getAllHosts(String host) {
+        return new ArrayList<>(hosts.get(host));
     }
 
     @SneakyThrows

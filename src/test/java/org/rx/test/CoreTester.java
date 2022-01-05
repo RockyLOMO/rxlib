@@ -198,8 +198,7 @@ public class CoreTester extends TestUtil {
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //FastThreadLocal 支持netty FastThreadLocal
-        ExecutorService pool = new ThreadPool(1, 1, 1,
-                8, new IntWaterMark(20, 40), "DEV");
+        ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
         for (int i = 0; i < 100; i++) {
             int x = i;
             pool.execute(() -> {
@@ -242,15 +241,23 @@ public class CoreTester extends TestUtil {
     public synchronized void MXBean() {
         int productCount = 10;
         ExecutorService fix = Executors.newFixedThreadPool(productCount);
-        ThreadPool pool = new ThreadPool(1, 1, 1, "rx");
+        ThreadPool pool = new ThreadPool(1, 4, "rx");
 
         for (int i = 0; i < productCount; i++) {
             int finalI = i;
             fix.execute(() -> {
 //                while (true) {
-                pool.execute(() -> {
-                    System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
-                    sleep(500);
+                pool.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
+                        sleep(5000);
+                    }
+
+                    @Override
+                    public String toString() {
+                        return "-[" + finalI;
+                    }
                 });
 //                }
             });

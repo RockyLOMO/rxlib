@@ -142,7 +142,6 @@ public class Reflects extends TypeUtils {
     }
 
     //ClassPath.from(classloader).getTopLevelClasses(packageDirName)
-    @SuppressWarnings(NON_UNCHECKED)
     public static <T> Class<T> loadClass(String className, boolean initialize, boolean throwOnEmpty) {
         try {
             return (Class<T>) Class.forName(className, initialize, getClassLoader());
@@ -158,7 +157,6 @@ public class Reflects extends TypeUtils {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode
     @SneakyThrows
     public static <T> T newInstance(@NonNull Class<T> type, Object... args) {
@@ -210,7 +208,6 @@ public class Reflects extends TypeUtils {
         return Tuple.of(declaredClass, fieldName);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T> T invokeDefaultMethod(@NonNull Method method, Object instance, Object... args) {
         require(method, method.isDefault());
@@ -242,7 +239,6 @@ public class Reflects extends TypeUtils {
         return invokeMethod(null, instance, name, args);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     @ErrorCode
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
@@ -296,7 +292,6 @@ public class Reflects extends TypeUtils {
         }
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T invokeMethod(Method method, TT instance, Object... args) {
         setAccess(method);
@@ -369,7 +364,6 @@ public class Reflects extends TypeUtils {
         return readField(instance.getClass(), instance, name);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     public static <T, TT> T readField(Class<? extends TT> type, TT instance, String name) {
         Field field = getFieldMap(type).get(name);

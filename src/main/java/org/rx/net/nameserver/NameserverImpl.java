@@ -135,6 +135,6 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
-        return dnsServer.getHosts(appName);
+        return dnsServer.getAllHosts(appName);
     }
 }

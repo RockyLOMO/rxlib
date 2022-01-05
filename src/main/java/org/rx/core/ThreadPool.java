@@ -1,7 +1,5 @@
 package org.rx.core;
 
-//import com.conversantmedia.util.concurrent.DisruptorBlockingQueue;
-
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
@@ -29,16 +27,12 @@ import static org.rx.core.App.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
-    public static class ThreadQueue<T>
-            extends LinkedTransferQueue<T>
-//            extends BlockingQueueProxyObject<T>
-    {
+    public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private ThreadPool pool;
         private final int queueCapacity;
         private final AtomicInteger counter = new AtomicInteger();
 
         public ThreadQueue(int queueCapacity) {
-//            super(new DisruptorBlockingQueue<>(queueCapacity));
             this.queueCapacity = queueCapacity;
         }
 
@@ -55,26 +49,21 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
-            if (t == EMPTY) {
-                return false;
-            }
+//            if (t == EMPTY) {
+//                return false;
+//            }
             IdentityRunnable p = pool.getAs((Runnable) t, false);
             if (p != null && eq(p.flag(), RunFlag.PRIORITY)) {
-                incrSize(pool, pool.getMaximumPoolSize() + getResizeQuantity());
+                incrSize(pool);
+                //New thread to execute
                 return false;
             }
 
-            int poolSize = pool.getPoolSize();
-            int maxPoolSize = pool.getMaximumPoolSize();
-            if (poolSize < maxPoolSize) {
-                log.debug("{}/{} New thread to execute", poolSize, maxPoolSize);
-                return false;
-            }
             boolean isFull = counter.get() >= queueCapacity;
             if (isFull) {
                 while (counter.get() >= queueCapacity) {
-                    log.warn("Block caller thread[{}] until queue[{}/{}] polled", Thread.currentThread().getName(),
-                            counter.get(), queueCapacity);
+                    log.warn("Block caller thread[{}] until queue[{}/{}] polled then offer {}", Thread.currentThread().getName(),
+                            counter.get(), queueCapacity, t);
                     synchronized (this) {
                         wait();
                     }
@@ -82,7 +71,11 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.debug("Wait poll ok");
             }
             counter.incrementAndGet();
-            return super.offer(t);
+            try {
+                return super.offer(t);
+            } finally {
+                log.debug("queue[{}] offer {}", counter.get(), t);
+            }
         }
 
         @Override
@@ -173,21 +166,19 @@ public class ThreadPool extends ThreadPoolExecutor {
             int incrementCounter = tuple.right;
 
             String prefix = pool.toString();
-            int maxSize = pool.getMaximumPoolSize();
+            int poolSize = pool.getPoolSize();
             int resizeQuantity = getResizeQuantity();
-            log.debug("{} PoolSize={}/{} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                    pool.getPoolSize(), maxSize, pool.getQueue().size(),
+            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                    poolSize, pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
 
             if (cpuLoad.gt(waterMark.getHigh())) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
-                    maxSize -= resizeQuantity;
-                    if (maxSize >= pool.getCorePoolSize()) {
-                        log.info("{} Threshold={}[{}-{}]% decrement to {}", prefix,
-                                cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
-                        pool.setMaximumPoolSize(maxSize);
-                        decrementCounter = 0;
-                    }
+                    poolSize = Math.max(poolSize - resizeQuantity, 2);
+                    log.info("{} Threshold={}[{}-{}]% decrement to {}", prefix,
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), poolSize);
+                    pool.setCorePoolSize(poolSize);
+                    decrementCounter = 0;
                 }
             } else {
                 decrementCounter = 0;
@@ -195,10 +186,10 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
                 if (++incrementCounter >= SAMPLING_TIMES) {
-                    maxSize += resizeQuantity;
+                    poolSize += resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), maxSize);
-                    incrSize(pool, maxSize);
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), poolSize);
+                    incrSize(pool);
                     incrementCounter = 0;
                 }
             } else {
@@ -262,7 +253,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final int DEFAULT_KEEP_ALIVE_MINUTES = 20;
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
             SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
             SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
@@ -284,14 +274,11 @@ public class ThreadPool extends ThreadPoolExecutor {
                 .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
     }
 
-    static void incrSize(ThreadPoolExecutor pool, int maxSize) {
-        int corePoolSize = pool.getCorePoolSize();
-        if (corePoolSize >= maxSize) {
-            return;
-        }
-
-        pool.setMaximumPoolSize(maxSize);
-        pool.execute(EMPTY);
+    static void incrSize(ThreadPoolExecutor pool) {
+        int poolSize = pool.getCorePoolSize() + getResizeQuantity();
+        pool.setCorePoolSize(poolSize);
+//        pool.setMaximumPoolSize(maxSize);
+//        pool.execute(EMPTY);
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -306,30 +293,33 @@ public class ThreadPool extends ThreadPoolExecutor {
     private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
 
     @Override
+    public void setMaximumPoolSize(int maximumPoolSize) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void setRejectedExecutionHandler(RejectedExecutionHandler handler) {
         log.warn("ignore setRejectedExecutionHandler");
     }
 
     public ThreadPool(String poolName) {
+        //computeThreads(1, 2, 1)
         this(SystemPropertyUtil.getInt(Constants.THREAD_POOL_MIN_SIZE, CPU_THREADS + 1),
-                SystemPropertyUtil.getInt(Constants.THREAD_POOL_MAX_SIZE, computeThreads(1, 2, 1)),
                 SystemPropertyUtil.getInt(Constants.THREAD_POOL_QUEUE_CAPACITY, CPU_THREADS * 32), poolName);
     }
 
-    public ThreadPool(int coreThreads, int maxThreads, int queueCapacity, String poolName) {
-        this(coreThreads, maxThreads, DEFAULT_KEEP_ALIVE_MINUTES, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
+    public ThreadPool(int coreThreads, int queueCapacity, String poolName) {
+        this(coreThreads, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
     }
 
     /**
      * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
      *
-     * @param coreThreads      最小线程数
-     * @param maxThreads       最大线程数
-     * @param keepAliveMinutes 超出最小线程数的最大线程数存活时间
-     * @param queueCapacity    LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
+     * @param coreThreads   最小线程数
+     * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
-    public ThreadPool(int coreThreads, int maxThreads, int keepAliveMinutes, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(Math.max(2, coreThreads), Math.max(Math.max(2, coreThreads), maxThreads), keepAliveMinutes, TimeUnit.MINUTES, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+    public ThreadPool(int coreThreads, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
+        super(Math.max(2, coreThreads), Integer.MAX_VALUE, 0, TimeUnit.MILLISECONDS, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
             if (r == EMPTY) {
                 return;
             }
