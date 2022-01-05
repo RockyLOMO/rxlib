@@ -1,11 +1,14 @@
 package org.rx.core;
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
+import org.apache.commons.collections4.SetUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
@@ -293,12 +296,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public NQuery<T> intersect(Iterable<T> set) {
+    public NQuery<T> intersection(Iterable<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
+    public NQuery<T> difference(Iterable<T> set) {
+        return NQuery.of(CollectionUtils.disjunction(this, set));
+    }
+
     public NQuery<T> union(Iterable<T> set) {
-        return concat(set);
+        return NQuery.of(CollectionUtils.union(this, set));
     }
 
     public <TK> NQuery<T> orderBy(BiFunc<T, TK> keySelector) {
