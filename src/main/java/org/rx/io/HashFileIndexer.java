@@ -141,7 +141,7 @@ final class HashFileIndexer<TK> extends Disposable {
     private final int growSize;
     private final Slot[] slots;
     private final WriteBehindQueue<String, Integer> queue;
-    private final Cache<TK, KeyData<TK>> cache = new MemoryCache.MultiExpireCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 4 + 8));
+    private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 4 + 8));
 
     public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);

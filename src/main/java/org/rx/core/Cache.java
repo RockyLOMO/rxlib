@@ -17,18 +17,18 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<Cache> MAIN_CACHE = Cache.class;
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
-        return getOrSet(key, loadingFunc, CacheExpiration.NON_EXPIRE);
+        return getOrSet(key, loadingFunc, CachePolicy.NON_EXPIRE);
     }
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc, Class<?> cacheName) {
-        return getOrSet(key, loadingFunc, CacheExpiration.NON_EXPIRE, cacheName);
+        return getOrSet(key, loadingFunc, CachePolicy.NON_EXPIRE, cacheName);
     }
 
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration) {
         return getOrSet(key, loadingFunc, expiration, MAIN_CACHE);
     }
 
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CacheExpiration expiration, Class<?> cacheName) {
+    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration, Class<?> cacheName) {
         return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expiration);
     }
 
@@ -42,12 +42,12 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     @SneakyThrows
-    default TV get(TK key, BiFunc<TK, TV> loadingFunc, CacheExpiration expiration) {
+    default TV get(TK key, BiFunc<TK, TV> loadingFunc, CachePolicy policy) {
         TV v;
         if ((v = get(key)) == null) {
             TV newValue;
             if ((newValue = loadingFunc.invoke(key)) != null) {
-                put(key, newValue, expiration);
+                put(key, newValue, policy);
                 return newValue;
             }
         }
@@ -59,5 +59,5 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
         return put(key, value, null);
     }
 
-    TV put(TK key, TV value, CacheExpiration expiration);
+    TV put(TK key, TV value, CachePolicy policy);
 }

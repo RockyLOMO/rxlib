@@ -2,11 +2,16 @@ package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
+import com.github.benmanes.caffeine.cache.Policy;
 import io.netty.util.Timeout;
+import io.netty.util.internal.SystemPropertyUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
+import org.checkerframework.checker.index.qual.NonNegative;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -306,7 +311,7 @@ public class CoreTester extends TestUtil {
     @Test
     public void cache() {
         BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
-        testCache(new MemoryCache.MultiExpireCache<>(dump));
+        testCache(new MemoryCache<>(dump));
 
 //        Tuple<Integer, String> key1 = Tuple.of(1, "a");
 //        Tuple<Integer, String> key2 = Tuple.of(2, "b");
@@ -346,16 +351,16 @@ public class CoreTester extends TestUtil {
 
         cache.put(key1, 100);
         assert cache.get(key1).equals(100);
-        cache.put(key2, 100, CacheExpiration.absolute(10));
+        cache.put(key2, 100, CachePolicy.absolute(10));
         assert cache.get(key2).equals(100);
-        cache.put(key3, 100, CacheExpiration.sliding(5));
+        cache.put(key3, 100, CachePolicy.sliding(5));
         assert cache.get(key3).equals(100);
 
         cache.put(key1, 100);
         assert cache.get(key1).equals(100);
-        cache.put(key2, 100, CacheExpiration.absolute(10));
+        cache.put(key2, 100, CachePolicy.absolute(10));
         assert cache.get(key2).equals(100);
-        cache.put(key3, 100, CacheExpiration.sliding(5));
+        cache.put(key3, 100, CachePolicy.sliding(5));
         assert cache.get(key3).equals(100);
 
         assert cache.containsKey(key1);

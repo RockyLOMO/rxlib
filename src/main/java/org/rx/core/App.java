@@ -271,6 +271,13 @@ public final class App extends SystemUtils {
     }
 
     public static JSONObject toJsonObject(Object src) {
+        if (src instanceof JSONObject) {
+            return (JSONObject) src;
+        }
+        if (src instanceof Map) {
+            return new JSONObject((Map<String, Object>) src);
+        }
+
         String js = toJsonString(src);
         try {
             return JSON.parseObject(js);
@@ -280,6 +287,13 @@ public final class App extends SystemUtils {
     }
 
     public static JSONArray toJsonArray(Object src) {
+        if (src instanceof JSONArray) {
+            return (JSONArray) src;
+        }
+        if (src instanceof List) {
+            return new JSONArray((List<Object>) src);
+        }
+
         String js = toJsonString(src);
         try {
             return JSON.parseArray(js);
