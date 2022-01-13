@@ -17,11 +17,13 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
+import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
@@ -308,8 +310,8 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void cache() {
-//        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
-//        testCache(new MemoryCache.ExpiryMemoryCache<>(dump));
+        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
+        testCache(new MemoryCache<>(dump));
 
 //        Tuple<Integer, String> key1 = Tuple.of(1, "a");
 //        Tuple<Integer, String> key2 = Tuple.of(2, "b");

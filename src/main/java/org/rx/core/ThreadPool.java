@@ -133,7 +133,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        static final long SAMPLING_PERIOD = 1500L;
+        static final long SAMPLING_PERIOD = 2000L;
         static final int SAMPLING_TIMES = 4;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
