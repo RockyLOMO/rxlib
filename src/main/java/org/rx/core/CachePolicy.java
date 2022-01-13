@@ -1,13 +1,13 @@
 package org.rx.core;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.rx.bean.DateTime;
 
 import java.io.Serializable;
 
 @Getter
-@RequiredArgsConstructor
+@AllArgsConstructor
 public class CachePolicy implements Serializable {
     public static final CachePolicy NON_EXPIRE = new CachePolicy(null, -1);
 
@@ -29,6 +29,6 @@ public class CachePolicy implements Serializable {
         return new CachePolicy(NON_EXPIRE.absoluteExpiration, expireSeconds);
     }
 
-    private final DateTime absoluteExpiration;
-    private final int slidingExpiration;
+    private DateTime absoluteExpiration;
+    private int slidingExpiration;
 }
