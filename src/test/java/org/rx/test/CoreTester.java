@@ -17,6 +17,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.cache.DiskCache;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
@@ -28,6 +29,7 @@ import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.*;
@@ -310,36 +312,11 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void cache() {
-        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
-        testCache(new MemoryCache<>(dump));
+//        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
+//        testCache(new MemoryCache<>(dump));
 
-//        Tuple<Integer, String> key1 = Tuple.of(1, "a");
-//        Tuple<Integer, String> key2 = Tuple.of(2, "b");
-//
-//        HybridCache<Serializable, PersonBean> pCache = (HybridCache) Cache.getInstance(Cache.DISTRIBUTED_CACHE);
-////        testCache(pCache);
-//
-//        pCache.put(key1, PersonBean.girl);
-//        pCache.put(key2, PersonBean.boy, CacheExpirations.absolute(2 * 60));
-//        pCache.put(4, PersonBean.girl);
-//        pCache.remove(4);
-//        Tasks.scheduleOnce(() -> {
-//            sleep(1000);
-//            PersonBean v1 = pCache.get(Tuple.of(1, "a"));
-//            PersonBean v2 = pCache.get(Tuple.of(2, "b"));
-//            log.info("key1={} key2={}", v1, v2);
-//            assert v1.equals(PersonBean.girl);
-//            assert v2.equals(PersonBean.boy);
-//            log.info("pCache ok");
-//        }, 60 * 1000 + 10);
-//        Tasks.scheduleOnce(() -> {
-//            PersonBean v1 = pCache.get(key1);
-//            PersonBean v2 = pCache.get(key2);
-//            log.info("key1={} key2={}", v1, v2);
-//            assert v1.equals(PersonBean.girl);
-//            assert v2 == null;
-//            log.info("pCache ok");
-//        }, 60 * 1000 * 2 + 10);
+        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(Cache.DISK_CACHE);
+        testCache(diskCache);
 
         System.in.read();
     }
@@ -367,6 +344,9 @@ public class CoreTester extends TestUtil {
         assert cache.containsKey(key2);
         assert cache.containsKey(key3);
         assert cache.size() == 3;
+        Integer val2 = cache.remove(key1);
+        assert 100 == val2;
+        assert cache.size() == 2;
 
         Tasks.setTimeout(() -> {
             assert cache.get(key3).equals(100);
