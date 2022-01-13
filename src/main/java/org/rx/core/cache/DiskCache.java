@@ -1,11 +1,9 @@
 package org.rx.core.cache;
 
-import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
-import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.bean.DateTime;
@@ -25,24 +23,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache.MultiExpireCache<>(b -> b
-//            .expireAfter(new Expiry<Object, Object>() {
-//        @Override
-//        public long expireAfterCreate(@NonNull Object o, @NonNull Object o2, long l) {
-//            return 0;
-//        }
-//
-//        @Override
-//        public long expireAfterUpdate(@NonNull Object o, @NonNull Object o2, long l, @NonNegative long l1) {
-//            return 0;
-//        }
-//
-//        @Override
-//        public long expireAfterRead(@NonNull Object o, @NonNull Object o2, long l, @NonNegative long l1) {
-//            return 0;
-//        }
-//    })
-            .maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
@@ -104,26 +85,26 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         }
         if (item.slidingSeconds > 0) {
             item.expire = utc.addSeconds(item.slidingSeconds);
-            cache.put(key, item, CacheExpiration.sliding(item.slidingSeconds));
+            cache.put(key, item, CachePolicy.sliding(item.slidingSeconds));
         }
         return item.value;
     }
 
     @Override
-    public TV put(TK key, TV value, CacheExpiration expiration) {
-        if (expiration == null) {
-            expiration = CacheExpiration.NON_EXPIRE;
+    public TV put(TK key, TV value, CachePolicy policy) {
+        if (policy == null) {
+            policy = CachePolicy.NON_EXPIRE;
         }
 
-        DiskCacheItem<TV> item = new DiskCacheItem<>(value, expiration.getSlidingExpiration());
-        if (!eq(expiration.getAbsoluteExpiration(), CacheExpiration.NON_EXPIRE.getAbsoluteExpiration())) {
-            item.expire = expiration.getAbsoluteExpiration();
-        } else if (expiration.getSlidingExpiration() != CacheExpiration.NON_EXPIRE.getSlidingExpiration()) {
-            item.expire = DateTime.utcNow().addSeconds(expiration.getSlidingExpiration());
+        DiskCacheItem<TV> item = new DiskCacheItem<>(value, policy.getSlidingExpiration());
+        if (!eq(policy.getAbsoluteExpiration(), CachePolicy.NON_EXPIRE.getAbsoluteExpiration())) {
+            item.expire = policy.getAbsoluteExpiration();
+        } else if (policy.getSlidingExpiration() != CachePolicy.NON_EXPIRE.getSlidingExpiration()) {
+            item.expire = DateTime.utcNow().addSeconds(policy.getSlidingExpiration());
         } else {
             item.expire = DateTime.MAX;
         }
-        DiskCacheItem<TV> old = cache.put(key, item, expiration);
+        DiskCacheItem<TV> old = cache.put(key, item, policy);
         return unwrap(key, old);
     }
 

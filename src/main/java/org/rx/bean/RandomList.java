@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
-import org.rx.core.CacheExpiration;
+import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
 
 import java.io.Serializable;
@@ -59,7 +59,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     public <S> T next(S steeringObj, int ttl, boolean isSliding) {
         Cache<S, T> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        return cache.get(steeringObj, k -> next(), isSliding ? CacheExpiration.sliding(ttl) : CacheExpiration.absolute(ttl));
+        return cache.get(steeringObj, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
     }
 
     public T next() {
