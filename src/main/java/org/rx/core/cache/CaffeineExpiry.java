@@ -11,6 +11,8 @@ import org.rx.core.Constants;
 
 import java.util.concurrent.TimeUnit;
 
+import static org.rx.core.App.eq;
+
 @RequiredArgsConstructor
 class CaffeineExpiry implements Expiry<Object, Object> {
     static final long DEFAULT_SLIDING_NANOS = TimeUnit.SECONDS.toNanos(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_SLIDING_SECONDS, 60));
@@ -20,7 +22,7 @@ class CaffeineExpiry implements Expiry<Object, Object> {
         if (value instanceof CachePolicy) {
             policy = (CachePolicy) value;
             DateTime absoluteExpiration = policy.getAbsoluteExpiration();
-            if (absoluteExpiration != CachePolicy.NON_EXPIRE.getAbsoluteExpiration()) {
+            if (!eq(absoluteExpiration, CachePolicy.NON_EXPIRE.getAbsoluteExpiration())) {
                 return TimeUnit.MICROSECONDS.toNanos(System.currentTimeMillis() - absoluteExpiration.getTime());
             }
             long slidingExpiration = policy.getSlidingExpiration();

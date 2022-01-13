@@ -26,9 +26,14 @@ public class CachePolicy implements Serializable {
     }
 
     public static CachePolicy sliding(int expireSeconds) {
-        return new CachePolicy(NON_EXPIRE.absoluteExpiration, expireSeconds);
+        return new CachePolicy(NON_EXPIRE.absoluteExpiration, expireSeconds * 1000L);
     }
 
-    private DateTime absoluteExpiration;
-    private int slidingExpiration;
+    protected DateTime absoluteExpiration;
+    protected long slidingExpiration;
+
+    protected CachePolicy(CachePolicy policy) {
+        this.absoluteExpiration = policy.absoluteExpiration;
+        this.slidingExpiration = policy.slidingExpiration;
+    }
 }

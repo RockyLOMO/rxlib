@@ -13,7 +13,6 @@ import org.rx.io.*;
 import java.io.Serializable;
 import java.util.*;
 
-import static org.rx.core.App.eq;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
@@ -31,14 +30,14 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
 //        log.info("onRemoval {} {}", key, removalCause);
         if (key == null || item == null || item.value == null
                 || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT
-                || item.expire.before(DateTime.utcNow())) {
+                || item.isExpired()) {
             return;
         }
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.expire);
+        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.getExpire());
     }
 
     @Override
@@ -72,9 +71,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         if (item == null) {
             return null;
         }
-        DateTime utc = DateTime.utcNow();
-//        log.info("check {} < NOW[{}]", item.expire, utc);
-        if (item.expire.before(utc)) {
+        if (item.isExpired()) {
             remove(key);
             if (onExpired == null) {
                 return null;
@@ -83,9 +80,10 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
-        if (item.slidingSeconds > 0) {
-            item.expire = utc.addSeconds(item.slidingSeconds);
-            cache.put(key, item, CachePolicy.sliding(item.slidingSeconds));
+        long slidingExpiration = item.getSlidingExpiration();
+        if (slidingExpiration > 0) {
+            item.setExpire(DateTime.utcNow().addMilliseconds((int) slidingExpiration));
+            cache.put(key, item);
         }
         return item.value;
     }
@@ -96,15 +94,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             policy = CachePolicy.NON_EXPIRE;
         }
 
-        DiskCacheItem<TV> item = new DiskCacheItem<>(value, policy.getSlidingExpiration());
-        if (!eq(policy.getAbsoluteExpiration(), CachePolicy.NON_EXPIRE.getAbsoluteExpiration())) {
-            item.expire = policy.getAbsoluteExpiration();
-        } else if (policy.getSlidingExpiration() != CachePolicy.NON_EXPIRE.getSlidingExpiration()) {
-            item.expire = DateTime.utcNow().addSeconds(policy.getSlidingExpiration());
-        } else {
-            item.expire = DateTime.MAX;
-        }
-        DiskCacheItem<TV> old = cache.put(key, item, policy);
+        DiskCacheItem<TV> old = cache.put(key, new DiskCacheItem<>(value, policy));
         return unwrap(key, old);
     }
 
