@@ -120,6 +120,9 @@ public final class NameserverClient extends Disposable {
                                         hold.setWeight(tuple, 0);
                                         reInject();
                                     });
+                                    rc.onReconnecting.combine((s, e) -> {
+                                        e.setValue(Arrays.randomGet(registerEndpoints));
+                                    });
                                     rc.onReconnected.combine((s, e) -> {
                                         tuple.right = null;
                                         doReg.invoke();
@@ -150,5 +153,9 @@ public final class NameserverClient extends Disposable {
 
     public List<InetAddress> discover(@NonNull String appName) {
         return hold.next().middle.discover(appName);
+    }
+
+    public List<InetAddress> discoverAll(@NonNull String appName) {
+        return hold.next().middle.discoverAll(appName);
     }
 }

@@ -50,6 +50,14 @@ public class Arrays extends ArrayUtils {
         return array[ThreadLocalRandom.current().nextInt(0, array.length)];
     }
 
+    public static <T> T randomGet(T[] array) {
+        if (isEmpty(array)) {
+            throw new InvalidException("Array is empty");
+        }
+
+        return array[ThreadLocalRandom.current().nextInt(0, array.length)];
+    }
+
     public static boolean equals(byte[] a, byte[] b) {
         return java.util.Arrays.equals(a, b);
     }

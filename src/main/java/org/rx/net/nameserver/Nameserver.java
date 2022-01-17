@@ -13,8 +13,8 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
      */
     String EVENT_CLIENT_SYNC = "CLIENT_SYNC";
 
-    default int register(String appName, InetSocketAddress... registerEndpoints) {
-        return register(appName, RandomList.DEFAULT_WEIGHT, registerEndpoints);
+    default int register(String appName, InetSocketAddress... serverEndpoints) {
+        return register(appName, RandomList.DEFAULT_WEIGHT, serverEndpoints);
     }
 
     /**
@@ -24,11 +24,13 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
      * @param weight
      * @return
      */
-    int register(String appName, int weight, InetSocketAddress... registerEndpoints);
+    int register(String appName, int weight, InetSocketAddress... serverEndpoints);
 
     void deregister();
 
     List<InetAddress> discover(String appName);
+
+    List<InetAddress> discoverAll(String appName);
 
     default void close() {
     }
