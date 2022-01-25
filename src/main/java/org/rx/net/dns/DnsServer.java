@@ -84,7 +84,13 @@ public class DnsServer extends Disposable {
     public DnsServer addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
         for (InetAddress ip : ips) {
-            list.add(ip, weight);
+            synchronized (list) {
+                if (list.contains(ip)) {
+                    list.setWeight(ip, weight);
+                    continue;
+                }
+                list.add(ip, weight);
+            }
         }
         return this;
     }

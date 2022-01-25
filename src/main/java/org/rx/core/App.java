@@ -7,11 +7,11 @@ import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.SneakyThrows;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
@@ -42,7 +42,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import io.netty.util.internal.ThreadLocalRandom;
 
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -50,7 +49,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
-    static final ValueFilter skipTypesFilter = (o, k, v) -> {
+    static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
             NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
             if (v.getClass().isArray() || v instanceof Iterable) {
@@ -64,14 +63,43 @@ public final class App extends SystemUtils {
         }
         return v;
     };
-    @Setter
-    static Predicate<Throwable> ignoreExceptionHandler;
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
 
         log("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
+    }
+
+    public static java.io.File getJarFile(Object obj) {
+        return getJarFile(obj.getClass());
+    }
+
+    @SneakyThrows
+    public static java.io.File getJarFile(Class<?> _class) {
+        String path = _class.getPackage().getName().replace(".", "/");
+        String url = _class.getClassLoader().getResource(path).toString();
+        url = url.replace(" ", "%20");
+        java.net.URI uri = new java.net.URI(url);
+        if (uri.getPath() == null) {
+            path = uri.toString();
+            if (path.startsWith("jar:file:")) {
+                //Update Path and Define Zipped File
+                path = path.substring(path.indexOf("file:/"));
+                path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
+
+                if (path.startsWith("file://")) { //UNC Path
+                    path = "C:/" + path.substring(path.indexOf("file:/") + 7);
+                    path = "/" + new java.net.URI(path).getPath();
+                } else {
+                    path = new java.net.URI(path).getPath();
+                }
+                return new java.io.File(path);
+            }
+        } else {
+            return new java.io.File(uri);
+        }
+        return null;
     }
 
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
@@ -138,13 +166,6 @@ public final class App extends SystemUtils {
         return MessageFormatter.getThrowableCandidate(args);
     }
 
-    public static boolean isIgnoringException(Throwable e) {
-        if (e == null) {
-            return false;
-        }
-        return ignoreExceptionHandler != null && ignoreExceptionHandler.test(e);
-    }
-
     public static String log(@NonNull String format, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
@@ -152,7 +173,7 @@ public final class App extends SystemUtils {
         org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
         Throwable e = MessageFormatter.getThrowableCandidate(args);
         boolean isIgnoring = e == null;
-        if (!isIgnoring && (isIgnoring = isIgnoringException(e))) {
+        if (!isIgnoring) {
             format += "\t{}";
             args[args.length - 1] = e.getMessage();
         }
@@ -313,7 +334,7 @@ public final class App extends SystemUtils {
 
         try {
 //            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
-            return JSON.toJSONString(skipTypesFilter.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Throwable e) {
             NQuery<Object> q;
             if (src.getClass().isArray() || src instanceof Iterable) {
@@ -346,7 +367,7 @@ public final class App extends SystemUtils {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    App.log("sneakyInvoke retry={}", i, e);
+                    log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -368,7 +389,7 @@ public final class App extends SystemUtils {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    App.log("sneakyInvoke retry={}", i, e);
+                    log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -384,7 +405,7 @@ public final class App extends SystemUtils {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            App.log("quietly", e);
+            log("quietly", e);
         }
         return false;
     }
@@ -397,7 +418,7 @@ public final class App extends SystemUtils {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            App.log("quietly", e);
+            log("quietly", e);
         }
         if (defaultValue != null) {
             try {
@@ -407,6 +428,23 @@ public final class App extends SystemUtils {
             }
         }
         return null;
+    }
+
+    public static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
+        if (iterable == null) {
+            return;
+        }
+
+        for (T t : iterable) {
+            try {
+                fn.invoke(t);
+            } catch (Throwable e) {
+                if (e instanceof CircuitBreakingException) {
+                    break;
+                }
+                log("eachQuietly", e);
+            }
+        }
     }
 
     public static boolean tryClose(Object obj) {
@@ -461,10 +499,6 @@ public final class App extends SystemUtils {
         return value;
     }
 
-    public static Object[] values(Object... args) {
-        return args;
-    }
-
     public static <T> T as(Object obj, Class<T> type) {
         if (!Reflects.isInstance(obj, type)) {
             return null;
@@ -474,6 +508,10 @@ public final class App extends SystemUtils {
 
     public static <T> boolean eq(T a, T b) {
         return (a == b) || (a != null && a.equals(b));
+    }
+
+    public static Object[] values(Object... args) {
+        return args;
     }
     //endregion
 

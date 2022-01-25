@@ -37,7 +37,7 @@ public class NameserverImpl implements Nameserver {
     @Getter
     final DnsServer dnsServer;
     final UdpClient ss;
-    final Set<InetSocketAddress> regEps = ConcurrentHashMap.newKeySet();
+    final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     int getSyncPort() {
         if (config.getSyncPort() > 0) {
@@ -54,7 +54,7 @@ public class NameserverImpl implements Nameserver {
         this.config = config;
         dnsServer = new DnsServer(config.getDnsPort());
         dnsServer.setTtl(config.getDnsTtl());
-        regEps.addAll(NQuery.of(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).toList());
+        svrEps.addAll(NQuery.of(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
 
         rs = Remoting.listen(this, config.getRegisterPort());
         rs.onDisconnected.combine((s, e) -> {
@@ -76,28 +76,26 @@ public class NameserverImpl implements Nameserver {
         });
     }
 
-    public synchronized void syncRegister(@NonNull Set<InetSocketAddress> registerEndpoints) {
-        if (!regEps.addAll(registerEndpoints)
-                && registerEndpoints.containsAll(regEps)
-        ) {
+    public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {
+        if (!svrEps.addAll(serverEndpoints) && serverEndpoints.containsAll(svrEps)) {
             return;
         }
 
-        dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(regEps).select(InetSocketAddress::getAddress).toList());
-        raiseEventAsync(Nameserver.EVENT_CLIENT_SYNC, new NEventArgs<>(regEps));
-        for (InetSocketAddress ssAddr : registerEndpoints) {
-            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), regEps);
+        dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(svrEps).select(InetSocketAddress::getAddress).toList());
+        raiseEventAsync(Nameserver.EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
+        for (InetSocketAddress ssAddr : serverEndpoints) {
+            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
         }
     }
 
     public void syncDeregister(@NonNull DeregisterInfo deregisterInfo) {
-        for (InetSocketAddress ssAddr : regEps) {
+        for (InetSocketAddress ssAddr : svrEps) {
             ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), deregisterInfo);
         }
     }
 
     @Override
-    public int register(@NonNull String appName, int weight, InetSocketAddress... registerEndpoints) {
+    public int register(@NonNull String appName, int weight, InetSocketAddress... serverEndpoints) {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
@@ -106,7 +104,7 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("remoteAddr", addr);
         dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
 
-        syncRegister(new HashSet<>(Arrays.toList(registerEndpoints)));
+        syncRegister(new HashSet<>(Arrays.toList(serverEndpoints)));
         return config.getDnsPort();
     }
 
@@ -135,6 +133,11 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public List<InetAddress> discover(@NonNull String appName) {
+        return dnsServer.getHosts(appName);
+    }
+
+    @Override
+    public List<InetAddress> discoverAll(@NonNull String appName) {
         return dnsServer.getAllHosts(appName);
     }
 }
