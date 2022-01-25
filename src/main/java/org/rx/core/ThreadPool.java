@@ -133,8 +133,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        static final long SAMPLING_PERIOD = 2000L;
-        static final int SAMPLING_TIMES = 4;
+        static final long SAMPLING_PERIOD = 3000L;
+        static final int SAMPLING_TIMES = 2;
         final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
@@ -166,18 +166,17 @@ public class ThreadPool extends ThreadPoolExecutor {
             int incrementCounter = tuple.right;
 
             String prefix = pool.toString();
-            int poolSize = pool.getPoolSize();
-            int resizeQuantity = getResizeQuantity();
-            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                    poolSize, pool.getQueue().size(),
-                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
+            if (log.isDebugEnabled()) {
+                int poolSize = pool.getPoolSize();
+                log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                        poolSize, pool.getQueue().size(),
+                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
+            }
 
             if (cpuLoad.gt(waterMark.getHigh())) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
-                    poolSize = Math.max(poolSize - resizeQuantity, 2);
                     log.info("{} Threshold={}[{}-{}]% decrement to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), poolSize);
-                    pool.setCorePoolSize(poolSize);
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
                     decrementCounter = 0;
                 }
             } else {
@@ -186,10 +185,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
                 if (++incrementCounter >= SAMPLING_TIMES) {
-                    poolSize += resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), poolSize);
-                    incrSize(pool);
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                     incrementCounter = 0;
                 }
             } else {
@@ -274,11 +271,25 @@ public class ThreadPool extends ThreadPoolExecutor {
                 .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
     }
 
-    static void incrSize(ThreadPoolExecutor pool) {
+    static int incrSize(ThreadPoolExecutor pool) {
+//        pool.getPoolSize()
         int poolSize = pool.getCorePoolSize() + getResizeQuantity();
+        if (poolSize > 1000) {
+            return 1000;
+        }
         pool.setCorePoolSize(poolSize);
+        return poolSize;
 //        pool.setMaximumPoolSize(maxSize);
 //        pool.execute(EMPTY);
+    }
+
+    static int decrSize(ThreadPoolExecutor pool) {
+        int poolSize = pool.getCorePoolSize() - getResizeQuantity();
+        if (poolSize < 4) {
+            return 4;
+        }
+        pool.setCorePoolSize(poolSize);
+        return poolSize;
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
