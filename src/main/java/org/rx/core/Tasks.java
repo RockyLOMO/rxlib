@@ -4,6 +4,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
+import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -136,16 +137,16 @@ public final class Tasks {
         return pool().run(task);
     }
 
-    public static CompletableFuture<Void> run(Action task, Object taskId, RunFlag runFlag) {
-        return pool().run(task, taskId, runFlag);
+    public static CompletableFuture<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().run(task, taskId, flags);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
         return pool().run(task);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, RunFlag runFlag) {
-        return pool().run(task, taskId, runFlag);
+    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().run(task, taskId, flags);
     }
 
     @SuppressWarnings(NON_RAW_TYPES)

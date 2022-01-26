@@ -149,7 +149,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<RpcServer, TArgs> event, TArgs args) {
         TaskScheduler scheduler = asyncScheduler();
-        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY);
+        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
 
     public List<RpcServerClient> getClients() {
