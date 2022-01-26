@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Policy;
 import io.netty.util.Timeout;
+import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -188,6 +189,7 @@ public class CoreTester extends TestUtil {
     }
 
     static final long delayMillis = 5000;
+    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<>();
 
     @SneakyThrows
     @Test
@@ -215,20 +217,19 @@ public class CoreTester extends TestUtil {
             });
         }
 
-//        for (int i = 0; i < 10; i++) {
-//            int x = i;
-//            //RunFlag.CONCURRENT    默认无锁
-//            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
-//            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-//            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-//            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-//            Tasks.run(() -> {
-//                        log.info("exec {} begin..", x);
-//                        sleep(delayMillis);
-//                        log.info("exec {} end..", x);
-//                    }, "myTaskId", RunFlag.TRANSFER)
-//                    .whenCompleteAsync((r, e) -> log.info("Done: " + x));
-//        }
+        for (int i = 0; i < 10; i++) {
+            int x = i;
+            //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
+            //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
+            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+            //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
+            Tasks.run(() -> {
+                log.info("exec {} begin..", x);
+                sleep(delayMillis);
+                log.info("exec {} end..", x);
+            }, "myTaskId", RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("Done: " + x));
+        }
 
 //        for (int i = 0; i < 5; i++) {
 //            int x = i;
@@ -241,6 +242,38 @@ public class CoreTester extends TestUtil {
 
         System.out.println("main thread done");
         System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void inheritThreadLocal() {
+        inherit.set(IntTuple.of(1, "a"));
+        ThreadPool pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
+        pool.run(() -> {
+            IntTuple<String> tuple = inherit.get();
+            assert IntTuple.of(1, "a").equals(tuple);
+            System.out.println("ok");
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+
+        pool.run(() -> {
+            IntTuple<String> tuple = inherit.get();
+            assert IntTuple.of(1, "a").equals(tuple);
+            System.out.println("ok");
+            return null;
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+
+        pool.runAsync(() -> {
+            IntTuple<String> tuple = inherit.get();
+            assert IntTuple.of(1, "a").equals(tuple);
+            System.out.println("ok");
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+
+        pool.runAsync(() -> {
+            IntTuple<String> tuple = inherit.get();
+            assert IntTuple.of(1, "a").equals(tuple);
+            System.out.println("ok");
+            return null;
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
     }
 
     @SneakyThrows

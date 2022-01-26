@@ -29,7 +29,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
     }
 
     @NonNull
-    default TaskScheduler asyncScheduler() {
+    default ThreadPool asyncScheduler() {
         return Tasks.pool();
     }
 
@@ -68,13 +68,13 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-        return asyncScheduler().run(() -> raiseEvent(eventName, args));
+        return asyncScheduler().runAsync(() -> raiseEvent(eventName, args));
     }
 
     default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TSender, TArgs> event, TArgs args) {
         if (event.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
-        return asyncScheduler().run(() -> raiseEvent(event, args));
+        return asyncScheduler().runAsync(() -> raiseEvent(event, args));
     }
 }

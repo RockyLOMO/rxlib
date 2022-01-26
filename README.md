@@ -8,7 +8,7 @@ A set of utilities for Java.
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.17.7</version>
+    <version>2.17.8</version>
 </dependency>
 ```
 
@@ -43,11 +43,11 @@ public void threadPool() {
 
     for (int i = 0; i < 6; i++) {
         int x = i;
-        //RunFlag.CONCURRENT    默认无锁
-        //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
-        //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+        //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
+        //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
         //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
         //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+        //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
         Tasks.run(() -> {
             log.info("Exec: " + x);
             sleep(2000);

@@ -7,6 +7,8 @@ import lombok.SneakyThrows;
 import org.rx.bean.RxConfig;
 import org.rx.core.App;
 import org.rx.core.NQuery;
+import org.rx.core.ShellCommander;
+import org.rx.core.StringBuilder;
 import org.rx.io.IOStream;
 import org.rx.net.Sockets;
 import org.rx.net.http.tunnel.ReceivePack;
@@ -23,7 +25,7 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 
 @RequiredArgsConstructor
-@RestController("mxapi")
+@RestController
 @RequestMapping("mxapi")
 public class ApiController {
     final RxConfig conf;
@@ -38,7 +40,7 @@ public class ApiController {
         bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
         j.put("vmOptions", bean.getDiagnosticOptions());
 
-        j.put("conf", conf);
+//        j.put("conf", conf);
         return j;
     }
 
@@ -51,6 +53,15 @@ public class ApiController {
     public void setVMOption(String k, String v) {
         HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
         bean.setVMOption(k, v);
+    }
+
+    @RequestMapping("shell")
+    public String shell(String shell, String workspace) {
+        StringBuilder echo = new StringBuilder();
+        ShellCommander cmd = new ShellCommander(shell, workspace);
+        cmd.onOutPrint.combine((s, e) -> echo.append(e.toString()));
+        cmd.start().waitFor(60);
+        return echo.toString();
     }
 
     @SneakyThrows

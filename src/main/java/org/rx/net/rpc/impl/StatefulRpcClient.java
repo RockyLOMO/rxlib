@@ -131,7 +131,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     private Date connectedTime;
 
     @Override
-    public @NonNull TaskScheduler asyncScheduler() {
+    public @NonNull ThreadPool asyncScheduler() {
         return RpcServer.SCHEDULER;
     }
 

@@ -20,7 +20,6 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.protocol.HandshakePacket;
 import org.rx.net.rpc.protocol.PingMessage;
-import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -124,7 +123,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
     }
 
-    public static final TaskScheduler SCHEDULER = new TaskScheduler(RpcServerConfig.REACTOR_NAME);
+    public static final ThreadPool SCHEDULER = new ThreadPool(RpcServerConfig.REACTOR_NAME);
     public final Delegate<RpcServer, RpcServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
@@ -142,14 +141,14 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     private boolean isStarted;
 
     @Override
-    public @NonNull TaskScheduler asyncScheduler() {
+    public @NonNull ThreadPool asyncScheduler() {
         return SCHEDULER;
     }
 
     @Override
     public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<RpcServer, TArgs> event, TArgs args) {
-        TaskScheduler scheduler = asyncScheduler();
-        return scheduler.run(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY);
+        ThreadPool scheduler = asyncScheduler();
+        return scheduler.runAsync(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
 
     public List<RpcServerClient> getClients() {

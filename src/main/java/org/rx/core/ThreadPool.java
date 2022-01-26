@@ -6,22 +6,21 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.FastThreadLocalThread;
+import io.netty.util.internal.InternalThreadLocalMap;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.BiTuple;
-import org.rx.bean.Decimal;
-import org.rx.bean.IntWaterMark;
-import org.rx.bean.Tuple;
+import org.rx.bean.*;
 import org.rx.exception.ExceptionHandler;
+import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import java.lang.management.ManagementFactory;
-import java.util.Collections;
-import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import static org.rx.core.App.*;
 
@@ -52,8 +51,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 //            if (t == EMPTY) {
 //                return false;
 //            }
-            IdentityRunnable p = pool.getAs((Runnable) t, false);
-            if (p != null && eq(p.flag(), RunFlag.PRIORITY)) {
+            Task<?> p = pool.getAs((Runnable) t, false);
+            if (p != null && p.flags.has(RunFlag.PRIORITY)) {
                 incrSize(pool);
                 //New thread to execute
                 return false;
@@ -61,21 +60,21 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             boolean isFull = counter.get() >= queueCapacity;
             if (isFull) {
+                boolean logged = false;
                 while (counter.get() >= queueCapacity) {
-                    log.warn("Block caller thread[{}] until queue[{}/{}] polled then offer {}", Thread.currentThread().getName(),
-                            counter.get(), queueCapacity, t);
+                    if (!logged) {
+                        log.warn("Block caller thread[{}] until queue[{}/{}] polled then offer {}", Thread.currentThread().getName(),
+                                counter.get(), queueCapacity, t);
+                        logged = true;
+                    }
                     synchronized (this) {
-                        wait();
+                        wait(500);
                     }
                 }
                 log.debug("Wait poll ok");
             }
             counter.incrementAndGet();
-            try {
-                return super.offer(t);
-            } finally {
-                log.debug("queue[{}] offer {}", counter.get(), t);
-            }
+            return super.offer(t);
         }
 
         @Override
@@ -124,11 +123,51 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    public interface IdentityRunnable extends Runnable {
-        Object id();
+    static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
+        final InternalThreadLocalMap parent;
+        final Object id;
+        final FlagsEnum<RunFlag> flags;
+        final Func<T> fn;
 
-        default RunFlag flag() {
-            return RunFlag.DEFAULT;
+        Task(Object id, FlagsEnum<RunFlag> flags, Func<T> fn) {
+            if (flags == null) {
+                flags = RunFlag.NONE.flags();
+            }
+            if (ENABLE_INHERIT_THREAD_LOCALS) {
+                flags.add(RunFlag.INHERIT_THREAD_LOCALS);
+            }
+
+            this.id = id;
+            this.flags = flags;
+            parent = flags.has(RunFlag.INHERIT_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
+            this.fn = fn;
+        }
+
+        @SneakyThrows
+        @Override
+        public T call() {
+            try {
+                return fn.invoke();
+            } catch (Throwable e) {
+                Container.get(ExceptionHandler.class).uncaughtException(toString(), e);
+//                return null;
+                throw e;
+            }
+        }
+
+        @Override
+        public void run() {
+            call();
+        }
+
+        @Override
+        public T get() {
+            return call();
+        }
+
+        @Override
+        public String toString() {
+            return String.format("Task-%s[%s]", isNull(id, 0), flags);
         }
     }
 
@@ -253,6 +292,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
             SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
             SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
+    static final boolean ENABLE_INHERIT_THREAD_LOCALS = SystemPropertyUtil.getBoolean(Constants.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };
@@ -272,15 +312,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static int incrSize(ThreadPoolExecutor pool) {
-//        pool.getPoolSize()
         int poolSize = pool.getCorePoolSize() + getResizeQuantity();
         if (poolSize > 1000) {
             return 1000;
         }
         pool.setCorePoolSize(poolSize);
-        return poolSize;
-//        pool.setMaximumPoolSize(maxSize);
 //        pool.execute(EMPTY);
+        return poolSize;
     }
 
     static int decrSize(ThreadPoolExecutor pool) {
@@ -300,7 +338,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Getter
     private final String poolName;
-    private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Runnable, Task<?>> funcMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
 
     @Override
@@ -310,7 +348,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public void setRejectedExecutionHandler(RejectedExecutionHandler handler) {
-        log.warn("ignore setRejectedExecutionHandler");
+        throw new UnsupportedOperationException();
     }
 
     public ThreadPool(String poolName) {
@@ -356,70 +394,109 @@ public class ThreadPool extends ThreadPoolExecutor {
         SIZER.register(this, cpuWaterMark);
     }
 
+    public Future<?> run(Action task) {
+        return run(task, null, null);
+    }
+
+    public Future<?> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return super.submit((Runnable) new Task<>(taskId, flags, task.toFunc()));
+    }
+
+    public <T> Future<T> run(Func<T> task) {
+        return run(task, null, null);
+    }
+
+    public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return super.submit((Callable<T>) new Task<>(taskId, flags, task));
+    }
+
+    public CompletableFuture<Void> runAsync(Action task) {
+        return runAsync(task, null, null);
+    }
+
+    public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return CompletableFuture.runAsync(new Task<>(taskId, flags, task.toFunc()), this);
+    }
+
+    public <T> CompletableFuture<T> runAsync(Func<T> task) {
+        return runAsync(task, null, null);
+    }
+
+    public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return CompletableFuture.supplyAsync(new Task<>(taskId, flags, task), this);
+    }
+
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        IdentityRunnable p = null;
+        Task<?> task = null;
         if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            Object fn = Reflects.readField(r.getClass(), r, "fn");
-            if (fn == null) {
-                log.warn("{}.fn is null", r);
-            } else {
-                funcMap.put(r, (Runnable) fn);
-                p = as(fn, IdentityRunnable.class);
+            Object fn = Reflects.readField(r, "fn");
+            task = as(fn, Task.class);
+        } else if (r instanceof FutureTask) {
+            Object fn = Reflects.readField(r, "callable");
+            task = as(fn, Task.class);
+            if (task == null) {
+                fn = Reflects.readField(fn, "task");
             }
+            task = as(fn, Task.class);
         }
-        if (p == null) {
-            p = as(r, IdentityRunnable.class);
-        }
-        if (p != null && p.flag() != null) {
-            switch (p.flag()) {
-                case SINGLE: {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.id());
+        if (task != null) {
+            funcMap.put(r, task);
+            Object id = task.id;
+            FlagsEnum<RunFlag> flags = task.flags;
+            if (id != null) {
+                if (flags.has(RunFlag.SINGLE)) {
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(id);
                     if (!locker.left.tryLock()) {
-                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", p.id()));
+                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", id));
                     }
-                    locker.right.incrementAndGet();
-                    log.debug("{} {} tryLock", p.flag(), p.id());
-                }
-                break;
-                case SYNCHRONIZED: {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(p.id());
+                    log.debug("{} {} tryLock", id, flags);
+                } else if (flags.has(RunFlag.SYNCHRONIZED)) {
+                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(id);
                     locker.right.incrementAndGet();
                     locker.left.lock();
-                    log.debug("{} {} lock", p.flag(), p.id());
+                    log.debug("{} {} lock", id, flags);
                 }
-                break;
+            }
+            //TransmittableThreadLocal
+            if (task.parent != null) {
+                if (t instanceof FastThreadLocalThread) {
+                    ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
+                } else {
+                    ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
+                    slowThreadLocalMap.set(task.parent);
+                }
             }
         }
+//        super.beforeExecute(t, r);
+    }
 
-        super.beforeExecute(t, r);
+    @Override
+    protected void afterExecute(Runnable r, Throwable t) {
+        Task<?> task = getAs(r, true);
+        if (task != null) {
+            Object id = task.id;
+            if (id != null) {
+                Tuple<ReentrantLock, AtomicInteger> locker = syncRoots.get(id);
+                if (locker != null) {
+                    log.debug("{} {} unlock", id, task.flags);
+                    locker.left.unlock();
+                    if (locker.right.decrementAndGet() <= 0) {
+                        syncRoots.remove(id);
+                    }
+                }
+            }
+        }
+//        super.afterExecute(r, t);
     }
 
     private Tuple<ReentrantLock, AtomicInteger> getLocker(Object id) {
         return syncRoots.computeIfAbsent(id, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
     }
 
-    private IdentityRunnable getAs(Runnable command, boolean remove) {
-        Runnable r = remove ? funcMap.remove(command) : funcMap.get(command);
-        return as(r, IdentityRunnable.class);
-    }
-
-    @Override
-    protected void afterExecute(Runnable r, Throwable t) {
-        IdentityRunnable p = getAs(r, true);
-        if (p != null) {
-            Tuple<ReentrantLock, AtomicInteger> locker = syncRoots.get(p.id());
-            if (locker != null) {
-                log.debug("{} {} unlock", p.flag(), p.id());
-                locker.left.unlock();
-                if (locker.right.decrementAndGet() <= 0) {
-                    syncRoots.remove(p.id());
-                }
-            }
-        }
-
-        super.afterExecute(r, t);
+    private Task<?> getAs(Runnable command, boolean remove) {
+        return remove ? funcMap.remove(command) : funcMap.get(command);
     }
 
     @Override

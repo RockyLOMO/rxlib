@@ -4,6 +4,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
+import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -25,7 +26,7 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final List<TaskScheduler> replicas;
+    private static final List<ThreadPool> replicas;
     private static final ScheduledThreadPoolExecutor scheduler;
     private static final WheelTimer wheelTimer;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
@@ -33,7 +34,7 @@ public final class Tasks {
     static {
         replicas = new CopyOnWriteArrayList<>();
         for (int i = 0; i < POOL_COUNT; i++) {
-            replicas.add(new TaskScheduler(String.valueOf(i)));
+            replicas.add(new ThreadPool(String.valueOf(i)));
         }
         scheduler = new ScheduledThreadPool();
         wheelTimer = new WheelTimer();
@@ -50,7 +51,7 @@ public final class Tasks {
         }));
     }
 
-    public static TaskScheduler pool() {
+    public static ThreadPool pool() {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
     }
 
@@ -133,19 +134,19 @@ public final class Tasks {
     }
 
     public static CompletableFuture<Void> run(Action task) {
-        return pool().run(task);
+        return pool().runAsync(task);
     }
 
-    public static CompletableFuture<Void> run(Action task, Object taskId, RunFlag runFlag) {
-        return pool().run(task, taskId, runFlag);
+    public static CompletableFuture<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().runAsync(task, taskId, flags);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
-        return pool().run(task);
+        return pool().runAsync(task);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, RunFlag runFlag) {
-        return pool().run(task, taskId, runFlag);
+    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().runAsync(task, taskId, flags);
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
@@ -241,8 +242,8 @@ public final class Tasks {
         return scheduler.scheduleWithFixedDelay(wrap(task), initialDelay, delay, TimeUnit.MILLISECONDS);
     }
 
-    static TaskScheduler.Task<?> wrap(Action task) {
+    static ThreadPool.Task<?> wrap(Action task) {
         //schedule 抛出异常会终止
-        return new TaskScheduler.Task<>(null, null, () -> quietly(task));
+        return new ThreadPool.Task<>(null, null, () -> quietly(task));
     }
 }
