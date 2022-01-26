@@ -29,7 +29,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
     }
 
     @NonNull
-    default TaskScheduler asyncScheduler() {
+    default ThreadPool asyncScheduler() {
         return Tasks.pool();
     }
 
