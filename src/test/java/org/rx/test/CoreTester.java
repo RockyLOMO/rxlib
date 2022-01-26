@@ -219,8 +219,8 @@ public class CoreTester extends TestUtil {
 
         for (int i = 0; i < 10; i++) {
             int x = i;
-            //RunFlag.SYNCHRONIZED  根据taskName同步执行，只要有一个线程在执行，其它线程等待执行。
-            //RunFlag.SINGLE        根据taskName单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+            //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
+            //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
             //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
             //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
             //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal

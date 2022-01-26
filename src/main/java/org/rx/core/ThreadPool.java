@@ -455,6 +455,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     log.debug("{} {} lock", id, flags);
                 }
             }
+            //TransmittableThreadLocal
             if (task.parent != null && t instanceof FastThreadLocalThread) {
                 ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
             }
