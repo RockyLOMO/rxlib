@@ -133,6 +133,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
+            if (ENABLE_INHERIT_THREAD_LOCALS) {
+                flags.add(RunFlag.INHERIT_THREAD_LOCALS);
+            }
 
             this.id = id;
             this.flags = flags;
@@ -289,6 +292,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
             SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
             SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
+    static final boolean ENABLE_INHERIT_THREAD_LOCALS = SystemPropertyUtil.getBoolean(Constants.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };
@@ -456,8 +460,13 @@ public class ThreadPool extends ThreadPoolExecutor {
                 }
             }
             //TransmittableThreadLocal
-            if (task.parent != null && t instanceof FastThreadLocalThread) {
-                ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
+            if (task.parent != null) {
+                if (t instanceof FastThreadLocalThread) {
+                    ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
+                } else {
+                    ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
+                    slowThreadLocalMap.set(task.parent);
+                }
             }
         }
 //        super.beforeExecute(t, r);

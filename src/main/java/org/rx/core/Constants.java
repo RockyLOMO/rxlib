@@ -6,6 +6,7 @@ public interface Constants {
     String CPU_LOW_WATER_MARK = "app.cpu.lowWaterMark";
     String CPU_HIGH_WATER_MARK = "app.cpu.highWaterMark";
     String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
+    String THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS = "app.threadPool.enableInheritThreadLocals";
     String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
     String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
     String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
