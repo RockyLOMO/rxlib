@@ -124,7 +124,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
-        final FastThreadLocalThread parent;
+        final InternalThreadLocalMap parent;
         final Object id;
         final FlagsEnum<RunFlag> flags;
         final Func<T> fn;
@@ -136,7 +136,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             this.id = id;
             this.flags = flags;
-            parent = flags.has(RunFlag.INHERIT_THREAD_LOCALS) ? as(Thread.currentThread(), FastThreadLocalThread.class) : null;
+            parent = flags.has(RunFlag.INHERIT_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
             this.fn = fn;
         }
 
@@ -334,7 +334,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Getter
     private final String poolName;
-    private final ConcurrentHashMap<Runnable, Runnable> funcMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Runnable, Task<?>> funcMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
 
     @Override
@@ -390,35 +390,35 @@ public class ThreadPool extends ThreadPoolExecutor {
         SIZER.register(this, cpuWaterMark);
     }
 
-    public Future<?> submit(Action task) {
-        return submit(task, null, null);
+    public Future<?> run(Action task) {
+        return run(task, null, null);
     }
 
-    public Future<?> submit(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public Future<?> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         return super.submit((Runnable) new Task<>(taskId, flags, task.toFunc()));
     }
 
-    public <T> Future<T> submit(Func<T> task) {
-        return submit(task, null, null);
+    public <T> Future<T> run(Func<T> task) {
+        return run(task, null, null);
     }
 
-    public <T> Future<T> submit(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return super.submit((Callable<T>) new Task<>(taskId, flags, task));
     }
 
-    public CompletableFuture<Void> run(Action task) {
-        return run(task, null, null);
+    public CompletableFuture<Void> runAsync(Action task) {
+        return runAsync(task, null, null);
     }
 
-    public CompletableFuture<Void> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         return CompletableFuture.runAsync(new Task<>(taskId, flags, task.toFunc()), this);
     }
 
-    public <T> CompletableFuture<T> run(Func<T> task) {
-        return run(task, null, null);
+    public <T> CompletableFuture<T> runAsync(Func<T> task) {
+        return runAsync(task, null, null);
     }
 
-    public <T> CompletableFuture<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return CompletableFuture.supplyAsync(new Task<>(taskId, flags, task), this);
     }
 
@@ -427,18 +427,18 @@ public class ThreadPool extends ThreadPoolExecutor {
     protected void beforeExecute(Thread t, Runnable r) {
         Task<?> task = null;
         if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            Object fn = Reflects.readField(r.getClass(), r, "fn");
-            if (fn == null) {
-                log.warn("{}.fn is null", r);
-            } else {
-                funcMap.put(r, (Runnable) fn);
-                task = as(fn, Task.class);
+            Object fn = Reflects.readField(r, "fn");
+            task = as(fn, Task.class);
+        } else if (r instanceof FutureTask) {
+            Object fn = Reflects.readField(r, "callable");
+            task = as(fn, Task.class);
+            if (task == null) {
+                fn = Reflects.readField(fn, "task");
             }
-        }
-        if (task == null) {
-            task = as(r, Task.class);
+            task = as(fn, Task.class);
         }
         if (task != null) {
+            funcMap.put(r, task);
             Object id = task.id;
             FlagsEnum<RunFlag> flags = task.flags;
             if (id != null) {
@@ -456,7 +456,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 }
             }
             if (task.parent != null && t instanceof FastThreadLocalThread) {
-                ((FastThreadLocalThread) t).setThreadLocalMap(task.parent.threadLocalMap());
+                ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
             }
         }
 //        super.beforeExecute(t, r);
@@ -486,8 +486,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private Task<?> getAs(Runnable command, boolean remove) {
-        Runnable r = remove ? funcMap.remove(command) : funcMap.get(command);
-        return as(r, Task.class);
+        return remove ? funcMap.remove(command) : funcMap.get(command);
     }
 
     @Override

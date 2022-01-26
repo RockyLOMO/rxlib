@@ -134,19 +134,19 @@ public final class Tasks {
     }
 
     public static CompletableFuture<Void> run(Action task) {
-        return pool().run(task);
+        return pool().runAsync(task);
     }
 
     public static CompletableFuture<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().run(task, taskId, flags);
+        return pool().runAsync(task, taskId, flags);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task) {
-        return pool().run(task);
+        return pool().runAsync(task);
     }
 
     public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().run(task, taskId, flags);
+        return pool().runAsync(task, taskId, flags);
     }
 
     @SuppressWarnings(NON_RAW_TYPES)

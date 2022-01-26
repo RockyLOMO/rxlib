@@ -144,7 +144,7 @@ public final class Remoting {
                             if (onInit != null) {
                                 onInit.invoke((T) p.getProxyObject(), (StatefulRpcClient) s);
                             }
-                            s.asyncScheduler().run(() -> {
+                            s.asyncScheduler().runAsync(() -> {
                                 for (ClientBean value : getClientBeans((StatefulRpcClient) s).values()) {
                                     if (value.syncRoot.getHoldCount() == 0) {
                                         continue;
