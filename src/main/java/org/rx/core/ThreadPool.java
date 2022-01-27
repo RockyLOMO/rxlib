@@ -206,15 +206,15 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             String prefix = pool.toString();
             if (log.isDebugEnabled()) {
-                int poolSize = pool.getPoolSize();
-                log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                        poolSize, pool.getQueue().size(),
+                log.debug("{} PoolSize={}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                        pool.getPoolSize(), pool.getQueue().size(),
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
             }
 
             if (cpuLoad.gt(waterMark.getHigh())) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
-                    log.info("{} Threshold={}[{}-{}]% decrement to {}", prefix,
+                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
+                            pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
                     decrementCounter = 0;
                 }
@@ -224,7 +224,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
                 if (++incrementCounter >= SAMPLING_TIMES) {
-                    log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
+                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
+                            pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                     incrementCounter = 0;
                 }
