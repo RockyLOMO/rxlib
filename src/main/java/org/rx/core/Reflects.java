@@ -387,7 +387,7 @@ public class Reflects extends TypeUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return (Map<String, Field>) FIELD_CACHE.getValue().get(type, k -> {
+        return FIELD_CACHE.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);

@@ -3,6 +3,7 @@ package org.rx.test.bean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
 
@@ -21,6 +22,7 @@ public class PersonBean implements IPerson {
 
     public int index;
     public int index2;
+    @DbColumn(primaryKey = true)
     public final UUID id = UUID.randomUUID();
     @NotNull
     public String name;
