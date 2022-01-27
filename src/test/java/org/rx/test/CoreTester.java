@@ -1,40 +1,32 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.Expiry;
-import com.github.benmanes.caffeine.cache.Policy;
 import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.MethodUtils;
-import org.checkerframework.checker.index.qual.NonNegative;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
-import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
-import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -189,7 +181,12 @@ public class CoreTester extends TestUtil {
     }
 
     static final long delayMillis = 5000;
-    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<>();
+    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
+        @Override
+        protected void onRemoval(IntTuple<String> value) {
+            System.out.println("rm:" + value);
+        }
+    };
 
     @SneakyThrows
     @Test
@@ -249,7 +246,9 @@ public class CoreTester extends TestUtil {
     public void inheritThreadLocal() {
         inherit.set(IntTuple.of(1, "a"));
         ThreadPool pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
+        AtomicReference<Thread> t = new AtomicReference<>();
         pool.run(() -> {
+            t.set(Thread.currentThread());
             IntTuple<String> tuple = inherit.get();
             assert IntTuple.of(1, "a").equals(tuple);
             System.out.println("ok");

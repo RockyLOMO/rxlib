@@ -461,15 +461,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             //TransmittableThreadLocal
             if (task.parent != null) {
-                if (t instanceof FastThreadLocalThread) {
-                    ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
-                } else {
-                    ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
-                    slowThreadLocalMap.set(task.parent);
-                }
+                setThreadLocalMap(t, task.parent);
             }
         }
-//        super.beforeExecute(t, r);
     }
 
     @Override
@@ -487,8 +481,24 @@ public class ThreadPool extends ThreadPoolExecutor {
                     }
                 }
             }
+            if (task.parent != null) {
+                setThreadLocalMap(Thread.currentThread(), null);
+            }
         }
-//        super.afterExecute(r, t);
+    }
+
+    void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {
+        if (t instanceof FastThreadLocalThread) {
+            ((FastThreadLocalThread) t).setThreadLocalMap(threadLocalMap);
+            return;
+        }
+
+        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
+        if (threadLocalMap == null) {
+            slowThreadLocalMap.remove();
+            return;
+        }
+        slowThreadLocalMap.set(threadLocalMap);
     }
 
     private Tuple<ReentrantLock, AtomicInteger> getLocker(Object id) {
