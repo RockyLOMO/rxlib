@@ -27,6 +27,12 @@ import static org.rx.core.App.*;
 @Slf4j
 public class IOTester {
     @Test
+    public void h2() {
+        EmbeddedDatabase db = new EmbeddedDatabase("~/test");
+        db.createMapping(PersonBean.class);
+    }
+
+    @Test
     public void releaseBuffer() {
         ByteBuffer buffer = ByteBuffer.allocateDirect(64);
         IOStream.release(buffer);
