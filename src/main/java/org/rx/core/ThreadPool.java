@@ -36,11 +36,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         @Override
-        public boolean isEmpty() {
-            return counter.get() == 0;
-        }
-
-        @Override
         public int size() {
             return counter.get();
         }
@@ -116,8 +111,12 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         private void doNotify() {
-            counter.decrementAndGet();
+            int c = counter.decrementAndGet();
             synchronized (this) {
+                if (c < 0) {
+                    counter.set(super.size());
+                    log.warn("FIX SIZE {} -> {}", c, counter);
+                }
                 notify();
             }
         }
