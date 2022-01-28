@@ -579,7 +579,7 @@ public final class App extends SystemUtils {
         String[] splits = Strings.split(key, d);
         int c = splits.length - 1;
         for (int i = 0; i <= c; i++) {
-            if (kBuf.getLength() > 0) {
+            if (kBuf.length() > 0) {
                 kBuf.append(d);
             }
             String k = kBuf.append(splits[i]).toString();

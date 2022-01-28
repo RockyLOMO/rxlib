@@ -1,11 +1,14 @@
 package org.rx.io;
 
 import com.google.common.base.CaseFormat;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.annotation.DbColumn;
+import org.rx.bean.BiTuple;
+import org.rx.bean.FluentIterable;
 import org.rx.core.Disposable;
 import org.rx.core.Reflects;
 import org.rx.core.StringBuilder;
@@ -18,20 +21,56 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.util.Date;
-import java.util.Map;
-import java.util.UUID;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class EmbeddedDatabase extends Disposable {
-    static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $table\n" +
+    @RequiredArgsConstructor
+    static class SqlMeta {
+        final int pkIndex;
+        final List<BiTuple<String, Field, DbColumn>> columns;
+        final String insertSql;
+        final String updateSql;
+        final String deleteSql;
+        final String selectSql;
+
+        BiTuple<String, Field, DbColumn> primaryKey() {
+            return columns.get(pkIndex);
+        }
+
+        Iterable<BiTuple<String, Field, DbColumn>> columnsWithoutPk() {
+            return new FluentIterable<BiTuple<String, Field, DbColumn>>() {
+                int i;
+
+                @Override
+                public boolean hasNext() {
+                    return i < columns.size();
+                }
+
+                @Override
+                public BiTuple<String, Field, DbColumn> next() {
+                    if (i == pkIndex) {
+                        i++;
+                    }
+                    return columns.get(i++);
+                }
+            };
+        }
+    }
+
+    static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $TABLE\n" +
             "(\n" +
-            "$columns" +
-            "\tconstraint $table_PK\n" +
+            "$CREATE_COLUMNS" +
+            "\tconstraint $TABLE_PK\n" +
             "\t\tprimary key ($PK)\n" +
             ");";
+    static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
+            $UPDATE_COLUMNS = "$UPDATE_COLUMNS", $WHERE_PART = "$WHERE_PART";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
+    static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
 
     static {
         H2_TYPES.put(String.class, H2Type.VARCHAR);
@@ -65,53 +104,140 @@ public class EmbeddedDatabase extends Disposable {
         connectionPool.dispose();
     }
 
-    public void createMapping(Class<?>... entityTypes) {
+    @SneakyThrows
+    <T> void save(T entity) {
+        Class<?> entityType = entity.getClass();
+        SqlMeta meta = SQL_META.get(entityType);
+        if (meta == null) {
+            throw new InvalidException("Entity %s mapping not found", entityType);
+        }
+
+        BiTuple<String, Field, DbColumn> pk = meta.primaryKey();
+        Object id = pk.middle.get(entity);
+        if (id == null) {
+            try (Connection conn = connectionPool.getConnection()) {
+                PreparedStatement stmt = conn.prepareStatement(meta.insertSql);
+                int c = 0;
+                for (BiTuple<String, Field, DbColumn> col : meta.columnsWithoutPk()) {
+                    Object val = col.middle.get(entity);
+                    stmt.setObject(c++, val);
+                }
+                stmt.executeUpdate();
+            }
+            return;
+        }
+
+        List<Object> params = new ArrayList<>();
         StringBuilder cols = new StringBuilder();
+        for (BiTuple<String, Field, DbColumn> col : meta.columnsWithoutPk()) {
+            Object val = col.middle.get(entity);
+            if (val == null) {
+                continue;
+            }
+
+            cols.append("%s=?,", col.left);
+            params.add(val);
+        }
+        executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
+    }
+
+
+    public void createMapping(Class<?>... entityTypes) {
+        StringBuilder createCols = new StringBuilder();
+        StringBuilder insert = new StringBuilder();
         for (Class<?> entityType : entityTypes) {
-            String tableName = CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName());
+            createCols.setLength(0);
+            String tableName = tableName(entityType);
+            insert.setLength(0).append("INSERT INTO %s VALUES (", tableName);
+
             String pkName = null;
-            cols.setLength(0);
+            int pkIndex = -1;
+            List<BiTuple<String, Field, DbColumn>> columns = new ArrayList<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
                 if (Modifier.isStatic(field.getModifiers())) {
                     continue;
                 }
-
-                Class<?> type = field.getType();
-                H2Type h2Type = H2_TYPES.getOrDefault(type, H2Type.VARCHAR);
-                String name = CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName()), extra = Strings.EMPTY;
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
+                String colName = columnName(field, dbColumn);
+                columns.add(BiTuple.of(colName, field, dbColumn));
+
+                H2Type h2Type = H2_TYPES.getOrDefault(field.getType(), H2Type.VARCHAR);
+                String extra = Strings.EMPTY;
                 if (dbColumn != null) {
-                    if (!Strings.isEmpty(dbColumn.name())) {
-                        name = dbColumn.name();
-                    }
                     if (dbColumn.length() > 0) {
                         extra = "(" + dbColumn.length() + ")";
                     }
                     if (dbColumn.primaryKey()) {
-                        pkName = name;
+                        pkIndex = columns.size() - 1;
+                        pkName = colName;
                     }
                     if (dbColumn.autoIncrement()) {
                         extra += " auto_increment";
                     }
                 }
-                cols.appendLine("\t%s %s%s,", name, h2Type.getName(), extra);
+                createCols.appendLine("\t%s %s%s,", colName, h2Type.getName(), extra);
+                insert.append("?,");
             }
-            cols.setLength(cols.getLength() - 1);
             if (pkName == null) {
                 throw new InvalidException("require a primaryKey mapping");
             }
-            String sql = new StringBuilder(SQL_CREATE).replace("$table", tableName)
-                    .replace("$columns", cols.toString())
-                    .replace("$PK", pkName).toString();
+
+            createCols.setLength(createCols.length() - 1);
+            insert.setLength(insert.length() - 1).append(")");
+
+            String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)
+                    .replace($CREATE_COLUMNS, createCols.toString())
+                    .replace($PK, pkName).toString();
             log.debug("createMapping\n{}", sql);
             executeUpdate(sql);
+
+            int finalPkIndex = pkIndex;
+            String finalPkName = pkName;
+            SQL_META.computeIfAbsent(entityType, k -> new SqlMeta(finalPkIndex, columns, insert.toString(),
+                    String.format("UPDATE %s SET $UPDATE_COLUMNS WHERE %s=?", tableName, finalPkName),
+                    String.format("DELETE FROM %s WHERE %s=?", tableName, finalPkName),
+                    String.format("SELECT * FROM %s", tableName)));
         }
+    }
+
+    String columnName(Field field, DbColumn dbColumn) {
+        if (dbColumn != null && !dbColumn.name().isEmpty()) {
+            return dbColumn.name();
+        }
+        return CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName());
+    }
+
+    String tableName(Class<?> entityType) {
+        return CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName());
     }
 
     @SneakyThrows
     int executeUpdate(String sql) {
         try (Connection conn = connectionPool.getConnection()) {
             return conn.createStatement().executeUpdate(sql);
+        }
+    }
+
+    @SneakyThrows
+    int executeUpdate(String sql, List<Object> params) {
+        try (Connection conn = connectionPool.getConnection()) {
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            for (int i = 0; i < params.size(); i++) {
+                stmt.setObject(i + 1, params.get(i));
+            }
+            return stmt.executeUpdate();
+        }
+    }
+
+    @SneakyThrows
+    <T> T executeQuery(String sql, List<Object> params) {
+        try (Connection conn = connectionPool.getConnection()) {
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            for (int i = 0; i < params.size(); i++) {
+                stmt.setObject(i + 1, params.get(i));
+            }
+            ResultSet rs = stmt.executeQuery();
+            return null;
         }
     }
 }

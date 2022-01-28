@@ -29,6 +29,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private ThreadPool pool;
         private final int queueCapacity;
+        //todo cache len
         private final AtomicInteger counter = new AtomicInteger();
 
         public ThreadQueue(int queueCapacity) {

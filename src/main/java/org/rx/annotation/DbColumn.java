@@ -18,6 +18,4 @@ public @interface DbColumn {
     boolean primaryKey() default false;
 
     boolean autoIncrement() default false;
-
-    boolean large() default false;
 }
