@@ -152,7 +152,32 @@ public class Reflects extends TypeUtils {
             throw InvalidException.sneaky(e);
         }
     }
+    //endregion
 
+    public static <TP, TR> String resolveProperty(BiFunc<TP, TR> func) {
+        SerializedLambda lambda = getLambda(func);
+        return propertyName(lambda.getImplMethodName());
+    }
+
+    public static <TP, TR> Tuple<String, String> resolve(BiFunc<TP, TR> func) {
+        SerializedLambda lambda = getLambda(func);
+        String declaredClass = lambda.getImplClass().replace("/", ".");
+        return Tuple.of(declaredClass, propertyName(lambda.getImplMethodName()));
+    }
+
+    static <TP, TR> SerializedLambda getLambda(BiFunc<TP, TR> func) {
+        SerializedLambda lambda = invokeMethod(func, "writeReplace");
+        String implMethodName = lambda.getImplMethodName();
+        if (implMethodName.startsWith("lambda$")) {
+            throw new IllegalArgumentException("BiFunc can not be LAMBDA EXPR, but only METHOD REFERENCE");
+        }
+        if (!implMethodName.startsWith(GET_PROPERTY) && !implMethodName.startsWith(GET_BOOL_PROPERTY)) {
+            throw new IllegalArgumentException(implMethodName + " is not a GETTER");
+        }
+        return lambda;
+    }
+
+    //region methods
     public static <T> T newInstance(Class<T> type) {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
@@ -188,24 +213,6 @@ public class Reflects extends TypeUtils {
             }
         }
         throw new ApplicationException(values(type.getName()));
-    }
-    //endregion
-
-    public static <TP, TR> Tuple<String, String> resolve(BiFunc<TP, TR> func) {
-        SerializedLambda serializedLambda = invokeMethod(func, "writeReplace");
-        String implMethodName = serializedLambda.getImplMethodName();
-        if (implMethodName.startsWith("lambda$")) {
-            throw new IllegalArgumentException("BiFunc can not be LAMBDA EXPR, but only METHOD REFERENCE");
-        }
-        String fieldName;
-        if ((implMethodName.startsWith("get") && implMethodName.length() > 3)
-                || implMethodName.startsWith("is") && implMethodName.length() > 2) {
-            fieldName = propertyName(implMethodName);
-        } else {
-            throw new IllegalArgumentException(implMethodName + " is not a GETTER");
-        }
-        String declaredClass = serializedLambda.getImplClass().replace("/", ".");
-        return Tuple.of(declaredClass, fieldName);
     }
 
     @SneakyThrows
@@ -320,6 +327,7 @@ public class Reflects extends TypeUtils {
             return Collections.unmodifiableMap(NQuery.of(all).groupByIntoMap(Method::getName, (p, x) -> x));
         });
     }
+    //endregion
 
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
@@ -332,17 +340,21 @@ public class Reflects extends TypeUtils {
         });
     }
 
-    public static String propertyName(@NonNull String getterOrSetterName) {
+    public static String propertyName(String getterOrSetter) {
         String name;
-        if (getterOrSetterName.startsWith(GET_PROPERTY)) {
-            name = getterOrSetterName.substring(GET_PROPERTY.length());
-        } else if (getterOrSetterName.startsWith(GET_BOOL_PROPERTY)) {
-            name = getterOrSetterName.substring(GET_BOOL_PROPERTY.length());
-        } else if (getterOrSetterName.startsWith(SET_PROPERTY)) {
-            name = getterOrSetterName.substring(SET_PROPERTY.length());
+        if (getterOrSetter.startsWith(GET_PROPERTY)) {
+            name = getterOrSetter.substring(GET_PROPERTY.length());
+        } else if (getterOrSetter.startsWith(GET_BOOL_PROPERTY)) {
+            name = getterOrSetter.substring(GET_BOOL_PROPERTY.length());
+        } else if (getterOrSetter.startsWith(SET_PROPERTY)) {
+            name = getterOrSetter.substring(SET_PROPERTY.length());
         } else {
-            name = getterOrSetterName;
+            name = getterOrSetter;
         }
+        if (name.isEmpty()) {
+            throw new InvalidException("Invalid name %s", getterOrSetter);
+        }
+
         //Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;

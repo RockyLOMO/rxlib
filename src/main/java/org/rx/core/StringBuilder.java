@@ -14,6 +14,10 @@ public final class StringBuilder implements Appendable, CharSequence, Serializab
     @Setter
     TripleAction<StringBuilder, Object> preAppend;
 
+    public boolean isEmpty() {
+        return length() == 0;
+    }
+
     public StringBuilder() {
         buffer = new java.lang.StringBuilder();
     }

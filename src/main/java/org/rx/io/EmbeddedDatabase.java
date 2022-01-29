@@ -1,19 +1,18 @@
 package org.rx.io;
 
 import com.google.common.base.CaseFormat;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.annotation.DbColumn;
-import org.rx.bean.BiTuple;
-import org.rx.bean.FluentIterable;
-import org.rx.core.Disposable;
-import org.rx.core.Reflects;
+import org.rx.bean.Tuple;
+import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
+import org.rx.util.Lazy;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -23,6 +22,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -30,34 +30,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class EmbeddedDatabase extends Disposable {
     @RequiredArgsConstructor
     static class SqlMeta {
-        final int pkIndex;
-        final List<BiTuple<String, Field, DbColumn>> columns;
+        @Getter
+        final String primaryKey;
+        @Getter
+        final Map<String, Tuple<Field, DbColumn>> columns;
         final String insertSql;
         final String updateSql;
         final String deleteSql;
         final String selectSql;
+        final Lazy<NQuery<Map.Entry<String, Tuple<Field, DbColumn>>>> secondaryView = new Lazy<>(() -> NQuery.of(getColumns().entrySet())
+                .where(p -> p.getKey().hashCode() != getPrimaryKey().hashCode()));
 
-        BiTuple<String, Field, DbColumn> primaryKey() {
-            return columns.get(pkIndex);
+        Map.Entry<String, Tuple<Field, DbColumn>> primaryKey() {
+            return new AbstractMap.SimpleEntry<>(primaryKey, columns.get(primaryKey));
         }
 
-        Iterable<BiTuple<String, Field, DbColumn>> columnsWithoutPk() {
-            return new FluentIterable<BiTuple<String, Field, DbColumn>>() {
-                int i;
-
-                @Override
-                public boolean hasNext() {
-                    return i < columns.size();
-                }
-
-                @Override
-                public BiTuple<String, Field, DbColumn> next() {
-                    if (i == pkIndex) {
-                        i++;
-                    }
-                    return columns.get(i++);
-                }
-            };
+        Iterable<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryColumns() {
+            return secondaryView.getValue();
         }
     }
 
@@ -105,21 +94,16 @@ public class EmbeddedDatabase extends Disposable {
     }
 
     @SneakyThrows
-    <T> void save(T entity) {
-        Class<?> entityType = entity.getClass();
-        SqlMeta meta = SQL_META.get(entityType);
-        if (meta == null) {
-            throw new InvalidException("Entity %s mapping not found", entityType);
-        }
-
-        BiTuple<String, Field, DbColumn> pk = meta.primaryKey();
-        Object id = pk.middle.get(entity);
+    public <T> void save(T entity) {
+        SqlMeta meta = getMeta(entity.getClass());
+        Map.Entry<String, Tuple<Field, DbColumn>> pk = meta.primaryKey();
+        Object id = pk.getValue().left.get(entity);
         if (id == null) {
             try (Connection conn = connectionPool.getConnection()) {
                 PreparedStatement stmt = conn.prepareStatement(meta.insertSql);
                 int c = 0;
-                for (BiTuple<String, Field, DbColumn> col : meta.columnsWithoutPk()) {
-                    Object val = col.middle.get(entity);
+                for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryColumns()) {
+                    Object val = col.getValue().left.get(entity);
                     stmt.setObject(c++, val);
                 }
                 stmt.executeUpdate();
@@ -128,19 +112,32 @@ public class EmbeddedDatabase extends Disposable {
         }
 
         List<Object> params = new ArrayList<>();
-        StringBuilder cols = new StringBuilder();
-        for (BiTuple<String, Field, DbColumn> col : meta.columnsWithoutPk()) {
-            Object val = col.middle.get(entity);
+        StringBuilder cols = new StringBuilder(128);
+        for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryColumns()) {
+            Object val = col.getValue().left.get(entity);
             if (val == null) {
                 continue;
             }
 
-            cols.append("%s=?,", col.left);
+            cols.append("%s=?,", col.getKey());
             params.add(val);
         }
         executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
     }
 
+    public <T> List<T> findBy(EntityQueryLambda<T> query) {
+        List<Object> params = new ArrayList<>();
+        String sql = query.toString(params);
+        return executeQuery(sql, params, query.entityType);
+    }
+
+    SqlMeta getMeta(Class<?> entityType) {
+        SqlMeta meta = SQL_META.get(entityType);
+        if (meta == null) {
+            throw new InvalidException("Entity %s mapping not found", entityType);
+        }
+        return meta;
+    }
 
     public void createMapping(Class<?>... entityTypes) {
         StringBuilder createCols = new StringBuilder();
@@ -151,15 +148,14 @@ public class EmbeddedDatabase extends Disposable {
             insert.setLength(0).append("INSERT INTO %s VALUES (", tableName);
 
             String pkName = null;
-            int pkIndex = -1;
-            List<BiTuple<String, Field, DbColumn>> columns = new ArrayList<>();
+            Map<String, Tuple<Field, DbColumn>> columns = new HashMap<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
                 if (Modifier.isStatic(field.getModifiers())) {
                     continue;
                 }
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
                 String colName = columnName(field, dbColumn);
-                columns.add(BiTuple.of(colName, field, dbColumn));
+                columns.put(colName, Tuple.of(field, dbColumn));
 
                 H2Type h2Type = H2_TYPES.getOrDefault(field.getType(), H2Type.VARCHAR);
                 String extra = Strings.EMPTY;
@@ -168,7 +164,6 @@ public class EmbeddedDatabase extends Disposable {
                         extra = "(" + dbColumn.length() + ")";
                     }
                     if (dbColumn.primaryKey()) {
-                        pkIndex = columns.size() - 1;
                         pkName = colName;
                     }
                     if (dbColumn.autoIncrement()) {
@@ -191,9 +186,8 @@ public class EmbeddedDatabase extends Disposable {
             log.debug("createMapping\n{}", sql);
             executeUpdate(sql);
 
-            int finalPkIndex = pkIndex;
             String finalPkName = pkName;
-            SQL_META.computeIfAbsent(entityType, k -> new SqlMeta(finalPkIndex, columns, insert.toString(),
+            SQL_META.computeIfAbsent(entityType, k -> new SqlMeta(finalPkName, columns, insert.toString(),
                     String.format("UPDATE %s SET $UPDATE_COLUMNS WHERE %s=?", tableName, finalPkName),
                     String.format("DELETE FROM %s WHERE %s=?", tableName, finalPkName),
                     String.format("SELECT * FROM %s", tableName)));
@@ -230,14 +224,25 @@ public class EmbeddedDatabase extends Disposable {
     }
 
     @SneakyThrows
-    <T> T executeQuery(String sql, List<Object> params) {
+    <T> List<T> executeQuery(String sql, List<Object> params, Class<T> entityType) {
+        SqlMeta meta = getMeta(entityType);
+        List<T> r = new ArrayList<>();
         try (Connection conn = connectionPool.getConnection()) {
             PreparedStatement stmt = conn.prepareStatement(sql);
             for (int i = 0; i < params.size(); i++) {
                 stmt.setObject(i + 1, params.get(i));
             }
             ResultSet rs = stmt.executeQuery();
-            return null;
+            ResultSetMetaData metaData = rs.getMetaData();
+            while (rs.next()) {
+                T t = entityType.newInstance();
+                for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                    Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
+                    bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
+                }
+                r.add(t);
+            }
         }
+        return r;
     }
 }

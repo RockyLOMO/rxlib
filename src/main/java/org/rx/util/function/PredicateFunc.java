@@ -1,6 +1,6 @@
 package org.rx.util.function;
 
-import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 
 import java.util.function.Predicate;
 
@@ -14,7 +14,7 @@ public interface PredicateFunc<T> {
             try {
                 return invoke(p);
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         };
     }

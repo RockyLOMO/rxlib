@@ -204,7 +204,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             try {
                 return selector.invoke(p, counter.getAndIncrement());
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         }));
     }
@@ -223,7 +223,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             try {
                 return predicate.invoke(p);
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         }));
     }
@@ -234,7 +234,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             try {
                 return predicate.invoke(p, counter.getAndIncrement());
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         }));
     }
@@ -324,7 +324,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
                 }
                 return c1.compareTo(c2);
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         };
     }
@@ -356,7 +356,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
                 }
                 return 0;
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         };
     }
@@ -421,7 +421,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
             try {
                 return predicate.invoke(p);
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         }).count();
     }

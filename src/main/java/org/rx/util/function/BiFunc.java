@@ -1,6 +1,6 @@
 package org.rx.util.function;
 
-import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 
 import java.io.Serializable;
 import java.util.function.Function;
@@ -14,7 +14,7 @@ public interface BiFunc<TP, TR> extends Serializable {
             try {
                 return invoke(p);
             } catch (Throwable e) {
-                throw ApplicationException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
         };
     }

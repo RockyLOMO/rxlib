@@ -7,9 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.App;
 import org.rx.core.Arrays;
-import org.rx.core.Reflects;
 import org.rx.io.*;
-import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
@@ -20,6 +18,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.App.*;
@@ -30,6 +30,22 @@ public class IOTester {
     public void h2() {
         EmbeddedDatabase db = new EmbeddedDatabase("~/test");
         db.createMapping(PersonBean.class);
+
+        EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
+                .eq(PersonBean::getName, "张三")
+                .in(PersonBean::getIndex, 1, 2, 3)
+                .between(PersonBean::getAge, 6, 14)
+                .notLike(PersonBean::getName, "王%");
+        q.and(q.newClause()
+                        .ne(PersonBean::getAge, 10)
+                        .ne(PersonBean::getAge, 11))
+                .or(q.newClause()
+                        .ne(PersonBean::getAge, 12)
+                        .ne(PersonBean::getAge, 13));
+        System.out.println(q.toString());
+        List<Object> params = new ArrayList<>();
+        System.out.println(q.toString(params));
+        System.out.println(toJsonString(params));
     }
 
     @Test
