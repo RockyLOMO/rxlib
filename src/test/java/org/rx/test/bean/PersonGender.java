@@ -8,9 +8,9 @@ import org.rx.bean.NEnum;
 @RequiredArgsConstructor
 public enum PersonGender implements NEnum<PersonGender> {
     @Description("男孩")
-    Boy(1),
+    BOY(1),
     @Description("女孩")
-    Girl(2);
+    GIRL(2);
 
     @Getter
     private final int value;

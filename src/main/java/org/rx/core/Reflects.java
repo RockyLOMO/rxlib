@@ -35,7 +35,7 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j
-public class Reflects extends TypeUtils {
+public class Reflects extends ClassUtils {
     //region NestedTypes
     @RequiredArgsConstructor
     public static class PropertyNode implements Serializable {
@@ -46,11 +46,10 @@ public class Reflects extends TypeUtils {
     }
 
     @RequiredArgsConstructor
-    @Getter
-    private static class ConvertBean<TS, TT> {
-        private final Class<TS> baseFromType;
-        private final Class<TT> toType;
-        private final BiFunction<TS, Class<TT>, TT> converter;
+    static class ConvertBean<TS, TT> {
+        final Class<TS> baseFromType;
+        final Class<TT> toType;
+        final BiFunction<TS, Class<TT>, TT> converter;
     }
 
     static class SecurityManagerEx extends SecurityManager {
@@ -152,6 +151,10 @@ public class Reflects extends TypeUtils {
             throw InvalidException.sneaky(e);
         }
     }
+
+    public static boolean isInstance(Object val, Type type) {
+        return TypeUtils.isInstance(val, type);
+    }
     //endregion
 
     public static <TP, TR> String resolveProperty(BiFunc<TP, TR> func) {
@@ -200,7 +203,7 @@ public class Reflects extends TypeUtils {
                 }
                 boolean ok = true;
                 for (int i = 0; i < paramTypes.length; i++) {
-                    if (!isInstance(args[i], paramTypes[i])) {
+                    if (!TypeUtils.isInstance(args[i], paramTypes[i])) {
                         ok = false;
                         break;
                     }
@@ -271,7 +274,7 @@ public class Reflects extends TypeUtils {
                         }
                         continue;
                     }
-                    if (!ClassUtils.primitiveToWrapper(parameterType).isInstance(arg)) {
+                    if (!primitiveToWrapper(parameterType).isInstance(arg)) {
                         find = false;
                         break;
                     }
@@ -288,7 +291,7 @@ public class Reflects extends TypeUtils {
 
         try {
             if (isStatic) {
-                Class<?>[] parameterTypes = ClassUtils.toClass(args);  //null 不准
+                Class<?>[] parameterTypes = toClass(args);  //null 不准
                 method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
                 return invokeMethod(method, args);
             } else {
@@ -432,7 +435,7 @@ public class Reflects extends TypeUtils {
 
     public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
-            return isNull(Reflects.changeType(val, toType), defaultVal);
+            return isNull(changeType(val, toType), defaultVal);
         } catch (Exception ex) {
             return defaultVal;
         }
@@ -477,22 +480,34 @@ public class Reflects extends TypeUtils {
         } else if (toType.equals(BigDecimal.class)) {
             value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
-            if (NEnum.class.isAssignableFrom(toType) && ClassUtils.isAssignable(fromType, Number.class)) {
-                int val = ((Number) value).intValue();
-                value = NEnum.valueOf((Class) toType, val);
-            } else {
+            boolean failBack = true;
+            if (NEnum.class.isAssignableFrom(toType)) {
+                if (value instanceof String) {
+                    try {
+                        value = Integer.valueOf((String) value);
+                    } catch (NumberFormatException e) {
+                        //ignore
+                    }
+                }
+                if (value instanceof Number) {
+                    int val = ((Number) value).intValue();
+                    value = NEnum.valueOf((Class) toType, val);
+                    failBack = false;
+                }
+            }
+            if (failBack) {
                 String val = value.toString();
                 value = NQuery.of(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
             }
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
-        } else if (!toType.isPrimitive() && Reflects.isInstance(value, toType)) {
+        } else if (!toType.isPrimitive() && TypeUtils.isInstance(value, toType)) {
             //isInstance int to long ok, do nothing
         } else {
             try {
-                toType = (Class) ClassUtils.primitiveToWrapper(toType);
-                if (toType.equals(Boolean.class) && ClassUtils.isAssignable(fromType, Number.class)) {
+                toType = (Class) primitiveToWrapper(toType);
+                if (toType.equals(Boolean.class) && isAssignable(fromType, Number.class)) {
                     int val = ((Number) value).intValue();
                     if (val == 0) {
                         value = Boolean.FALSE;
@@ -505,14 +520,14 @@ public class Reflects extends TypeUtils {
                     NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null) {
                         Class<T> fType = toType;
-                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> Reflects.isInstance(fValue, p.getBaseFromType()) && p.getToType().isAssignableFrom(fType));
+                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {
-                            return (T) convertBean.getConverter().apply(value, convertBean.getToType());
+                            return (T) convertBean.converter.apply(value, convertBean.toType);
                         }
                         throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
                     }
 
-                    if (ClassUtils.isAssignable(toType, Number.class) && ClassUtils.primitiveToWrapper(fromType).equals(Boolean.class)) {
+                    if (isAssignable(toType, Number.class) && primitiveToWrapper(fromType).equals(Boolean.class)) {
                         boolean val = (boolean) value;
                         if (!val) {
                             value = "0";

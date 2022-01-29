@@ -28,8 +28,15 @@ import static org.rx.core.App.*;
 public class IOTester {
     @Test
     public void h2() {
-        EmbeddedDatabase db = new EmbeddedDatabase("~/test");
+        EntityDatabase db = new EntityDatabase("~/test");
         db.createMapping(PersonBean.class);
+
+        PersonBean entity = PersonBean.LeZhi;
+        db.save(entity, true);
+
+        List<PersonBean> list = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之"));
+        System.out.println(toJsonString(list));
+        assert !list.isEmpty() && list.get(0).getName().equals("乐之");
 
         EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
                 .eq(PersonBean::getName, "张三")
@@ -96,11 +103,11 @@ public class IOTester {
     public void kvZip() {
         KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
-        kv.put(0, PersonBean.boy);
-        kv.put(1, PersonBean.girl);
+        kv.put(0, PersonBean.YouFan);
+        kv.put(1, PersonBean.LeZhi);
 
-        assert kv.get(0).equals(PersonBean.boy);
-        assert kv.get(1).equals(PersonBean.girl);
+        assert kv.get(0).equals(PersonBean.YouFan);
+        assert kv.get(1).equals(PersonBean.LeZhi);
     }
 
     @Test

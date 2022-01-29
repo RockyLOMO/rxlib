@@ -181,12 +181,12 @@ public class SocksTester extends TConfig {
             }, false);
         }
         for (int i = 0; i < 10; i++) {
-            UserEventArgs args = new UserEventArgs(PersonBean.girl);
+            UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
             facadeGroup.get(0).raiseEvent(eventName, args);
             System.out.println("flag:" + args.getFlag());
             assert args.getFlag() == 1;
 
-            args = new UserEventArgs(PersonBean.girl);
+            args = new UserEventArgs(PersonBean.LeZhi);
             args.setFlag(1);
             facadeGroup.get(1).raiseEvent(eventName, args);
             assert args.getFlag() == 2;
@@ -223,14 +223,14 @@ public class SocksTester extends TConfig {
         //注册事件（广播）
         attachEvent(facade1, "0x00");
         //服务端触发事件，只有facade1注册会被广播到
-        server.create(PersonBean.girl);
+        server.create(PersonBean.LeZhi);
 
         attachEvent(facade2, "0x01");
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
-        server.create(PersonBean.girl);
+        server.create(PersonBean.LeZhi);
 
         //客户端触发事件
-        facade1.create(PersonBean.girl);
+        facade1.create(PersonBean.LeZhi);
         sleep(5000);
     }
 

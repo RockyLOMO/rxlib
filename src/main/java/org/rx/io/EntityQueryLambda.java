@@ -9,6 +9,7 @@ import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -26,7 +27,7 @@ public class EntityQueryLambda<T> implements Serializable {
         final String format;
     }
 
-    static final String OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
+    static final String WHERE = " WHERE ", OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
     final Class<T> entityType;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
 
@@ -203,6 +204,9 @@ public class EntityQueryLambda<T> implements Serializable {
         }
         if (val instanceof String) {
             return String.format("'%s'", ((String) val).replace("'", "‘"));
+        }
+        if (val instanceof Date || val instanceof Enum) {
+            return String.format("'%s'", val);
         }
         return val.toString();
     }

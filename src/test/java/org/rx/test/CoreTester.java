@@ -45,7 +45,7 @@ public class CoreTester extends TestUtil {
     @Test
     public void runNQuery() {
         Collection<PersonBean> personSet = new HashSet<>();
-        personSet.add(PersonBean.girl);
+        personSet.add(PersonBean.LeZhi);
         for (int i = 0; i < 5; i++) {
             PersonBean p = new PersonBean();
             p.index = i % 2 == 0 ? 2 : i;
@@ -55,16 +55,16 @@ public class CoreTester extends TestUtil {
             personSet.add(p);
         }
 
-        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(28, 28, "tom", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(29, 29, "lily", PersonGender.Girl, 8, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(30, 30, "cookie", PersonGender.Boy, 6, DateTime.now(), 1L, Decimal.valueOf(1d))).leftJoin(
-                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.Boy, 5, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(28, 28, "tom", PersonGender.Boy, 10, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(29, 29, "jack", PersonGender.Boy, 1, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(30, 30, "session", PersonGender.Boy, 25, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(31, 31, "trump", PersonGender.Boy, 55, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(32, 32, "jack", PersonGender.Boy, 55, DateTime.now(), 1L, Decimal.valueOf(1d))), (p, x) -> p.name.equals(x.name), Tuple::of
+        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d))).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d))), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
@@ -437,11 +437,11 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void convert() {
-        int val = Reflects.changeType(PersonGender.Boy, Integer.class);
+        int val = Reflects.changeType(PersonGender.BOY, Integer.class);
         assert val == 1;
 
         PersonGender testEnum = Reflects.changeType(1, PersonGender.class);
-        assert testEnum == PersonGender.Boy;
+        assert testEnum == PersonGender.BOY;
         int integer = Reflects.changeType("1", Integer.class);
         assert integer == 1;
 
@@ -543,11 +543,11 @@ public class CoreTester extends TestUtil {
 
         String str = "abc";
         assert str.equals(toJsonString(str));
-        String jObj = toJsonString(PersonBean.girl);
+        String jObj = toJsonString(PersonBean.LeZhi);
         System.out.println("encode jObj: " + jObj);
         System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
 //        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
-        List<PersonBean> arr = Arrays.toList(PersonBean.girl, PersonBean.girl);
+        List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
         String jArr = toJsonString(arr);
         System.out.println("encode jArr: " + jArr);
         System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
