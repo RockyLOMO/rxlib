@@ -35,7 +35,8 @@ public class IOTester {
         PersonBean entity = PersonBean.LeZhi;
         db.save(entity, false);
 
-        List<PersonBean> list = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之"));
+        List<PersonBean> list = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
+                .limit(1, 10));
         System.out.println(toJsonString(list));
         assert !list.isEmpty() && list.get(0).getName().equals("乐之");
 
@@ -49,7 +50,8 @@ public class IOTester {
                         .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
-                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge);
+                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
+                .limit(100);
         System.out.println(q.toString());
         List<Object> params = new ArrayList<>();
         System.out.println(q.toString(params));

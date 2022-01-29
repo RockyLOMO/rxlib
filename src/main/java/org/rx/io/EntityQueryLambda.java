@@ -36,12 +36,25 @@ public class EntityQueryLambda<T> implements Serializable {
         DESC
     }
 
-    static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
+    static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", LIMIT = " LIMIT ",
+            OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
     final Class<T> entityType;
     @Setter
     boolean autoUnderscoreColumnName;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
     final List<Tuple<BiFunc<T, ?>, Order>> orders = new ArrayList<>();
+    Integer limit, offset;
+
+    public EntityQueryLambda<T> limit(int limit) {
+        this.limit = limit;
+        return this;
+    }
+
+    public EntityQueryLambda<T> limit(int offset, int limit) {
+        this.offset = offset;
+        this.limit = limit;
+        return this;
+    }
 
     public EntityQueryLambda<T> newClause() {
         return new EntityQueryLambda<>(entityType);
@@ -143,11 +156,12 @@ public class EntityQueryLambda<T> implements Serializable {
     }
 
     public String toString(List<Object> params) {
-        return resolve(conditions, orders, params, autoUnderscoreColumnName);
+        return resolve(conditions, params, orders, autoUnderscoreColumnName, limit, offset);
     }
 
-    static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Tuple<BiFunc<T, ?>, Order>> orders,
-                              List<Object> params, boolean autoUnderscoreColumnName) {
+    static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params,
+                              List<Tuple<BiFunc<T, ?>, Order>> orders, boolean autoUnderscoreColumnName,
+                              Integer limit, Integer offset) {
         StringBuilder b = new StringBuilder(128);
         boolean isParam = params != null;
         for (BiTuple<Serializable, Operator, ?> condition : conditions) {
@@ -218,7 +232,7 @@ public class EntityQueryLambda<T> implements Serializable {
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
-                    b.append(op.format, resolve(l, null, params, autoUnderscoreColumnName), r.toString(params));
+                    b.append(op.format, resolve(l, params, null, autoUnderscoreColumnName, limit, offset), r.toString(params));
                     break;
             }
         }
@@ -230,6 +244,14 @@ public class EntityQueryLambda<T> implements Serializable {
                 b.append("%s %s,", colName, bi.right);
             }
             b.setLength(b.length() - 1);
+        }
+
+        if (limit != null) {
+            b.append(LIMIT);
+            if (offset != null) {
+                b.append("%s,", offset);
+            }
+            b.append(limit);
         }
         return b.toString();
     }
