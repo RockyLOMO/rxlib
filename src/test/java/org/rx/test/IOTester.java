@@ -29,10 +29,11 @@ public class IOTester {
     @Test
     public void h2() {
         EntityDatabase db = new EntityDatabase("~/test");
+        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
 
         PersonBean entity = PersonBean.LeZhi;
-        db.save(entity, true);
+        db.save(entity, false);
 
         List<PersonBean> list = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之"));
         System.out.println(toJsonString(list));
@@ -48,7 +49,7 @@ public class IOTester {
                         .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
-                        .ne(PersonBean::getAge, 13));
+                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge);
         System.out.println(q.toString());
         List<Object> params = new ArrayList<>();
         System.out.println(q.toString(params));

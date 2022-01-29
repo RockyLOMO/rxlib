@@ -1,7 +1,11 @@
 package org.rx.io;
 
+import com.google.common.base.CaseFormat;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.BiTuple;
+import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
 import org.rx.core.Reflects;
 import org.rx.core.StringBuilder;
@@ -27,18 +31,38 @@ public class EntityQueryLambda<T> implements Serializable {
         final String format;
     }
 
-    static final String WHERE = " WHERE ", OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
+    enum Order {
+        ASC,
+        DESC
+    }
+
+    static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
     final Class<T> entityType;
+    @Setter
+    boolean autoUnderscoreColumnName;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
+    final List<Tuple<BiFunc<T, ?>, Order>> orders = new ArrayList<>();
 
     public EntityQueryLambda<T> newClause() {
         return new EntityQueryLambda<>(entityType);
+    }
+
+    public <R> EntityQueryLambda<T> orderBy(BiFunc<T, R> fn) {
+        orders.add(Tuple.of(fn, Order.ASC));
+        return this;
+    }
+
+    public <R> EntityQueryLambda<T> orderByDescending(BiFunc<T, R> fn) {
+        orders.add(Tuple.of(fn, Order.DESC));
+        return this;
     }
 
     public EntityQueryLambda<T> and(EntityQueryLambda<T> lambda) {
         ArrayList<BiTuple<Serializable, Operator, ?>> copy = new ArrayList<>(conditions);
         conditions.clear();
         conditions.add(BiTuple.of(copy, Operator.AND, lambda));
+        orders.addAll(lambda.orders);
+        lambda.orders.clear();
         return this;
     }
 
@@ -46,6 +70,8 @@ public class EntityQueryLambda<T> implements Serializable {
         ArrayList<BiTuple<Serializable, Operator, ?>> copy = new ArrayList<>(conditions);
         conditions.clear();
         conditions.add(BiTuple.of(copy, Operator.OR, lambda));
+        orders.addAll(lambda.orders);
+        lambda.orders.clear();
         return this;
     }
 
@@ -113,14 +139,15 @@ public class EntityQueryLambda<T> implements Serializable {
 
     @Override
     public String toString() {
-        return resolve(conditions, null);
+        return toString(null);
     }
 
     public String toString(List<Object> params) {
-        return resolve(conditions, params);
+        return resolve(conditions, orders, params, autoUnderscoreColumnName);
     }
 
-    static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params) {
+    static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Tuple<BiFunc<T, ?>, Order>> orders,
+                              List<Object> params, boolean autoUnderscoreColumnName) {
         StringBuilder b = new StringBuilder(128);
         boolean isParam = params != null;
         for (BiTuple<Serializable, Operator, ?> condition : conditions) {
@@ -134,7 +161,7 @@ public class EntityQueryLambda<T> implements Serializable {
                 case LE:
                 case LIKE:
                 case NOT_LIKE: {
-                    String propName = Reflects.resolveProperty((BiFunc<T, ?>) condition.left);
+                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
@@ -145,12 +172,12 @@ public class EntityQueryLambda<T> implements Serializable {
                     } else {
                         valHold = toValueString(condition.right);
                     }
-                    b.append(op.format, propName, valHold);
+                    b.append(op.format, colName, valHold);
                 }
                 break;
                 case IN:
                 case NOT_IN: {
-                    String propName = Reflects.resolveProperty((BiFunc<T, ?>) condition.left);
+                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
@@ -161,12 +188,12 @@ public class EntityQueryLambda<T> implements Serializable {
                     } else {
                         valHold = NQuery.of((Object[]) condition.right).toJoinString(",", EntityQueryLambda::toValueString);
                     }
-                    b.append(op.format, propName, valHold);
+                    b.append(op.format, colName, valHold);
                 }
                 break;
                 case BETWEEN:
                 case NOT_BETWEEN: {
-                    String propName = Reflects.resolveProperty((BiFunc<T, ?>) condition.left);
+                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
                     Object[] p = (Object[]) condition.right;
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
@@ -181,7 +208,7 @@ public class EntityQueryLambda<T> implements Serializable {
                         valHold0 = toValueString(p[0]);
                         valHold1 = toValueString(p[1]);
                     }
-                    b.append(op.format, propName, valHold0, valHold1);
+                    b.append(op.format, colName, valHold0, valHold1);
                 }
                 break;
                 case AND:
@@ -191,11 +218,26 @@ public class EntityQueryLambda<T> implements Serializable {
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
-                    b.append(op.format, resolve(l, params), r.toString(params));
+                    b.append(op.format, resolve(l, null, params, autoUnderscoreColumnName), r.toString(params));
                     break;
             }
         }
+
+        if (!CollectionUtils.isEmpty(orders)) {
+            b.append(ORDER_BY);
+            for (Tuple<BiFunc<T, ?>, Order> bi : orders) {
+                String colName = resolveColumnName(bi.left, autoUnderscoreColumnName);
+                b.append("%s %s,", colName, bi.right);
+            }
+            b.setLength(b.length() - 1);
+        }
         return b.toString();
+    }
+
+    static <T> String resolveColumnName(Object fn, boolean autoUnderscoreColumnName) {
+        String propName = Reflects.resolveProperty((BiFunc<T, ?>) fn);
+        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, propName)
+                : propName;
     }
 
     static String toValueString(Object val) {

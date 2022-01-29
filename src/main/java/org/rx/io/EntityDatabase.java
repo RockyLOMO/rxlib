@@ -3,6 +3,7 @@ package org.rx.io;
 import com.google.common.base.CaseFormat;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
@@ -84,6 +85,8 @@ public class EntityDatabase extends Disposable {
     }
 
     final JdbcConnectionPool connectionPool;
+    @Setter
+    boolean autoUnderscoreColumnName;
 
     public EntityDatabase(String filePath) {
         connectionPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s", filePath), null, null);
@@ -130,6 +133,8 @@ public class EntityDatabase extends Disposable {
 
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
         SqlMeta meta = getMeta(query.entityType);
+        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+
         StringBuilder sql = new StringBuilder(meta.selectSql);
         List<Object> params = new ArrayList<>();
         String clause = query.toString(params);
@@ -206,7 +211,8 @@ public class EntityDatabase extends Disposable {
         if (dbColumn != null && !dbColumn.name().isEmpty()) {
             return dbColumn.name();
         }
-        return CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName());
+        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName())
+                : field.getName();
     }
 
     String tableName(Class<?> entityType) {
