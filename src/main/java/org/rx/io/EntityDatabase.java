@@ -19,6 +19,7 @@ import org.rx.util.Lazy;
 
 import java.io.InputStream;
 import java.io.Reader;
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
@@ -131,17 +132,102 @@ public class EntityDatabase extends Disposable {
         executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
     }
 
+    public <T> void deleteById(Class<T> entityType, Serializable id) {
+        SqlMeta meta = getMeta(entityType);
+
+        List<Object> params = new ArrayList<>(1);
+        params.add(id);
+        executeUpdate(meta.deleteSql, params);
+    }
+
+    public <T> long count(EntityQueryLambda<T> query) {
+        //with limit, the result always 0
+        Integer tmpLimit = null;
+        if (query.limit != null) {
+            tmpLimit = query.limit;
+            query.limit = null;
+        }
+        SqlMeta meta = getMeta(query.entityType);
+        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        replaceSelectColumns(sql, "COUNT(*)");
+        List<Object> params = new ArrayList<>();
+        appendClause(sql, query, params);
+        try {
+            Number num = executeScalar(sql.toString(), params);
+            if (num == null) {
+                return 0;
+            }
+            return num.longValue();
+        } finally {
+            if (tmpLimit != null) {
+                query.limit = tmpLimit;
+            }
+        }
+    }
+
+    public <T> boolean exists(EntityQueryLambda<T> query) {
+        Integer tmpLimit = null;
+        if (query.limit != null) {
+            tmpLimit = query.limit;
+            query.limit = 1;
+        }
+        SqlMeta meta = getMeta(query.entityType);
+        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        replaceSelectColumns(sql, "1");
+        List<Object> params = new ArrayList<>();
+        appendClause(sql, query, params);
+        try {
+            return executeScalar(sql.toString(), params) != null;
+        } finally {
+            if (tmpLimit != null) {
+                query.limit = tmpLimit;
+            }
+        }
+    }
+
+    public <T> T findById(Class<T> entityType, Serializable id) {
+        SqlMeta meta = getMeta(entityType);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        EntityQueryLambda.pkClaus(sql, meta.primaryKey);
+        List<Object> params = new ArrayList<>(1);
+        params.add(id);
+        List<T> list = executeQuery(sql.toString(), params, entityType);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public <T> T findOne(EntityQueryLambda<T> query) {
+        List<T> list = findBy(query);
+        if (list.size() > 1) {
+            throw new InvalidException("Query yields more than one result");
+        }
+        return list.get(0);
+    }
+
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
         SqlMeta meta = getMeta(query.entityType);
         query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         List<Object> params = new ArrayList<>();
-        String clause = query.toString(params);
-        if (!Strings.isEmpty(clause)) {
-            sql.append(EntityQueryLambda.WHERE).append(clause);
-        }
+        appendClause(sql, query, params);
         return executeQuery(sql.toString(), params, query.entityType);
+    }
+
+    <T> void replaceSelectColumns(StringBuilder sql, String newColumns) {
+        sql.replace(7, 8, newColumns);
+    }
+
+    <T> void appendClause(StringBuilder sql, EntityQueryLambda<T> query, List<Object> params) {
+        String clause = query.toString(params);
+        if (!params.isEmpty()) {
+            sql.append(EntityQueryLambda.WHERE);
+        }
+        sql.append(clause);
     }
 
     SqlMeta getMeta(Class<?> entityType) {
@@ -245,6 +331,25 @@ public class EntityDatabase extends Disposable {
                 stmt.setObject(++i, val);
             }
             return stmt.executeUpdate();
+        }
+    }
+
+    @SneakyThrows
+    <T> T executeScalar(String sql, List<Object> params) {
+        if (log.isDebugEnabled()) {
+            log.debug("executeQuery {}\n{}", sql, toJsonString(params));
+        }
+        try (Connection conn = connectionPool.getConnection()) {
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            for (int i = 0; i < params.size(); i++) {
+                stmt.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return (T) rs.getObject(1);
+                }
+                return null;
+            }
         }
     }
 

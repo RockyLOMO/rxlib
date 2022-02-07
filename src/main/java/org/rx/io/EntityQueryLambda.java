@@ -6,6 +6,7 @@ import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.BiTuple;
 import org.rx.bean.Tuple;
+import org.rx.core.App;
 import org.rx.core.NQuery;
 import org.rx.core.Reflects;
 import org.rx.core.StringBuilder;
@@ -38,6 +39,11 @@ public class EntityQueryLambda<T> implements Serializable {
 
     static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", LIMIT = " LIMIT ",
             OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
+
+    static void pkClaus(StringBuilder sql, String pk) {
+        sql.append(WHERE).append(Operator.EQ.format, pk, PARAM_HOLD);
+    }
+
     final Class<T> entityType;
     @Setter
     boolean autoUnderscoreColumnName;
@@ -54,6 +60,11 @@ public class EntityQueryLambda<T> implements Serializable {
         this.offset = offset;
         this.limit = limit;
         return this;
+    }
+
+    @Override
+    public EntityQueryLambda<T> clone() {
+        return App.deepClone(this);
     }
 
     public EntityQueryLambda<T> newClause() {

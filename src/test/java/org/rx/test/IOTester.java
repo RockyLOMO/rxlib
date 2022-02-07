@@ -35,10 +35,16 @@ public class IOTester {
         PersonBean entity = PersonBean.LeZhi;
         db.save(entity, false);
 
-        List<PersonBean> list = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
-                .limit(1, 10));
+        EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
+                .limit(1, 10);
+        assert db.exists(queryLambda);
+        System.out.println(db.count(queryLambda));
+        List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
         assert !list.isEmpty() && list.get(0).getName().equals("乐之");
+        PersonBean byId = db.findById(PersonBean.class, list.get(0).getId());
+        System.out.println(byId);
+        assert byId != null;
 
         EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
                 .eq(PersonBean::getName, "张三")
