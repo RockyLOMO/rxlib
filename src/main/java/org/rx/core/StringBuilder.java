@@ -1,16 +1,37 @@
 package org.rx.core;
 
-import static org.rx.core.App.isNull;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.SneakyThrows;
+import org.rx.util.function.TripleAction;
 
-public final class StringBuilder {
-    private final java.lang.StringBuilder buffer;
-    private String prefix = Strings.EMPTY;
+import java.io.IOException;
+import java.io.Serializable;
 
-    public java.lang.StringBuilder getBuffer() {
-        return buffer;
+@Getter
+public final class StringBuilder implements Appendable, CharSequence, Serializable {
+    final java.lang.StringBuilder buffer;
+    @Setter
+    TripleAction<StringBuilder, Object> preAppend;
+
+    public boolean isEmpty() {
+        return length() == 0;
     }
 
-    public int getLength() {
+    public StringBuilder() {
+        buffer = new java.lang.StringBuilder();
+    }
+
+    public StringBuilder(int capacity) {
+        buffer = new java.lang.StringBuilder(capacity);
+    }
+
+    public StringBuilder(CharSequence seq) {
+        buffer = new java.lang.StringBuilder(seq);
+    }
+
+    @Override
+    public int length() {
         return buffer.length();
     }
 
@@ -19,40 +40,84 @@ public final class StringBuilder {
         return this;
     }
 
-    public String getPrefix() {
-        return prefix;
+    @Override
+    public char charAt(int index) {
+        return buffer.charAt(index);
     }
 
-    public void setPrefix(String prefix) {
-        this.prefix = isNull(prefix, Strings.EMPTY);
+    public StringBuilder setCharAt(int index, char ch) {
+        buffer.setCharAt(index, ch);
+        return this;
     }
 
-    public StringBuilder() {
-        this(32);
+    public int indexOf(String str) {
+        return buffer.indexOf(str);
     }
 
-    public StringBuilder(int capacity) {
-        buffer = new java.lang.StringBuilder(capacity);
+    public int indexOf(String str, int fromIndex) {
+        return buffer.indexOf(str, fromIndex);
     }
 
-    public StringBuilder(String str) {
-        buffer = new java.lang.StringBuilder(str);
+    public int lastIndexOf(String str) {
+        return buffer.lastIndexOf(str);
     }
 
-    public int indexOf(String target) {
-        return indexOf(target, 0);
+    public int lastIndexOf(String str, int fromIndex) {
+        return buffer.lastIndexOf(str, fromIndex);
     }
 
-    public int indexOf(String target, int fromIndex) {
-        return buffer.indexOf(target, fromIndex);
+    public StringBuilder insert(int offset, Object obj) {
+        buffer.insert(offset, obj);
+        return this;
     }
 
-    public int lastIndexOf(String target) {
-        return lastIndexOf(target, getLength());
+    public StringBuilder insert(int offset, String str) {
+        buffer.insert(offset, str);
+        return this;
     }
 
-    public int lastIndexOf(String target, int fromIndex) {
-        return buffer.lastIndexOf(target, fromIndex);
+    public StringBuilder insert(int offset, String format, Object... args) {
+        return insert(offset, String.format(format, args));
+    }
+
+    public StringBuilder insert(int dstOffset, CharSequence s) {
+        buffer.insert(dstOffset, s);
+        return this;
+    }
+
+    public StringBuilder insert(int dstOffset, CharSequence s, int start, int end) {
+        buffer.insert(dstOffset, s, start, end);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, boolean p) {
+        buffer.insert(offset, p);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, char p) {
+        buffer.insert(offset, p);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, int p) {
+        buffer.insert(offset, p);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, long p) {
+        buffer.insert(offset, p);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, float p) {
+        buffer.insert(offset, p);
+        return this;
+    }
+
+    public StringBuilder insert(int offset, double p) {
+        buffer.insert(offset, p);
+        return this;
     }
 
     public StringBuilder replace(String target, String replacement) {
@@ -64,26 +129,45 @@ public final class StringBuilder {
         return this;
     }
 
-    public String substring(int start) {
-        return substring(start, getLength());
-    }
-
-    public String substring(int start, int end) {
-        return buffer.substring(start, end);
-    }
-
-    public StringBuilder insert(int offset, String format, Object... args) {
-        return insert(offset, String.format(format, args));
-    }
-
-    public StringBuilder insert(int offset, Object obj) {
-        buffer.insert(offset, prefix);
-        buffer.insert(offset + prefix.length(), obj);
+    public StringBuilder replace(int start, int end, String str) {
+        buffer.replace(start, end, str);
         return this;
     }
 
-    public StringBuilder remove(int offset, int length) {
+    public StringBuilder delete(int offset, int length) {
         buffer.delete(offset, offset + length);
+        return this;
+    }
+
+    public StringBuilder deleteCharAt(int index) {
+        buffer.deleteCharAt(index);
+        return this;
+    }
+
+    @SneakyThrows
+    void preAppend(Object obj) {
+        if (preAppend == null) {
+            return;
+        }
+        preAppend.invoke(this, obj);
+    }
+
+    @Override
+    public StringBuilder append(CharSequence csq) throws IOException {
+        preAppend(csq);
+        buffer.append(csq);
+        return this;
+    }
+
+    public StringBuilder append(Object obj) {
+        preAppend(obj);
+        buffer.append(obj);
+        return this;
+    }
+
+    public StringBuilder append(String str) {
+        preAppend(str);
+        buffer.append(str);
         return this;
     }
 
@@ -91,8 +175,40 @@ public final class StringBuilder {
         return append(String.format(format, args));
     }
 
-    public StringBuilder append(Object obj) {
-        buffer.append(prefix).append(obj);
+    @Override
+    public StringBuilder append(CharSequence csq, int start, int end) throws IOException {
+        buffer.append(csq, start, end);
+        return this;
+    }
+
+    @Override
+    public StringBuilder append(char p) {
+        buffer.append(p);
+        return this;
+    }
+
+    public StringBuilder append(boolean p) {
+        buffer.append(p);
+        return this;
+    }
+
+    public StringBuilder append(int p) {
+        buffer.append(p);
+        return this;
+    }
+
+    public StringBuilder append(long p) {
+        buffer.append(p);
+        return this;
+    }
+
+    public StringBuilder append(float p) {
+        buffer.append(p);
+        return this;
+    }
+
+    public StringBuilder append(double p) {
+        buffer.append(p);
         return this;
     }
 
@@ -102,12 +218,26 @@ public final class StringBuilder {
     }
 
     public StringBuilder appendLine(Object obj) {
-        buffer.append(prefix).append(obj);
+        preAppend(obj);
+        buffer.append(obj);
         return appendLine();
     }
 
     public StringBuilder appendLine(String format, Object... args) {
         return appendLine(String.format(format, args));
+    }
+
+    @Override
+    public CharSequence subSequence(int start, int end) {
+        return buffer.subSequence(start, end);
+    }
+
+    public String substring(int start) {
+        return buffer.substring(start);
+    }
+
+    public String substring(int start, int end) {
+        return buffer.substring(start, end);
     }
 
     @Override

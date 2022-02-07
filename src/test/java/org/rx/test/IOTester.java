@@ -7,9 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.App;
 import org.rx.core.Arrays;
-import org.rx.core.Reflects;
 import org.rx.io.*;
-import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
@@ -20,12 +18,52 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.App.*;
 
 @Slf4j
 public class IOTester {
+    @Test
+    public void h2() {
+        EntityDatabase db = new EntityDatabase("~/test");
+        db.setAutoUnderscoreColumnName(true);
+        db.createMapping(PersonBean.class);
+
+        PersonBean entity = PersonBean.LeZhi;
+        db.save(entity, false);
+
+        EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
+                .limit(1, 10);
+        assert db.exists(queryLambda);
+        System.out.println(db.count(queryLambda));
+        List<PersonBean> list = db.findBy(queryLambda);
+        System.out.println(toJsonString(list));
+        assert !list.isEmpty() && list.get(0).getName().equals("乐之");
+        PersonBean byId = db.findById(PersonBean.class, list.get(0).getId());
+        System.out.println(byId);
+        assert byId != null;
+
+        EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
+                .eq(PersonBean::getName, "张三")
+                .in(PersonBean::getIndex, 1, 2, 3)
+                .between(PersonBean::getAge, 6, 14)
+                .notLike(PersonBean::getName, "王%");
+        q.and(q.newClause()
+                        .ne(PersonBean::getAge, 10)
+                        .ne(PersonBean::getAge, 11))
+                .or(q.newClause()
+                        .ne(PersonBean::getAge, 12)
+                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
+                .limit(100);
+        System.out.println(q.toString());
+        List<Object> params = new ArrayList<>();
+        System.out.println(q.toString(params));
+        System.out.println(toJsonString(params));
+    }
+
     @Test
     public void releaseBuffer() {
         ByteBuffer buffer = ByteBuffer.allocateDirect(64);
@@ -74,11 +112,11 @@ public class IOTester {
     public void kvZip() {
         KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
-        kv.put(0, PersonBean.boy);
-        kv.put(1, PersonBean.girl);
+        kv.put(0, PersonBean.YouFan);
+        kv.put(1, PersonBean.LeZhi);
 
-        assert kv.get(0).equals(PersonBean.boy);
-        assert kv.get(1).equals(PersonBean.girl);
+        assert kv.get(0).equals(PersonBean.YouFan);
+        assert kv.get(1).equals(PersonBean.LeZhi);
     }
 
     @Test

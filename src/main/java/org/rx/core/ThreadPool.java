@@ -29,15 +29,11 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private ThreadPool pool;
         private final int queueCapacity;
+        //todo cache len
         private final AtomicInteger counter = new AtomicInteger();
 
         public ThreadQueue(int queueCapacity) {
             this.queueCapacity = queueCapacity;
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return counter.get() == 0;
         }
 
         @Override
@@ -51,12 +47,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 //            if (t == EMPTY) {
 //                return false;
 //            }
-            Task<?> p = pool.getAs((Runnable) t, false);
-            if (p != null && p.flags.has(RunFlag.PRIORITY)) {
-                incrSize(pool);
-                //New thread to execute
-                return false;
-            }
+//            Task<?> p = pool.getAs((Runnable) t, false);
+//            if (p != null && p.flags.has(RunFlag.PRIORITY)) {
+//                incrSize(pool);
+//                //New thread to execute
+//                return false;
+//            }
 
             boolean isFull = counter.get() >= queueCapacity;
             if (isFull) {
@@ -116,8 +112,12 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         private void doNotify() {
-            counter.decrementAndGet();
+            int c = counter.decrementAndGet();
             synchronized (this) {
+                if (c < 0) {
+                    counter.set(super.size());
+                    log.warn("FIX SIZE {} -> {}", c, counter);
+                }
                 notify();
             }
         }
@@ -206,15 +206,15 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             String prefix = pool.toString();
             if (log.isDebugEnabled()) {
-                int poolSize = pool.getPoolSize();
-                log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                        poolSize, pool.getQueue().size(),
+                log.debug("{} PoolSize={}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                        pool.getPoolSize(), pool.getQueue().size(),
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
             }
 
             if (cpuLoad.gt(waterMark.getHigh())) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
-                    log.info("{} Threshold={}[{}-{}]% decrement to {}", prefix,
+                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
+                            pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
                     decrementCounter = 0;
                 }
@@ -224,7 +224,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
                 if (++incrementCounter >= SAMPLING_TIMES) {
-                    log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
+                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
+                            pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                     incrementCounter = 0;
                 }
@@ -353,31 +354,33 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public ThreadPool(String poolName) {
         //computeThreads(1, 2, 1)
-        this(SystemPropertyUtil.getInt(Constants.THREAD_POOL_MIN_SIZE, CPU_THREADS + 1),
+        this(SystemPropertyUtil.getInt(Constants.THREAD_POOL_INIT_SIZE, CPU_THREADS + 1),
                 SystemPropertyUtil.getInt(Constants.THREAD_POOL_QUEUE_CAPACITY, CPU_THREADS * 32), poolName);
     }
 
-    public ThreadPool(int coreThreads, int queueCapacity, String poolName) {
-        this(coreThreads, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
+    public ThreadPool(int initThreads, int queueCapacity, String poolName) {
+        this(initThreads, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
     }
 
     /**
      * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
      *
-     * @param coreThreads   最小线程数
+     * @param initThreads   最小线程数
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
-    public ThreadPool(int coreThreads, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(Math.max(2, coreThreads), Integer.MAX_VALUE, 0, TimeUnit.MILLISECONDS, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
-            if (r == EMPTY) {
-                return;
-            }
-            if (executor.isShutdown()) {
-                log.warn("ThreadPool {} is shutdown", poolName);
-                return;
-            }
-            executor.getQueue().offer(r);
-        });
+    public ThreadPool(int initThreads, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
+        super(Math.max(2, initThreads), Integer.MAX_VALUE,
+                SystemPropertyUtil.getLong(Constants.THREAD_POOL_KEEP_ALIVE_SECONDS, 60 * 10), TimeUnit.SECONDS, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+                    if (r == EMPTY) {
+                        return;
+                    }
+                    if (executor.isShutdown()) {
+                        log.warn("ThreadPool {} is shutdown", poolName);
+                        return;
+                    }
+                    executor.getQueue().offer(r);
+                });
+        super.allowCoreThreadTimeOut(true);
         ((ThreadQueue<Runnable>) getQueue()).pool = this;
         this.poolName = poolName;
 
@@ -461,15 +464,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             //TransmittableThreadLocal
             if (task.parent != null) {
-                if (t instanceof FastThreadLocalThread) {
-                    ((FastThreadLocalThread) t).setThreadLocalMap(task.parent);
-                } else {
-                    ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
-                    slowThreadLocalMap.set(task.parent);
-                }
+                setThreadLocalMap(t, task.parent);
             }
         }
-//        super.beforeExecute(t, r);
     }
 
     @Override
@@ -487,8 +484,24 @@ public class ThreadPool extends ThreadPoolExecutor {
                     }
                 }
             }
+            if (task.parent != null) {
+                setThreadLocalMap(Thread.currentThread(), null);
+            }
         }
-//        super.afterExecute(r, t);
+    }
+
+    void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {
+        if (t instanceof FastThreadLocalThread) {
+            ((FastThreadLocalThread) t).setThreadLocalMap(threadLocalMap);
+            return;
+        }
+
+        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
+        if (threadLocalMap == null) {
+            slowThreadLocalMap.remove();
+            return;
+        }
+        slowThreadLocalMap.set(threadLocalMap);
     }
 
     private Tuple<ReentrantLock, AtomicInteger> getLocker(Object id) {

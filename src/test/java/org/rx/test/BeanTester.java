@@ -59,7 +59,7 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void defineMapBean() {
-        PersonBean source = PersonBean.boy;
+        PersonBean source = PersonBean.YouFan;
         //定义用法
         GirlBean target = PersonMapper.INSTANCE.toTarget(source);
         System.out.println(toJsonString(source));
@@ -81,7 +81,7 @@ public class BeanTester extends TestUtil {
         f.setName("王湵范");
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
-        f.setGender(PersonGender.Boy);
+        f.setGender(PersonGender.BOY);
         f.setMoneyCent(200L);
         GirlBean t = new GirlBean();
         t.setKids(10L);
@@ -234,7 +234,7 @@ public class BeanTester extends TestUtil {
         assert cent.compareTo(1.11) == 0;
         assert cent.toCent() == 111;
 
-        String j = toJsonString(PersonBean.girl);
+        String j = toJsonString(PersonBean.LeZhi);
         System.out.println(j);
         PersonBean d = fromJson(j, PersonBean.class);
         System.out.println(d);
@@ -266,7 +266,7 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void nenum() {
-        assert eq(PersonGender.Girl.description(), "女孩");
+        assert eq(PersonGender.GIRL.description(), "女孩");
     }
 
     @Test
