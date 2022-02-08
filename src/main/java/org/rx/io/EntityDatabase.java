@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import com.google.common.base.CaseFormat;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -16,6 +17,8 @@ import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.InvalidException;
 import org.rx.util.Lazy;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -64,6 +67,7 @@ public class EntityDatabase extends Disposable {
             $UPDATE_COLUMNS = "$UPDATE_COLUMNS", $WHERE_PART = "$WHERE_PART";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
+    static final FastThreadLocal<Connection> TX_CONN = new FastThreadLocal<>();
 
     static {
         H2_TYPES.put(String.class, H2Type.VARCHAR);
@@ -90,8 +94,12 @@ public class EntityDatabase extends Disposable {
     boolean autoUnderscoreColumnName;
 
     public EntityDatabase(String filePath) {
-        connectionPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s", filePath), null, null);
-        connectionPool.setMaxConnections(1);
+        this(filePath, Math.max(10, ThreadPool.CPU_THREADS));
+    }
+
+    public EntityDatabase(String filePath, int maxConnections) {
+        connectionPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1", filePath), null, null);
+        connectionPool.setMaxConnections(maxConnections);
     }
 
     @Override
@@ -305,19 +313,17 @@ public class EntityDatabase extends Disposable {
         return CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName());
     }
 
-    @SneakyThrows
     int executeUpdate(String sql) {
-        try (Connection conn = connectionPool.getConnection()) {
+        return invoke(conn -> {
             return conn.createStatement().executeUpdate(sql);
-        }
+        });
     }
 
-    @SneakyThrows
     int executeUpdate(String sql, List<Object> params) {
         if (log.isDebugEnabled()) {
             log.debug("executeUpdate {}\n{}", sql, toJsonString(params));
         }
-        try (Connection conn = connectionPool.getConnection()) {
+        return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             for (int i = 0; i < params.size(); ) {
                 Object val = params.get(i);
@@ -331,15 +337,14 @@ public class EntityDatabase extends Disposable {
                 stmt.setObject(++i, val);
             }
             return stmt.executeUpdate();
-        }
+        });
     }
 
-    @SneakyThrows
     <T> T executeScalar(String sql, List<Object> params) {
         if (log.isDebugEnabled()) {
             log.debug("executeQuery {}\n{}", sql, toJsonString(params));
         }
-        try (Connection conn = connectionPool.getConnection()) {
+        return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             for (int i = 0; i < params.size(); i++) {
                 stmt.setObject(i + 1, params.get(i));
@@ -350,17 +355,16 @@ public class EntityDatabase extends Disposable {
                 }
                 return null;
             }
-        }
+        });
     }
 
-    @SneakyThrows
     <T> List<T> executeQuery(String sql, List<Object> params, Class<T> entityType) {
         if (log.isDebugEnabled()) {
             log.debug("executeQuery {}\n{}", sql, toJsonString(params));
         }
         SqlMeta meta = getMeta(entityType);
         List<T> r = new ArrayList<>();
-        try (Connection conn = connectionPool.getConnection()) {
+        invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             for (int i = 0; i < params.size(); i++) {
                 stmt.setObject(i + 1, params.get(i));
@@ -376,7 +380,77 @@ public class EntityDatabase extends Disposable {
                     r.add(t);
                 }
             }
-        }
+        });
         return r;
+    }
+
+    public void begin() {
+        begin(Connection.TRANSACTION_NONE);
+    }
+
+    @SneakyThrows
+    public void begin(int transactionIsolation) {
+        Connection conn = TX_CONN.getIfExists();
+        if (conn == null) {
+            TX_CONN.set(conn = connectionPool.getConnection());
+        }
+        if (transactionIsolation != Connection.TRANSACTION_NONE) {
+            conn.setTransactionIsolation(transactionIsolation);
+        }
+        conn.setAutoCommit(false);
+    }
+
+    @SneakyThrows
+    public void commit() {
+        Connection conn = TX_CONN.getIfExists();
+        if (conn == null) {
+            throw new InvalidException("Not in transaction");
+        }
+        TX_CONN.remove();
+        conn.commit();
+        conn.close();
+    }
+
+    @SneakyThrows
+    public void rollback() {
+        Connection conn = TX_CONN.getIfExists();
+        if (conn == null) {
+            throw new InvalidException("Not in transaction");
+        }
+        TX_CONN.remove();
+        conn.rollback();
+        conn.close();
+    }
+
+    @SneakyThrows
+    private void invoke(BiAction<Connection> fn) {
+        Connection conn = TX_CONN.getIfExists();
+        boolean autoClose = conn == null;
+        if (autoClose) {
+            conn = connectionPool.getConnection();
+        }
+        try {
+            fn.invoke(conn);
+        } finally {
+            if (autoClose) {
+                conn.close();
+            }
+        }
+    }
+
+    @SneakyThrows
+    private <T> T invoke(BiFunc<Connection, T> fn) {
+        Connection conn = TX_CONN.getIfExists();
+        boolean autoClose = conn == null;
+        if (autoClose) {
+            conn = connectionPool.getConnection();
+        }
+        try {
+            return fn.invoke(conn);
+        } finally {
+            if (autoClose) {
+                conn.close();
+            }
+        }
     }
 }

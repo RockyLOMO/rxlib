@@ -31,6 +31,7 @@ public class IOTester {
         EntityDatabase db = new EntityDatabase("~/test");
         db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
+        db.begin();
 
         PersonBean entity = PersonBean.LeZhi;
         db.save(entity, false);
@@ -38,6 +39,8 @@ public class IOTester {
         EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
                 .limit(1, 10);
         assert db.exists(queryLambda);
+        db.commit();
+
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
