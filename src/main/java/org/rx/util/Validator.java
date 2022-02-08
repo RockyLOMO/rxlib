@@ -50,9 +50,6 @@ public class Validator {
      */
     public static void validateBean(Object bean) {
         List<Object> list = NQuery.asList(bean, false);
-        if (list.isEmpty()) {
-            list.add(bean);
-        }
         javax.validation.Validator validator = getValidator();
         for (Object b : list) {
             for (ConstraintViolation<Object> violation : validator.validate(b)) {

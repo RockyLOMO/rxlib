@@ -36,10 +36,14 @@ public class CoreTester extends TestUtil {
     //region NQuery
     @Test
     public void parallelNQuery() {
-        for (Integer integer : NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-                .groupBy(p -> p > 5, (p, x) -> x.first())) {
-            System.out.println(integer.toString());
+        NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+//                .groupBy(p -> p > 5, (p, x) -> x.first())
+                ;
+        //not work
+        for (Integer p : pq) {
+            log.info(p.toString());
         }
+        pq.forEach(p -> log.info(p.toString()));
     }
 
     @Test

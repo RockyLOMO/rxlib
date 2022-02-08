@@ -52,8 +52,8 @@ public final class App extends SystemUtils {
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
             NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
-            if (v.getClass().isArray() || v instanceof Iterable) {
-                List<Object> list = NQuery.asList(v);
+            if (NQuery.couldBeCollection(v.getClass())) {
+                List<Object> list = NQuery.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
                 return list;
             }
@@ -337,8 +337,8 @@ public final class App extends SystemUtils {
             return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Throwable e) {
             NQuery<Object> q;
-            if (src.getClass().isArray() || src instanceof Iterable) {
-                q = NQuery.of(NQuery.asList(src));
+            if (NQuery.couldBeCollection(src.getClass())) {
+                q = NQuery.ofCollection(src);
             } else {
                 q = NQuery.of(src);
             }
