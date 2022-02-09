@@ -11,6 +11,7 @@ import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
 import org.rx.core.cache.DiskCache;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UpstreamSupport;
@@ -110,7 +111,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         client.query(question).addListener(f -> {
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
             if (!f.isSuccess()) {
-                log.error("query domain fail {} -> {}", domain, envelope, f.cause());
+                ExceptionHandler.INSTANCE.log("query domain fail {} -> {}", domain, envelope, f.cause());
 //                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
 //                ctx.writeAndFlush(newResponse(query, question, server.ttl));
                 if (envelope == null) {
@@ -139,6 +140,6 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("caught", cause);
+        ExceptionHandler.INSTANCE.log(cause);
     }
 }

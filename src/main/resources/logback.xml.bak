@@ -30,22 +30,6 @@
             <pattern>%d %-5p [%t] %c - %m%n</pattern>
         </encoder>
     </appender>
-    <appender name="errorAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${logPath}/${appName}_error.log</file>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>WARN</level>
-        </filter>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${logPath}/${appName}_error.%d{yyyyMMdd}_%i.log</fileNamePattern>
-            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
-                <maxFileSize>500MB</maxFileSize>
-            </timeBasedFileNamingAndTriggeringPolicy>
-            <maxHistory>${days}</maxHistory>
-        </rollingPolicy>
-        <encoder charset="UTF-8">
-            <pattern>%d %-5p [%t] %c - %m%n</pattern>
-        </encoder>
-    </appender>
 
     <!--    <logger name="org.rx.io" level="DEBUG"/>-->
     <!--    <logger name="org.rx.net" level="DEBUG"/>-->
@@ -54,6 +38,5 @@
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="infoAppender"/>
-        <appender-ref ref="errorAppender"/>
     </root>
 </configuration>

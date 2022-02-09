@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.core.StringBuilder;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
@@ -85,7 +86,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                log.error("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), dstEp, realEp, f.cause());
+                ExceptionHandler.INSTANCE.log("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), dstEp, realEp, f.cause());
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }

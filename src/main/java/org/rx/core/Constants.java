@@ -1,7 +1,6 @@
 package org.rx.core;
 
 public interface Constants {
-    String TRACE_ENABLE = "app.trace.enable";
     String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
     String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
     String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
@@ -12,12 +11,13 @@ public interface Constants {
     String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
     String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
     String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
+    String TRACE_KEEP_DAYS = "app.trace.keepDays";
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";
 
     String CACHE_KEY_SUFFIX = ":";
-    int ONE_DAY_EXPIRE_SECONDS = 60 * 60 * 24;
+    int ONE_DAY_TOTAL_SECONDS = 60 * 60 * 24;
 
     int DEFAULT_INTERVAL = 500;
     int IO_EOF = -1;

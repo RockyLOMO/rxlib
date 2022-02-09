@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.*;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.impl.StatefulRpcClient;
 import org.rx.net.rpc.protocol.EventFlag;
@@ -20,7 +21,9 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
+
 import io.netty.util.internal.ThreadLocalRandom;
+
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.bean.$.$;
@@ -261,7 +264,7 @@ public final class Remoting {
                             target.raiseEvent(x.eventName, x.eventArgs);
                             log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                         } catch (Exception ex) {
-                            log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
+                            ExceptionHandler.INSTANCE.log("clientSide event {} -> {}", x.eventName, x.flag, ex);
                         } finally {
                             if (x.flag == EventFlag.COMPUTE_ARGS) {
                                 s.send(x);  //import
@@ -354,7 +357,7 @@ public final class Remoting {
                                                 log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getId(), s.getConfig().getConnectTimeoutMillis());
                                                 eventBean.wait(s.getConfig().getConnectTimeoutMillis());
                                             } catch (Exception ex) {
-                                                log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
+                                                ExceptionHandler.INSTANCE.log("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
                                             } finally {
                                                 //delay purge
                                                 Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);

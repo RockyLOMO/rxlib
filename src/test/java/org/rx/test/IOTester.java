@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,14 +53,16 @@ public class IOTester {
         System.out.println(byId);
         assert byId != null;
 
+        db.delete(new EntityQueryLambda<>(PersonBean.class).lt(PersonBean::getId, null));
+
         EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
                 .eq(PersonBean::getName, "张三")
                 .in(PersonBean::getIndex, 1, 2, 3)
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                        .ne(PersonBean::getAge, 10)
-                        .ne(PersonBean::getAge, 11))
+                .ne(PersonBean::getAge, 10)
+                .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)

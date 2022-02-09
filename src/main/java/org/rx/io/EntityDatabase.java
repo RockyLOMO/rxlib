@@ -167,12 +167,38 @@ public class EntityDatabase extends Disposable {
         executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
     }
 
-    public <T> void deleteById(Class<T> entityType, Serializable id) {
+    public <T> boolean deleteById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
 
         List<Object> params = new ArrayList<>(1);
         params.add(id);
-        executeUpdate(meta.deleteSql, params);
+        return executeUpdate(meta.deleteSql, params) > 0;
+    }
+
+    public <T> long delete(EntityQueryLambda<T> query) {
+        if (query.conditions.isEmpty()) {
+            throw new InvalidException("Forbid: empty condition");
+        }
+        query.limit(1000);
+        SqlMeta meta = getMeta(query.entityType);
+
+        StringBuilder sql = new StringBuilder(meta.deleteSql);
+        sql.setLength(sql.length() - 2);
+
+        StringBuilder subSql = new StringBuilder(meta.selectSql);
+        replaceSelectColumns(subSql, meta.primaryKey);
+        List<Object> params = new ArrayList<>();
+        appendClause(subSql, query, params);
+
+        sql.append(" IN(%s)", subSql);
+        String execSql = sql.toString();
+
+        long total = 0;
+        int rf;
+        while ((rf = executeUpdate(execSql, params)) > 0) {
+            total += rf;
+        }
+        return total;
     }
 
     public <T> long count(EntityQueryLambda<T> query) {
@@ -203,10 +229,12 @@ public class EntityDatabase extends Disposable {
     }
 
     public <T> boolean exists(EntityQueryLambda<T> query) {
-        Integer tmpLimit = null;
+        Integer tmpLimit = null, tmpOffset = null;
         if (query.limit != null) {
             tmpLimit = query.limit;
+            tmpOffset = query.offset;
             query.limit = 1;
+            query.offset = null;
         }
         SqlMeta meta = getMeta(query.entityType);
         query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
@@ -220,6 +248,7 @@ public class EntityDatabase extends Disposable {
         } finally {
             if (tmpLimit != null) {
                 query.limit = tmpLimit;
+                query.offset = tmpOffset;
             }
         }
     }

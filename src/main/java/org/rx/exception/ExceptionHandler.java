@@ -6,18 +6,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
-import org.rx.core.Arrays;
-import org.rx.core.Constants;
-import org.rx.core.Container;
-import org.rx.core.NQuery;
+import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
+import java.sql.Time;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.App.as;
 
@@ -58,17 +57,27 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         return args;
     }
 
-    private ExceptionHandler() {
-        if (!SystemPropertyUtil.getBoolean(Constants.TRACE_ENABLE, false)) {
-            return;
-        }
+    int keepDays;
+    ScheduledFuture<?> future;
 
-        enableTrace();
+    public synchronized void setKeepDays(int keepDays) {
+        if ((this.keepDays = keepDays) > 0) {
+            EntityDatabase db = EntityDatabase.DEFAULT.getValue();
+            db.createMapping(ErrorEntity.class);
+            if (future == null) {
+                future = Tasks.scheduleDaily(() -> db.delete(new EntityQueryLambda<>(ErrorEntity.class)
+                        .lt(ErrorEntity::getModifyTime, DateTime.now().addDays(-keepDays))), Time.valueOf("3:00:00"));
+            }
+        } else {
+            if (future != null) {
+                future.cancel(true);
+                future = null;
+            }
+        }
     }
 
-    public void enableTrace() {
-        System.setProperty(Constants.TRACE_ENABLE, Boolean.TRUE.toString());
-        EntityDatabase.DEFAULT.getValue().createMapping(ErrorEntity.class);
+    private ExceptionHandler() {
+        setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
     }
 
     public void log(String format, Object... args) {
@@ -93,7 +102,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public List<ErrorEntity> queryTraces(int takeCount) {
-        if (!SystemPropertyUtil.getBoolean(Constants.TRACE_ENABLE, false)) {
+        if (keepDays <= 0) {
             return Collections.emptyList();
         }
 
@@ -104,7 +113,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, Throwable e) {
-        if (!SystemPropertyUtil.getBoolean(Constants.TRACE_ENABLE, false)) {
+        if (keepDays <= 0) {
             return;
         }
 

@@ -226,7 +226,7 @@ public final class Tasks {
      * @return Future
      */
     public static ScheduledFuture<?> scheduleDaily(@NonNull Action task, @NonNull Time time) {
-        long oneDay = 24 * 60 * 60 * 1000;
+        long oneDay = Constants.ONE_DAY_TOTAL_SECONDS * 1000;
         long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 
