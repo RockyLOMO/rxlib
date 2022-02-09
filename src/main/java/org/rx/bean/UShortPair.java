@@ -18,7 +18,7 @@ public class UShortPair implements Serializable {
         return value & EXCLUSIVE_MASK;
     }
 
-    //    c + SHARED_UNIT
+//    c + SHARED_UNIT
 //    c + acquires
     public void addShort0(int val) {
         value += SHARED_UNIT * val;

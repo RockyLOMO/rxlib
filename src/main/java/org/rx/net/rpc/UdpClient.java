@@ -86,7 +86,7 @@ public class UdpClient implements EventTarget<UdpClient> {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            ExceptionHandler.INSTANCE.uncaughtException(cause);
+            ExceptionHandler.INSTANCE.log(cause);
         }
     }
 

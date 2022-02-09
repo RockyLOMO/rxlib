@@ -2,7 +2,6 @@ package org.rx.bean;
 
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
@@ -18,7 +17,6 @@ import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 @SuppressWarnings(NON_UNCHECKED)
-@Slf4j
 @NoArgsConstructor
 public class RandomList<T> extends AbstractList<T> implements RandomAccess, Serializable {
     private static final long serialVersionUID = 675332324858046587L;

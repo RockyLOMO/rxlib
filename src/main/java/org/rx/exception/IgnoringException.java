@@ -1,8 +1,0 @@
-package org.rx.exception;
-
-public class IgnoringException extends InvalidException {
-    public IgnoringException(String format, Object... args) {
-        super(format, args);
-        level = ExceptionLevel.IGNORE;
-    }
-}

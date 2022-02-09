@@ -100,7 +100,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel channel = ctx.channel();
-            ExceptionHandler.INSTANCE.uncaughtException("clientCaught {}", channel.remoteAddress(), cause);
+            ExceptionHandler.INSTANCE.log("clientCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
             }

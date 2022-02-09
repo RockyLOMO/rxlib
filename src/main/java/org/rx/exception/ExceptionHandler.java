@@ -32,6 +32,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         String stackTrace;
         int occurCount;
 
+        //        String appName;
         String threadName;
         Date modifyTime;
     }
@@ -70,7 +71,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         EntityDatabase.DEFAULT.getValue().createMapping(ErrorEntity.class);
     }
 
-    public void uncaughtException(String format, Object... args) {
+    public void log(String format, Object... args) {
         Throwable e = MessageFormatter.getThrowableCandidate(args);
         if (e == null) {
             log.warn(format + "[NoThrowableCandidate]", args);
@@ -81,7 +82,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         saveTrace(Thread.currentThread(), e);
     }
 
-    public void uncaughtException(Throwable e) {
+    public void log(Throwable e) {
         uncaughtException(Thread.currentThread(), e);
     }
 

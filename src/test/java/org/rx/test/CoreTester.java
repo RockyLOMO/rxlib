@@ -500,7 +500,7 @@ public class CoreTester extends TestUtil {
         ExceptionHandler handler = Container.get(ExceptionHandler.class);
         handler.enableTrace();
 
-        handler.uncaughtException(new InvalidException("test error"));
+        handler.log(new InvalidException("test error"));
 
         System.out.println(handler.queryTraces(10));
     }
