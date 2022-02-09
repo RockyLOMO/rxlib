@@ -19,9 +19,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
+import java.util.Collections;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -42,15 +44,25 @@ public class ApiController {
     }
 
     @RequestMapping("svr")
-    public JSONObject server() {
+    public JSONObject server(HttpServletRequest request) {
         JSONObject j = new JSONObject();
         j.put("jarFile", App.getJarFile(this));
         j.put("inputArguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
         HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
-        bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
+        try {
+            bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
+        } catch (Exception e) {
+            j.put("UnlockCommercialFeatures", e);
+        }
         j.put("vmOptions", bean.getDiagnosticOptions());
 
 //        j.put("conf", conf);
+        StringBuilder headers = new StringBuilder();
+        for (String headerName : Collections.list(request.getHeaderNames())) {
+            String vals = NQuery.of(Collections.list(request.getHeaders(headerName))).toJoinString("; ", p -> p);
+            headers.appendLine("%s: %s", headerName, vals);
+        }
+        j.put("requestHeaders", headers);
         j.put("errorTraces", queryTraces(10));
         return j;
     }
