@@ -1,6 +1,5 @@
 package org.rx.exception;
 
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -74,10 +73,6 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 future = null;
             }
         }
-    }
-
-    private ExceptionHandler() {
-        setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
     }
 
     public void log(String format, Object... args) {

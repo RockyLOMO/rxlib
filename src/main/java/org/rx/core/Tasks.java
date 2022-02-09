@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import io.netty.util.internal.SystemPropertyUtil;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.DateTime;
@@ -25,13 +26,12 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final List<ThreadPool> replicas;
+    private static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
     private static final ScheduledThreadPoolExecutor scheduler;
     private static final WheelTimer wheelTimer;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
     static {
-        replicas = new CopyOnWriteArrayList<>();
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new ThreadPool(String.valueOf(i)));
         }
@@ -48,6 +48,8 @@ public final class Tasks {
                 }
             }
         }));
+
+        ExceptionHandler.INSTANCE.setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
     }
 
     public static ThreadPool pool() {
