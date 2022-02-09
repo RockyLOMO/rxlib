@@ -52,17 +52,13 @@ public class ApiController {
         try {
             bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
         } catch (Exception e) {
-            j.put("UnlockCommercialFeatures", e);
+            j.put("UnlockCommercialFeatures", e.toString());
         }
         j.put("vmOptions", bean.getDiagnosticOptions());
 
 //        j.put("conf", conf);
-        StringBuilder headers = new StringBuilder();
-        for (String headerName : Collections.list(request.getHeaderNames())) {
-            String vals = NQuery.of(Collections.list(request.getHeaders(headerName))).toJoinString("; ", p -> p);
-            headers.appendLine("%s: %s", headerName, vals);
-        }
-        j.put("requestHeaders", headers);
+        j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
+                .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.put("errorTraces", queryTraces(10));
         return j;
     }
