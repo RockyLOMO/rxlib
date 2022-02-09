@@ -1,6 +1,7 @@
 package org.rx.core;
 
 public interface Constants {
+    String TRACE_ENABLE = "app.trace.enable";
     String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
     String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
     String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";

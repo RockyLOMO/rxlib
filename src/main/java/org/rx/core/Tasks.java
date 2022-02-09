@@ -2,10 +2,10 @@ package org.rx.core;
 
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
+import org.rx.exception.ExceptionHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateAction;
@@ -22,7 +22,6 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
-@Slf4j
 public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
@@ -45,7 +44,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    log.warn("ShutdownHook", e);
+                    Container.get(ExceptionHandler.class).uncaughtException(e);
                 }
             }
         }));
@@ -126,9 +125,9 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            log.warn("awaitNow {} timeout", Reflects.stackClass(2).getName());
+            Container.get(ExceptionHandler.class).uncaughtException("awaitNow {} timeout", Reflects.stackClass(2).getName());
         } catch (Exception e) {
-            log.warn("awaitNow", e);
+            Container.get(ExceptionHandler.class).uncaughtException(e);
         }
         return null;
     }

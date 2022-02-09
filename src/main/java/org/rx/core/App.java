@@ -8,6 +8,7 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
@@ -18,14 +19,12 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
-import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
-import org.slf4j.helpers.MessageFormatter;
 import org.springframework.cglib.proxy.Enhancer;
 import org.yaml.snakeyaml.Yaml;
 
@@ -46,6 +45,7 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
@@ -68,7 +68,7 @@ public final class App extends SystemUtils {
     static {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
 
-        log("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
+        log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
     }
 
     public static java.io.File getJarFile(Object obj) {
@@ -148,51 +148,6 @@ public final class App extends SystemUtils {
         Thread.sleep(millis);
     }
 
-    public static Object[] getMessageCandidate(Object... args) {
-        if (args != null && args.length != 0) {
-            int lastIndex = args.length - 1;
-            Object last = args[lastIndex];
-            if (last instanceof Throwable) {
-                if (lastIndex == 0) {
-                    return Arrays.EMPTY_OBJECT_ARRAY;
-                }
-                return NQuery.of(args).take(lastIndex).toArray();
-            }
-        }
-        return args;
-    }
-
-    public static Throwable getThrowableCandidate(Object... args) {
-        return MessageFormatter.getThrowableCandidate(args);
-    }
-
-    public static String log(@NonNull String format, Object... args) {
-        if (args == null) {
-            args = Arrays.EMPTY_OBJECT_ARRAY;
-        }
-        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
-        Throwable e = MessageFormatter.getThrowableCandidate(args);
-        boolean isIgnoring = e == null;
-        if (!isIgnoring) {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-        }
-        if (isIgnoring) {
-            log.info(format, args);
-            return ApplicationException.getMessage(e);
-        }
-
-        InvalidException invalidException = as(e, InvalidException.class);
-        if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-            log.error(format, args);
-        } else {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-            log.warn(format, args);
-        }
-        return ApplicationException.getMessage(e);
-    }
-
     public static void logMetric(String name, Object value) {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
@@ -260,7 +215,7 @@ public final class App extends SystemUtils {
             }
             if (eventArgs.getError() != null) {
 //                log.error(msg.toString(), eventArgs.getError());
-                log(msg.toString(), eventArgs.getError());
+                Container.get(ExceptionHandler.class).uncaughtException(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }
@@ -367,7 +322,7 @@ public final class App extends SystemUtils {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    log("sneakyInvoke retry={}", i, e);
+                    Container.get(ExceptionHandler.class).uncaughtException("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -389,7 +344,7 @@ public final class App extends SystemUtils {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    log("sneakyInvoke retry={}", i, e);
+                    Container.get(ExceptionHandler.class).uncaughtException("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -405,7 +360,7 @@ public final class App extends SystemUtils {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            log("quietly", e);
+            Container.get(ExceptionHandler.class).uncaughtException("quietly", e);
         }
         return false;
     }
@@ -418,7 +373,7 @@ public final class App extends SystemUtils {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            log("quietly", e);
+            Container.get(ExceptionHandler.class).uncaughtException("quietly", e);
         }
         if (defaultValue != null) {
             try {
@@ -442,7 +397,7 @@ public final class App extends SystemUtils {
                 if (e instanceof CircuitBreakingException) {
                     break;
                 }
-                log("eachQuietly", e);
+                Container.get(ExceptionHandler.class).uncaughtException("eachQuietly", e);
             }
         }
     }

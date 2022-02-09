@@ -57,6 +57,7 @@ public class EntityDatabase extends Disposable {
         }
     }
 
+    public static final Lazy<EntityDatabase> DEFAULT = new Lazy<>(() -> new EntityDatabase("~/RxMeta"));
     static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $TABLE\n" +
             "(\n" +
             "$CREATE_COLUMNS" +
@@ -92,6 +93,8 @@ public class EntityDatabase extends Disposable {
     final JdbcConnectionPool connectionPool;
     @Setter
     boolean autoUnderscoreColumnName;
+    @Setter
+    boolean autoRollbackOnError;
 
     public EntityDatabase(String filePath) {
         this(filePath, Math.max(10, ThreadPool.CPU_THREADS));
@@ -107,17 +110,40 @@ public class EntityDatabase extends Disposable {
         connectionPool.dispose();
     }
 
+    @SneakyThrows
     public <T> void save(T entity) {
-        save(entity, false);
+        Class<?> entityType = entity.getClass();
+        SqlMeta meta = getMeta(entityType);
+        Map.Entry<String, Tuple<Field, DbColumn>> pk = meta.primaryKey();
+        Serializable id = (Serializable) pk.getValue().left.get(entity);
+        if (id == null) {
+            save(entity, true);
+            return;
+        }
+
+        boolean isInTx = isInTransaction();
+        if (!isInTx) {
+            begin(Connection.TRANSACTION_READ_COMMITTED);
+        }
+        try {
+            save(entity, !existsById(entityType, id));
+            if (!isInTx) {
+                commit();
+            }
+        } catch (Throwable e) {
+            if (!isInTx) {
+                rollback();
+            }
+            throw e;
+        }
     }
 
     @SneakyThrows
     public <T> void save(T entity, boolean doInsert) {
         SqlMeta meta = getMeta(entity.getClass());
-        Map.Entry<String, Tuple<Field, DbColumn>> pk = meta.primaryKey();
-        Object id = pk.getValue().left.get(entity);
+
         List<Object> params = new ArrayList<>();
-        if (doInsert || id == null) {
+        if (doInsert) {
             for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView.getValue()) {
                 params.add(col.getValue().left.get(entity));
             }
@@ -136,6 +162,7 @@ public class EntityDatabase extends Disposable {
             params.add(val);
         }
         cols.setLength(cols.length() - 1);
+        Object id = meta.primaryKey().getValue().left.get(entity);
         params.add(id);
         executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
     }
@@ -195,6 +222,18 @@ public class EntityDatabase extends Disposable {
                 query.limit = tmpLimit;
             }
         }
+    }
+
+    public <T> boolean existsById(Class<T> entityType, Serializable id) {
+        SqlMeta meta = getMeta(entityType);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        replaceSelectColumns(sql, "1");
+        EntityQueryLambda.pkClaus(sql, meta.primaryKey);
+        sql.append(EntityQueryLambda.LIMIT).append("1");
+        List<Object> params = new ArrayList<>(1);
+        params.add(id);
+        return executeScalar(sql.toString(), params) != null;
     }
 
     public <T> T findById(Class<T> entityType, Serializable id) {
@@ -284,7 +323,7 @@ public class EntityDatabase extends Disposable {
                 throw new InvalidException("require a primaryKey mapping");
             }
 
-            createCols.setLength(createCols.length() - 1);
+//            createCols.setLength(createCols.length() - 1);
             insert.setLength(insert.length() - 1).append(")");
 
             String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)
@@ -306,7 +345,7 @@ public class EntityDatabase extends Disposable {
             return dbColumn.name();
         }
         return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName())
-                : field.getName();
+                : field.getName().toUpperCase();
     }
 
     String tableName(Class<?> entityType) {
@@ -332,6 +371,9 @@ public class EntityDatabase extends Disposable {
                     continue;
                 } else if (val instanceof Decimal) {
                     stmt.setBigDecimal(++i, ((Decimal) val).getValue());
+                    continue;
+                } else if (val instanceof Enum) {
+                    stmt.setString(++i, ((Enum<?>) val).name());
                     continue;
                 }
                 stmt.setObject(++i, val);
@@ -384,6 +426,10 @@ public class EntityDatabase extends Disposable {
         return r;
     }
 
+    public boolean isInTransaction() {
+        return TX_CONN.isSet();
+    }
+
     public void begin() {
         begin(Connection.TRANSACTION_NONE);
     }
@@ -415,7 +461,9 @@ public class EntityDatabase extends Disposable {
     public void rollback() {
         Connection conn = TX_CONN.getIfExists();
         if (conn == null) {
-            throw new InvalidException("Not in transaction");
+//            throw new InvalidException("Not in transaction");
+            log.warn("Not in transaction");
+            return;
         }
         TX_CONN.remove();
         conn.rollback();
@@ -425,14 +473,19 @@ public class EntityDatabase extends Disposable {
     @SneakyThrows
     private void invoke(BiAction<Connection> fn) {
         Connection conn = TX_CONN.getIfExists();
-        boolean autoClose = conn == null;
-        if (autoClose) {
+        boolean isInTx = conn != null;
+        if (!isInTx) {
             conn = connectionPool.getConnection();
         }
         try {
             fn.invoke(conn);
+        } catch (Throwable e) {
+            if (isInTx && autoRollbackOnError) {
+                rollback();
+            }
+            throw e;
         } finally {
-            if (autoClose) {
+            if (!isInTx) {
                 conn.close();
             }
         }
@@ -441,14 +494,19 @@ public class EntityDatabase extends Disposable {
     @SneakyThrows
     private <T> T invoke(BiFunc<Connection, T> fn) {
         Connection conn = TX_CONN.getIfExists();
-        boolean autoClose = conn == null;
-        if (autoClose) {
+        boolean isInTx = conn != null;
+        if (!isInTx) {
             conn = connectionPool.getConnection();
         }
         try {
             return fn.invoke(conn);
+        } catch (Throwable e) {
+            if (isInTx && autoRollbackOnError) {
+                rollback();
+            }
+            throw e;
         } finally {
-            if (autoClose) {
+            if (!isInTx) {
                 conn.close();
             }
         }

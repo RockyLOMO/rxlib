@@ -65,18 +65,18 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return copyLen;
     }
 
-    public static long getCRC32Checksum(byte[] bytes) {
+    public static long checksum(byte[] bytes) {
         CRC32 crc32 = new CRC32();
         crc32.update(bytes, 0, bytes.length);
         return crc32.getValue();
     }
 
-    public static long getChecksumCRC32(InputStream stream) {
-        return getChecksumCRC32(stream, 1024);
+    public static long checksum(InputStream stream) {
+        return checksum(stream, 1024);
     }
 
     @SneakyThrows
-    public static long getChecksumCRC32(InputStream stream, int bufferSize) {
+    public static long checksum(InputStream stream, int bufferSize) {
         CheckedInputStream checkedInputStream = new CheckedInputStream(stream, new CRC32());
         byte[] buffer = new byte[bufferSize];
         while (checkedInputStream.read(buffer, 0, buffer.length) >= 0) {

@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.rx.core.App.*;
 
@@ -34,7 +35,7 @@ public class IOTester {
         db.begin();
 
         PersonBean entity = PersonBean.LeZhi;
-        db.save(entity, false);
+        db.save(entity);
 
         EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
                 .limit(1, 10);
@@ -45,7 +46,9 @@ public class IOTester {
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
         assert !list.isEmpty() && list.get(0).getName().equals("乐之");
-        PersonBean byId = db.findById(PersonBean.class, list.get(0).getId());
+        UUID pk = list.get(0).getId();
+        assert db.existsById(PersonBean.class, pk);
+        PersonBean byId = db.findById(PersonBean.class, pk);
         System.out.println(byId);
         assert byId != null;
 

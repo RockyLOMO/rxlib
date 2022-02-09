@@ -150,7 +150,6 @@ public class ThreadPool extends ThreadPoolExecutor {
                 return fn.invoke();
             } catch (Throwable e) {
                 Container.get(ExceptionHandler.class).uncaughtException(toString(), e);
-//                return null;
                 throw e;
             }
         }
@@ -454,7 +453,6 @@ public class ThreadPool extends ThreadPoolExecutor {
                     if (!locker.left.tryLock()) {
                         throw new InterruptedException(String.format("SingleScope %s locked by other thread", id));
                     }
-                    log.debug("{} {} tryLock", id, flags);
                 } else if (flags.has(RunFlag.SYNCHRONIZED)) {
                     Tuple<ReentrantLock, AtomicInteger> locker = getLocker(id);
                     locker.right.incrementAndGet();

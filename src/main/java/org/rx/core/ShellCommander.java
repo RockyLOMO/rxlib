@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.FileStream;
@@ -181,7 +182,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                             }
                         }
                     } catch (Throwable e) {
-                        App.log("onOutPrint", e);
+                        Container.get(ExceptionHandler.class).uncaughtException("onOutPrint", e);
                     }
                     Thread.sleep(intervalPeriod);
                 }

@@ -5,10 +5,9 @@ import com.sun.management.HotSpotDiagnosticMXBean;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.bean.RxConfig;
-import org.rx.core.App;
-import org.rx.core.NQuery;
-import org.rx.core.ShellCommander;
+import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.exception.ExceptionHandler;
 import org.rx.io.IOStream;
 import org.rx.net.Sockets;
 import org.rx.net.http.tunnel.ReceivePack;
@@ -23,6 +22,7 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -30,6 +30,16 @@ import java.net.InetAddress;
 public class ApiController {
     final RxConfig conf;
     final Server server;
+
+    @RequestMapping("queryTraces")
+    public List<ExceptionHandler.ErrorEntity> queryTraces(int take) {
+        return Container.get(ExceptionHandler.class).queryTraces(take);
+    }
+
+    @RequestMapping("setConfig")
+    public RxConfig setConfig(@RequestBody RxConfig config) {
+        return BeanMapper.INSTANCE.map(config, conf);
+    }
 
     @RequestMapping("svr")
     public JSONObject server() {
@@ -41,12 +51,8 @@ public class ApiController {
         j.put("vmOptions", bean.getDiagnosticOptions());
 
 //        j.put("conf", conf);
+        j.put("errorTraces", queryTraces(10));
         return j;
-    }
-
-    @PostMapping("setConfig")
-    public RxConfig setConfig(@RequestBody RxConfig config) {
-        return BeanMapper.INSTANCE.map(config, conf);
     }
 
     @RequestMapping("setVMOption")
@@ -70,22 +76,22 @@ public class ApiController {
         return NQuery.of(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
     }
 
-    @PostMapping("directOffer")
-    public void directOffer(String appName, String socksId, String endpoint, MultipartFile binary) {
-        SendPack pack = new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint));
-        pack.setBinary(binary);
-        server.frontendOffer(pack);
-    }
-
-    @SneakyThrows
-    @PostMapping("directPoll")
-    public void directPoll(String appName, String socksId, String endpoint, HttpServletResponse response) {
-        ReceivePack pack = server.frontendPoll(new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint)));
-        ServletOutputStream out = response.getOutputStream();
-        for (IOStream<?, ?> binary : pack.getBinaries()) {
-            binary.read(out);
-        }
-    }
+//    @PostMapping("directOffer")
+//    public void directOffer(String appName, String socksId, String endpoint, MultipartFile binary) {
+//        SendPack pack = new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint));
+//        pack.setBinary(binary);
+//        server.frontendOffer(pack);
+//    }
+//
+//    @SneakyThrows
+//    @PostMapping("directPoll")
+//    public void directPoll(String appName, String socksId, String endpoint, HttpServletResponse response) {
+//        ReceivePack pack = server.frontendPoll(new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint)));
+//        ServletOutputStream out = response.getOutputStream();
+//        for (IOStream<?, ?> binary : pack.getBinaries()) {
+//            binary.read(out);
+//        }
+//    }
 
     @SneakyThrows
     @PostConstruct

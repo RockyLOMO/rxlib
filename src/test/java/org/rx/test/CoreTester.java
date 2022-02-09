@@ -14,6 +14,7 @@ import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
@@ -391,18 +392,6 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void exceptionHandle() {
-        Tasks.schedule(() -> {
-            try {
-                throw new InvalidException("xx");
-            } catch (Exception e) {
-                log.error("x", e);
-            }
-        }, 1000);
-        sleep(5000);
-    }
-
-    @Test
     public void fluentWait() throws TimeoutException {
         FluentWait.newInstance(2000, 200).until(s -> {
             System.out.println(System.currentTimeMillis());
@@ -504,6 +493,16 @@ public class CoreTester extends TestUtil {
 //        Method charset = MethodUtils.getMatchingAccessibleMethod(ResponseBody.class, "charset");
 //        charset = MethodUtils.getAccessibleMethod(ResponseBody.class, "charset");
 //        charset = MethodUtils.getMatchingMethod(ResponseBody.class, "charset");
+    }
+
+    @Test
+    public void exceptionHandle() {
+        ExceptionHandler handler = Container.get(ExceptionHandler.class);
+        handler.enableTrace();
+
+        handler.uncaughtException(new InvalidException("test error"));
+
+        System.out.println(handler.queryTraces(10));
     }
 
     @Test

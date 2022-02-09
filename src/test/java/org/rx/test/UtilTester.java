@@ -3,6 +3,7 @@ package org.rx.test;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.core.App;
 import org.rx.core.Arrays;
@@ -14,6 +15,7 @@ import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 import org.rx.test.bean.PersonBean;
 import org.slf4j.helpers.MessageFormatter;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
@@ -104,10 +106,9 @@ public class UtilTester {
 ////        List<TwoPerson> list = Collections.singletonList(tp);
 ////        Validator.validateBean(list);
 
-        System.out.println(MessageFormatter.arrayFormat("hello {}!", new Object[]{1024}, new InvalidException("error")).getMessage());
-
-        System.out.println("log:" + App.log("hello {}!", 1));
-        System.out.println("log:" + App.log("hello {}!", 1, new InvalidException("a").level(ExceptionLevel.USER_OPERATION)));
+        InvalidException error = new InvalidException("error");
+        System.out.println(MessageFormatter.arrayFormat("hello {}!", new Object[]{1024}, error));
+        System.out.println("--st--\n" + ExceptionUtils.getStackTrace(error));
     }
 
     @Test
