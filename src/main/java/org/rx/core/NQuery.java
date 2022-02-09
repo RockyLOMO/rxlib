@@ -78,7 +78,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return list;
     }
 
-    public static <T, C> NQuery<T> ofCollection(C collection) {
+    public static <T> NQuery<T> ofCollection(Object collection) {
         return new NQuery<>(asList(collection, true), false);
     }
 
