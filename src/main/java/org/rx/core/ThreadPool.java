@@ -149,7 +149,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return fn.invoke();
             } catch (Throwable e) {
-                Container.get(ExceptionHandler.class).uncaughtException(toString(), e);
+                ExceptionHandler.INSTANCE.uncaughtException(toString(), e);
                 throw e;
             }
         }

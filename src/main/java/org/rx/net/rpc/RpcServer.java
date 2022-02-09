@@ -110,7 +110,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel channel = ctx.channel();
-            Container.get(ExceptionHandler.class).uncaughtException("serverCaught {}", channel.remoteAddress(), cause);
+            ExceptionHandler.INSTANCE.uncaughtException("serverCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
             }

@@ -33,7 +33,7 @@ public class ApiController {
 
     @RequestMapping("queryTraces")
     public List<ExceptionHandler.ErrorEntity> queryTraces(int take) {
-        return Container.get(ExceptionHandler.class).queryTraces(take);
+        return ExceptionHandler.INSTANCE.queryTraces(take);
     }
 
     @RequestMapping("setConfig")

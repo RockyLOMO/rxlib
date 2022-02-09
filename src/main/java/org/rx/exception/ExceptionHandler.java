@@ -36,9 +36,11 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
+    public static final ExceptionHandler INSTANCE = new ExceptionHandler();
+
     static {
         Container.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
-        Container.register(ExceptionHandler.class, new ExceptionHandler());
+        Container.register(ExceptionHandler.class, INSTANCE);
     }
 
     public static Object[] getMessageCandidate(Object... args) {

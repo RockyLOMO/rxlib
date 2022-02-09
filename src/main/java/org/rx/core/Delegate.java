@@ -154,7 +154,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
                 throw e;
             }
-            Container.get(ExceptionHandler.class).uncaughtException(e);
+            ExceptionHandler.INSTANCE.uncaughtException(e);
         }
         return true;
     }

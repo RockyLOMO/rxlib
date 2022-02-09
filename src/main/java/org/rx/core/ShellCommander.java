@@ -182,7 +182,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                             }
                         }
                     } catch (Throwable e) {
-                        Container.get(ExceptionHandler.class).uncaughtException("onOutPrint", e);
+                        ExceptionHandler.INSTANCE.uncaughtException("onOutPrint", e);
                     }
                     Thread.sleep(intervalPeriod);
                 }

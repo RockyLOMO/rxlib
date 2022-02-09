@@ -214,8 +214,7 @@ public final class App extends SystemUtils {
                 msg.appendLine();
             }
             if (eventArgs.getError() != null) {
-//                log.error(msg.toString(), eventArgs.getError());
-                Container.get(ExceptionHandler.class).uncaughtException(msg.toString(), eventArgs.getError());
+                ExceptionHandler.INSTANCE.uncaughtException(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }
@@ -299,7 +298,7 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypeSet = Container.get(RxConfig.class).getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            Container.get(ExceptionHandler.class).uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            ExceptionHandler.INSTANCE.uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
@@ -322,7 +321,7 @@ public final class App extends SystemUtils {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    Container.get(ExceptionHandler.class).uncaughtException("sneakyInvoke retry={}", i, e);
+                    ExceptionHandler.INSTANCE.uncaughtException("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -344,7 +343,7 @@ public final class App extends SystemUtils {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    Container.get(ExceptionHandler.class).uncaughtException("sneakyInvoke retry={}", i, e);
+                    ExceptionHandler.INSTANCE.uncaughtException("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -360,7 +359,7 @@ public final class App extends SystemUtils {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            Container.get(ExceptionHandler.class).uncaughtException("quietly", e);
+            ExceptionHandler.INSTANCE.uncaughtException("quietly", e);
         }
         return false;
     }
@@ -373,7 +372,7 @@ public final class App extends SystemUtils {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            Container.get(ExceptionHandler.class).uncaughtException("quietly", e);
+            ExceptionHandler.INSTANCE.uncaughtException("quietly", e);
         }
         if (defaultValue != null) {
             try {
@@ -397,7 +396,7 @@ public final class App extends SystemUtils {
                 if (e instanceof CircuitBreakingException) {
                     break;
                 }
-                Container.get(ExceptionHandler.class).uncaughtException("eachQuietly", e);
+                ExceptionHandler.INSTANCE.uncaughtException("eachQuietly", e);
             }
         }
     }

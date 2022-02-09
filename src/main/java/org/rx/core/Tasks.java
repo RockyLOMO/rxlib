@@ -44,7 +44,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    Container.get(ExceptionHandler.class).uncaughtException(e);
+                    ExceptionHandler.INSTANCE.uncaughtException(e);
                 }
             }
         }));
@@ -125,9 +125,9 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            Container.get(ExceptionHandler.class).uncaughtException("awaitNow {} timeout", Reflects.stackClass(2).getName());
+            ExceptionHandler.INSTANCE.uncaughtException("awaitNow {} timeout", Reflects.stackClass(2).getName());
         } catch (Exception e) {
-            Container.get(ExceptionHandler.class).uncaughtException(e);
+            ExceptionHandler.INSTANCE.uncaughtException(e);
         }
         return null;
     }
