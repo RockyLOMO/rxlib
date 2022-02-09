@@ -1,5 +1,6 @@
 package org.rx.exception;
 
+import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -39,7 +40,6 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
     static {
         Container.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
-        Container.register(ExceptionHandler.class, INSTANCE);
     }
 
     public static Object[] getMessageCandidate(Object... args) {
@@ -73,6 +73,11 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 future = null;
             }
         }
+    }
+
+    private ExceptionHandler() {
+        Thread.setDefaultUncaughtExceptionHandler(this);
+        setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
     }
 
     public void log(String format, Object... args) {

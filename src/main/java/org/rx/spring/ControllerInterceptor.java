@@ -62,7 +62,7 @@ public class ControllerInterceptor extends BaseInterceptor {
     @ResponseStatus(HttpStatus.OK)
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
-        Container.get(org.rx.exception.ExceptionHandler.class).log(request.getRequestURL().toString(), e);
+        org.rx.exception.ExceptionHandler.INSTANCE.log(request.getRequestURL().toString(), e);
         String msg = ApplicationException.getMessage(e);
         if (SpringContext.controllerExceptionHandler == null) {
             return msg;

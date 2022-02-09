@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import io.netty.util.internal.SystemPropertyUtil;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.DateTime;
@@ -48,8 +47,6 @@ public final class Tasks {
                 }
             }
         }));
-
-        ExceptionHandler.INSTANCE.setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
     }
 
     public static ThreadPool pool() {

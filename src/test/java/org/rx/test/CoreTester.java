@@ -497,7 +497,7 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void exceptionHandle() {
-        ExceptionHandler handler = Container.get(ExceptionHandler.class);
+        ExceptionHandler handler = ExceptionHandler.INSTANCE;
 
         handler.log(new InvalidException("test error"));
 

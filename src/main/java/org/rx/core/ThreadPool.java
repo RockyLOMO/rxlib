@@ -301,13 +301,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         return SystemPropertyUtil.getInt(Constants.THREAD_POOL_RESIZE_QUANTITY, 2);
     }
 
-    static {
-        Thread.setDefaultUncaughtExceptionHandler(Container.get(ExceptionHandler.class));
-    }
-
     static ThreadFactory newThreadFactory(String name) {
+        //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
         return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-//                .setUncaughtExceptionHandler(ExceptionHandler.INSTANCE) //跟上面重复
                 .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
     }
 
