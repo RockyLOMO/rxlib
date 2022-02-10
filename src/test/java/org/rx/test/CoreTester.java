@@ -501,7 +501,7 @@ public class CoreTester extends TestUtil {
 
         handler.log(new InvalidException("test error"));
 
-        System.out.println(handler.queryTraces(10));
+        System.out.println(handler.queryTraces(null, null));
     }
 
     @Test

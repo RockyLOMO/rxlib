@@ -34,8 +34,8 @@ public class MxController {
     final Server server;
 
     @RequestMapping("queryTraces")
-    public List<ExceptionHandler.ErrorEntity> queryTraces(int take) {
-        return ExceptionHandler.INSTANCE.queryTraces(take);
+    public List<ExceptionHandler.ErrorEntity> queryTraces(Integer take, Boolean newest) {
+        return ExceptionHandler.INSTANCE.queryTraces(take, newest);
     }
 
     @RequestMapping("setConfig")
@@ -59,7 +59,7 @@ public class MxController {
 //        j.put("conf", conf);
         j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("errorTraces", queryTraces(10));
+        j.put("errorTraces", queryTraces(null, null));
         return j;
     }
 

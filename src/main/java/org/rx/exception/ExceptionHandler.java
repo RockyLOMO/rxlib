@@ -101,15 +101,25 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         saveTrace(t, e);
     }
 
-    public List<ErrorEntity> queryTraces(int takeCount) {
+    public List<ErrorEntity> queryTraces(Integer takeCount, Boolean newest) {
         if (keepDays <= 0) {
             return Collections.emptyList();
         }
+        if (takeCount == null) {
+            takeCount = 10;
+        }
+        if (newest == null) {
+            newest = Boolean.FALSE;
+        }
 
+        EntityQueryLambda<ErrorEntity> q = new EntityQueryLambda<>(ErrorEntity.class).limit(takeCount);
+        if (newest) {
+            q.orderByDescending(ErrorEntity::getModifyTime);
+        } else {
+            q.orderByDescending(ErrorEntity::getOccurCount);
+        }
         EntityDatabase db = EntityDatabase.DEFAULT.getValue();
-        return db.findBy(new EntityQueryLambda<>(ErrorEntity.class)
-                .orderByDescending(ErrorEntity::getOccurCount)
-                .limit(takeCount));
+        return db.findBy(q);
     }
 
     public void saveTrace(Thread t, Throwable e) {
