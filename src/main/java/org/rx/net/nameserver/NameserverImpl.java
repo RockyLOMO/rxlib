@@ -7,7 +7,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.App;
-import org.rx.core.Arrays;
 import org.rx.core.NEventArgs;
 import org.rx.core.NQuery;
 import org.rx.exception.InvalidException;
@@ -97,7 +96,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public int register(@NonNull String appName, int weight, InetSocketAddress... serverEndpoints) {
+    public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
@@ -106,7 +105,7 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("remoteAddr", addr);
         dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
 
-        syncRegister(new HashSet<>(Arrays.toList(serverEndpoints)));
+        syncRegister(serverEndpoints);
         return config.getDnsPort();
     }
 
