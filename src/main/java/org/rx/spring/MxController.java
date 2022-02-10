@@ -28,8 +28,8 @@ import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("mxapi")
-public class ApiController {
+@RequestMapping("mx")
+public class MxController {
     final RxConfig conf;
     final Server server;
 
