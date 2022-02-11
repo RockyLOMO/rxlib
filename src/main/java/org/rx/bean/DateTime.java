@@ -27,6 +27,11 @@ public final class DateTime extends Date {
     public static final NQuery<String> FORMATS = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
     private static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
+    public static boolean isToday(Date time) {
+        String f = "yyyMMdd";
+        return DateTime.now().toString(f).equals(new DateTime(time).toString(f));
+    }
+
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis());
     }
