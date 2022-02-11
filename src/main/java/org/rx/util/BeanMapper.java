@@ -66,12 +66,14 @@ public class BeanMapper {
     private MapConfig setMappings(Class<?> from, Class<?> to, Class<?> type, Object instance, Method method) {
         MapConfig config = getConfig(from, to);
         config.mappings.computeIfAbsent(method, k -> {
-            quietly(() -> {
+            try {
                 Method defMethod = type.getDeclaredMethod("getFlags");
                 if (defMethod.isDefault()) {
                     config.flags = Reflects.invokeDefaultMethod(defMethod, instance);
                 }
-            });
+            } catch (Exception e) {
+                log.warn("BeanMapper.setMappings {}", e.toString());
+            }
             return method.getAnnotationsByType(Mapping.class);
         });
         return config;
