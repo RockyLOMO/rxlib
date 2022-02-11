@@ -102,6 +102,16 @@ public final class App extends SystemUtils {
         return null;
     }
 
+    public static <T> ArrayList<T> proxyList(ArrayList<T> source, BiAction<ArrayList<T>> onSet) {
+        return proxy(ArrayList.class, (m, p) -> {
+            Object val = p.fastInvoke(source);
+            if (onSet != null && Reflects.List_WRITE_METHOD_NAMES.contains(m.getName())) {
+                onSet.invoke(source);
+            }
+            return val;
+        });
+    }
+
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
         return proxy(type, func, false);
     }
