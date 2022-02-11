@@ -8,6 +8,7 @@ import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
+import org.rx.exception.ExceptionLevel;
 import org.rx.io.IOStream;
 import org.rx.net.Sockets;
 import org.rx.net.http.tunnel.ReceivePack;
@@ -34,8 +35,12 @@ public class MxController {
     final Server server;
 
     @RequestMapping("queryTraces")
-    public List<ExceptionHandler.ErrorEntity> queryTraces(Integer take, Boolean newest) {
-        return ExceptionHandler.INSTANCE.queryTraces(take, newest);
+    public List<ExceptionHandler.ErrorEntity> queryTraces(Boolean newest, String level, Integer take) {
+        ExceptionLevel el = null;
+        if (!Strings.isBlank(level)) {
+            el = ExceptionLevel.valueOf(level);
+        }
+        return ExceptionHandler.INSTANCE.queryTraces(newest, el, take);
     }
 
     @RequestMapping("setConfig")
@@ -59,7 +64,7 @@ public class MxController {
 //        j.put("conf", conf);
         j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("errorTraces", queryTraces(null, null));
+        j.put("errorTraces", queryTraces(null, null, 10));
         return j;
     }
 
