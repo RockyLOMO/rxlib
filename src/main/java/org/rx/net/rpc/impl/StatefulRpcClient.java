@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
@@ -99,7 +100,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel channel = ctx.channel();
-            App.log("clientCaught {}", channel.remoteAddress(), cause);
+            ExceptionHandler.INSTANCE.log("clientCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
             }

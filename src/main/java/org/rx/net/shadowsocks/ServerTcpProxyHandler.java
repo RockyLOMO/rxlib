@@ -4,6 +4,7 @@ import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
 import org.rx.core.Arrays;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.BackendRelayHandler;
 import org.rx.net.socks.FrontendRelayHandler;
@@ -46,7 +47,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
                 outbound.pipeline().addLast(new BackendRelayHandler(inbound, pendingPackages));
             }).connect(dstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
-                    log.error("connect to backend {}[{}] fail", finalDestinationEp, realEp, f.cause());
+                    ExceptionHandler.INSTANCE.log("connect to backend {}[{}] fail", finalDestinationEp, realEp, f.cause());
                     Sockets.closeOnFlushed(inbound);
                     return;
                 }

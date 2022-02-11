@@ -1,11 +1,9 @@
 package org.rx.core;
 
-import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IntWaterMark;
 
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
-@Slf4j
 public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
     final String poolName;
 

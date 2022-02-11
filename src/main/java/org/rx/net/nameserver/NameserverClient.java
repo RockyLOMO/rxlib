@@ -47,6 +47,7 @@ public final class NameserverClient extends Disposable {
     final String appName;
     final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
     final Map<String, Future<?>> delayTasks = new ConcurrentHashMap<>();
+    final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     public Set<InetSocketAddress> registerEndpoints() {
         return NQuery.of(hold).select(p -> p.left).toSet();
@@ -83,61 +84,66 @@ public final class NameserverClient extends Disposable {
             throw new InvalidException("At least one server that required");
         }
 
-        return registerAsync(NQuery.of(registerEndpoints).select(Sockets::parseEndpoint).toArray());
+        return registerAsync(NQuery.of(registerEndpoints).select(Sockets::parseEndpoint).toSet());
     }
 
-    public CompletableFuture<?> registerAsync(@NonNull InetSocketAddress... registerEndpoints) {
-        if (registerEndpoints.length == 0) {
+    public CompletableFuture<?> registerAsync(@NonNull Set<InetSocketAddress> registerEndpoints) {
+        if (registerEndpoints.isEmpty()) {
             throw new InvalidException("At least one server that required");
         }
+        svrEps.addAll(NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
 
         return Tasks.run(() -> {
-            for (InetSocketAddress regEp : NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints)) {
+            for (InetSocketAddress regEp : svrEps) {
                 synchronized (hold) {
-                    if (!NQuery.of(hold).any(p -> eq(p.left, regEp))) {
-                        BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
-                        hold.add(tuple);
-                        Action doReg = () -> {
-                            try {
-                                tuple.right = tuple.middle.register(appName, registerEndpoints);
-                                reInject();
-                            } catch (Throwable e) {
-                                delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
-                                    tuple.right = tuple.middle.register(appName, registerEndpoints);
-                                    delayTasks.remove(appName); //优先
-                                    reInject();
-                                    return false;
-                                }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
-                            }
-                        };
-                        tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
-                                (ns, rc) -> {
-                                    rc.onConnected.combine((s, e) -> {
-                                        hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
-                                        reInject();
-                                    });
-                                    rc.onDisconnected.combine((s, e) -> {
-                                        hold.setWeight(tuple, 0);
-                                        reInject();
-                                    });
-                                    rc.onReconnecting.combine((s, e) -> {
-                                        e.setValue(Arrays.randomGet(registerEndpoints));
-                                    });
-                                    rc.onReconnected.combine((s, e) -> {
-                                        tuple.right = null;
-                                        doReg.invoke();
-                                    });
-                                    ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
-                                        log.info("sync server endpoints: {}", toJsonString(e.getValue()));
-                                        if (e.getValue().isEmpty()) {
-                                            return;
-                                        }
-
-                                        registerAsync(NQuery.of(e.getValue()).toArray());
-                                    }, false);
-                                });
-                        doReg.invoke();
+                    if (NQuery.of(hold).any(p -> eq(p.left, regEp))) {
+                        continue;
                     }
+
+                    BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
+                    hold.add(tuple);
+                    Action doReg = () -> {
+                        try {
+                            tuple.right = tuple.middle.register(appName, svrEps);
+                            reInject();
+                        } catch (Throwable e) {
+                            delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
+                                tuple.right = tuple.middle.register(appName, svrEps);
+                                delayTasks.remove(appName); //优先
+                                reInject();
+                                return false;
+                            }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
+                        }
+                    };
+                    tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
+                            (ns, rc) -> {
+                                rc.onConnected.combine((s, e) -> {
+                                    hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
+                                    reInject();
+                                });
+                                rc.onDisconnected.combine((s, e) -> {
+                                    hold.setWeight(tuple, 0);
+                                    reInject();
+                                });
+                                rc.onReconnecting.combine((s, e) -> {
+                                    if (svrEps.addAll(NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
+                                        registerAsync(svrEps);
+                                    }
+                                });
+                                rc.onReconnected.combine((s, e) -> {
+                                    tuple.right = null;
+                                    doReg.invoke();
+                                });
+                                ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
+                                    log.info("sync server endpoints: {}", toJsonString(e.getValue()));
+                                    if (e.getValue().isEmpty()) {
+                                        return;
+                                    }
+
+                                    registerAsync(e.getValue());
+                                }, false);
+                            });
+                    doReg.invoke();
                 }
             }
         });

@@ -18,9 +18,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.rx.core.App.*;
 
@@ -31,20 +33,27 @@ public class IOTester {
         EntityDatabase db = new EntityDatabase("~/test");
         db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
+        db.begin();
 
         PersonBean entity = PersonBean.LeZhi;
-        db.save(entity, false);
+        db.save(entity);
 
         EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
                 .limit(1, 10);
         assert db.exists(queryLambda);
+        db.commit();
+
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
         assert !list.isEmpty() && list.get(0).getName().equals("乐之");
-        PersonBean byId = db.findById(PersonBean.class, list.get(0).getId());
+        UUID pk = list.get(0).getId();
+        assert db.existsById(PersonBean.class, pk);
+        PersonBean byId = db.findById(PersonBean.class, pk);
         System.out.println(byId);
         assert byId != null;
+
+        db.delete(new EntityQueryLambda<>(PersonBean.class).lt(PersonBean::getId, null));
 
         EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
                 .eq(PersonBean::getName, "张三")
@@ -52,8 +61,8 @@ public class IOTester {
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                        .ne(PersonBean::getAge, 10)
-                        .ne(PersonBean::getAge, 11))
+                .ne(PersonBean::getAge, 10)
+                .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)

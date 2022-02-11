@@ -6,7 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.socksx.SocksMessage;
 import io.netty.handler.codec.socksx.v5.*;
-import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.SSCommon;
 
@@ -15,7 +15,6 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
-@Slf4j
 @ChannelHandler.Sharable
 public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksMessage> {
     public static final SocksServerHandler DEFAULT = new SocksServerHandler();
@@ -82,7 +81,7 @@ public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksM
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("caught", cause);
+        ExceptionHandler.INSTANCE.log(cause);
         Sockets.closeOnFlushed(ctx.channel());
     }
 }

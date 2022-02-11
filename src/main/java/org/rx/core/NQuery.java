@@ -1,14 +1,12 @@
 package org.rx.core;
 
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
-import org.apache.commons.collections4.SetUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
@@ -43,40 +41,45 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     private static final long serialVersionUID = -7167070585936243198L;
 
     //region staticMembers
-    public static <T> List<T> asList(Object arrayOrIterable) {
-        return asList(arrayOrIterable, true);
+    public static boolean couldBeCollection(Class<?> type) {
+        return Iterable.class.isAssignableFrom(type)
+                || type.isArray()
+                || Iterator.class.isAssignableFrom(type);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode("argError")
-    public static <T> List<T> asList(@NonNull Object arrayOrIterable, boolean throwOnEmpty) {
-        Class<?> type = arrayOrIterable.getClass();
+    public static <T> List<T> asList(@NonNull Object collection, boolean throwOnFail) {
+        Iterable<T> iterable;
+        if ((iterable = as(collection, Iterable.class)) != null) {
+            return IterableUtils.toList(iterable);
+        }
+
+        Class<?> type = collection.getClass();
         if (type.isArray()) {
-            int length = Array.getLength(arrayOrIterable);
+            int length = Array.getLength(collection);
             List<T> list = new ArrayList<>(length);
             for (int i = 0; i < length; i++) {
-                list.add((T) Array.get(arrayOrIterable, i));
+                list.add((T) Array.get(collection, i));
             }
             return list;
         }
 
-        Iterable<T> iterable;
-        if ((iterable = as(arrayOrIterable, Iterable.class)) != null) {
-            return toList(iterable);
+        Iterator<T> iterator;
+        if ((iterator = as(collection, Iterator.class)) != null) {
+            return IteratorUtils.toList(iterator);
         }
 
-        if (throwOnEmpty) {
+        if (throwOnFail) {
             throw new ApplicationException("argError", values(type.getSimpleName()));
         }
-        return new ArrayList<>();
+        ArrayList<T> list = new ArrayList<>();
+        list.add((T) collection);
+        return list;
     }
 
-    public static <T> List<T> toList(Iterator<T> iterator) {
-        return IteratorUtils.toList(iterator);
-    }
-
-    public static <T> List<T> toList(Iterable<T> iterable) {
-        return IterableUtils.toList(iterable);
+    public static <T> NQuery<T> ofCollection(Object collection) {
+        return new NQuery<>(asList(collection, true), false);
     }
 
     public static <T> NQuery<T> of(T one) {
@@ -84,16 +87,12 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     @SafeVarargs
-    public static <T> NQuery<T> of(T... set) {
-        return of(Arrays.toList(set));
+    public static <T> NQuery<T> of(T... array) {
+        return of(Arrays.toList(array));
     }
 
     public static <T> NQuery<T> of(@NonNull Stream<T> stream) {
         return of(stream::iterator, stream.isParallel());
-    }
-
-    public static <T> NQuery<T> of(@NonNull Iterator<T> iterator) {
-        return of(() -> iterator);
     }
 
     public static <T> NQuery<T> of(Iterable<T> iterable) {
@@ -114,11 +113,6 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public Stream<T> stream() {
         return StreamSupport.stream(data.spliterator(), isParallel);
-    }
-
-    @Override
-    public Iterator<T> iterator() {
-        return data.iterator();
     }
 
     private <TR> List<TR> newList() {
@@ -184,6 +178,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         int each(T item, int index);
     }
     //endregion
+
+    @Override
+    public Iterator<T> iterator() {
+        return data.iterator();
+    }
 
     @Override
     public void forEach(Consumer<? super T> action) {

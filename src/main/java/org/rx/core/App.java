@@ -8,6 +8,7 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
@@ -18,14 +19,12 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
-import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
-import org.slf4j.helpers.MessageFormatter;
 import org.springframework.cglib.proxy.Enhancer;
 import org.yaml.snakeyaml.Yaml;
 
@@ -46,14 +45,15 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
             NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
-            if (v.getClass().isArray() || v instanceof Iterable) {
-                List<Object> list = NQuery.asList(v);
+            if (NQuery.couldBeCollection(v.getClass())) {
+                List<Object> list = NQuery.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
                 return list;
             }
@@ -68,7 +68,7 @@ public final class App extends SystemUtils {
     static {
         Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
 
-        log("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
+        log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
     }
 
     public static java.io.File getJarFile(Object obj) {
@@ -148,51 +148,6 @@ public final class App extends SystemUtils {
         Thread.sleep(millis);
     }
 
-    public static Object[] getMessageCandidate(Object... args) {
-        if (args != null && args.length != 0) {
-            int lastIndex = args.length - 1;
-            Object last = args[lastIndex];
-            if (last instanceof Throwable) {
-                if (lastIndex == 0) {
-                    return Arrays.EMPTY_OBJECT_ARRAY;
-                }
-                return NQuery.of(args).take(lastIndex).toArray();
-            }
-        }
-        return args;
-    }
-
-    public static Throwable getThrowableCandidate(Object... args) {
-        return MessageFormatter.getThrowableCandidate(args);
-    }
-
-    public static String log(@NonNull String format, Object... args) {
-        if (args == null) {
-            args = Arrays.EMPTY_OBJECT_ARRAY;
-        }
-        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Reflects.stackClass(1));
-        Throwable e = MessageFormatter.getThrowableCandidate(args);
-        boolean isIgnoring = e == null;
-        if (!isIgnoring) {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-        }
-        if (isIgnoring) {
-            log.info(format, args);
-            return ApplicationException.getMessage(e);
-        }
-
-        InvalidException invalidException = as(e, InvalidException.class);
-        if (invalidException == null || invalidException.getLevel() == null || invalidException.getLevel() == ExceptionLevel.SYSTEM) {
-            log.error(format, args);
-        } else {
-            format += "\t{}";
-            args[args.length - 1] = e.getMessage();
-            log.warn(format, args);
-        }
-        return ApplicationException.getMessage(e);
-    }
-
     public static void logMetric(String name, Object value) {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
@@ -259,8 +214,7 @@ public final class App extends SystemUtils {
                 msg.appendLine();
             }
             if (eventArgs.getError() != null) {
-//                log.error(msg.toString(), eventArgs.getError());
-                log(msg.toString(), eventArgs.getError());
+                ExceptionHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }
@@ -337,14 +291,14 @@ public final class App extends SystemUtils {
             return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Throwable e) {
             NQuery<Object> q;
-            if (src.getClass().isArray() || src instanceof Iterable) {
-                q = NQuery.of(NQuery.asList(src));
+            if (NQuery.couldBeCollection(src.getClass())) {
+                q = NQuery.ofCollection(src);
             } else {
                 q = NQuery.of(src);
             }
             Set<Class<?>> jsonSkipTypeSet = Container.get(RxConfig.class).getJsonSkipTypeSet();
             jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            Container.get(ExceptionHandler.class).uncaughtException("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
@@ -367,7 +321,7 @@ public final class App extends SystemUtils {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    log("sneakyInvoke retry={}", i, e);
+                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -389,7 +343,7 @@ public final class App extends SystemUtils {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    log("sneakyInvoke retry={}", i, e);
+                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -405,7 +359,7 @@ public final class App extends SystemUtils {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            log("quietly", e);
+            ExceptionHandler.INSTANCE.log("quietly", e);
         }
         return false;
     }
@@ -418,7 +372,7 @@ public final class App extends SystemUtils {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            log("quietly", e);
+            ExceptionHandler.INSTANCE.log("quietly", e);
         }
         if (defaultValue != null) {
             try {
@@ -442,7 +396,7 @@ public final class App extends SystemUtils {
                 if (e instanceof CircuitBreakingException) {
                     break;
                 }
-                log("eachQuietly", e);
+                ExceptionHandler.INSTANCE.log("eachQuietly", e);
             }
         }
     }

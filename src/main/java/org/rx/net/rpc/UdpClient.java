@@ -12,6 +12,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.IdGenerator;
 import org.rx.core.*;
+import org.rx.exception.ExceptionHandler;
 import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
@@ -85,7 +86,7 @@ public class UdpClient implements EventTarget<UdpClient> {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            App.log("exceptionCaught", cause);
+            ExceptionHandler.INSTANCE.log(cause);
         }
     }
 

@@ -6,6 +6,7 @@ import org.rx.core.EventTarget;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Set;
 
 public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
     /**
@@ -13,7 +14,7 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
      */
     String EVENT_CLIENT_SYNC = "CLIENT_SYNC";
 
-    default int register(String appName, InetSocketAddress... serverEndpoints) {
+    default int register(String appName, Set<InetSocketAddress> serverEndpoints) {
         return register(appName, RandomList.DEFAULT_WEIGHT, serverEndpoints);
     }
 
@@ -24,7 +25,7 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
      * @param weight
      * @return
      */
-    int register(String appName, int weight, InetSocketAddress... serverEndpoints);
+    int register(String appName, int weight, Set<InetSocketAddress> serverEndpoints);
 
     void deregister();
 

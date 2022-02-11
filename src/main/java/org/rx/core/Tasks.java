@@ -2,10 +2,10 @@ package org.rx.core;
 
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
+import org.rx.exception.ExceptionHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateAction;
@@ -22,17 +22,15 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
-@Slf4j
 public final class Tasks {
     private static final int POOL_COUNT = 2;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final List<ThreadPool> replicas;
+    private static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
     private static final ScheduledThreadPoolExecutor scheduler;
     private static final WheelTimer wheelTimer;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
     static {
-        replicas = new CopyOnWriteArrayList<>();
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new ThreadPool(String.valueOf(i)));
         }
@@ -45,7 +43,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    log.warn("ShutdownHook", e);
+                    ExceptionHandler.INSTANCE.log(e);
                 }
             }
         }));
@@ -126,9 +124,9 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            log.warn("awaitNow {} timeout", Reflects.stackClass(2).getName());
+            ExceptionHandler.INSTANCE.log("awaitNow {} timeout", Reflects.stackClass(2).getName());
         } catch (Exception e) {
-            log.warn("awaitNow", e);
+            ExceptionHandler.INSTANCE.log(e);
         }
         return null;
     }
@@ -227,7 +225,7 @@ public final class Tasks {
      * @return Future
      */
     public static ScheduledFuture<?> scheduleDaily(@NonNull Action task, @NonNull Time time) {
-        long oneDay = 24 * 60 * 60 * 1000;
+        long oneDay = Constants.ONE_DAY_TOTAL_SECONDS * 1000;
         long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 

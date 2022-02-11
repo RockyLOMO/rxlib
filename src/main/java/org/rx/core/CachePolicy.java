@@ -12,7 +12,7 @@ public class CachePolicy implements Serializable {
     public static final CachePolicy NON_EXPIRE = new CachePolicy(null, -1);
 
     public static CachePolicy today() {
-        return today(Constants.ONE_DAY_EXPIRE_SECONDS);
+        return today(Constants.ONE_DAY_TOTAL_SECONDS);
     }
 
     public static CachePolicy today(int expireSeconds) {

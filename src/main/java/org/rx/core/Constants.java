@@ -11,12 +11,13 @@ public interface Constants {
     String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
     String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
     String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
+    String TRACE_KEEP_DAYS = "app.trace.keepDays";
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";
 
     String CACHE_KEY_SUFFIX = ":";
-    int ONE_DAY_EXPIRE_SECONDS = 60 * 60 * 24;
+    int ONE_DAY_TOTAL_SECONDS = 60 * 60 * 24;
 
     int DEFAULT_INTERVAL = 500;
     int IO_EOF = -1;

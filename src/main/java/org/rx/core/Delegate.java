@@ -2,7 +2,7 @@ package org.rx.core;
 
 import com.google.common.eventbus.EventBus;
 import lombok.*;
-import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.TripleAction;
 
@@ -14,7 +14,6 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import static org.rx.core.App.tryAs;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
-@Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
     static {
@@ -155,7 +154,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
                 throw e;
             }
-            log.warn("innerRaise", e);
+            ExceptionHandler.INSTANCE.log(e);
         }
         return true;
     }

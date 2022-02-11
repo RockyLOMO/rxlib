@@ -7,6 +7,7 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.RxConfig;
 import org.rx.core.*;
+import org.rx.exception.ApplicationException;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.Servlets;
 import org.springframework.http.HttpStatus;
@@ -61,7 +62,8 @@ public class ControllerInterceptor extends BaseInterceptor {
     @ResponseStatus(HttpStatus.OK)
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
-        String msg = App.log(request.getRequestURL().toString(), e);
+        org.rx.exception.ExceptionHandler.INSTANCE.log(request.getRequestURL().toString(), e);
+        String msg = ApplicationException.getMessage(e);
         if (SpringContext.controllerExceptionHandler == null) {
             return msg;
         }

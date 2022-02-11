@@ -4,9 +4,9 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.App;
-import org.rx.core.Arrays;
 import org.rx.core.NEventArgs;
 import org.rx.core.NQuery;
 import org.rx.exception.InvalidException;
@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
 
+@Slf4j
 public class NameserverImpl implements Nameserver {
     @RequiredArgsConstructor
     @ToString
@@ -69,7 +70,7 @@ public class NameserverImpl implements Nameserver {
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
-            log("[{}] Replica {}", getSyncPort(), packet);
+            log.info("[{}] Replica {}", getSyncPort(), packet);
             if (!tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.ip, false, false))) {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
@@ -95,7 +96,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public int register(@NonNull String appName, int weight, InetSocketAddress... serverEndpoints) {
+    public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
@@ -104,7 +105,7 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("remoteAddr", addr);
         dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
 
-        syncRegister(new HashSet<>(Arrays.toList(serverEndpoints)));
+        syncRegister(serverEndpoints);
         return config.getDnsPort();
     }
 
@@ -123,7 +124,7 @@ public class NameserverImpl implements Nameserver {
         //同app同ip多实例，比如k8s滚动更新
         int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
         if (c == (isDisconnected ? 0 : 1)) {
-            App.log("deregister {}", appName);
+            log.info("deregister {}", appName);
             dnsServer.removeHosts(appName, Collections.singletonList(ip));
             if (shouldSync) {
                 syncDeregister(new DeregisterInfo(appName, ip));
