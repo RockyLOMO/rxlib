@@ -393,20 +393,7 @@ public class EntityDatabase extends Disposable {
         }
         return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
-            for (int i = 0; i < params.size(); ) {
-                Object val = params.get(i);
-                if (val instanceof NEnum) {
-                    stmt.setInt(++i, ((NEnum<?>) val).getValue());
-                    continue;
-                } else if (val instanceof Decimal) {
-                    stmt.setBigDecimal(++i, ((Decimal) val).getValue());
-                    continue;
-                } else if (val instanceof Enum) {
-                    stmt.setString(++i, ((Enum<?>) val).name());
-                    continue;
-                }
-                stmt.setObject(++i, val);
-            }
+            fillParams(stmt, params);
             return stmt.executeUpdate();
         });
     }
@@ -417,9 +404,7 @@ public class EntityDatabase extends Disposable {
         }
         return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
-            for (int i = 0; i < params.size(); i++) {
-                stmt.setObject(i + 1, params.get(i));
-            }
+            fillParams(stmt, params);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     return (T) rs.getObject(1);
@@ -437,9 +422,7 @@ public class EntityDatabase extends Disposable {
         List<T> r = new ArrayList<>();
         invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
-            for (int i = 0; i < params.size(); i++) {
-                stmt.setObject(i + 1, params.get(i));
-            }
+            fillParams(stmt, params);
             try (ResultSet rs = stmt.executeQuery()) {
                 ResultSetMetaData metaData = rs.getMetaData();
                 while (rs.next()) {
@@ -453,6 +436,26 @@ public class EntityDatabase extends Disposable {
             }
         });
         return r;
+    }
+
+    @SneakyThrows
+    void fillParams(PreparedStatement stmt, List<Object> params) {
+        for (int i = 0; i < params.size(); ) {
+            Object val = params.get(i++);
+            if (val instanceof NEnum) {
+                stmt.setInt(i, ((NEnum<?>) val).getValue());
+                continue;
+            }
+            if (val instanceof Decimal) {
+                stmt.setBigDecimal(i, ((Decimal) val).getValue());
+                continue;
+            }
+            if (val instanceof Enum) {
+                stmt.setString(i, ((Enum<?>) val).name());
+                continue;
+            }
+            stmt.setObject(i, val);
+        }
     }
 
     public boolean isInTransaction() {
