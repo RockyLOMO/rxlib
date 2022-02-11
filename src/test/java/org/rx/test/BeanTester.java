@@ -265,19 +265,17 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void nenum() {
-        assert eq(PersonGender.GIRL.description(), "女孩");
-    }
+    public void normal() {
+        AbstractReferenceCounter counter = new AbstractReferenceCounter() {
+        };
+        assert counter.getRefCnt() == 0;
+        assert counter.incrementRefCnt() == 1;
+        assert counter.decrementRefCnt() == 0;
 
-    @Test
-    public void tuple() {
         Tuple<String, Integer> tuple = Tuple.of("s", 1);
-        tuple.setRight(2);
         Tuple<String, Integer> tuple2 = Tuple.of("s", 1);
-        Tuple<String, Integer> tuple3 = Tuple.of("s", 0);
-
-        assert tuple.right == 1;
         assert tuple.equals(tuple2);
-        assert !tuple.equals(tuple3);
+
+        assert eq(PersonGender.GIRL.description(), "女孩");
     }
 }

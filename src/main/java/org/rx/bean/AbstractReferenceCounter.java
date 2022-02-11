@@ -8,7 +8,15 @@ public abstract class AbstractReferenceCounter {
 
     protected volatile int refCnt;
 
-    public void xxx() {
-        updater.incrementAndGet(this);
+    public int getRefCnt() {
+        return updater.get(this);
+    }
+
+    public int incrementRefCnt() {
+        return updater.incrementAndGet(this);
+    }
+
+    public int decrementRefCnt() {
+        return updater.decrementAndGet(this);
     }
 }
