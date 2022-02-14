@@ -12,14 +12,9 @@ import okhttp3.*;
 import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
-import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.bean.RxConfig;
-import org.rx.core.Container;
-import org.rx.core.Reflects;
+import org.rx.core.*;
 import org.rx.util.Lazy;
-import org.rx.core.NQuery;
-import org.rx.core.Strings;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
@@ -35,6 +30,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
+import java.lang.StringBuilder;
 import java.net.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -209,7 +205,7 @@ public class HttpClient {
     }
 
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
-    private static final ConnectionPool POOL = new ConnectionPool(Container.get(RxConfig.class).getNetMaxPoolSize(), Container.get(RxConfig.class).getNetKeepaliveSeconds(), TimeUnit.SECONDS);
+    private static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
     private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
     private static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
         final X509Certificate[] empty = new X509Certificate[0];
@@ -396,11 +392,11 @@ public class HttpClient {
     @Getter
     final HttpHeaders headers = new DefaultHttpHeaders();
     @Setter
-    LogStrategy logStrategy;
+    boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
     ResponseContent responseContent;
 
     public HttpClient() {
-        this(Container.get(RxConfig.class).getNetTimeoutMillis());
+        this(RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
     }
 
     public HttpClient(int timeoutMillis) {
@@ -408,7 +404,7 @@ public class HttpClient {
     }
 
     public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        headers.set(HttpHeaderNames.USER_AGENT, Container.get(RxConfig.class).getNetUserAgent());
+        headers.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
         boolean cookieJar = Strings.isEmpty(rawCookie);
         if (!cookieJar) {
             headers.set(HttpHeaderNames.COOKIE, rawCookie);
@@ -458,10 +454,7 @@ public class HttpClient {
             args.setError(e);
             throw e;
         } finally {
-            if (logStrategy != null) {
-                RxConfig rxConfig = Container.get(RxConfig.class);
-                args.setLogStrategy(logStrategy);
-                args.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
+            if (enableLog) {
                 if (responseContent != null) {
                     logMetric("body", responseContent.toString());
                 }

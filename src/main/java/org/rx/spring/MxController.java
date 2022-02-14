@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSONObject;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;

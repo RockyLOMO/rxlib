@@ -23,7 +23,6 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -100,13 +99,13 @@ public final class Sockets {
 
     static EventLoopGroup reactor(@NonNull String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> {
-            int amount = SystemPropertyUtil.getInt(Constants.REACTOR_THREAD_AMOUNT, 0);
+            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
             return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
         });
     }
 
     public static EventLoopGroup udpReactor() {
-        return reactors.computeIfAbsent(SHARED_UDP_REACTOR, k -> new NioEventLoopGroup(SystemPropertyUtil.getInt(Constants.REACTOR_THREAD_AMOUNT, 0)));
+        return reactors.computeIfAbsent(SHARED_UDP_REACTOR, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
     }
 
     // not executor
@@ -153,7 +152,7 @@ public final class Sockets {
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .childHandler(WaterMarkHandler.DEFAULT);
-        if (config.isEnableNettyLog()) {
+        if (config.isEnableLog()) {
             //netty日志
             b.handler(DEFAULT_LOG);
         }
@@ -214,7 +213,7 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .handler(WaterMarkHandler.DEFAULT);
-        if (config.isEnableNettyLog()) {
+        if (config.isEnableLog()) {
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {

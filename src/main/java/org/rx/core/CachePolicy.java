@@ -9,6 +9,7 @@ import java.io.Serializable;
 @Getter
 @AllArgsConstructor
 public class CachePolicy implements Serializable {
+    private static final long serialVersionUID = 4378825072232415879L;
     public static final CachePolicy NON_EXPIRE = new CachePolicy(null, -1);
 
     public static CachePolicy today() {

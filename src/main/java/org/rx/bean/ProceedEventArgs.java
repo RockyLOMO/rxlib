@@ -9,7 +9,7 @@ import org.rx.core.App;
 import org.rx.core.EventArgs;
 import org.rx.util.function.Func;
 
-import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Getter
@@ -34,7 +34,7 @@ public class ProceedEventArgs extends EventArgs {
     @Setter
     private LogStrategy logStrategy;
     @Setter
-    private List<String> logTypeWhitelist;
+    private Set<String> logTypeWhitelist;
 
     public UUID getTraceId() {
         return traceIdLocal.get();

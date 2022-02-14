@@ -2,7 +2,6 @@ package org.rx.io;
 
 import io.netty.buffer.*;
 import lombok.SneakyThrows;
-import org.rx.bean.RxConfig;
 import org.rx.core.Constants;
 
 import java.io.InputStream;
@@ -31,16 +30,16 @@ public class Bytes {
     }
 
     public static byte[] arrayBuffer() {
-        return new byte[RxConfig.HEAP_BUF_SIZE];
+        return new byte[Constants.HEAP_BUF_SIZE];
     }
 
     public static ByteBuf heapBuffer() {
-        return heapBuffer(RxConfig.HEAP_BUF_SIZE, false);
+        return heapBuffer(Constants.HEAP_BUF_SIZE, false);
     }
 
     public static ByteBuf heapBuffer(int initialCapacity, boolean unpool) {
         ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
-        return allocator.heapBuffer(initialCapacity, RxConfig.MAX_HEAP_BUF_SIZE);
+        return allocator.heapBuffer(initialCapacity, Constants.MAX_HEAP_BUF_SIZE);
     }
 
     public static ByteBuf directBuffer() {

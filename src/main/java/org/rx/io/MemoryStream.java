@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.Setter;
 import org.rx.annotation.ErrorCode;
-import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 import org.rx.exception.InvalidException;
 import org.rx.util.SnowFlake;
 
@@ -128,11 +128,11 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public MemoryStream() {
-        this(RxConfig.HEAP_BUF_SIZE, false);
+        this(Constants.HEAP_BUF_SIZE, false);
     }
 
     public MemoryStream(boolean directBuffer) {
-        this(RxConfig.HEAP_BUF_SIZE, directBuffer);
+        this(Constants.HEAP_BUF_SIZE, directBuffer);
     }
 
     public MemoryStream(int initialCapacity, boolean directBuffer) {

@@ -245,7 +245,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             int active = pool.getActiveCount();
             int size = pool.getCorePoolSize();
             float idle = (float) active / size * 100;
-            int resizeQuantity = getResizeQuantity();
+            int resizeQuantity = RxConfig.INSTANCE.threadPool.resizeQuantity;
             log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
                     pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
@@ -289,17 +289,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(
-            SystemPropertyUtil.getInt(Constants.CPU_LOW_WATER_MARK, 40),
-            SystemPropertyUtil.getInt(Constants.CPU_HIGH_WATER_MARK, 70));
+    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
+            RxConfig.INSTANCE.threadPool.highCpuWaterMark);
     static final boolean ENABLE_INHERIT_THREAD_LOCALS = SystemPropertyUtil.getBoolean(Constants.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };
-
-    static int getResizeQuantity() {
-        return SystemPropertyUtil.getInt(Constants.THREAD_POOL_RESIZE_QUANTITY, 2);
-    }
 
     static ThreadFactory newThreadFactory(String name) {
         //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
@@ -308,7 +303,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static int incrSize(ThreadPoolExecutor pool) {
-        int poolSize = pool.getCorePoolSize() + getResizeQuantity();
+        int poolSize = pool.getCorePoolSize() + RxConfig.INSTANCE.threadPool.resizeQuantity;
         if (poolSize > 1000) {
             return 1000;
         }
@@ -318,7 +313,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static int decrSize(ThreadPoolExecutor pool) {
-        int poolSize = pool.getCorePoolSize() - getResizeQuantity();
+        int poolSize = pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity;
         if (poolSize < 4) {
             return 4;
         }
@@ -349,23 +344,22 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public ThreadPool(String poolName) {
         //computeThreads(1, 2, 1)
-        this(SystemPropertyUtil.getInt(Constants.THREAD_POOL_INIT_SIZE, CPU_THREADS + 1),
-                SystemPropertyUtil.getInt(Constants.THREAD_POOL_QUEUE_CAPACITY, CPU_THREADS * 32), poolName);
+        this(RxConfig.INSTANCE.threadPool.initSize, RxConfig.INSTANCE.threadPool.queueCapacity, poolName);
     }
 
-    public ThreadPool(int initThreads, int queueCapacity, String poolName) {
-        this(initThreads, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
+    public ThreadPool(int initSize, int queueCapacity, String poolName) {
+        this(initSize, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
     }
 
     /**
      * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
      *
-     * @param initThreads   最小线程数
+     * @param initSize      最小线程数
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
-    public ThreadPool(int initThreads, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(Math.max(2, initThreads), Integer.MAX_VALUE,
-                SystemPropertyUtil.getLong(Constants.THREAD_POOL_KEEP_ALIVE_SECONDS, 60 * 10), TimeUnit.SECONDS, new ThreadQueue<>(Math.max(1, queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+    public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
+        super(checkSize(initSize), Integer.MAX_VALUE,
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue<>(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
                     if (r == EMPTY) {
                         return;
                     }
@@ -380,6 +374,20 @@ public class ThreadPool extends ThreadPoolExecutor {
         this.poolName = poolName;
 
         setDynamicSize(cpuWaterMark);
+    }
+
+    private static int checkSize(int size) {
+        if (size <= 0) {
+            size = CPU_THREADS + 1;
+        }
+        return size;
+    }
+
+    private static int checkCapacity(int capacity) {
+        if (capacity <= 0) {
+            capacity = CPU_THREADS * 32;
+        }
+        return capacity;
     }
 
     public void setDynamicSize(IntWaterMark cpuWaterMark) {

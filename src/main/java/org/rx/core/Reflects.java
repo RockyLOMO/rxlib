@@ -73,7 +73,7 @@ public class Reflects extends ClassUtils {
     static final Lazy<Cache<Class, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     private static final Constructor<MethodHandles.Lookup> lookupConstructor;
     private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
-    private static final List<ConvertBean<?, ?>> typeConverter;
+    private static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     public static <T> Cache<String, T> cache() {
         return (Cache<String, T>) LAZY_CACHE.getValue();
@@ -87,7 +87,6 @@ public class Reflects extends ClassUtils {
             throw InvalidException.sneaky(e);
         }
 
-        typeConverter = new CopyOnWriteArrayList<>();
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
@@ -442,7 +441,7 @@ public class Reflects extends ClassUtils {
     }
 
     public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
-        typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
+        CONVERT_BEANS.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
     public static Object defaultValue(Class<?> type) {
@@ -520,7 +519,7 @@ public class Reflects extends ClassUtils {
                     NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null) {
                         Class<T> fType = toType;
-                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
+                        ConvertBean convertBean = NQuery.of(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {
                             return (T) convertBean.converter.apply(value, convertBean.toType);
                         }

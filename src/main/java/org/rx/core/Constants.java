@@ -1,23 +1,18 @@
 package org.rx.core;
 
 public interface Constants {
-    String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
-    String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
-    String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
-    String CPU_LOW_WATER_MARK = "app.cpu.lowWaterMark";
-    String CPU_HIGH_WATER_MARK = "app.cpu.highWaterMark";
-    String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
+
+
     String THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS = "app.threadPool.enableInheritThreadLocals";
-    String REACTOR_THREAD_AMOUNT = "app.reactor.threadAmount";
     String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
     String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
     String TRACE_KEEP_DAYS = "app.trace.keepDays";
 
-    String NON_UNCHECKED = "unchecked";
-    String NON_RAW_TYPES = "unchecked,rawtypes";
-
+    String CONFIG_KEY_SPLITS = ".";
     String CACHE_KEY_SUFFIX = ":";
     int ONE_DAY_TOTAL_SECONDS = 60 * 60 * 24;
+    int HEAP_BUF_SIZE = 256;
+    int MAX_HEAP_BUF_SIZE = Constants.MB * 16;
 
     int DEFAULT_INTERVAL = 500;
     int IO_EOF = -1;
@@ -27,4 +22,6 @@ public interface Constants {
     int KB = 1024, MB = KB * 1024, GB = MB * 1024;
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
+    String NON_UNCHECKED = "unchecked";
+    String NON_RAW_TYPES = "unchecked,rawtypes";
 }

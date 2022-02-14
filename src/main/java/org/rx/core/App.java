@@ -51,7 +51,7 @@ public final class App extends SystemUtils {
     static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
-            NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
+            NQuery<Class<?>> q = NQuery.of(RxConfig.INSTANCE.jsonSkipTypes);
             if (NQuery.couldBeCollection(v.getClass())) {
                 List<Object> list = NQuery.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
@@ -66,8 +66,6 @@ public final class App extends SystemUtils {
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
-        Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
-
         log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
     }
 
@@ -163,6 +161,9 @@ public final class App extends SystemUtils {
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
+        RxConfig conf = RxConfig.INSTANCE;
+        eventArgs.setLogStrategy(conf.logStrategy);
+        eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
         log(eventArgs, msg -> {
             msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
@@ -199,14 +200,14 @@ public final class App extends SystemUtils {
             }
         }
         if (doWrite) {
-            List<String> whitelist = eventArgs.getLogTypeWhitelist();
+            Set<String> whitelist = eventArgs.getLogTypeWhitelist();
             if (!CollectionUtils.isEmpty(whitelist)) {
                 doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
             }
         }
         if (doWrite) {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(RxConfig.HEAP_BUF_SIZE);
+            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
             for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
@@ -306,9 +307,9 @@ public final class App extends SystemUtils {
             } else {
                 q = NQuery.of(src);
             }
-            Set<Class<?>> jsonSkipTypeSet = Container.get(RxConfig.class).getJsonSkipTypeSet();
-            jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
+            jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
@@ -512,13 +513,13 @@ public final class App extends SystemUtils {
         return new File(Strings.EMPTY).getAbsolutePath();
     }
 
-    public static <T> T readSetting(String key) {
-        return readSetting(key, null);
-    }
+//    public static <T> T readSetting(String key) {
+//        return readSetting(key, null);
+//    }
 
-    public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, loadYaml("application.yml"), false);
-    }
+//    public static <T> T readSetting(String key, Class<T> type) {
+//        return readSetting(key, type, loadYaml("application.yml"), false);
+//    }
 
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
@@ -563,48 +564,6 @@ public final class App extends SystemUtils {
             throw new ApplicationException("keyError", values(key, type));
         }
         return null;
-    }
-
-    @SneakyThrows
-    public static Map<String, Object> loadYaml(@NonNull String... yamlFile) {
-        Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml();
-        for (Object data : NQuery.of(yamlFile).selectMany(p -> {
-            NQuery<InputStream> resources = Reflects.getResources(p);
-            if (resources.any()) {
-                return resources.reverse();
-            }
-            File file = new File(p);
-            return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
-        }).selectMany(yaml::loadAll)) {
-            Map<String, Object> one = (Map<String, Object>) data;
-            fillDeep(one, result);
-        }
-        return result;
-    }
-
-    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
-        if (one == null) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : one.entrySet()) {
-            Map<String, Object> nextOne;
-            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
-                all.put(entry.getKey(), entry.getValue());
-                continue;
-            }
-            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
-            if (nextAll == null) {
-                all.put(entry.getKey(), nextOne);
-                continue;
-            }
-            fillDeep(nextOne, nextAll);
-        }
-    }
-
-    public static <T> String dumpYaml(@NonNull T bean) {
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
     }
 
     /**

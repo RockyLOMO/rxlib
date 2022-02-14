@@ -2,7 +2,7 @@ package org.rx.io;
 
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -13,7 +13,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private MemoryStream memoryStream = new MemoryStream(RxConfig.HEAP_BUF_SIZE, true);
+    private MemoryStream memoryStream = new MemoryStream(Constants.HEAP_BUF_SIZE, true);
     private FileStream fileStream;
     @Setter
     private String name;
@@ -87,7 +87,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public HybridStream() {
-        this(RxConfig.MAX_HEAP_BUF_SIZE, null);
+        this(Constants.MAX_HEAP_BUF_SIZE, null);
     }
 
     public HybridStream(int maxMemorySize, String tempFilePath) {

@@ -7,7 +7,6 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.util.function.TripleFunc;
 
@@ -82,7 +81,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return r;
                 }
             }
-            int maxLen = 1024 * 64;
+            int maxLen = 1024 * 32;
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
                 if (b.length > maxLen) {

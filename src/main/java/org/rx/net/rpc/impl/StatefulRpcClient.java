@@ -12,7 +12,6 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
@@ -180,7 +179,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
         ManualResetEvent syncRoot = null;
