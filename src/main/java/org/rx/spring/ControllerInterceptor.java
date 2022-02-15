@@ -35,7 +35,7 @@ public class ControllerInterceptor extends BaseInterceptor {
             }
             return p;
         };
-        String omega = Container.get(RxConfig.class).getOmega();
+        String omega = RxConfig.INSTANCE.getOmega();
         if (omega != null) {
             SocksContext.omega(omega, null);
         }

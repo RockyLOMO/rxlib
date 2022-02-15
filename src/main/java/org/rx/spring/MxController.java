@@ -30,7 +30,6 @@ import java.util.List;
 @RestController
 @RequestMapping("mx")
 public class MxController {
-    final RxConfig conf;
     final Server server;
 
     @RequestMapping("queryTraces")
@@ -44,7 +43,7 @@ public class MxController {
 
     @RequestMapping("setConfig")
     public RxConfig setConfig(@RequestBody RxConfig config) {
-        return BeanMapper.INSTANCE.map(config, conf);
+        return BeanMapper.INSTANCE.map(config, RxConfig.INSTANCE);
     }
 
     @RequestMapping("svr")

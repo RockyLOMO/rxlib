@@ -22,8 +22,6 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             onProceed = Delegate.create(),
             onError = Delegate.create();
     protected TripleFunc<Signature, Object, Object> argShortSelector;
-    @Resource
-    protected RxConfig rxConfig;
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
@@ -45,6 +43,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return joinPoint.proceed();
         }
 
+        RxConfig rxConfig = RxConfig.INSTANCE;
         eventArgs.setLogStrategy(rxConfig.getLogStrategy());
         eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {

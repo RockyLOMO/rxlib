@@ -6,6 +6,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
+import org.apache.commons.collections4.IterableUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -20,6 +21,7 @@ import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
+import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
@@ -556,6 +558,9 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void rxConf() {
+        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
+        List<Object> list = IterableUtils.toList(all);
+
         YamlConfig conf = YamlConfig.RX_CONF;
         System.out.println(conf.getYaml());
 
