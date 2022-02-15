@@ -146,6 +146,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 entity.setStackTrace(stackTrace);
             }
             entity.occurCount++;
+            entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(t.getName());
             entity.setModifyTime(DateTime.now());
             db.save(entity, doInsert);

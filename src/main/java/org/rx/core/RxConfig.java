@@ -4,6 +4,7 @@ import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
 import org.rx.bean.LogStrategy;
+import org.rx.net.Sockets;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,7 @@ public final class RxConfig {
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
 
+        String APP_ID = "app.id";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
@@ -72,6 +74,7 @@ public final class RxConfig {
     final ThreadPoolConfig threadPool = new ThreadPoolConfig();
     final CacheConfig cache = new CacheConfig();
     final NetConfig net = new NetConfig();
+    String id;
     int traceKeepDays;
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
@@ -114,6 +117,10 @@ public final class RxConfig {
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, 120);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
 
+        id = SystemPropertyUtil.get(ConfigNames.APP_ID);
+        if (id == null) {
+            id = Sockets.getLocalAddress().getHostAddress();
+        }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         jsonSkipTypes.clear();
         String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);

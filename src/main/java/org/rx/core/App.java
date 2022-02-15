@@ -58,9 +58,11 @@ public final class App extends SystemUtils {
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
-        Container.register(Cache.class, Container.<Cache>get(RxConfig.INSTANCE.cache.mainInstance));
+        RxConfig conf = RxConfig.INSTANCE;
+        Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
 
-        log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
+        log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
+                getBootstrapPath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
     }
 
     public static File getJarFile(Object obj) {
@@ -68,9 +70,9 @@ public final class App extends SystemUtils {
     }
 
     @SneakyThrows
-    public static File getJarFile(Class<?> _class) {
-        String path = _class.getPackage().getName().replace(".", "/");
-        String url = _class.getClassLoader().getResource(path).toString();
+    public static File getJarFile(Class<?> klass) {
+        String path = klass.getPackage().getName().replace(".", "/");
+        String url = klass.getClassLoader().getResource(path).toString();
         url = url.replace(" ", "%20");
         java.net.URI uri = new java.net.URI(url);
         if (uri.getPath() == null) {
