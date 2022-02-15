@@ -1,6 +1,5 @@
 package org.rx.exception;
 
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -18,7 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 
-import static org.rx.core.App.as;
+import static org.rx.core.Extends.as;
 
 @Slf4j
 public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
@@ -31,7 +30,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         String stackTrace;
         int occurCount;
 
-        //        String appName;
+        String appName;
         String threadName;
         Date modifyTime;
     }
@@ -77,7 +76,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
     private ExceptionHandler() {
         Thread.setDefaultUncaughtExceptionHandler(this);
-        setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
+        setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
     }
 
     public void log(String format, Object... args) {

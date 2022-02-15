@@ -7,6 +7,7 @@ app:
     highCpuWaterMark: 70
     resizeQuantity: 2
     scheduleInitSize: 1
+    replicas: 2
   net:
     reactorThreadAmount: 0
     enableLog: false
@@ -26,12 +27,15 @@ default: Network error, please retry later.
 
 org:
   rx:
-    io:
-      IOStream:
-        getPosition: The stream does not support seeking
-        setPosition: The stream does not support seeking
-        getLength: A class derived from {0} does not support seeking
     core:
+      Extends:
+        require[test]: Parameter {0} test failed
+      Disposable:
+        checkNotClosed: Cannot access a closed {0}
+      NQuery:
+        asList: Invalid collection type {0}
+        single: Require 1 element, current set has {0} elements
+        singleOrDefault: Require less than 1 element, current set has {0} elements
       Reflects:
         newInstance: Constructor {0} parameter type not match
         invokeMethod: Method {0}.{1} parameter type not match
@@ -40,24 +44,26 @@ org:
         changeType<ReflectiveOperationException>: Convert {0} from {1} to {2} error
       Strings:
         split[lengthError]: Result array not fit {0} length
-      NQuery:
-        single: Require 1 element, current set has {0} elements
-        singleOrDefault: Require less than 1 element, current set has {0} elements
-      Disposable:
-        checkNotClosed: Cannot access a closed {0}
-      Extends:
-        require[test]: Parameter {0} test failed
-      config:
-        YamlConfig:
-          readAs[keyError]: Not found key {0} with type {1}
-          readAs[partialKeyError]: Not found partial key {0} with type {1}
-    bean.DateTime:
-      valueOf<ParseException>: Only supported {0} date formats, current date string is {1}
+      YamlConfig:
+        readAs[keyError]: Not found key {0} with type {1}
+        readAs[partialKeyError]: Not found partial key {0} with type {1}
+    io:
+      IOStream:
+        getPosition: The stream does not support seeking
+        setPosition: The stream does not support seeking
+        getLength: A class derived from {0} does not support seeking
+    bean:
+      DateTime:
+        valueOf<ParseException>: Only supported {0} date formats, current date string is {1}
+      SUID:
+        valueOf: Invalid SUID value {0}
+    util.BeanMapper:
+      define: Invalid define method {0}
 
     test:
       CoreTester:
         exceptionCode: Test default error code, value={0}
         exceptionCode<IllegalArgumentException>: Test IAException, value={0}
       bean.UserManager$BizCode:
-        argument: Enum Error Code value={0}
-        returnValue: Enum Error returnValue={0}
+        argument: Enum error code arg={0}
+        returnValue: Enum error code returnValue={0}

@@ -2,10 +2,11 @@ package org.rx.util;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
-import org.rx.exception.InvalidException;
+import org.rx.exception.ApplicationException;
 import org.springframework.cglib.beans.BeanCopier;
 
 import java.lang.reflect.Method;
@@ -31,6 +32,7 @@ public class BeanMapper {
     private final Map<Integer, MapConfig> config = new ConcurrentHashMap<>();
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
 
+    @ErrorCode
     public <T> T define(@NonNull Class<T> type) {
         require(type, type.isInterface());
 
@@ -60,7 +62,7 @@ public class BeanMapper {
                 }
                 return map(args[0], target, config.flags, m);
             }
-            throw new InvalidException("Error Define Method %s", m.getName());
+            throw new ApplicationException(values(m.getName()));
         });
     }
 

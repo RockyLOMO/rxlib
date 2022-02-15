@@ -38,7 +38,7 @@ public class Arrays extends ArrayUtils {
         return list;
     }
 
-    public static int randomGet(int[] array) {
+    public static int randomNext(int[] array) {
         if (isEmpty(array)) {
             throw new InvalidException("Array is empty");
         }
@@ -46,7 +46,7 @@ public class Arrays extends ArrayUtils {
         return array[ThreadLocalRandom.current().nextInt(0, array.length)];
     }
 
-    public static <T> T randomGet(T[] array) {
+    public static <T> T randomNext(T[] array) {
         if (isEmpty(array)) {
             throw new InvalidException("Array is empty");
         }

@@ -7,7 +7,9 @@ import com.alibaba.fastjson.serializer.JSONSerializer;
 import com.alibaba.fastjson.serializer.ObjectSerializer;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
+import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
+import org.rx.exception.ApplicationException;
 import org.rx.io.Bytes;
 import org.rx.security.MD5Util;
 
@@ -16,6 +18,8 @@ import java.io.Serializable;
 import java.lang.reflect.Type;
 import java.util.Base64;
 import java.util.UUID;
+
+import static org.rx.core.Extends.values;
 
 @JSONType(serializer = SUID.Serializer.class, deserializer = SUID.Serializer.class)
 @EqualsAndHashCode
@@ -44,6 +48,7 @@ public final class SUID implements Serializable {
         return valueOf(newUUID(MD5Util.md5(data)));
     }
 
+    @ErrorCode
     public static SUID valueOf(@NonNull String suid) {
         switch (suid.length()) {
             case 22:
@@ -59,7 +64,7 @@ public final class SUID implements Serializable {
                 }
                 return new SUID(UUID.fromString(suid));
         }
-        throw new IllegalArgumentException("suid");
+        throw new ApplicationException(values(suid));
     }
 
     public static SUID randomSUID() {

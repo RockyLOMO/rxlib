@@ -46,7 +46,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    @ErrorCode("argError")
+    @ErrorCode
     public static <T> List<T> asList(@NonNull Object collection, boolean throwOnFail) {
         Iterable<T> iterable;
         if ((iterable = as(collection, Iterable.class)) != null) {
@@ -69,7 +69,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }
 
         if (throwOnFail) {
-            throw new ApplicationException("argError", values(type.getSimpleName()));
+            throw new ApplicationException(values(type.getSimpleName()));
         }
         ArrayList<T> list = new ArrayList<>();
         list.add((T) collection);

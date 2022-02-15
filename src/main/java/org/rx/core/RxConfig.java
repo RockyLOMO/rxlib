@@ -93,7 +93,7 @@ public final class RxConfig {
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
         threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
         threadPool.enableInheritThreadLocals = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
-        threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2);
+        threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
 
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
         if (mc != null) {
@@ -101,7 +101,6 @@ public final class RxConfig {
         } else {
             cache.mainInstance = Cache.MEMORY_CACHE;
         }
-
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, 60);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 10000);
 
@@ -116,13 +115,11 @@ public final class RxConfig {
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
 
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
-
         jsonSkipTypes.clear();
         String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {
             jsonSkipTypes.addAll(NQuery.of(Strings.split(v, ",")).select(Class::forName).toSet());
         }
-
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, "℞FREEDOM");
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA);
     }

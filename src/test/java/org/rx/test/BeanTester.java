@@ -79,7 +79,7 @@ public class BeanTester extends TestUtil {
     public void normalMapBean() {
         PersonBean f = new PersonBean();
         f.setIndex(2);
-        f.setName(TConfig.name);
+        f.setName(TConfig.NAME_WYF);
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.BOY);
@@ -190,7 +190,7 @@ public class BeanTester extends TestUtil {
             assert App.combId(map.get(i), "" + i).equals(App.combId(new Timestamp(map.get(i)), "" + i));
         }
 
-        SUID suid = SUID.compute(TConfig.name);
+        SUID suid = SUID.compute(TConfig.NAME_WYF);
         System.out.println(suid);
 
         SUID valueOf = SUID.valueOf(suid.toString());

@@ -6,6 +6,8 @@ import org.rx.net.Sockets;
 import java.net.InetSocketAddress;
 
 public class TConfig {
+    static final String NAME_WYF = "王湵范 wyf520";
+
     //    static final String baseDir = "D:\\download";
     static final String baseDir = "D:\\home\\RxSocks";
     static final InetSocketAddress endpoint_3307 = Sockets.parseEndpoint("127.0.0.1:3307");
