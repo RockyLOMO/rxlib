@@ -1,10 +1,13 @@
 package org.rx.exception;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
+import org.rx.core.YamlConfig;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
@@ -13,26 +16,24 @@ import java.lang.reflect.Method;
 import java.text.MessageFormat;
 import java.util.Map;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.as;
 
 @Slf4j
-public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
-    protected Map<String, Object> getMessageSource() {
-        return Cache.getOrSet("getMessageSource", k -> {
-            Map<String, Object> codes = loadYaml("errorCode.yml");
-            if (codes.isEmpty()) {
-                log.warn("load errorCode.yml fail");
-            }
-            return codes;
-        }, Cache.MEMORY_CACHE);
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
+public class YamlCodeHandler {
+    static {
+        Container.register(YamlCodeHandler.class, new YamlCodeHandler());
+    }
+
+    protected YamlConfig getMessageSource() {
+        return YamlConfig.RX_CONF;
     }
 
     @SneakyThrows
-    @Override
     public void handle(ApplicationException e) {
         Class<?> codeType = e.getErrorCode().getClass();
         if (codeType.isEnum()) {
-            Map<String, Object> messageSource = as(readSetting(codeType.getName(), null, getMessageSource(), false), Map.class);
+            Map<String, Object> messageSource = getMessageSource().readAs(codeType.getName(), Map.class);
             if (messageSource == null) {
                 return;
             }
@@ -68,12 +69,12 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
         }
 
         for (StackTraceElement stack : e.getStacks()) {
-            Map<String, Object> messageSource = as(readSetting(stack.getClassName(), null, getMessageSource(), false), Map.class);
+            Map<String, Object> messageSource = getMessageSource().readAs(stack.getClassName(), Map.class);
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
-                Class type = Reflects.loadClass(p, false);
+            Tuple<Class<?>, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
+                Class<?> type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }, Cache.MEMORY_CACHE), Tuple.class);
             if (caller == null) {
@@ -90,7 +91,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
                     continue;
                 }
 
-                log.debug("SystemException: Found @ErrorCode at {}", method.toString());
+                log.debug("SystemException: Found @ErrorCode at {}", method);
                 targetSite = method;
                 break;
             }
@@ -110,7 +111,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
     private ErrorCode findCode(AccessibleObject member, String code, Throwable cause) {
         NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
         if (!errorCodes.any()) {
-            log.debug("SystemException: Not found @ErrorCode in {}", member.toString());
+            log.debug("SystemException: Not found @ErrorCode in {}", member);
             return null;
         }
         if (code != null) {
@@ -119,7 +120,7 @@ public class DefaultExceptionCodeHandler implements ExceptionCodeHandler {
         if (cause != null) {
             errorCodes = errorCodes.orderByDescending(p -> {
                 byte count = 0;
-                Class st = p.cause();
+                Class<?> st = p.cause();
                 for (; count < 8; count++) {
                     if (st.equals(Exception.class)) {
                         break;

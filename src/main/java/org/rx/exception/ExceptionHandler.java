@@ -37,10 +37,6 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
     public static final ExceptionHandler INSTANCE = new ExceptionHandler();
 
-    static {
-        Container.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
-    }
-
     public static Object[] getMessageCandidate(Object... args) {
         if (args != null && args.length != 0) {
             int lastIndex = args.length - 1;
@@ -55,11 +51,14 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         return args;
     }
 
-    int keepDays;
     ScheduledFuture<?> future;
 
+    public int getKeepDays() {
+        return RxConfig.INSTANCE.getTraceKeepDays();
+    }
+
     public synchronized void setKeepDays(int keepDays) {
-        if ((this.keepDays = keepDays) > 0) {
+        if (keepDays > 0) {
             EntityDatabase db = EntityDatabase.DEFAULT.getValue();
             db.createMapping(ErrorEntity.class);
             if (future == null) {
@@ -72,6 +71,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 future = null;
             }
         }
+        RxConfig.INSTANCE.setTraceKeepDays(keepDays);
     }
 
     private ExceptionHandler() {
@@ -101,7 +101,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {
-        if (keepDays <= 0) {
+        if (getKeepDays() <= 0) {
             return Collections.emptyList();
         }
         if (newest == null) {
@@ -125,7 +125,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, Throwable e) {
-        if (keepDays <= 0) {
+        if (getKeepDays() <= 0) {
             return;
         }
 

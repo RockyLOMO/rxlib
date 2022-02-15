@@ -1,10 +1,9 @@
 package org.rx.core;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.parser.Feature;
-import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.alibaba.fastjson.JSONObject;
 import lombok.Getter;
 import lombok.NonNull;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.io.FileStream;
@@ -14,6 +13,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.Extends.as;
@@ -22,17 +22,24 @@ import static org.rx.core.Extends.values;
 public class YamlConfig {
     public static final YamlConfig RX_CONF = new YamlConfig(Constants.RX_CONFIG_FILE);
 
-    public static Map<String, Object> loadYaml(@NonNull String... fileNames) {
-        Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml();
-        for (Object data : NQuery.of(fileNames).selectMany(p -> {
+    public static Map<String, Object> loadYaml(String... fileNames) {
+        return loadYaml(NQuery.of(fileNames).selectMany(p -> {
             NQuery<InputStream> resources = Reflects.getResources(p);
             if (resources.any()) {
                 return resources.reverse();
             }
             File file = new File(p);
             return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
-        }).selectMany(yaml::loadAll)) {
+        }).toList());
+    }
+
+    public static Map<String, Object> loadYaml(List<InputStream> streams) {
+        if (CollectionUtils.isEmpty(streams)) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> result = new HashMap<>();
+        Yaml yaml = new Yaml();
+        for (Object data : NQuery.of(streams).selectMany(yaml::loadAll)) {
             Map<String, Object> sub = (Map<String, Object>) data;
             fill(sub, result);
         }
@@ -68,6 +75,11 @@ public class YamlConfig {
 
     public YamlConfig(String fileName) {
         yaml = loadYaml(fileName);
+    }
+
+    public YamlConfig write(@NonNull InputStream yamlStream) {
+        yaml.putAll(loadYaml(Collections.singletonList(yamlStream)));
+        return this;
     }
 
     public <T> T readAs(String key, Class<T> type) {
@@ -118,7 +130,7 @@ public class YamlConfig {
             if (type.equals(Map.class)) {
                 return (T) map;
             }
-            return JSON.parseObject(JSON.toJSONString(map, SerializerFeature.DisableCircularReferenceDetect), type, Feature.OrderedField);
+            return new JSONObject(map).toJavaObject(type);
         }
         return Reflects.changeType(p, type);
     }

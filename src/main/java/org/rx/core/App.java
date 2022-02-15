@@ -12,12 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.rx.annotation.Description;
-import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
-import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
@@ -26,29 +21,26 @@ import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
-import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.netty.util.internal.ThreadLocalRandom;
 
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static org.rx.core.Extends.as;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
-    static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
+    static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
             NQuery<Class<?>> q = NQuery.of(RxConfig.INSTANCE.jsonSkipTypes);
@@ -66,15 +58,17 @@ public final class App extends SystemUtils {
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
+        Container.register(Cache.class, Container.<Cache>get(RxConfig.INSTANCE.cache.mainInstance));
+
         log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
     }
 
-    public static java.io.File getJarFile(Object obj) {
+    public static File getJarFile(Object obj) {
         return getJarFile(obj.getClass());
     }
 
     @SneakyThrows
-    public static java.io.File getJarFile(Class<?> _class) {
+    public static File getJarFile(Class<?> _class) {
         String path = _class.getPackage().getName().replace(".", "/");
         String url = _class.getClassLoader().getResource(path).toString();
         url = url.replace(" ", "%20");
@@ -92,10 +86,10 @@ public final class App extends SystemUtils {
                 } else {
                     path = new java.net.URI(path).getPath();
                 }
-                return new java.io.File(path);
+                return new File(path);
             }
         } else {
-            return new java.io.File(uri);
+            return new File(uri);
         }
         return null;
     }
@@ -141,19 +135,6 @@ public final class App extends SystemUtils {
             method += Constants.CACHE_KEY_SUFFIX + toJsonString(args.length == 1 ? args[0] : args);
         }
         return method;
-    }
-
-    public static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
-    }
-
-    @SneakyThrows
-    public static void sleep(long millis) {
-        Thread.sleep(millis);
     }
 
     public static void logMetric(String name, Object value) {
@@ -232,20 +213,7 @@ public final class App extends SystemUtils {
         }
     }
 
-    //region Collection
-    public static <T> List<T> newConcurrentList(boolean readMore) {
-        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
-    }
-
-    public static <T> List<T> newConcurrentList(int initialCapacity) {
-        return newConcurrentList(initialCapacity, false);
-    }
-
-    public static <T> List<T> newConcurrentList(int initialCapacity, boolean readMore) {
-        //CopyOnWriteArrayList 写性能差
-        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
-    }
-
+    //region json
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
@@ -319,168 +287,7 @@ public final class App extends SystemUtils {
     }
     //endregion
 
-    //region extend
-    public static boolean sneakyInvoke(Action action) {
-        return sneakyInvoke(action, 1);
-    }
-
-    public static boolean sneakyInvoke(@NonNull Action action, int retryCount) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                action.invoke();
-                return true;
-            } catch (Throwable e) {
-                if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
-                }
-                last = e;
-            }
-        }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
-        }
-        return false;
-    }
-
-    public static <T> T sneakyInvoke(Func<T> action) {
-        return sneakyInvoke(action, 1);
-    }
-
-    public static <T> T sneakyInvoke(@NonNull Func<T> action, int retryCount) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                return action.invoke();
-            } catch (Throwable e) {
-                if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
-                }
-                last = e;
-            }
-        }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
-        }
-        return null;
-    }
-
-    public static boolean quietly(@NonNull Action action) {
-        try {
-            action.invoke();
-            return true;
-        } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
-        }
-        return false;
-    }
-
-    public static <T> T quietly(Func<T> action) {
-        return quietly(action, null);
-    }
-
-    public static <T> T quietly(@NonNull Func<T> action, Func<T> defaultValue) {
-        try {
-            return action.invoke();
-        } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
-        }
-        if (defaultValue != null) {
-            try {
-                return defaultValue.invoke();
-            } catch (Throwable e) {
-                ExceptionUtils.rethrow(e);
-            }
-        }
-        return null;
-    }
-
-    public static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
-            return;
-        }
-
-        for (T t : iterable) {
-            try {
-                fn.invoke(t);
-            } catch (Throwable e) {
-                if (e instanceof CircuitBreakingException) {
-                    break;
-                }
-                ExceptionHandler.INSTANCE.log("eachQuietly", e);
-            }
-        }
-    }
-
-    public static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
-    }
-
-    public static boolean tryClose(AutoCloseable obj) {
-        if (obj == null) {
-            return false;
-        }
-        quietly(obj::close);
-        return true;
-    }
-
-    public static <T> boolean tryAs(Object obj, Class<T> type) {
-        return tryAs(obj, type, null);
-    }
-
-    @SneakyThrows
-    public static <T> boolean tryAs(Object obj, Class<T> type, BiAction<T> action) {
-        T t = as(obj, type);
-        if (t == null) {
-            return false;
-        }
-        if (action != null) {
-            action.invoke(t);
-        }
-        return true;
-    }
-
-    //todo checkerframework
-    @ErrorCode("test")
-    public static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
-    public static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
-    }
-
-    public static <T> T isNull(T value, Supplier<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.get();
-            }
-        }
-        return value;
-    }
-
-    public static <T> T as(Object obj, Class<T> type) {
-        if (!Reflects.isInstance(obj, type)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> boolean eq(T a, T b) {
-        return (a == b) || (a != null && a.equals(b));
-    }
-
-    public static Object[] values(Object... args) {
-        return args;
-    }
-    //endregion
-
-    //region Basic
+    //region basic
     public static List<String> argsOperations(String[] args) {
         List<String> result = new ArrayList<>();
         for (String arg : args) {
@@ -496,7 +303,7 @@ public final class App extends SystemUtils {
         Map<String, String> result = new HashMap<>();
         for (String arg : args) {
             if (arg.startsWith("-")) {
-                Matcher matcher = patternToFindOptions.matcher(arg);
+                Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
                 if (matcher.find()) {
                     result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
                 }
@@ -511,59 +318,6 @@ public final class App extends SystemUtils {
 
     public static String getBootstrapPath() {
         return new File(Strings.EMPTY).getAbsolutePath();
-    }
-
-//    public static <T> T readSetting(String key) {
-//        return readSetting(key, null);
-//    }
-
-//    public static <T> T readSetting(String key, Class<T> type) {
-//        return readSetting(key, type, loadYaml("application.yml"), false);
-//    }
-
-    @ErrorCode("keyError")
-    @ErrorCode("partialKeyError")
-    public static <T> T readSetting(@NonNull String key, Class<T> type, @NonNull Map<String, Object> settings, boolean throwOnEmpty) {
-        Function<Object, T> func = p -> {
-            if (type == null) {
-                return (T) p;
-            }
-            Map<String, Object> map = as(p, Map.class);
-            if (map != null) {
-                return fromJson(map, type);
-            }
-            return Reflects.changeType(p, type);
-        };
-        Object val;
-        if ((val = settings.get(key)) != null) {
-            return func.apply(val);
-        }
-
-        StringBuilder kBuf = new StringBuilder();
-        String d = ".";
-        String[] splits = Strings.split(key, d);
-        int c = splits.length - 1;
-        for (int i = 0; i <= c; i++) {
-            if (kBuf.length() > 0) {
-                kBuf.append(d);
-            }
-            String k = kBuf.append(splits[i]).toString();
-            if ((val = settings.get(k)) == null) {
-                continue;
-            }
-            if (i == c) {
-                return func.apply(val);
-            }
-            if ((settings = as(val, Map.class)) == null) {
-                throw new ApplicationException("partialKeyError", values(k, type));
-            }
-            kBuf.setLength(0);
-        }
-
-        if (throwOnEmpty) {
-            throw new ApplicationException("keyError", values(key, type));
-        }
-        return null;
     }
 
     /**
@@ -705,11 +459,6 @@ public final class App extends SystemUtils {
     public static <T extends Serializable> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64String(base64);
         return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
-    }
-
-    public static <T extends Serializable> T deepClone(T obj) {
-        IOStream<?, ?> stream = Serializer.DEFAULT.serialize(obj);
-        return Serializer.DEFAULT.deserialize(stream.rewind());
     }
     //endregion
 }
