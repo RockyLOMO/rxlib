@@ -26,14 +26,12 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.*;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
- *
- * @param <T>
  */
 @Slf4j
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -48,7 +46,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    @ErrorCode("argError")
+    @ErrorCode
     public static <T> List<T> asList(@NonNull Object collection, boolean throwOnFail) {
         Iterable<T> iterable;
         if ((iterable = as(collection, Iterable.class)) != null) {
@@ -71,7 +69,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }
 
         if (throwOnFail) {
-            throw new ApplicationException("argError", values(type.getSimpleName()));
+            throw new ApplicationException(values(type.getSimpleName()));
         }
         ArrayList<T> list = new ArrayList<>();
         list.add((T) collection);

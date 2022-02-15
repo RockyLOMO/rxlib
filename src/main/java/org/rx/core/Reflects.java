@@ -32,6 +32,7 @@ import java.util.function.BiFunction;
 import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.*;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j
@@ -69,25 +70,20 @@ public class Reflects extends ClassUtils {
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
-    static final Lazy<Cache<Class, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
-    static final Lazy<Cache<Class, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
-    private static final Constructor<MethodHandles.Lookup> lookupConstructor;
-    private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
-    private static final List<ConvertBean<?, ?>> typeConverter;
-
-    public static <T> Cache<String, T> cache() {
-        return (Cache<String, T>) LAZY_CACHE.getValue();
-    }
+    static final Lazy<Cache<Class<?>, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
+    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
+    static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     static {
         try {
-            lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
-            setAccess(lookupConstructor);
+            LOOKUP_CONSTRUCTOR = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
+            setAccess(LOOKUP_CONSTRUCTOR);
         } catch (NoSuchMethodException e) {
             throw InvalidException.sneaky(e);
         }
 
-        typeConverter = new CopyOnWriteArrayList<>();
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
@@ -123,7 +119,6 @@ public class Reflects extends ClassUtils {
         return in;
     }
 
-    //class.getResourceAsStream
     @SneakyThrows
     public static NQuery<InputStream> getResources(String namePattern) {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
@@ -223,7 +218,7 @@ public class Reflects extends ClassUtils {
         require(method, method.isDefault());
 
         Class<?> declaringClass = method.getDeclaringClass();
-        return (T) lookupConstructor.newInstance(declaringClass, lookupFlags)
+        return (T) LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
                 .unreflectSpecial(method, declaringClass)
                 .bindTo(instance)
                 .invokeWithArguments(args);
@@ -358,7 +353,7 @@ public class Reflects extends ClassUtils {
             throw new InvalidException("Invalid name %s", getterOrSetter);
         }
 
-        //Introspector.decapitalize
+//        Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
         }
@@ -435,17 +430,17 @@ public class Reflects extends ClassUtils {
 
     public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
-            return isNull(changeType(val, toType), defaultVal);
+            return ifNull(changeType(val, toType), defaultVal);
         } catch (Exception ex) {
             return defaultVal;
         }
     }
 
     public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
-        typeConverter.add(0, new ConvertBean<>(baseFromType, toType, converter));
+        CONVERT_BEANS.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
-    public static Object defaultValue(Class<?> type) {
+    public static <T> T defaultValue(Class<T> type) {
         return changeType(null, type);
     }
 
@@ -502,7 +497,8 @@ public class Reflects extends ClassUtils {
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
-        } else if (!toType.isPrimitive() && TypeUtils.isInstance(value, toType)) {
+        } else if ((!toType.isPrimitive() && TypeUtils.isInstance(value, toType))
+                || toType.equals(Object.class)) {
             //isInstance int to long ok, do nothing
         } else {
             try {
@@ -518,9 +514,9 @@ public class Reflects extends ClassUtils {
                     }
                 } else {
                     NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
-                    if (methods == null) {
+                    if (methods == null || fromType.isEnum()) {
                         Class<T> fType = toType;
-                        ConvertBean convertBean = NQuery.of(typeConverter).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
+                        ConvertBean convertBean = NQuery.of(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {
                             return (T) convertBean.converter.apply(value, convertBean.toType);
                         }

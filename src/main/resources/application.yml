@@ -1,11 +1,11 @@
-app:
-  netUserAgent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat
-  netTimeoutMillis: 15000
-  netMaxPoolSize: 0
-  netKeepaliveSeconds: 120
-  jsonSkipTypes:
-    - javax.servlet.ServletRequest
-    - javax.servlet.ServletResponse
-    - org.springframework.ui.Model
-    - org.springframework.validation.BindingResult
-    - org.rx.io.IOStream
+#app:
+#  id: Rx
+#  threadPool:
+#    replicas: 4
+#  net:
+#    connectTimeoutMillis: 40000
+#  logTypeWhitelist:
+#    - org.rx
+#    - com.net
+#  jsonSkipTypes:
+#    - java.lang.String

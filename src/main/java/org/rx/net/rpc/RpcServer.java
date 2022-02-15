@@ -11,8 +11,8 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.bean.IdGenerator;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -175,7 +176,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {

@@ -16,14 +16,14 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
-import static org.rx.core.App.quietly;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.quietly;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 public final class Tasks {
-    private static final int POOL_COUNT = 2;
+    private static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
     private static final ScheduledThreadPoolExecutor scheduler;

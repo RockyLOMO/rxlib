@@ -5,7 +5,6 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.net.socks.SocksContext;
@@ -20,7 +19,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static org.rx.core.App.as;
+import static org.rx.core.Extends.as;
 
 @ControllerAdvice
 @Aspect
@@ -36,7 +35,7 @@ public class ControllerInterceptor extends BaseInterceptor {
             }
             return p;
         };
-        String omega = Container.get(RxConfig.class).getOmega();
+        String omega = RxConfig.INSTANCE.getOmega();
         if (omega != null) {
             SocksContext.omega(omega, null);
         }

@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
-import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.io.*;
 import org.rx.net.socks.SocksUser;
@@ -18,13 +17,13 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class IOTester {
@@ -61,8 +60,8 @@ public class IOTester {
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                .ne(PersonBean::getAge, 10)
-                .ne(PersonBean::getAge, 11))
+                        .ne(PersonBean::getAge, 10)
+                        .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
@@ -403,32 +402,32 @@ public class IOTester {
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream<?, ?> newStream = App.deepClone(stream);
+        IOStream<?, ?> newStream = stream.deepClone();
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
     @Test
     public void listFiles() {
-        for (File p : Files.listFiles(TConfig.baseDir, false)) {
+        for (File p : Files.listFiles(TConfig.BASE_DIR, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listFiles(TConfig.baseDir, true)) {
+        for (File p : Files.listFiles(TConfig.BASE_DIR, true)) {
             System.out.println(p);
         }
     }
 
     @Test
     public void listDirectories() {
-        Path path = Files.path(TConfig.baseDir);
+        Path path = Files.path(TConfig.BASE_DIR);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (File p : Files.listDirectories(TConfig.baseDir, false)) {
+        for (File p : Files.listDirectories(TConfig.BASE_DIR, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listDirectories(TConfig.baseDir, true)) {
+        for (File p : Files.listDirectories(TConfig.BASE_DIR, true)) {
             System.out.println(p);
         }
     }

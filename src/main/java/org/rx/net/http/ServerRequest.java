@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.rx.bean.MultiValueMap;
+import org.rx.core.Extends;
 import org.rx.core.Strings;
 
 import java.net.InetSocketAddress;
@@ -19,7 +20,7 @@ import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.rx.core.App.isNull;
+import static org.rx.core.Extends.ifNull;
 
 @Getter
 public final class ServerRequest {
@@ -53,7 +54,7 @@ public final class ServerRequest {
     public ServerRequest(@NonNull InetSocketAddress remoteEndpoint, @NonNull String uri, HttpMethod method) {
         this.remoteEndpoint = remoteEndpoint;
         this.uri = uri;
-        this.method = isNull(method, HttpMethod.GET);
+        this.method = ifNull(method, HttpMethod.GET);
     }
 
     public String jsonBody() {

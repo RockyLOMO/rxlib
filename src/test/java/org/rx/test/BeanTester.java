@@ -2,7 +2,6 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.BooleanUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
@@ -20,6 +19,8 @@ import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class BeanTester extends TestUtil {
@@ -78,7 +79,7 @@ public class BeanTester extends TestUtil {
     public void normalMapBean() {
         PersonBean f = new PersonBean();
         f.setIndex(2);
-        f.setName("王湵范");
+        f.setName(TConfig.NAME_WYF);
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.BOY);
@@ -146,9 +147,14 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void snowFlake() {
-        SnowFlake snowFlake = new SnowFlake(2, 3);
-        for (int i = 0; i < (1 << 12); i++) {
-            System.out.println(snowFlake.nextId());
+        Set<Long> set = new HashSet<>();
+        int len = 1 << 12;
+        System.out.println(len);
+        SnowFlake snowFlake = new SnowFlake(1, 1);
+        for (int i = 0; i < len; i++) {
+            Tasks.run(() -> {
+                assert set.add(snowFlake.nextId());
+            });
         }
     }
 
@@ -184,12 +190,11 @@ public class BeanTester extends TestUtil {
             assert App.combId(map.get(i), "" + i).equals(App.combId(new Timestamp(map.get(i)), "" + i));
         }
 
-        String d = "wyf520";
-        SUID suid = SUID.compute(d);
-        System.out.println(suid.toString());
+        SUID suid = SUID.compute(TConfig.NAME_WYF);
+        System.out.println(suid);
 
         SUID valueOf = SUID.valueOf(suid.toString());
-        System.out.println(valueOf.toString());
+        System.out.println(valueOf);
 
         assert suid.equals(valueOf);
 
@@ -197,7 +202,7 @@ public class BeanTester extends TestUtil {
         int len = 100;  //1530ms
         invoke("suid", i -> {
             SUID suid1 = SUID.randomSUID();
-            System.out.println(suid1.toString());
+            System.out.println(suid1);
             set.add(suid1);
 
             assert SUID.valueOf(suid1.toString()).equals(suid1);
@@ -207,14 +212,11 @@ public class BeanTester extends TestUtil {
 
     @Test
     public void decimal() {
-        Object x = true;
-        assert x instanceof Boolean && BooleanUtils.isTrue((Boolean) x);
-
         Decimal permille = Decimal.valueOf("50%");
         Decimal permille1 = Decimal.valueOf("500‰");
         Decimal permille2 = Decimal.valueOf(0.5);
         assert permille.equals(permille1) && permille1.equals(permille2);
-        System.out.println(permille1.toString());
+        System.out.println(permille1);
         System.out.println(permille1.toPermilleString());
         System.out.println(permille1.toPermilleInt());
         System.out.println(permille1.toPercentString());
@@ -257,27 +259,23 @@ public class BeanTester extends TestUtil {
         assert d2.getYear() == 2011;
         assert d.subtract(d3).getTotalHours() == 24;
 
-        System.out.println(now.toString());
-        System.out.println(utc.toString());
+        System.out.println(now);
+        System.out.println(utc);
         System.out.println(d.toDateTimeString());
-
-        DateTime.valueOf("x");
     }
 
     @Test
-    public void nenum() {
-        assert eq(PersonGender.GIRL.description(), "女孩");
-    }
+    public void normal() {
+        AbstractReferenceCounter counter = new AbstractReferenceCounter() {
+        };
+        assert counter.getRefCnt() == 0;
+        assert counter.incrementRefCnt() == 1;
+        assert counter.decrementRefCnt() == 0;
 
-    @Test
-    public void tuple() {
         Tuple<String, Integer> tuple = Tuple.of("s", 1);
-        tuple.setRight(2);
         Tuple<String, Integer> tuple2 = Tuple.of("s", 1);
-        Tuple<String, Integer> tuple3 = Tuple.of("s", 0);
-
-        assert tuple.right == 1;
         assert tuple.equals(tuple2);
-        assert !tuple.equals(tuple3);
+
+        assert eq(PersonGender.GIRL.description(), "女孩");
     }
 }

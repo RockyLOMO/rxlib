@@ -15,7 +15,6 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.util.List;
 
-import static org.rx.core.App.cacheKey;
 import static org.rx.core.App.hashKey;
 import static org.rx.core.Constants.PERCENT;
 

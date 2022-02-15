@@ -7,8 +7,8 @@ import org.rx.core.EventTarget;
 public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
     enum BizCode {
         @ErrorCode
-        argument,
-        returnValue;
+        USER_NOT_FOUND,
+        COMPUTE_FAIL;
     }
 
     default void close() {
@@ -17,7 +17,7 @@ public interface UserManager extends EventTarget<UserManager>, AutoCloseable {
 
     void create(PersonBean person);
 
-    int computeInt(int x, int y);
+    int computeLevel(int x, int y);
 
     void triggerError();
 }

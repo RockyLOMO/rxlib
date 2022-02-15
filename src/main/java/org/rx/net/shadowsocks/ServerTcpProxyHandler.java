@@ -37,7 +37,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
                 SUID hash = SUID.compute(dstEp.toString());
                 SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
-                dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomGet(SocksSupport.FAKE_PORT_OBFS));
+                dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             }
 
             ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();

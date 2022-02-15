@@ -7,15 +7,15 @@ import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.util.SnowFlake;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 /**
- * 根据Exception来读取errorCode.yml的错误信息
  * ex.fillInStackTrace()
  * https://northconcepts.com/blog/2013/01/18/6-tips-to-improve-your-exception-handling/
  */
 @Getter
 public class ApplicationException extends InvalidException {
+    private static final long serialVersionUID = -2150583552731782944L;
     public static final String DEFAULT_MESSAGE = "网络繁忙，请稍后再试。";
 
     public static String getMessage(Throwable e) {
@@ -25,7 +25,7 @@ public class ApplicationException extends InvalidException {
 
         ApplicationException applicationException = as(e, ApplicationException.class);
         if (applicationException == null) {
-            return isNull(e.getMessage(), DEFAULT_MESSAGE);
+            return ifNull(e.getMessage(), DEFAULT_MESSAGE);
         }
         return applicationException.getFriendlyMessage();
     }
@@ -39,11 +39,11 @@ public class ApplicationException extends InvalidException {
 
     @Override
     public String getMessage() {
-        return isNull(friendlyMessage, String.format("%s %s", id, super.getMessage()));
+        return ifNull(friendlyMessage, String.format("%s %s", id, super.getMessage()));
     }
 
     public String getFriendlyMessage() {
-        return isNull(friendlyMessage, DEFAULT_MESSAGE);
+        return ifNull(friendlyMessage, DEFAULT_MESSAGE);
     }
 
     public ApplicationException(Object[] codeValues) {
@@ -93,7 +93,6 @@ public class ApplicationException extends InvalidException {
         } else {
             stacks = null;
         }
-        Class.forName(ExceptionHandler.class.getName());
-        Container.get(ExceptionCodeHandler.class).handle(this);
+        Container.get(YamlCodeHandler.class).handle(this);
     }
 }

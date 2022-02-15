@@ -13,8 +13,9 @@ import io.netty.util.internal.ThreadLocalRandom;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.require;
 
 @SuppressWarnings(NON_UNCHECKED)
 @NoArgsConstructor

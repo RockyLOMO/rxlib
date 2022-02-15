@@ -14,7 +14,6 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<MemoryCache> MEMORY_CACHE = MemoryCache.class;
     Class<DiskCache> DISK_CACHE = DiskCache.class;
     Class<ThreadCache> THREAD_CACHE = ThreadCache.class;
-    Class<Cache> MAIN_CACHE = Cache.class;
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
         return getOrSet(key, loadingFunc, CachePolicy.NON_EXPIRE);
@@ -25,7 +24,7 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration) {
-        return getOrSet(key, loadingFunc, expiration, MAIN_CACHE);
+        return getOrSet(key, loadingFunc, expiration, Cache.class);
     }
 
     static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration, Class<?> cacheName) {

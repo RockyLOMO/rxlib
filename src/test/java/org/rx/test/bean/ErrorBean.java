@@ -1,45 +1,42 @@
 package org.rx.test.bean;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.rx.exception.InvalidException;
 
-import java.util.Collections;
-
 @NoArgsConstructor
-@AllArgsConstructor
+@Getter
+@Setter
 public class ErrorBean implements NestedDefMethod {
-    private static void staticCall(int hint, String nullable) {
-        System.out.println("staticCall:" + Collections.singletonMap(hint, nullable));
+    private static String staticCall(int code, String msg) {
+        return "S-" + code + msg;
     }
 
-    @Getter
-    @Setter
+    private int code;
     private String error;
 
     public int getCode() {
         throw new InvalidException("auto skip");
     }
 
-    private ErrorBean(int hint, String nullable) {
-        error = "hint-" + nullable;
+    private ErrorBean(int code, String msg) {
+        error = code + msg;
     }
 
-    private void instanceCall(int hint, String nullable) {
-        System.out.println("instanceCall:" + Collections.singletonMap(hint, nullable));
+    private String instanceCall(int code, String msg) {
+        return "I-" + code + msg;
     }
 }
 
 interface DefMethod {
-    default void defCall(int hint, String nullable) {
-        System.out.println("defCall:" + Collections.singletonMap(hint, nullable));
+    default String defCall(int code, String msg) {
+        return "D-" + code + msg;
     }
 }
 
 interface NestedDefMethod extends DefMethod {
-    default void nestedDefCall(int hint, String nullable) {
-        System.out.println("nestedDefCall:" + Collections.singletonMap(hint, nullable));
+    default String nestedDefCall(int code, String msg) {
+        return "N-" + code + msg;
     }
 }

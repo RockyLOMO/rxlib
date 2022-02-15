@@ -1,7 +1,6 @@
 package org.rx.net.rpc.impl;
 
 import lombok.RequiredArgsConstructor;
-import org.rx.core.App;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcClientPool;
 
@@ -11,7 +10,7 @@ public class NonClientPool implements RpcClientPool {
 
     @Override
     public StatefulRpcClient borrowClient() {
-        RpcClientConfig config = App.deepClone(template);
+        RpcClientConfig config = template.deepClone();
         StatefulRpcClient client = new StatefulRpcClient(config);
         client.connect(true);
         return client;

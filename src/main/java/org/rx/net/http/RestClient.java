@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.ifNull;
 
 @Slf4j
 public final class RestClient {
@@ -90,7 +91,7 @@ public final class RestClient {
             if (m.getReturnType().equals(Void.class)) {
                 return null;
             }
-            return fromJson(responseText, isNull(RESULT_TYPE.get(), m.getReturnType()));
+            return fromJson(responseText, ifNull(RESULT_TYPE.get(), m.getReturnType()));
         });
     }
 

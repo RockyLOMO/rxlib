@@ -11,8 +11,8 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.bean.DateTime;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
@@ -28,7 +28,7 @@ import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class StatefulRpcClient extends Disposable implements RpcClient {
@@ -180,7 +180,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(RxConfig.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
         ManualResetEvent syncRoot = null;
@@ -207,7 +207,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
-            NEventArgs<InetSocketAddress> args = new NEventArgs<>(isNull(reconnectingEp, config.getServerEndpoint()));
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(reconnectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
             ep = reconnectingEp = args.getValue();
         } else {

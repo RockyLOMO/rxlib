@@ -2,10 +2,11 @@ package org.rx.util;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
-import org.rx.exception.InvalidException;
+import org.rx.exception.ApplicationException;
 import org.springframework.cglib.beans.BeanCopier;
 
 import java.lang.reflect.Method;
@@ -13,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -30,6 +32,7 @@ public class BeanMapper {
     private final Map<Integer, MapConfig> config = new ConcurrentHashMap<>();
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
 
+    @ErrorCode
     public <T> T define(@NonNull Class<T> type) {
         require(type, type.isInterface());
 
@@ -46,7 +49,7 @@ public class BeanMapper {
             boolean noreturn = m.getReturnType() == void.class;
             if (args.length >= 2) {
                 MapConfig config = setMappings(args[0].getClass(), noreturn ? args[1].getClass() : m.getReturnType(), type, p.getProxyObject(), m);
-                map(args[0], isNull(target, args[1]), config.flags, m);
+                map(args[0], ifNull(target, args[1]), config.flags, m);
                 return noreturn ? null : args[1];
             }
             if (args.length == 1) {
@@ -59,7 +62,7 @@ public class BeanMapper {
                 }
                 return map(args[0], target, config.flags, m);
             }
-            throw new InvalidException("Error Define Method %s", m.getName());
+            throw new ApplicationException(values(m.getName()));
         });
     }
 

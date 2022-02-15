@@ -8,8 +8,8 @@ import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
+import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -17,12 +17,9 @@ import java.net.InetSocketAddress;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.rx.core.App.tryClose;
 import static org.rx.core.Tasks.await;
 
-@Slf4j
 public class DnsClient extends Disposable {
     static class DnsServerAddressStreamProviderImpl implements DnsServerAddressStreamProvider {
         final DnsServerAddresses nameServer;
@@ -37,8 +34,6 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static final int MAX_FAIL_COUNT = 4;
-
     public static DnsClient inlandClient() {
         return new DnsClient(Arrays.toList(Sockets.parseEndpoint("114.114.114.114:53")));
     }
@@ -49,12 +44,15 @@ public class DnsClient extends Disposable {
 
     @Getter
     final Set<InetSocketAddress> serverAddresses;
-    private volatile DnsNameResolver nameResolver;
-    final AtomicInteger failCount = new AtomicInteger();
+    final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull List<InetSocketAddress> nameServerList) {
         serverAddresses = new LinkedHashSet<>(nameServerList);
-        renewResolver();
+        nameResolver = new DnsNameResolverBuilder(Sockets.udpReactor().next())
+                .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
+                        : DnsServerAddressStreamProviders.platformDefault())
+                .channelType(NioDatagramChannel.class)
+                .socketChannelType(Sockets.channelClass()).build();
     }
 
     @Override
@@ -64,27 +62,12 @@ public class DnsClient extends Disposable {
 
     public Future<AddressedEnvelope<DnsResponse, InetSocketAddress>> query(DnsQuestion question) {
         return nameResolver.query(question).addListener(f -> {
-            if (f.isSuccess()
-                    || !(f.cause() instanceof DnsNameResolverException)
-                    || !Strings.contains(f.cause().getMessage(), "failed to send a query via UDP")) {
+            if (f.isSuccess()) {
                 return;
             }
 
-            if (failCount.incrementAndGet() > MAX_FAIL_COUNT) {
-//                Tasks.setTimeout(this::renewResolver, 500, this, TimeoutFlag.SINGLE);
-                log.warn("renewResolver 4 {}", question);
-            }
+            ExceptionHandler.INSTANCE.log("Dns query fail question={}", question, f.cause());
         });
-    }
-
-    void renewResolver() {
-        tryClose(nameResolver);
-        nameResolver = new DnsNameResolverBuilder(Sockets.udpReactor().next())
-                .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
-                        : DnsServerAddressStreamProviders.platformDefault())
-                .channelType(NioDatagramChannel.class)
-                .socketChannelType(Sockets.channelClass()).build();
-        failCount.set(0);
     }
 
     public InetAddress resolve(String inetHost) {

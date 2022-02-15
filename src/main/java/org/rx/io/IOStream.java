@@ -3,12 +3,9 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.RxConfig;
-import org.rx.core.Constants;
-import org.rx.core.Disposable;
+import org.rx.core.*;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
-import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 
 import java.io.*;
@@ -22,10 +19,10 @@ import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
-public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
+public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Extends {
     private static final long serialVersionUID = 3204673656139586437L;
     public static final int NON_READ_FULLY = -1;
 
@@ -39,14 +36,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public static IOStream<?, ?> wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
-        stream.setName(isNull(name, Strings.EMPTY));
+        stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(data);
         return stream.rewind();
     }
 
     public static IOStream<?, ?> wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
-        stream.setName(isNull(name, Strings.EMPTY));
+        stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(in);
         return stream.rewind();
     }
@@ -261,7 +258,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public int read(ByteBuf dst) {
         int total = 0, read;
-        while ((read = read(dst, RxConfig.HEAP_BUF_SIZE)) > 0) {
+        while ((read = read(dst, Constants.HEAP_BUF_SIZE)) > 0) {
             total += read;
         }
         return total;

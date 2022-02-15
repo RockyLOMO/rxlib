@@ -14,8 +14,8 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.values;
 
 /**
  * GMT: UTC +0
@@ -26,6 +26,11 @@ public final class DateTime extends Date {
     public static final DateTime MIN = new DateTime(2000, 1, 1), MAX = new DateTime(9999, 12, 31);
     public static final NQuery<String> FORMATS = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
     private static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
+
+    public static boolean isToday(Date time) {
+        String f = "yyyMMdd";
+        return DateTime.now().toString(f).equals(new DateTime(time).toString(f));
+    }
 
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis());

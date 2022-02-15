@@ -63,7 +63,6 @@
         <okhttp.version>4.9.3</okhttp.version>
         <jsch.version>0.1.55</jsch.version>
 
-        <spring.cloud.version>3.0.4</spring.cloud.version>
         <spring.boot.version>2.4.13</spring.boot.version>
         <spring.version>5.3.13</spring.version>
         <aspectj.version>1.9.6</aspectj.version>
@@ -71,11 +70,6 @@
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-context</artifactId>
-            <version>${spring.cloud.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

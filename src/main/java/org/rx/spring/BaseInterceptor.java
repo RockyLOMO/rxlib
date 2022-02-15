@@ -7,7 +7,6 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.util.function.TripleFunc;
 
@@ -15,6 +14,7 @@ import javax.annotation.Resource;
 import java.util.List;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
@@ -22,8 +22,6 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             onProceed = Delegate.create(),
             onError = Delegate.create();
     protected TripleFunc<Signature, Object, Object> argShortSelector;
-    @Resource
-    protected RxConfig rxConfig;
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
@@ -45,6 +43,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return joinPoint.proceed();
         }
 
+        RxConfig rxConfig = RxConfig.INSTANCE;
         eventArgs.setLogStrategy(rxConfig.getLogStrategy());
         eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {
@@ -82,7 +81,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return r;
                 }
             }
-            int maxLen = 1024 * 64;
+            int maxLen = 1024 * 32;
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
                 if (b.length > maxLen) {

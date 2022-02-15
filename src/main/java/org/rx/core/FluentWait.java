@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
-import static org.rx.core.App.require;
+import static org.rx.core.Extends.require;
 
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class FluentWait {
@@ -75,9 +75,10 @@ public class FluentWait {
         return this;
     }
 
+    @SneakyThrows
     public FluentWait sleep() {
         if (interval > 0) {
-            App.sleep(interval);
+            Thread.sleep(interval);
         }
         return this;
     }

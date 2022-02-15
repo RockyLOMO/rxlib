@@ -5,14 +5,14 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.WeakAttribute;
+import org.rx.core.Extends;
 import org.rx.util.function.Func;
 
 import java.util.Objects;
 
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public final class RemotingContext implements WeakAttribute {
+public final class RemotingContext implements Extends {
     static final FastThreadLocal<RemotingContext> tl = new FastThreadLocal<>();
 
     public static RemotingContext context() {

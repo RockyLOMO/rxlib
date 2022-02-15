@@ -3,7 +3,6 @@ package org.rx.core.cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Policy;
 import com.github.benmanes.caffeine.cache.Scheduler;
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.util.function.BiAction;
@@ -11,7 +10,7 @@ import org.rx.util.function.BiAction;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.require;
 
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static {
@@ -44,7 +43,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     final Policy.VarExpiration<TK, TV> expireVariably;
 
     public MemoryCache() {
-        this(b -> b.maximumSize(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_MAX_SIZE, 10000)));
+        this(b -> b.maximumSize(RxConfig.INSTANCE.getCache().getMaxItemSize()));
     }
 
     @SneakyThrows

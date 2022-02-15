@@ -12,7 +12,7 @@ import org.rx.util.function.BiAction;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-import static org.rx.core.App.quietly;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 final class WriteBehindQueue<K, V> extends Disposable {

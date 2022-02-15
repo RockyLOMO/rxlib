@@ -1,21 +1,20 @@
 package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.Expiry;
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.RequiredArgsConstructor;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.rx.bean.DateTime;
 import org.rx.core.CachePolicy;
-import org.rx.core.Constants;
+import org.rx.core.RxConfig;
 
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.eq;
+import static org.rx.core.Extends.eq;
 
 @RequiredArgsConstructor
 class CaffeineExpiry implements Expiry<Object, Object> {
-    static final long DEFAULT_SLIDING_NANOS = TimeUnit.SECONDS.toNanos(SystemPropertyUtil.getInt(Constants.CACHE_DEFAULT_SLIDING_SECONDS, 60));
+    static final long DEFAULT_SLIDING_NANOS = TimeUnit.SECONDS.toNanos(RxConfig.INSTANCE.getCache().getSlidingSeconds());
 
     static long computeNanos(Object value, long currentDuration) {
         CachePolicy policy;

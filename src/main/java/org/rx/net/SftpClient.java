@@ -5,7 +5,6 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
-import org.rx.bean.RxConfig;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
@@ -16,7 +15,7 @@ import org.rx.io.IOStream;
 import java.io.InputStream;
 import java.util.*;
 
-import static org.rx.core.App.quietly;
+import static org.rx.core.Extends.quietly;
 
 /**
  * "cd remotePath                       Change remote directory to 'remotePath'\n"+
@@ -65,7 +64,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     private final ChannelSftp channel;
 
     public SftpClient(AuthenticEndpoint endpoint) {
-        this(endpoint, Container.get(RxConfig.class).getNetTimeoutMillis());
+        this(endpoint, RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
     }
 
     @SneakyThrows

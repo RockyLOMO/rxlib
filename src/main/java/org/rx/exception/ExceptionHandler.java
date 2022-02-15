@@ -1,6 +1,5 @@
 package org.rx.exception;
 
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -18,7 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 
-import static org.rx.core.App.as;
+import static org.rx.core.Extends.as;
 
 @Slf4j
 public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
@@ -31,16 +30,12 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         String stackTrace;
         int occurCount;
 
-        //        String appName;
+        String appName;
         String threadName;
         Date modifyTime;
     }
 
     public static final ExceptionHandler INSTANCE = new ExceptionHandler();
-
-    static {
-        Container.register(ExceptionCodeHandler.class, new DefaultExceptionCodeHandler());
-    }
 
     public static Object[] getMessageCandidate(Object... args) {
         if (args != null && args.length != 0) {
@@ -56,11 +51,14 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         return args;
     }
 
-    int keepDays;
     ScheduledFuture<?> future;
 
+    public int getKeepDays() {
+        return RxConfig.INSTANCE.getTraceKeepDays();
+    }
+
     public synchronized void setKeepDays(int keepDays) {
-        if ((this.keepDays = keepDays) > 0) {
+        if (keepDays > 0) {
             EntityDatabase db = EntityDatabase.DEFAULT.getValue();
             db.createMapping(ErrorEntity.class);
             if (future == null) {
@@ -73,11 +71,12 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 future = null;
             }
         }
+        RxConfig.INSTANCE.setTraceKeepDays(keepDays);
     }
 
     private ExceptionHandler() {
         Thread.setDefaultUncaughtExceptionHandler(this);
-        setKeepDays(SystemPropertyUtil.getInt(Constants.TRACE_KEEP_DAYS, 1));
+        setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
     }
 
     public void log(String format, Object... args) {
@@ -101,29 +100,32 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         saveTrace(t, e);
     }
 
-    public List<ErrorEntity> queryTraces(Integer takeCount, Boolean newest) {
-        if (keepDays <= 0) {
+    public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {
+        if (getKeepDays() <= 0) {
             return Collections.emptyList();
-        }
-        if (takeCount == null) {
-            takeCount = 10;
         }
         if (newest == null) {
             newest = Boolean.FALSE;
         }
+        if (limit == null) {
+            limit = 20;
+        }
 
-        EntityQueryLambda<ErrorEntity> q = new EntityQueryLambda<>(ErrorEntity.class).limit(takeCount);
+        EntityQueryLambda<ErrorEntity> q = new EntityQueryLambda<>(ErrorEntity.class).limit(limit);
         if (newest) {
             q.orderByDescending(ErrorEntity::getModifyTime);
         } else {
             q.orderByDescending(ErrorEntity::getOccurCount);
+        }
+        if (level != null) {
+            q.eq(ErrorEntity::getLevel, level);
         }
         EntityDatabase db = EntityDatabase.DEFAULT.getValue();
         return db.findBy(q);
     }
 
     public void saveTrace(Thread t, Throwable e) {
-        if (keepDays <= 0) {
+        if (getKeepDays() <= 0) {
             return;
         }
 
@@ -144,6 +146,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 entity.setStackTrace(stackTrace);
             }
             entity.occurCount++;
+            entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(t.getName());
             entity.setModifyTime(DateTime.now());
             db.save(entity, doInsert);

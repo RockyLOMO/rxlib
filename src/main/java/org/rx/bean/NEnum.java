@@ -2,7 +2,7 @@ package org.rx.bean;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.core.App;
+import org.rx.core.Extends;
 
 import java.io.Serializable;
 
@@ -34,7 +34,7 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
     default String description() {
-        Class type = this.getClass();
-        return App.description(type.getField(((T) this).name()));
+        Class<?> type = this.getClass();
+        return Extends.description(type.getField(((T) this).name()));
     }
 }

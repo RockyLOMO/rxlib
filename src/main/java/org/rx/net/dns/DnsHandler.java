@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
@@ -95,7 +95,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             $<Boolean> isEmpty = $(false);
             List<InetAddress> addresses = cache().get(DOMAIN_PREFIX + domain,
                     k -> {
-                        List<InetAddress> tmp = isNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
+                        List<InetAddress> tmp = ifNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
                         isEmpty.v = tmp.isEmpty();
                         return tmp;
                     },

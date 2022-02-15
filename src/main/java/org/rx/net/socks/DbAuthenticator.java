@@ -8,7 +8,7 @@ import org.rx.io.KeyValueStoreConfig;
 
 import java.util.List;
 
-import static org.rx.core.App.eq;
+import static org.rx.core.Extends.eq;
 
 final class DbAuthenticator implements Authenticator {
     final KeyValueStore<String, SocksUser> store;

@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 public class Servlets extends ServletRequestUtils {

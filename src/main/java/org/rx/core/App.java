@@ -12,12 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.rx.annotation.Description;
-import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
-import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
@@ -26,32 +21,29 @@ import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
-import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.netty.util.internal.ThreadLocalRandom;
 
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static org.rx.core.Extends.as;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
-    static final Pattern patternToFindOptions = Pattern.compile("(?<=-).*?(?==)");
+    static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
-            NQuery<Class<?>> q = NQuery.of(Container.get(RxConfig.class).getJsonSkipTypeSet());
+            NQuery<Class<?>> q = NQuery.of(RxConfig.INSTANCE.jsonSkipTypes);
             if (NQuery.couldBeCollection(v.getClass())) {
                 List<Object> list = NQuery.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
@@ -66,19 +58,21 @@ public final class App extends SystemUtils {
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
-        Container.register(RxConfig.class, readSetting("app", RxConfig.class), true);
+        RxConfig conf = RxConfig.INSTANCE;
+        Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
 
-        log.info("RxMeta {} {}_{}_{} @ {} & {}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH, getBootstrapPath(), Sockets.getLocalAddresses());
+        log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
+                getBootstrapPath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
     }
 
-    public static java.io.File getJarFile(Object obj) {
+    public static File getJarFile(Object obj) {
         return getJarFile(obj.getClass());
     }
 
     @SneakyThrows
-    public static java.io.File getJarFile(Class<?> _class) {
-        String path = _class.getPackage().getName().replace(".", "/");
-        String url = _class.getClassLoader().getResource(path).toString();
+    public static File getJarFile(Class<?> klass) {
+        String path = klass.getPackage().getName().replace(".", "/");
+        String url = klass.getClassLoader().getResource(path).toString();
         url = url.replace(" ", "%20");
         java.net.URI uri = new java.net.URI(url);
         if (uri.getPath() == null) {
@@ -94,12 +88,22 @@ public final class App extends SystemUtils {
                 } else {
                     path = new java.net.URI(path).getPath();
                 }
-                return new java.io.File(path);
+                return new File(path);
             }
         } else {
-            return new java.io.File(uri);
+            return new File(uri);
         }
         return null;
+    }
+
+    public static <T> ArrayList<T> proxyList(ArrayList<T> source, BiAction<ArrayList<T>> onSet) {
+        return proxy(ArrayList.class, (m, p) -> {
+            Object val = p.fastInvoke(source);
+            if (onSet != null && Reflects.List_WRITE_METHOD_NAMES.contains(m.getName())) {
+                onSet.invoke(source);
+            }
+            return val;
+        });
     }
 
     public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
@@ -135,24 +139,14 @@ public final class App extends SystemUtils {
         return method;
     }
 
-    public static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
-    }
-
-    @SneakyThrows
-    public static void sleep(long millis) {
-        Thread.sleep(millis);
-    }
-
     public static void logMetric(String name, Object value) {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
+        RxConfig conf = RxConfig.INSTANCE;
+        eventArgs.setLogStrategy(conf.logStrategy);
+        eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
         log(eventArgs, msg -> {
             msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
@@ -189,14 +183,14 @@ public final class App extends SystemUtils {
             }
         }
         if (doWrite) {
-            List<String> whitelist = eventArgs.getLogTypeWhitelist();
+            Set<String> whitelist = eventArgs.getLogTypeWhitelist();
             if (!CollectionUtils.isEmpty(whitelist)) {
                 doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
             }
         }
         if (doWrite) {
             org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(RxConfig.HEAP_BUF_SIZE);
+            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
             for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
@@ -221,20 +215,7 @@ public final class App extends SystemUtils {
         }
     }
 
-    //region Collection
-    public static <T> List<T> newConcurrentList(boolean readMore) {
-        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
-    }
-
-    public static <T> List<T> newConcurrentList(int initialCapacity) {
-        return newConcurrentList(initialCapacity, false);
-    }
-
-    public static <T> List<T> newConcurrentList(int initialCapacity, boolean readMore) {
-        //CopyOnWriteArrayList 写性能差
-        return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
-    }
-
+    //region json
     //final 字段不会覆盖
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
@@ -296,9 +277,9 @@ public final class App extends SystemUtils {
             } else {
                 q = NQuery.of(src);
             }
-            Set<Class<?>> jsonSkipTypeSet = Container.get(RxConfig.class).getJsonSkipTypeSet();
-            jsonSkipTypeSet.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypeSet).toJoinString(",", Class::getName), e);
+            Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
+            jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());
@@ -308,168 +289,7 @@ public final class App extends SystemUtils {
     }
     //endregion
 
-    //region extend
-    public static boolean sneakyInvoke(Action action) {
-        return sneakyInvoke(action, 1);
-    }
-
-    public static boolean sneakyInvoke(@NonNull Action action, int retryCount) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                action.invoke();
-                return true;
-            } catch (Throwable e) {
-                if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
-                }
-                last = e;
-            }
-        }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
-        }
-        return false;
-    }
-
-    public static <T> T sneakyInvoke(Func<T> action) {
-        return sneakyInvoke(action, 1);
-    }
-
-    public static <T> T sneakyInvoke(@NonNull Func<T> action, int retryCount) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                return action.invoke();
-            } catch (Throwable e) {
-                if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
-                }
-                last = e;
-            }
-        }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
-        }
-        return null;
-    }
-
-    public static boolean quietly(@NonNull Action action) {
-        try {
-            action.invoke();
-            return true;
-        } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
-        }
-        return false;
-    }
-
-    public static <T> T quietly(Func<T> action) {
-        return quietly(action, null);
-    }
-
-    public static <T> T quietly(@NonNull Func<T> action, Func<T> defaultValue) {
-        try {
-            return action.invoke();
-        } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
-        }
-        if (defaultValue != null) {
-            try {
-                return defaultValue.invoke();
-            } catch (Throwable e) {
-                ExceptionUtils.rethrow(e);
-            }
-        }
-        return null;
-    }
-
-    public static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
-            return;
-        }
-
-        for (T t : iterable) {
-            try {
-                fn.invoke(t);
-            } catch (Throwable e) {
-                if (e instanceof CircuitBreakingException) {
-                    break;
-                }
-                ExceptionHandler.INSTANCE.log("eachQuietly", e);
-            }
-        }
-    }
-
-    public static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
-    }
-
-    public static boolean tryClose(AutoCloseable obj) {
-        if (obj == null) {
-            return false;
-        }
-        quietly(obj::close);
-        return true;
-    }
-
-    public static <T> boolean tryAs(Object obj, Class<T> type) {
-        return tryAs(obj, type, null);
-    }
-
-    @SneakyThrows
-    public static <T> boolean tryAs(Object obj, Class<T> type, BiAction<T> action) {
-        T t = as(obj, type);
-        if (t == null) {
-            return false;
-        }
-        if (action != null) {
-            action.invoke(t);
-        }
-        return true;
-    }
-
-    //todo checkerframework
-    @ErrorCode("test")
-    public static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
-    public static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
-    }
-
-    public static <T> T isNull(T value, Supplier<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.get();
-            }
-        }
-        return value;
-    }
-
-    public static <T> T as(Object obj, Class<T> type) {
-        if (!Reflects.isInstance(obj, type)) {
-            return null;
-        }
-        return (T) obj;
-    }
-
-    public static <T> boolean eq(T a, T b) {
-        return (a == b) || (a != null && a.equals(b));
-    }
-
-    public static Object[] values(Object... args) {
-        return args;
-    }
-    //endregion
-
-    //region Basic
+    //region basic
     public static List<String> argsOperations(String[] args) {
         List<String> result = new ArrayList<>();
         for (String arg : args) {
@@ -485,7 +305,7 @@ public final class App extends SystemUtils {
         Map<String, String> result = new HashMap<>();
         for (String arg : args) {
             if (arg.startsWith("-")) {
-                Matcher matcher = patternToFindOptions.matcher(arg);
+                Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
                 if (matcher.find()) {
                     result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
                 }
@@ -500,101 +320,6 @@ public final class App extends SystemUtils {
 
     public static String getBootstrapPath() {
         return new File(Strings.EMPTY).getAbsolutePath();
-    }
-
-    public static <T> T readSetting(String key) {
-        return readSetting(key, null);
-    }
-
-    public static <T> T readSetting(String key, Class<T> type) {
-        return readSetting(key, type, loadYaml("application.yml"), false);
-    }
-
-    @ErrorCode("keyError")
-    @ErrorCode("partialKeyError")
-    public static <T> T readSetting(@NonNull String key, Class<T> type, @NonNull Map<String, Object> settings, boolean throwOnEmpty) {
-        Function<Object, T> func = p -> {
-            if (type == null) {
-                return (T) p;
-            }
-            Map<String, Object> map = as(p, Map.class);
-            if (map != null) {
-                return fromJson(map, type);
-            }
-            return Reflects.changeType(p, type);
-        };
-        Object val;
-        if ((val = settings.get(key)) != null) {
-            return func.apply(val);
-        }
-
-        StringBuilder kBuf = new StringBuilder();
-        String d = ".";
-        String[] splits = Strings.split(key, d);
-        int c = splits.length - 1;
-        for (int i = 0; i <= c; i++) {
-            if (kBuf.length() > 0) {
-                kBuf.append(d);
-            }
-            String k = kBuf.append(splits[i]).toString();
-            if ((val = settings.get(k)) == null) {
-                continue;
-            }
-            if (i == c) {
-                return func.apply(val);
-            }
-            if ((settings = as(val, Map.class)) == null) {
-                throw new ApplicationException("partialKeyError", values(k, type));
-            }
-            kBuf.setLength(0);
-        }
-
-        if (throwOnEmpty) {
-            throw new ApplicationException("keyError", values(key, type));
-        }
-        return null;
-    }
-
-    @SneakyThrows
-    public static Map<String, Object> loadYaml(@NonNull String... yamlFile) {
-        Map<String, Object> result = new HashMap<>();
-        Yaml yaml = new Yaml();
-        for (Object data : NQuery.of(yamlFile).selectMany(p -> {
-            NQuery<InputStream> resources = Reflects.getResources(p);
-            if (resources.any()) {
-                return resources.reverse();
-            }
-            File file = new File(p);
-            return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
-        }).selectMany(yaml::loadAll)) {
-            Map<String, Object> one = (Map<String, Object>) data;
-            fillDeep(one, result);
-        }
-        return result;
-    }
-
-    private static void fillDeep(Map<String, Object> one, Map<String, Object> all) {
-        if (one == null) {
-            return;
-        }
-        for (Map.Entry<String, Object> entry : one.entrySet()) {
-            Map<String, Object> nextOne;
-            if ((nextOne = as(entry.getValue(), Map.class)) == null) {
-                all.put(entry.getKey(), entry.getValue());
-                continue;
-            }
-            Map<String, Object> nextAll = (Map<String, Object>) all.get(entry.getKey());
-            if (nextAll == null) {
-                all.put(entry.getKey(), nextOne);
-                continue;
-            }
-            fillDeep(nextOne, nextAll);
-        }
-    }
-
-    public static <T> String dumpYaml(@NonNull T bean) {
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
     }
 
     /**
@@ -736,11 +461,6 @@ public final class App extends SystemUtils {
     public static <T extends Serializable> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64String(base64);
         return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
-    }
-
-    public static <T extends Serializable> T deepClone(T obj) {
-        IOStream<?, ?> stream = Serializer.DEFAULT.serialize(obj);
-        return Serializer.DEFAULT.deserialize(stream.rewind());
     }
     //endregion
 }

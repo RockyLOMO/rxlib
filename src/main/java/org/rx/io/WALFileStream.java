@@ -15,7 +15,7 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.rx.core.App.require;
+import static org.rx.core.Extends.require;
 
 /**
  * Optimum buffer size is related to a number of things: file system block size, CPU cache size and cache latency.

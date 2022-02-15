@@ -1,12 +1,12 @@
 package org.rx.io;
 
-import org.rx.bean.RxConfig;
+import org.rx.core.Constants;
 
 public interface Serializer {
     Serializer DEFAULT = new JdkAndJsonSerializer();
 
     default <T> IOStream<?, ?> serialize(T obj) {
-        return serialize(obj, RxConfig.MAX_HEAP_BUF_SIZE, null);
+        return serialize(obj, Constants.MAX_HEAP_BUF_SIZE, null);
     }
 
     default <T> HybridStream serialize(T obj, int maxMemorySize, String tempFilePath) {

@@ -6,7 +6,7 @@ import lombok.NonNull;
 
 import java.io.Serializable;
 
-import static org.rx.core.App.require;
+import static org.rx.core.Extends.require;
 
 @Data
 @NoArgsConstructor
