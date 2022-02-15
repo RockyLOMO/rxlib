@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.quietly;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 public class Server {

@@ -32,6 +32,7 @@ import java.util.function.BiFunction;
 import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.*;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j
@@ -69,20 +70,16 @@ public class Reflects extends ClassUtils {
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
-    static final Lazy<Cache<Class, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
-    static final Lazy<Cache<Class, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
-    private static final Constructor<MethodHandles.Lookup> lookupConstructor;
-    private static final int lookupFlags = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
-    private static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
-
-    public static <T> Cache<String, T> cache() {
-        return (Cache<String, T>) LAZY_CACHE.getValue();
-    }
+    static final Lazy<Cache<Class<?>, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
+    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
+    static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     static {
         try {
-            lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
-            setAccess(lookupConstructor);
+            LOOKUP_CONSTRUCTOR = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
+            setAccess(LOOKUP_CONSTRUCTOR);
         } catch (NoSuchMethodException e) {
             throw InvalidException.sneaky(e);
         }
@@ -122,7 +119,6 @@ public class Reflects extends ClassUtils {
         return in;
     }
 
-    //class.getResourceAsStream
     @SneakyThrows
     public static NQuery<InputStream> getResources(String namePattern) {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
@@ -222,7 +218,7 @@ public class Reflects extends ClassUtils {
         require(method, method.isDefault());
 
         Class<?> declaringClass = method.getDeclaringClass();
-        return (T) lookupConstructor.newInstance(declaringClass, lookupFlags)
+        return (T) LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
                 .unreflectSpecial(method, declaringClass)
                 .bindTo(instance)
                 .invokeWithArguments(args);
@@ -357,7 +353,7 @@ public class Reflects extends ClassUtils {
             throw new InvalidException("Invalid name %s", getterOrSetter);
         }
 
-        //Introspector.decapitalize
+//        Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
         }

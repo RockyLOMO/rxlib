@@ -6,9 +6,7 @@ import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.BiTuple;
 import org.rx.bean.Tuple;
-import org.rx.core.App;
-import org.rx.core.NQuery;
-import org.rx.core.Reflects;
+import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.util.function.BiFunc;
 
@@ -18,7 +16,9 @@ import java.util.Date;
 import java.util.List;
 
 @RequiredArgsConstructor
-public class EntityQueryLambda<T> implements Serializable {
+public class EntityQueryLambda<T> implements Extends {
+    private static final long serialVersionUID = 6543834322640433503L;
+
     @RequiredArgsConstructor
     enum Operator {
         AND("(%s)AND(%s)"), OR("(%s)OR(%s)"),
@@ -60,11 +60,6 @@ public class EntityQueryLambda<T> implements Serializable {
         this.offset = offset;
         this.limit = limit;
         return this;
-    }
-
-    @Override
-    public EntityQueryLambda<T> clone() {
-        return App.deepClone(this);
     }
 
     public EntityQueryLambda<T> newClause() {

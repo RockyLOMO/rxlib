@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 /**
  * meta

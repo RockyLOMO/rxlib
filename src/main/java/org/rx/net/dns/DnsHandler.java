@@ -24,6 +24,7 @@ import java.util.Map;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j

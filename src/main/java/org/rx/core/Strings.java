@@ -8,7 +8,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 
 import java.util.regex.Pattern;
 
-import static org.rx.core.App.values;
+import static org.rx.core.Extends.values;
 
 public class Strings extends StringUtils {
     /**
@@ -54,12 +54,17 @@ public class Strings extends StringUtils {
      * @return 处理后
      */
     public static String removeInNumeric(String string) {
-        if (isEmpty(string)) return EMPTY;
-
+        if (isEmpty(string)) {
+            return EMPTY;
+        }
         java.lang.StringBuilder output = new java.lang.StringBuilder();
         for (Character aChar : string.toCharArray()) {
-            if (Character.isDigit(aChar)) output.append(aChar);
-            if (aChar == '.') output.append('.');
+            if (Character.isDigit(aChar)) {
+                output.append(aChar);
+            }
+            if (aChar == '.') {
+                output.append('.');
+            }
         }
         return output.toString();
     }
@@ -86,34 +91,32 @@ public class Strings extends StringUtils {
      */
     public static String replaceVariables(String original, Object... variablesAndReplacements) {
         java.lang.StringBuilder builder = new java.lang.StringBuilder();
-
         boolean first = true;
         for (String line : original.split("\n")) {
-            for (int i = 0; i < variablesAndReplacements.length; i += 2)
-                line = line.replace("%{" + String.valueOf(variablesAndReplacements[i]) + "}",
-                        String.valueOf(variablesAndReplacements[i + 1]));
-
+            for (int i = 0; i < variablesAndReplacements.length; i += 2) {
+                line = line.replace("%{" + variablesAndReplacements[i] + "}", String.valueOf(variablesAndReplacements[i + 1]));
+            }
             if (first) {
                 builder.append(line);
                 first = false;
-            } else builder.append("\n").append(line);
+            } else {
+                builder.append("\n").append(line);
+            }
         }
-
         return builder.toString();
     }
 
     public static String randomValue(int maxValue) {
-        Integer int2 = maxValue;
-        return String.format("%0" + int2.toString().length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
+        return String.format("%0" + String.valueOf(maxValue).length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
     }
 
-    public static String maskPrivacy(String val) {
-        if (isEmpty(val)) {
+    public static String maskPrivacy(String str) {
+        if (isEmpty(str)) {
             return EMPTY;
         }
 
-        val = val.trim();
-        int len = val.length(), left, right;
+        str = str.trim();
+        int len = str.length(), left, right;
         switch (len) {
             case 11:
                 left = 3;
@@ -133,11 +136,7 @@ public class Strings extends StringUtils {
                 break;
         }
         String x = Strings.repeat("*", len - left - right);
-        return val.substring(0, left) + x + val.substring(left + x.length());
-    }
-
-    public static String toTitleCase(String s) {
-        return StringUtils.capitalize(s);
+        return str.substring(0, left) + x + str.substring(left + x.length());
     }
 
     public static String[] split(String str, String delimiter) {

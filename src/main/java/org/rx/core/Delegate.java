@@ -11,8 +11,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-import static org.rx.core.App.tryAs;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.tryAs;
+import static org.rx.core.Extends.tryClose;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
@@ -113,12 +114,12 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return this;
     }
 
-    public synchronized Delegate<TSender, TArgs> tryClose() {
-        App.tryClose(headInvocation);
+    public synchronized Delegate<TSender, TArgs> close() {
+        tryClose(headInvocation);
         for (TripleAction<TSender, TArgs> invocation : invocations) {
-            App.tryClose(invocation);
+            tryClose(invocation);
         }
-        App.tryClose(tailInvocation);
+        tryClose(tailInvocation);
         return purge();
     }
 

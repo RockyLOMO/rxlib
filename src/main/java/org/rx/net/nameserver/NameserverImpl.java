@@ -21,6 +21,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class NameserverImpl implements Nameserver {

@@ -10,8 +10,8 @@ import java.io.Serializable;
 //EventObject
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class EventArgs implements Serializable {
-    public static final EventArgs EMPTY = new EventArgs();
     private static final long serialVersionUID = 8965443362204763240L;
+    public static final EventArgs EMPTY = new EventArgs();
 
     @Getter
     @Setter

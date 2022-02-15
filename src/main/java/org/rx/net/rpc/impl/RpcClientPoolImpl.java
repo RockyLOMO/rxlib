@@ -8,7 +8,6 @@ import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import org.rx.core.App;
 import org.rx.core.Disposable;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcClientPool;
@@ -33,7 +32,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
         pool = new GenericObjectPool<>(new BasePooledObjectFactory<StatefulRpcClient>() {
             @Override
             public StatefulRpcClient create() throws Exception {
-                RpcClientConfig config = App.deepClone(template);
+                RpcClientConfig config = template.deepClone();
                 StatefulRpcClient client = new StatefulRpcClient(config);
                 client.connect(true);
                 log.debug("Create RpcClient {}", client);

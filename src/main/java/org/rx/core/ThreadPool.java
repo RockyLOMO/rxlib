@@ -7,7 +7,6 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
-import io.netty.util.internal.SystemPropertyUtil;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
@@ -22,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
@@ -133,7 +132,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
-            if (ENABLE_INHERIT_THREAD_LOCALS) {
+            if (RxConfig.INSTANCE.threadPool.enableInheritThreadLocals) {
                 flags.add(RunFlag.INHERIT_THREAD_LOCALS);
             }
 
@@ -166,7 +165,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public String toString() {
-            return String.format("Task-%s[%s]", isNull(id, 0), flags);
+            return String.format("Task-%s[%s]", isNull(id, 0), flags.getValue());
         }
     }
 
@@ -287,11 +286,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    public static final int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
-    static final boolean ENABLE_INHERIT_THREAD_LOCALS = SystemPropertyUtil.getBoolean(Constants.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final Runnable EMPTY = () -> {
     };
@@ -324,7 +321,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
         require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
 
-        return (int) Math.max(CPU_THREADS, Math.floor(CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
+        return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
     @Getter
@@ -378,14 +375,14 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     private static int checkSize(int size) {
         if (size <= 0) {
-            size = CPU_THREADS + 1;
+            size = Constants.CPU_THREADS + 1;
         }
         return size;
     }
 
     private static int checkCapacity(int capacity) {
         if (capacity <= 0) {
-            capacity = CPU_THREADS * 32;
+            capacity = Constants.CPU_THREADS * 32;
         }
         return capacity;
     }

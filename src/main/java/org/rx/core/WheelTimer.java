@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.LongUnaryOperator;
 
-import static org.rx.core.App.isNull;
+import static org.rx.core.Extends.isNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer {

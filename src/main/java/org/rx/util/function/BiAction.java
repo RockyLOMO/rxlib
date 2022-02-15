@@ -2,7 +2,7 @@ package org.rx.util.function;
 
 import java.util.function.Consumer;
 
-import static org.rx.core.App.sneakyInvoke;
+import static org.rx.core.Extends.sneakyInvoke;
 
 @FunctionalInterface
 public interface BiAction<T> {

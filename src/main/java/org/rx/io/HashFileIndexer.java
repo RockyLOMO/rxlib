@@ -12,7 +12,8 @@ import org.rx.core.cache.MemoryCache;
 import java.io.File;
 import java.nio.channels.FileChannel;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.require;
+import static org.rx.core.Extends.tryClose;
 
 /**
  * murmur3_128  com.google.common.hash.Hashing.goodFastHash(128);

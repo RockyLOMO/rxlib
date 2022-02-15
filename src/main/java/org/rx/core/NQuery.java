@@ -26,14 +26,12 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.*;
 
 /**
  * https://msdn.microsoft.com/en-us/library/bb738550(v=vs.110).aspx
- *
- * @param <T>
  */
 @Slf4j
 @AllArgsConstructor(access = AccessLevel.PRIVATE)

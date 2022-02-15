@@ -15,7 +15,7 @@ import org.rx.net.http.HttpClient;
 import java.net.InetAddress;
 import java.util.function.Predicate;
 
-import static org.rx.core.App.eq;
+import static org.rx.core.Extends.eq;
 
 class ComboIPSearcher implements IPSearcher {
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.miniConfig("./data/ip"));

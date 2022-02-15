@@ -19,7 +19,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static org.rx.core.App.as;
+import static org.rx.core.Extends.as;
 
 @ControllerAdvice
 @Aspect

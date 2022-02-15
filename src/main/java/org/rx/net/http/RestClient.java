@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.isNull;
 
 @Slf4j
 public final class RestClient {

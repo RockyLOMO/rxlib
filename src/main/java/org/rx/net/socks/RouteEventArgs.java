@@ -9,7 +9,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 
-import static org.rx.core.App.eq;
+import static org.rx.core.Extends.eq;
 
 @Getter
 @RequiredArgsConstructor

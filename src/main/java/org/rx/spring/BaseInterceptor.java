@@ -14,6 +14,7 @@ import javax.annotation.Resource;
 import java.util.List;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();

@@ -5,7 +5,6 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.App;
 import org.rx.core.Strings;
 
 import java.io.ObjectInputStream;
@@ -15,6 +14,8 @@ import java.io.StreamCorruptedException;
 import java.lang.reflect.Type;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.isNull;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 public class JdkAndJsonSerializer implements Serializer {

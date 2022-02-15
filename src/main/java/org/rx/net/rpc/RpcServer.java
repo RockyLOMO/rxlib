@@ -11,6 +11,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.bean.IdGenerator;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
@@ -29,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor

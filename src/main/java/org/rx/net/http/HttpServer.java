@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
-import static org.rx.core.App.isNull;
+import static org.rx.core.Extends.isNull;
 
 @Slf4j
 public class HttpServer extends Disposable {

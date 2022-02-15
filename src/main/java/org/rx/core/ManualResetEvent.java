@@ -41,7 +41,7 @@ public final class ManualResetEvent {
             }
             if (timeout > 0) {
                 if (!open) {
-                    throw new TimeoutException("Call waitOne() timeout");
+                    throw new TimeoutException("WaitOne() timeout");
                 }
                 break;
             }

@@ -3,6 +3,7 @@ package org.rx.net.nameserver;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.bean.BiTuple;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.*;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public final class NameserverClient extends Disposable {

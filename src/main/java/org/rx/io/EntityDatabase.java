@@ -9,6 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
 import org.h2.jdbcx.JdbcConnectionPool;
+import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.Decimal;
 import org.rx.bean.NEnum;
@@ -97,7 +98,7 @@ public class EntityDatabase extends Disposable {
     boolean autoRollbackOnError;
 
     public EntityDatabase(String filePath) {
-        this(filePath, Math.max(10, ThreadPool.CPU_THREADS));
+        this(filePath, Math.max(10, Constants.CPU_THREADS));
     }
 
     public EntityDatabase(String filePath, int maxConnections) {

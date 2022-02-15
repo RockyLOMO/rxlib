@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.exception.ExceptionHandler;
@@ -27,7 +28,7 @@ import java.net.InetSocketAddress;
 import java.util.Date;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class StatefulRpcClient extends Disposable implements RpcClient {

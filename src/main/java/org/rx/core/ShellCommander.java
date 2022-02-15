@@ -18,7 +18,8 @@ import java.util.StringTokenizer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.newConcurrentList;
+import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class ShellCommander extends Disposable implements EventTarget<ShellCommander> {
@@ -140,7 +141,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
     @Override
     protected void freeObjects() {
-        onOutPrint.tryClose();
+        onOutPrint.close();
         kill();
         KILL_LIST.remove(this);
     }

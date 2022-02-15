@@ -3,11 +3,9 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
-import org.rx.core.Disposable;
+import org.rx.core.*;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
-import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 
 import java.io.*;
@@ -21,10 +19,10 @@ import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
-public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Serializable {
+public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Extends {
     private static final long serialVersionUID = 3204673656139586437L;
     public static final int NON_READ_FULLY = -1;
 

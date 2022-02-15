@@ -28,6 +28,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 //snappy + protobuf
 @Slf4j

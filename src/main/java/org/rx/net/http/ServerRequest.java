@@ -19,7 +19,7 @@ import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.rx.core.App.isNull;
+import static org.rx.core.Extends.isNull;
 
 @Getter
 public final class ServerRequest {

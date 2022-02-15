@@ -2,7 +2,7 @@ package org.rx.util.function;
 
 import java.util.function.BiFunction;
 
-import static org.rx.core.App.sneakyInvoke;
+import static org.rx.core.Extends.sneakyInvoke;
 
 @FunctionalInterface
 public interface TripleFunc<T1, T2, TR> {
