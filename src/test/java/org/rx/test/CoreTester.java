@@ -5,14 +5,14 @@ import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.ClassUtils;
-import org.apache.commons.lang3.reflect.MethodUtils;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
+import org.rx.core.YamlConfig;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
@@ -23,7 +23,6 @@ import org.rx.util.function.TripleAction;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,116 +30,10 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class CoreTester extends TestUtil {
-    //region NQuery
-    @Test
-    public void parallelNQuery() {
-        NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-//                .groupBy(p -> p > 5, (p, x) -> x.first())
-                ;
-        //not work
-        for (Integer p : pq) {
-            log.info(p.toString());
-        }
-        pq.forEach(p -> log.info(p.toString()));
-    }
-
-    @Test
-    public void runNQuery() {
-        Collection<PersonBean> personSet = new HashSet<>();
-        personSet.add(PersonBean.LeZhi);
-        for (int i = 0; i < 5; i++) {
-            PersonBean p = new PersonBean();
-            p.index = i % 2 == 0 ? 2 : i;
-            p.index2 = i % 2 == 0 ? 3 : 4;
-            p.name = Strings.randomValue(5);
-            p.age = ThreadLocalRandom.current().nextInt(100);
-            personSet.add(p);
-        }
-
-        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d))).leftJoin(
-                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d)),
-                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d))), (p, x) -> p.name.equals(x.name), Tuple::of
-        ));
-
-        showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
-            System.out.println("groupKey: " + p);
-            List<PersonBean> list = x.toList();
-            System.out.println("items: " + toJsonString(list));
-            return list.get(0);
-        }));
-        showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> Arrays.toList(p.index, p.index2), (p, x) -> {
-                    System.out.println("groupKey: " + toJsonString(p));
-                    List<PersonBean> list = x.toList();
-                    System.out.println("items: " + toJsonString(list));
-                    return list.get(0);
-                }));
-
-        showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
-        showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
-        showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByMany(p -> Arrays.toList(p.index2, p.index)));
-        showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByDescendingMany(p -> Arrays.toList(p.index2, p.index)));
-
-        showResult("select(p -> p.index).reverse()",
-                NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
-
-        showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer>max(p -> p.index));
-        showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer>min(p -> p.index));
-
-        showResult("take(0).average(p -> p.index)", NQuery.of(personSet).take(0).average(p -> p.index));
-        showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
-        showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
-        showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
-        showResult("sumMoney(p -> p.index)", NQuery.of(personSet).sumDecimal(p -> Decimal.valueOf((double) p.index)));
-
-        showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
-        NQuery oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
-        showResult("ofType(Integer.class)", oq.ofType(Integer.class));
-
-        showResult("firstOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).firstOrDefault());
-        showResult("lastOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).lastOrDefault());
-        showResult("skip(2)", NQuery.of(personSet).orderBy(p -> p.index).skip(2));
-        showResult("take(2)", NQuery.of(personSet).orderBy(p -> p.index).take(2));
-
-        showResult(".skipWhile((p, i) -> p.index < 3)",
-                NQuery.of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
-
-        showResult(".takeWhile((p, i) -> p.index < 3)",
-                NQuery.of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
-
-        NQuery<PersonBean> set0 = NQuery.of(personSet);
-        NQuery<PersonBean> set1 = set0.take(1);
-        System.out.printf("set a=%s,b=%s%n", set0.count(), set1.count());
-        assert set0.count() > set1.count();
-    }
-
-    private void showResult(String n, Object q) {
-        System.out.println();
-        System.out.println();
-        System.out.println("showResult: " + n);
-        System.out.println(toJsonString(q));
-    }
-
-    private void showResult(String n, NQuery q) {
-        System.out.println();
-        System.out.println();
-        System.out.println("showResult: " + n);
-        System.out.println(toJsonString(q.toList()));
-    }
-    //endregion
-
     @SneakyThrows
     @Test
     public void timer() {
@@ -328,27 +221,13 @@ public class CoreTester extends TestUtil {
         wait();
     }
 
-    @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander(TConfig.path("1.bat"), null);
-        ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.start().waitFor();
-
-        sleep(5000);
-    }
-
     @SneakyThrows
     @Test
     public void cache() {
+        System.out.println(hashKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        System.out.println(cacheKey("prefix", "12345"));
+        System.out.println(cacheKey("prefix", 12345));
+
 //        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
 //        testCache(new MemoryCache<>(dump));
 
@@ -399,13 +278,61 @@ public class CoreTester extends TestUtil {
         });
     }
 
+    @ErrorCode
+    @ErrorCode(cause = IllegalArgumentException.class)
+    @Test
+    public void exceptionHandle() {
+        ExceptionHandler handler = ExceptionHandler.INSTANCE;
+        handler.log(new InvalidException("test error"));
+        System.out.println(handler.queryTraces(null, null, null));
+
+
+        String err = "ERR";
+        ApplicationException ex = new ApplicationException(values(err));
+        assert eq(ex.getFriendlyMessage(), "Test error code, value=" + err);
+
+        ex = new ApplicationException(values(err), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Test IAException, value=" + err);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String errCode = "ERR_CODE";
+        ex = new ApplicationException(UserManager.BizCode.USER_NOT_FOUND, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "User " + errCode + " not found");
+
+        ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
+
+        try {
+            Reflects.changeType("x", Date.class);
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping www.baidu.com", null);
+        ShellCommander finalExecutor = executor;
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
+
+        sleep(5000);
+    }
+
+    //region basic
     @Test
     public void runNEvent() {
         UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = new PersonBean();
-        p.index = 1;
-        p.name = "rx";
-        p.age = 6;
+        PersonBean p = PersonBean.YouFan;
 
         mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
@@ -429,116 +356,9 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void convert() {
-        int val = Reflects.changeType(PersonGender.BOY, Integer.class);
-        assert val == 1;
-
-        PersonGender testEnum = Reflects.changeType(1, PersonGender.class);
-        assert testEnum == PersonGender.BOY;
-        int integer = Reflects.changeType("1", Integer.class);
-        assert integer == 1;
-
-        assert Reflects.changeType(10, long.class) instanceof Long;
-
-        assert Reflects.changeType(1, boolean.class);
-        assert Reflects.changeType(1, Boolean.class);
-
-        assert Reflects.changeType(true, byte.class) == 1;
-        assert Reflects.changeType(true, Byte.class) == 1;
-
-        System.out.println(Reflects.defaultValue(List.class));
-        System.out.println(Reflects.defaultValue(Map.class));
-
-        System.out.println(Numbers.readableByteCount(1024, false));
-        System.out.println(Numbers.readableByteCount(1024, true));
-        System.out.println(Numbers.readableByteCount(1024 * 1024, false));
-        System.out.println(Numbers.readableByteCount(1024 * 1024, true));
-    }
-
-    @SneakyThrows
-    @Test
-    public void reflect() {
-        for (InputStream resource : Reflects.getResources("C:\\Project\\rxlib\\src\\main\\resources\\errorCode.yml")) {
-            System.out.println(resource);
-        }
-
-        Tuple<String, String> resolve = Reflects.resolve(PersonBean::getAge);
-        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-
-        assert Reflects.stackClass(0) == this.getClass();
-//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
-//            System.out.println(traceElement);
-//        }
-        System.out.println(hashKey("prefix", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        System.out.println(cacheKey("prefix", "12345"));
-        System.out.println(cacheKey("prefix", 12345));
-
-
-        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
-        System.out.println(bean.getError());
-
-        Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", 1, null);
-        Reflects.invokeMethod(bean, "instanceCall", 2, null);
-        Reflects.invokeMethod(bean, "defCall", 3, null);
-        Reflects.invokeMethod(bean, "nestedDefCall", 4, null);
-
-//        MethodUtils.invokeMethod(ErrorBean.class, "staticCall", 10, null);
-        Class<?>[] classes = ClassUtils.toClass(10, null);
-        Method staticCall = MethodUtils.getMatchingMethod(ErrorBean.class, "staticCall", classes);
-        assert staticCall != null;
-        Reflects.invokeMethod(staticCall, (Object) null, 10, null);
-//        ErrorBean.class.getDeclaredMethod("staticCall", int.class, String.class);
-
-//        Method charset1 = ResponseBody.class.getDeclaredMethod("charset");
-//        Method charset = MethodUtils.getMatchingAccessibleMethod(ResponseBody.class, "charset");
-//        charset = MethodUtils.getAccessibleMethod(ResponseBody.class, "charset");
-//        charset = MethodUtils.getMatchingMethod(ResponseBody.class, "charset");
-    }
-
-    @Test
-    public void exceptionHandle() {
-        ExceptionHandler handler = ExceptionHandler.INSTANCE;
-
-        handler.log(new InvalidException("test error"));
-
-        System.out.println(handler.queryTraces(null, null, null));
-    }
-
-    @Test
-    @ErrorCode
-    @ErrorCode(cause = IllegalArgumentException.class)
-    public void exceptionCode() {
-        String val = "rx";
-        ApplicationException ex = new ApplicationException(values(val));
-        assert eq(ex.getFriendlyMessage(), "Default Error Code value=" + val);
-
-        ex = new ApplicationException(values(val), new IllegalArgumentException());
-        assert eq(ex.getFriendlyMessage(), "Exception Error Code value=" + val);
-        $<IllegalArgumentException> out = $();
-        assert ex.tryGet(out, IllegalArgumentException.class);
-
-        String uid = "userId";
-        ex = new ApplicationException(UserManager.BizCode.argument, values(uid));
-        assert eq(ex.getFriendlyMessage(), "Enum Error Code value=" + uid);
-
-        ex = new ApplicationException(UserManager.BizCode.returnValue, values(uid));
-        assert eq(ex.getFriendlyMessage(), "Enum Error returnValue=" + uid);
-
-        String date = "2017-08-24 02:02:02";
-        assert Reflects.changeType(date, DateTime.class) instanceof Date;
-        try {
-            date = "x";
-            Reflects.changeType(date, Date.class);
-        } catch (InvalidException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Test
     public void json() {
-        Object[] args = new Object[]{"b", proxy(HttpServletResponse.class, (m, i) -> {
-            throw new InvalidException("auto skip");
-//            return null;
+        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
+            throw new InvalidException("wont reach");
         }), new ErrorBean()};
         System.out.println(toJsonString(args));
         System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
@@ -548,52 +368,205 @@ public class CoreTester extends TestUtil {
         String jObj = toJsonString(PersonBean.LeZhi);
         System.out.println("encode jObj: " + jObj);
         System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
-//        assert fromJsonAsObject(jObj, PersonBean.class).equals(PersonBean.def);
         List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
         String jArr = toJsonString(arr);
         System.out.println("encode jArr: " + jArr);
         System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
         }.getType()));
-//        assert ListUtils.isEqualList(fromJsonAsList(jArr, List.class), arr);
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("name", "rocky");
+        data.put("name", TConfig.NAME_WYF);
         data.put("age", 10);
         data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
         System.out.println(fromJson(data, Map.class).toString());
 
-        Tuple<String, List<Float>> tuple = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
-        String tjObj = toJsonString(tuple);
-        tuple = fromJson(tjObj, new TypeReference<Tuple<String, List<Float>>>() {
+        Tuple<String, List<Float>> tuple1 = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
+        Tuple<String, List<Float>> tuple2 = fromJson(toJsonString(tuple1), new TypeReference<Tuple<String, List<Float>>>() {
         }.getType());
-        System.out.println(tuple);
+        assert tuple1.equals(tuple2);
+        Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
+        }.getType());
+        assert tuple1.equals(tuple3);
+    }
 
-        List<Tuple<String, List<Float>>> tupleList = Arrays.toList(Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F)), Tuple.of("xyz", Arrays.toList(1.2F, 2F, 3F)));
-        String tjArr = toJsonString(tupleList);
-        tupleList = fromJson(tjArr, new TypeReference<List<Tuple<String, List<Float>>>>() {
-        }.getType());
-        for (Tuple<String, List<Float>> item : tupleList) {
-            System.out.println(item);
+    @SneakyThrows
+    @Test
+    public void reflect() {
+        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
+            System.out.println(resource);
+            assert resource != null;
         }
-        tupleList = fromJson(tupleList, new TypeReference<List<Tuple<String, List<Float>>>>() {
-        }.getType());
-        for (Tuple<String, List<Float>> item : tupleList) {
-            System.out.println(item);
+
+        Tuple<String, String> resolve = Reflects.resolve(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+
+        assert Reflects.stackClass(0) == this.getClass();
+//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
+//            System.out.println(traceElement);
+//        }
+
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
+
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
+        assert bean != null;
+        int code = 1;
+        String msg = "Usr not found";
+        String r = code + msg;
+        assert eq("S-" + r, Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", code, msg));
+        assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
+        assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
+        assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
+
+
+        //convert
+        assert Reflects.changeType(1, boolean.class);
+        assert Reflects.changeType(1, Boolean.class);
+        assert Reflects.changeType(true, byte.class) == 1;
+        assert Reflects.changeType(true, Byte.class) == 1;
+
+        assert Reflects.changeType("1", Integer.class) == 1;
+        assert Reflects.changeType(10, long.class) == 10L;
+
+        int enumVal = Reflects.changeType(PersonGender.BOY, Integer.class);
+        assert enumVal == 1;
+        PersonGender enumBoy = Reflects.changeType(enumVal, PersonGender.class);
+        assert enumBoy == PersonGender.BOY;
+
+        String date = "2017-08-24 02:02:02";
+        assert Reflects.changeType(date, DateTime.class) instanceof Date;
+
+        assert Reflects.defaultValue(Integer.class) == null;
+        assert Reflects.defaultValue(int.class) == 0;
+        assert Reflects.defaultValue(List.class) == Collections.emptyList();
+        assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
+
+        System.out.println(Numbers.readableByteCount(1024, false));
+        System.out.println(Numbers.readableByteCount(1024, true));
+        System.out.println(Numbers.readableByteCount(1024 * 1024, false));
+        System.out.println(Numbers.readableByteCount(1024 * 1024, true));
+    }
+
+    //region NQuery
+    @Test
+    public void parallelNQuery() {
+        NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+//                .groupBy(p -> p > 5, (p, x) -> x.first())
+                ;
+        //not work
+        for (Integer p : pq) {
+            log.info(p.toString());
         }
+        pq.forEach(p -> log.info(p.toString()));
     }
 
     @Test
-    public void appSetting() {
-        System.out.println(Container.get(RxConfig.class));
+    public void runNQuery() {
+        Collection<PersonBean> personSet = new HashSet<>();
+        personSet.add(PersonBean.LeZhi);
+        for (int i = 0; i < 5; i++) {
+            PersonBean p = new PersonBean();
+            p.index = i % 2 == 0 ? 2 : i;
+            p.index2 = i % 2 == 0 ? 3 : 4;
+            p.name = Strings.randomValue(5);
+            p.age = ThreadLocalRandom.current().nextInt(100);
+            personSet.add(p);
+        }
 
-        Map<String, Object> map = loadYaml("application.yml");
-        System.out.println(map);
+        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d))).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d)),
+                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d))), (p, x) -> p.name.equals(x.name), Tuple::of
+        ));
 
-        Object v = readSetting("org.rx.test.CoreTester", null, loadYaml("errorCode.yml"), false);
-        assert v instanceof Map;
+        showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
+            System.out.println("groupKey: " + p);
+            List<PersonBean> list = x.toList();
+            System.out.println("items: " + toJsonString(list));
+            return list.get(0);
+        }));
+        showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
+                NQuery.of(personSet).groupByMany(p -> Arrays.toList(p.index, p.index2), (p, x) -> {
+                    System.out.println("groupKey: " + toJsonString(p));
+                    List<PersonBean> list = x.toList();
+                    System.out.println("items: " + toJsonString(list));
+                    return list.get(0);
+                }));
 
-        v = readSetting("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", null, loadYaml("errorCode.yml"), false);
-        assert eq(v, "Exception Error Code value={0}");
+        showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
+        showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
+        showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
+                NQuery.of(personSet).orderByMany(p -> Arrays.toList(p.index2, p.index)));
+        showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
+                NQuery.of(personSet).orderByDescendingMany(p -> Arrays.toList(p.index2, p.index)));
+
+        showResult("select(p -> p.index).reverse()",
+                NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
+
+        showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer>max(p -> p.index));
+        showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer>min(p -> p.index));
+
+        showResult("take(0).average(p -> p.index)", NQuery.of(personSet).take(0).average(p -> p.index));
+        showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
+        showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
+        showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
+        showResult("sumMoney(p -> p.index)", NQuery.of(personSet).sumDecimal(p -> Decimal.valueOf((double) p.index)));
+
+        showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
+        NQuery<?> oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
+        showResult("ofType(Integer.class)", oq.ofType(Integer.class));
+
+        showResult("firstOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).firstOrDefault());
+        showResult("lastOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).lastOrDefault());
+        showResult("skip(2)", NQuery.of(personSet).orderBy(p -> p.index).skip(2));
+        showResult("take(2)", NQuery.of(personSet).orderBy(p -> p.index).take(2));
+
+        showResult(".skipWhile((p, i) -> p.index < 3)",
+                NQuery.of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
+
+        showResult(".takeWhile((p, i) -> p.index < 3)",
+                NQuery.of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
+
+        NQuery<PersonBean> set0 = NQuery.of(personSet);
+        NQuery<PersonBean> set1 = set0.take(1);
+        System.out.printf("set a=%s,b=%s%n", set0.count(), set1.count());
+        assert set0.count() > set1.count();
     }
+
+    private void showResult(String n, Object q) {
+        System.out.println();
+        System.out.println();
+        System.out.println("showResult: " + n);
+        System.out.println(toJsonString(q));
+    }
+
+    private void showResult(String n, NQuery<?> q) {
+        System.out.println();
+        System.out.println();
+        System.out.println("showResult: " + n);
+        System.out.println(toJsonString(q.toList()));
+    }
+    //endregion
+
+    @Test
+    public void rxConf() {
+        YamlConfig conf = YamlConfig.RX_CONF;
+        System.out.println(conf.getYaml());
+
+        Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
+        System.out.println(codeMap);
+
+        String codeFormat = conf.readAs("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", String.class);
+        System.out.println(codeFormat);
+        assert eq(codeFormat, "Test IAException, value={0}");
+
+        System.out.println(RxConfig.INSTANCE);
+    }
+    //endregion
 }

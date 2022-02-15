@@ -440,7 +440,7 @@ public class Reflects extends ClassUtils {
         CONVERT_BEANS.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
-    public static Object defaultValue(Class<?> type) {
+    public static <T> T defaultValue(Class<T> type) {
         return changeType(null, type);
     }
 
@@ -513,7 +513,7 @@ public class Reflects extends ClassUtils {
                     }
                 } else {
                     NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
-                    if (methods == null) {
+                    if (methods == null || fromType.isEnum()) {
                         Class<T> fType = toType;
                         ConvertBean convertBean = NQuery.of(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {

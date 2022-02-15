@@ -47,6 +47,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class SocksTester extends TConfig {
@@ -169,7 +171,7 @@ public class SocksTester extends TConfig {
                 facade.triggerError();
             } catch (RemotingException e) {
             }
-            assert facade.computeInt(1, 1) == 2;  //服务端计算并返回
+            assert facade.computeLevel(1, 1) == 2;  //服务端计算并返回
         }
 
         //自定义事件（广播） 只加1次
@@ -209,14 +211,14 @@ public class SocksTester extends TConfig {
         //客户端 facade
         RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
         UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (p, c) -> {
-            System.out.println("onHandshake: " + p.computeInt(1, 2));
+            System.out.println("onHandshake: " + p.computeLevel(1, 2));
         });
-        assert facade1.computeInt(1, 1) == 2; //服务端计算并返回
+        assert facade1.computeLevel(1, 1) == 2; //服务端计算并返回
         try {
             facade1.triggerError(); //测试异常
         } catch (RemotingException e) {
         }
-        assert facade1.computeInt(17, 1) == 18;
+        assert facade1.computeLevel(17, 1) == 18;
 
         config.setEventVersion(2);
         UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
@@ -238,7 +240,7 @@ public class SocksTester extends TConfig {
         facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
 //          Tasks.run(()->  facade.computeInt(0, -1));
             System.out.println("xxx111");
-            facade.computeInt(0, -1);
+            facade.computeLevel(0, -1);
             System.out.println("xxx222");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
             e.getStatefulList().add(id + ":" + SUID.randomSUID());
@@ -270,7 +272,7 @@ public class SocksTester extends TConfig {
             log.debug("init ok");
             connected.set(true);
         });
-        assert userManager.computeInt(1, 1) == 2;
+        assert userManager.computeLevel(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
         restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
@@ -284,7 +286,7 @@ public class SocksTester extends TConfig {
                 sleep(5000);
                 log.debug("sleep 5");
             }
-            assert userManager.computeInt(i, 1) == i + 1;
+            assert userManager.computeLevel(i, 1) == i + 1;
             i++;
         }
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
@@ -331,7 +333,7 @@ public class SocksTester extends TConfig {
             int finalI = i;
             Tasks.run(() -> {
                 facade.computeInt(1, finalI);
-                App.sleep(1000);
+                sleep(1000);
                 latch.countDown();
             });
         }

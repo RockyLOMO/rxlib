@@ -24,7 +24,7 @@ public class UserManagerImpl implements UserManager {
     }
 
     @Override
-    public int computeInt(int a, int b) {
+    public int computeLevel(int a, int b) {
         return a + b;
     }
 

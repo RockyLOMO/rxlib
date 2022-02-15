@@ -62,8 +62,8 @@ org:
 
     test:
       CoreTester:
-        exceptionCode: Test default error code, value={0}
-        exceptionCode<IllegalArgumentException>: Test IAException, value={0}
+        exceptionHandle: Test error code, value={0}
+        exceptionHandle<IllegalArgumentException>: Test IAException, value={0}
       bean.UserManager$BizCode:
-        argument: Enum error code arg={0}
-        returnValue: Enum error code returnValue={0}
+        USER_NOT_FOUND: User {0} not found
+        COMPUTE_FAIL: Compute user level error {0}

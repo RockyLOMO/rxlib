@@ -16,9 +16,9 @@ import java.util.UUID;
 @Data
 public class PersonBean implements IPerson {
     public static final PersonBean LeZhi = new PersonBean(1, 2, "乐之", PersonGender.GIRL,
-            4, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d));
+            2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d));
     public static final PersonBean YouFan = new PersonBean(3, 4, "湵范", PersonGender.BOY,
-            2, DateTime.valueOf("2024-02-04 00:00:00"), 200L, Decimal.valueOf(2d));
+            3, DateTime.valueOf("2019-02-04 00:00:00"), 200L, Decimal.valueOf(2d));
 
     @DbColumn(primaryKey = true)
     public final UUID id = UUID.randomUUID();

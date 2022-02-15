@@ -8,6 +8,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
+import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
@@ -35,6 +36,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.toJsonString;
+import static org.rx.core.Extends.eq;
 
 @Slf4j
 public class EntityDatabase extends Disposable {
@@ -148,7 +150,20 @@ public class EntityDatabase extends Disposable {
             for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView.getValue()) {
                 params.add(col.getValue().left.get(entity));
             }
-            executeUpdate(meta.insertSql, params);
+            try {
+                executeUpdate(meta.insertSql, params);
+            } catch (Exception e) {
+                if (e instanceof JdbcSQLSyntaxErrorException && Strings.startsWith(e.getMessage(), "Column count does not match")) {
+                    StringBuilder sql = new StringBuilder(meta.selectSql);
+                    sql.replace(0, 13, "DROP TABLE");
+                    log.info("recreate {}", sql);
+                    executeUpdate(sql.toString());
+                    createMapping(entity.getClass());
+                    save(entity, doInsert);
+                    return;
+                }
+                throw e;
+            }
             return;
         }
 
