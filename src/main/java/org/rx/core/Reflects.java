@@ -497,9 +497,8 @@ public class Reflects extends ClassUtils {
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
-        } else if ((!toType.isPrimitive() && TypeUtils.isInstance(value, toType))
-                || toType.equals(Object.class)) {
-            //isInstance int to long ok, do nothing
+        } else if ((!toType.isPrimitive() && TypeUtils.isInstance(value, toType))) {
+            //isInstance int to long/all to object ok, do nothing
         } else {
             try {
                 toType = (Class) primitiveToWrapper(toType);
