@@ -1,12 +1,8 @@
 package org.rx.core;
 
 public interface Constants {
-
-
-    String THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS = "app.threadPool.enableInheritThreadLocals";
-    String CACHE_DEFAULT_SLIDING_SECONDS = "app.cache.defaultSlidingSeconds";
-    String CACHE_DEFAULT_MAX_SIZE = "app.cache.defaultMaxSize";
-    String TRACE_KEEP_DAYS = "app.trace.keepDays";
+    String RX_CONFIG_FILE = "rx.yml";
+    int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
     String CONFIG_KEY_SPLITS = ".";
     String CACHE_KEY_SUFFIX = ":";

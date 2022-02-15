@@ -19,7 +19,7 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.Locale;
 
-import static org.rx.core.App.isNull;
+import static org.rx.core.Extends.isNull;
 
 @JSONType(serializer = Decimal.Serializer.class, deserializer = Decimal.Serializer.class)
 @EqualsAndHashCode(callSuper = false)

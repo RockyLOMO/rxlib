@@ -14,8 +14,8 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.values;
 
 /**
  * GMT: UTC +0

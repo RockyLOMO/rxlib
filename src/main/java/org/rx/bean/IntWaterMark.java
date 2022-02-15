@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
-import static org.rx.core.App.require;
+import static org.rx.core.Extends.require;
 
 @Data
 @AllArgsConstructor
@@ -18,11 +18,13 @@ public class IntWaterMark implements Serializable {
 
     public void setLow(int low) {
         require(low, low < high);
+
         this.low = low;
     }
 
     public void setHigh(int high) {
         require(high, high > low);
+
         this.high = high;
     }
 }
