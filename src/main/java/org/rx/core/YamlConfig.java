@@ -71,17 +71,17 @@ public class YamlConfig {
         return yaml.dump(bean);
     }
 
-    //    final String fileName;
+    final String fileName;
     @Getter
     final Map<String, Object> yaml;
 
     public YamlConfig(@NonNull String fileName) {
-//        yaml = loadYaml(this.fileName = fileName);
-        yaml = loadYaml(fileName);
+        yaml = loadYaml(this.fileName = fileName);
     }
 
     public YamlConfig write(@NonNull String fileName) {
-        yaml.putAll(loadYaml(fileName));
+//        yaml = loadYaml(this.fileName, fileName);
+        yaml.putAll(loadYaml(this.fileName, fileName));
         return this;
     }
 

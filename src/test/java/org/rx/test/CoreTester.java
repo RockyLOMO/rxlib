@@ -562,11 +562,16 @@ public class CoreTester extends TestUtil {
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
         System.out.println(codeMap);
 
-        String codeFormat = conf.readAs("org.rx.test.CoreTester.exceptionCode<IllegalArgumentException>", String.class);
+        String codeFormat = conf.readAs("org.rx.test.CoreTester.exceptionHandle<IllegalArgumentException>", String.class);
         System.out.println(codeFormat);
         assert eq(codeFormat, "Test IAException, value={0}");
 
-        System.out.println(RxConfig.INSTANCE);
+        RxConfig rxConf = RxConfig.INSTANCE;
+        assert rxConf.getId().equals("Rx");
+        assert rxConf.getThreadPool().getReplicas() == 4;
+        assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
+        assert rxConf.getLogTypeWhitelist().size() == 2;
+        assert rxConf.getJsonSkipTypes().size() == 1;
     }
     //endregion
 }

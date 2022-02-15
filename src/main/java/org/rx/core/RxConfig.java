@@ -71,9 +71,9 @@ public final class RxConfig {
     }
 
     public static final RxConfig INSTANCE = YamlConfig.RX_CONF.readAs("app", RxConfig.class);
-    final ThreadPoolConfig threadPool = new ThreadPoolConfig();
-    final CacheConfig cache = new CacheConfig();
-    final NetConfig net = new NetConfig();
+    ThreadPoolConfig threadPool = new ThreadPoolConfig();
+    CacheConfig cache = new CacheConfig();
+    NetConfig net = new NetConfig();
     String id;
     int traceKeepDays;
     LogStrategy logStrategy;

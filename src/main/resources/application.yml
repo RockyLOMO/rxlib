@@ -1,2 +1,11 @@
 #app:
 #  id: Rx
+#  threadPool:
+#    replicas: 4
+#  net:
+#    connectTimeoutMillis: 40000
+#  logTypeWhitelist:
+#    - org.rx
+#    - com.net
+#  jsonSkipTypes:
+#    - java.lang.String
