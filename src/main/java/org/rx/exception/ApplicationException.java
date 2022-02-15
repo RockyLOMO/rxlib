@@ -25,7 +25,7 @@ public class ApplicationException extends InvalidException {
 
         ApplicationException applicationException = as(e, ApplicationException.class);
         if (applicationException == null) {
-            return isNull(e.getMessage(), DEFAULT_MESSAGE);
+            return ifNull(e.getMessage(), DEFAULT_MESSAGE);
         }
         return applicationException.getFriendlyMessage();
     }
@@ -39,11 +39,11 @@ public class ApplicationException extends InvalidException {
 
     @Override
     public String getMessage() {
-        return isNull(friendlyMessage, String.format("%s %s", id, super.getMessage()));
+        return ifNull(friendlyMessage, String.format("%s %s", id, super.getMessage()));
     }
 
     public String getFriendlyMessage() {
-        return isNull(friendlyMessage, DEFAULT_MESSAGE);
+        return ifNull(friendlyMessage, DEFAULT_MESSAGE);
     }
 
     public ApplicationException(Object[] codeValues) {

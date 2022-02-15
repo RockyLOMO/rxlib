@@ -406,7 +406,7 @@ public final class Remoting {
                             Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)
                     ), e.getClient());
                 } catch (Throwable ex) {
-                    Throwable cause = isNull(ex.getCause(), ex);
+                    Throwable cause = ifNull(ex.getCause(), ex);
                     args.setError(ex);
                     pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {

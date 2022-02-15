@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.LongUnaryOperator;
 
-import static org.rx.core.Extends.isNull;
+import static org.rx.core.Extends.ifNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer {
@@ -50,7 +50,7 @@ public class WheelTimer {
 
         @Override
         public String toString() {
-            return String.format("WheelTask-%s[%s]", isNull(id, Strings.EMPTY), isNull(flag, TimeoutFlag.SINGLE));
+            return String.format("WheelTask-%s[%s]", ifNull(id, Strings.EMPTY), ifNull(flag, TimeoutFlag.SINGLE));
         }
 
         @Override

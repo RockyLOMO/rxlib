@@ -165,7 +165,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public String toString() {
-            return String.format("Task-%s[%s]", isNull(id, 0), flags.getValue());
+            return String.format("Task-%s[%s]", ifNull(id, 0), flags.getValue());
         }
     }
 

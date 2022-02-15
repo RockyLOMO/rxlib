@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import org.rx.core.Extends;
 import org.rx.core.StringBuilder;
 
 import java.io.IOException;
@@ -19,7 +20,7 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.Locale;
 
-import static org.rx.core.Extends.isNull;
+import static org.rx.core.Extends.ifNull;
 
 @JSONType(serializer = Decimal.Serializer.class, deserializer = Decimal.Serializer.class)
 @EqualsAndHashCode(callSuper = false)
@@ -74,7 +75,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public static Decimal fromCent(Long cent) {
-        return valueOf(BigDecimal.valueOf(isNull(cent, 0L))).divide(PERCENT_DIVISOR);
+        return valueOf(BigDecimal.valueOf(ifNull(cent, 0L))).divide(PERCENT_DIVISOR);
     }
 
     public static Decimal valueOf(String expr) {

@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
+import org.rx.core.Extends;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
@@ -27,7 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
-import static org.rx.core.Extends.isNull;
+import static org.rx.core.Extends.ifNull;
 
 @Slf4j
 public class HttpServer extends Disposable {
@@ -151,7 +152,7 @@ public class HttpServer extends Disposable {
                         return;
                     }
 
-                    DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, isNull(res.getContent(), Unpooled.EMPTY_BUFFER));
+                    DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, ifNull(res.getContent(), Unpooled.EMPTY_BUFFER));
                     response.headers().setAll(res.getHeaders());
                     sendResponse(ctx, response);
                 }

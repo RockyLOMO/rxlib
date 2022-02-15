@@ -430,7 +430,7 @@ public class Reflects extends ClassUtils {
 
     public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
-            return isNull(changeType(val, toType), defaultVal);
+            return ifNull(changeType(val, toType), defaultVal);
         } catch (Exception ex) {
             return defaultVal;
         }
@@ -497,7 +497,8 @@ public class Reflects extends ClassUtils {
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
-        } else if (!toType.isPrimitive() && TypeUtils.isInstance(value, toType)) {
+        } else if ((!toType.isPrimitive() && TypeUtils.isInstance(value, toType))
+                || toType.equals(Object.class)) {
             //isInstance int to long ok, do nothing
         } else {
             try {

@@ -218,7 +218,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
                         TV v = apiDeserialize(reqJson, VALUE_TYPE_FIELD, value);
                         if (concurrentValue == null) {
-                            byte flag = isNull(reqJson.getByte("flag"), (byte) 0);
+                            byte flag = ifNull(reqJson.getByte("flag"), (byte) 0);
                             switch (flag) {
                                 case 1:
                                     apiSerialize(resJson, VALUE_TYPE_FIELD, putIfAbsent(k, v));

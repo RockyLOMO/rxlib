@@ -173,14 +173,11 @@ public interface Extends extends Serializable {
         }
     }
 
-    static <T> T isNull(T value, T defaultVal) {
-        if (value == null) {
-            return defaultVal;
-        }
-        return value;
+    static <T> T ifNull(T value, T defaultVal) {
+        return value != null ? value : defaultVal;
     }
 
-    static <T> T isNull(T value, Supplier<T> supplier) {
+    static <T> T ifNull(T value, Supplier<T> supplier) {
         if (value == null) {
             if (supplier != null) {
                 value = supplier.get();

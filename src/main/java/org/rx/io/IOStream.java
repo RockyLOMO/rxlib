@@ -36,14 +36,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public static IOStream<?, ?> wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
-        stream.setName(isNull(name, Strings.EMPTY));
+        stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(data);
         return stream.rewind();
     }
 
     public static IOStream<?, ?> wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
-        stream.setName(isNull(name, Strings.EMPTY));
+        stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(in);
         return stream.rewind();
     }

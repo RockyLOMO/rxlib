@@ -5,6 +5,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.rx.core.Extends;
 import org.rx.core.Strings;
 
 import java.io.ObjectInputStream;
@@ -15,7 +16,7 @@ import java.lang.reflect.Type;
 
 import static org.rx.core.App.*;
 import static org.rx.core.Extends.as;
-import static org.rx.core.Extends.isNull;
+import static org.rx.core.Extends.ifNull;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 public class JdkAndJsonSerializer implements Serializer {
@@ -80,7 +81,7 @@ public class JdkAndJsonSerializer implements Serializer {
 
             JsonWrapper wrapper;
             if ((wrapper = as(obj0, JsonWrapper.class)) != null) {
-                Type type = isNull(jsonType.getIfExists(), wrapper.type);
+                Type type = ifNull(jsonType.getIfExists(), wrapper.type);
                 return fromJson(wrapper.json, type);
             }
             return (T) obj0;

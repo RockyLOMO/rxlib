@@ -85,6 +85,11 @@ public class YamlConfig {
         return this;
     }
 
+    public <T> T read(String key, T defaultVal) {
+        Object val = readAs(key, Object.class);
+        return val != null ? (T) val : defaultVal;
+    }
+
     public <T> T readAs(String key, Class<T> type) {
         return readAs(key, type, false);
     }

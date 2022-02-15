@@ -20,7 +20,6 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
 
 @Slf4j
@@ -49,7 +48,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupByIntoMap(p -> isNull(p.attr(), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteAddress().getAddress()).toList());
+        return NQuery.of(rs.getClients()).groupByIntoMap(p -> ifNull(p.attr(), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteAddress().getAddress()).toList());
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {

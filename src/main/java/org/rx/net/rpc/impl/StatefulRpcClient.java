@@ -207,7 +207,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
-            NEventArgs<InetSocketAddress> args = new NEventArgs<>(isNull(reconnectingEp, config.getServerEndpoint()));
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(reconnectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
             ep = reconnectingEp = args.getValue();
         } else {
