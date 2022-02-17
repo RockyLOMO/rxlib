@@ -443,10 +443,10 @@ public class CoreTester extends TestUtil {
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
 
-        System.out.println(Numbers.readableByteCount(1024, false));
-        System.out.println(Numbers.readableByteCount(1024, true));
-        System.out.println(Numbers.readableByteCount(1024 * 1024, false));
-        System.out.println(Numbers.readableByteCount(1024 * 1024, true));
+//        System.out.println(Numbers.readableByteCount(1024, false));
+//        System.out.println(Numbers.readableByteCount(1024, true));
+//        System.out.println(Numbers.readableByteCount(1024 * 1024, false));
+//        System.out.println(Numbers.readableByteCount(1024 * 1024, true));
     }
 
     //region NQuery
