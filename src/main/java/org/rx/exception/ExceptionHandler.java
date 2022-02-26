@@ -8,6 +8,7 @@ import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
+import org.slf4j.helpers.FormattingTuple;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
@@ -27,6 +28,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         @DbColumn(primaryKey = true)
         int id;
         ExceptionLevel level;
+        String message;
         String stackTrace;
         int occurCount;
 
@@ -80,14 +82,14 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void log(String format, Object... args) {
-        Throwable e = MessageFormatter.getThrowableCandidate(args);
-        if (e == null) {
+        FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
+        if (tuple.getThrowable() == null) {
             log.warn(format + "[NoThrowableCandidate]", args);
             return;
         }
 
         log.error(format, args);
-        saveTrace(Thread.currentThread(), e);
+        saveTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
     }
 
     public void log(Throwable e) {
@@ -97,7 +99,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     @Override
     public void uncaughtException(Thread t, Throwable e) {
         log.error("Thread[{}] uncaught", t.getId(), e);
-        saveTrace(t, e);
+        saveTrace(t, null, e);
     }
 
     public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {
@@ -124,13 +126,13 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveTrace(Thread t, Throwable e) {
+    public void saveTrace(Thread t, String msg, Throwable e) {
         if (getKeepDays() <= 0) {
             return;
         }
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
-        int pk = stackTrace.hashCode();
+        int pk = msg != null ? java.util.Arrays.hashCode(new Object[]{msg, stackTrace}) : stackTrace.hashCode();
         EntityDatabase db = EntityDatabase.DEFAULT.getValue();
         db.begin();
         try {
@@ -143,6 +145,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
                         : ExceptionLevel.SYSTEM;
                 entity.setLevel(level);
+                entity.setMessage(msg);
                 entity.setStackTrace(stackTrace);
             }
             entity.occurCount++;

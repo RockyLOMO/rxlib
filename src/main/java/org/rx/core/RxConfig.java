@@ -125,6 +125,7 @@ public final class RxConfig {
         jsonSkipTypes.clear();
         String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {
+            //method ref will match multi methods
             jsonSkipTypes.addAll(NQuery.of(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
         }
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, "℞FREEDOM");

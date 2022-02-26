@@ -20,8 +20,7 @@ import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.values;
 
 public class YamlConfig {
-    public static final YamlConfig RX_CONF = new YamlConfig(Constants.RX_CONFIG_FILE)
-            .write("application.yml");
+    public static final YamlConfig RX_CONF = new YamlConfig(Constants.RX_CONFIG_FILE, "application.yml");
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(NQuery.of(fileNames).selectMany(p -> {
@@ -71,17 +70,17 @@ public class YamlConfig {
         return yaml.dump(bean);
     }
 
-    final String fileName;
+    final String[] fileNames;
     @Getter
     final Map<String, Object> yaml;
 
-    public YamlConfig(@NonNull String fileName) {
-        yaml = loadYaml(this.fileName = fileName);
+    public YamlConfig(@NonNull String... fileNames) {
+        yaml = loadYaml(this.fileNames = fileNames);
     }
 
     public YamlConfig write(@NonNull String fileName) {
-//        yaml = loadYaml(this.fileName, fileName);
-        yaml.putAll(loadYaml(this.fileName, fileName));
+        String[] clone = fileNames.clone();
+        yaml.putAll(loadYaml(Arrays.add(clone, fileName)));
         return this;
     }
 

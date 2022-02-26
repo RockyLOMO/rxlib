@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.text.DecimalFormat;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -176,7 +177,8 @@ public class Bytes {
         return bytes;
     }
 
-    public static String readableByteSize(double val) {
+    //https://stackoverflow.com/a/5599842/1253611
+    public static strictfp String readableByteSize(double val) {
         if (val < Constants.KB) {
             return String.valueOf(val);
         }
@@ -190,6 +192,19 @@ public class Bytes {
             return String.format("%.1fGB", val / Constants.GB);
         }
         return String.format("%.1fTB", val / Constants.TB);
+
+//        int unit = si ? 1000 : 1024;
+//        long absBytes = bytes == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(bytes);
+//        if (absBytes < unit) return bytes + " B";
+//        int exp = (int) (Math.log(absBytes) / Math.log(unit));
+//        long th = (long) Math.ceil(Math.pow(unit, exp) * (unit - 0.05));
+//        if (exp < 6 && absBytes >= th - ((th & 0xFFF) == 0xD00 ? 51 : 0)) exp++;
+//        String pre = (si ? "kMGTPE" : "KMGTPE").charAt(exp - 1) + (si ? "" : "i");
+//        if (exp > 4) {
+//            bytes /= unit;
+//            exp -= 1;
+//        }
+//        return String.format("%.1f %sB", bytes / Math.pow(unit, exp), pre);
     }
 
     public static <E extends Enum<E>> int toEnumVector(Set<E> set) {
