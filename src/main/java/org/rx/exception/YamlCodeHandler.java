@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
-import org.rx.core.YamlConfig;
+import org.rx.core.YamlConfiguration;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
@@ -25,8 +25,8 @@ public class YamlCodeHandler {
         Container.register(YamlCodeHandler.class, new YamlCodeHandler());
     }
 
-    protected YamlConfig getMessageSource() {
-        return YamlConfig.RX_CONF;
+    protected YamlConfiguration getMessageSource() {
+        return YamlConfiguration.RX_CONF;
     }
 
     @SneakyThrows

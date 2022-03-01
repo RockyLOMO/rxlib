@@ -13,7 +13,7 @@ import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
-import org.rx.core.YamlConfig;
+import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
@@ -561,7 +561,8 @@ public class CoreTester extends TestUtil {
         Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
         List<Object> list = IterableUtils.toList(all);
 
-        YamlConfig conf = YamlConfig.RX_CONF;
+        YamlConfiguration conf = YamlConfiguration.RX_CONF;
+        conf.enableWatch();
         System.out.println(conf.getYaml());
 
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);

@@ -3,7 +3,6 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.FlagsEnum;
 import org.rx.util.Lazy;
 import org.rx.util.SnowFlake;
@@ -77,7 +76,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @Override
     public String getName() {
-        return FilenameUtils.getName(getPath());
+        return Files.getName(getPath());
     }
 
     public String getContentType() {

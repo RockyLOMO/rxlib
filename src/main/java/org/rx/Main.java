@@ -9,7 +9,6 @@ import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.io.YamlFileWatcher;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
@@ -89,13 +88,14 @@ public final class Main implements SocksSupport {
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
             SocksConfig frontConf = new SocksConfig(port);
-            YamlFileWatcher<SSConf> watcher = new YamlFileWatcher<>(SSConf.class);
+            YamlConfiguration watcher = new YamlConfiguration().enableWatch("conf.yml");
             watcher.onChanged.combine((s, e) -> {
-                if (e.getConfigObject() == null) {
+                SSConf changed = s.readAs(SSConf.class);
+                if (changed == null) {
                     return;
                 }
 
-                conf = e.getConfigObject();
+                conf = changed;
                 NQuery<AuthenticEndpoint> svrs = NQuery.of(conf.shadowServer).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
                 if (!svrs.any() || svrs.any(Objects::isNull)) {
                     throw new InvalidException("Invalid shadowServer arg");
@@ -119,7 +119,7 @@ public final class Main implements SocksSupport {
                     frontConf.getBypassList().addAll(conf.bypassHosts);
                 }
             });
-            watcher.raiseChangeWithDefaultFile();
+            watcher.raiseChange();
             NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),

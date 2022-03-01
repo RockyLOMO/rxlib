@@ -18,7 +18,7 @@ class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
     @Override
     public void createDirectory(String path) {
-        //do not use File parent = path.getParentFile();
+        //do not use File.getParentFile();
         Files.createDirectories(new File(FilenameUtils.getFullPath(path)).toPath());
     }
 
@@ -36,7 +36,6 @@ class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
     @Override
     public void saveFile(String filePath, InputStream in) {
-        //nio
         Files.copy(in, Paths.get(filePath), StandardCopyOption.REPLACE_EXISTING);
     }
 
