@@ -6,7 +6,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.io.FileUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.io.FileStream;
@@ -35,12 +34,15 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(NQuery.of(fileNames).selectMany(p -> {
+            File file = new File(p);
+            if (file.exists()) {
+                return Arrays.toList(new FileStream(file).getReader());
+            }
             NQuery<InputStream> resources = Reflects.getResources(p);
             if (resources.any()) {
                 return resources.reverse();
             }
-            File file = new File(p);
-            return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
+            return resources;
         }).toList());
     }
 
@@ -76,11 +78,6 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
         }
     }
 
-    public static <T> String dumpYaml(@NonNull T bean) {
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
-    }
-
     public final Delegate<YamlConfiguration, ChangedEventArgs> onChanged = Delegate.create();
     final String[] fileNames;
     @Getter
@@ -100,11 +97,16 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
         if (Strings.isEmpty(outputFile)) {
             outputFile = DEFAULT_CONFIG_FILE;
         }
-//        new FileStream()
+
+        try (FileStream fs = new FileStream(outputFile)) {
+            fs.setPosition(0);
+            fs.writeString(new Yaml().dumpAsMap(yaml));
+        }
         if (watcher != null) {
             watcher.close();
         }
-        watcher = new FileWatcher(Files.getBaseName(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
+
+        watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
         watcher.onChanged.combine((s, e) -> {
             String filePath = e.getPath().toString();
             synchronized (this) {

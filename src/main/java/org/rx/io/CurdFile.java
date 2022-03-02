@@ -7,25 +7,30 @@ import org.rx.core.Strings;
 import java.io.InputStream;
 
 public interface CurdFile<T> {
+    default boolean isDirectoryPath(String path) {
+        if (Strings.isEmpty(path)) {
+            return false;
+        }
+
+        char ch = path.charAt(path.length() - 1);
+        return ch == '/' || ch == '\\' || Strings.isEmpty(FilenameUtils.getExtension(path));
+    }
+
+    default String getDirectoryPath(String path) {
+        return FilenameUtils.getFullPath(path);
+    }
+
     default String padDirectoryPath(String path) {
         if (Strings.isEmpty(path)) {
             return Strings.EMPTY;
         }
+
         char ch = path.charAt(path.length() - 1);
         if (ch == '/' || ch == '\\') {
             return path;
         }
         char separatorChar = path.lastIndexOf('\\') != -1 ? '\\' : '/';
         return path + separatorChar;
-    }
-
-    default boolean isDirectory(String path) {
-        if (Strings.isEmpty(path)) {
-            throw new IllegalArgumentException("path");
-        }
-
-        char ch = path.charAt(path.length() - 1);
-        return ch == '/' || ch == '\\' || Strings.isEmpty(FilenameUtils.getExtension(path));
     }
 
     void createDirectory(String path);

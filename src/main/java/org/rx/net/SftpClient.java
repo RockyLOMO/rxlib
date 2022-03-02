@@ -86,7 +86,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
     }
 
     @Override
-    public boolean isDirectory(String remotePath) {
+    public boolean isDirectoryPath(String remotePath) {
         if (Strings.isEmpty(remotePath)) {
             throw new IllegalArgumentException("remotePath");
         }
@@ -108,7 +108,7 @@ public class SftpClient extends Disposable implements CurdFile<SftpFile> {
 
     @SneakyThrows
     public void delete(String remotePath) {
-        if (isDirectory(remotePath)) {
+        if (isDirectoryPath(remotePath)) {
             for (SftpFile file : listFiles(remotePath, true)) {
                 channel.rm(file.getPath());
             }

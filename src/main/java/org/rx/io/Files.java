@@ -32,7 +32,7 @@ public class Files extends FilenameUtils {
     public static final CurdFile<File> CURD_FILE = new LocalCurdFile();
 
     public static boolean isDirectory(String path) {
-        return CURD_FILE.isDirectory(path);
+        return CURD_FILE.isDirectoryPath(path);
     }
 
     public static void createDirectory(String path) {

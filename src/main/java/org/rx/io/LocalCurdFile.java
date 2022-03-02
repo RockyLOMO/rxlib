@@ -2,7 +2,6 @@ package org.rx.io;
 
 import lombok.SneakyThrows;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
 import org.rx.core.NQuery;
@@ -18,19 +17,17 @@ class LocalCurdFile implements CurdFile<File> {
     @SneakyThrows
     @Override
     public void createDirectory(String path) {
-        //do not use File.getParentFile();
-        Files.createDirectories(new File(FilenameUtils.getFullPath(path)).toPath());
+        //Do not use FileUtils.createParentDirectories() || File.getParentFile();
+        Files.createDirectories(Paths.get(getDirectoryPath(path)));
     }
 
     @SneakyThrows
     @Override
     public NQuery<File> listDirectories(String directoryPath, boolean recursive) {
-        File dir = new File(directoryPath);
         if (!recursive) {
-            return NQuery.of(Files.newDirectoryStream(dir.toPath(), java.nio.file.Files::isDirectory)).select(Path::toFile);
+            return NQuery.of(Files.newDirectoryStream(Paths.get(directoryPath), java.nio.file.Files::isDirectory)).select(Path::toFile);
         }
-        //FileUtils.listFiles() 有bug
-        return NQuery.of(FileUtils.listFilesAndDirs(dir, FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
+        return NQuery.of(FileUtils.listFilesAndDirs(new File(directoryPath), FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
     }
 
     @SneakyThrows
@@ -41,8 +38,8 @@ class LocalCurdFile implements CurdFile<File> {
 
     @Override
     public NQuery<File> listFiles(String directoryPath, boolean recursive) {
-        IOFileFilter ff = FileFilterUtils.fileFileFilter(), df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
-        return NQuery.of(FileUtils.listFiles(new File(directoryPath), ff, df));
+        IOFileFilter df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
+        return NQuery.of(FileUtils.listFiles(new File(directoryPath), FileFilterUtils.fileFileFilter(), df));
     }
 
     @Override
@@ -57,7 +54,7 @@ class LocalCurdFile implements CurdFile<File> {
         if (!file.exists()) {
             return;
         }
-//        java.nio.file.Files.delete(), FileUtils.deleteQuietly();  DirectoryNotEmptyException
+        //java.nio.file.Files.delete() || FileUtils.deleteQuietly() may throw DirectoryNotEmptyException
         FileUtils.forceDelete(file);
     }
 }
