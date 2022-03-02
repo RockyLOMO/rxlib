@@ -88,7 +88,7 @@ public final class Main implements SocksSupport {
 
             RandomList<UpstreamSupport> shadowServers = new RandomList<>();
             SocksConfig frontConf = new SocksConfig(port);
-            YamlConfiguration watcher = new YamlConfiguration().enableWatch("conf.yml");
+            YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
             watcher.onChanged.combine((s, e) -> {
                 SSConf changed = s.readAs(SSConf.class);
                 if (changed == null) {

@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 import org.rx.io.FileStream;
 import org.rx.io.FileWatcher;
 import org.rx.io.Files;
@@ -47,10 +48,10 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
     }
 
     public static Map<String, Object> loadYaml(List<InputStream> streams) {
-        if (CollectionUtils.isEmpty(streams)) {
-            return Collections.emptyMap();
-        }
         Map<String, Object> result = new HashMap<>();
+        if (CollectionUtils.isEmpty(streams)) {
+            return result;
+        }
         Yaml yaml = new Yaml();
         for (Object data : NQuery.of(streams).selectMany(yaml::loadAll)) {
             Map<String, Object> sub = (Map<String, Object>) data;
@@ -86,18 +87,17 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
     FileWatcher watcher;
 
     public YamlConfiguration(@NonNull String... fileNames) {
-        yaml = new LinkedHashMap<>(loadYaml(this.fileNames = fileNames));
+        yaml = loadYaml(this.fileNames = fileNames);
     }
 
     public YamlConfiguration enableWatch() {
-        return enableWatch(null);
+        if (fileNames.length == 0) {
+            throw new InvalidException("Empty loaded fileNames");
+        }
+        return enableWatch(fileNames[fileNames.length - 1]);
     }
 
-    public synchronized YamlConfiguration enableWatch(String outputFile) {
-        if (Strings.isEmpty(outputFile)) {
-            outputFile = DEFAULT_CONFIG_FILE;
-        }
-
+    public synchronized YamlConfiguration enableWatch(@NonNull String outputFile) {
         try (FileStream fs = new FileStream(outputFile)) {
             fs.setPosition(0);
             fs.writeString(new Yaml().dumpAsMap(yaml));
@@ -109,13 +109,14 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
         watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
         watcher.onChanged.combine((s, e) -> {
             String filePath = e.getPath().toString();
+            log.info("Config changing {} {} -> {}", e.isCreate(), filePath, yaml);
             synchronized (this) {
                 yaml.clear();
                 if (!e.isDelete()) {
                     write(filePath);
                 }
             }
-            log.info("Config changed {} -> {}", filePath, yaml);
+            log.info("Config changed {} {} -> {}", e.isCreate(), filePath, yaml);
             raiseEvent(onChanged, new ChangedEventArgs(filePath));
         });
 
