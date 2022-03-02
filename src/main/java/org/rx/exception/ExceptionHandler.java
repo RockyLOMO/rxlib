@@ -82,14 +82,18 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void log(String format, Object... args) {
-        FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
-        if (tuple.getThrowable() == null) {
-            log.warn(format + "[NoThrowableCandidate]", args);
-            return;
-        }
+        try {
+            FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
+            if (tuple.getThrowable() == null) {
+                log.warn(format + "[NoThrowableCandidate]", args);
+                return;
+            }
 
-        log.error(format, args);
-        saveTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
+            log.error(format, args);
+            saveTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
+        } catch (Throwable ie) {
+            ie.printStackTrace();
+        }
     }
 
     public void log(Throwable e) {
@@ -98,8 +102,12 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
     @Override
     public void uncaughtException(Thread t, Throwable e) {
-        log.error("Thread[{}] uncaught", t.getId(), e);
-        saveTrace(t, null, e);
+        try {
+            log.error("Thread[{}] uncaught", t.getId(), e);
+            saveTrace(t, null, e);
+        } catch (Throwable ie) {
+            ie.printStackTrace();
+        }
     }
 
     public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {

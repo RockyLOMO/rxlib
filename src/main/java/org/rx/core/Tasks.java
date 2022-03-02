@@ -201,7 +201,7 @@ public final class Tasks {
     public static Future<Void> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
         return setTimeout(() -> {
             task.invoke();
-            return false;
+            return flag == TimeoutFlag.PERIOD;
         }, delay, taskId, flag);
     }
 

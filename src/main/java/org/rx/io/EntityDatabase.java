@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
+import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.Decimal;
@@ -17,6 +18,7 @@ import org.rx.bean.NEnum;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
@@ -36,7 +38,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.toJsonString;
-import static org.rx.core.Extends.eq;
 
 @Slf4j
 public class EntityDatabase extends Disposable {
@@ -93,24 +94,83 @@ public class EntityDatabase extends Disposable {
         H2_TYPES.put(InputStream.class, H2Type.BLOB);
     }
 
-    final JdbcConnectionPool connectionPool;
+    final String filePath;
+    final String timeRollingPattern;
+    @Setter
+    int rollingHours = 48;
+    final int maxConnections;
+    final Set<Class<?>> mappedEntityTypes = ConcurrentHashMap.newKeySet();
     @Setter
     boolean autoUnderscoreColumnName;
     @Setter
     boolean autoRollbackOnError;
+    int hash;
+    JdbcConnectionPool connPool;
 
-    public EntityDatabase(String filePath) {
-        this(filePath, Math.max(10, Constants.CPU_THREADS));
+    JdbcConnectionPool getConnectionPool() {
+        if (connPool == null) {
+            String filePath = getFilePath();
+            hash = filePath.hashCode();
+            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;TRACE_LEVEL_FILE=0", filePath), null, null);
+            connPool.setMaxConnections(maxConnections);
+            if (!mappedEntityTypes.isEmpty()) {
+                createMapping(NQuery.of(mappedEntityTypes).toArray());
+            }
+        }
+        return connPool;
     }
 
-    public EntityDatabase(String filePath, int maxConnections) {
-        connectionPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1", filePath), null, null);
-        connectionPool.setMaxConnections(maxConnections);
+    String getFilePath() {
+        return timeRollingPattern != null ? filePath + "_" + DateTime.now().toString(timeRollingPattern) : filePath;
+    }
+
+    public EntityDatabase(String filePath) {
+        this(filePath, null);
+    }
+
+    public EntityDatabase(String filePath, String timeRollingPattern) {
+        this(filePath, timeRollingPattern, Math.max(10, Constants.CPU_THREADS));
+    }
+
+    public EntityDatabase(String filePath, String timeRollingPattern, int maxConnections) {
+        this.filePath = filePath;
+        this.timeRollingPattern = timeRollingPattern;
+        this.maxConnections = maxConnections;
+
+        if (timeRollingPattern != null) {
+            Tasks.setTimeout(() -> {
+                if (connPool == null || getFilePath().hashCode() == hash) {
+                    return;
+                }
+
+                try {
+                    clearTimeRollingFiles();
+                } catch (Exception e) {
+                    ExceptionHandler.INSTANCE.log(e);
+                }
+
+                connPool = null;
+            }, 10 * 1000, null, TimeoutFlag.PERIOD);
+        }
     }
 
     @Override
     protected void freeObjects() {
-        connectionPool.dispose();
+        if (connPool != null) {
+            connPool.dispose();
+        }
+    }
+
+    public void clearTimeRollingFiles() {
+        if (timeRollingPattern == null) {
+            throw new InvalidException("Time rolling policy not enabled");
+        }
+
+        String p = filePath;
+        if (p.startsWith("~/")) {
+            p = App.USER_HOME + p.substring(1);
+        }
+        Files.deleteBefore(Files.getFullPath(p), DateTime.now(timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }
 
     @SneakyThrows
@@ -145,42 +205,41 @@ public class EntityDatabase extends Disposable {
     public <T> void save(T entity, boolean doInsert) {
         SqlMeta meta = getMeta(entity.getClass());
 
-        List<Object> params = new ArrayList<>();
-        if (doInsert) {
-            for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView.getValue()) {
-                params.add(col.getValue().left.get(entity));
-            }
-            try {
-                executeUpdate(meta.insertSql, params);
-            } catch (Exception e) {
-                if (e instanceof JdbcSQLSyntaxErrorException && Strings.startsWith(e.getMessage(), "Column count does not match")) {
-                    StringBuilder sql = new StringBuilder(meta.selectSql);
-                    sql.replace(0, 13, "DROP TABLE");
-                    log.info("recreate {}", sql);
-                    executeUpdate(sql.toString());
-                    createMapping(entity.getClass());
-                    save(entity, doInsert);
-                    return;
+        try {
+            List<Object> params = new ArrayList<>();
+            if (doInsert) {
+                for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView.getValue()) {
+                    params.add(col.getValue().left.get(entity));
                 }
-                throw e;
-            }
-            return;
-        }
-
-        StringBuilder cols = new StringBuilder(128);
-        for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryView.getValue()) {
-            Object val = col.getValue().left.get(entity);
-            if (val == null) {
-                continue;
+                executeUpdate(meta.insertSql, params);
+                return;
             }
 
-            cols.append("%s=?,", col.getKey());
-            params.add(val);
+            StringBuilder cols = new StringBuilder(128);
+            for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryView.getValue()) {
+                Object val = col.getValue().left.get(entity);
+                if (val == null) {
+                    continue;
+                }
+
+                cols.append("%s=?,", col.getKey());
+                params.add(val);
+            }
+            cols.setLength(cols.length() - 1);
+            Object id = meta.primaryKey().getValue().left.get(entity);
+            params.add(id);
+            executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
+        } catch (Exception e) {
+            if (e instanceof JdbcSQLSyntaxErrorException && (Strings.startsWith(e.getMessage(), "Column count does not match")
+                    || Strings.containsAll(e.getMessage(), "Column", "not found"))) {
+                dropMapping(entity.getClass());
+                log.info("recreate {} -> {}", entity.getClass(), e.getMessage());
+                createMapping(entity.getClass());
+                save(entity, doInsert);
+                return;
+            }
+            throw e;
         }
-        cols.setLength(cols.length() - 1);
-        Object id = meta.primaryKey().getValue().left.get(entity);
-        params.add(id);
-        executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
     }
 
     public <T> boolean deleteById(Class<T> entityType, Serializable id) {
@@ -330,6 +389,19 @@ public class EntityDatabase extends Disposable {
         return meta;
     }
 
+    public <T> void dropMapping(Class<T> entityType) {
+        SqlMeta meta = getMeta(entityType);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        sql.replace(0, 13, "DROP TABLE");
+//        StringBuilder sql = new StringBuilder(meta.deleteSql);
+//        sql.setLength(sql.length() - 11);
+//        executeUpdate(sql.toString());
+//        sql = new StringBuilder("optimize table PERSON_BEAN");
+        executeUpdate(sql.toString());
+        mappedEntityTypes.remove(entityType);
+    }
+
     public void createMapping(Class<?>... entityTypes) {
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
@@ -382,6 +454,7 @@ public class EntityDatabase extends Disposable {
                     String.format("UPDATE %s SET $UPDATE_COLUMNS WHERE %s=?", tableName, finalPkName),
                     String.format("DELETE FROM %s WHERE %s=?", tableName, finalPkName),
                     String.format("SELECT * FROM %s", tableName)));
+            mappedEntityTypes.add(entityType);
         }
     }
 
@@ -486,7 +559,7 @@ public class EntityDatabase extends Disposable {
     public void begin(int transactionIsolation) {
         Connection conn = TX_CONN.getIfExists();
         if (conn == null) {
-            TX_CONN.set(conn = connectionPool.getConnection());
+            TX_CONN.set(conn = getConnectionPool().getConnection());
         }
         if (transactionIsolation != Connection.TRANSACTION_NONE) {
             conn.setTransactionIsolation(transactionIsolation);
@@ -523,7 +596,7 @@ public class EntityDatabase extends Disposable {
         Connection conn = TX_CONN.getIfExists();
         boolean isInTx = conn != null;
         if (!isInTx) {
-            conn = connectionPool.getConnection();
+            conn = getConnectionPool().getConnection();
         }
         try {
             fn.invoke(conn);
@@ -544,7 +617,7 @@ public class EntityDatabase extends Disposable {
         Connection conn = TX_CONN.getIfExists();
         boolean isInTx = conn != null;
         if (!isInTx) {
-            conn = connectionPool.getConnection();
+            conn = getConnectionPool().getConnection();
         }
         try {
             return fn.invoke(conn);

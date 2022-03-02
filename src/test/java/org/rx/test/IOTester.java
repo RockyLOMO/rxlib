@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
+import org.rx.core.Tasks;
 import org.rx.io.*;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
@@ -17,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,27 @@ import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class IOTester {
+    static final String h2Db = "~/h2/test";
+
+    @SneakyThrows
+    @Test
+    public synchronized void h2Reduce() {
+        EntityDatabase db = new EntityDatabase(h2Db, "yyyyMMddHHmm");
+        db.setRollingHours(0);
+        db.createMapping(PersonBean.class);
+        for (int i = 0; i < 1000; i++) {
+            db.save(new PersonBean());
+        }
+//        db.clearTimeRollingFiles();
+        Tasks.setTimeout(() -> {
+            db.save(new PersonBean());
+            return true;
+        }, 2000);
+//        db.dropMapping(PersonBean.class);
+        System.out.println(DateTime.now("yyyy"));
+        wait();
+    }
+
     @Test
     public void h2() {
         EntityDatabase db = new EntityDatabase("~/test");
@@ -419,7 +442,7 @@ public class IOTester {
 
     @Test
     public void listDirectories() {
-        Path path = Files.path(TConfig.BASE_DIR);
+        Path path = Paths.get(TConfig.BASE_DIR);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");

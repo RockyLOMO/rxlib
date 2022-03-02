@@ -10,6 +10,8 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
+import org.apache.commons.io.filefilter.IOFileFilter;
+import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.rx.core.Arrays;
 import org.rx.core.NQuery;
 import org.rx.core.StringBuilder;
@@ -96,7 +98,7 @@ public class Files extends FilenameUtils {
         FileUtils.copyFile(src, dest);
     }
 
-    //慎用java的File#renameTo
+    //慎用File.renameTo
     @SneakyThrows
     public static void move(String srcPath, String destPath) {
         File src = new File(srcPath), dest = new File(destPath);
@@ -113,8 +115,17 @@ public class Files extends FilenameUtils {
     }
 
     public static void deleteBefore(String directoryPath, Date time) {
+        deleteBefore(directoryPath, time, null);
+    }
+
+    public static void deleteBefore(@NonNull String directoryPath, @NonNull Date time, String wildcard) {
         File dir = new File(directoryPath);
-        for (File file : FileUtils.listFiles(dir, FileFilterUtils.ageFileFilter(time), FileFilterUtils.directoryFileFilter())) {
+
+        IOFileFilter fileFilter = FileFilterUtils.ageFileFilter(time);
+        if (wildcard != null) {
+            fileFilter = fileFilter.and(new WildcardFileFilter(wildcard));
+        }
+        for (File file : FileUtils.listFiles(dir, fileFilter, FileFilterUtils.directoryFileFilter())) {
             delete(file.getPath());
         }
         for (File directory : listDirectories(directoryPath, true)) {
@@ -149,10 +160,6 @@ public class Files extends FilenameUtils {
             return MediaType.TEXT_PLAIN_VALUE;
         }
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
-    }
-
-    public static Path path(String root, String... paths) {
-        return Paths.get(root, paths);
     }
 
     @SneakyThrows
