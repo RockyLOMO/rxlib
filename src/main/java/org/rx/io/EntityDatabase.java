@@ -10,6 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
+import org.h2.tools.DeleteDbFiles;
+import org.h2.tools.RunScript;
+import org.h2.tools.Script;
 import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
@@ -389,14 +392,32 @@ public class EntityDatabase extends Disposable {
         return meta;
     }
 
+    //    @SneakyThrows
+    public void compact() {
+        executeUpdate("SHUTDOWN COMPACT");
+//        String filePath = getFilePath();
+//        String dir = Files.getFullPath(filePath);
+//        String dbName = Files.getName(filePath);
+//        String url = "jdbc:h2:" + dir + dbName;
+//        System.out.println(url);
+//        String file = String.format("%s/tmp_%s.sql", dir, dbName);
+//        invoke(conn -> {
+//            String opt = "";
+//            Script.process(conn, file, opt, opt);
+//        });
+//        String p = dir;
+//        if (p.startsWith("~/")) {
+//            p = App.USER_HOME + p.substring(1);
+//        }
+//        DeleteDbFiles.execute(p, dbName, true);
+//        RunScript.execute(url, null, null, file, null, false);
+    }
+
     public <T> void dropMapping(Class<T> entityType) {
         SqlMeta meta = getMeta(entityType);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         sql.replace(0, 13, "DROP TABLE");
-//        StringBuilder sql = new StringBuilder(meta.deleteSql);
-//        sql.setLength(sql.length() - 11);
-//        executeUpdate(sql.toString());
 //        sql = new StringBuilder("optimize table PERSON_BEAN");
         executeUpdate(sql.toString());
         mappedEntityTypes.remove(entityType);

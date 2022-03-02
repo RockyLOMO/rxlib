@@ -64,8 +64,11 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
             EntityDatabase db = EntityDatabase.DEFAULT.getValue();
             db.createMapping(ErrorEntity.class);
             if (future == null) {
-                future = Tasks.scheduleDaily(() -> db.delete(new EntityQueryLambda<>(ErrorEntity.class)
-                        .lt(ErrorEntity::getModifyTime, DateTime.now().addDays(-keepDays - 1))), Time.valueOf("3:00:00"));
+                future = Tasks.scheduleDaily(() -> {
+                    db.delete(new EntityQueryLambda<>(ErrorEntity.class)
+                            .lt(ErrorEntity::getModifyTime, DateTime.now().addDays(-keepDays - 1)));
+                    db.compact();
+                }, Time.valueOf("3:00:00"));
             }
         } else {
             if (future != null) {

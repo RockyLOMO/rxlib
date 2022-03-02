@@ -34,25 +34,25 @@ public class IOTester {
     @SneakyThrows
     @Test
     public synchronized void h2Reduce() {
-        EntityDatabase db = new EntityDatabase(h2Db, "yyyyMMddHHmm");
+        EntityDatabase db = new EntityDatabase(h2Db, "yyyyMMddHH");
         db.setRollingHours(0);
         db.createMapping(PersonBean.class);
         for (int i = 0; i < 1000; i++) {
             db.save(new PersonBean());
         }
+        db.compact();
 //        db.clearTimeRollingFiles();
-        Tasks.setTimeout(() -> {
-            db.save(new PersonBean());
-            return true;
-        }, 2000);
+//        Tasks.setTimeout(() -> {
+//            db.save(new PersonBean());
+//            return true;
+//        }, 2000);
 //        db.dropMapping(PersonBean.class);
-        System.out.println(DateTime.now("yyyy"));
-        wait();
+//        wait();
     }
 
     @Test
     public void h2() {
-        EntityDatabase db = new EntityDatabase("~/test");
+        EntityDatabase db = new EntityDatabase(h2Db);
         db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();
