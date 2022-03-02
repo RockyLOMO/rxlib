@@ -575,7 +575,6 @@ public class CoreTester extends TestUtil {
         List<Object> list = IterableUtils.toList(all);
 
         YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        conf.enableWatch();
         System.out.println(conf.getYaml());
 
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
