@@ -47,7 +47,13 @@ public class IOTester {
 //            return true;
 //        }, 2000);
 //        db.dropMapping(PersonBean.class);
-//        wait();
+
+        DiskMonitor.INSTANCE.register(1, () -> System.out.println(1));
+        DiskMonitor.INSTANCE.register(1, () -> System.out.println(11));
+        DiskMonitor.INSTANCE.register(20, () -> System.out.println(20));
+        DiskMonitor.INSTANCE.register(99, () -> System.out.println(99));
+
+        wait();
     }
 
     @Test

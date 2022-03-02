@@ -153,7 +153,7 @@ public class EntityDatabase extends Disposable {
                 }
 
                 connPool = null;
-            }, 10 * 1000, null, TimeoutFlag.PERIOD);
+            }, RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD);
         }
     }
 
