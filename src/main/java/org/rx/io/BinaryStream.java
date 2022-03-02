@@ -83,6 +83,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @SneakyThrows
+    @Override
     public int readInt() {
         return getReader().readInt();
     }
@@ -144,6 +145,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @SneakyThrows
+    @Override
     public void writeInt(int value) {
         getWriter().writeInt(value);
     }
@@ -169,6 +171,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @SneakyThrows
+    @Override
     public void writeString(String value) {
         getWriter().writeUTF(value);
     }

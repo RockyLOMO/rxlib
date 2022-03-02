@@ -7,13 +7,14 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
-import org.rx.core.YamlConfig;
+import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
@@ -36,6 +37,14 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 public class CoreTester extends TestUtil {
+    static final long delayMillis = 5000;
+    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
+        @Override
+        protected void onRemoval(IntTuple<String> value) {
+            System.out.println("rm:" + value);
+        }
+    };
+
     @SneakyThrows
     @Test
     public void timer() {
@@ -79,14 +88,6 @@ public class CoreTester extends TestUtil {
 
         System.in.read();
     }
-
-    static final long delayMillis = 5000;
-    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
-        @Override
-        protected void onRemoval(IntTuple<String> value) {
-            System.out.println("rm:" + value);
-        }
-    };
 
     @SneakyThrows
     @Test
@@ -270,6 +271,18 @@ public class CoreTester extends TestUtil {
             assert cache.get(key3).equals(100);
             log.info("check sliding ok");
         }, 4000);
+    }
+
+    @Test
+    public void yamlConf() {
+        System.out.println(FilenameUtils.getFullPath("b.txt"));
+        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
+        YamlConfiguration conf = YamlConfiguration.RX_CONF;
+        conf.enableWatch();
+
+        sleep(60000);
     }
 
     @Test
@@ -561,7 +574,8 @@ public class CoreTester extends TestUtil {
         Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
         List<Object> list = IterableUtils.toList(all);
 
-        YamlConfig conf = YamlConfig.RX_CONF;
+        YamlConfiguration conf = YamlConfiguration.RX_CONF;
+        conf.enableWatch();
         System.out.println(conf.getYaml());
 
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);

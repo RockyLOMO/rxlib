@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import net.lingala.zip4j.ZipFile;
@@ -30,31 +29,30 @@ import java.util.List;
 import java.util.stream.Stream;
 
 public class Files extends FilenameUtils {
-    @Getter
-    private static final CurdFile<File> curdFile = new LocalCurdFile();
+    public static final CurdFile<File> CURD_FILE = new LocalCurdFile();
 
     public static boolean isDirectory(String path) {
-        return curdFile.isDirectory(path);
+        return CURD_FILE.isDirectoryPath(path);
     }
 
     public static void createDirectory(String path) {
-        curdFile.createDirectory(path);
+        CURD_FILE.createDirectory(path);
     }
 
     public static void saveFile(String filePath, InputStream in) {
-        curdFile.saveFile(filePath, in);
+        CURD_FILE.saveFile(filePath, in);
     }
 
     public static void delete(String path) {
-        curdFile.delete(path);
+        CURD_FILE.delete(path);
     }
 
     public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {
-        return curdFile.listDirectories(directoryPath, recursive);
+        return CURD_FILE.listDirectories(directoryPath, recursive);
     }
 
     public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
-        return curdFile.listFiles(directoryPath, recursive);
+        return CURD_FILE.listFiles(directoryPath, recursive);
     }
 
     public static boolean isPath(String str) {
@@ -62,11 +60,11 @@ public class Files extends FilenameUtils {
     }
 
     public static String concatPath(@NonNull String root, String... paths) {
-        StringBuilder p = new StringBuilder(curdFile.padDirectoryPath(root));
+        StringBuilder p = new StringBuilder(CURD_FILE.padDirectoryPath(root));
         if (!Arrays.isEmpty(paths)) {
             int l = paths.length - 1;
             for (int i = 0; i < l; i++) {
-                p.append(curdFile.padDirectoryPath(paths[i]));
+                p.append(CURD_FILE.padDirectoryPath(paths[i]));
             }
             p.append(paths[l]);
         }

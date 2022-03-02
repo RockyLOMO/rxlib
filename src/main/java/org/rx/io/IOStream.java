@@ -97,7 +97,11 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     @SneakyThrows
-    public static void writeString(@NonNull OutputStream out, @NonNull String value, @NonNull Charset charset) {
+    public static void writeString(@NonNull OutputStream out, @NonNull String value, Charset charset) {
+        if (charset == null) {
+            charset = StandardCharsets.UTF_8;
+        }
+
         out.write(value.getBytes(charset));
     }
 
@@ -340,16 +344,24 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         src.readBytes(getWriter(), length);
     }
 
-    public void writeShort(short v) {
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
+    public void writeShort(short n) {
+        write((n >>> 8) & 0xFF);
+        write((n >>> 0) & 0xFF);
     }
 
-    public void writeInt(int v) {
-        write((v >>> 24) & 0xFF);
-        write((v >>> 16) & 0xFF);
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
+    public void writeInt(int n) {
+        write((n >>> 24) & 0xFF);
+        write((n >>> 16) & 0xFF);
+        write((n >>> 8) & 0xFF);
+        write((n >>> 0) & 0xFF);
+    }
+
+    public void writeString(String str) {
+        writeString(str, StandardCharsets.UTF_8);
+    }
+
+    public void writeString(String str, Charset charset) {
+        write(str.getBytes(charset));
     }
 
     @SneakyThrows

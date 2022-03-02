@@ -23,8 +23,7 @@ public class RxBenchmark {
 
     @Benchmark
     public void b() {
-        Bytes.formatSize(1024);
-        Bytes.formatSize(1024 * 1024);
+
     }
 
     public static void main(String[] args) throws RunnerException {

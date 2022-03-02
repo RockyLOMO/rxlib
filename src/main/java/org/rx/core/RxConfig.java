@@ -70,7 +70,7 @@ public final class RxConfig {
         String userAgent;
     }
 
-    public static final RxConfig INSTANCE = YamlConfig.RX_CONF.readAs("app", RxConfig.class);
+    public static final RxConfig INSTANCE = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     NetConfig net = new NetConfig();

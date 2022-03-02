@@ -3,33 +3,46 @@ package org.rx.core;
 import com.alibaba.fastjson.JSONObject;
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.io.FileStream;
+import org.rx.io.FileWatcher;
+import org.rx.io.Files;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.InputStream;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.values;
 
-public class YamlConfig {
-    public static final YamlConfig RX_CONF = new YamlConfig(Constants.RX_CONFIG_FILE, "application.yml");
+@Slf4j
+public class YamlConfiguration implements EventTarget<YamlConfiguration> {
+    @RequiredArgsConstructor
+    @Getter
+    public static class ChangedEventArgs extends EventArgs {
+        private static final long serialVersionUID = -1217316266335592369L;
+        final String filePath;
+    }
+
+    static final String DEFAULT_CONFIG_FILE = "application.yml";
+    public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.RX_CONFIG_FILE, DEFAULT_CONFIG_FILE);
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(NQuery.of(fileNames).selectMany(p -> {
+            File file = new File(p);
+            if (file.exists()) {
+                return Arrays.toList(new FileStream(file).getReader());
+            }
             NQuery<InputStream> resources = Reflects.getResources(p);
             if (resources.any()) {
                 return resources.reverse();
             }
-            File file = new File(p);
-            return file.exists() ? Arrays.toList(new FileStream(file).getReader()) : Collections.emptyList();
+            return resources;
         }).toList());
     }
 
@@ -65,20 +78,70 @@ public class YamlConfig {
         }
     }
 
-    public static <T> String dumpYaml(@NonNull T bean) {
-        Yaml yaml = new Yaml();
-        return yaml.dump(bean);
-    }
-
+    public final Delegate<YamlConfiguration, ChangedEventArgs> onChanged = Delegate.create();
     final String[] fileNames;
     @Getter
     final Map<String, Object> yaml;
+    String outputFile;
+    FileWatcher watcher;
 
-    public YamlConfig(@NonNull String... fileNames) {
-        yaml = loadYaml(this.fileNames = fileNames);
+    public YamlConfiguration(@NonNull String... fileNames) {
+        yaml = new LinkedHashMap<>(loadYaml(this.fileNames = fileNames));
     }
 
-    public YamlConfig write(@NonNull String fileName) {
+    public YamlConfiguration enableWatch() {
+        return enableWatch(null);
+    }
+
+    public synchronized YamlConfiguration enableWatch(String outputFile) {
+        if (Strings.isEmpty(outputFile)) {
+            outputFile = DEFAULT_CONFIG_FILE;
+        }
+
+        try (FileStream fs = new FileStream(outputFile)) {
+            fs.setPosition(0);
+            fs.writeString(new Yaml().dumpAsMap(yaml));
+        }
+        if (watcher != null) {
+            watcher.close();
+        }
+
+        watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
+        watcher.onChanged.combine((s, e) -> {
+            String filePath = e.getPath().toString();
+            synchronized (this) {
+                yaml.clear();
+                if (!e.isDelete()) {
+                    write(filePath);
+                }
+            }
+            log.info("Config changed {} -> {}", filePath, yaml);
+            raiseEvent(onChanged, new ChangedEventArgs(filePath));
+        });
+
+        return this;
+    }
+
+    public void raiseChange() {
+        raiseChange(outputFile);
+    }
+
+    public void raiseChange(String filePath) {
+        if (filePath == null) {
+            return;
+        }
+        File f = new File(filePath);
+        if (!f.exists()) {
+            log.warn("File not found {}", filePath);
+            return;
+        }
+
+        write(filePath);
+        log.info("Config changed {} -> {}", filePath, yaml);
+        raiseEvent(onChanged, new ChangedEventArgs(filePath));
+    }
+
+    public synchronized YamlConfiguration write(@NonNull String fileName) {
         String[] clone = fileNames.clone();
         yaml.putAll(loadYaml(Arrays.add(clone, fileName)));
         return this;
@@ -89,14 +152,22 @@ public class YamlConfig {
         return val != null ? (T) val : defaultVal;
     }
 
+    public <T> T readAs(Class<T> type) {
+        return readAs(null, type, false);
+    }
+
     public <T> T readAs(String key, Class<T> type) {
         return readAs(key, type, false);
     }
 
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
-    public <T> T readAs(String key, Class<T> type, boolean throwOnEmpty) {
+    public synchronized <T> T readAs(String key, Class<T> type, boolean throwOnEmpty) {
         Map<String, Object> tmp = yaml;
+        if (key == null) {
+            return convert(tmp, type);
+        }
+
         Object val;
         if ((val = tmp.get(key)) != null) {
             return convert(val, type);
@@ -137,6 +208,7 @@ public class YamlConfig {
             if (type.equals(Map.class)) {
                 return (T) map;
             }
+//            new Yaml().loadAs()
             return new JSONObject(map).toJavaObject(type);
         }
         return Reflects.changeType(p, type);
