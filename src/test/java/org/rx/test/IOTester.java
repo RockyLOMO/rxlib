@@ -59,7 +59,7 @@ public class IOTester {
     @Test
     public void h2() {
         EntityDatabase db = new EntityDatabase(h2Db);
-        db.setAutoUnderscoreColumnName(true);
+//        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();
 
@@ -72,6 +72,7 @@ public class IOTester {
         assert db.exists(queryLambda);
         db.commit();
 
+        System.out.println(db.executeQuery("select * from `personbean` limit 2"));
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));

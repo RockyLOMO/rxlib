@@ -13,12 +13,9 @@ import org.h2.jdbcx.JdbcConnectionPool;
 import org.h2.tools.DeleteDbFiles;
 import org.h2.tools.RunScript;
 import org.h2.tools.Script;
-import org.rx.bean.DateTime;
+import org.rx.bean.*;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
-import org.rx.bean.Decimal;
-import org.rx.bean.NEnum;
-import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
@@ -33,11 +30,10 @@ import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
+import java.sql.*;
 import java.util.*;
+import java.util.AbstractMap;
+import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.toJsonString;
@@ -496,7 +492,17 @@ public class EntityDatabase extends Disposable {
     }
 
     String tableName(Class<?> entityType) {
-        return CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName());
+        return autoUnderscoreColumnName ? CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName())
+                : entityType.getSimpleName();
+    }
+
+    public DataTable executeQuery(String sql) {
+        return invoke(conn -> {
+            if (log.isDebugEnabled()) {
+                log.debug("executeQuery {}", sql);
+            }
+            return DataTable.read(conn.createStatement().executeQuery(sql));
+        });
     }
 
     int executeUpdate(String sql) {
@@ -546,6 +552,7 @@ public class EntityDatabase extends Disposable {
                 while (rs.next()) {
                     T t = entityType.newInstance();
                     for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                        //metaData.getColumnName是大写
                         Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
                         bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
                     }
