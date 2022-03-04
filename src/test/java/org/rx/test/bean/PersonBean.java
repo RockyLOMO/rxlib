@@ -18,9 +18,9 @@ import java.util.UUID;
 @Description("person")
 public class PersonBean implements IPerson {
     public static final PersonBean LeZhi = new PersonBean(1, 2, "乐之", PersonGender.GIRL,
-            2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d));
+            2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d), new int[]{0});
     public static final PersonBean YouFan = new PersonBean(3, 4, "湵范", PersonGender.BOY,
-            3, DateTime.valueOf("2019-02-04 00:00:00"), 200L, Decimal.valueOf(2d));
+            3, DateTime.valueOf("2019-02-04 00:00:00"), 200L, Decimal.valueOf(2d), new int[0]);
 
     @DbColumn(primaryKey = true)
     public final UUID id = UUID.randomUUID();
@@ -34,6 +34,7 @@ public class PersonBean implements IPerson {
     public Date birth;
     public Long moneyCent;
     public Decimal money;
+    public int[] flags;
 
     @Override
     public boolean enableCompress() {

@@ -8,7 +8,6 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
-import org.h2.jdbc.JdbcArray;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.bean.*;
@@ -22,11 +21,9 @@ import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
-import javax.sql.rowset.serial.SerialArray;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.Serializable;
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
@@ -36,7 +33,6 @@ import java.util.AbstractMap;
 import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.App.fromJson;
 import static org.rx.core.App.toJsonString;
 
 @Slf4j
@@ -98,7 +94,7 @@ public class EntityDatabase extends Disposable {
         H2_TYPES.put(Float.class, H2Type.REAL);
         H2_TYPES.put(Double.class, H2Type.DOUBLE_PRECISION);
         H2_TYPES.put(Date.class, H2Type.TIMESTAMP);
-        H2_TYPES.put(Object.class, H2Type.JAVA_OBJECT);
+//        H2_TYPES.put(Object.class, H2Type.JAVA_OBJECT);
         H2_TYPES.put(UUID.class, H2Type.UUID);
 
         H2_TYPES.put(Reader.class, H2Type.CLOB);
@@ -192,6 +188,7 @@ public class EntityDatabase extends Disposable {
         Files.deleteBefore(Files.getFullPath(p), DateTime.now(timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }
 
+    //region CRUD
     @SneakyThrows
     public <T> void save(T entity) {
         Class<?> entityType = entity.getClass();
@@ -414,6 +411,7 @@ public class EntityDatabase extends Disposable {
         }
         return meta;
     }
+    //endregion
 
     public void compact() {
         executeUpdate("SHUTDOWN COMPACT");
@@ -448,7 +446,15 @@ public class EntityDatabase extends Disposable {
                 Tuple<Field, DbColumn> tuple = Tuple.of(field, dbColumn);
                 columns.put(colName, tuple);
 
-                H2Type h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(field.getType()), H2Type.VARCHAR);
+                String h2Type;
+                if (Reflects.isAssignable(field.getType(), NEnum.class)) {
+                    h2Type = H2Type.INTEGER.getName();
+                } else if (Reflects.isAssignable(field.getType(), Decimal.class)) {
+//                    h2Type = H2Type.NUMERIC.getName();
+                    h2Type = "NUMERIC(50006, 6)";
+                } else {
+                    h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(field.getType()), H2Type.JAVA_OBJECT).getName();
+                }
                 String extra = Strings.EMPTY;
                 if (dbColumn != null) {
                     if (dbColumn.length() > 0) {
@@ -461,7 +467,7 @@ public class EntityDatabase extends Disposable {
                         extra += " auto_increment";
                     }
                 }
-                createCols.appendLine("\t`%s` %s%s,", colName, h2Type.getName(), extra);
+                createCols.appendLine("\t`%s` %s%s,", colName, h2Type, extra);
                 insert.append("?,");
             }
             if (pkName == null) {
@@ -572,8 +578,7 @@ public class EntityDatabase extends Disposable {
                         if (bi == null) {
                             throw new InvalidException("Mapping %s not found", metaData.getColumnName(i));
                         }
-//                        bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
-                        bi.left.set(t, fromJson(rs.getObject(i), bi.left.getType()));
+                        bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
                     }
                     r.add(t);
                 }
@@ -592,10 +597,6 @@ public class EntityDatabase extends Disposable {
             }
             if (val instanceof Decimal) {
                 stmt.setBigDecimal(i, ((Decimal) val).getValue());
-                continue;
-            }
-            if (val instanceof Enum) {
-                stmt.setString(i, ((Enum<?>) val).name());
                 continue;
             }
             stmt.setObject(i, val);

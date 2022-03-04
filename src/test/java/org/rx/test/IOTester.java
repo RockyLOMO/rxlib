@@ -72,7 +72,7 @@ public class IOTester {
         assert db.exists(queryLambda);
         db.commit();
 
-        System.out.println(db.executeQuery("select * from `personbean` limit 2", PersonBean.class));
+        System.out.println(db.executeQuery("select * from `person` limit 2", PersonBean.class));
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
