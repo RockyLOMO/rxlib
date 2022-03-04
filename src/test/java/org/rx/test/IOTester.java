@@ -67,6 +67,7 @@ public class IOTester {
         db.save(entity);
 
         EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
+                .orderBy(PersonBean::getId)
                 .limit(1, 10);
         assert db.exists(queryLambda);
         db.commit();

@@ -280,6 +280,11 @@ public class EntityDatabase extends Disposable {
     }
 
     public <T> long count(EntityQueryLambda<T> query) {
+        List<Tuple<BiFunc<T, ?>, EntityQueryLambda.Order>> tmpOrders = null;
+        if (!query.orders.isEmpty()) {
+            tmpOrders = new ArrayList<>(query.orders);
+            query.orders.clear();
+        }
         //with limit, the result always 0
         Integer tmpLimit = null;
         if (query.limit != null) {
@@ -300,6 +305,9 @@ public class EntityDatabase extends Disposable {
             }
             return num.longValue();
         } finally {
+            if (tmpOrders != null) {
+                query.orders.addAll(tmpOrders);
+            }
             if (tmpLimit != null) {
                 query.limit = tmpLimit;
             }
