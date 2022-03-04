@@ -180,7 +180,7 @@ public class Bytes {
     //https://stackoverflow.com/a/5599842/1253611
     public static strictfp String readableByteSize(double val) {
         if (val < Constants.KB) {
-            return String.valueOf(val);
+            return String.format("%.0fB", val);
         }
         if (val < Constants.MB) {
             return String.format("%.1fKB", val / Constants.KB);

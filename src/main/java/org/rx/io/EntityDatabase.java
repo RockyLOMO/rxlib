@@ -8,11 +8,9 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.api.H2Type;
+import org.h2.jdbc.JdbcArray;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
-import org.h2.tools.DeleteDbFiles;
-import org.h2.tools.RunScript;
-import org.h2.tools.Script;
 import org.rx.bean.*;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
@@ -24,9 +22,11 @@ import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
+import javax.sql.rowset.serial.SerialArray;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.Serializable;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
@@ -36,6 +36,7 @@ import java.util.AbstractMap;
 import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.App.fromJson;
 import static org.rx.core.App.toJsonString;
 
 @Slf4j
@@ -43,20 +44,31 @@ public class EntityDatabase extends Disposable {
     @RequiredArgsConstructor
     static class SqlMeta {
         @Getter
-        final String primaryKey;
+        final Map.Entry<String, Tuple<Field, DbColumn>> primaryKey;
         @Getter
         final Map<String, Tuple<Field, DbColumn>> columns;
+        final Map<String, Tuple<String, Tuple<Field, DbColumn>>> upperColumns = new HashMap<>();
+        final NQuery<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
+        final NQuery<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
         final String insertSql;
         final String updateSql;
         final String deleteSql;
         final String selectSql;
-        final Lazy<NQuery<Map.Entry<String, Tuple<Field, DbColumn>>>> insertView = new Lazy<>(() -> NQuery.of(getColumns().entrySet())
-                .where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement()));
-        final Lazy<NQuery<Map.Entry<String, Tuple<Field, DbColumn>>>> secondaryView = new Lazy<>(() -> NQuery.of(getColumns().entrySet())
-                .where(p -> p.getKey().hashCode() != getPrimaryKey().hashCode()));
 
-        Map.Entry<String, Tuple<Field, DbColumn>> primaryKey() {
-            return new AbstractMap.SimpleEntry<>(primaryKey, columns.get(primaryKey));
+        public SqlMeta(String primaryKey, Map<String, Tuple<Field, DbColumn>> columns
+                , String insertSql, String updateSql, String deleteSql, String selectSql) {
+            this.primaryKey = new AbstractMap.SimpleEntry<>(primaryKey, columns.get(primaryKey));
+            this.columns = columns;
+            for (Map.Entry<String, Tuple<Field, DbColumn>> entry : columns.entrySet()) {
+                upperColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
+            }
+            insertView = NQuery.of(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
+            secondaryView = NQuery.of(columns.entrySet()).where(p -> p.getKey().hashCode() != getPrimaryKey().hashCode());
+
+            this.insertSql = insertSql;
+            this.updateSql = updateSql;
+            this.deleteSql = deleteSql;
+            this.selectSql = selectSql;
         }
     }
 
@@ -91,6 +103,14 @@ public class EntityDatabase extends Disposable {
 
         H2_TYPES.put(Reader.class, H2Type.CLOB);
         H2_TYPES.put(InputStream.class, H2Type.BLOB);
+    }
+
+    static String columnName(Field field, DbColumn dbColumn, boolean autoUnderscoreColumnName) {
+        if (dbColumn != null && !dbColumn.name().isEmpty()) {
+            return dbColumn.name();
+        }
+        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName())
+                : field.getName();
     }
 
     final String filePath;
@@ -176,8 +196,7 @@ public class EntityDatabase extends Disposable {
     public <T> void save(T entity) {
         Class<?> entityType = entity.getClass();
         SqlMeta meta = getMeta(entityType);
-        Map.Entry<String, Tuple<Field, DbColumn>> pk = meta.primaryKey();
-        Serializable id = (Serializable) pk.getValue().left.get(entity);
+        Serializable id = (Serializable) meta.primaryKey.getValue().left.get(entity);
         if (id == null) {
             save(entity, true);
             return;
@@ -207,7 +226,7 @@ public class EntityDatabase extends Disposable {
         try {
             List<Object> params = new ArrayList<>();
             if (doInsert) {
-                for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView.getValue()) {
+                for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.insertView) {
                     params.add(col.getValue().left.get(entity));
                 }
                 executeUpdate(meta.insertSql, params);
@@ -215,7 +234,7 @@ public class EntityDatabase extends Disposable {
             }
 
             StringBuilder cols = new StringBuilder(128);
-            for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryView.getValue()) {
+            for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryView) {
                 Object val = col.getValue().left.get(entity);
                 if (val == null) {
                     continue;
@@ -225,7 +244,7 @@ public class EntityDatabase extends Disposable {
                 params.add(val);
             }
             cols.setLength(cols.length() - 1);
-            Object id = meta.primaryKey().getValue().left.get(entity);
+            Object id = meta.primaryKey.getValue().left.get(entity);
             params.add(id);
             executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
         } catch (Exception e) {
@@ -260,7 +279,7 @@ public class EntityDatabase extends Disposable {
         sql.setLength(sql.length() - 2);
 
         StringBuilder subSql = new StringBuilder(meta.selectSql);
-        replaceSelectColumns(subSql, meta.primaryKey);
+        replaceSelectColumns(subSql, meta.primaryKey.getKey());
         List<Object> params = new ArrayList<>();
         appendClause(subSql, query, params);
 
@@ -340,7 +359,7 @@ public class EntityDatabase extends Disposable {
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         replaceSelectColumns(sql, "1");
-        EntityQueryLambda.pkClaus(sql, meta.primaryKey);
+        EntityQueryLambda.pkClaus(sql, meta.primaryKey.getKey());
         sql.append(EntityQueryLambda.LIMIT).append("1");
         List<Object> params = new ArrayList<>(1);
         params.add(id);
@@ -351,7 +370,7 @@ public class EntityDatabase extends Disposable {
         SqlMeta meta = getMeta(entityType);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
-        EntityQueryLambda.pkClaus(sql, meta.primaryKey);
+        EntityQueryLambda.pkClaus(sql, meta.primaryKey.getKey());
         List<Object> params = new ArrayList<>(1);
         params.add(id);
         List<T> list = executeQuery(sql.toString(), params, entityType);
@@ -396,25 +415,8 @@ public class EntityDatabase extends Disposable {
         return meta;
     }
 
-    //    @SneakyThrows
     public void compact() {
         executeUpdate("SHUTDOWN COMPACT");
-//        String filePath = getFilePath();
-//        String dir = Files.getFullPath(filePath);
-//        String dbName = Files.getName(filePath);
-//        String url = "jdbc:h2:" + dir + dbName;
-//        System.out.println(url);
-//        String file = String.format("%s/tmp_%s.sql", dir, dbName);
-//        invoke(conn -> {
-//            String opt = "";
-//            Script.process(conn, file, opt, opt);
-//        });
-//        String p = dir;
-//        if (p.startsWith("~/")) {
-//            p = App.USER_HOME + p.substring(1);
-//        }
-//        DeleteDbFiles.execute(p, dbName, true);
-//        RunScript.execute(url, null, null, file, null, false);
     }
 
     public <T> void dropMapping(Class<T> entityType) {
@@ -442,8 +444,9 @@ public class EntityDatabase extends Disposable {
                     continue;
                 }
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
-                String colName = columnName(field, dbColumn);
-                columns.put(colName, Tuple.of(field, dbColumn));
+                String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+                Tuple<Field, DbColumn> tuple = Tuple.of(field, dbColumn);
+                columns.put(colName, tuple);
 
                 H2Type h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(field.getType()), H2Type.VARCHAR);
                 String extra = Strings.EMPTY;
@@ -458,7 +461,7 @@ public class EntityDatabase extends Disposable {
                         extra += " auto_increment";
                     }
                 }
-                createCols.appendLine("\t%s %s%s,", colName, h2Type.getName(), extra);
+                createCols.appendLine("\t`%s` %s%s,", colName, h2Type.getName(), extra);
                 insert.append("?,");
             }
             if (pkName == null) {
@@ -483,25 +486,36 @@ public class EntityDatabase extends Disposable {
         }
     }
 
-    String columnName(Field field, DbColumn dbColumn) {
-        if (dbColumn != null && !dbColumn.name().isEmpty()) {
-            return dbColumn.name();
+    public String tableName(Class<?> entityType) {
+        String desc = Extends.description(entityType);
+        if (desc != null) {
+            return desc;
         }
-        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName())
-                : field.getName().toUpperCase();
-    }
-
-    String tableName(Class<?> entityType) {
         return autoUnderscoreColumnName ? CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName())
                 : entityType.getSimpleName();
     }
 
     public DataTable executeQuery(String sql) {
+        return executeQuery(sql, null);
+    }
+
+    public <T> DataTable executeQuery(String sql, Class<T> entityType) {
         return invoke(conn -> {
             if (log.isDebugEnabled()) {
                 log.debug("executeQuery {}", sql);
             }
-            return DataTable.read(conn.createStatement().executeQuery(sql));
+            DataTable dt = DataTable.read(conn.createStatement().executeQuery(sql));
+            if (entityType != null) {
+                SqlMeta meta = getMeta(entityType);
+                for (DataColumn<?> column : dt.getColumns()) {
+                    Tuple<String, Tuple<Field, DbColumn>> bi = meta.upperColumns.get(column.getColumnName());
+                    if (bi == null) {
+                        continue;
+                    }
+                    column.setColumnName(bi.left);
+                }
+            }
+            return dt;
         });
     }
 
@@ -553,8 +567,13 @@ public class EntityDatabase extends Disposable {
                     T t = entityType.newInstance();
                     for (int i = 1; i <= metaData.getColumnCount(); i++) {
                         //metaData.getColumnName是大写
-                        Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
-                        bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
+//                        Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
+                        Tuple<Field, DbColumn> bi = meta.upperColumns.get(metaData.getColumnName(i)).right;
+                        if (bi == null) {
+                            throw new InvalidException("Mapping %s not found", metaData.getColumnName(i));
+                        }
+//                        bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
+                        bi.left.set(t, fromJson(rs.getObject(i), bi.left.getType()));
                     }
                     r.add(t);
                 }

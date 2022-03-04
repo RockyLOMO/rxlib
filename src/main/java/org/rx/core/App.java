@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
+import com.alibaba.fastjson.parser.ParserConfig;
+import com.alibaba.fastjson.parser.deserializer.ParseProcess;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
@@ -55,6 +57,7 @@ public final class App extends SystemUtils {
         }
         return v;
     };
+    static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
     static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
@@ -220,7 +223,7 @@ public final class App extends SystemUtils {
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {
-            return JSON.parseObject(js, type, Feature.OrderedField);
+            return JSON.parseObject(js, type, PARSE_FLAGS);
         } catch (Exception e) {
             throw new InvalidException("fromJson %s", new Object[]{js}, e);
         }

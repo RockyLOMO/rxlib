@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.rx.annotation.DbColumn;
+import org.rx.annotation.Description;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
 
@@ -14,6 +15,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Data
+@Description("person")
 public class PersonBean implements IPerson {
     public static final PersonBean LeZhi = new PersonBean(1, 2, "乐之", PersonGender.GIRL,
             2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d));
