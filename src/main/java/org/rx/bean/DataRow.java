@@ -57,6 +57,9 @@ public class DataRow implements Extends {
     public <T> T get(@NonNull DataColumn<T> column) {
         require(column, column.getTable() == table);
 
+        if (items.size() <= column.ordinal) {
+            return null;
+        }
         return (T) items.get(column.ordinal);
     }
 

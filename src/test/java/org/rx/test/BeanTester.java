@@ -101,10 +101,17 @@ public class BeanTester extends TestUtil {
         DataTable dt = new DataTable();
         dt.addColumns("id", "name", "age");
         dt.addRow(1, "张三", 5);
-        dt.addRow(2, "李四", 10);
+        DataRow secondRow = dt.addRow(2, "李四", 10);
         DataRow row = dt.newRow(3, "湵范", 20);
         dt.setFluentRows(Arrays.toList(row).iterator());
         System.out.println(dt);
+
+        dt.removeColumn("age");
+        dt.addColumn("money");
+        secondRow.set(2, 100);
+        System.out.println(dt);
+
+//        row.set(4, 0);
     }
 
     @SneakyThrows

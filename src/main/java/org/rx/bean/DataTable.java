@@ -109,6 +109,19 @@ public class DataTable implements Extends {
         return row;
     }
 
+    public DataRow addRow(DataRow row) {
+        if (row.table != this) {
+            row = newRow(row.getArray());
+        }
+        rows.add(row);
+        return row;
+    }
+
+    public DataRow removeRow(DataRow row) {
+        rows.remove(row);
+        return row;
+    }
+
     public DataRow newRow(Object... items) {
         DataRow row = new DataRow(this);
         if (!Arrays.isEmpty(items)) {
@@ -127,6 +140,15 @@ public class DataTable implements Extends {
         column.ordinal = columns.size();
         column.columnName = columnName;
         columns.add(column);
+        return column;
+    }
+
+    public <T> DataColumn<T> removeColumn(String columnName) {
+        int index = getColumn(columnName).ordinal;
+        DataColumn column = columns.remove(index);
+        for (DataRow row : rows) {
+            row.items.remove(index);
+        }
         return column;
     }
 
