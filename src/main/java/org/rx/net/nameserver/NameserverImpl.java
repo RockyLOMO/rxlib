@@ -146,7 +146,13 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public List<InetAddress> discoverAll(@NonNull String appName) {
-        return dnsServer.getAllHosts(appName);
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
+        List<InetAddress> allHosts = dnsServer.getAllHosts(appName);
+        if (withoutCurrent) {
+            RemotingContext ctx = RemotingContext.context();
+            ctx.getClient().attr(appName);
+            allHosts.remove(ctx.getClient().getRemoteAddress().getAddress());
+        }
+        return allHosts;
     }
 }

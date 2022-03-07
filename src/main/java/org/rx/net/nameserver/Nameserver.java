@@ -44,7 +44,7 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
 
     List<InetAddress> discover(String appName);
 
-    List<InetAddress> discoverAll(String appName);
+    List<InetAddress> discoverAll(String appName, boolean withoutCurrent);
 
     default void close() {
     }

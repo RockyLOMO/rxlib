@@ -165,7 +165,7 @@ public final class NameserverClient extends Disposable {
         return hold.next().middle.discover(appName);
     }
 
-    public List<InetAddress> discoverAll(@NonNull String appName) {
-        return hold.next().middle.discoverAll(appName);
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
+        return hold.next().middle.discoverAll(appName, withoutCurrent);
     }
 }
