@@ -7,6 +7,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.Description;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
+import org.rx.core.Arrays;
 
 import javax.validation.constraints.NotNull;
 import java.util.Date;
@@ -17,10 +18,12 @@ import java.util.UUID;
 @Data
 @Description("person")
 public class PersonBean implements IPerson {
+    public static final int[] Flags = new int[]{2, 4};
+    public static final Object[] Array = new Object[]{0, "a"};
     public static final PersonBean LeZhi = new PersonBean(1, 2, "乐之", PersonGender.GIRL,
-            2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d), new int[]{0});
+            2, DateTime.valueOf("2020-02-04 00:00:00"), 100L, Decimal.valueOf(1d), Flags, Array);
     public static final PersonBean YouFan = new PersonBean(3, 4, "湵范", PersonGender.BOY,
-            3, DateTime.valueOf("2019-02-04 00:00:00"), 200L, Decimal.valueOf(2d), new int[0]);
+            3, DateTime.valueOf("2019-02-04 00:00:00"), 200L, Decimal.valueOf(2d), Arrays.EMPTY_INT_ARRAY, Arrays.EMPTY_OBJECT_ARRAY);
 
     @DbColumn(primaryKey = true)
     public final UUID id = UUID.randomUUID();
@@ -35,6 +38,7 @@ public class PersonBean implements IPerson {
     public Long moneyCent;
     public Decimal money;
     public int[] flags;
+    public Object[] array;
 
     @Override
     public boolean enableCompress() {

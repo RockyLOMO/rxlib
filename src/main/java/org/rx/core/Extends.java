@@ -9,7 +9,6 @@ import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
-import org.rx.io.IOStream;
 import org.rx.io.Serializer;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
@@ -217,7 +216,6 @@ public interface Extends extends Serializable {
     }
 
     default <T> T deepClone() {
-        IOStream<?, ?> stream = Serializer.DEFAULT.serialize(this);
-        return Serializer.DEFAULT.deserialize(stream.rewind());
+        return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(this));
     }
 }

@@ -11,6 +11,7 @@ import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.bean.*;
+import org.rx.core.Arrays;
 import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
 import org.rx.core.*;
@@ -446,14 +447,22 @@ public class EntityDatabase extends Disposable {
                 Tuple<Field, DbColumn> tuple = Tuple.of(field, dbColumn);
                 columns.put(colName, tuple);
 
+                Class<?> fieldType = field.getType();
                 String h2Type;
-                if (Reflects.isAssignable(field.getType(), NEnum.class)) {
+                if (Reflects.isAssignable(fieldType, NEnum.class)) {
                     h2Type = H2Type.INTEGER.getName();
-                } else if (Reflects.isAssignable(field.getType(), Decimal.class)) {
+                } else if (Reflects.isAssignable(fieldType, Decimal.class)) {
 //                    h2Type = H2Type.NUMERIC.getName();
-                    h2Type = "NUMERIC(50006, 6)";
+                    h2Type = "NUMERIC(56, 6)";
+                } else if (fieldType.isArray()) {
+                    if (fieldType.getComponentType() == Object.class) {
+                        h2Type = H2Type.BLOB.getName();
+                    } else {
+//                        h2Type = H2Type.array(H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType.getComponentType()), H2Type.JAVA_OBJECT)).getName();
+                        h2Type = H2Type.JAVA_OBJECT.getName();
+                    }
                 } else {
-                    h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(field.getType()), H2Type.JAVA_OBJECT).getName();
+                    h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
                 }
                 String extra = Strings.EMPTY;
                 if (dbColumn != null) {
@@ -578,7 +587,24 @@ public class EntityDatabase extends Disposable {
                         if (bi == null) {
                             throw new InvalidException("Mapping %s not found", metaData.getColumnName(i));
                         }
-                        bi.left.set(t, Reflects.changeType(rs.getObject(i), bi.left.getType()));
+                        Class<?> type = bi.left.getType();
+                        Object val = rs.getObject(i);
+                        if (type.isArray() && type.getComponentType() == Object.class) {
+                            if (val == null) {
+                                continue;
+                            }
+                            Object[] arr;
+                            Blob blob = (Blob) val;
+                            if (blob.length() == 0) {
+                                arr = Arrays.EMPTY_OBJECT_ARRAY;
+                            } else {
+                                IOStream<?, ?> wrap = IOStream.wrap(null, blob.getBinaryStream());
+                                arr = Serializer.DEFAULT.deserialize(wrap);
+                            }
+                            bi.left.set(t, arr);
+                            continue;
+                        }
+                        bi.left.set(t, Reflects.changeType(val, type));
                     }
                     r.add(t);
                 }
@@ -593,6 +619,10 @@ public class EntityDatabase extends Disposable {
             Object val = params.get(i++);
             if (val instanceof NEnum) {
                 stmt.setInt(i, ((NEnum<?>) val).getValue());
+                continue;
+            }
+            if (val instanceof Object[]) {
+                stmt.setBinaryStream(i, Serializer.DEFAULT.serialize(val).getReader());
                 continue;
             }
             if (val instanceof Decimal) {

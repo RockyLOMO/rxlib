@@ -412,7 +412,6 @@ public class IOTester {
         System.out.println(stream.read());
 
         IOStream<?, ?> serializeStream = Serializer.DEFAULT.serialize(stream);
-        serializeStream.setPosition(0);
         MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
@@ -469,7 +468,6 @@ public class IOTester {
         GirlBean girlBean = new GirlBean();
         girlBean.setAge(8);
         IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
-        serialize.setPosition(0);
         GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
         assert girlBean.equals(deGirl);
     }
