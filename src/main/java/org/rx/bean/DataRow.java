@@ -69,6 +69,10 @@ public class DataRow implements Extends {
         if (column.dataType != null && !Reflects.isInstance(item, column.dataType)) {
             throw new InvalidException("Item type error");
         }
-        items.add(column.ordinal, item);
+        if (column.ordinal < items.size()) {
+            items.set(column.ordinal, item);
+        } else {
+            items.add(column.ordinal, item);
+        }
     }
 }

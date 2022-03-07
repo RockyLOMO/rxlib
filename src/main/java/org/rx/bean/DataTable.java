@@ -61,8 +61,8 @@ public class DataTable implements Extends {
         return (List) readOnlyColumns;
     }
 
-    public Iterator<DataRow> getRows() {
-        return new Iterator<DataRow>() {
+    public FluentIterable<DataRow> getRows() {
+        return new FluentIterable<DataRow>() {
             Iterator<DataRow> cur = rows.iterator();
             final Iterator<DataRow> next = fluentRows;
 

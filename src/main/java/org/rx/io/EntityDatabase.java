@@ -522,12 +522,16 @@ public class EntityDatabase extends Disposable {
             DataTable dt = DataTable.read(conn.createStatement().executeQuery(sql));
             if (entityType != null) {
                 SqlMeta meta = getMeta(entityType);
-                for (DataColumn<?> column : dt.getColumns()) {
+                for (int i = 0; i < dt.getColumns().size(); i++) {
+                    DataColumn<?> column = dt.getColumn(i);
                     Tuple<String, Tuple<Field, DbColumn>> bi = meta.upperColumns.get(column.getColumnName());
                     if (bi == null) {
                         continue;
                     }
                     column.setColumnName(bi.left);
+                    for (DataRow row : dt.getRows()) {
+                        row.set(i, handleCell(bi.right.left.getType(), row.get(i)));
+                    }
                 }
             }
             return dt;
@@ -589,28 +593,31 @@ public class EntityDatabase extends Disposable {
                         }
                         Class<?> type = bi.left.getType();
                         Object val = rs.getObject(i);
-                        if (type.isArray() && type.getComponentType() == Object.class) {
-                            if (val == null) {
-                                continue;
-                            }
-                            Object[] arr;
-                            Blob blob = (Blob) val;
-                            if (blob.length() == 0) {
-                                arr = Arrays.EMPTY_OBJECT_ARRAY;
-                            } else {
-                                IOStream<?, ?> wrap = IOStream.wrap(null, blob.getBinaryStream());
-                                arr = Serializer.DEFAULT.deserialize(wrap);
-                            }
-                            bi.left.set(t, arr);
+                        if (val == null) {
                             continue;
                         }
-                        bi.left.set(t, Reflects.changeType(val, type));
+                        bi.left.set(t, handleCell(type, val));
                     }
                     r.add(t);
                 }
             }
         });
         return r;
+    }
+
+    @SneakyThrows
+    Object handleCell(Class<?> type, Object val) {
+        if (type.isArray() && type.getComponentType() == Object.class) {
+            Object[] arr;
+            Blob blob = (Blob) val;
+            if (blob.length() == 0) {
+                arr = Arrays.EMPTY_OBJECT_ARRAY;
+            } else {
+                arr = Serializer.DEFAULT.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
+            }
+            return arr;
+        }
+        return Reflects.changeType(val, type);
     }
 
     @SneakyThrows
