@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
-import org.rx.core.Tasks;
 import org.rx.io.*;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
@@ -34,7 +33,7 @@ public class IOTester {
     @SneakyThrows
     @Test
     public synchronized void h2Reduce() {
-        EntityDatabase db = new EntityDatabase(h2Db, "yyyyMMddHH");
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, "yyyyMMddHH");
         db.setRollingHours(0);
         db.createMapping(PersonBean.class);
         for (int i = 0; i < 1000; i++) {
@@ -58,7 +57,7 @@ public class IOTester {
 
     @Test
     public void h2() {
-        EntityDatabase db = new EntityDatabase(h2Db);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
 //        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();

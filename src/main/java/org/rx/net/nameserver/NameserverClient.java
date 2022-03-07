@@ -45,6 +45,7 @@ public final class NameserverClient extends Disposable {
         }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE);
     }
 
+    public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppHostChanged = Delegate.create();
     @Getter
     final String appName;
     final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
@@ -144,6 +145,7 @@ public final class NameserverClient extends Disposable {
 
                                     registerAsync(e.getValue());
                                 }, false);
+                                ns.attachEvent(Nameserver.EVENT_APP_HOST_CHANGED, onAppHostChanged);
                             });
                     doReg.invoke();
                 }

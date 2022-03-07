@@ -8,7 +8,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
-import org.rx.io.CurdFile;
+import org.rx.io.CrudFile;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
 
@@ -56,7 +56,7 @@ import static org.rx.core.Extends.quietly;
  * "?                             Synonym for help";
  */
 @Slf4j
-public class SftpClient extends Disposable implements CurdFile<SftpFile> {
+public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     private static final List<String> skipDirectories = Arrays.toList(".", "..");
 
     private final JSch jsch = new JSch();

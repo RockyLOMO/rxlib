@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 public class Files extends FilenameUtils {
-    public static final CurdFile<File> CURD_FILE = new LocalCurdFile();
+    public static final CrudFile<File> CURD_FILE = new LocalCrudFile();
 
     public static boolean isDirectory(String path) {
         return CURD_FILE.isDirectoryPath(path);

@@ -7,6 +7,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
+import org.rx.io.EntityDatabaseImpl;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.FormattingTuple;
 import org.slf4j.helpers.MessageFormatter;
@@ -61,13 +62,13 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
     public synchronized void setKeepDays(int keepDays) {
         if (keepDays > 0) {
-            EntityDatabase db = EntityDatabase.DEFAULT.getValue();
+            EntityDatabase db = EntityDatabase.DEFAULT;
             db.createMapping(ErrorEntity.class);
             if (future == null) {
                 future = Tasks.scheduleDaily(() -> {
                     db.delete(new EntityQueryLambda<>(ErrorEntity.class)
                             .lt(ErrorEntity::getModifyTime, DateTime.now().addDays(-keepDays - 1)));
-                    db.compact();
+                    ((EntityDatabaseImpl) db).compact();
                 }, Time.valueOf("3:00:00"));
             }
         } else {
@@ -133,7 +134,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         if (level != null) {
             q.eq(ErrorEntity::getLevel, level);
         }
-        EntityDatabase db = EntityDatabase.DEFAULT.getValue();
+        EntityDatabase db = EntityDatabase.DEFAULT;
         return db.findBy(q);
     }
 
@@ -144,7 +145,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
         int pk = msg != null ? java.util.Arrays.hashCode(new Object[]{msg, stackTrace}) : stackTrace.hashCode();
-        EntityDatabase db = EntityDatabase.DEFAULT.getValue();
+        EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
         try {
             ErrorEntity entity = db.findById(ErrorEntity.class, pk);
