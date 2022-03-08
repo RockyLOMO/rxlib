@@ -2,6 +2,7 @@ package org.rx.io;
 
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.concurrent.CircuitBreakingException;
+import org.rx.bean.$;
 import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
@@ -16,10 +17,13 @@ import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.rx.bean.$.$;
 
 public class ShardingEntityDatabase implements EntityDatabase {
     static final String APP_NAME = "EDB";
@@ -141,12 +145,21 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> T findOne(EntityQueryLambda<T> query) {
-        return super.findOne(query);
+        $<T> h = $();
+        invokeAll(p -> {
+            h.v = p.findOne(query);
+            if (h.v != null) {
+                throw new CircuitBreakingException();
+            }
+        });
+        return h.v;
     }
 
     @Override
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
-        return super.findBy(query);
+        List<T> r = new ArrayList<>();
+        invokeAll(p -> r.addAll(p.findBy(query)));
+        return EntityQueryLambda.sharding(r, query);
     }
 
     @Override
@@ -166,32 +179,33 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> DataTable executeQuery(String sql, Class<T> entityType) {
-        return super.executeQuery(sql, entityType);
+//        return super.executeQuery(sql, entityType);
+        return null;
     }
 
     @Override
     public boolean isInTransaction() {
-        return super.isInTransaction();
+        return local.isInTransaction();
     }
 
     @Override
     public void begin() {
-        super.begin();
+        local.begin();
     }
 
     @Override
     public void begin(int transactionIsolation) {
-        super.begin(transactionIsolation);
+        local.begin(transactionIsolation);
     }
 
     @Override
     public void commit() {
-        super.commit();
+        local.commit();
     }
 
     @Override
     public void rollback() {
-        super.rollback();
+        local.rollback();
     }
 
     @SneakyThrows

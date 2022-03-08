@@ -157,10 +157,17 @@ public class Reflects extends ClassUtils {
         return propertyName(lambda.getImplMethodName());
     }
 
-    public static <TP, TR> Tuple<String, String> resolve(BiFunc<TP, TR> func) {
+    public static <TP, TR> Tuple<String, String> resolveImpl(BiFunc<TP, TR> func) {
         SerializedLambda lambda = getLambda(func);
         String declaredClass = lambda.getImplClass().replace("/", ".");
         return Tuple.of(declaredClass, propertyName(lambda.getImplMethodName()));
+    }
+
+    @SneakyThrows
+    public static <TP, TR> Field resolve(BiFunc<TP, TR> func) {
+        SerializedLambda lambda = getLambda(func);
+        String declaredClass = lambda.getImplClass().replace("/", ".");
+        return getFieldMap(Class.forName(declaredClass)).get(propertyName(lambda.getImplMethodName()));
     }
 
     static <TP, TR> SerializedLambda getLambda(BiFunc<TP, TR> func) {

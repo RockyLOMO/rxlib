@@ -18,6 +18,7 @@ import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
+import org.rx.util.SnowFlake;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -73,6 +74,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             "$CREATE_COLUMNS" +
             "\tconstraint $TABLE_PK\n" +
             "\t\tprimary key ($PK)\n" +
+            ");";
+    static final String SQL_CREATE_TEMP_TABLE = "CREATE TABLE $TABLE\n" +
+            "(\n" +
+            "$CREATE_COLUMNS" +
             ");";
     static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
             $UPDATE_COLUMNS = "$UPDATE_COLUMNS", $WHERE_PART = "$WHERE_PART";
@@ -462,22 +467,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 columns.put(colName, tuple);
 
                 Class<?> fieldType = field.getType();
-                String h2Type;
-                if (Reflects.isAssignable(fieldType, NEnum.class)) {
-                    h2Type = H2Type.INTEGER.getName();
-                } else if (Reflects.isAssignable(fieldType, Decimal.class)) {
-//                    h2Type = H2Type.NUMERIC.getName();
-                    h2Type = "NUMERIC(56, 6)";
-                } else if (fieldType.isArray()) {
-                    if (fieldType.getComponentType() == Object.class) {
-                        h2Type = H2Type.BLOB.getName();
-                    } else {
-//                        h2Type = H2Type.array(H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType.getComponentType()), H2Type.JAVA_OBJECT)).getName();
-                        h2Type = H2Type.JAVA_OBJECT.getName();
-                    }
-                } else {
-                    h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
-                }
+                String h2Type = toH2Type(fieldType);
                 String extra = Strings.EMPTY;
                 if (dbColumn != null) {
                     if (dbColumn.length() > 0) {
@@ -497,7 +487,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 throw new InvalidException("require a primaryKey mapping");
             }
 
-//            createCols.setLength(createCols.length() - 1);
+//            createCols.setLength(createCols.length() - 3);
             insert.setLength(insert.length() - 1).append(")");
 
             String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)
@@ -525,6 +515,82 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 : entityType.getSimpleName();
     }
 
+    @SneakyThrows
+    static DataTable sharding(List<DataTable> result, String querySql) {
+        DataTable template = result.get(0);
+        String tableName = String.format("TEMP%s", SnowFlake.nextInstance().nextId());
+        StringBuilder createCols = new StringBuilder();
+        StringBuilder insert = new StringBuilder();
+        insert.append("INSERT INTO %s VALUES (", tableName);
+
+        for (DataColumn<?> column : template.getColumns()) {
+            String colName = column.getColumnName();
+
+            Class<?> fieldType = column.getDataType();
+            if (fieldType == null) {
+                fieldType = Object.class;
+            }
+            createCols.appendLine("\t`%s` %s,", colName, toH2Type(fieldType));
+            insert.append("?,");
+        }
+        createCols.setLength(createCols.length() - 3);
+        String insertSql = insert.setLength(insert.length() - 1).append(")").toString();
+
+        String url = "jdbc:h2:mem:";
+        try (Connection conn = DriverManager.getConnection(url);
+             Statement stmt = conn.createStatement();
+             PreparedStatement prepStmt = conn.prepareStatement(insertSql)) {
+            String sql = new StringBuilder(SQL_CREATE_TEMP_TABLE).replace($TABLE, tableName)
+                    .replace($CREATE_COLUMNS, createCols.toString()).toString();
+            log.debug("createMapping\n{}", sql);
+            stmt.executeUpdate(sql);
+
+            List<Object> params = new ArrayList<>();
+            for (DataTable dt : result) {
+                for (DataRow row : dt.getRows()) {
+                    for (DataColumn<?> col : template.getColumns()) {
+                        params.add(row.get(col));
+                        fillParams(prepStmt, params);
+                        prepStmt.executeUpdate();
+                    }
+                }
+            }
+
+            DataTable combined = DataTable.read(stmt.executeQuery(querySql));
+            for (int i = 0; i < combined.getColumns().size(); i++) {
+                for (DataRow row : combined.getRows()) {
+                    Object cell = row.get(i);
+                    if (cell == null) {
+                        continue;
+                    }
+                    row.set(i, convertCell(cell.getClass(), cell));
+                }
+            }
+            return combined;
+        }
+    }
+
+    static String toH2Type(Class<?> fieldType) {
+        String h2Type;
+        if (Reflects.isAssignable(fieldType, NEnum.class)) {
+            h2Type = H2Type.INTEGER.getName();
+        } else if (Reflects.isAssignable(fieldType, Decimal.class)) {
+//            h2Type = H2Type.NUMERIC.getName();
+            h2Type = "NUMERIC(56, 6)";
+        } else if (fieldType.isArray()) {
+            if (fieldType.getComponentType() == Object.class) {
+                h2Type = H2Type.BLOB.getName();
+            } else {
+//                h2Type = H2Type.array(H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType.getComponentType()), H2Type.JAVA_OBJECT)).getName();
+                h2Type = H2Type.JAVA_OBJECT.getName();
+            }
+        } else {
+            h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
+        }
+        return h2Type;
+    }
+
+    //region jdbc
     public DataTable executeQuery(String sql) {
         return executeQuery(sql, null);
     }
@@ -546,7 +612,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     }
                     column.setColumnName(bi.left);
                     for (DataRow row : dt.getRows()) {
-                        row.set(i, handleCell(bi.right.left.getType(), row.get(i)));
+                        row.set(i, convertCell(bi.right.left.getType(), row.get(i)));
                     }
                 }
             }
@@ -612,7 +678,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                         if (val == null) {
                             continue;
                         }
-                        bi.left.set(t, handleCell(type, val));
+                        bi.left.set(t, convertCell(type, val));
                     }
                     r.add(t);
                 }
@@ -622,10 +688,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     @SneakyThrows
-    Object handleCell(Class<?> type, Object val) {
+    static Object convertCell(Class<?> type, Object cell) {
         if (type.isArray() && type.getComponentType() == Object.class) {
             Object[] arr;
-            Blob blob = (Blob) val;
+            Blob blob = (Blob) cell;
             if (blob.length() == 0) {
                 arr = Arrays.EMPTY_OBJECT_ARRAY;
             } else {
@@ -633,11 +699,11 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             return arr;
         }
-        return Reflects.changeType(val, type);
+        return Reflects.changeType(cell, type);
     }
 
     @SneakyThrows
-    void fillParams(PreparedStatement stmt, List<Object> params) {
+    static void fillParams(PreparedStatement stmt, List<Object> params) {
         for (int i = 0; i < params.size(); ) {
             Object val = params.get(i++);
             if (val instanceof NEnum) {
@@ -655,7 +721,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             stmt.setObject(i, val);
         }
     }
+    //endregion
 
+    //region trans
     @Override
     public boolean isInTransaction() {
         return TX_CONN.isSet();
@@ -746,4 +814,5 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
         }
     }
+    //endregion
 }

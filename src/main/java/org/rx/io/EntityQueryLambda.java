@@ -165,6 +165,26 @@ public class EntityQueryLambda<T> implements Extends {
         return resolve(conditions, params, orders, autoUnderscoreColumnName, limit, offset);
     }
 
+    static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
+        NQuery<T> q = NQuery.of(result);
+        if (!lambda.orders.isEmpty()) {
+            for (Tuple<BiFunc<T, ?>, Order> order : lambda.orders) {
+                if (order.right == Order.DESC) {
+                    q = q.orderByDescending(order.left);
+                } else {
+                    q = q.orderBy(order.left);
+                }
+            }
+        }
+        if (lambda.offset != null) {
+            q = q.skip(lambda.offset);
+        }
+        if (lambda.limit != null) {
+            q = q.take(lambda.limit);
+        }
+        return q.toList();
+    }
+
     static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params,
                               List<Tuple<BiFunc<T, ?>, Order>> orders, boolean autoUnderscoreColumnName,
                               Integer limit, Integer offset) {

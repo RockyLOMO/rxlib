@@ -413,7 +413,7 @@ public class CoreTester extends TestUtil {
             assert resource != null;
         }
 
-        Tuple<String, String> resolve = Reflects.resolve(PersonBean::getAge);
+        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
         assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
 
         assert Reflects.stackClass(0) == this.getClass();
