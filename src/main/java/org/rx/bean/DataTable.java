@@ -29,6 +29,7 @@ public class DataTable implements Extends {
         DataTable dt = new DataTable();
         try (ResultSet x = resultSet) {
             ResultSetMetaData metaData = x.getMetaData();
+            dt.setTableName(metaData.getTableName(1));
             int columnCount = metaData.getColumnCount();
             for (int i = 1; i <= columnCount; i++) {
                 dt.addColumns(metaData.getColumnLabel(i));

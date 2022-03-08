@@ -8,6 +8,7 @@ import org.rx.annotation.Description;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
 import org.rx.core.Arrays;
+import org.rx.core.Extends;
 
 import javax.validation.constraints.NotNull;
 import java.util.Date;
@@ -17,7 +18,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Data
 @Description("person")
-public class PersonBean implements IPerson {
+public class PersonBean implements IPerson, Extends {
     public static final int[] Flags = new int[]{2, 4};
     public static final Object[] Array = new Object[]{0, "a"};
     public static final PersonBean LeZhi = new PersonBean(1, 2, "乐之", PersonGender.GIRL,

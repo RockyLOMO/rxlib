@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.IteratorUtils;
 import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
@@ -98,6 +99,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         H2_TYPES.put(Float.class, H2Type.REAL);
         H2_TYPES.put(Double.class, H2Type.DOUBLE_PRECISION);
         H2_TYPES.put(Date.class, H2Type.TIMESTAMP);
+        H2_TYPES.put(Timestamp.class, H2Type.TIMESTAMP);
 //        H2_TYPES.put(Object.class, H2Type.JAVA_OBJECT);
         H2_TYPES.put(UUID.class, H2Type.UUID);
 
@@ -247,7 +249,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     continue;
                 }
 
-                cols.append("%s=?,", col.getKey());
+                cols.append("`%s`=?,", col.getKey());
                 params.add(val);
             }
             cols.setLength(cols.length() - 1);
@@ -516,20 +518,59 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     @SneakyThrows
-    static DataTable sharding(List<DataTable> result, String querySql) {
-        DataTable template = result.get(0);
-        String tableName = String.format("TEMP%s", SnowFlake.nextInstance().nextId());
+    public static DataTable sharding(List<DataTable> queryResults, String querySql) {
+        DataTable template = queryResults.get(0);
+        if (Strings.isBlank(template.getTableName())) {
+            String c = " FROM ";
+            int s = Strings.indexOfIgnoreCase(querySql, c);
+            if (s != -1) {
+                s += c.length();
+                int e = querySql.indexOf(" ", s);
+                if (e != -1) {
+                    template.setTableName(querySql.substring(s, e));
+                } else {
+                    template.setTableName(querySql.substring(s));
+                }
+            }
+            if (Strings.isBlank(template.getTableName())) {
+                throw new InvalidException("Invalid table name");
+            }
+        }
+        DataRow first;
+        try {
+            first = IteratorUtils.first(template.getRows());
+        } catch (IndexOutOfBoundsException e) {
+            return template;
+        }
+        String tableName = template.getTableName();
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
         insert.append("INSERT INTO %s VALUES (", tableName);
 
-        for (DataColumn<?> column : template.getColumns()) {
+        int len = template.getColumns().size();
+        List<Class<?>> colTypes = new ArrayList<>(len);
+        for (int i = 0; i < len; i++) {
+            DataColumn<Object> column = template.getColumn(i);
             String colName = column.getColumnName();
+            int s = colName.indexOf("(");
+            if (s != -1) {
+                s += 1;
+                int e = colName.indexOf(")", s);
+                if (e != -1) {
+                    colName = colName.substring(s, e);
+                }
+            }
 
             Class<?> fieldType = column.getDataType();
             if (fieldType == null) {
-                fieldType = Object.class;
+                Object cell = first.get(i);
+                if (cell == null) {
+                    fieldType = Object.class;
+                } else {
+                    fieldType = cell.getClass();
+                }
             }
+            colTypes.add(fieldType);
             createCols.appendLine("\t`%s` %s,", colName, toH2Type(fieldType));
             insert.append("?,");
         }
@@ -538,32 +579,38 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         String url = "jdbc:h2:mem:";
         try (Connection conn = DriverManager.getConnection(url);
-             Statement stmt = conn.createStatement();
-             PreparedStatement prepStmt = conn.prepareStatement(insertSql)) {
+             Statement stmt = conn.createStatement()) {
             String sql = new StringBuilder(SQL_CREATE_TEMP_TABLE).replace($TABLE, tableName)
                     .replace($CREATE_COLUMNS, createCols.toString()).toString();
             log.debug("createMapping\n{}", sql);
             stmt.executeUpdate(sql);
 
-            List<Object> params = new ArrayList<>();
-            for (DataTable dt : result) {
-                for (DataRow row : dt.getRows()) {
-                    for (DataColumn<?> col : template.getColumns()) {
-                        params.add(row.get(col));
+            try (PreparedStatement prepStmt = conn.prepareStatement(insertSql)) {
+                List<Object> params = new ArrayList<>();
+                for (DataTable dt : queryResults) {
+                    for (DataRow row : dt.getRows()) {
+                        params.clear();
+                        for (DataColumn<?> col : dt.getColumns()) {
+                            params.add(row.get(col));
+                        }
                         fillParams(prepStmt, params);
-                        prepStmt.executeUpdate();
+                        prepStmt.addBatch();
                     }
                 }
+                prepStmt.executeBatch();
             }
 
             DataTable combined = DataTable.read(stmt.executeQuery(querySql));
-            for (int i = 0; i < combined.getColumns().size(); i++) {
+            if (combined.getColumns().size() != colTypes.size()) {
+                throw new InvalidException("Invalid querySql");
+            }
+            for (int i = 0; i < colTypes.size(); i++) {
                 for (DataRow row : combined.getRows()) {
                     Object cell = row.get(i);
                     if (cell == null) {
                         continue;
                     }
-                    row.set(i, convertCell(cell.getClass(), cell));
+                    row.set(i, convertCell(colTypes.get(i), cell));
                 }
             }
             return combined;
@@ -574,7 +621,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String h2Type;
         if (Reflects.isAssignable(fieldType, NEnum.class)) {
             h2Type = H2Type.INTEGER.getName();
-        } else if (Reflects.isAssignable(fieldType, Decimal.class)) {
+        } else if (Reflects.isAssignable(fieldType, Decimal.class) || fieldType == BigDecimal.class) {
 //            h2Type = H2Type.NUMERIC.getName();
             h2Type = "NUMERIC(56, 6)";
         } else if (fieldType.isArray()) {

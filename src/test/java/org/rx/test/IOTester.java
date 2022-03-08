@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
 import org.rx.io.*;
@@ -29,6 +30,35 @@ import static org.rx.core.Extends.sleep;
 @Slf4j
 public class IOTester {
     static final String h2Db = "~/h2/test";
+
+    @Test
+    public synchronized void h2Sharding() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        db.createMapping(PersonBean.class);
+
+//        for (int i = 0; i < 10; i++) {
+//            PersonBean personBean = i % 2 == 0 ? PersonBean.YouFan : PersonBean.LeZhi;
+//            personBean = personBean.deepClone();
+//            personBean.setIndex(i);
+//            db.save(personBean);
+//        }
+
+//        DataTable dt1 = db.executeQuery("select * from person order by index limit 0,2", PersonBean.class);
+//        DataTable dt2 = db.executeQuery("select * from person order by index limit 2,2", PersonBean.class);
+//        System.out.println(dt1);
+//        System.out.println(dt2);
+//
+//        DataTable c = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), "select * from person order by index");
+//        System.out.println(c);
+
+        DataTable dt1 = db.executeQuery("select sum(moneycent) from person limit 0,2", PersonBean.class);
+        DataTable dt2 = db.executeQuery("select sum(moneycent) from person", PersonBean.class);
+        System.out.println(dt1);
+        System.out.println(dt2);
+
+        DataTable c = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), "select sum(moneycent) from person");
+        System.out.println(c);
+    }
 
     @SneakyThrows
     @Test
@@ -90,8 +120,8 @@ public class IOTester {
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                        .ne(PersonBean::getAge, 10)
-                        .ne(PersonBean::getAge, 11))
+                .ne(PersonBean::getAge, 10)
+                .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
