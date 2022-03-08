@@ -606,11 +606,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             for (int i = 0; i < colTypes.size(); i++) {
                 for (DataRow row : combined.getRows()) {
-                    Object cell = row.get(i);
-                    if (cell == null) {
-                        continue;
-                    }
-                    row.set(i, convertCell(colTypes.get(i), cell));
+                    row.set(i, convertCell(colTypes.get(i), row.get(i)));
                 }
             }
             return combined;
@@ -721,11 +717,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                             throw new InvalidException("Mapping %s not found", metaData.getColumnName(i));
                         }
                         Class<?> type = bi.left.getType();
-                        Object val = rs.getObject(i);
-                        if (val == null) {
-                            continue;
-                        }
-                        bi.left.set(t, convertCell(type, val));
+                        bi.left.set(t, convertCell(type, rs.getObject(i)));
                     }
                     r.add(t);
                 }
@@ -736,6 +728,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @SneakyThrows
     static Object convertCell(Class<?> type, Object cell) {
+        if (cell == null) {
+            return Reflects.defaultValue(type);
+        }
         if (type.isArray() && type.getComponentType() == Object.class) {
             Object[] arr;
             Blob blob = (Blob) cell;

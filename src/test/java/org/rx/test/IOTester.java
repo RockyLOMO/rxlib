@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DataRow;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
@@ -11,6 +12,7 @@ import org.rx.io.*;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
+import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
 
 import java.io.*;
@@ -25,6 +27,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.quietly;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
@@ -36,28 +39,46 @@ public class IOTester {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
         db.createMapping(PersonBean.class);
 
-//        for (int i = 0; i < 10; i++) {
-//            PersonBean personBean = i % 2 == 0 ? PersonBean.YouFan : PersonBean.LeZhi;
-//            personBean = personBean.deepClone();
-//            personBean.setIndex(i);
-//            db.save(personBean);
-//        }
+        try {
+            for (int i = 0; i < 10; i++) {
+                PersonBean personBean = new PersonBean();
+                personBean.setIndex(i);
+                personBean.setName("老王" + i);
+                if (i % 2 == 0) {
+                    personBean.setGender(PersonGender.GIRL);
+                    personBean.setFlags(PersonBean.Flags);
+                    personBean.setArray(PersonBean.Array);
+                } else {
+                    personBean.setGender(PersonGender.BOY);
+                }
+                db.save(personBean);
+            }
 
-//        DataTable dt1 = db.executeQuery("select * from person order by index limit 0,2", PersonBean.class);
-//        DataTable dt2 = db.executeQuery("select * from person order by index limit 2,2", PersonBean.class);
-//        System.out.println(dt1);
-//        System.out.println(dt2);
-//
-//        DataTable c = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), "select * from person order by index");
-//        System.out.println(c);
+            String querySql = "select * from person order by index";
+            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
+            System.out.println(dt1);
+            System.out.println(dt2);
 
-        DataTable dt1 = db.executeQuery("select sum(moneycent) from person limit 0,2", PersonBean.class);
-        DataTable dt2 = db.executeQuery("select sum(moneycent) from person", PersonBean.class);
-        System.out.println(dt1);
-        System.out.println(dt2);
+            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            System.out.println(dt);
+            int i = 0;
+            for (DataRow row : dt.getRows()) {
+                int x = row.get("INDEX");
+                assert x == i++;
+            }
 
-        DataTable c = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), "select sum(moneycent) from person");
-        System.out.println(c);
+            querySql = "select sum(index),gender from person group by gender";
+            dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            dt2 = db.executeQuery(querySql + " limit 5", PersonBean.class);
+            System.out.println(dt1);
+            System.out.println(dt2);
+
+            dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            System.out.println(dt);
+        } finally {
+            db.dropMapping(PersonBean.class);
+        }
     }
 
     @SneakyThrows
