@@ -8,6 +8,9 @@ app:
     resizeQuantity: 2
     scheduleInitSize: 1
     replicas: 2
+  disk:
+    monitorPeriod: 60000
+    entityDatabaseRollPeriod: 10000
   net:
     reactorThreadAmount: 0
     enableLog: false

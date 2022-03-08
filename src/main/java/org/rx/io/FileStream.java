@@ -186,6 +186,12 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         randomAccessFile.close();
     }
 
+    public final FileStream flip() {
+        setLength(getPosition());
+        setPosition(0);
+        return this;
+    }
+
     @SneakyThrows
     @Override
     public long available() {

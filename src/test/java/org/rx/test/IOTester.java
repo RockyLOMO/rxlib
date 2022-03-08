@@ -4,12 +4,15 @@ import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DataRow;
+import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
 import org.rx.io.*;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
+import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
 
 import java.io.*;
@@ -17,20 +20,97 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.rx.core.App.*;
+import static org.rx.core.Extends.quietly;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class IOTester {
+    static final String h2Db = "~/h2/test";
+
+    @Test
+    public synchronized void h2Sharding() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        db.createMapping(PersonBean.class);
+
+        try {
+            for (int i = 0; i < 10; i++) {
+                PersonBean personBean = new PersonBean();
+                personBean.setIndex(i);
+                personBean.setName("老王" + i);
+                if (i % 2 == 0) {
+                    personBean.setGender(PersonGender.GIRL);
+                    personBean.setFlags(PersonBean.Flags);
+                    personBean.setArray(PersonBean.Array);
+                } else {
+                    personBean.setGender(PersonGender.BOY);
+                }
+                db.save(personBean);
+            }
+
+            String querySql = "select * from person order by index";
+            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
+            System.out.println(dt1);
+            System.out.println(dt2);
+
+            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            System.out.println(dt);
+            int i = 0;
+            for (DataRow row : dt.getRows()) {
+                int x = row.get("INDEX");
+                assert x == i++;
+            }
+
+            querySql = "select sum(index),gender from person group by gender";
+            dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            //todo offset -> empty row
+            dt2 = db.executeQuery(querySql + " limit 5 offset 5", PersonBean.class);
+            System.out.println(dt1);
+            System.out.println(dt2);
+
+            dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            System.out.println(dt);
+        } finally {
+            db.dropMapping(PersonBean.class);
+        }
+    }
+
+    @SneakyThrows
+    @Test
+    public synchronized void h2Reduce() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, "yyyyMMddHH");
+        db.setRollingHours(0);
+        db.createMapping(PersonBean.class);
+        for (int i = 0; i < 1000; i++) {
+            db.save(new PersonBean());
+        }
+        db.compact();
+//        db.clearTimeRollingFiles();
+//        Tasks.setTimeout(() -> {
+//            db.save(new PersonBean());
+//            return true;
+//        }, 2000);
+//        db.dropMapping(PersonBean.class);
+
+        DiskMonitor.INSTANCE.register(1, () -> System.out.println(1));
+        DiskMonitor.INSTANCE.register(1, () -> System.out.println(11));
+        DiskMonitor.INSTANCE.register(20, () -> System.out.println(20));
+        DiskMonitor.INSTANCE.register(99, () -> System.out.println(99));
+
+        wait();
+    }
+
     @Test
     public void h2() {
-        EntityDatabase db = new EntityDatabase("~/test");
-        db.setAutoUnderscoreColumnName(true);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+//        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();
 
@@ -38,10 +118,12 @@ public class IOTester {
         db.save(entity);
 
         EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
+                .orderBy(PersonBean::getId)
                 .limit(1, 10);
         assert db.exists(queryLambda);
         db.commit();
 
+        System.out.println(db.executeQuery("select * from `person` limit 2", PersonBean.class));
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         System.out.println(toJsonString(list));
@@ -60,8 +142,8 @@ public class IOTester {
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                        .ne(PersonBean::getAge, 10)
-                        .ne(PersonBean::getAge, 11))
+                .ne(PersonBean::getAge, 10)
+                .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
@@ -381,7 +463,6 @@ public class IOTester {
         System.out.println(stream.read());
 
         IOStream<?, ?> serializeStream = Serializer.DEFAULT.serialize(stream);
-        serializeStream.setPosition(0);
         MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
@@ -419,7 +500,7 @@ public class IOTester {
 
     @Test
     public void listDirectories() {
-        Path path = Files.path(TConfig.BASE_DIR);
+        Path path = Paths.get(TConfig.BASE_DIR);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
@@ -438,7 +519,6 @@ public class IOTester {
         GirlBean girlBean = new GirlBean();
         girlBean.setAge(8);
         IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
-        serialize.setPosition(0);
         GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
         assert girlBean.equals(deGirl);
     }

@@ -13,7 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
-class LocalCurdFile implements CurdFile<File> {
+class LocalCrudFile implements CrudFile<File> {
     @SneakyThrows
     @Override
     public void createDirectory(String path) {

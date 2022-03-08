@@ -183,7 +183,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     public <T extends Serializable> void writeObject(T value) {
         try (IOStream<?, ?> stream = Serializer.DEFAULT.serialize(value)) {
             writeLong(stream.getLength());
-            write(stream.rewind());
+            write(stream);
         }
     }
 }

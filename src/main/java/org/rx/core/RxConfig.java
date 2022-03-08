@@ -26,6 +26,9 @@ public final class RxConfig {
         String CACHE_SLIDING_SECONDS = "app.cache.slidingSeconds";
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
+        String DISK_MONITOR_PERIOD = "app.disk.monitorPeriod";
+        String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
+
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
         String NET_ENABLE_LOG = "app.net.enableLog";
         String NET_CONNECT_TIMEOUT_MILLIS = "app.net.connectTimeoutMillis";
@@ -61,6 +64,12 @@ public final class RxConfig {
     }
 
     @Data
+    public static class DiskConfig {
+        int monitorPeriod;
+        int entityDatabaseRollPeriod;
+    }
+
+    @Data
     public static class NetConfig {
         int reactorThreadAmount;
         boolean enableLog;
@@ -73,6 +82,7 @@ public final class RxConfig {
     public static final RxConfig INSTANCE = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
+    DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
     String id;
     int traceKeepDays;
@@ -106,6 +116,9 @@ public final class RxConfig {
         }
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, 60);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 10000);
+
+        disk.monitorPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_MONITOR_PERIOD, 60000);
+        disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, 10000);
 
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, 0);
         net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, false);

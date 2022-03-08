@@ -12,7 +12,7 @@ public interface Serializer {
     default <T> HybridStream serialize(T obj, int maxMemorySize, String tempFilePath) {
         HybridStream stream = new HybridStream(maxMemorySize, tempFilePath);
         serialize(obj, stream);
-        return stream;
+         return (HybridStream) stream.rewind();
     }
 
     <T> void serialize(T obj, IOStream<?, ?> stream);

@@ -36,6 +36,10 @@ public final class DateTime extends Date {
         return new DateTime(System.currentTimeMillis());
     }
 
+    public static DateTime now(String format) {
+        return valueOf(now().toString(format), format);
+    }
+
     public static DateTime utcNow() {
         return now().asUniversalTime();
     }
@@ -73,12 +77,12 @@ public final class DateTime extends Date {
 
     public DateTime getDateComponent() {
         String format = "yyyyMMdd";
-        return DateTime.valueOf(this.toString(format), format);
+        return DateTime.valueOf(toString(format), format);
     }
 
     public DateTime getDateTimeComponent() {
         String format = "yyyyMMddHHmmss";
-        return DateTime.valueOf(this.toString(format), format);
+        return DateTime.valueOf(toString(format), format);
     }
 
     @SuppressWarnings(NON_UNCHECKED)

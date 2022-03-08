@@ -83,7 +83,7 @@ public class NameserverImpl implements Nameserver {
         }
 
         dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(svrEps).select(InetSocketAddress::getAddress).toList());
-        raiseEventAsync(Nameserver.EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
+        raiseEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
         for (InetSocketAddress ssAddr : serverEndpoints) {
             ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
         }
@@ -101,12 +101,18 @@ public class NameserverImpl implements Nameserver {
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(appName);
-        InetAddress addr = ctx.getClient().getRemoteAddress().getAddress();
-        App.logMetric("remoteAddr", addr);
-        dnsServer.addHosts(appName, weight, Collections.singletonList(addr));
+        InetAddress ip = ctx.getClient().getRemoteAddress().getAddress();
+        App.logMetric("remoteAddr", ip);
+        doRegister(appName, weight, ip);
 
         syncRegister(serverEndpoints);
         return config.getDnsPort();
+    }
+
+    void doRegister(String appName, int weight, InetAddress ip) {
+        if (dnsServer.addHosts(appName, weight, Collections.singletonList(ip))) {
+            raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, ip, true));
+        }
     }
 
     @Override
@@ -120,12 +126,14 @@ public class NameserverImpl implements Nameserver {
         doDeregister(appName, ctx.getClient().getRemoteAddress().getAddress(), false, true);
     }
 
-    private void doDeregister(String appName, InetAddress ip, boolean isDisconnected, boolean shouldSync) {
+    void doDeregister(String appName, InetAddress ip, boolean isDisconnected, boolean shouldSync) {
         //同app同ip多实例，比如k8s滚动更新
         int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
-            dnsServer.removeHosts(appName, Collections.singletonList(ip));
+            if (dnsServer.removeHosts(appName, Collections.singletonList(ip))) {
+                raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, ip, false));
+            }
             if (shouldSync) {
                 syncDeregister(new DeregisterInfo(appName, ip));
             }
@@ -138,7 +146,13 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public List<InetAddress> discoverAll(@NonNull String appName) {
-        return dnsServer.getAllHosts(appName);
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
+        List<InetAddress> allHosts = dnsServer.getAllHosts(appName);
+        if (withoutCurrent) {
+            RemotingContext ctx = RemotingContext.context();
+            ctx.getClient().attr(appName);
+            allHosts.remove(ctx.getClient().getRemoteAddress().getAddress());
+        }
+        return allHosts;
     }
 }

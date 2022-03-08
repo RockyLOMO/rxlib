@@ -139,6 +139,10 @@ public class Strings extends StringUtils {
         return str.substring(0, left) + x + str.substring(left + x.length());
     }
 
+    public static boolean containsAll(String str, CharSequence... searches) {
+        return str != null && NQuery.of(searches).all(str::contains);
+    }
+
     public static String[] split(String str, String delimiter) {
         return split(str, delimiter, -1);
     }
@@ -278,7 +282,7 @@ public class Strings extends StringUtils {
     }
     //#endregion
 
-    public static boolean isMatch(String input, String regularExp) {
+    public static boolean isMatch(CharSequence input, String regularExp) {
         return input != null && regularExp != null && Pattern.matches(regularExp, input);
     }
 }

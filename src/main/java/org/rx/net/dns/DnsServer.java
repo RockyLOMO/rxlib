@@ -9,7 +9,6 @@ import io.netty.handler.codec.dns.TcpDnsResponseEncoder;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
@@ -76,12 +75,12 @@ public class DnsServer extends Disposable {
         return new ArrayList<>(hosts.get(host));
     }
 
-    @SneakyThrows
-    public DnsServer addHosts(String host, @NonNull String... ips) {
-        return addHosts(host, RandomList.DEFAULT_WEIGHT, NQuery.of(ips).select(InetAddress::getByName).toList());
+    public boolean addHosts(String host, @NonNull String... ips) {
+        return addHosts(host, RandomList.DEFAULT_WEIGHT, NQuery.of(ips).select(InetAddress::getByName).toSet());
     }
 
-    public DnsServer addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
+    public boolean addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
+        boolean changed = false;
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
         for (InetAddress ip : ips) {
             synchronized (list) {
@@ -90,14 +89,14 @@ public class DnsServer extends Disposable {
                     continue;
                 }
                 list.add(ip, weight);
+                changed = true;
             }
         }
-        return this;
+        return changed;
     }
 
-    public DnsServer removeHosts(@NonNull String host, Collection<InetAddress> ips) {
-        hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
-        return this;
+    public boolean removeHosts(@NonNull String host, Collection<InetAddress> ips) {
+        return hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
     }
 
     public DnsServer addHostsFile(String filePath) {

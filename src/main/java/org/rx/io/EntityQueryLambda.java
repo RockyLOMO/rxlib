@@ -165,6 +165,39 @@ public class EntityQueryLambda<T> implements Extends {
         return resolve(conditions, params, orders, autoUnderscoreColumnName, limit, offset);
     }
 
+    static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
+        NQuery<T> q = NQuery.of(result);
+        if (!lambda.orders.isEmpty()) {
+            boolean isDescFirst = false;
+            List<BiFunc<T, ?>> asc = new ArrayList<>(), desc = new ArrayList<>();
+            for (int i = 0; i < lambda.orders.size(); i++) {
+                Tuple<BiFunc<T, ?>, Order> order = lambda.orders.get(i);
+                if (i == 0) {
+                    isDescFirst = order.right == Order.DESC;
+                }
+                if (order.right == Order.DESC) {
+                    desc.add(order.left);
+                } else {
+                    asc.add(order.left);
+                }
+            }
+            if (isDescFirst) {
+                q = q.orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList());
+            } else {
+                q = q.orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList());
+            }
+        }
+        if (lambda.offset != null) {
+            q = q.skip(lambda.offset);
+        }
+        if (lambda.limit != null) {
+            q = q.take(lambda.limit);
+        }
+        return q.toList();
+    }
+
     static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params,
                               List<Tuple<BiFunc<T, ?>, Order>> orders, boolean autoUnderscoreColumnName,
                               Integer limit, Integer offset) {

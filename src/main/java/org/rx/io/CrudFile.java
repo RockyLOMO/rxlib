@@ -6,7 +6,7 @@ import org.rx.core.Strings;
 
 import java.io.InputStream;
 
-public interface CurdFile<T> {
+public interface CrudFile<T> {
     default boolean isDirectoryPath(String path) {
         if (Strings.isEmpty(path)) {
             return false;

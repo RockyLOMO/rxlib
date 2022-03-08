@@ -1,5 +1,6 @@
 package org.rx.test;
 
+import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -16,7 +17,9 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class RxBenchmark {
     @Benchmark
+    @Test
     public void a() {
+        System.out.println(Bytes.readableByteSize(16));
         Bytes.readableByteSize(1024);
         Bytes.readableByteSize(1024 * 1024);
     }

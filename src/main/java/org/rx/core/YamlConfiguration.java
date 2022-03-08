@@ -48,7 +48,7 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
     }
 
     public static Map<String, Object> loadYaml(List<InputStream> streams) {
-        Map<String, Object> result = new HashMap<>();
+        Map<String, Object> result = new LinkedHashMap<>();
         if (CollectionUtils.isEmpty(streams)) {
             return result;
         }
@@ -98,14 +98,17 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
     }
 
     public synchronized YamlConfiguration enableWatch(@NonNull String outputFile) {
-        try (FileStream fs = new FileStream(outputFile)) {
-            fs.setPosition(0);
-            fs.writeString(new Yaml().dumpAsMap(yaml));
-        }
         if (watcher != null) {
-            watcher.close();
+            throw new InvalidException("Already watched");
         }
 
+        if (!yaml.isEmpty()) {
+            try (FileStream fs = new FileStream(outputFile)) {
+                fs.setPosition(0);
+                fs.writeString(new Yaml().dumpAsMap(yaml));
+                fs.flip();
+            }
+        }
         watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
         watcher.onChanged.combine((s, e) -> {
             String filePath = e.getPath().toString();

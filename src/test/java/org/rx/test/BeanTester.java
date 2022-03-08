@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
 import org.rx.core.App;
+import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.test.bean.PersonBean;
@@ -93,6 +94,24 @@ public class BeanTester extends TestUtil {
         mapper.map(f, t, BeanMapFlag.LOG_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
+    }
+
+    @Test
+    public void dataTable() {
+        DataTable dt = new DataTable();
+        dt.addColumns("id", "name", "age");
+        dt.addRow(1, "张三", 5);
+        DataRow secondRow = dt.addRow(2, "李四", 10);
+        DataRow row = dt.newRow(3, "湵范", 20);
+        dt.setFluentRows(Arrays.toList(row).iterator());
+        System.out.println(dt);
+
+        dt.removeColumn("age");
+        dt.addColumn("money");
+        secondRow.set(2, 100);
+        System.out.println(dt);
+
+//        row.set(4, 0);
     }
 
     @SneakyThrows
