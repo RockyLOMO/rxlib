@@ -179,8 +179,9 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> DataTable executeQuery(String sql, Class<T> entityType) {
-//        return super.executeQuery(sql, entityType);
-        return null;
+        List<DataTable> r = new ArrayList<>();
+        invokeAll(p -> r.add(p.executeQuery(sql, entityType)));
+        return EntityDatabaseImpl.sharding(r, sql);
     }
 
     @Override

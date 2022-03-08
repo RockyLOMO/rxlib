@@ -132,7 +132,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (connPool == null) {
             String filePath = getFilePath();
             hash = filePath.hashCode();
-            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;TRACE_LEVEL_FILE=0", filePath), null, null);
+            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
             connPool.setMaxConnections(maxConnections);
             if (!mappedEntityTypes.isEmpty()) {
                 createMapping(NQuery.of(mappedEntityTypes).toArray());

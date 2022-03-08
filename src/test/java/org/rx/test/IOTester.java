@@ -70,7 +70,8 @@ public class IOTester {
 
             querySql = "select sum(index),gender from person group by gender";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
-            dt2 = db.executeQuery(querySql + " limit 5", PersonBean.class);
+            //todo offset -> empty row
+            dt2 = db.executeQuery(querySql + " limit 5 offset 5", PersonBean.class);
             System.out.println(dt1);
             System.out.println(dt2);
 

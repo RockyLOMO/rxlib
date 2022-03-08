@@ -168,12 +168,25 @@ public class EntityQueryLambda<T> implements Extends {
     static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
         NQuery<T> q = NQuery.of(result);
         if (!lambda.orders.isEmpty()) {
-            for (Tuple<BiFunc<T, ?>, Order> order : lambda.orders) {
-                if (order.right == Order.DESC) {
-                    q = q.orderByDescending(order.left);
-                } else {
-                    q = q.orderBy(order.left);
+            boolean isDescFirst = false;
+            List<BiFunc<T, ?>> asc = new ArrayList<>(), desc = new ArrayList<>();
+            for (int i = 0; i < lambda.orders.size(); i++) {
+                Tuple<BiFunc<T, ?>, Order> order = lambda.orders.get(i);
+                if (i == 0) {
+                    isDescFirst = order.right == Order.DESC;
                 }
+                if (order.right == Order.DESC) {
+                    desc.add(order.left);
+                } else {
+                    asc.add(order.left);
+                }
+            }
+            if (isDescFirst) {
+                q = q.orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList());
+            } else {
+                q = q.orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList());
             }
         }
         if (lambda.offset != null) {
