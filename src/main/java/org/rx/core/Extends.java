@@ -17,7 +17,9 @@ import org.rx.util.function.Func;
 import java.io.Serializable;
 import java.lang.reflect.AnnotatedElement;
 import java.util.List;
+import java.util.Map;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
@@ -207,12 +209,12 @@ public interface Extends extends Serializable {
     }
     //endregion
 
-    default <TV> TV attr() {
-        return Container.<Object, TV>weakMap().get(this);
+    default <TK, TV> TV attr(TK key) {
+        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).get(key);
     }
 
-    default <TV> TV attr(TV v) {
-        return Container.<Object, TV>weakMap().put(this, v);
+    default <TK, TV> void attr(TK key, TV value) {
+        Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).put(key, value);
     }
 
     default <T> T deepClone() {

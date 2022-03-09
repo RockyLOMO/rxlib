@@ -10,9 +10,9 @@ import java.io.Serializable;
 @EqualsAndHashCode(callSuper = true)
 public class RpcServerEventArgs<T extends Serializable> extends NEventArgs<T> {
     private static final long serialVersionUID = 6292438476559047718L;
-    private final RpcServerClient client;
+    private final RpcClientMeta client;
 
-    public RpcServerEventArgs(RpcServerClient client, T value) {
+    public RpcServerEventArgs(RpcClientMeta client, T value) {
         super(value);
         this.client = client;
     }
