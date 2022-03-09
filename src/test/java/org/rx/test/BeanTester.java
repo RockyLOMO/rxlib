@@ -169,7 +169,7 @@ public class BeanTester extends TestUtil {
         Set<Long> set = new HashSet<>();
         int len = 1 << 12;
         System.out.println(len);
-        SnowFlake snowFlake = new SnowFlake(1, 1);
+        SnowFlake snowFlake = SnowFlake.DEFAULT;
         for (int i = 0; i < len; i++) {
             Tasks.run(() -> {
                 assert set.add(snowFlake.nextId());

@@ -92,6 +92,14 @@ public final class RxConfig {
     String aesKey;
     String omega;
 
+    public int getIntId() {
+        Integer v = Integer.getInteger(id);
+        if (v != null) {
+            return v;
+        }
+        return id.hashCode();
+    }
+
     private RxConfig() {
         refreshFromSystemProperty();
     }
@@ -132,7 +140,7 @@ public final class RxConfig {
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID);
         if (id == null) {
-            id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(100);
+            id = Sockets.getLocalAddress().getHostAddress();
         }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         jsonSkipTypes.clear();

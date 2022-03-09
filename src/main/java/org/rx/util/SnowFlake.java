@@ -2,17 +2,30 @@ package org.rx.util;
 
 import io.netty.util.internal.ThreadLocalRandom;
 import org.rx.bean.DateTime;
+import org.rx.core.RxConfig;
 
 /**
  * 1位标识部分    -      41位时间戳部分        -         10位节点部分     12位序列号部分
  * 0 - 0000000000 0000000000 0000000000 0000000000 0 - 00000 - 00000 - 000000000000
  */
 public final class SnowFlake {
-    public static final SnowFlake DEFAULT = nextInstance();
+    public static final SnowFlake DEFAULT;
+
+    static {
+        int d, m, max = 31, v = RxConfig.INSTANCE.getIntId() % (max * max);
+        if (v <= max) {
+            d = v;
+            m = 0;
+        } else {
+            d = max;
+            m = v / max;
+        }
+        DEFAULT = new SnowFlake(d, m);
+    }
 
     public static SnowFlake nextInstance() {
-        return new SnowFlake(ThreadLocalRandom.current().nextInt(0, (int) MAX_DATACENTER_NUM),
-                ThreadLocalRandom.current().nextInt(0, (int) MAX_MACHINE_NUM));
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        return new SnowFlake(rnd.nextInt(0, (int) MAX_DATACENTER_NUM), rnd.nextInt(0, (int) MAX_MACHINE_NUM));
     }
 
     /**
@@ -20,39 +33,31 @@ public final class SnowFlake {
      */
 //    private static final long START_STAMP = 1480166465631L;
     private static final long START_STAMP = DateTime.valueOf("2020-02-04 00:00:00").getTime();
-    /**
-     * 每一部分占用的位数
-     */
-    private static final long DATACENTER_BIT = 5;//数据中心占用的位数
-    private static final long MACHINE_BIT = 5;   //机器标识占用的位数
-    private static final long SEQUENCE_BIT = 12; //序列号占用的位数
-    /**
-     * 每一部分的最大值
-     */
-    private static final long MAX_DATACENTER_NUM = ~(-1L << DATACENTER_BIT);
-    private static final long MAX_MACHINE_NUM = ~(-1L << MACHINE_BIT);
-    private static final long MAX_SEQUENCE = ~(-1L << SEQUENCE_BIT);
+    private static final short DATACENTER_BIT = 5;//数据中心占用的位数
+    private static final short MACHINE_BIT = 5;   //机器标识占用的位数
+    private static final short SEQUENCE_BIT = 12; //序列号占用的位数
+
+    private static final long MAX_DATACENTER_NUM = ~(-1L << DATACENTER_BIT);//31
+    private static final long MAX_MACHINE_NUM = ~(-1L << MACHINE_BIT);      //31
+    private static final long MAX_SEQUENCE = ~(-1L << SEQUENCE_BIT);        //4095
     /**
      * 每一部分向左的位移
      */
-    private static final long DATACENTER_LEFT = SEQUENCE_BIT + MACHINE_BIT;
-    private static final long MACHINE_LEFT = SEQUENCE_BIT;
-    private static final long TIMESTAMP_LEFT = DATACENTER_LEFT + DATACENTER_BIT;
-    /**
-     * 步长, 1024
-     */
-    private static final long STEP_SIZE = 2 << 9;
+    private static final short DATACENTER_LEFT = SEQUENCE_BIT + MACHINE_BIT;
+    private static final short MACHINE_LEFT = SEQUENCE_BIT;
+    private static final short TIMESTAMP_LEFT = DATACENTER_LEFT + DATACENTER_BIT;
+    private static final short STEP_SIZE = 2 << 9; //1024
 
-    private final long datacenterId;
-    private final long machineId;
+    private final int datacenterId;
+    private final int machineId;
     private long sequence;
     private long lastStamp = -1L;
     /**
-     * 基础序列号, 每发生一次时钟回拨, basicSequence += STEP_SIZE
+     * 基础序列号，每发生一次时钟回拨，basicSequence += STEP_SIZE
      */
     private long basicSequence;
 
-    public SnowFlake(long datacenterId, long machineId) {
+    public SnowFlake(int datacenterId, int machineId) {
         if (datacenterId > MAX_DATACENTER_NUM || datacenterId < 0) {
             throw new IllegalArgumentException("datacenterId can't be greater than MAX_DATACENTER_NUM or less than 0");
         }
@@ -64,18 +69,18 @@ public final class SnowFlake {
     }
 
     public synchronized long nextId() {
-        long currStmp = System.currentTimeMillis();
-        if (currStmp < lastStamp) {
+        long curStamp = System.currentTimeMillis();
+        if (curStamp < lastStamp) {
 //            throw new RuntimeException("Clock moved backwards. Refusing to generate id");
-            return handleClockBackwards(currStmp);
+            return handleClockBackwards(curStamp);
         }
 
-        if (currStmp == lastStamp) {
+        if (curStamp == lastStamp) {
             //相同毫秒内，序列号自增
             sequence = (sequence + 1) & MAX_SEQUENCE;
             //同一毫秒的序列数已经达到最大
             if (sequence == 0L) {
-                currStmp = getNextMill();
+                curStamp = getNextMill();
             }
         } else {
             //不同毫秒内，序列号置为0
@@ -84,23 +89,23 @@ public final class SnowFlake {
             sequence = basicSequence;
         }
 
-        lastStamp = currStmp;
+        lastStamp = curStamp;
 
-        return (currStmp - START_STAMP) << TIMESTAMP_LEFT   //时间戳部分
+        return (curStamp - START_STAMP) << TIMESTAMP_LEFT   //时间戳部分
                 | datacenterId << DATACENTER_LEFT           //数据中心部分
                 | machineId << MACHINE_LEFT                 //机器标识部分
                 | sequence;                                 //序列号部分
     }
 
-    private long handleClockBackwards(long currStmp) {
+    private long handleClockBackwards(long curStamp) {
         basicSequence += STEP_SIZE;
         if (basicSequence == MAX_SEQUENCE + 1) {
             basicSequence = 0;
-            currStmp = getNextMill();
+            curStamp = getNextMill();
         }
         sequence = basicSequence;
-        lastStamp = currStmp;
-        return (currStmp - START_STAMP) << TIMESTAMP_LEFT
+        lastStamp = curStamp;
+        return (curStamp - START_STAMP) << TIMESTAMP_LEFT
                 | datacenterId << DATACENTER_LEFT
                 | machineId << MACHINE_LEFT
                 | sequence;
