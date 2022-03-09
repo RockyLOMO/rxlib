@@ -28,6 +28,8 @@ public interface EntityDatabase extends AutoCloseable {
 
     <T> List<T> findBy(EntityQueryLambda<T> query);
 
+    void compact();
+
     <T> void dropMapping(Class<T> entityType);
 
     void createMapping(Class<?>... entityTypes);

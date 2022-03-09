@@ -163,6 +163,11 @@ public class ShardingEntityDatabase implements EntityDatabase {
     }
 
     @Override
+    public void compact() {
+        invokeAll(EntityDatabase::compact);
+    }
+
+    @Override
     public <T> void dropMapping(Class<T> entityType) {
         invokeAll(p -> p.dropMapping(entityType));
     }

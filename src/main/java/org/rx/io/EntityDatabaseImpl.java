@@ -433,6 +433,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
     //endregion
 
+    @Override
     public void compact() {
         executeUpdate("SHUTDOWN COMPACT");
     }
