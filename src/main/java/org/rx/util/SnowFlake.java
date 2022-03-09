@@ -12,7 +12,7 @@ public final class SnowFlake {
     public static final SnowFlake DEFAULT;
 
     static {
-        int d, m, max = 31, v = RxConfig.INSTANCE.getIntId() % (max * max);
+        int d, m, max = 31, v = Math.abs(RxConfig.INSTANCE.getIntId()) % (max * max);
         if (v <= max) {
             d = v;
             m = 0;
