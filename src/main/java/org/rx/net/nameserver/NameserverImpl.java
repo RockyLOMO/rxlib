@@ -1,14 +1,9 @@
 package org.rx.net.nameserver;
 
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
-import org.rx.core.App;
-import org.rx.core.NEventArgs;
-import org.rx.core.NQuery;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
@@ -29,7 +24,7 @@ public class NameserverImpl implements Nameserver {
     static class DeregisterInfo implements Serializable {
         private static final long serialVersionUID = 713672672746841635L;
         final String appName;
-        final InetAddress ip;
+        final InetAddress address;
     }
 
     static final String NAME = "nameserver";
@@ -37,8 +32,12 @@ public class NameserverImpl implements Nameserver {
     final RpcServer rs;
     @Getter
     final DnsServer dnsServer;
+    @Setter
+    long syncDelay = 500;
     final UdpClient ss;
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
+    //key String -> appName, InetAddress -> instance addr
+    final Map<Object, Map<String, Serializable>> attrs = new ConcurrentHashMap<>();
 
     int getSyncPort() {
         if (config.getSyncPort() > 0) {
@@ -48,7 +47,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients()).groupByIntoMap(p -> ifNull(p.attr(), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteAddress().getAddress()).toList());
+        return NQuery.of(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteEndpoint().getAddress()).toList());
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -59,19 +58,24 @@ public class NameserverImpl implements Nameserver {
 
         rs = Remoting.listen(this, config.getRegisterPort());
         rs.onDisconnected.combine((s, e) -> {
-            String appName = e.getClient().attr();
+            String appName = e.getClient().attr(APP_NAME_KEY);
             if (appName == null) {
                 return;
             }
 
-            doDeregister(appName, e.getClient().getRemoteAddress().getAddress(), true, true);
+            doDeregister(appName, e.getClient().getRemoteEndpoint().getAddress(), true, true);
         });
 
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);
-            if (!tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.ip, false, false))) {
+            if (!tryAs(packet, Map.class, p -> {
+                Map<Object, Map<String, Serializable>> sync = (Map<Object, Map<String, Serializable>>) p;
+                for (Map.Entry<Object, Map<String, Serializable>> entry : sync.entrySet()) {
+                    attrs(entry.getKey()).putAll(entry.getValue());
+                }
+            }) && !tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.address, false, false))) {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
@@ -84,15 +88,27 @@ public class NameserverImpl implements Nameserver {
 
         dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(svrEps).select(InetSocketAddress::getAddress).toList());
         raiseEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
-        for (InetSocketAddress ssAddr : serverEndpoints) {
-            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
-        }
+        Tasks.setTimeout(() -> {
+            for (InetSocketAddress ssAddr : serverEndpoints) {
+                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
+            }
+        }, syncDelay, svrEps, TimeoutFlag.REPLACE);
     }
 
     public void syncDeregister(@NonNull DeregisterInfo deregisterInfo) {
-        for (InetSocketAddress ssAddr : svrEps) {
-            ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), deregisterInfo);
-        }
+        Tasks.setTimeout(() -> {
+            for (InetSocketAddress ssAddr : svrEps) {
+                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), deregisterInfo);
+            }
+        }, syncDelay, DeregisterInfo.class, TimeoutFlag.REPLACE);
+    }
+
+    public void syncAttributes() {
+        Tasks.setTimeout(() -> {
+            for (InetSocketAddress ssAddr : svrEps) {
+                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), attrs);
+            }
+        }, syncDelay, attrs, TimeoutFlag.REPLACE);
     }
 
     @Override
@@ -100,44 +116,72 @@ public class NameserverImpl implements Nameserver {
         App.logMetric("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
-        ctx.getClient().attr(appName);
-        InetAddress ip = ctx.getClient().getRemoteAddress().getAddress();
-        App.logMetric("remoteAddr", ip);
-        doRegister(appName, weight, ip);
+        ctx.getClient().attr(APP_NAME_KEY, appName);
+        InetAddress addr = ctx.getClient().getRemoteEndpoint().getAddress();
+        App.logMetric("remoteAddr", addr);
+        doRegister(appName, weight, addr);
 
         syncRegister(serverEndpoints);
         return config.getDnsPort();
     }
 
-    void doRegister(String appName, int weight, InetAddress ip) {
-        if (dnsServer.addHosts(appName, weight, Collections.singletonList(ip))) {
-            raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, ip, true));
+    void doRegister(String appName, int weight, InetAddress address) {
+        if (dnsServer.addHosts(appName, weight, Collections.singletonList(address))) {
+            raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, address, true));
         }
     }
 
     @Override
     public void deregister() {
         RemotingContext ctx = RemotingContext.context();
-        String appName = ctx.getClient().attr();
+        String appName = ctx.getClient().attr(APP_NAME_KEY);
         if (appName == null) {
             throw new InvalidException("Must register first");
         }
 
-        doDeregister(appName, ctx.getClient().getRemoteAddress().getAddress(), false, true);
+        doDeregister(appName, ctx.getClient().getRemoteEndpoint().getAddress(), false, true);
     }
 
-    void doDeregister(String appName, InetAddress ip, boolean isDisconnected, boolean shouldSync) {
+    void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
         //同app同ip多实例，比如k8s滚动更新
-        int c = NQuery.of(rs.getClients()).count(p -> eq(p.attr(), appName) && p.getRemoteAddress().getAddress().equals(ip));
+        int c = NQuery.of(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
-            if (dnsServer.removeHosts(appName, Collections.singletonList(ip))) {
-                raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, ip, false));
+            if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
+                raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, addr, false));
             }
             if (shouldSync) {
-                syncDeregister(new DeregisterInfo(appName, ip));
+                syncDeregister(new DeregisterInfo(appName, addr));
             }
         }
+    }
+
+    @Override
+    public <T extends Serializable> void attr(String appName, String key, T value) {
+        attrs(appName).put(key, value);
+        syncAttributes();
+    }
+
+    @Override
+    public <T extends Serializable> T attr(String appName, String key) {
+        return (T) attrs(appName).get(key);
+    }
+
+    Map<String, Serializable> attrs(Object key) {
+        return attrs.computeIfAbsent(key, k -> new ConcurrentHashMap<>());
+    }
+
+    @Override
+    public <T extends Serializable> void instanceAttr(String appName, String key, T value) {
+        RemotingContext ctx = RemotingContext.context();
+        attrs(ctx.getClient().getRemoteEndpoint().getAddress()).put(key, value);
+        syncAttributes();
+    }
+
+    @Override
+    public <T extends Serializable> T instanceAttr(String appName, String key) {
+        RemotingContext ctx = RemotingContext.context();
+        return (T) attrs(ctx.getClient().getRemoteEndpoint().getAddress()).get(key);
     }
 
     @Override
@@ -146,13 +190,36 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
-        List<InetAddress> allHosts = dnsServer.getAllHosts(appName);
-        if (withoutCurrent) {
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
+        List<InetAddress> hosts = dnsServer.getAllHosts(appName);
+        if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            ctx.getClient().attr(appName);
-            allHosts.remove(ctx.getClient().getRemoteAddress().getAddress());
+            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
         }
-        return allHosts;
+        return hosts;
+    }
+
+    @Override
+    public List<DiscoverInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
+        List<InetAddress> hosts = dnsServer.getHosts(appName);
+        return getDiscoverInfos(instanceAttrKeys, hosts);
+    }
+
+    @Override
+    public List<DiscoverInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
+        List<InetAddress> hosts = dnsServer.getAllHosts(appName);
+        if (exceptCurrent) {
+            RemotingContext ctx = RemotingContext.context();
+            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
+        }
+        return getDiscoverInfos(instanceAttrKeys, hosts);
+    }
+
+    List<DiscoverInfo> getDiscoverInfos(List<String> instanceAttrKeys, List<InetAddress> hosts) {
+        return NQuery.of(hosts).select(p -> {
+            Map<String, Serializable> attrs = attrs(p);
+            return new DiscoverInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID), NQuery.of(instanceAttrKeys)
+                    .where(x -> !eq(x, RxConfig.ConfigNames.APP_ID)).toMap(x -> x, attrs::get));
+        }).toList();
     }
 }

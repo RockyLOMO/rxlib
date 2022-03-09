@@ -210,11 +210,15 @@ public interface Extends extends Serializable {
     //endregion
 
     default <TK, TV> TV attr(TK key) {
-        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).get(key);
+        return this.<TK, TV>attrMap().get(key);
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).put(key, value);
+        attrMap().put(key, value);
+    }
+
+    default <TK, TV> Map<TK, TV> attrMap() {
+        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8));
     }
 
     default <T> T deepClone() {

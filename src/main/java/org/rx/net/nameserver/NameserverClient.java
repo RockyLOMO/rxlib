@@ -108,10 +108,12 @@ public final class NameserverClient extends Disposable {
                     Action doReg = () -> {
                         try {
                             tuple.right = tuple.middle.register(appName, svrEps);
+                            tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                             reInject();
                         } catch (Throwable e) {
                             delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
                                 tuple.right = tuple.middle.register(appName, svrEps);
+                                tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                                 delayTasks.remove(appName); //优先
                                 reInject();
                                 return false;
@@ -165,7 +167,15 @@ public final class NameserverClient extends Disposable {
         return hold.next().middle.discover(appName);
     }
 
-    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
-        return hold.next().middle.discoverAll(appName, withoutCurrent);
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
+        return hold.next().middle.discoverAll(appName, exceptCurrent);
+    }
+
+    public List<Nameserver.DiscoverInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
+        return hold.next().middle.discover(appName, instanceAttrKeys);
+    }
+
+    public List<Nameserver.DiscoverInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
+        return hold.next().middle.discoverAll(appName, exceptCurrent, instanceAttrKeys);
     }
 }
