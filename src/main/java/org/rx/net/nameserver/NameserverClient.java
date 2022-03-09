@@ -171,11 +171,11 @@ public final class NameserverClient extends Disposable {
         return hold.next().middle.discoverAll(appName, exceptCurrent);
     }
 
-    public List<Nameserver.DiscoverInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
+    public List<Nameserver.InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
         return hold.next().middle.discover(appName, instanceAttrKeys);
     }
 
-    public List<Nameserver.DiscoverInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
+    public List<Nameserver.InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
         return hold.next().middle.discoverAll(appName, exceptCurrent, instanceAttrKeys);
     }
 }

@@ -36,7 +36,7 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
 
     @RequiredArgsConstructor
     @Getter
-    class DiscoverInfo implements Extends {
+    class InstanceInfo implements Extends {
         private static final long serialVersionUID = 454367372507105015L;
         final InetAddress address;
         final String instanceId;
@@ -78,9 +78,9 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
 
     List<InetAddress> discoverAll(String appName, boolean exceptCurrent);
 
-    List<DiscoverInfo> discover(String appName, List<String> instanceAttrKeys);
+    List<InstanceInfo> discover(String appName, List<String> instanceAttrKeys);
 
-    List<DiscoverInfo> discoverAll(String appName, boolean exceptCurrent, List<String> instanceAttrKeys);
+    List<InstanceInfo> discoverAll(String appName, boolean exceptCurrent, List<String> instanceAttrKeys);
 
     default void close() {
     }

@@ -47,8 +47,9 @@ public class NameserverImpl implements Nameserver {
         return config.getRegisterPort();
     }
 
-    public Map<String, List<InetAddress>> getInstances() {
-        return NQuery.of(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"), (k, p) -> p.select(x -> x.getRemoteEndpoint().getAddress()).toList());
+    public Map<String, List<InstanceInfo>> getInstances() {
+        return NQuery.of(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
+                (k, p) -> getDiscoverInfos(p.select(x -> x.getRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -201,25 +202,25 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
-    public List<DiscoverInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
+    public List<InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
         List<InetAddress> hosts = dnsServer.getHosts(appName);
-        return getDiscoverInfos(instanceAttrKeys, hosts);
+        return getDiscoverInfos(hosts, instanceAttrKeys);
     }
 
     @Override
-    public List<DiscoverInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
+    public List<InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
         List<InetAddress> hosts = dnsServer.getAllHosts(appName);
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
             hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
         }
-        return getDiscoverInfos(instanceAttrKeys, hosts);
+        return getDiscoverInfos(hosts, instanceAttrKeys);
     }
 
-    List<DiscoverInfo> getDiscoverInfos(List<String> instanceAttrKeys, List<InetAddress> hosts) {
+    List<InstanceInfo> getDiscoverInfos(List<InetAddress> hosts, List<String> instanceAttrKeys) {
         return NQuery.of(hosts).select(p -> {
             Map<String, Serializable> attrs = attrs(p);
-            return new DiscoverInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID),
+            return new InstanceInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID),
                     NQuery.of(!CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet()).toMap(x -> x, attrs::get));
         }).toList();
     }
