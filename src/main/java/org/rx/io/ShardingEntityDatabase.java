@@ -40,11 +40,11 @@ public class ShardingEntityDatabase implements EntityDatabase {
                                   int rpcPort, String... registerEndpoints) {
         local = new EntityDatabaseImpl(filePath, timeRollingPattern, maxConnections);
         this.rpcPort = rpcPort;
-        nsClient.onAppHostChanged.combine((s, e) -> {
+        nsClient.onAppAddressChanged.combine((s, e) -> {
             if (!e.getAppName().equals(APP_NAME)) {
                 return;
             }
-            InetSocketAddress ep = new InetSocketAddress(e.getIp(), rpcPort);
+            InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);
             synchronized (shardingDbs) {
                 if (e.isUp()) {
                     if (!NQuery.of(shardingDbs).any(p -> p.left.equals(ep))) {
@@ -69,7 +69,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             shardingDbs.addAll(NQuery.of(nsClient.discoverAll(APP_NAME, true)).select(p -> {
                 InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
                 return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
-            }).toList());
+            }).orderBy(p -> p.left.getHostString()).toList());
         });
     }
 

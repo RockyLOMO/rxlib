@@ -132,7 +132,7 @@ public final class RxConfig {
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID);
         if (id == null) {
-            id = Sockets.getLocalAddress().getHostAddress();
+            id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(100);
         }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         jsonSkipTypes.clear();

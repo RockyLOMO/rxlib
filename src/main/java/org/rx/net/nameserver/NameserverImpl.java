@@ -2,6 +2,7 @@ package org.rx.net.nameserver;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -125,9 +126,9 @@ public class NameserverImpl implements Nameserver {
         return config.getDnsPort();
     }
 
-    void doRegister(String appName, int weight, InetAddress address) {
-        if (dnsServer.addHosts(appName, weight, Collections.singletonList(address))) {
-            raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, address, true));
+    void doRegister(String appName, int weight, InetAddress addr) {
+        if (dnsServer.addHosts(appName, weight, Collections.singletonList(addr))) {
+            raiseEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, true, attrs(addr)));
         }
     }
 
@@ -148,7 +149,7 @@ public class NameserverImpl implements Nameserver {
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
-                raiseEventAsync(EVENT_APP_HOST_CHANGED, new AppChangedEventArgs(appName, addr, false));
+                raiseEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, attrs(addr)));
             }
             if (shouldSync) {
                 syncDeregister(new DeregisterInfo(appName, addr));
@@ -218,8 +219,8 @@ public class NameserverImpl implements Nameserver {
     List<DiscoverInfo> getDiscoverInfos(List<String> instanceAttrKeys, List<InetAddress> hosts) {
         return NQuery.of(hosts).select(p -> {
             Map<String, Serializable> attrs = attrs(p);
-            return new DiscoverInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID), NQuery.of(instanceAttrKeys)
-                    .where(x -> !eq(x, RxConfig.ConfigNames.APP_ID)).toMap(x -> x, attrs::get));
+            return new DiscoverInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID),
+                    NQuery.of(!CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet()).toMap(x -> x, attrs::get));
         }).toList();
     }
 }
