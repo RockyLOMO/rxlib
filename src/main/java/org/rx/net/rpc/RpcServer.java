@@ -38,18 +38,22 @@ import static org.rx.core.Extends.*;
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     class ClientHandler extends ChannelInboundHandlerAdapter implements RpcClientMeta {
         transient Channel channel;
+        transient InetSocketAddress lastRemoteEp;
         @Getter
         DateTime connectedTime;
         @Getter
         final HandshakePacket handshakePacket = new HandshakePacket();
 
-        @Override
-        public InetSocketAddress getRemoteEndpoint() {
-            return (InetSocketAddress) channel.remoteAddress();
-        }
-
         public boolean isConnected() {
             return channel != null && channel.isActive();
+        }
+
+        @Override
+        public InetSocketAddress getRemoteEndpoint() {
+            if (isConnected()) {
+                return (InetSocketAddress) channel.remoteAddress();
+            }
+            return lastRemoteEp;
         }
 
         @Override
@@ -64,7 +68,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             }
 
             connectedTime = DateTime.now();
-            clients.put(getRemoteEndpoint(), this);
+            clients.put(lastRemoteEp = getRemoteEndpoint(), this);
             RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(this, null);
             raiseEvent(onConnected, args);
             if (args.isCancel()) {

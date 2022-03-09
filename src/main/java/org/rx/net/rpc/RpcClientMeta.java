@@ -7,9 +7,9 @@ import org.rx.net.rpc.protocol.HandshakePacket;
 import java.net.InetSocketAddress;
 
 public interface RpcClientMeta extends Extends {
-    InetSocketAddress getRemoteEndpoint();
-
     boolean isConnected();
+
+    InetSocketAddress getRemoteEndpoint();
 
     DateTime getConnectedTime();
 

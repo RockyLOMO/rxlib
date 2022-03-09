@@ -227,7 +227,7 @@ public final class Remoting {
                 if (eventArgs != null) {
                     log(eventArgs, msg -> {
                         msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
-                                client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()),
+                                Sockets.toString(client.getLocalEndpoint()),
                                 Sockets.toString(client.getConfig().getServerEndpoint()));
                         msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
                         if (eventArgs.getError() != null) {
