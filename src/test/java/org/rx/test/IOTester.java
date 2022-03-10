@@ -62,7 +62,7 @@ public class IOTester {
 
     @Test
     public synchronized void h2Sharding() {
-        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
         db.createMapping(PersonBean.class);
 
         try {
@@ -81,20 +81,21 @@ public class IOTester {
             }
 
             String querySql = "select * from person order by index";
-            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
-            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
-            System.out.println(dt1);
-            System.out.println(dt2);
+            DataTable dt1, dt2, dt;
+//            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+//            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
+//            System.out.println(dt1);
+//            System.out.println(dt2);
+//
+//            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+//            System.out.println(dt);
+//            int i = 0;
+//            for (DataRow row : dt.getRows()) {
+//                int x = row.get("INDEX");
+//                assert x == i++;
+//            }
 
-            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
-            System.out.println(dt);
-            int i = 0;
-            for (DataRow row : dt.getRows()) {
-                int x = row.get("INDEX");
-                assert x == i++;
-            }
-
-            querySql = "select sum(index),gender from person group by gender";
+            querySql = "select sum(index) val, name n, gender from person group by name, gender";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
             //todo offset -> empty row
             dt2 = db.executeQuery(querySql + " limit 5 offset 5", PersonBean.class);
@@ -135,7 +136,7 @@ public class IOTester {
 
     @Test
     public void h2() {
-        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
 //        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();

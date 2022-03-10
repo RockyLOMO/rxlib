@@ -5,12 +5,19 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import org.h2.expression.Alias;
+import org.h2.expression.Expression;
+import org.h2.expression.ExpressionColumn;
+import org.h2.expression.aggregate.Aggregate;
+import org.h2.jdbc.JdbcResultSet;
+import org.h2.result.LocalResult;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -18,32 +25,68 @@ import java.util.List;
 
 import static org.rx.core.App.fromJson;
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.tryAs;
 
 @SuppressWarnings(Constants.NON_RAW_TYPES)
 @NoArgsConstructor
 public class DataTable implements Extends {
     private static final long serialVersionUID = -7379386582995440975L;
 
-    @SneakyThrows
     public static DataTable read(ResultSet resultSet) {
+        return read(resultSet, false);
+    }
+
+    @SneakyThrows
+    public static DataTable read(ResultSet resultSet, boolean preferColumnName) {
         DataTable dt = new DataTable();
-        try (ResultSet x = resultSet) {
-            ResultSetMetaData metaData = x.getMetaData();
+        try (ResultSet rs = resultSet) {
+            ResultSetMetaData metaData = rs.getMetaData();
             dt.setTableName(metaData.getTableName(1));
             int columnCount = metaData.getColumnCount();
             for (int i = 1; i <= columnCount; i++) {
-                dt.addColumns(metaData.getColumnLabel(i));
+                dt.addColumns(preferColumnName ? metaData.getColumnName(i) : metaData.getColumnLabel(i));
             }
-            List<Object> buf = new ArrayList<>(columnCount);
-            while (x.next()) {
-                buf.clear();
-                for (int i = 1; i <= columnCount; i++) {
-                    buf.add(x.getObject(i));
-                }
-                dt.addRow(buf.toArray());
-            }
+            readRows(dt, rs, columnCount);
         }
         return dt;
+    }
+
+    static void readRows(DataTable dt, ResultSet rs, int columnCount) throws SQLException {
+        List<Object> buf = new ArrayList<>(columnCount);
+        while (rs.next()) {
+            buf.clear();
+            for (int i = 1; i <= columnCount; i++) {
+                buf.add(rs.getObject(i));
+            }
+            dt.addRow(buf.toArray());
+        }
+    }
+
+    @SneakyThrows
+    public static DataTable read(JdbcResultSet resultSet) {
+        DataTable dt = new DataTable();
+        try (JdbcResultSet rs = resultSet) {
+            LocalResult result = (LocalResult) rs.getResult();
+            Expression[] exprs = Reflects.readField(result, "expressions");
+            for (Expression expr : exprs) {
+                addColumnName(dt, expr);
+            }
+            int columnCount = exprs.length;
+            readRows(dt, rs, columnCount);
+        }
+        return dt;
+    }
+
+    static void addColumnName(DataTable dt, Expression expr) {
+        if (tryAs(expr, ExpressionColumn.class, p -> dt.addColumns(p.getOriginalColumnName()))
+                || tryAs(expr, Aggregate.class, p -> {
+            Expression subExpr = p.getSubexpression(0);
+            addColumnName(dt, subExpr);
+        })
+                || tryAs(expr, Alias.class, p -> {
+            Expression subExpr = p.getNonAliasExpression();
+            addColumnName(dt, subExpr);
+        })) ;
     }
 
     @Getter

@@ -9,6 +9,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
 import org.h2.api.H2Type;
+import org.h2.jdbc.JdbcResultSet;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.bean.*;
@@ -644,7 +645,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             if (log.isDebugEnabled()) {
                 log.debug("executeQuery {}", sql);
             }
-            DataTable dt = DataTable.read(conn.createStatement().executeQuery(sql));
+            DataTable dt = DataTable.read((JdbcResultSet) conn.createStatement().executeQuery(sql));
             if (entityType != null) {
                 SqlMeta meta = getMeta(entityType);
                 for (int i = 0; i < dt.getColumns().size(); i++) {
