@@ -49,9 +49,10 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         }
     }
 
-    private final List<WeightElement<T>> elements = new ArrayList<>();
-    private int maxRandomValue;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    final ReadWriteLock lock = new ReentrantReadWriteLock();
+    final List<WeightElement<T>> elements = new ArrayList<>();
+    int maxRandomValue;
+    CopyOnWriteArrayList<T> temp;
     @Setter
     BiFunc<T, ? extends Comparable> sortFunc;
 
@@ -158,6 +159,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                     }
                 });
             }
+            temp = null;
             maxRandomValue = 0;
         }
         return changed;
@@ -246,16 +248,17 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public T set(int index, T element) {
         lock.writeLock().lock();
         try {
+            WeightElement<T> previously = null;
             boolean changed;
             WeightElement<T> node = findElement(element, false);
             if (node == null) {
-                elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
+                previously = elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
                 changed = true;
             } else {
                 changed = false;
             }
             change(changed);
-            return null;
+            return previously == null ? null : previously.element;
         } finally {
             lock.writeLock().unlock();
         }
@@ -300,7 +303,10 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public Iterator<T> iterator() {
         lock.readLock().lock();
         try {
-            return new CopyOnWriteArrayList<T>(NQuery.of(elements).select(p -> p.element).toList()).iterator();
+            if (temp == null) {
+                temp = new CopyOnWriteArrayList<>(NQuery.of(elements).select(p -> p.element).toList());
+            }
+            return temp.iterator();
         } finally {
             lock.readLock().unlock();
         }
@@ -310,7 +316,13 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public boolean addAll(Collection<? extends T> c) {
         lock.writeLock().lock();
         try {
-            return change(elements.addAll(NQuery.of(c).select(p -> new WeightElement<T>(p, DEFAULT_WEIGHT)).toList()));
+            boolean changed = false;
+            for (T t : c) {
+                if (add(t)) {
+                    changed = true;
+                }
+            }
+            return change(changed);
         } finally {
             lock.writeLock().unlock();
         }

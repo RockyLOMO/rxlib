@@ -1,6 +1,7 @@
 package org.rx.util;
 
 import io.netty.util.internal.ThreadLocalRandom;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.RxConfig;
 
@@ -8,6 +9,7 @@ import org.rx.core.RxConfig;
  * 1位标识部分    -      41位时间戳部分        -         10位节点部分     12位序列号部分
  * 0 - 0000000000 0000000000 0000000000 0000000000 0 - 00000 - 00000 - 000000000000
  */
+@Slf4j
 public final class SnowFlake {
     public static final SnowFlake DEFAULT;
 
@@ -21,6 +23,7 @@ public final class SnowFlake {
             m = v / max;
         }
         DEFAULT = new SnowFlake(d, m);
+        log.info("SnowFlake {} {}", d, m);
     }
 
     public static SnowFlake nextInstance() {

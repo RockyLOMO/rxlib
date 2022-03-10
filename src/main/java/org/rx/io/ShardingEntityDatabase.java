@@ -231,9 +231,10 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @SneakyThrows
     <T> T invokeSharding(BiFunc<EntityDatabase, T> fn, Object shardingKey) {
-        int i = Math.abs(shardingKey.hashCode()) % shardingDbs.size();
+        int len = shardingDbs.size();
+        int i = Math.abs(shardingKey.hashCode()) % len;
         EntityDatabase db = shardingDbs.get(i).right;
-        log.info("{} sharding route {} -> {}", APP_NAME, i, db);
+        log.info("{} sharding route {}/{} -> {}", APP_NAME, i, len, db);
         return fn.invoke(db);
     }
 
