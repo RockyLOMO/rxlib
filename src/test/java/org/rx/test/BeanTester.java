@@ -166,14 +166,14 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void snowFlake() {
+    public void snowflake() {
         Set<Long> set = new HashSet<>();
         int len = 1 << 12;
         System.out.println(len);
-        SnowFlake snowFlake = SnowFlake.DEFAULT;
+        Snowflake snowflake = Snowflake.DEFAULT;
         for (int i = 0; i < len; i++) {
             Tasks.run(() -> {
-                assert set.add(snowFlake.nextId());
+                assert set.add(snowflake.nextId());
             });
         }
     }

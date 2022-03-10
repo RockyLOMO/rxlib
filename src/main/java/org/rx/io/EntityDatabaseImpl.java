@@ -574,7 +574,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             createCols.appendLine("\t`%s` %s,", colName, toH2Type(fieldType));
             insert.append("?,");
         }
-        createCols.setLength(createCols.length() - 3);
+        createCols.setLength(createCols.length() - System.lineSeparator().length() - 1);
         String insertSql = insert.setLength(insert.length() - 1).append(")").toString();
 
         String url = "jdbc:h2:mem:";

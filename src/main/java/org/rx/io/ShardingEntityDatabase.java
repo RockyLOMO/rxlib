@@ -69,6 +69,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         }).join();
 
         nsClient.onAppAddressChanged.combine((s, e) -> {
+            log.info("{} onchange {} {}", APP_NAME, e.getAppName(), e.getAddress());
             if (!e.getAppName().equals(APP_NAME)
 //                    || eq(e.getInstanceId(), RxConfig.INSTANCE.getId())
             ) {

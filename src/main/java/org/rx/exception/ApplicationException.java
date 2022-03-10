@@ -5,7 +5,7 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.*;
-import org.rx.util.SnowFlake;
+import org.rx.util.Snowflake;
 
 import static org.rx.core.Extends.*;
 
@@ -30,7 +30,7 @@ public class ApplicationException extends InvalidException {
         return applicationException.getFriendlyMessage();
     }
 
-    private final long id = SnowFlake.DEFAULT.nextId();
+    private final long id = Snowflake.DEFAULT.nextId();
     private final Object errorCode;
     private final Object[] codeValues;
     @Setter

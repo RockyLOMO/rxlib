@@ -5,7 +5,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
 import org.rx.util.Lazy;
-import org.rx.util.SnowFlake;
+import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
 
 import javax.activation.MimetypesFileTypeMap;
@@ -25,7 +25,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     public static File createTempFile() {
-        File temp = File.createTempFile(String.valueOf(SnowFlake.DEFAULT.nextId()), ".rfs");
+        File temp = File.createTempFile(String.valueOf(Snowflake.DEFAULT.nextId()), ".rfs");
         temp.setReadable(true);
         temp.setWritable(true);
 //        temp.deleteOnExit();

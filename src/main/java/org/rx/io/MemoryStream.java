@@ -6,7 +6,7 @@ import lombok.Setter;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.Constants;
 import org.rx.exception.InvalidException;
-import org.rx.util.SnowFlake;
+import org.rx.util.Snowflake;
 
 import java.io.*;
 
@@ -38,7 +38,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     @Override
     public String getName() {
         if (name == null) {
-            name = String.valueOf(SnowFlake.DEFAULT.nextId());
+            name = String.valueOf(Snowflake.DEFAULT.nextId());
         }
         return name;
     }
