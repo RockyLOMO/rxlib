@@ -537,6 +537,18 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 throw new InvalidException("Invalid table name");
             }
         }
+        for (DataColumn<?> column : template.getColumns()) {
+            Tuple<String, String> countMap = column.attr(DataTable.HS_COUNT_MAP);
+            if (countMap != null) {
+                querySql = Strings.replaceIgnoreCase(querySql, countMap.left, String.format("sum(%s)", countMap.right));
+            }
+        }
+//        int cs, ce = 0;
+//        while ((cs = Strings.indexOfIgnoreCase(querySql, "count(", ce)) != -1) {
+////            Strings.indexOfIgnoreCase(querySql,"",)
+//            ce = cs;
+//        }
+        log.info("shardingSql: {}", querySql);
         DataRow first;
         try {
             first = IteratorUtils.first(template.getRows());

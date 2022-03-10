@@ -95,10 +95,11 @@ public class IOTester {
 //                assert x == i++;
 //            }
 
-            querySql = "select sum(index) val, name n, gender from person group by name, gender";
+            querySql = "select sum(index) val, gender, count(1), count(*)  count from person group by gender";
+            querySql = "select sum(index), gender, count(id) count, count(*) count2, count(1)  count3 from person group by gender";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
             //todo offset -> empty row
-            dt2 = db.executeQuery(querySql + " limit 5 offset 5", PersonBean.class);
+            dt2 = db.executeQuery(querySql + " limit 5", PersonBean.class);
             System.out.println(dt1);
             System.out.println(dt2);
 

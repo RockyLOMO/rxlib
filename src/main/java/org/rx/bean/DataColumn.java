@@ -1,9 +1,6 @@
 package org.rx.bean;
 
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.rx.core.Extends;
 
 @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
