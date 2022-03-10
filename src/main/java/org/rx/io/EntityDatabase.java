@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface EntityDatabase extends AutoCloseable {
     String DEFAULT_FILE_PATH = "./rx";
-    EntityDatabase DEFAULT = new EntityDatabaseImpl(DEFAULT_FILE_PATH);
+    EntityDatabase DEFAULT = new EntityDatabaseImpl();
 
     <T> void save(T entity);
 

@@ -144,8 +144,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         return timeRollingPattern != null ? filePath + "_" + DateTime.now().toString(timeRollingPattern) : filePath;
     }
 
-    public EntityDatabaseImpl(String filePath) {
-        this(filePath, null);
+    public EntityDatabaseImpl() {
+        this(DEFAULT_FILE_PATH, null);
     }
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern) {

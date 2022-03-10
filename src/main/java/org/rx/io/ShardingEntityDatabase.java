@@ -30,18 +30,19 @@ import static org.rx.core.Extends.eq;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
+    public static final int DEFAULT_PORT = 3305;
     static final String APP_NAME = "EDB";
     final EntityDatabaseImpl local;
     final int rpcPort;
     final NameserverClient nsClient = new NameserverClient(APP_NAME);
     final RandomList<Tuple<InetSocketAddress, EntityDatabase>> shardingDbs = new RandomList<>();
 
-    public ShardingEntityDatabase(String filePath, String... registerEndpoints) {
-        this(filePath, 3305, registerEndpoints);
+    public ShardingEntityDatabase(String... registerEndpoints) {
+        this(DEFAULT_PORT, registerEndpoints);
     }
 
-    public ShardingEntityDatabase(String filePath, int rpcPort, String... registerEndpoints) {
-        this(filePath, null, 0, rpcPort, registerEndpoints);
+    public ShardingEntityDatabase(int rpcPort, String... registerEndpoints) {
+        this(DEFAULT_FILE_PATH, null, 0, rpcPort, registerEndpoints);
     }
 
     public ShardingEntityDatabase(String filePath, String timeRollingPattern, int maxConnections,
