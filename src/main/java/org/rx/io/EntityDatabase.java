@@ -6,7 +6,7 @@ import java.io.Serializable;
 import java.util.List;
 
 public interface EntityDatabase extends AutoCloseable {
-    EntityDatabase DEFAULT = new EntityDatabaseImpl("~/RxMeta");
+    EntityDatabase DEFAULT = new EntityDatabaseImpl("./rx");
 
     <T> void save(T entity);
 

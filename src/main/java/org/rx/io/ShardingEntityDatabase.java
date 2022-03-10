@@ -216,8 +216,8 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @SneakyThrows
     <T> T invokeSharding(BiFunc<EntityDatabase, T> fn, Object shardingKey) {
-        int offset = shardingKey.hashCode() % shardingDbs.size();
-        return fn.invoke(shardingDbs.get(offset).right);
+        int i = Math.abs(shardingKey.hashCode()) % shardingDbs.size();
+        return fn.invoke(shardingDbs.get(i).right);
     }
 
     @SneakyThrows
