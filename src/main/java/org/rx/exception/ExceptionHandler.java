@@ -7,7 +7,6 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
-import org.rx.io.EntityDatabaseImpl;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.FormattingTuple;
 import org.slf4j.helpers.MessageFormatter;
@@ -68,7 +67,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 future = Tasks.scheduleDaily(() -> {
                     db.delete(new EntityQueryLambda<>(ErrorEntity.class)
                             .lt(ErrorEntity::getModifyTime, DateTime.now().addDays(-keepDays - 1)));
-                    ((EntityDatabaseImpl) db).compact();
+                    db.compact();
                 }, Time.valueOf("3:00:00"));
             }
         } else {

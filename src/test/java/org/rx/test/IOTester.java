@@ -34,6 +34,32 @@ import static org.rx.core.Extends.sleep;
 public class IOTester {
     static final String h2Db = "~/h2/test";
 
+    @SneakyThrows
+    @Test
+    public synchronized void h2ShardingX() {
+        EntityDatabase db1 = new ShardingEntityDatabase("~/h2/s1", "192.168.31.5:854");
+//        EntityDatabase db2 = new ShardingEntityDatabase("~/h2/s2", "192.168.31.5:854");
+
+        db1.createMapping(PersonBean.class);
+        for (int i = 0; i < 10; i++) {
+            PersonBean personBean = new PersonBean();
+            personBean.setIndex(i);
+            personBean.setName("老王" + i);
+            if (i % 2 == 0) {
+                personBean.setGender(PersonGender.GIRL);
+                personBean.setFlags(PersonBean.Flags);
+                personBean.setArray(PersonBean.Array);
+            } else {
+                personBean.setGender(PersonGender.BOY);
+            }
+            db1.save(personBean);
+        }
+
+        List<PersonBean> result = db1.findBy(new EntityQueryLambda<>(PersonBean.class));
+        System.out.println(result);
+        wait();
+    }
+
     @Test
     public synchronized void h2Sharding() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);

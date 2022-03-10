@@ -1,12 +1,14 @@
 package org.rx.io;
 
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.rx.bean.$;
 import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
+import org.rx.core.RxConfig;
 import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverClient;
@@ -24,7 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.Extends.eq;
 
+@Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
     static final String APP_NAME = "EDB";
     final EntityDatabaseImpl local;
@@ -33,18 +37,45 @@ public class ShardingEntityDatabase implements EntityDatabase {
     final RandomList<Tuple<InetSocketAddress, EntityDatabase>> shardingDbs = new RandomList<>();
 
     public ShardingEntityDatabase(String filePath, String... registerEndpoints) {
-        this(filePath, null, 0, 3305, registerEndpoints);
+        this(filePath, 3305, registerEndpoints);
+    }
+
+    public ShardingEntityDatabase(String filePath, int rpcPort, String... registerEndpoints) {
+        this(filePath, null, 0, rpcPort, registerEndpoints);
     }
 
     public ShardingEntityDatabase(String filePath, String timeRollingPattern, int maxConnections,
                                   int rpcPort, String... registerEndpoints) {
+        shardingDbs.setSortFunc(p -> p.left.getHostString());
         local = new EntityDatabaseImpl(filePath, timeRollingPattern, maxConnections);
         this.rpcPort = rpcPort;
+
+        Remoting.listen(local, rpcPort);
+        nsClient.registerAsync(registerEndpoints).whenComplete((r, e) -> {
+            if (e != null) {
+                return;
+            }
+            shardingDbs.add(Tuple.of(new InetSocketAddress(Sockets.loopbackAddress(), rpcPort), local));
+            shardingDbs.addAll(NQuery.of(nsClient.discoverAll(APP_NAME, true)).select(p -> {
+                InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
+                return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
+            }).toList());
+            log.info("{} init {} shardingDbs", APP_NAME, shardingDbs.size());
+            try {
+                nsClient.wait4Inject();
+            } catch (TimeoutException ex) {
+                ExceptionHandler.INSTANCE.log(ex);
+            }
+        }).join();
+
         nsClient.onAppAddressChanged.combine((s, e) -> {
-            if (!e.getAppName().equals(APP_NAME)) {
+            if (!e.getAppName().equals(APP_NAME)
+//                    || eq(e.getInstanceId(), RxConfig.INSTANCE.getId())
+            ) {
                 return;
             }
             InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);
+            log.info("{} address {} isUp={}", APP_NAME, ep, e.isUp());
             synchronized (shardingDbs) {
                 if (e.isUp()) {
                     if (!NQuery.of(shardingDbs).any(p -> p.left.equals(ep))) {
@@ -54,22 +85,6 @@ public class ShardingEntityDatabase implements EntityDatabase {
                     shardingDbs.removeIf(p -> p.left.equals(ep));
                 }
             }
-        });
-        nsClient.registerAsync(registerEndpoints).whenComplete((r, e) -> {
-            if (e != null) {
-                return;
-            }
-            try {
-                nsClient.wait4Inject();
-            } catch (TimeoutException ex) {
-                ExceptionHandler.INSTANCE.log(ex);
-                return;
-            }
-            shardingDbs.add(Tuple.of(new InetSocketAddress(Sockets.loopbackAddress(), rpcPort), local));
-            shardingDbs.addAll(NQuery.of(nsClient.discoverAll(APP_NAME, true)).select(p -> {
-                InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
-                return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
-            }).orderBy(p -> p.left.getHostString()).toList());
         });
     }
 
@@ -217,7 +232,9 @@ public class ShardingEntityDatabase implements EntityDatabase {
     @SneakyThrows
     <T> T invokeSharding(BiFunc<EntityDatabase, T> fn, Object shardingKey) {
         int i = Math.abs(shardingKey.hashCode()) % shardingDbs.size();
-        return fn.invoke(shardingDbs.get(i).right);
+        EntityDatabase db = shardingDbs.get(i).right;
+        log.info("{} sharding route {} -> {}", APP_NAME, i, db);
+        return fn.invoke(db);
     }
 
     @SneakyThrows

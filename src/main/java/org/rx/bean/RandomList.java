@@ -2,6 +2,7 @@ package org.rx.bean;
 
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
@@ -9,7 +10,11 @@ import org.rx.core.NQuery;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 import io.netty.util.internal.ThreadLocalRandom;
+import org.rx.exception.InvalidException;
+import org.rx.util.function.BiFunc;
+
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -47,18 +52,20 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     private final List<WeightElement<T>> elements = new ArrayList<>();
     private int maxRandomValue;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    @Setter
+    BiFunc<T, ? extends Comparable> sortFunc;
 
     public RandomList(Collection<T> elements) {
         addAll(elements);
     }
 
-    public <S> T next(S steeringObj, int ttl) {
-        return next(steeringObj, ttl, false);
+    public <S> T next(S steeringKey, int ttl) {
+        return next(steeringKey, ttl, false);
     }
 
-    public <S> T next(S steeringObj, int ttl, boolean isSliding) {
+    public <S> T next(S steeringKey, int ttl, boolean isSliding) {
         Cache<S, T> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        return cache.get(steeringObj, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
+        return cache.get(steeringKey, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
     }
 
     public T next() {
@@ -137,6 +144,20 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     private boolean change(boolean changed) {
         if (changed) {
+            if (sortFunc != null) {
+                elements.sort((o1, o2) -> {
+                    try {
+                        Comparable c1 = sortFunc.invoke(o1.element);
+                        Comparable c2 = sortFunc.invoke(o2.element);
+                        if (c1 == null || c2 == null) {
+                            return c1 == null ? (c2 == null ? 0 : 1) : -1;
+                        }
+                        return c1.compareTo(c2);
+                    } catch (Throwable e) {
+                        throw InvalidException.sneaky(e);
+                    }
+                });
+            }
             maxRandomValue = 0;
         }
         return changed;
