@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
@@ -26,6 +27,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -439,6 +441,7 @@ public class CoreTester extends TestUtil {
         assert Reflects.changeType(1, Boolean.class);
         assert Reflects.changeType(true, byte.class) == 1;
         assert Reflects.changeType(true, Byte.class) == 1;
+        assert Reflects.changeType(new BigDecimal("1.002"), int.class) == 1;
 
         assert Reflects.changeType("1", Integer.class) == 1;
         assert Reflects.changeType(10, long.class) == 10L;
@@ -456,10 +459,6 @@ public class CoreTester extends TestUtil {
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
 
-//        System.out.println(Numbers.readableByteCount(1024, false));
-//        System.out.println(Numbers.readableByteCount(1024, true));
-//        System.out.println(Numbers.readableByteCount(1024 * 1024, false));
-//        System.out.println(Numbers.readableByteCount(1024 * 1024, true));
     }
 
     //region NQuery

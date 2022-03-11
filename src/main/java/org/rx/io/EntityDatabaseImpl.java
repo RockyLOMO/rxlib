@@ -518,6 +518,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 : entityType.getSimpleName();
     }
 
+    //count 需alias
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
