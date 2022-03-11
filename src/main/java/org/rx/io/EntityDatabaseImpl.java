@@ -8,6 +8,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
+import org.h2.Driver;
 import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcResultSet;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
@@ -100,11 +101,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         H2_TYPES.put(Double.class, H2Type.DOUBLE_PRECISION);
         H2_TYPES.put(Date.class, H2Type.TIMESTAMP);
         H2_TYPES.put(Timestamp.class, H2Type.TIMESTAMP);
-//        H2_TYPES.put(Object.class, H2Type.JAVA_OBJECT);
         H2_TYPES.put(UUID.class, H2Type.UUID);
 
         H2_TYPES.put(Reader.class, H2Type.CLOB);
         H2_TYPES.put(InputStream.class, H2Type.BLOB);
+
+        Driver driver = Driver.load();
+        log.info("Load H2 driver {}.{}", driver.getMajorVersion(), driver.getMinorVersion());
     }
 
     static String columnName(Field field, DbColumn dbColumn, boolean autoUnderscoreColumnName) {

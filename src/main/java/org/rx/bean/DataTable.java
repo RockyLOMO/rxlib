@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.h2.expression.Alias;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
@@ -27,6 +28,7 @@ import java.util.List;
 import static org.rx.core.App.fromJson;
 import static org.rx.core.Extends.*;
 
+@Slf4j
 @SuppressWarnings(Constants.NON_RAW_TYPES)
 @NoArgsConstructor
 public class DataTable implements Extends {
@@ -72,6 +74,7 @@ public class DataTable implements Extends {
             dt.setTableName(result.getTableName(1));
             Expression[] exprs = Reflects.readField(result, "expressions");
             for (Expression expr : exprs) {
+                log.info("H2 expr {}", expr.getClass());
                 addColumnName(dt, expr);
             }
             readRows(dt, rs, rs.getMetaData());

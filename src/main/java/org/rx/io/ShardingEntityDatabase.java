@@ -237,7 +237,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         int len = shardingDbs.size();
         int i = Math.abs(shardingKey.hashCode()) % len;
         EntityDatabase db = shardingDbs.get(i).right;
-        log.info("{} sharding route {}/{} -> {}", APP_NAME, i, len, db.getClass().getSimpleName());
+        log.info("{} route {}/{} -> {}", APP_NAME, i, len, db.getClass().getSimpleName());
         return fn.invoke(db);
     }
 
