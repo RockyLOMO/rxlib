@@ -21,6 +21,7 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Vector;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -200,8 +201,8 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> DataTable executeQuery(String sql, Class<T> entityType) {
-        List<DataTable> r = new ArrayList<>();
-        invokeAll(p -> r.add(p.executeQuery(sql, entityType)));
+        List<DataTable> r = new Vector<>();
+        invokeAllAsync(p -> r.add(p.executeQuery(sql, entityType)));
         return EntityDatabaseImpl.sharding(r, sql);
     }
 
