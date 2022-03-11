@@ -444,7 +444,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         sql.replace(0, 13, "DROP TABLE");
-//        sql = new StringBuilder("optimize table PERSON_BEAN");
         executeUpdate(sql.toString());
         mappedEntityTypes.remove(entityType);
     }

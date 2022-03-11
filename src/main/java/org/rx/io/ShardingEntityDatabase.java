@@ -70,14 +70,15 @@ public class ShardingEntityDatabase implements EntityDatabase {
         }).join();
 
         nsClient.onAppAddressChanged.combine((s, e) -> {
-            log.info("{} onchange {} {}", APP_NAME, e.getAppName(), e.getAddress());
             if (!e.getAppName().equals(APP_NAME)
 //                    || eq(e.getInstanceId(), RxConfig.INSTANCE.getId())
             ) {
                 return;
             }
             InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);
-            log.info("{} address {} isUp={}", APP_NAME, ep, e.isUp());
+            log.info("{} address registered: {} -> {} isUp={}", APP_NAME,
+                    NQuery.of(shardingDbs).toJoinString(",", p -> p.left.toString()),
+                    ep, e.isUp());
             synchronized (shardingDbs) {
                 if (e.isUp()) {
                     if (!NQuery.of(shardingDbs).any(p -> p.left.equals(ep))) {
@@ -236,7 +237,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         int len = shardingDbs.size();
         int i = Math.abs(shardingKey.hashCode()) % len;
         EntityDatabase db = shardingDbs.get(i).right;
-        log.info("{} sharding route {}/{} -> {}", APP_NAME, i, len, db);
+        log.info("{} sharding route {}/{} -> {}", APP_NAME, i, len, db.getClass().getSimpleName());
         return fn.invoke(db);
     }
 

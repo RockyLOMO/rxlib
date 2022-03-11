@@ -147,8 +147,9 @@ public final class NameserverClient extends Disposable {
 
                                     registerAsync(e.getValue());
                                 }, false);
+                                //onAppAddressChanged for arg#1 not work
                                 ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
-                                    log.info("app {} address changed: {}", e.getAppName(), e.getAddress());
+                                    log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
                                     onAppAddressChanged.invoke(s, e);
                                 }, false);
                             });

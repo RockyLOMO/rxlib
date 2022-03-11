@@ -124,6 +124,7 @@ public class BeanTester extends TestUtil {
         list.add("b", 3);
         list.add("c", 2);
         list.add("d", 1);
+        list.removeIf(p -> p.equals("c"));
         //basic function
         for (String s : list) {
             System.out.print(s + " ");

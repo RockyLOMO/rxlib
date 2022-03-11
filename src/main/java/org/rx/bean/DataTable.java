@@ -47,12 +47,13 @@ public class DataTable implements Extends {
             for (int i = 1; i <= columnCount; i++) {
                 dt.addColumn(preferColumnName ? metaData.getColumnName(i) : metaData.getColumnLabel(i));
             }
-            readRows(dt, rs, columnCount);
+            readRows(dt, rs, metaData);
         }
         return dt;
     }
 
-    static void readRows(DataTable dt, ResultSet rs, int columnCount) throws SQLException {
+    static void readRows(DataTable dt, ResultSet rs, ResultSetMetaData metaData) throws SQLException {
+        int columnCount = metaData.getColumnCount();
         List<Object> buf = new ArrayList<>(columnCount);
         while (rs.next()) {
             buf.clear();
@@ -73,8 +74,7 @@ public class DataTable implements Extends {
             for (Expression expr : exprs) {
                 addColumnName(dt, expr);
             }
-            int columnCount = exprs.length;
-            readRows(dt, rs, columnCount);
+            readRows(dt, rs, rs.getMetaData());
         }
         return dt;
     }

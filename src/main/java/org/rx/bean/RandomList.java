@@ -17,6 +17,7 @@ import org.rx.util.function.BiFunc;
 
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Predicate;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.eq;
@@ -92,6 +93,9 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 maxRandomValue = hold.threshold.end;
             }
 
+//            if (maxRandomValue <= 0) {
+//                throw new NoSuchElementException();
+//            }
             int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
             //二分法查找
             int low = 0;
@@ -246,16 +250,24 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     @Override
     public T set(int index, T element) {
+        return set(index, element, DEFAULT_WEIGHT);
+    }
+
+    public T set(int index, T element, int weight) {
+        require(weight, weight >= 0);
+
         lock.writeLock().lock();
         try {
             WeightElement<T> previously = null;
             boolean changed;
             WeightElement<T> node = findElement(element, false);
             if (node == null) {
-                previously = elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
+                previously = elements.set(index, new WeightElement<>(element, weight));
                 changed = true;
             } else {
-                changed = false;
+                if (changed = node.weight != weight) {
+                    node.weight = weight;
+                }
             }
             change(changed);
             return previously == null ? null : previously.element;
@@ -266,12 +278,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     @Override
     public boolean remove(Object element) {
-        lock.writeLock().lock();
-        try {
-            return change(elements.removeIf(p -> eq(p.element, element)));
-        } finally {
-            lock.writeLock().unlock();
-        }
+        return removeIf(p -> eq(p, element));
     }
 
     @Override
@@ -284,6 +291,16 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
             }
             change(true);
             return item.element;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public boolean removeIf(Predicate<? super T> filter) {
+        lock.writeLock().lock();
+        try {
+            return change(elements.removeIf(p -> filter.test(p.element)));
         } finally {
             lock.writeLock().unlock();
         }
