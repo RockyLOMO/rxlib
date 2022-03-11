@@ -111,7 +111,7 @@ public class BeanTester extends TestUtil {
         secondRow.set(2, 100);
         System.out.println(dt);
 
-//        row.set(4, 0);
+        System.out.println(toJsonString(dt));
     }
 
     @SneakyThrows

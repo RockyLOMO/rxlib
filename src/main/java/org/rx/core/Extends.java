@@ -221,10 +221,6 @@ public interface Extends extends Serializable {
         Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).put(key, value);
     }
 
-//    default <TK, TV> Map<TK, TV> attrMap() {
-//        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8));
-//    }
-
     default <T> T deepClone() {
         return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(this));
     }

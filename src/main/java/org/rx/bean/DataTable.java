@@ -74,8 +74,10 @@ public class DataTable implements Extends {
             dt.setTableName(result.getTableName(1));
             Expression[] exprs = Reflects.readField(result, "expressions");
             for (Expression expr : exprs) {
-                log.info("H2 expr {}", expr.getClass());
                 addColumnName(dt, expr);
+            }
+            if (rs.getMetaData().getColumnCount() != exprs.length) {
+                log.info("XX: {}", dt);
             }
             readRows(dt, rs, rs.getMetaData());
         }
