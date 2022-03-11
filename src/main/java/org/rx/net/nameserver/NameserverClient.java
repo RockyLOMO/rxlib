@@ -45,7 +45,7 @@ public final class NameserverClient extends Disposable {
         }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE);
     }
 
-    public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppHostChanged = Delegate.create();
+    public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();
     @Getter
     final String appName;
     final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
@@ -108,10 +108,12 @@ public final class NameserverClient extends Disposable {
                     Action doReg = () -> {
                         try {
                             tuple.right = tuple.middle.register(appName, svrEps);
+                            tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                             reInject();
                         } catch (Throwable e) {
                             delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
                                 tuple.right = tuple.middle.register(appName, svrEps);
+                                tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                                 delayTasks.remove(appName); //优先
                                 reInject();
                                 return false;
@@ -145,7 +147,11 @@ public final class NameserverClient extends Disposable {
 
                                     registerAsync(e.getValue());
                                 }, false);
-                                ns.attachEvent(Nameserver.EVENT_APP_HOST_CHANGED, onAppHostChanged);
+                                //onAppAddressChanged for arg#1 not work
+                                ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
+                                    log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
+                                    onAppAddressChanged.invoke(s, e);
+                                }, false);
                             });
                     doReg.invoke();
                 }
@@ -165,7 +171,15 @@ public final class NameserverClient extends Disposable {
         return hold.next().middle.discover(appName);
     }
 
-    public List<InetAddress> discoverAll(@NonNull String appName, boolean withoutCurrent) {
-        return hold.next().middle.discoverAll(appName, withoutCurrent);
+    public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
+        return hold.next().middle.discoverAll(appName, exceptCurrent);
+    }
+
+    public List<Nameserver.InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
+        return hold.next().middle.discover(appName, instanceAttrKeys);
+    }
+
+    public List<Nameserver.InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
+        return hold.next().middle.discoverAll(appName, exceptCurrent, instanceAttrKeys);
     }
 }

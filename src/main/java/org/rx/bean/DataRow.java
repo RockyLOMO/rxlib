@@ -1,5 +1,6 @@
 package org.rx.bean;
 
+import com.alibaba.fastjson.annotation.JSONField;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.Constants;
@@ -15,7 +16,7 @@ import static org.rx.core.Extends.require;
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public class DataRow implements Extends {
     private static final long serialVersionUID = 252345291901055072L;
-
+    @JSONField(serialize = false)
     @Getter
     final DataTable table;
     final List<Object> items;

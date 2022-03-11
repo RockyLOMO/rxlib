@@ -14,6 +14,7 @@ import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.core.*;
 import org.rx.net.rpc.protocol.ErrorPacket;
 import org.rx.util.BeanMapper;
+import org.rx.util.Snowflake;
 import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
@@ -44,12 +45,12 @@ public final class Remoting {
         @AllArgsConstructor
         static class EventContext {
             volatile EventArgs computedArgs;
-            volatile RpcServerClient computingClient;
+            volatile RpcClientMeta computingClient;
         }
 
         static class EventBean {
-            final Set<RpcServerClient> subscribe = ConcurrentHashMap.newKeySet();
-            final Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
+            final Set<RpcClientMeta> subscribe = ConcurrentHashMap.newKeySet();
+            final Map<Long, EventContext> contextMap = new ConcurrentHashMap<>();
         }
 
         @Getter
@@ -227,7 +228,7 @@ public final class Remoting {
                 if (eventArgs != null) {
                     log(eventArgs, msg -> {
                         msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
-                                client.getLocalAddress() == null ? "NULL" : Sockets.toString(client.getLocalAddress()),
+                                Sockets.toString(client.getLocalEndpoint()),
                                 Sockets.toString(client.getConfig().getServerEndpoint()));
                         msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
                         if (eventArgs.getError() != null) {
@@ -333,14 +334,14 @@ public final class Remoting {
                                     if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
                                         eCtx.computingClient = null;
                                     } else {
-                                        RpcServerClient computingClient = null;
+                                        RpcClientMeta computingClient = null;
                                         if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
                                             computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
                                                 int i = ThreadLocalRandom.current().nextInt(0, p2.count());
                                                 return p2.skip(i).first();
                                             }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
                                         } else {
-                                            List<RpcServerClient> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
+                                            List<RpcClientMeta> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
                                             if (!list.isEmpty()) {
                                                 computingClient = list.get(ThreadLocalRandom.current().nextInt(0, list.size()));
                                             }
@@ -350,15 +351,15 @@ public final class Remoting {
                                         } else {
                                             eCtx.computingClient = computingClient;
                                             EventMessage pack = new EventMessage(p.eventName, EventFlag.COMPUTE_ARGS);
-                                            pack.computeId = UUID.randomUUID();
+                                            pack.computeId = Snowflake.DEFAULT.nextId();
                                             pack.eventArgs = args;
                                             eventBean.contextMap.put(pack.computeId, eCtx);
                                             try {
                                                 s.send(computingClient, pack);
-                                                log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getId(), s.getConfig().getConnectTimeoutMillis());
+                                                log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
                                                 eventBean.wait(s.getConfig().getConnectTimeoutMillis());
                                             } catch (Exception ex) {
-                                                ExceptionHandler.INSTANCE.log("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getId(), ex);
+                                                ExceptionHandler.INSTANCE.log("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getRemoteEndpoint(), ex);
                                             } finally {
                                                 //delay purge
                                                 Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
@@ -368,16 +369,16 @@ public final class Remoting {
                                     broadcast(s, p, eventBean, eCtx);
                                 }
                             }, false); //必须false
-                            log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getId());
+                            log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
                             eventBean.subscribe.add(e.getClient());
                             break;
                         case UNSUBSCRIBE:
-                            log.info("serverSide event {} {} -> UNSUBSCRIBE", p.eventName, e.getClient().getId());
+                            log.info("serverSide event {} {} -> UNSUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
                             eventBean.subscribe.remove(e.getClient());
                             break;
                         case PUBLISH:
                             synchronized (eventBean) {
-                                log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getId());
+                                log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getRemoteEndpoint());
                                 broadcast(s, p, eventBean, new ServerBean.EventContext(p.eventArgs, e.getClient()));
                             }
                             break;
@@ -389,7 +390,7 @@ public final class Remoting {
                                 } else {
                                     //赋值原引用对象
                                     BeanMapper.INSTANCE.map(p.eventArgs, ctx.computedArgs);
-                                    log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getId(), toJsonString(ctx.computedArgs));
+                                    log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getRemoteEndpoint(), toJsonString(ctx.computedArgs));
                                 }
                                 eventBean.notifyAll();
                             }
@@ -404,7 +405,7 @@ public final class Remoting {
                 try {
                     pack.returnValue = RemotingContext.invoke(() -> args.proceed(() ->
                             Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters)
-                    ), e.getClient());
+                    ), s, e.getClient());
                 } catch (Throwable ex) {
                     Throwable cause = ifNull(ex.getCause(), ex);
                     args.setError(ex);
@@ -412,7 +413,7 @@ public final class Remoting {
                 } finally {
                     log(args, msg -> {
                         msg.appendLine("Server invoke %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
-                                s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteAddress()));
+                                s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint()));
                         msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
                         if (args.getError() != null) {
                             msg.appendLine("Response:\t%s", pack.errorMessage);
@@ -434,8 +435,8 @@ public final class Remoting {
         EventMessage pack = new EventMessage(p.eventName, EventFlag.BROADCAST);
         pack.eventArgs = context.computedArgs;
         tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
-        for (RpcServerClient client : eventBean.subscribe) {
-            if (!s.isConnected(client)) {
+        for (RpcClientMeta client : eventBean.subscribe) {
+            if (!client.isConnected()) {
                 eventBean.subscribe.remove(client);
                 continue;
             }
@@ -445,7 +446,7 @@ public final class Remoting {
             }
 
             s.send(client, pack);
-            log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.getId());
+            log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.getRemoteEndpoint());
         }
     }
 }

@@ -8,7 +8,9 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
+import org.h2.Driver;
 import org.h2.api.H2Type;
+import org.h2.jdbc.JdbcResultSet;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.bean.*;
@@ -19,7 +21,6 @@ import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
-import org.rx.util.SnowFlake;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -100,11 +101,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         H2_TYPES.put(Double.class, H2Type.DOUBLE_PRECISION);
         H2_TYPES.put(Date.class, H2Type.TIMESTAMP);
         H2_TYPES.put(Timestamp.class, H2Type.TIMESTAMP);
-//        H2_TYPES.put(Object.class, H2Type.JAVA_OBJECT);
         H2_TYPES.put(UUID.class, H2Type.UUID);
 
         H2_TYPES.put(Reader.class, H2Type.CLOB);
         H2_TYPES.put(InputStream.class, H2Type.BLOB);
+
+        Driver driver = Driver.load();
+        log.info("Load H2 driver {}.{}", driver.getMajorVersion(), driver.getMinorVersion());
     }
 
     static String columnName(Field field, DbColumn dbColumn, boolean autoUnderscoreColumnName) {
@@ -145,8 +148,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         return timeRollingPattern != null ? filePath + "_" + DateTime.now().toString(timeRollingPattern) : filePath;
     }
 
-    public EntityDatabaseImpl(String filePath) {
-        this(filePath, null);
+    public EntityDatabaseImpl() {
+        this(DEFAULT_FILE_PATH, null);
     }
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern) {
@@ -433,8 +436,36 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
     //endregion
 
+    @Override
     public void compact() {
         executeUpdate("SHUTDOWN COMPACT");
+    }
+
+    public <T> void dropIndex(Class<T> entityType, String fieldName) {
+        Field field = Reflects.getFieldMap(entityType).get(fieldName);
+        DbColumn dbColumn = field.getAnnotation(DbColumn.class);
+        String tableName = tableName(entityType);
+        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String sql = String.format("DROP INDEX %s ON %s;", indexName(tableName, colName), tableName);
+        executeUpdate(sql);
+    }
+
+    public <T> void createIndex(Class<T> entityType, String fieldName) {
+        Field field = Reflects.getFieldMap(entityType).get(fieldName);
+        DbColumn dbColumn = field.getAnnotation(DbColumn.class);
+        String tableName = tableName(entityType);
+        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String index = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_ASC
+                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? "UNIQUE " : Strings.EMPTY;
+        String desc = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.INDEX_DESC
+                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? " DESC" : Strings.EMPTY;
+        String sql = String.format("CREATE %sINDEX %s ON %s (%s%s);", index,
+                indexName(tableName, colName), tableName, colName, desc);
+        executeUpdate(sql);
+    }
+
+    String indexName(String tableName, String columnName) {
+        return String.format("%s_%s_index", tableName, columnName);
     }
 
     @Override
@@ -443,7 +474,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         sql.replace(0, 13, "DROP TABLE");
-//        sql = new StringBuilder("optimize table PERSON_BEAN");
         executeUpdate(sql.toString());
         mappedEntityTypes.remove(entityType);
     }
@@ -498,6 +528,26 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             log.debug("createMapping\n{}", sql);
             executeUpdate(sql);
 
+            for (Tuple<Field, DbColumn> value : columns.values()) {
+                DbColumn dbColumn = value.right;
+                if (dbColumn == null || dbColumn.primaryKey()) {
+                    continue;
+                }
+                if (dbColumn.index() == DbColumn.IndexKind.NONE) {
+                    try {
+                        dropIndex(entityType, value.left.getName());
+                    } catch (Exception e) {
+                        log.warn("dropIndex: {}", e.getMessage());
+                    }
+                    continue;
+                }
+                try {
+                    createIndex(entityType, value.left.getName());
+                } catch (Exception e) {
+                    log.warn("createIndex: {}", e.getMessage());
+                }
+            }
+
             String finalPkName = pkName;
             SQL_META.computeIfAbsent(entityType, k -> new SqlMeta(finalPkName, columns, insert.toString(),
                     String.format("UPDATE %s SET $UPDATE_COLUMNS WHERE %s=?", tableName, finalPkName),
@@ -517,25 +567,51 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 : entityType.getSimpleName();
     }
 
+    //count 需alias
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
+        int startPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.WHERE), endPos;
+        if (startPos != -1) {
+            int pos = startPos + EntityQueryLambda.WHERE.length();
+            endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.GROUP_BY, pos);
+            if (endPos == -1) {
+                endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.ORDER_BY, pos);
+            }
+            if (endPos == -1) {
+                endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.LIMIT, pos);
+            }
+            if (endPos == -1) {
+                endPos = querySql.length();
+            }
+            querySql = new StringBuilder(querySql).delete(startPos, endPos - startPos).toString();
+        }
         if (Strings.isBlank(template.getTableName())) {
             String c = " FROM ";
-            int s = Strings.indexOfIgnoreCase(querySql, c);
-            if (s != -1) {
-                s += c.length();
-                int e = querySql.indexOf(" ", s);
-                if (e != -1) {
-                    template.setTableName(querySql.substring(s, e));
+            startPos = Strings.indexOfIgnoreCase(querySql, c);
+            if (startPos != -1) {
+                startPos += c.length();
+                endPos = querySql.indexOf(" ", startPos);
+                if (endPos != -1) {
+                    template.setTableName(querySql.substring(startPos, endPos));
                 } else {
-                    template.setTableName(querySql.substring(s));
+                    template.setTableName(querySql.substring(startPos));
                 }
             }
             if (Strings.isBlank(template.getTableName())) {
                 throw new InvalidException("Invalid table name");
             }
         }
+        for (DataColumn<?> column : template.getColumns()) {
+            Tuple<String, String> countMap = column.attr(DataTable.HS_COUNT_MAP);
+            if (countMap != null) {
+                querySql = Strings.replaceIgnoreCase(querySql, countMap.left, String.format("SUM(%s)", countMap.right));
+                if (countMap.left.equalsIgnoreCase("COUNT(*)")) {
+                    querySql = Strings.replaceIgnoreCase(querySql, "COUNT(1)", String.format("SUM(%s)", countMap.right));
+                }
+            }
+        }
+        log.info("shardingSql: {}", querySql);
         DataRow first;
         try {
             first = IteratorUtils.first(template.getRows());
@@ -552,12 +628,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (int i = 0; i < len; i++) {
             DataColumn<Object> column = template.getColumn(i);
             String colName = column.getColumnName();
-            int s = colName.indexOf("(");
-            if (s != -1) {
-                s += 1;
-                int e = colName.indexOf(")", s);
-                if (e != -1) {
-                    colName = colName.substring(s, e);
+            startPos = colName.indexOf("(");
+            if (startPos != -1) {
+                startPos += 1;
+                endPos = colName.indexOf(")", startPos);
+                if (endPos != -1) {
+                    colName = colName.substring(startPos, endPos);
                 }
             }
 
@@ -574,7 +650,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             createCols.appendLine("\t`%s` %s,", colName, toH2Type(fieldType));
             insert.append("?,");
         }
-        createCols.setLength(createCols.length() - 3);
+        createCols.setLength(createCols.length() - System.lineSeparator().length() - 1);
         String insertSql = insert.setLength(insert.length() - 1).append(")").toString();
 
         String url = "jdbc:h2:mem:";
@@ -601,10 +677,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
 
             DataTable combined = DataTable.read(stmt.executeQuery(querySql));
-            if (combined.getColumns().size() != colTypes.size()) {
-                throw new InvalidException("Invalid querySql");
-            }
-            for (int i = 0; i < colTypes.size(); i++) {
+            int columnCount = combined.getColumns().size();
+            for (int i = 0; i < columnCount; i++) {
                 for (DataRow row : combined.getRows()) {
                     row.set(i, convertCell(colTypes.get(i), row.get(i)));
                 }
@@ -644,7 +718,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             if (log.isDebugEnabled()) {
                 log.debug("executeQuery {}", sql);
             }
-            DataTable dt = DataTable.read(conn.createStatement().executeQuery(sql));
+            DataTable dt = DataTable.read((JdbcResultSet) conn.createStatement().executeQuery(sql));
             if (entityType != null) {
                 SqlMeta meta = getMeta(entityType);
                 for (int i = 0; i < dt.getColumns().size(); i++) {

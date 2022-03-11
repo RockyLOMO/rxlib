@@ -6,12 +6,8 @@ import org.rx.core.EventTarget;
 import java.io.Serializable;
 import java.util.Date;
 
-public interface RpcClient extends EventTarget<RpcClient> {
+public interface RpcClient extends RpcClientMeta, EventTarget<RpcClient> {
     RpcClientConfig getConfig();
-
-    boolean isConnected();
-
-    Date getConnectedTime();
 
     void send(Serializable pack);
 

@@ -2,6 +2,7 @@ package org.rx.bean;
 
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
@@ -9,9 +10,14 @@ import org.rx.core.NQuery;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 import io.netty.util.internal.ThreadLocalRandom;
+import org.rx.exception.InvalidException;
+import org.rx.util.function.BiFunc;
+
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Predicate;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.eq;
@@ -44,21 +50,24 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         }
     }
 
-    private final List<WeightElement<T>> elements = new ArrayList<>();
-    private int maxRandomValue;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    final ReadWriteLock lock = new ReentrantReadWriteLock();
+    final List<WeightElement<T>> elements = new ArrayList<>();
+    int maxRandomValue;
+    CopyOnWriteArrayList<T> temp;
+    @Setter
+    BiFunc<T, ? extends Comparable> sortFunc;
 
     public RandomList(Collection<T> elements) {
         addAll(elements);
     }
 
-    public <S> T next(S steeringObj, int ttl) {
-        return next(steeringObj, ttl, false);
+    public <S> T next(S steeringKey, int ttl) {
+        return next(steeringKey, ttl, false);
     }
 
-    public <S> T next(S steeringObj, int ttl, boolean isSliding) {
+    public <S> T next(S steeringKey, int ttl, boolean isSliding) {
         Cache<S, T> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        return cache.get(steeringObj, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
+        return cache.get(steeringKey, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
     }
 
     public T next() {
@@ -84,6 +93,9 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 maxRandomValue = hold.threshold.end;
             }
 
+//            if (maxRandomValue <= 0) {
+//                throw new NoSuchElementException();
+//            }
             int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
             //二分法查找
             int low = 0;
@@ -137,6 +149,21 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     private boolean change(boolean changed) {
         if (changed) {
+            if (sortFunc != null) {
+                elements.sort((o1, o2) -> {
+                    try {
+                        Comparable c1 = sortFunc.invoke(o1.element);
+                        Comparable c2 = sortFunc.invoke(o2.element);
+                        if (c1 == null || c2 == null) {
+                            return c1 == null ? (c2 == null ? 0 : 1) : -1;
+                        }
+                        return c1.compareTo(c2);
+                    } catch (Throwable e) {
+                        throw InvalidException.sneaky(e);
+                    }
+                });
+            }
+            temp = null;
             maxRandomValue = 0;
         }
         return changed;
@@ -223,18 +250,27 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     @Override
     public T set(int index, T element) {
+        return set(index, element, DEFAULT_WEIGHT);
+    }
+
+    public T set(int index, T element, int weight) {
+        require(weight, weight >= 0);
+
         lock.writeLock().lock();
         try {
+            WeightElement<T> previously = null;
             boolean changed;
             WeightElement<T> node = findElement(element, false);
             if (node == null) {
-                elements.set(index, new WeightElement<>(element, DEFAULT_WEIGHT));
+                previously = elements.set(index, new WeightElement<>(element, weight));
                 changed = true;
             } else {
-                changed = false;
+                if (changed = node.weight != weight) {
+                    node.weight = weight;
+                }
             }
             change(changed);
-            return null;
+            return previously == null ? null : previously.element;
         } finally {
             lock.writeLock().unlock();
         }
@@ -242,12 +278,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
     @Override
     public boolean remove(Object element) {
-        lock.writeLock().lock();
-        try {
-            return change(elements.removeIf(p -> eq(p.element, element)));
-        } finally {
-            lock.writeLock().unlock();
-        }
+        return removeIf(p -> eq(p, element));
     }
 
     @Override
@@ -260,6 +291,16 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
             }
             change(true);
             return item.element;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public boolean removeIf(Predicate<? super T> filter) {
+        lock.writeLock().lock();
+        try {
+            return change(elements.removeIf(p -> filter.test(p.element)));
         } finally {
             lock.writeLock().unlock();
         }
@@ -279,7 +320,10 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public Iterator<T> iterator() {
         lock.readLock().lock();
         try {
-            return new CopyOnWriteArrayList<T>(NQuery.of(elements).select(p -> p.element).toList()).iterator();
+            if (temp == null) {
+                temp = new CopyOnWriteArrayList<>(NQuery.of(elements).select(p -> p.element).toList());
+            }
+            return temp.iterator();
         } finally {
             lock.readLock().unlock();
         }
@@ -289,7 +333,13 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public boolean addAll(Collection<? extends T> c) {
         lock.writeLock().lock();
         try {
-            return change(elements.addAll(NQuery.of(c).select(p -> new WeightElement<T>(p, DEFAULT_WEIGHT)).toList()));
+            boolean changed = false;
+            for (T t : c) {
+                if (add(t)) {
+                    changed = true;
+                }
+            }
+            return change(changed);
         } finally {
             lock.writeLock().unlock();
         }

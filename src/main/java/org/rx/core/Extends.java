@@ -17,7 +17,9 @@ import org.rx.util.function.Func;
 import java.io.Serializable;
 import java.lang.reflect.AnnotatedElement;
 import java.util.List;
+import java.util.Map;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
@@ -82,6 +84,39 @@ public interface Extends extends Serializable {
         return null;
     }
 
+    //todo checkerframework
+    @ErrorCode("test")
+    static void require(Object arg, boolean testResult) {
+        if (!testResult) {
+            throw new ApplicationException("test", values(arg));
+        }
+    }
+
+    static String description(@NonNull AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
+    static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
+        if (iterable == null) {
+            return;
+        }
+
+        for (T t : iterable) {
+            try {
+                fn.invoke(t);
+            } catch (Throwable e) {
+                if (e instanceof CircuitBreakingException) {
+                    break;
+                }
+                ExceptionHandler.INSTANCE.log("eachQuietly", e);
+            }
+        }
+    }
+
     static boolean quietly(@NonNull Action action) {
         try {
             action.invoke();
@@ -110,23 +145,6 @@ public interface Extends extends Serializable {
             }
         }
         return null;
-    }
-
-    static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
-            return;
-        }
-
-        for (T t : iterable) {
-            try {
-                fn.invoke(t);
-            } catch (Throwable e) {
-                if (e instanceof CircuitBreakingException) {
-                    break;
-                }
-                ExceptionHandler.INSTANCE.log("eachQuietly", e);
-            }
-        }
     }
 
     static boolean tryClose(Object obj) {
@@ -164,14 +182,6 @@ public interface Extends extends Serializable {
         return (T) obj;
     }
 
-    //todo checkerframework
-    @ErrorCode("test")
-    static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
     static <T> T ifNull(T value, T defaultVal) {
         return value != null ? value : defaultVal;
     }
@@ -189,12 +199,8 @@ public interface Extends extends Serializable {
         return (a == b) || (a != null && a.equals(b));
     }
 
-    static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
+    static CircuitBreakingException asyncBreak() {
+        throw new CircuitBreakingException();
     }
 
     static Object[] values(Object... args) {
@@ -207,12 +213,16 @@ public interface Extends extends Serializable {
     }
     //endregion
 
-    default <TV> TV attr() {
-        return Container.<Object, TV>weakMap().get(this);
+    default <TK, TV> TV attr(TK key) {
+        Map<TK, TV> attrMap = Container.<Object, Map<TK, TV>>weakMap().get(this);
+        if (attrMap == null) {
+            return null;
+        }
+        return attrMap.get(key);
     }
 
-    default <TV> TV attr(TV v) {
-        return Container.<Object, TV>weakMap().put(this, v);
+    default <TK, TV> void attr(TK key, TV value) {
+        Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(this, k -> new ConcurrentHashMap<>(8)).put(key, value);
     }
 
     default <T> T deepClone() {

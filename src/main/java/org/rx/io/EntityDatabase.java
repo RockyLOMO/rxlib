@@ -6,7 +6,8 @@ import java.io.Serializable;
 import java.util.List;
 
 public interface EntityDatabase extends AutoCloseable {
-    EntityDatabase DEFAULT = new EntityDatabaseImpl("~/RxMeta");
+    String DEFAULT_FILE_PATH = "./rx";
+    EntityDatabase DEFAULT = new EntityDatabaseImpl();
 
     <T> void save(T entity);
 
@@ -27,6 +28,8 @@ public interface EntityDatabase extends AutoCloseable {
     <T> T findOne(EntityQueryLambda<T> query);
 
     <T> List<T> findBy(EntityQueryLambda<T> query);
+
+    void compact();
 
     <T> void dropMapping(Class<T> entityType);
 

@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
@@ -64,8 +65,8 @@ public class Reflects extends ClassUtils {
 
     public static final NQuery<String> COLLECTION_WRITE_METHOD_NAMES = NQuery.of("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
-    public static final NQuery<Method> OBJECT_METHODS = NQuery.of(Object.class.getMethods());
-    static final int OBJECT_GET_CLASS_HASH = "getClass".hashCode(), CLOSE_METHOD_HASH = "close".hashCode();
+    public static final Set<Method> OBJECT_METHODS = ConcurrentHashMap.newKeySet();
+    static final int CLOSE_METHOD_HASH = "close".hashCode();
     static final String CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
@@ -77,6 +78,10 @@ public class Reflects extends ClassUtils {
     static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     static {
+        for (Method method : Object.class.getMethods()) {
+            OBJECT_METHODS.add(method);
+        }
+
         try {
             LOOKUP_CONSTRUCTOR = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
             setAccess(LOOKUP_CONSTRUCTOR);
@@ -337,7 +342,7 @@ public class Reflects extends ClassUtils {
     //region fields
     public static NQuery<PropertyNode> getProperties(Class<?> to) {
         return (NQuery<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
-            Method getClass = OBJECT_METHODS.first(p -> p.getName().hashCode() == OBJECT_GET_CLASS_HASH);
+            Method getClass = Object.class.getDeclaredMethod("getClass");
             NQuery<Method> q = NQuery.of(to.getMethods());
             NQuery<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
             NQuery<Tuple<String, Method>> getters = q.where(p -> p.getParameterCount() == 0 && p != getClass && (p.getName().startsWith(GET_PROPERTY) || p.getName().startsWith(GET_BOOL_PROPERTY))).select(p -> Tuple.of(propertyName(p.getName()), p));
@@ -458,28 +463,27 @@ public class Reflects extends ClassUtils {
     public static <T> T changeType(Object value, @NonNull Class<T> toType) {
         if (value == null) {
             if (!toType.isPrimitive()) {
-                if (List.class.equals(toType)) {
+                if (toType == List.class) {
                     return (T) Collections.emptyList();
                 }
-                if (Map.class.equals(toType)) {
+                if (toType == Map.class) {
                     return (T) Collections.emptyMap();
                 }
                 return null;
             }
-            if (boolean.class.equals(toType)) {
+            if (toType == boolean.class) {
                 return (T) Boolean.FALSE;
             } else {
                 value = 0;
             }
         }
 
-        Class<?> fromType = value.getClass();
         Object fValue = value;
-        if (toType.equals(String.class)) {
+        if (toType == String.class) {
             value = value.toString();
-        } else if (toType.equals(UUID.class)) {
+        } else if (toType == UUID.class) {
             value = UUID.fromString(value.toString());
-        } else if (toType.equals(BigDecimal.class)) {
+        } else if (toType == BigDecimal.class) {
             value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
             boolean failBack = true;
@@ -504,12 +508,14 @@ public class Reflects extends ClassUtils {
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
             }
-        } else if ((!toType.isPrimitive() && TypeUtils.isInstance(value, toType))) {
-            //isInstance int to long/all to object ok, do nothing
+        } else if (!toType.isPrimitive() && TypeUtils.isInstance(value, toType)) {
+            //int to long | int to Object ok, DO NOTHING
+            //long to int not ok
         } else {
+            Class<?> fromType = value.getClass();
             try {
                 toType = (Class) primitiveToWrapper(toType);
-                if (toType.equals(Boolean.class) && isAssignable(fromType, Number.class)) {
+                if (toType == Boolean.class && value instanceof Number) {
                     int val = ((Number) value).intValue();
                     if (val == 0) {
                         value = Boolean.FALSE;
@@ -529,12 +535,25 @@ public class Reflects extends ClassUtils {
                         throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
                     }
 
-                    if (isAssignable(toType, Number.class) && primitiveToWrapper(fromType).equals(Boolean.class)) {
-                        boolean val = (boolean) value;
-                        if (!val) {
-                            value = "0";
-                        } else {
-                            value = "1";
+                    if (isAssignable(toType, Number.class)) {
+                        if (value instanceof Boolean) {
+                            if (!(Boolean) value) {
+                                value = "0";
+                            } else {
+                                value = "1";
+                            }
+                        } else if (value instanceof Number) {
+                            //BigDecimal 1.001 to 1
+                            Number num = (Number) value;
+                            if (toType == Integer.class) {
+                                value = num.intValue();
+                            } else if (toType == Long.class) {
+                                value = num.longValue();
+                            } else if (toType == Byte.class) {
+                                value = num.byteValue();
+                            } else if (toType == Short.class) {
+                                value = num.shortValue();
+                            }
                         }
                     }
 

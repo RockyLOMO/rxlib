@@ -5,6 +5,16 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import org.h2.expression.Alias;
+import org.h2.expression.Expression;
+import org.h2.expression.ExpressionColumn;
+import org.h2.expression.aggregate.Aggregate;
+import org.h2.expression.aggregate.AggregateType;
+import org.h2.jdbc.JdbcConnection;
+import org.h2.jdbc.JdbcResultSet;
+import org.h2.result.LocalResult;
+import org.h2.value.ValueToObjectConverter;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -17,33 +27,94 @@ import java.util.Iterator;
 import java.util.List;
 
 import static org.rx.core.App.fromJson;
-import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.*;
 
+@Slf4j
 @SuppressWarnings(Constants.NON_RAW_TYPES)
 @NoArgsConstructor
 public class DataTable implements Extends {
     private static final long serialVersionUID = -7379386582995440975L;
+    public static final String HS_COUNT_MAP = "HS_COUNT_MAP";
+
+    public static DataTable read(ResultSet resultSet) {
+        return read(resultSet, false);
+    }
 
     @SneakyThrows
-    public static DataTable read(ResultSet resultSet) {
+    public static DataTable read(ResultSet resultSet, boolean preferColumnName) {
         DataTable dt = new DataTable();
-        try (ResultSet x = resultSet) {
-            ResultSetMetaData metaData = x.getMetaData();
+        try (ResultSet rs = resultSet) {
+            ResultSetMetaData metaData = rs.getMetaData();
             dt.setTableName(metaData.getTableName(1));
             int columnCount = metaData.getColumnCount();
             for (int i = 1; i <= columnCount; i++) {
-                dt.addColumns(metaData.getColumnLabel(i));
+                dt.addColumn(preferColumnName ? metaData.getColumnName(i) : metaData.getColumnLabel(i));
             }
+
             List<Object> buf = new ArrayList<>(columnCount);
-            while (x.next()) {
+            while (rs.next()) {
                 buf.clear();
                 for (int i = 1; i <= columnCount; i++) {
-                    buf.add(x.getObject(i));
+                    buf.add(rs.getObject(i));
                 }
                 dt.addRow(buf.toArray());
             }
         }
         return dt;
+    }
+
+    @SneakyThrows
+    public static DataTable read(JdbcResultSet resultSet) {
+        DataTable dt = new DataTable();
+        try (JdbcResultSet rs = resultSet) {
+            LocalResult result = (LocalResult) rs.getResult();
+            dt.setTableName(result.getTableName(1));
+            //包含orderby的
+            Expression[] exprs = Reflects.readField(result, "expressions");
+            for (Expression expr : exprs) {
+                addColumnName(dt, expr);
+            }
+
+            JdbcConnection conn = Reflects.readField(rs, "conn");
+            int columnCount = exprs.length;
+            List<Object> buf = new ArrayList<>(columnCount);
+            while (rs.next()) {
+                buf.clear();
+                for (int i = 1; i <= columnCount; i++) {
+                    buf.add(ValueToObjectConverter.valueToDefaultObject(rs.getInternal(i), conn, true));
+//                    buf.add(rs.getObject(i));
+                }
+                dt.addRow(buf.toArray());
+            }
+        }
+        return dt;
+    }
+
+    static void addColumnName(DataTable dt, Expression expr) {
+        if (tryAs(expr, ExpressionColumn.class, p -> dt.addColumns(p.getOriginalColumnName()))
+                || tryAs(expr, Aggregate.class, p -> {
+            if (p.getAggregateType() == AggregateType.COUNT_ALL
+                    || p.getAggregateType() == AggregateType.COUNT) {
+                String label = p.toString();
+                dt.addColumn(label);
+                //todo COUNT with no label
+                return;
+            }
+            Expression subExpr = p.getSubexpression(0);
+            addColumnName(dt, subExpr);
+        })
+                || tryAs(expr, Alias.class, p -> {
+            Expression subExpr = p.getNonAliasExpression();
+            Aggregate aggregate = as(subExpr, Aggregate.class);
+            if (aggregate != null
+                    && (aggregate.getAggregateType() == AggregateType.COUNT_ALL
+                    || aggregate.getAggregateType() == AggregateType.COUNT)) {
+                String label = p.getAlias(null, 0);
+                dt.addColumn(label).attr(HS_COUNT_MAP, Tuple.of(subExpr.toString(), label));
+                return;
+            }
+            addColumnName(dt, subExpr);
+        })) ;
     }
 
     @Getter

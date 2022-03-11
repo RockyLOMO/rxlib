@@ -37,7 +37,7 @@ public class EntityQueryLambda<T> implements Extends {
         DESC
     }
 
-    static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", LIMIT = " LIMIT ",
+    static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", GROUP_BY = " GROUP BY ", LIMIT = " LIMIT ",
             OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
 
     static void pkClaus(StringBuilder sql, String pk) {

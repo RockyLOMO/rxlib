@@ -111,18 +111,20 @@ public class BeanTester extends TestUtil {
         secondRow.set(2, 100);
         System.out.println(dt);
 
-//        row.set(4, 0);
+        System.out.println(toJsonString(dt));
     }
 
     @SneakyThrows
     @Test
     public void randomList() {
         RandomList<String> list = new RandomList<>();
+        list.setSortFunc(p -> p);
+        list.add("e", 0);
         list.add("a", 4);
         list.add("b", 3);
         list.add("c", 2);
         list.add("d", 1);
-        list.add("e", 0);
+        list.removeIf(p -> p.equals("c"));
         //basic function
         for (String s : list) {
             System.out.print(s + " ");
@@ -137,7 +139,7 @@ public class BeanTester extends TestUtil {
             Tasks.run(() -> {
                 StringBuilder str = new StringBuilder();
                 for (int j = 0; j < 10; j++) {
-                    str.append(list.next() + " ");
+                    str.append(list.next()).append(" ");
                 }
                 System.out.println(str);
                 l.countDown();
@@ -153,26 +155,26 @@ public class BeanTester extends TestUtil {
             });
         }
         //steering function
-        Object steeringObj = 1;
+        Object steeringKey = 1;
         int ttl = 2;
-        String next = list.next(steeringObj, ttl);
-        assert next.equals(list.next(steeringObj, ttl));
-        log.info("steering {} -> {}", steeringObj, next);
+        String next = list.next(steeringKey, ttl);
+        assert next.equals(list.next(steeringKey, ttl));
+        log.info("steering {} -> {}", steeringKey, next);
         sleep(5000);
-        String after = list.next(steeringObj, ttl);
-        log.info("steering {} -> {} | {}", steeringObj, next, after);
-        assert after.equals(list.next(steeringObj, ttl));
+        String after = list.next(steeringKey, ttl);
+        log.info("steering {} -> {} | {}", steeringKey, next, after);
+        assert after.equals(list.next(steeringKey, ttl));
     }
 
     @Test
-    public void snowFlake() {
+    public void snowflake() {
         Set<Long> set = new HashSet<>();
         int len = 1 << 12;
         System.out.println(len);
-        SnowFlake snowFlake = new SnowFlake(1, 1);
+        Snowflake snowflake = Snowflake.DEFAULT;
         for (int i = 0; i < len; i++) {
             Tasks.run(() -> {
-                assert set.add(snowFlake.nextId());
+                assert set.add(snowflake.nextId());
             });
         }
     }

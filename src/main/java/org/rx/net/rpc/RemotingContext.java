@@ -5,31 +5,31 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.Extends;
 import org.rx.util.function.Func;
 
 import java.util.Objects;
 
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public final class RemotingContext implements Extends {
-    static final FastThreadLocal<RemotingContext> tl = new FastThreadLocal<>();
+public final class RemotingContext {
+    static final FastThreadLocal<RemotingContext> TL = new FastThreadLocal<>();
 
     public static RemotingContext context() {
-        RemotingContext ctx = tl.getIfExists();
+        RemotingContext ctx = TL.getIfExists();
         Objects.requireNonNull(ctx, "No context");
         return ctx;
     }
 
     @SneakyThrows
-    static <T> T invoke(Func<T> fn, RpcServerClient rc) {
-        tl.set(new RemotingContext(rc));
+    static <T> T invoke(Func<T> fn, RpcServer rs, RpcClientMeta rc) {
+        TL.set(new RemotingContext(rs, rc));
         try {
             return fn.invoke();
         } finally {
-            tl.remove();
+            TL.remove();
         }
     }
 
-    final RpcServerClient client;
+    final RpcServer server;
+    final RpcClientMeta client;
 }

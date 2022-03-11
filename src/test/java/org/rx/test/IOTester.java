@@ -34,9 +34,35 @@ import static org.rx.core.Extends.sleep;
 public class IOTester {
     static final String h2Db = "~/h2/test";
 
+    @SneakyThrows
+    @Test
+    public synchronized void h2ShardingX() {
+        EntityDatabase db1 = new ShardingEntityDatabase("~/h2/s1", "192.168.31.5:854");
+//        EntityDatabase db2 = new ShardingEntityDatabase("~/h2/s2", "192.168.31.5:854");
+
+        db1.createMapping(PersonBean.class);
+        for (int i = 0; i < 10; i++) {
+            PersonBean personBean = new PersonBean();
+            personBean.setIndex(i);
+            personBean.setName("老王" + i);
+            if (i % 2 == 0) {
+                personBean.setGender(PersonGender.GIRL);
+                personBean.setFlags(PersonBean.Flags);
+                personBean.setArray(PersonBean.Array);
+            } else {
+                personBean.setGender(PersonGender.BOY);
+            }
+            db1.save(personBean);
+        }
+
+        List<PersonBean> result = db1.findBy(new EntityQueryLambda<>(PersonBean.class));
+        System.out.println(result);
+        wait();
+    }
+
     @Test
     public synchronized void h2Sharding() {
-        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
         db.createMapping(PersonBean.class);
 
         try {
@@ -54,24 +80,25 @@ public class IOTester {
                 db.save(personBean);
             }
 
-            String querySql = "select * from person order by index";
-            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
-            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
+            DataTable dt1, dt2, dt;
+            String querySql = "select id, index, name from person where 1=1 and name != '' order by gender";
+
+            dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
             System.out.println(dt1);
             System.out.println(dt2);
-
-            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
             System.out.println(dt);
-            int i = 0;
-            for (DataRow row : dt.getRows()) {
-                int x = row.get("INDEX");
-                assert x == i++;
-            }
+//            int i = 0;
+//            for (DataRow row : dt.getRows()) {
+//                int x = row.get("INDEX");
+//                assert x == i++;
+//            }
 
-            querySql = "select sum(index),gender from person group by gender";
+            querySql = "select sum(index), gender, count(1) count, count(*) count2, count(id)  count3 from person where 1=1 and name!='' group by gender order by sum(index) asc";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
             //todo offset -> empty row
-            dt2 = db.executeQuery(querySql + " limit 5 offset 5", PersonBean.class);
+            dt2 = db.executeQuery(querySql + " limit 5", PersonBean.class);
             System.out.println(dt1);
             System.out.println(dt2);
 
@@ -109,7 +136,7 @@ public class IOTester {
 
     @Test
     public void h2() {
-        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db);
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
 //        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
         db.begin();

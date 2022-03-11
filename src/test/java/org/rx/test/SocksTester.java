@@ -143,8 +143,8 @@ public class SocksTester extends TConfig {
         c1.wait4Inject();
 
         sleep4Sync();
-        System.out.println("x:" + ns1.getDnsServer().getHosts());
-        System.out.println("x2:" + ns2.getDnsServer().getHosts());
+        System.out.println("ns1:" + ns1.getDnsServer().getHosts());
+        System.out.println("ns2:" + ns2.getDnsServer().getHosts());
     }
 
     @SneakyThrows

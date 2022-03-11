@@ -452,6 +452,9 @@ public final class Sockets {
     }
 
     public static String toString(InetSocketAddress endpoint) {
+        if (endpoint == null) {
+            return "NULL";
+        }
         return String.format("%s:%s", endpoint.getHostString(), endpoint.getPort());
     }
 
