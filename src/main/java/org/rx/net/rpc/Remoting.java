@@ -14,6 +14,7 @@ import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.core.*;
 import org.rx.net.rpc.protocol.ErrorPacket;
 import org.rx.util.BeanMapper;
+import org.rx.util.Snowflake;
 import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
@@ -49,7 +50,7 @@ public final class Remoting {
 
         static class EventBean {
             final Set<RpcClientMeta> subscribe = ConcurrentHashMap.newKeySet();
-            final Map<UUID, EventContext> contextMap = new ConcurrentHashMap<>();
+            final Map<Long, EventContext> contextMap = new ConcurrentHashMap<>();
         }
 
         @Getter
@@ -350,7 +351,7 @@ public final class Remoting {
                                         } else {
                                             eCtx.computingClient = computingClient;
                                             EventMessage pack = new EventMessage(p.eventName, EventFlag.COMPUTE_ARGS);
-                                            pack.computeId = UUID.randomUUID();
+                                            pack.computeId = Snowflake.DEFAULT.nextId();
                                             pack.eventArgs = args;
                                             eventBean.contextMap.put(pack.computeId, eCtx);
                                             try {

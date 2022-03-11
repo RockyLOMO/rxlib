@@ -84,6 +84,39 @@ public interface Extends extends Serializable {
         return null;
     }
 
+    //todo checkerframework
+    @ErrorCode("test")
+    static void require(Object arg, boolean testResult) {
+        if (!testResult) {
+            throw new ApplicationException("test", values(arg));
+        }
+    }
+
+    static String description(@NonNull AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
+    static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
+        if (iterable == null) {
+            return;
+        }
+
+        for (T t : iterable) {
+            try {
+                fn.invoke(t);
+            } catch (Throwable e) {
+                if (e instanceof CircuitBreakingException) {
+                    break;
+                }
+                ExceptionHandler.INSTANCE.log("eachQuietly", e);
+            }
+        }
+    }
+
     static boolean quietly(@NonNull Action action) {
         try {
             action.invoke();
@@ -112,23 +145,6 @@ public interface Extends extends Serializable {
             }
         }
         return null;
-    }
-
-    static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
-            return;
-        }
-
-        for (T t : iterable) {
-            try {
-                fn.invoke(t);
-            } catch (Throwable e) {
-                if (e instanceof CircuitBreakingException) {
-                    break;
-                }
-                ExceptionHandler.INSTANCE.log("eachQuietly", e);
-            }
-        }
     }
 
     static boolean tryClose(Object obj) {
@@ -166,14 +182,6 @@ public interface Extends extends Serializable {
         return (T) obj;
     }
 
-    //todo checkerframework
-    @ErrorCode("test")
-    static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
     static <T> T ifNull(T value, T defaultVal) {
         return value != null ? value : defaultVal;
     }
@@ -191,12 +199,8 @@ public interface Extends extends Serializable {
         return (a == b) || (a != null && a.equals(b));
     }
 
-    static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
+    static CircuitBreakingException asyncBreak() {
+        throw new CircuitBreakingException();
     }
 
     static Object[] values(Object... args) {

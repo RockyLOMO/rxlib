@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.ErrorCode;
@@ -471,7 +472,10 @@ public class CoreTester extends TestUtil {
         for (Integer p : pq) {
             log.info(p.toString());
         }
-        pq.forEach(p -> log.info(p.toString()));
+        pq.forEach(p -> {
+            log.info(p.toString());
+            throw new CircuitBreakingException();
+        });
     }
 
     @Test

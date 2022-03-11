@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
+import static org.rx.core.Extends.asyncBreak;
 import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
@@ -28,7 +29,7 @@ public class DiskMonitor {
             int up = Decimal.valueOf((double) (totalSpace - root.getUsableSpace()) / totalSpace).toPercentInt();
             eachQuietly(fns.entrySet(), entry -> {
                 if (entry.getKey() > up) {
-                    throw new CircuitBreakingException();
+                    throw asyncBreak();
                 }
                 log.debug("DiskMonitor Used={}% Threshold={} -> {}", up, entry.getKey(), entry.getValue().size());
                 eachQuietly(entry.getValue(), Action::invoke);

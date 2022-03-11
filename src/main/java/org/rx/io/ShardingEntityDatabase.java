@@ -8,8 +8,8 @@ import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
-import org.rx.core.RxConfig;
 import org.rx.exception.ExceptionHandler;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.rpc.Remoting;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.asyncBreak;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
@@ -70,9 +70,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         }).join();
 
         nsClient.onAppAddressChanged.combine((s, e) -> {
-            if (!e.getAppName().equals(APP_NAME)
-//                    || eq(e.getInstanceId(), RxConfig.INSTANCE.getId())
-            ) {
+            if (!e.getAppName().equals(APP_NAME)) {
                 return;
             }
             InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);
@@ -145,7 +143,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             if (p.exists(query)) {
                 rf.set(true);
-                throw new CircuitBreakingException();
+                asyncBreak();
             }
         });
         return rf.get();
@@ -167,7 +165,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             h.v = p.findOne(query);
             if (h.v != null) {
-                throw new CircuitBreakingException();
+                asyncBreak();
             }
         });
         return h.v;
@@ -250,5 +248,15 @@ public class ShardingEntityDatabase implements EntityDatabase {
                 break;
             }
         }
+    }
+
+    void invokeAllAsync(BiAction<EntityDatabase> fn) {
+        NQuery.of(shardingDbs, true).forEach(tuple -> {
+            try {
+                fn.invoke(tuple.right);
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        });
     }
 }

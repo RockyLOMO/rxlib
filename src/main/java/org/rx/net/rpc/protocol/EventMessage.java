@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.rx.core.EventArgs;
 
 import java.io.Serializable;
-import java.util.UUID;
 
 @RequiredArgsConstructor
 public class EventMessage implements Serializable {
@@ -12,5 +11,5 @@ public class EventMessage implements Serializable {
     public final String eventName;
     public final EventFlag flag;
     public EventArgs eventArgs;
-    public UUID computeId;
+    public long computeId;
 }
