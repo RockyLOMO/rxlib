@@ -11,8 +11,10 @@ import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
 import org.h2.expression.aggregate.Aggregate;
 import org.h2.expression.aggregate.AggregateType;
+import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbc.JdbcResultSet;
 import org.h2.result.LocalResult;
+import org.h2.value.ValueToObjectConverter;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -79,7 +81,18 @@ public class DataTable implements Extends {
             if (rs.getMetaData().getColumnCount() != exprs.length) {
                 log.info("XX: {}", dt);
             }
-            readRows(dt, rs, rs.getMetaData());
+
+            JdbcConnection conn = Reflects.readField(rs, "conn");
+            int columnCount = exprs.length;
+            List<Object> buf = new ArrayList<>(columnCount);
+            while (rs.next()) {
+                buf.clear();
+                for (int i = 1; i <= columnCount; i++) {
+                    buf.add(ValueToObjectConverter.valueToDefaultObject(rs.getInternal(i), conn, true));
+//                    buf.add(rs.getObject(i));
+                }
+                dt.addRow(buf.toArray());
+            }
         }
         return dt;
     }

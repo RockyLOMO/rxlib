@@ -630,10 +630,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
 
             DataTable combined = DataTable.read(stmt.executeQuery(querySql));
-            if (combined.getColumns().size() != colTypes.size()) {
-                throw new InvalidException("Invalid querySql");
-            }
-            for (int i = 0; i < colTypes.size(); i++) {
+            int columnCount = combined.getColumns().size();
+            for (int i = 0; i < columnCount; i++) {
                 for (DataRow row : combined.getRows()) {
                     row.set(i, convertCell(colTypes.get(i), row.get(i)));
                 }

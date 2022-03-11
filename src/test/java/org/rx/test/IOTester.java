@@ -81,7 +81,7 @@ public class IOTester {
             }
 
             DataTable dt1, dt2, dt;
-            String querySql = "select * from person where 1=1 and name != '' ";
+            String querySql = "select id, index, name from person where 1=1 and name != '' order by gender";
 
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
             dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
@@ -89,11 +89,11 @@ public class IOTester {
             System.out.println(dt2);
             dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
             System.out.println(dt);
-            int i = 0;
-            for (DataRow row : dt.getRows()) {
-                int x = row.get("INDEX");
-                assert x == i++;
-            }
+//            int i = 0;
+//            for (DataRow row : dt.getRows()) {
+//                int x = row.get("INDEX");
+//                assert x == i++;
+//            }
 
             querySql = "select sum(index), gender, count(1) count, count(*) count2, count(id)  count3 from person where 1=1 and name!='' group by gender order by sum(index) asc";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
