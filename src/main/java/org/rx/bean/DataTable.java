@@ -21,7 +21,6 @@ import org.rx.exception.InvalidException;
 
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -51,21 +50,17 @@ public class DataTable implements Extends {
             for (int i = 1; i <= columnCount; i++) {
                 dt.addColumn(preferColumnName ? metaData.getColumnName(i) : metaData.getColumnLabel(i));
             }
-            readRows(dt, rs, metaData);
+
+            List<Object> buf = new ArrayList<>(columnCount);
+            while (rs.next()) {
+                buf.clear();
+                for (int i = 1; i <= columnCount; i++) {
+                    buf.add(rs.getObject(i));
+                }
+                dt.addRow(buf.toArray());
+            }
         }
         return dt;
-    }
-
-    static void readRows(DataTable dt, ResultSet rs, ResultSetMetaData metaData) throws SQLException {
-        int columnCount = metaData.getColumnCount();
-        List<Object> buf = new ArrayList<>(columnCount);
-        while (rs.next()) {
-            buf.clear();
-            for (int i = 1; i <= columnCount; i++) {
-                buf.add(rs.getObject(i));
-            }
-            dt.addRow(buf.toArray());
-        }
     }
 
     @SneakyThrows
@@ -74,12 +69,10 @@ public class DataTable implements Extends {
         try (JdbcResultSet rs = resultSet) {
             LocalResult result = (LocalResult) rs.getResult();
             dt.setTableName(result.getTableName(1));
+            //包含orderby的
             Expression[] exprs = Reflects.readField(result, "expressions");
             for (Expression expr : exprs) {
                 addColumnName(dt, expr);
-            }
-            if (rs.getMetaData().getColumnCount() != exprs.length) {
-                log.info("XX: {}", dt);
             }
 
             JdbcConnection conn = Reflects.readField(rs, "conn");

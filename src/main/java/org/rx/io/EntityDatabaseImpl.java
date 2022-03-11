@@ -441,6 +441,33 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         executeUpdate("SHUTDOWN COMPACT");
     }
 
+    public <T> void dropIndex(Class<T> entityType, String fieldName) {
+        Field field = Reflects.getFieldMap(entityType).get(fieldName);
+        DbColumn dbColumn = field.getAnnotation(DbColumn.class);
+        String tableName = tableName(entityType);
+        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String sql = String.format("DROP INDEX %s ON %s;", indexName(tableName, colName), tableName);
+        executeUpdate(sql);
+    }
+
+    public <T> void createIndex(Class<T> entityType, String fieldName) {
+        Field field = Reflects.getFieldMap(entityType).get(fieldName);
+        DbColumn dbColumn = field.getAnnotation(DbColumn.class);
+        String tableName = tableName(entityType);
+        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String index = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_ASC
+                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? "UNIQUE " : Strings.EMPTY;
+        String desc = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.INDEX_DESC
+                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? " DESC" : Strings.EMPTY;
+        String sql = String.format("CREATE %sINDEX %s ON %s (%s%s);", index,
+                indexName(tableName, colName), tableName, colName, desc);
+        executeUpdate(sql);
+    }
+
+    String indexName(String tableName, String columnName) {
+        return String.format("%s_%s_index", tableName, columnName);
+    }
+
     @Override
     public <T> void dropMapping(Class<T> entityType) {
         SqlMeta meta = getMeta(entityType);
@@ -500,6 +527,26 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     .replace($PK, pkName).toString();
             log.debug("createMapping\n{}", sql);
             executeUpdate(sql);
+
+            for (Tuple<Field, DbColumn> value : columns.values()) {
+                DbColumn dbColumn = value.right;
+                if (dbColumn == null || dbColumn.primaryKey()) {
+                    continue;
+                }
+                if (dbColumn.index() == DbColumn.IndexKind.NONE) {
+                    try {
+                        dropIndex(entityType, value.left.getName());
+                    } catch (Exception e) {
+                        log.warn("dropIndex: {}", e.getMessage());
+                    }
+                    continue;
+                }
+                try {
+                    createIndex(entityType, value.left.getName());
+                } catch (Exception e) {
+                    log.warn("createIndex: {}", e.getMessage());
+                }
+            }
 
             String finalPkName = pkName;
             SQL_META.computeIfAbsent(entityType, k -> new SqlMeta(finalPkName, columns, insert.toString(),

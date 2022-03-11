@@ -28,9 +28,12 @@ public class PersonBean implements IPerson, Extends {
 
     @DbColumn(primaryKey = true)
     public final UUID id = UUID.randomUUID();
+    @DbColumn(index = DbColumn.IndexKind.NONE)
     public int index;
+    @DbColumn(index = DbColumn.IndexKind.NONE)
     public int index2;
     @NotNull
+    @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
     public String name;
     @NotNull
     public PersonGender gender;

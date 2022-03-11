@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="false" debug="false">
-<!--    <springProperty scope="context" name="appName" source="spring.application.name" default="RxSocks"/>-->
-    <property name="logLevel" value="INFO"/>
+    <!--    <springProperty scope="context" name="appName" source="spring.application.name" default="RxSocks"/>-->
+    <property name="logLevel" value="DEBUG"/>
     <property name="logPath" value="./logs"/>
     <property name="appName" value="RxSocks"/>
     <property name="days" value="2"/>
@@ -31,12 +31,12 @@
         </encoder>
     </appender>
 
-    <!--    <logger name="org.rx.io" level="DEBUG"/>-->
+    <logger name="io.netty" level="INFO"/>
     <!--    <logger name="org.rx.net" level="DEBUG"/>-->
     <!--    <logger name="org.rx.net.socks.Socks5UdpRelayHandler" level="DEBUG"/>-->
 
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>
-        <appender-ref ref="infoAppender"/>
+        <!--        <appender-ref ref="infoAppender"/>-->
     </root>
 </configuration>
