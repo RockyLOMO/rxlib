@@ -522,16 +522,31 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
+        int startPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.WHERE), endPos;
+        if (startPos != -1) {
+            int pos = startPos + EntityQueryLambda.WHERE.length();
+            endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.GROUP_BY, pos);
+            if (endPos == -1) {
+                endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.ORDER_BY, pos);
+            }
+            if (endPos == -1) {
+                endPos = Strings.indexOfIgnoreCase(querySql, EntityQueryLambda.LIMIT, pos);
+            }
+            if (endPos == -1) {
+                endPos = querySql.length();
+            }
+            querySql = new StringBuilder(querySql).delete(startPos, endPos - startPos).toString();
+        }
         if (Strings.isBlank(template.getTableName())) {
             String c = " FROM ";
-            int s = Strings.indexOfIgnoreCase(querySql, c);
-            if (s != -1) {
-                s += c.length();
-                int e = querySql.indexOf(" ", s);
-                if (e != -1) {
-                    template.setTableName(querySql.substring(s, e));
+            startPos = Strings.indexOfIgnoreCase(querySql, c);
+            if (startPos != -1) {
+                startPos += c.length();
+                endPos = querySql.indexOf(" ", startPos);
+                if (endPos != -1) {
+                    template.setTableName(querySql.substring(startPos, endPos));
                 } else {
-                    template.setTableName(querySql.substring(s));
+                    template.setTableName(querySql.substring(startPos));
                 }
             }
             if (Strings.isBlank(template.getTableName())) {
@@ -541,14 +556,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (DataColumn<?> column : template.getColumns()) {
             Tuple<String, String> countMap = column.attr(DataTable.HS_COUNT_MAP);
             if (countMap != null) {
-                querySql = Strings.replaceIgnoreCase(querySql, countMap.left, String.format("sum(%s)", countMap.right));
+                querySql = Strings.replaceIgnoreCase(querySql, countMap.left, String.format("SUM(%s)", countMap.right));
+                if (countMap.left.equalsIgnoreCase("COUNT(*)")) {
+                    querySql = Strings.replaceIgnoreCase(querySql, "COUNT(1)", String.format("SUM(%s)", countMap.right));
+                }
             }
         }
-//        int cs, ce = 0;
-//        while ((cs = Strings.indexOfIgnoreCase(querySql, "count(", ce)) != -1) {
-////            Strings.indexOfIgnoreCase(querySql,"",)
-//            ce = cs;
-//        }
         log.info("shardingSql: {}", querySql);
         DataRow first;
         try {
@@ -566,12 +579,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (int i = 0; i < len; i++) {
             DataColumn<Object> column = template.getColumn(i);
             String colName = column.getColumnName();
-            int s = colName.indexOf("(");
-            if (s != -1) {
-                s += 1;
-                int e = colName.indexOf(")", s);
-                if (e != -1) {
-                    colName = colName.substring(s, e);
+            startPos = colName.indexOf("(");
+            if (startPos != -1) {
+                startPos += 1;
+                endPos = colName.indexOf(")", startPos);
+                if (endPos != -1) {
+                    colName = colName.substring(startPos, endPos);
                 }
             }
 

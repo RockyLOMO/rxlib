@@ -80,23 +80,22 @@ public class IOTester {
                 db.save(personBean);
             }
 
-            String querySql = "select * from person order by index";
             DataTable dt1, dt2, dt;
-//            DataTable dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
-//            DataTable dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
-//            System.out.println(dt1);
-//            System.out.println(dt2);
-//
-//            DataTable dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
-//            System.out.println(dt);
-//            int i = 0;
-//            for (DataRow row : dt.getRows()) {
-//                int x = row.get("INDEX");
-//                assert x == i++;
-//            }
+            String querySql = "select * from person where 1=1 and name != '' ";
 
-            querySql = "select sum(index) val, gender, count(1), count(*)  count from person group by gender";
-            querySql = "select sum(index), gender, count(id) count, count(*) count2, count(1)  count3 from person group by gender";
+            dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
+            dt2 = db.executeQuery(querySql + " limit 5,5", PersonBean.class);
+            System.out.println(dt1);
+            System.out.println(dt2);
+            dt = EntityDatabaseImpl.sharding(Arrays.toList(dt1, dt2), querySql);
+            System.out.println(dt);
+            int i = 0;
+            for (DataRow row : dt.getRows()) {
+                int x = row.get("INDEX");
+                assert x == i++;
+            }
+
+            querySql = "select sum(index), gender, count(1) count, count(*) count2, count(id)  count3 from person where 1=1 and name!='' group by gender order by sum(index) asc";
             dt1 = db.executeQuery(querySql + " limit 0,5", PersonBean.class);
             //todo offset -> empty row
             dt2 = db.executeQuery(querySql + " limit 5", PersonBean.class);
