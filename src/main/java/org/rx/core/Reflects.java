@@ -19,7 +19,9 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import java.io.InputStream;
 import java.io.Serializable;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
@@ -74,7 +76,7 @@ public class Reflects extends ClassUtils {
     static final Lazy<Cache<Class<?>, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
     static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
-    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE | MethodHandles.Lookup.PACKAGE;
+    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PRIVATE;
     static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     static {
@@ -230,9 +232,20 @@ public class Reflects extends ClassUtils {
         require(method, method.isDefault());
 
         Class<?> declaringClass = method.getDeclaringClass();
-        return (T) LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
-                .unreflectSpecial(method, declaringClass)
-                .bindTo(instance)
+        MethodHandle methodHandle;
+        if (App.IS_JAVA_11) {
+            methodHandle = MethodHandles.lookup()
+                    .findSpecial(
+                            method.getDeclaringClass(),
+                            method.getName(),
+                            MethodType.methodType(method.getReturnType(), Arrays.EMPTY_CLASS_ARRAY),
+                            method.getDeclaringClass()
+                    );
+        } else {
+            methodHandle = LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
+                    .unreflectSpecial(method, declaringClass);
+        }
+        return (T) methodHandle.bindTo(instance)
                 .invokeWithArguments(args);
     }
 

@@ -28,6 +28,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
@@ -425,6 +426,9 @@ public class CoreTester extends TestUtil {
 //        }
 
         assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
+
+        Method defMethod = IPerson.class.getMethod("enableCompress");
+        assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
 
         ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
         assert bean != null;
