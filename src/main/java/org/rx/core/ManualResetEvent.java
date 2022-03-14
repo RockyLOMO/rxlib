@@ -41,7 +41,7 @@ public final class ManualResetEvent {
             }
             if (timeout > 0) {
                 if (!open) {
-                    throw new TimeoutException("WaitOne() timeout");
+                    throw new TimeoutException("wait unpark timeout");
                 }
                 break;
             }

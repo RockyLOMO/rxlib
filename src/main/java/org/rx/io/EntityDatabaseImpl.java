@@ -128,6 +128,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     boolean autoUnderscoreColumnName;
     @Setter
     boolean autoRollbackOnError;
+    @Setter
+    int slowSqlElapsed = 200;
     int hash;
     JdbcConnectionPool connPool;
 
@@ -135,7 +137,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (connPool == null) {
             String filePath = getFilePath();
             hash = filePath.hashCode();
-            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
+            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
             connPool.setMaxConnections(maxConnections);
             if (!mappedEntityTypes.isEmpty()) {
                 createMapping(NQuery.of(mappedEntityTypes).toArray());
@@ -715,9 +717,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Override
     public <T> DataTable executeQuery(String sql, Class<T> entityType) {
         return invoke(conn -> {
-            if (log.isDebugEnabled()) {
-                log.debug("executeQuery {}", sql);
-            }
             DataTable dt = DataTable.read((JdbcResultSet) conn.createStatement().executeQuery(sql));
             if (entityType != null) {
                 SqlMeta meta = getMeta(entityType);
@@ -734,30 +733,24 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
             }
             return dt;
-        });
+        }, sql, Collections.emptyList());
     }
 
     int executeUpdate(String sql) {
         return invoke(conn -> {
             return conn.createStatement().executeUpdate(sql);
-        });
+        }, sql, Collections.emptyList());
     }
 
     int executeUpdate(String sql, List<Object> params) {
-        if (log.isDebugEnabled()) {
-            log.debug("executeUpdate {}\n{}", sql, toJsonString(params));
-        }
         return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             fillParams(stmt, params);
             return stmt.executeUpdate();
-        });
+        }, sql, params);
     }
 
     <T> T executeScalar(String sql, List<Object> params) {
-        if (log.isDebugEnabled()) {
-            log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-        }
         return invoke(conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             fillParams(stmt, params);
@@ -767,13 +760,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
                 return null;
             }
-        });
+        }, sql, params);
     }
 
     <T> List<T> executeQuery(String sql, List<Object> params, Class<T> entityType) {
-        if (log.isDebugEnabled()) {
-            log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-        }
         SqlMeta meta = getMeta(entityType);
         List<T> r = new ArrayList<>();
         invoke(conn -> {
@@ -796,7 +786,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     r.add(t);
                 }
             }
-        });
+        }, sql, params);
         return r;
     }
 
@@ -890,12 +880,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     @SneakyThrows
-    private void invoke(BiAction<Connection> fn) {
+    private void invoke(BiAction<Connection> fn, String sql, List<Object> params) {
         Connection conn = TX_CONN.getIfExists();
         boolean isInTx = conn != null;
         if (!isInTx) {
             conn = getConnectionPool().getConnection();
         }
+        long startTime = System.currentTimeMillis();
         try {
             fn.invoke(conn);
         } catch (Throwable e) {
@@ -904,19 +895,28 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
+            long elapsed = System.currentTimeMillis() - startTime;
             if (!isInTx) {
                 conn.close();
+            }
+            if (elapsed > slowSqlElapsed) {
+                log.warn("slowSql: {} -> {}ms", sql, elapsed);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
+                }
             }
         }
     }
 
     @SneakyThrows
-    private <T> T invoke(BiFunc<Connection, T> fn) {
+    private <T> T invoke(BiFunc<Connection, T> fn, String sql, List<Object> params) {
         Connection conn = TX_CONN.getIfExists();
         boolean isInTx = conn != null;
         if (!isInTx) {
             conn = getConnectionPool().getConnection();
         }
+        long startTime = System.currentTimeMillis();
         try {
             return fn.invoke(conn);
         } catch (Throwable e) {
@@ -925,8 +925,16 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
+            long elapsed = System.currentTimeMillis() - startTime;
             if (!isInTx) {
                 conn.close();
+            }
+            if (elapsed > slowSqlElapsed) {
+                log.warn("slowSql: {} -> {}ms", sql, elapsed);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
+                }
             }
         }
     }
