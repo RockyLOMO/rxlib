@@ -641,11 +641,14 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
             Class<?> fieldType = column.getDataType();
             if (fieldType == null) {
-                Object cell = first.get(i);
-                if (cell == null) {
-                    fieldType = Object.class;
-                } else {
-                    fieldType = cell.getClass();
+                fieldType = column.attr(DataTable.HS_COLUMN_TYPE);
+                if (fieldType == null) {
+                    Object cell = first.get(i);
+                    if (cell == null) {
+                        fieldType = Object.class;
+                    } else {
+                        fieldType = cell.getClass();
+                    }
                 }
             }
             colTypes.add(fieldType);
@@ -709,6 +712,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         return h2Type;
     }
 
+    public static void main(String[] args) {
+        System.out.println(toH2Type(String.class));
+    }
+
     //region jdbc
     public DataTable executeQuery(String sql) {
         return executeQuery(sql, null);
@@ -727,8 +734,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                         continue;
                     }
                     column.setColumnName(bi.left);
+                    Class<?> type = bi.right.left.getType();
+                    column.attr(DataTable.HS_COLUMN_TYPE, type);
                     for (DataRow row : dt.getRows()) {
-                        row.set(i, convertCell(bi.right.left.getType(), row.get(i)));
+                        row.set(i, convertCell(type, row.get(i)));
                     }
                 }
             }

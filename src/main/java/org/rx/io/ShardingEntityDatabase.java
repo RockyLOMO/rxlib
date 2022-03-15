@@ -213,22 +213,22 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public void begin() {
-        local.begin();
+//        local.begin();
     }
 
     @Override
     public void begin(int transactionIsolation) {
-        local.begin(transactionIsolation);
+//        local.begin(transactionIsolation);
     }
 
     @Override
     public void commit() {
-        local.commit();
+//        local.commit();
     }
 
     @Override
     public void rollback() {
-        local.rollback();
+//        local.rollback();
     }
 
     @SneakyThrows

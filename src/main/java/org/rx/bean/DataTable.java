@@ -34,6 +34,7 @@ import static org.rx.core.Extends.*;
 @NoArgsConstructor
 public class DataTable implements Extends {
     private static final long serialVersionUID = -7379386582995440975L;
+    public static final String HS_COLUMN_TYPE = "HS_COLUMN_TYPE";
     public static final String HS_COUNT_MAP = "HS_COUNT_MAP";
 
     public static DataTable read(ResultSet resultSet) {
