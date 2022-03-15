@@ -139,6 +139,8 @@ public class IOTester {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
 //        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
+        System.out.println(db.executeQuery("EXPLAIN select * from person"));
+
         db.begin();
 
         PersonBean entity = PersonBean.LeZhi;

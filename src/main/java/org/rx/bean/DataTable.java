@@ -94,8 +94,13 @@ public class DataTable implements Extends {
     }
 
     static void addColumnName(DataTable dt, Expression expr) {
-        if (tryAs(expr, ExpressionColumn.class, p -> dt.addColumns(p.getOriginalColumnName()))
-                || tryAs(expr, Aggregate.class, p -> {
+        if (tryAs(expr, ExpressionColumn.class, p -> {
+            String col = p.getOriginalColumnName();
+            if (col == null) {
+                col = p.getColumn().getName();
+            }
+            dt.addColumns(col);
+        }) || tryAs(expr, Aggregate.class, p -> {
             if (p.getAggregateType() == AggregateType.COUNT_ALL
                     || p.getAggregateType() == AggregateType.COUNT) {
                 String label = p.toString();
@@ -105,8 +110,7 @@ public class DataTable implements Extends {
             }
             Expression subExpr = p.getSubexpression(0);
             addColumnName(dt, subExpr);
-        })
-                || tryAs(expr, Alias.class, p -> {
+        }) || tryAs(expr, Alias.class, p -> {
             Expression subExpr = p.getNonAliasExpression();
             Aggregate aggregate = as(subExpr, Aggregate.class);
             if (aggregate != null

@@ -3,12 +3,14 @@ package org.rx.core;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Data
 public final class RxConfig {
     public interface ConfigNames {
@@ -79,7 +81,19 @@ public final class RxConfig {
         String userAgent;
     }
 
-    public static final RxConfig INSTANCE = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
+    public static final RxConfig INSTANCE;
+
+    static {
+        RxConfig temp;
+        try {
+            temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
+        } catch (Throwable e) {
+            log.error("rx init error", e);
+            temp = new RxConfig();
+        }
+        INSTANCE = temp;
+    }
+
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
