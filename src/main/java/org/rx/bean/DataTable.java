@@ -69,9 +69,11 @@ public class DataTable implements Extends {
         DataTable dt = new DataTable();
         try (JdbcResultSet rs = resultSet) {
             LocalResult result = (LocalResult) rs.getResult();
-            dt.setTableName(result.getTableName(1));
             //包含orderby的
             Expression[] exprs = Reflects.readField(result, "expressions");
+            if (exprs.length > 0) {
+                dt.setTableName(exprs[0].getTableName());
+            }
             for (Expression expr : exprs) {
                 addColumnName(dt, expr);
             }
