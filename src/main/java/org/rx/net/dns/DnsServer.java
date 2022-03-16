@@ -72,7 +72,11 @@ public class DnsServer extends Disposable {
     }
 
     public List<InetAddress> getAllHosts(String host) {
-        return new ArrayList<>(hosts.get(host));
+        RandomList<InetAddress> list = hosts.get(host);
+        if (list == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(list);
     }
 
     public boolean addHosts(String host, @NonNull String... ips) {
