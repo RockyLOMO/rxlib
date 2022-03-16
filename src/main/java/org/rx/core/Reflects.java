@@ -233,18 +233,18 @@ public class Reflects extends ClassUtils {
 
         Class<?> declaringClass = method.getDeclaringClass();
         MethodHandle methodHandle;
-        if (App.IS_JAVA_11) {
-            methodHandle = MethodHandles.lookup()
-                    .findSpecial(
-                            method.getDeclaringClass(),
-                            method.getName(),
-                            MethodType.methodType(method.getReturnType(), Arrays.EMPTY_CLASS_ARRAY),
-                            method.getDeclaringClass()
-                    );
-        } else {
+//        if (App.IS_JAVA_11) {
+//            methodHandle = MethodHandles.lookup()
+//                    .findSpecial(
+//                            method.getDeclaringClass(),
+//                            method.getName(),
+//                            MethodType.methodType(method.getReturnType(), Arrays.EMPTY_CLASS_ARRAY),
+//                            method.getDeclaringClass()
+//                    );
+//        } else {
             methodHandle = LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
                     .unreflectSpecial(method, declaringClass);
-        }
+//        }
         return (T) methodHandle.bindTo(instance)
                 .invokeWithArguments(args);
     }
