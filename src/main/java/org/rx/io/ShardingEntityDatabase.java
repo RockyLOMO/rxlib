@@ -8,6 +8,7 @@ import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
+import org.rx.core.Strings;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -201,6 +202,10 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> DataTable executeQuery(String sql, Class<T> entityType) {
+        if (Strings.startsWithIgnoreCase(sql, "EXPLAIN")) {
+            return local.executeQuery(sql, entityType);
+        }
+
         List<DataTable> r = new Vector<>();
         invokeAllAsync(p -> r.add(p.executeQuery(sql, entityType)));
         return EntityDatabaseImpl.sharding(r, sql);
