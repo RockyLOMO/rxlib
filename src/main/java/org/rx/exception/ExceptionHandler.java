@@ -80,8 +80,12 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     private ExceptionHandler() {
-        Thread.setDefaultUncaughtExceptionHandler(this);
-        setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
+        try {
+            Thread.setDefaultUncaughtExceptionHandler(this);
+            setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
+        } catch (Throwable e) {
+            log.error("rx init error", e);
+        }
     }
 
     public void log(String format, Object... args) {

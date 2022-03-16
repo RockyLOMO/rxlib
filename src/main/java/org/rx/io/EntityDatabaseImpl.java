@@ -461,7 +461,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? "UNIQUE " : Strings.EMPTY;
         String desc = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.INDEX_DESC
                 || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? " DESC" : Strings.EMPTY;
-        String sql = String.format("CREATE %sINDEX %s ON %s (%s%s);", index,
+        String sql = String.format("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s%s);", index,
                 indexName(tableName, colName), tableName, colName, desc);
         executeUpdate(sql);
     }
