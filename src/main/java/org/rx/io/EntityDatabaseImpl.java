@@ -82,7 +82,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             "$CREATE_COLUMNS" +
             ");";
     static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
-            $UPDATE_COLUMNS = "$UPDATE_COLUMNS", $WHERE_PART = "$WHERE_PART";
+            $UPDATE_COLUMNS = "$UPDATE_COLUMNS";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
     static final FastThreadLocal<Connection> TX_CONN = new FastThreadLocal<>();
@@ -137,6 +137,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (connPool == null) {
             String filePath = getFilePath();
             hash = filePath.hashCode();
+            //http://www.h2database.com/html/commands.html#set_cache_size
             connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
             connPool.setMaxConnections(maxConnections);
             if (!mappedEntityTypes.isEmpty()) {

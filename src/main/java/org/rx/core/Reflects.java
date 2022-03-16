@@ -76,7 +76,7 @@ public class Reflects extends ClassUtils {
     static final Lazy<Cache<Class<?>, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
     static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
-    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PRIVATE;
+    static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
     static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
 
     static {
