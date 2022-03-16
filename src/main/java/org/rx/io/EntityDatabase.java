@@ -39,6 +39,8 @@ public interface EntityDatabase extends AutoCloseable {
 
     <T> DataTable executeQuery(String sql, Class<T> entityType);
 
+    int executeUpdate(String sql);
+
     boolean isInTransaction();
 
     void begin();

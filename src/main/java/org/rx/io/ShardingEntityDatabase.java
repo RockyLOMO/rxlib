@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Vector;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
@@ -175,7 +176,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
-        List<T> r = new ArrayList<>();
+        List<T> r = new ArrayList<>(shardingDbs.size());
         invokeAll(p -> r.addAll(p.findBy(query)));
         return EntityQueryLambda.sharding(r, query);
     }
@@ -206,9 +207,16 @@ public class ShardingEntityDatabase implements EntityDatabase {
             return local.executeQuery(sql, entityType);
         }
 
-        List<DataTable> r = new Vector<>();
+        List<DataTable> r = new Vector<>(shardingDbs.size());
         invokeAllAsync(p -> r.add(p.executeQuery(sql, entityType)));
         return EntityDatabaseImpl.sharding(r, sql);
+    }
+
+    @Override
+    public int executeUpdate(String sql) {
+        AtomicInteger c = new AtomicInteger();
+        invokeAllAsync(p -> c.addAndGet(p.executeUpdate(sql)));
+        return c.get();
     }
 
     @Override

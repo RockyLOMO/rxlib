@@ -745,7 +745,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }, sql, Collections.emptyList());
     }
 
-    int executeUpdate(String sql) {
+    @Override
+    public int executeUpdate(String sql) {
         return invoke(conn -> {
             return conn.createStatement().executeUpdate(sql);
         }, sql, Collections.emptyList());
