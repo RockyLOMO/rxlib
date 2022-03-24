@@ -24,7 +24,7 @@ public class EntityQueryLambda<T> implements Extends {
         AND("(%s)AND(%s)"), OR("(%s)OR(%s)"),
         EQ("%s=%s"), NE("%s!=%s"),
         GT("%s>%s"), LT("%s<%s"),
-        GE("%s<=%s"), LE("%s>=%s"),
+        GE("%s>=%s"), LE("%s<=%s"),
         IN("%s IN(%s)"), NOT_IN("%s NOT IN(%s)"),
         BETWEEN("%s BETWEEN %s AND %s"), NOT_BETWEEN("%s NOT BETWEEN %s AND %s"),
         LIKE("%s LIKE %s"), NOT_LIKE("%s NOT LIKE %s");

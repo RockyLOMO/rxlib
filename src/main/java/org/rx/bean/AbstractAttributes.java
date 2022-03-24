@@ -25,8 +25,15 @@ public class AbstractAttributes implements Extends {
     @Override
     public <TK, TV> void attr(TK key, TV value) {
         if (attrs == null) {
+            if (value == null) {
+                return;
+            }
             attrs = initialAttrs();
         }
-        attrs.put(key, value);
+        if (value == null) {
+            attrs.remove(key);
+        } else {
+            attrs.put(key, value);
+        }
     }
 }

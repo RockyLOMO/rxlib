@@ -37,6 +37,7 @@ import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.App.toJsonString;
+import static org.rx.core.Extends.eq;
 
 @Slf4j
 public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
@@ -62,7 +63,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 upperColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
             }
             insertView = NQuery.of(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
-            secondaryView = NQuery.of(columns.entrySet()).where(p -> p.getKey().hashCode() != getPrimaryKey().hashCode());
+            secondaryView = NQuery.of(columns.entrySet()).where(p -> !eq(p.getKey(), getPrimaryKey().getKey()));
 
             this.insertSql = insertSql;
             this.updateSql = updateSql;

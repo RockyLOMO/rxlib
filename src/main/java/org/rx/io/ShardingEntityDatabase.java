@@ -21,6 +21,7 @@ import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Vector;
 import java.util.concurrent.TimeoutException;
@@ -68,7 +69,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
                 InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
                 return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
             }).toList());
-            log.info("{} init {} shardingDbs", APP_NAME, nodes.size());
+            log.info("{} init {} sharding nodes", APP_NAME, nodes.size());
             try {
                 nsClient.wait4Inject();
             } catch (TimeoutException ex) {
@@ -210,7 +211,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
 
     @Override
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
-        List<T> rf = new Vector<>(nodes.size());
+        List<T> rf = enableAsync ? new Vector<>(nodes.size()) : new ArrayList<>(nodes.size());
         invokeAll(p -> rf.addAll(p.findBy(query)));
         return EntityQueryLambda.sharding(rf, query);
     }
@@ -241,7 +242,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             return local.executeQuery(sql, entityType);
         }
 
-        List<DataTable> rf = new Vector<>(nodes.size());
+        List<DataTable> rf = enableAsync ? new Vector<>(nodes.size()) : new ArrayList<>(nodes.size());
         invokeAll(p -> rf.add(p.executeQuery(sql, entityType)));
         return EntityDatabaseImpl.sharding(rf, sql);
     }

@@ -472,14 +472,21 @@ public class CoreTester extends TestUtil {
         NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
 //                .groupBy(p -> p > 5, (p, x) -> x.first())
                 ;
-        //not work
-        for (Integer p : pq) {
+        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
             log.info(p.toString());
         }
-        pq.forEach(p -> {
+        System.out.println("----");
+        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
             log.info(p.toString());
-            throw new CircuitBreakingException();
-        });
+        }
+//        //not work
+//        for (Integer p : pq) {
+//            log.info(p.toString());
+//        }
+//        pq.forEach(p -> {
+//            log.info(p.toString());
+//            throw new CircuitBreakingException();
+//        });
     }
 
     @Test

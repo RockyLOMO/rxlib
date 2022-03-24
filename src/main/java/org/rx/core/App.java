@@ -4,8 +4,6 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
-import com.alibaba.fastjson.parser.ParserConfig;
-import com.alibaba.fastjson.parser.deserializer.ParseProcess;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import lombok.NonNull;
@@ -42,6 +40,7 @@ import static org.rx.core.Extends.as;
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
+    static final Class<?>[] DPI = new Class[]{DynamicProxy.Proxifier.class};
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
@@ -65,7 +64,7 @@ public final class App extends SystemUtils {
         Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
 
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
-                getBootstrapPath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
+                new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
     }
 
     public static File getJarFile(Object obj) {
@@ -109,15 +108,22 @@ public final class App extends SystemUtils {
         });
     }
 
-    public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
         return proxy(type, func, false);
     }
 
-    public static <T> T proxy(Class<T> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
         if (jdkProxy) {
-            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func, null));
         }
-        return (T) Enhancer.create(type, new DynamicProxy(func));
+        return (T) Enhancer.create(type, new DynamicProxy(func, null));
+    }
+
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
+        if (jdkProxy) {
+            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type, DPI[0]}, new DynamicProxy(func, rawObject));
+        }
+        return (T) Enhancer.create(type, DPI, new DynamicProxy(func, rawObject));
     }
 
     public static String hashKey(String method, Object... args) {
@@ -319,10 +325,6 @@ public final class App extends SystemUtils {
 
     public static MainArgs parseArgs(String[] args) {
         return new MainArgs(argsOperations(args), argsOptions(args));
-    }
-
-    public static String getBootstrapPath() {
-        return new File(Strings.EMPTY).getAbsolutePath();
     }
 
     /**
