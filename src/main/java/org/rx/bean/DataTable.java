@@ -34,6 +34,7 @@ import static org.rx.core.Extends.*;
 @NoArgsConstructor
 public class DataTable implements Extends {
     private static final long serialVersionUID = -7379386582995440975L;
+    public static final String HS_COLUMN_TYPE = "HS_COLUMN_TYPE";
     public static final String HS_COUNT_MAP = "HS_COUNT_MAP";
 
     public static DataTable read(ResultSet resultSet) {
@@ -68,9 +69,11 @@ public class DataTable implements Extends {
         DataTable dt = new DataTable();
         try (JdbcResultSet rs = resultSet) {
             LocalResult result = (LocalResult) rs.getResult();
-            dt.setTableName(result.getTableName(1));
             //包含orderby的
             Expression[] exprs = Reflects.readField(result, "expressions");
+            if (exprs.length > 0) {
+                dt.setTableName(exprs[0].getTableName());
+            }
             for (Expression expr : exprs) {
                 addColumnName(dt, expr);
             }
@@ -91,8 +94,13 @@ public class DataTable implements Extends {
     }
 
     static void addColumnName(DataTable dt, Expression expr) {
-        if (tryAs(expr, ExpressionColumn.class, p -> dt.addColumns(p.getOriginalColumnName()))
-                || tryAs(expr, Aggregate.class, p -> {
+        if (tryAs(expr, ExpressionColumn.class, p -> {
+            String col = p.getOriginalColumnName();
+            if (col == null) {
+                col = p.getColumn().getName();
+            }
+            dt.addColumns(col);
+        }) || tryAs(expr, Aggregate.class, p -> {
             if (p.getAggregateType() == AggregateType.COUNT_ALL
                     || p.getAggregateType() == AggregateType.COUNT) {
                 String label = p.toString();
@@ -102,8 +110,7 @@ public class DataTable implements Extends {
             }
             Expression subExpr = p.getSubexpression(0);
             addColumnName(dt, subExpr);
-        })
-                || tryAs(expr, Alias.class, p -> {
+        }) || tryAs(expr, Alias.class, p -> {
             Expression subExpr = p.getNonAliasExpression();
             Aggregate aggregate = as(subExpr, Aggregate.class);
             if (aggregate != null

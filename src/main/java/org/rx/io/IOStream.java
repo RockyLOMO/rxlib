@@ -62,6 +62,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return copyLen;
     }
 
+    public static long checksum(String... args) {
+        StringBuilder buf = new StringBuilder();
+        for (int i = 0; i < args.length; i++) {
+            buf.append(args[i]);
+        }
+        return checksum(buf.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
     public static long checksum(byte[] bytes) {
         CRC32 crc32 = new CRC32();
         crc32.update(bytes, 0, bytes.length);

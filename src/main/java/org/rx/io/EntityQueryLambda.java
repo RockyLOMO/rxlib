@@ -24,7 +24,7 @@ public class EntityQueryLambda<T> implements Extends {
         AND("(%s)AND(%s)"), OR("(%s)OR(%s)"),
         EQ("%s=%s"), NE("%s!=%s"),
         GT("%s>%s"), LT("%s<%s"),
-        GE("%s<=%s"), LE("%s>=%s"),
+        GE("%s>=%s"), LE("%s<=%s"),
         IN("%s IN(%s)"), NOT_IN("%s NOT IN(%s)"),
         BETWEEN("%s BETWEEN %s AND %s"), NOT_BETWEEN("%s NOT BETWEEN %s AND %s"),
         LIKE("%s LIKE %s"), NOT_LIKE("%s NOT LIKE %s");
@@ -39,6 +39,7 @@ public class EntityQueryLambda<T> implements Extends {
 
     static final String WHERE = " WHERE ", ORDER_BY = " ORDER BY ", GROUP_BY = " GROUP BY ", LIMIT = " LIMIT ",
             OP_AND = " AND ", DB_NULL = "NULL", PARAM_HOLD = "?";
+    static final String FUNC_RAND = "RAND()";
 
     static void pkClaus(StringBuilder sql, String pk) {
         sql.append(WHERE).append(Operator.EQ.format, pk, PARAM_HOLD);
@@ -49,6 +50,7 @@ public class EntityQueryLambda<T> implements Extends {
     boolean autoUnderscoreColumnName;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
     final List<Tuple<BiFunc<T, ?>, Order>> orders = new ArrayList<>();
+    boolean orderByRand;
     Integer limit, offset;
 
     public EntityQueryLambda<T> limit(int limit) {
@@ -73,6 +75,11 @@ public class EntityQueryLambda<T> implements Extends {
 
     public <R> EntityQueryLambda<T> orderByDescending(BiFunc<T, R> fn) {
         orders.add(Tuple.of(fn, Order.DESC));
+        return this;
+    }
+
+    public EntityQueryLambda<T> orderByRand() {
+        orderByRand = true;
         return this;
     }
 
@@ -162,7 +169,7 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     public String toString(List<Object> params) {
-        return resolve(conditions, params, orders, autoUnderscoreColumnName, limit, offset);
+        return resolve(conditions, params, orders, orderByRand, autoUnderscoreColumnName, limit, offset);
     }
 
     static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
@@ -199,7 +206,7 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params,
-                              List<Tuple<BiFunc<T, ?>, Order>> orders, boolean autoUnderscoreColumnName,
+                              List<Tuple<BiFunc<T, ?>, Order>> orders, boolean orderByRand, boolean autoUnderscoreColumnName,
                               Integer limit, Integer offset) {
         StringBuilder b = new StringBuilder(128);
         boolean isParam = params != null;
@@ -271,12 +278,14 @@ public class EntityQueryLambda<T> implements Extends {
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
-                    b.append(op.format, resolve(l, params, null, autoUnderscoreColumnName, limit, offset), r.toString(params));
+                    b.append(op.format, resolve(l, params, null, orderByRand, autoUnderscoreColumnName, limit, offset), r.toString(params));
                     break;
             }
         }
 
-        if (!CollectionUtils.isEmpty(orders)) {
+        if (orderByRand) {
+            b.append(ORDER_BY).append(FUNC_RAND);
+        } else if (!CollectionUtils.isEmpty(orders)) {
             b.append(ORDER_BY);
             for (Tuple<BiFunc<T, ?>, Order> bi : orders) {
                 String colName = resolveColumnName(bi.left, autoUnderscoreColumnName);

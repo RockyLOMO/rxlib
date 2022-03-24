@@ -1,6 +1,10 @@
 package org.rx.io;
 
+import lombok.SneakyThrows;
 import org.rx.bean.DataTable;
+import org.rx.core.Extends;
+import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import java.io.Serializable;
 import java.util.List;
@@ -38,6 +42,41 @@ public interface EntityDatabase extends AutoCloseable {
     String tableName(Class<?> entityType);
 
     <T> DataTable executeQuery(String sql, Class<T> entityType);
+
+    int executeUpdate(String sql);
+
+    @SneakyThrows
+    default void transInvoke(int transactionIsolation, Action fn) {
+        boolean doCommit = false;
+        begin(transactionIsolation);
+        try {
+            fn.invoke();
+            doCommit = true;
+        } finally {
+            if (doCommit) {
+                commit();
+            } else {
+                rollback();
+            }
+        }
+    }
+
+    @SneakyThrows
+    default <T> T transInvoke(int transactionIsolation, Func<T> fn) {
+        boolean doCommit = false;
+        begin(transactionIsolation);
+        try {
+            T r = fn.invoke();
+            doCommit = true;
+            return r;
+        } finally {
+            if (doCommit) {
+                commit();
+            } else {
+                rollback();
+            }
+        }
+    }
 
     boolean isInTransaction();
 

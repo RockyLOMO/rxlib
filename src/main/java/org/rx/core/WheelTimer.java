@@ -36,10 +36,7 @@ public class WheelTimer {
                     doContinue = fn.invoke(state);
                 } finally {
                     if (doContinue) {
-                        if (nextDelayFn != null) {
-                            delay = nextDelayFn.applyAsLong(delay);
-                        }
-                        this.timeout = timeout.timer().newTimeout(this, delay, TimeUnit.MILLISECONDS);
+                        newTimeout(this, delay, timeout.timer());
                     } else if (id != null) {
                         hold.remove(id);
                     }
@@ -207,14 +204,7 @@ public class WheelTimer {
 
     private <T> TimeoutFuture setTimeout(Task<T> task) {
         if (task.id == null) {
-            if (task.nextDelayFn != null) {
-                task.delay = task.nextDelayFn.applyAsLong(0);
-            }
-            if (task.delay <= 0) {
-                task.timeout = nonTask;
-            } else {
-                task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
-            }
+            newTimeout(task, 0, timer);
             return task;
         }
 
@@ -230,17 +220,21 @@ public class WheelTimer {
         }
 
         TimeoutFuture ot = hold.put(task.id, task);
-        if (task.nextDelayFn != null) {
-            task.delay = task.nextDelayFn.applyAsLong(0);
-        }
-        if (task.delay <= 0) {
-            task.timeout = nonTask;
-        } else {
-            task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
-        }
+        newTimeout(task, 0, timer);
         if (flag == TimeoutFlag.REPLACE && ot != null) {
             ot.cancel();
         }
         return task;
+    }
+
+    private <T> void newTimeout(Task<T> task, long initDelay, Timer timer) {
+        if (task.nextDelayFn != null) {
+            task.delay = task.nextDelayFn.applyAsLong(initDelay);
+        }
+        if (task.delay == Constants.TIMEOUT_INFINITE) {
+            task.timeout = nonTask;
+        } else {
+            task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
+        }
     }
 }

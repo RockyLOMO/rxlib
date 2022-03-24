@@ -8,7 +8,7 @@ import static org.rx.core.Extends.values;
 public abstract class Disposable implements AutoCloseable {
     private boolean closed;
 
-    public boolean isClosed() {
+    public synchronized boolean isClosed() {
         return closed;
     }
 
