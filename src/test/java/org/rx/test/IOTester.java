@@ -181,6 +181,8 @@ public class IOTester {
         List<Object> params = new ArrayList<>();
         System.out.println(q.toString(params));
         System.out.println(toJsonString(params));
+
+        System.out.println(q.orderByRand());
     }
 
     @Test
