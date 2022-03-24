@@ -714,9 +714,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         return h2Type;
     }
 
-    public static void main(String[] args) {
-        System.out.println(toH2Type(String.class));
-    }
+//    public static void main(String[] args) {
+//        System.out.println(toH2Type(String.class));
+//    }
 
     //region jdbc
     public DataTable executeQuery(String sql) {
