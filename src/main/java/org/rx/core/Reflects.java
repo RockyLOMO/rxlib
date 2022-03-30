@@ -190,19 +190,19 @@ public class Reflects extends ClassUtils {
     }
 
     //region methods
-    public static <T> T newInstance(Class<T> type) {
+    public static <T> T newInstance(Class<?> type) {
         return newInstance(type, Arrays.EMPTY_OBJECT_ARRAY);
     }
 
     @ErrorCode
     @SneakyThrows
-    public static <T> T newInstance(@NonNull Class<T> type, Object... args) {
+    public static <T> T newInstance(@NonNull Class<?> type, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
 
         try {
-            return ConstructorUtils.invokeConstructor(type, args);
+            return (T) ConstructorUtils.invokeConstructor(type, args);
         } catch (Exception e) {
             log.warn("Not match any accessible constructors. {}", e.getMessage());
             for (Constructor<?> constructor : type.getDeclaredConstructors()) {
@@ -242,8 +242,8 @@ public class Reflects extends ClassUtils {
 //                            method.getDeclaringClass()
 //                    );
 //        } else {
-            methodHandle = LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
-                    .unreflectSpecial(method, declaringClass);
+        methodHandle = LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
+                .unreflectSpecial(method, declaringClass);
 //        }
         return (T) methodHandle.bindTo(instance)
                 .invokeWithArguments(args);
