@@ -14,6 +14,7 @@ import org.rx.net.Sockets;
 import org.rx.net.http.tunnel.ReceivePack;
 import org.rx.net.http.tunnel.SendPack;
 import org.rx.net.http.tunnel.Server;
+import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -114,5 +115,9 @@ public class MxController {
     @PostConstruct
     public void init() {
         Class.forName(App.class.getName());
+        String omega = RxConfig.INSTANCE.getOmega();
+        if (omega != null) {
+            SocksContext.omega(omega, null);
+        }
     }
 }
