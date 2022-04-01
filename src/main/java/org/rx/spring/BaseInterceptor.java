@@ -83,7 +83,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return r;
                 }
             }
-            int maxLen = 1024 * 16;
+            int maxLen = 1024 * 8;
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
                 if (b.length > maxLen) {

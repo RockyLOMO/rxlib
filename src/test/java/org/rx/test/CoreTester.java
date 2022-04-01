@@ -1,6 +1,7 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
+import com.github.sftwnd.crayfish.common.crc.CrcModel;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.primitives.UnsignedLong;
@@ -35,6 +36,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -313,8 +315,9 @@ public class CoreTester extends TestUtil {
         invoke("codec", i -> {
             assert r.size() == i;
 //            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
-            UnsignedLong checksum = App.hashUnsigned64("checksum" + i);
-//            Object checksum = App.hash128("checksum" + i);
+            UnsignedLong unsignedLong = App.hashUnsigned64("checksum" + i);
+//            UnsignedLong unsignedLong = UnsignedLong.fromLongBits(CrcModel.CRC64_ECMA_182.getCRC(("checksum" + i).getBytes(StandardCharsets.UTF_8)).getCrc());
+            Object checksum = unsignedLong.toString();
             System.out.println(checksum);
             r.add(checksum);
         }, c);
