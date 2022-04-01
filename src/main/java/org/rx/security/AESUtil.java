@@ -44,7 +44,7 @@ public class AESUtil {
     public static String encryptToBase64(@NonNull String data, String key) {
         byte[] k = key == null ? dailyKey() : key.getBytes(StandardCharsets.UTF_8);
         byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), k);
-        return App.convertToBase64String(valueByte);
+        return App.convertToBase64(valueByte);
     }
 
     public static String decryptFromBase64(@NonNull String data) {
@@ -54,7 +54,7 @@ public class AESUtil {
     public static String decryptFromBase64(@NonNull String data, String key) {
         boolean dk = key == null;
         byte[] k = dk ? dailyKey() : key.getBytes(StandardCharsets.UTF_8);
-        byte[] rawBytes = App.convertFromBase64String(data);
+        byte[] rawBytes = App.convertFromBase64(data);
         byte[] valueByte;
         try {
             valueByte = decrypt(rawBytes, k);
