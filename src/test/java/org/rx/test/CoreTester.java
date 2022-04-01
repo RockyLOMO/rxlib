@@ -409,6 +409,17 @@ public class CoreTester extends TestUtil {
         assert tuple1.equals(tuple3);
     }
 
+    @Test
+    public void dynamicProxy() {
+        PersonBean leZhi = PersonBean.LeZhi;
+
+        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(proxy) == leZhi;
+
+        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(iproxy) == leZhi;
+    }
+
     @SneakyThrows
     @Test
     public void reflect() {

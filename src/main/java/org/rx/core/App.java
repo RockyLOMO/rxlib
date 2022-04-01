@@ -40,7 +40,7 @@ import static org.rx.core.Extends.as;
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
-    static final Class<?>[] DPI = new Class[]{DynamicProxy.Proxifier.class};
+    static final String DPR = "_DPR";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
@@ -108,22 +108,29 @@ public final class App extends SystemUtils {
         });
     }
 
+    public static <T> T rawObject(Object proxyObject) {
+        return Extends.<String, T>weakMap(proxyObject).get(DPR);
+    }
+
     public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
         return proxy(type, func, false);
     }
 
     public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
-        if (jdkProxy) {
-            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func, null));
-        }
-        return (T) Enhancer.create(type, new DynamicProxy(func, null));
+        return proxy(type, func, null, jdkProxy);
     }
 
     public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
+        T proxyObj;
         if (jdkProxy) {
-            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type, DPI[0]}, new DynamicProxy(func, rawObject));
+            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+        } else {
+            proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
         }
-        return (T) Enhancer.create(type, DPI, new DynamicProxy(func, rawObject));
+        if (rawObject != null) {
+            Extends.weakMap(proxyObj).put(DPR, rawObject);
+        }
+        return proxyObj;
     }
 
     public static String hashKey(String method, Object... args) {
