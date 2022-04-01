@@ -20,9 +20,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
 
-@ControllerAdvice
 //@Aspect
 @Component
+@ControllerAdvice
 public class ControllerInterceptor extends BaseInterceptor {
     private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
