@@ -8,7 +8,6 @@ import org.rx.util.function.TripleAction;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 import static org.rx.core.Constants.NON_UNCHECKED;

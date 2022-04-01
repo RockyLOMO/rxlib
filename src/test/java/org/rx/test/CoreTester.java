@@ -1,6 +1,9 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
+import com.google.common.primitives.UnsignedLong;
 import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.SneakyThrows;
@@ -20,7 +23,9 @@ import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
+import org.rx.io.IOStream;
 import org.rx.io.MemoryStream;
+import org.rx.security.MD5Util;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
@@ -212,10 +217,6 @@ public class CoreTester extends TestUtil {
 //                sleep(2000);
 //            }, 1000);
 //        }
-
-//        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
-//            System.out.println(toJsonString(e.getValue()));
-//        });
 //
 //        Tasks.schedule(() -> {
 //            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
@@ -278,23 +279,46 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void yamlConf() {
-        System.out.println(FilenameUtils.getFullPath("b.txt"));
-        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
-        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
-
-        YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        conf.enableWatch();
-
-        sleep(60000);
-    }
-
-    @Test
     public void fluentWait() throws TimeoutException {
         FluentWait.newInstance(2000, 200).until(s -> {
             System.out.println(System.currentTimeMillis());
             return false;
         });
+    }
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping www.baidu.com", null);
+        ShellCommander finalExecutor = executor;
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
+
+        sleep(5000);
+    }
+
+    //region basic
+    @Test
+    public void codec() {
+//        int c = LOOP_COUNT * 1000;
+        int c = 100;
+        Set<Object> r = new HashSet<>();
+        invoke("codec", i -> {
+            assert r.size() == i;
+//            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
+            UnsignedLong checksum = App.hashUnsigned64("checksum" + i);
+//            Object checksum = App.hash128("checksum" + i);
+            System.out.println(checksum);
+            r.add(checksum);
+        }, c);
+        assert r.size() == c;
     }
 
     @ErrorCode
@@ -327,51 +351,6 @@ public class CoreTester extends TestUtil {
         } catch (InvalidException e) {
             e.printStackTrace();
         }
-    }
-
-    @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander("ping www.baidu.com", null);
-        ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.start().waitFor();
-
-        sleep(5000);
-    }
-
-    //region basic
-    @Test
-    public void runNEvent() {
-        UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = PersonBean.YouFan;
-
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
-        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
-
-        mgr.onCreate.combine(a);
-        mgr.create(p);  //触发事件（a执行）
-
-        mgr.onCreate.combine(b);
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.combine(a, b);  //会去重
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.remove(b);
-        mgr.create(p); //触发事件（a执行）
-
-        mgr.onCreate.replace(a, c);
-        mgr.create(p); //触发事件（a, c执行）
     }
 
     @Test
@@ -475,6 +454,32 @@ public class CoreTester extends TestUtil {
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
 
+    }
+
+    @Test
+    public void runNEvent() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        PersonBean p = PersonBean.YouFan;
+
+        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
+
+        mgr.onCreate.combine(a);
+        mgr.create(p);  //触发事件（a执行）
+
+        mgr.onCreate.combine(b);
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.combine(a, b);  //会去重
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.remove(b);
+        mgr.create(p); //触发事件（a执行）
+
+        mgr.onCreate.replace(a, c);
+        mgr.create(p); //触发事件（a, c执行）
     }
 
     //region NQuery
@@ -615,6 +620,18 @@ public class CoreTester extends TestUtil {
         assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
         assert rxConf.getLogTypeWhitelist().size() == 2;
         assert rxConf.getJsonSkipTypes().size() == 1;
+    }
+
+    @Test
+    public void yamlConf() {
+        System.out.println(FilenameUtils.getFullPath("b.txt"));
+        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
+        YamlConfiguration conf = YamlConfiguration.RX_CONF;
+        conf.enableWatch();
+
+        sleep(60000);
     }
     //endregion
 }

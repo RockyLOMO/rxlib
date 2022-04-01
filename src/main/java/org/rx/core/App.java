@@ -6,6 +6,9 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
+import com.google.common.primitives.UnsignedLong;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -412,13 +415,32 @@ public final class App extends SystemUtils {
     //endregion
 
     //region codec
-    public static UUID hash(Object... args) {
-        return hash(Strings.joinWith(Strings.EMPTY, args));
+    public static UnsignedLong hashUnsigned64(Object... args) {
+        return UnsignedLong.fromLongBits(hash64(args));
     }
 
-    public static UUID hash(@NonNull String key) {
-        byte[] guidBytes = MD5Util.md5(key);
-        return SUID.newUUID(guidBytes);
+    public static long hash64(Object... args) {
+        return hash64(h -> h.putBytes(Serializer.DEFAULT.serialize(args).toArray()));
+    }
+
+    @SneakyThrows
+    public static long hash64(@NonNull BiAction<Hasher> fn) {
+        Hasher hasher = Hashing.murmur3_128().newHasher();
+        fn.invoke(hasher);
+        return hasher.hash().asLong();
+    }
+
+    public static UUID hash128(Object... args) {
+        return hash128(h -> h.putBytes(Serializer.DEFAULT.serialize(args).toArray()));
+//        return hash128(h -> h.putUnencodedChars(Strings.joinWith(Strings.EMPTY, args)));
+//        return SUID.newUUID(MD5Util.md5(Serializer.DEFAULT.serialize(args).toArray()));
+    }
+
+    @SneakyThrows
+    public static UUID hash128(@NonNull BiAction<Hasher> fn) {
+        Hasher hasher = Hashing.murmur3_128().newHasher();
+        fn.invoke(hasher);
+        return SUID.newUUID(hasher.hash().asBytes());
     }
 
     public static UUID combId() {

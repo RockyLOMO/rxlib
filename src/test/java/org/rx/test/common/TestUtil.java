@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class TestUtil {
-    private static final int LOOP_COUNT = 10000;
+    protected static final int LOOP_COUNT = 10000;
 
     public static void invoke(String name, BiAction<Integer> action) {
         invoke(name, action, LOOP_COUNT);

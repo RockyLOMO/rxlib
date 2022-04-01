@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
-import org.rx.bean.DataRow;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
@@ -21,17 +20,13 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 import static org.rx.core.App.*;
-import static org.rx.core.Extends.quietly;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
-public class IOTester {
+public class IOTester extends TestUtil {
     static final String h2Db = "~/h2/test";
 
     @SneakyThrows
