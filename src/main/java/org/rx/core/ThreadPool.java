@@ -115,7 +115,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             synchronized (this) {
                 if (c < 0) {
                     counter.set(super.size());
-                    log.warn("FIX SIZE {} -> {}", c, counter);
+                    ExceptionHandler.INSTANCE.saveMetrics(Constants.THREAD_POOL_QUEUE, String.format("FIX SIZE %s -> %s", c, counter));
                 }
                 notify();
             }

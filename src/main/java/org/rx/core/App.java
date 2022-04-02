@@ -136,7 +136,7 @@ public final class App extends SystemUtils {
         });
     }
 
-    public static void logMetric(String name, Object value) {
+    public static void logExtra(String name, Object value) {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
@@ -157,8 +157,8 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
-        boolean doWrite = !MapUtils.isEmpty(metrics);
+        Map<Object, Object> extra = Cache.getInstance(Cache.THREAD_CACHE);
+        boolean doWrite = !MapUtils.isEmpty(extra);
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
                 eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
@@ -190,13 +190,13 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
+            for (Map.Entry<Object, Object> entry : extra.entrySet()) {
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
                     continue;
                 }
                 if (first) {
-                    msg.append("Metrics:\t");
+                    msg.append("Extra:\t");
                     first = false;
                 }
                 msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));

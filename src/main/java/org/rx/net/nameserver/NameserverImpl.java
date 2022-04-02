@@ -115,12 +115,12 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
-        App.logMetric("clientSize", rs.getClients().size());
+        App.logExtra("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
         InetAddress addr = ctx.getClient().getRemoteEndpoint().getAddress();
-        App.logMetric("remoteAddr", addr);
+        App.logExtra("remoteAddr", addr);
         doRegister(appName, weight, addr);
 
         syncRegister(serverEndpoints);

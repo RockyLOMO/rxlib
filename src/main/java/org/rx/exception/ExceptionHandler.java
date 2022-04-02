@@ -37,6 +37,15 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
+    @Data
+    public static class MetricsEntity implements Serializable {
+        private static final long serialVersionUID = 2049476730423563051L;
+        @DbColumn(primaryKey = true)
+        String name;
+        String message;
+        Date createTime;
+    }
+
     public static final ExceptionHandler INSTANCE = new ExceptionHandler();
 
     public static Object[] getMessageCandidate(Object... args) {
@@ -62,7 +71,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     public synchronized void setKeepDays(int keepDays) {
         if (keepDays > 0) {
             EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ErrorEntity.class);
+            db.createMapping(ErrorEntity.class, MetricsEntity.class);
             if (future == null) {
                 future = Tasks.scheduleDaily(() -> {
                     db.delete(new EntityQueryLambda<>(ErrorEntity.class)
@@ -142,6 +151,10 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, String msg, Throwable e) {
+        if (Strings.contains(e.getMessage(), "Duplicate entry ")) {
+            saveMetrics(Constants.DUPLICATE_KEY, e.getMessage());
+        }
+
         if (getKeepDays() <= 0) {
             return;
         }
@@ -173,5 +186,27 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
             log.error("dbTrace", ex);
             db.rollback();
         }
+    }
+
+    public void saveMetrics(String name, String message) {
+        MetricsEntity entity = new MetricsEntity();
+        entity.setName(name);
+        entity.setMessage(message);
+        entity.setCreateTime(DateTime.now());
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.save(entity, true);
+    }
+
+    public List<MetricsEntity> queryMetrics(String name, Integer limit) {
+        EntityQueryLambda<MetricsEntity> q = new EntityQueryLambda<>(MetricsEntity.class);
+        if (name != null) {
+            q.eq(MetricsEntity::getName, name);
+        }
+        if (limit == null) {
+            limit = 20;
+        }
+
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        return db.findBy(q.orderByDescending(MetricsEntity::getCreateTime).limit(limit));
     }
 }

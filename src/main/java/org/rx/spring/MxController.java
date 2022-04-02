@@ -44,6 +44,11 @@ public class MxController {
         return ExceptionHandler.INSTANCE.queryTraces(newest, el, take);
     }
 
+    @RequestMapping("queryMetrics")
+    public List<ExceptionHandler.MetricsEntity> queryMetrics(String name, Integer take) {
+        return ExceptionHandler.INSTANCE.queryMetrics(name, take);
+    }
+
     @RequestMapping("setConfig")
     public RxConfig setConfig(@RequestBody RxConfig config) {
         return BeanMapper.INSTANCE.map(config, RxConfig.INSTANCE);
