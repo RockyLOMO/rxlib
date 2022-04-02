@@ -58,7 +58,7 @@ public class NameserverImpl implements Nameserver {
         dnsServer.setTtl(config.getDnsTtl());
         svrEps.addAll(NQuery.of(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
 
-        rs = Remoting.listen(this, config.getRegisterPort());
+        rs = Remoting.listen(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {
             String appName = e.getClient().attr(APP_NAME_KEY);
             if (appName == null) {

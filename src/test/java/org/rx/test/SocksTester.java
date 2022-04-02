@@ -322,7 +322,7 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void rpcPoolMode() {
-        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort());
+        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);

@@ -36,7 +36,6 @@ public class SocksUser implements Serializable {
     }
 
     private static final long serialVersionUID = 7845976131633777320L;
-
     public static final SocksUser ANONYMOUS = new SocksUser("anonymous");
 
     private final String username;
