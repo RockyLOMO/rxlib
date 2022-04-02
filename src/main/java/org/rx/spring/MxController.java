@@ -75,6 +75,7 @@ public class MxController {
         j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.put("errorTraces", queryTraces(null, null, 10));
+        j.put("metrics", queryMetrics(null, 15));
         return j;
     }
 
