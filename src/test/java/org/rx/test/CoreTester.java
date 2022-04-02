@@ -2,19 +2,17 @@ package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
 import com.github.sftwnd.crayfish.common.crc.CrcModel;
-import com.google.common.hash.Hasher;
-import com.google.common.hash.Hashing;
 import com.google.common.primitives.UnsignedLong;
 import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
-import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
+import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
@@ -24,9 +22,7 @@ import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
-import org.rx.io.IOStream;
-import org.rx.io.MemoryStream;
-import org.rx.security.MD5Util;
+import org.rx.io.*;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
@@ -34,9 +30,9 @@ import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -307,21 +303,37 @@ public class CoreTester extends TestUtil {
     }
 
     //region basic
+    @Data
+    public static class CollisionEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        long id;
+    }
+
     @Test
     public void codec() {
-//        int c = LOOP_COUNT * 1000;
-        int c = 100;
-        Set<Object> r = new HashSet<>();
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.createMapping(CollisionEntity.class);
+        db.dropMapping(CollisionEntity.class);
+        db.createMapping(CollisionEntity.class);
+        int c = 100000000;
+        AtomicInteger collision = new AtomicInteger();
         invoke("codec", i -> {
-            assert r.size() == i;
-//            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
-            UnsignedLong unsignedLong = App.hashUnsigned64("checksum" + i);
-//            UnsignedLong unsignedLong = UnsignedLong.fromLongBits(CrcModel.CRC64_ECMA_182.getCRC(("checksum" + i).getBytes(StandardCharsets.UTF_8)).getCrc());
-            Object checksum = unsignedLong.toString();
-            System.out.println(checksum);
-            r.add(checksum);
+            long id = App.hash64("codec", i);
+            CollisionEntity po = db.findById(CollisionEntity.class, id);
+            if (po != null) {
+                log.warn("collision: {}", collision.incrementAndGet());
+                return;
+            }
+            po = new CollisionEntity();
+            po.setId(id);
+            db.save(po, true);
+////            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
+//            UnsignedLong unsignedLong = App.hashUnsigned64("checksum" + i);
+////            UnsignedLong unsignedLong = UnsignedLong.fromLongBits(CrcModel.CRC64_ECMA_182.getCRC(("checksum" + i).getBytes(StandardCharsets.UTF_8)).getCrc());
+//            Object checksum = unsignedLong.toString();
+//            System.out.println(checksum);
         }, c);
-        assert r.size() == c;
+        assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
     }
 
     @ErrorCode
