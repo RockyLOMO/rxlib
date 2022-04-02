@@ -430,7 +430,7 @@ public final class App extends SystemUtils {
     }
 
     public static long hash64(Object... args) {
-        return hash64(h -> h.putBytes(Serializer.DEFAULT.serialize(args).toArray()));
+        return hash64(h -> h.putBytes(Serializer.DEFAULT.serializeToBytes(args)));
     }
 
     @SneakyThrows
@@ -441,7 +441,7 @@ public final class App extends SystemUtils {
     }
 
     public static UUID hash128(Object... args) {
-        return hash128(h -> h.putBytes(Serializer.DEFAULT.serialize(args).toArray()));
+        return hash128(h -> h.putBytes(Serializer.DEFAULT.serializeToBytes(args)));
 //        return SUID.newUUID(MD5Util.md5(Serializer.DEFAULT.serialize(args).toArray()));
     }
 
@@ -495,7 +495,7 @@ public final class App extends SystemUtils {
     }
 
     public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = Serializer.DEFAULT.serialize(obj).toArray();
+        byte[] data = Serializer.DEFAULT.serializeToBytes(obj);
         return convertToBase64(data);
     }
 
