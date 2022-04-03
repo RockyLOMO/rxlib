@@ -33,7 +33,7 @@ import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
-import org.rx.security.AESUtil;
+import org.rx.codec.AESUtil;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
 

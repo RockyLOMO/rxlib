@@ -1,4 +1,4 @@
-package org.rx.security;
+package org.rx.codec;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -112,7 +112,7 @@ public final class RSAUtil {
         PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64(publicKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, key);
-        byte[] b = cipher.doFinal(source.getBytes());
+        byte[] b = cipher.doFinal(source.getBytes(StandardCharsets.UTF_8));
         return App.convertToBase64(b);
     }
 

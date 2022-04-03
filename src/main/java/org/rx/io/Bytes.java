@@ -72,7 +72,7 @@ public class Bytes {
     }
 
     public static int findText(ByteBuf byteBuf, String str) {
-        byte[] text = str.getBytes();
+        byte[] text = str.getBytes(StandardCharsets.UTF_8);
         int matchIndex = 0;
         for (int i = byteBuf.readerIndex(); i < byteBuf.readableBytes(); i++) {
             for (int j = matchIndex; j < text.length; j++) {

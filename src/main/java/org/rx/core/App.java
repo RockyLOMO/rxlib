@@ -8,7 +8,6 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
-import com.google.common.primitives.UnsignedLong;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -16,11 +15,11 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
+import org.rx.codec.CrcModel;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
-import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
@@ -29,8 +28,8 @@ import java.io.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.sql.Timestamp;
 import java.util.*;
 
 import io.netty.util.internal.ThreadLocalRandom;
@@ -425,39 +424,52 @@ public final class App extends SystemUtils {
         return buf.toString();
     }
 
-    public static UnsignedLong hashUnsigned64(Object... args) {
-        return UnsignedLong.fromLongBits(hash64(args));
-    }
-
-    public static long hash64(Object... args) {
-        return hash64(h -> h.putBytes(Serializer.DEFAULT.serializeToBytes(args)));
-    }
-
     @SneakyThrows
-    public static long hash64(BiAction<Hasher> fn) {
+    public static long murmurHash3_64(BiAction<Hasher> fn) {
         Hasher hasher = Hashing.murmur3_128().newHasher();
         fn.invoke(hasher);
         return hasher.hash().asLong();
     }
 
-    public static UUID hash128(Object... args) {
-        return hash128(h -> h.putBytes(Serializer.DEFAULT.serializeToBytes(args)));
-//        return SUID.newUUID(MD5Util.md5(Serializer.DEFAULT.serialize(args).toArray()));
-    }
-
     @SneakyThrows
-    public static UUID hash128(BiAction<Hasher> fn) {
+    public static UUID murmurHash3_128(BiAction<Hasher> fn) {
         Hasher hasher = Hashing.murmur3_128().newHasher();
         fn.invoke(hasher);
         return SUID.newUUID(hasher.hash().asBytes());
     }
 
-    public static UUID combId() {
-        return combId(System.nanoTime(), null);
+    public static BigInteger hashUnsigned64(Object... args) {
+        return hashUnsigned64(Serializer.DEFAULT.serializeToBytes(args));
     }
 
-    public static UUID combId(Timestamp timestamp, String key) {
-        return combId(timestamp.getTime(), key);
+    public static BigInteger hashUnsigned64(byte[] buf) {
+        return hashUnsigned64(buf, 0, buf.length);
+    }
+
+    //UnsignedLong.fromLongBits
+    public static BigInteger hashUnsigned64(byte[] buf, int offset, int len) {
+        long value = hash64(buf, offset, len);
+        BigInteger bigInt = BigInteger.valueOf(value & 9223372036854775807L);
+        if (value < 0L) {
+            bigInt = bigInt.setBit(63);
+        }
+        return bigInt;
+    }
+
+    public static long hash64(Object... args) {
+        return hash64(Serializer.DEFAULT.serializeToBytes(args));
+    }
+
+    public static long hash64(byte[] buf) {
+        return hash64(buf, 0, buf.length);
+    }
+
+    public static long hash64(byte[] buf, int offset, int len) {
+        return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
+    }
+
+    public static UUID combId() {
+        return combId(System.nanoTime(), null);
     }
 
     public static UUID combId(long timestamp, String key) {
@@ -468,7 +480,7 @@ public final class App extends SystemUtils {
     public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
         long id;
         if (key != null) {
-            id = Bytes.getLong(MD5Util.md5(key), 4);
+            id = hash64(key.getBytes(StandardCharsets.UTF_8));
         } else {
             id = ThreadLocalRandom.current().nextLong();
         }

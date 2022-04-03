@@ -2,7 +2,7 @@
  * Copyright (c) 2017-20xx Andrey D. Shindarev (ashindarev@gmail.com)
  * This program is made available under the terms of the BSD 3-Clause License.
  */
-package com.github.sftwnd.crayfish.common.crc;
+package org.rx.codec;
 
 import lombok.EqualsAndHashCode;
 import lombok.Generated;
@@ -12,7 +12,7 @@ import javax.annotation.Nonnull;
 import java.util.Objects;
 import java.util.Optional;
 
-import static com.github.sftwnd.crayfish.common.crc.CrcModel.crc_general_combine;
+import static org.rx.codec.CrcModel.crc_general_combine;
 
 /**
  * CRC Implementation
