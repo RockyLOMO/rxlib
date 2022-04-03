@@ -829,7 +829,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 continue;
             }
             if (val instanceof Object[]) {
-                stmt.setBinaryStream(i, Serializer.DEFAULT.serialize(val).getReader());
+                try (IOStream<?, ?> stream = Serializer.DEFAULT.serialize(val)) {
+                    stmt.setBinaryStream(i, stream.getReader());
+                }
                 continue;
             }
             if (val instanceof Decimal) {

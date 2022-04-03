@@ -59,7 +59,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         local = new EntityDatabaseImpl(filePath, timeRollingPattern, maxConnections);
         this.rpcPort = rpcPort;
 
-        Remoting.listen(local, rpcPort);
+        Remoting.listen(local, rpcPort, false);
         nsClient.registerAsync(registerEndpoints).whenComplete((r, e) -> {
             if (e != null) {
                 return;

@@ -16,7 +16,7 @@ import javax.validation.Validator;
 import java.io.File;
 
 @Configuration
-@EnableAspectJAutoProxy(proxyTargetClass = true)
+@EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
 public class SpringConfig {
     @Bean
     public Server server() {

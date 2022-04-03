@@ -194,7 +194,7 @@ public class BeanMapper {
             sourceValue = mapping.defaultValue();
         }
         if (mapping.converter() != BeanMapConverter.class) {
-            sourceValue = Reflects.newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
+            sourceValue = Reflects.<BeanMapConverter>newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
         }
         if (!Strings.isEmpty(mapping.source())) {
             Reflects.PropertyNode propertyNode = Reflects.getProperties(source.getClass()).firstOrDefault(p -> eq(mapping.source(), p.propertyName));

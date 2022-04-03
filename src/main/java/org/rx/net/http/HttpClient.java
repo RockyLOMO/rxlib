@@ -456,7 +456,7 @@ public class HttpClient {
         } finally {
             if (enableLog) {
                 if (responseContent != null) {
-                    logMetric("body", responseContent.toString());
+                    App.logExtra("body", responseContent.toString());
                 }
                 logHttp(args, url);
             }

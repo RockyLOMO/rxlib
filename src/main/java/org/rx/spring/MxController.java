@@ -14,6 +14,7 @@ import org.rx.net.Sockets;
 import org.rx.net.http.tunnel.ReceivePack;
 import org.rx.net.http.tunnel.SendPack;
 import org.rx.net.http.tunnel.Server;
+import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,6 +44,11 @@ public class MxController {
         return ExceptionHandler.INSTANCE.queryTraces(newest, el, take);
     }
 
+    @RequestMapping("queryMetrics")
+    public List<ExceptionHandler.MetricsEntity> queryMetrics(String name, Integer take) {
+        return ExceptionHandler.INSTANCE.queryMetrics(name, take);
+    }
+
     @RequestMapping("setConfig")
     public RxConfig setConfig(@RequestBody RxConfig config) {
         return BeanMapper.INSTANCE.map(config, RxConfig.INSTANCE);
@@ -69,6 +75,7 @@ public class MxController {
         j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.put("errorTraces", queryTraces(null, null, 10));
+        j.put("metrics", queryMetrics(null, 15));
         return j;
     }
 
@@ -114,5 +121,9 @@ public class MxController {
     @PostConstruct
     public void init() {
         Class.forName(App.class.getName());
+        String omega = RxConfig.INSTANCE.getOmega();
+        if (omega != null) {
+            SocksContext.omega(omega, null);
+        }
     }
 }

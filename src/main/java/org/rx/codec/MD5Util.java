@@ -1,4 +1,4 @@
-package org.rx.security;
+package org.rx.codec;
 
 import io.netty.buffer.ByteBufUtil;
 import lombok.NonNull;
@@ -7,6 +7,7 @@ import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 public class MD5Util {
@@ -24,20 +25,20 @@ public class MD5Util {
     }
 
     public static byte[] md5(@NonNull String data) {
-        return md5(data.getBytes());
+        return md5(data.getBytes(StandardCharsets.UTF_8));
     }
 
     @SneakyThrows
-    public static byte[] md5(@NonNull byte[] data) {
+    public static byte[] md5(byte[] data) {
         MessageDigest md = MessageDigest.getInstance("MD5");
         return md.digest(data);
     }
 
     public static String md5Hex(@NonNull String data) {
-        return md5Hex(data.getBytes());
+        return md5Hex(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    public static String md5Hex(@NonNull byte[] data) {
+    public static String md5Hex(byte[] data) {
         return ByteBufUtil.hexDump(md5(data));
     }
 

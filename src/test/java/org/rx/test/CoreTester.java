@@ -3,14 +3,14 @@ package org.rx.test;
 import com.alibaba.fastjson.TypeReference;
 import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
-import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
+import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.core.*;
@@ -20,7 +20,7 @@ import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
-import org.rx.io.MemoryStream;
+import org.rx.io.*;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
@@ -28,6 +28,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.*;
@@ -212,10 +213,6 @@ public class CoreTester extends TestUtil {
 //                sleep(2000);
 //            }, 1000);
 //        }
-
-//        ManagementMonitor.getInstance().onScheduled.combine((s, e) -> {
-//            System.out.println(toJsonString(e.getValue()));
-//        });
 //
 //        Tasks.schedule(() -> {
 //            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
@@ -278,23 +275,63 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void yamlConf() {
-        System.out.println(FilenameUtils.getFullPath("b.txt"));
-        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
-        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
-
-        YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        conf.enableWatch();
-
-        sleep(60000);
-    }
-
-    @Test
     public void fluentWait() throws TimeoutException {
         FluentWait.newInstance(2000, 200).until(s -> {
             System.out.println(System.currentTimeMillis());
             return false;
         });
+    }
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping www.baidu.com", null);
+        ShellCommander finalExecutor = executor;
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
+
+        sleep(5000);
+    }
+
+    //region basic
+    @Data
+    public static class CollisionEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        long id;
+    }
+
+    @Test
+    public void codec() {
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.createMapping(CollisionEntity.class);
+        db.dropMapping(CollisionEntity.class);
+        db.createMapping(CollisionEntity.class);
+        int c = 100000000;
+        AtomicInteger collision = new AtomicInteger();
+        invoke("codec", i -> {
+            long id = App.hash64("codec", i);
+            CollisionEntity po = db.findById(CollisionEntity.class, id);
+            if (po != null) {
+                log.warn("collision: {}", collision.incrementAndGet());
+                return;
+            }
+            po = new CollisionEntity();
+            po.setId(id);
+            db.save(po, true);
+////            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
+//            UnsignedLong unsignedLong = App.hashUnsigned64("checksum" + i);
+////            UnsignedLong unsignedLong = UnsignedLong.fromLongBits(CrcModel.CRC64_ECMA_182.getCRC(("checksum" + i).getBytes(StandardCharsets.UTF_8)).getCrc());
+//            Object checksum = unsignedLong.toString();
+//            System.out.println(checksum);
+        }, c);
+        assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
     }
 
     @ErrorCode
@@ -330,51 +367,6 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander("ping www.baidu.com", null);
-        ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.start().waitFor();
-
-        sleep(5000);
-    }
-
-    //region basic
-    @Test
-    public void runNEvent() {
-        UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = PersonBean.YouFan;
-
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
-        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
-
-        mgr.onCreate.combine(a);
-        mgr.create(p);  //触发事件（a执行）
-
-        mgr.onCreate.combine(b);
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.combine(a, b);  //会去重
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.remove(b);
-        mgr.create(p); //触发事件（a执行）
-
-        mgr.onCreate.replace(a, c);
-        mgr.create(p); //触发事件（a, c执行）
-    }
-
-    @Test
     public void json() {
         Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
             throw new InvalidException("wont reach");
@@ -407,6 +399,17 @@ public class CoreTester extends TestUtil {
         Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
         }.getType());
         assert tuple1.equals(tuple3);
+    }
+
+    @Test
+    public void dynamicProxy() {
+        PersonBean leZhi = PersonBean.LeZhi;
+
+        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(proxy) == leZhi;
+
+        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(iproxy) == leZhi;
     }
 
     @SneakyThrows
@@ -464,6 +467,32 @@ public class CoreTester extends TestUtil {
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
 
+    }
+
+    @Test
+    public void runNEvent() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        PersonBean p = PersonBean.YouFan;
+
+        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
+
+        mgr.onCreate.combine(a);
+        mgr.create(p);  //触发事件（a执行）
+
+        mgr.onCreate.combine(b);
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.combine(a, b);  //会去重
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.remove(b);
+        mgr.create(p); //触发事件（a执行）
+
+        mgr.onCreate.replace(a, c);
+        mgr.create(p); //触发事件（a, c执行）
     }
 
     //region NQuery
@@ -604,6 +633,18 @@ public class CoreTester extends TestUtil {
         assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
         assert rxConf.getLogTypeWhitelist().size() == 2;
         assert rxConf.getJsonSkipTypes().size() == 1;
+    }
+
+    @Test
+    public void yamlConf() {
+        System.out.println(FilenameUtils.getFullPath("b.txt"));
+        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
+        YamlConfiguration conf = YamlConfiguration.RX_CONF;
+        conf.enableWatch();
+
+        sleep(60000);
     }
     //endregion
 }

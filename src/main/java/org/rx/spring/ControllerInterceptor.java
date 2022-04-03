@@ -7,7 +7,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
-import org.rx.net.socks.SocksContext;
 import org.rx.util.Servlets;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -21,9 +20,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
 
-@ControllerAdvice
-@Aspect
+//@Aspect
 @Component
+@ControllerAdvice
 public class ControllerInterceptor extends BaseInterceptor {
     private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
@@ -35,10 +34,6 @@ public class ControllerInterceptor extends BaseInterceptor {
             }
             return p;
         };
-        String omega = RxConfig.INSTANCE.getOmega();
-        if (omega != null) {
-            SocksContext.omega(omega, null);
-        }
     }
 
     @Override
@@ -52,7 +47,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        App.logMetric("url", Servlets.currentRequest().left.getRequestURL().toString());
+        App.logExtra("url", Servlets.currentRequest().left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 

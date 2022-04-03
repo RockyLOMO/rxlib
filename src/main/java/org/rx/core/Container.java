@@ -51,7 +51,7 @@ public final class Container {
         HOLDER.remove(type);
     }
 
-    public static <K, V> Map<K, V> weakMap() {
+    static <K, V> Map<K, V> weakMap() {
         return WEAK_MAP;
     }
 }

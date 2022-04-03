@@ -2,6 +2,7 @@ package org.rx.core;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -303,6 +304,10 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
 
     public NQuery<T> union(Iterable<T> set) {
         return NQuery.of(CollectionUtils.union(this, set));
+    }
+
+    public NQuery<T> orderByRand() {
+        return me(stream().sorted(getComparator(p -> ThreadLocalRandom.current().nextInt(0, 100))));
     }
 
     public <TK> NQuery<T> orderBy(BiFunc<T, TK> keySelector) {

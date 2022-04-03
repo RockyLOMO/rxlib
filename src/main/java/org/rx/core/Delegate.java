@@ -8,7 +8,6 @@ import org.rx.util.function.TripleAction;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -52,8 +51,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (!target.eventFlags().has(EventTarget.EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event %s not defined", fnName);
             }
-            d = Container.<EventTarget<TSender>, Map<String, Delegate<TSender, TArgs>>>weakMap().computeIfAbsent(target, k -> new ConcurrentHashMap<>())
-                    .computeIfAbsent(fnName, k -> new Delegate<>());
+            d = Extends.<String, Delegate<TSender, TArgs>>weakMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
         }
         return d;
     }

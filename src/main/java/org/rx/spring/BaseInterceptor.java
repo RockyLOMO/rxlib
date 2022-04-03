@@ -10,7 +10,6 @@ import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.util.function.TripleFunc;
 
-import javax.annotation.Resource;
 import java.util.List;
 
 import static org.rx.core.App.*;
@@ -33,41 +32,44 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return joinPoint.proceed();
         }
         idempotent.set(Boolean.TRUE);
-
-        Signature signature = joinPoint.getSignature();
-        MethodSignature methodSignature = as(signature, MethodSignature.class);
-        boolean isVoid = methodSignature == null || methodSignature.getReturnType().equals(void.class);
-        ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs(), isVoid);
-        raiseEvent(onProcessing, eventArgs);
-        if (eventArgs.isCancel()) {
-            return joinPoint.proceed();
-        }
-
-        RxConfig rxConfig = RxConfig.INSTANCE;
-        eventArgs.setLogStrategy(rxConfig.getLogStrategy());
-        eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
         try {
-            eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
-        } catch (Throwable e) {
-            eventArgs.setError(e);
-            raiseEvent(onError, eventArgs);
-            if (eventArgs.getError() != null) {
-                throw eventArgs.getError();
+            Signature signature = joinPoint.getSignature();
+            MethodSignature methodSignature = as(signature, MethodSignature.class);
+            boolean isVoid = methodSignature == null || methodSignature.getReturnType().equals(void.class);
+            ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs(), isVoid);
+            raiseEvent(onProcessing, eventArgs);
+            if (eventArgs.isCancel()) {
+                return joinPoint.proceed();
             }
-            eventArgs.setError(e);
-        } finally {
-            raiseEvent(onProceed, eventArgs);
-            App.log(eventArgs, msg -> {
-                msg.appendLine("Call:\t%s", signature.getName());
-                msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
+
+            RxConfig rxConfig = RxConfig.INSTANCE;
+            eventArgs.setLogStrategy(rxConfig.getLogStrategy());
+            eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
+            try {
+                eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
+            } catch (Throwable e) {
+                eventArgs.setError(e);
+                raiseEvent(onError, eventArgs);
                 if (eventArgs.getError() != null) {
-                    msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
-                } else {
-                    msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
+                    throw eventArgs.getError();
                 }
-            });
+                eventArgs.setError(e);
+            } finally {
+                raiseEvent(onProceed, eventArgs);
+                App.log(eventArgs, msg -> {
+                    msg.appendLine("Call:\t%s", signature.getName());
+                    msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
+                    if (eventArgs.getError() != null) {
+                        msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
+                    } else {
+                        msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
+                    }
+                });
+            }
+            return eventArgs.getReturnValue();
+        } finally {
+            idempotent.remove();
         }
-        return eventArgs.getReturnValue();
     }
 
     private String jsonString(Signature signature, Object... args) {
@@ -81,7 +83,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return r;
                 }
             }
-            int maxLen = 1024 * 32;
+            int maxLen = 1024 * 8;
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
                 if (b.length > maxLen) {

@@ -6,6 +6,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -13,11 +15,11 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
+import org.rx.codec.CrcModel;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
-import org.rx.security.MD5Util;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
@@ -26,8 +28,8 @@ import java.io.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.sql.Timestamp;
 import java.util.*;
 
 import io.netty.util.internal.ThreadLocalRandom;
@@ -40,7 +42,7 @@ import static org.rx.core.Extends.as;
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class App extends SystemUtils {
-    static final Class<?>[] DPI = new Class[]{DynamicProxy.Proxifier.class};
+    static final String DPR = "_DPR";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
@@ -98,6 +100,31 @@ public final class App extends SystemUtils {
         return null;
     }
 
+    public static <T> T rawObject(Object proxyObject) {
+        return Extends.<String, T>weakMap(proxyObject).get(DPR);
+    }
+
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
+        return proxy(type, func, false);
+    }
+
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+        return proxy(type, func, null, jdkProxy);
+    }
+
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
+        T proxyObj;
+        if (jdkProxy) {
+            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+        } else {
+            proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
+        }
+        if (rawObject != null) {
+            Extends.weakMap(proxyObj).put(DPR, rawObject);
+        }
+        return proxyObj;
+    }
+
     public static <T> ArrayList<T> proxyList(ArrayList<T> source, BiAction<ArrayList<T>> onSet) {
         return proxy(ArrayList.class, (m, p) -> {
             Object val = p.fastInvoke(source);
@@ -108,47 +135,7 @@ public final class App extends SystemUtils {
         });
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
-        return proxy(type, func, false);
-    }
-
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
-        if (jdkProxy) {
-            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func, null));
-        }
-        return (T) Enhancer.create(type, new DynamicProxy(func, null));
-    }
-
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
-        if (jdkProxy) {
-            return (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type, DPI[0]}, new DynamicProxy(func, rawObject));
-        }
-        return (T) Enhancer.create(type, DPI, new DynamicProxy(func, rawObject));
-    }
-
-    public static String hashKey(String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
-        }
-        if (!Arrays.isEmpty(args)) {
-            method += java.util.Arrays.hashCode(args);
-        }
-        return method;
-//        return method.intern();
-    }
-
-    //注意arg类型区分String和Number
-    public static String cacheKey(String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
-        }
-        if (!Arrays.isEmpty(args)) {
-            method += Constants.CACHE_KEY_SUFFIX + toJsonString(args.length == 1 ? args[0] : args);
-        }
-        return method;
-    }
-
-    public static void logMetric(String name, Object value) {
+    public static void logExtra(String name, Object value) {
         Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
     }
 
@@ -169,8 +156,8 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<Object, Object> metrics = Cache.getInstance(Cache.THREAD_CACHE);
-        boolean doWrite = !MapUtils.isEmpty(metrics);
+        Map<Object, Object> extra = Cache.getInstance(Cache.THREAD_CACHE);
+        boolean doWrite = !MapUtils.isEmpty(extra);
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
                 eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
@@ -202,13 +189,13 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<Object, Object> entry : metrics.entrySet()) {
+            for (Map.Entry<Object, Object> entry : extra.entrySet()) {
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
                     continue;
                 }
                 if (first) {
-                    msg.append("Metrics:\t");
+                    msg.append("Extra:\t");
                     first = false;
                 }
                 msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
@@ -223,80 +210,6 @@ public final class App extends SystemUtils {
             }
         }
     }
-
-    //region json
-    //final 字段不会覆盖
-    public static <T> T fromJson(Object src, Type type) {
-        String js = toJsonString(src);
-        try {
-            return JSON.parseObject(js, type, PARSE_FLAGS);
-        } catch (Exception e) {
-            throw new InvalidException("fromJson %s", new Object[]{js}, e);
-        }
-    }
-
-    public static JSONObject toJsonObject(Object src) {
-        if (src instanceof JSONObject) {
-            return (JSONObject) src;
-        }
-        if (src instanceof Map) {
-            return new JSONObject((Map<String, Object>) src);
-        }
-
-        String js = toJsonString(src);
-        try {
-            return JSON.parseObject(js);
-        } catch (Exception e) {
-            throw new InvalidException("toJsonObject %s", new Object[]{js}, e);
-        }
-    }
-
-    public static JSONArray toJsonArray(Object src) {
-        if (src instanceof JSONArray) {
-            return (JSONArray) src;
-        }
-        if (src instanceof List) {
-            return new JSONArray((List<Object>) src);
-        }
-
-        String js = toJsonString(src);
-        try {
-            return JSON.parseArray(js);
-        } catch (Exception e) {
-            throw new InvalidException("toJsonArray %s", new Object[]{js}, e);
-        }
-    }
-
-    public static String toJsonString(Object src) {
-        if (src == null) {
-            return "{}";
-        }
-        String s;
-        if ((s = as(src, String.class)) != null) {
-            return s;
-        }
-
-        try {
-//            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
-            return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
-        } catch (Throwable e) {
-            NQuery<Object> q;
-            if (NQuery.couldBeCollection(src.getClass())) {
-                q = NQuery.ofCollection(src);
-            } else {
-                q = NQuery.of(src);
-            }
-            Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
-            jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypes).toJoinString(",", Class::getName), e);
-
-            JSONObject json = new JSONObject();
-            json.put("_input", src.toString());
-            json.put("_error", e.getMessage());
-            return json.toString();
-        }
-    }
-    //endregion
 
     //region basic
     public static List<String> argsOperations(String[] args) {
@@ -402,24 +315,161 @@ public final class App extends SystemUtils {
             }
         }.parse();
     }
+
+    //endregion
+
+    //region json
+    //final 字段不会覆盖
+    public static <T> T fromJson(Object src, Type type) {
+        String js = toJsonString(src);
+        try {
+            return JSON.parseObject(js, type, PARSE_FLAGS);
+        } catch (Exception e) {
+            throw new InvalidException("fromJson %s", new Object[]{js}, e);
+        }
+    }
+
+    public static JSONObject toJsonObject(Object src) {
+        if (src instanceof JSONObject) {
+            return (JSONObject) src;
+        }
+        if (src instanceof Map) {
+            return new JSONObject((Map<String, Object>) src);
+        }
+
+        String js = toJsonString(src);
+        try {
+            return JSON.parseObject(js);
+        } catch (Exception e) {
+            throw new InvalidException("toJsonObject %s", new Object[]{js}, e);
+        }
+    }
+
+    public static JSONArray toJsonArray(Object src) {
+        if (src instanceof JSONArray) {
+            return (JSONArray) src;
+        }
+        if (src instanceof List) {
+            return new JSONArray((List<Object>) src);
+        }
+
+        String js = toJsonString(src);
+        try {
+            return JSON.parseArray(js);
+        } catch (Exception e) {
+            throw new InvalidException("toJsonArray %s", new Object[]{js}, e);
+        }
+    }
+
+    public static String toJsonString(Object src) {
+        if (src == null) {
+            return "{}";
+        }
+        String s;
+        if ((s = as(src, String.class)) != null) {
+            return s;
+        }
+
+        try {
+//            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
+        } catch (Throwable e) {
+            NQuery<Object> q;
+            if (NQuery.couldBeCollection(src.getClass())) {
+                q = NQuery.ofCollection(src);
+            } else {
+                q = NQuery.of(src);
+            }
+            Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
+            jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypes).toJoinString(",", Class::getName), e);
+
+            JSONObject json = new JSONObject();
+            json.put("_input", src.toString());
+            json.put("_error", e.getMessage());
+            return json.toString();
+        }
+    }
     //endregion
 
     //region codec
-    public static UUID hash(Object... args) {
-        return hash(Strings.joinWith(Strings.EMPTY, args));
+    public static String hashKey(String method, Object... args) {
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
+        }
+        if (!Arrays.isEmpty(args)) {
+            method += java.util.Arrays.hashCode(args);
+        }
+        return method;
+//        return method.intern();
     }
 
-    public static UUID hash(@NonNull String key) {
-        byte[] guidBytes = MD5Util.md5(key);
-        return SUID.newUUID(guidBytes);
+    public static String cacheKey(String method, Object... args) {
+        return cacheKey(null, method, args);
+    }
+
+    //注意arg类型区分String和Number
+    public static String cacheKey(String region, String method, Object... args) {
+        if (region == null) {
+            region = Strings.EMPTY;
+        }
+        StringBuilder buf = new StringBuilder(region);
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
+        }
+        buf.append(Constants.CACHE_KEY_SUFFIX).append(method);
+        if (!Arrays.isEmpty(args)) {
+            buf.append(Constants.CACHE_KEY_SUFFIX).append(hash64(args));
+        }
+        return buf.toString();
+    }
+
+    @SneakyThrows
+    public static long murmurHash3_64(BiAction<Hasher> fn) {
+        Hasher hasher = Hashing.murmur3_128().newHasher();
+        fn.invoke(hasher);
+        return hasher.hash().asLong();
+    }
+
+    @SneakyThrows
+    public static UUID murmurHash3_128(BiAction<Hasher> fn) {
+        Hasher hasher = Hashing.murmur3_128().newHasher();
+        fn.invoke(hasher);
+        return SUID.newUUID(hasher.hash().asBytes());
+    }
+
+    public static BigInteger hashUnsigned64(Object... args) {
+        return hashUnsigned64(Serializer.DEFAULT.serializeToBytes(args));
+    }
+
+    public static BigInteger hashUnsigned64(byte[] buf) {
+        return hashUnsigned64(buf, 0, buf.length);
+    }
+
+    //UnsignedLong.fromLongBits
+    public static BigInteger hashUnsigned64(byte[] buf, int offset, int len) {
+        long value = hash64(buf, offset, len);
+        BigInteger bigInt = BigInteger.valueOf(value & 9223372036854775807L);
+        if (value < 0L) {
+            bigInt = bigInt.setBit(63);
+        }
+        return bigInt;
+    }
+
+    public static long hash64(Object... args) {
+        return hash64(Serializer.DEFAULT.serializeToBytes(args));
+    }
+
+    public static long hash64(byte[] buf) {
+        return hash64(buf, 0, buf.length);
+    }
+
+    public static long hash64(byte[] buf, int offset, int len) {
+        return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
     }
 
     public static UUID combId() {
         return combId(System.nanoTime(), null);
-    }
-
-    public static UUID combId(Timestamp timestamp, String key) {
-        return combId(timestamp.getTime(), key);
     }
 
     public static UUID combId(long timestamp, String key) {
@@ -430,7 +480,7 @@ public final class App extends SystemUtils {
     public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
         long id;
         if (key != null) {
-            id = Bytes.getLong(MD5Util.md5(key), 4);
+            id = hash64(key.getBytes(StandardCharsets.UTF_8));
         } else {
             id = ThreadLocalRandom.current().nextLong();
         }
@@ -446,25 +496,23 @@ public final class App extends SystemUtils {
     }
 
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
-    @SneakyThrows
-    public static String convertToBase64String(byte[] data) {
+    public static String convertToBase64(byte[] data) {
         byte[] ret = Base64.getEncoder().encode(data);
         return new String(ret, StandardCharsets.UTF_8);
     }
 
-    @SneakyThrows
-    public static byte[] convertFromBase64String(@NonNull String base64) {
+    public static byte[] convertFromBase64(@NonNull String base64) {
         byte[] data = base64.getBytes(StandardCharsets.UTF_8);
         return Base64.getDecoder().decode(data);
     }
 
     public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = Serializer.DEFAULT.serialize(obj).toArray();
-        return convertToBase64String(data);
+        byte[] data = Serializer.DEFAULT.serializeToBytes(obj);
+        return convertToBase64(data);
     }
 
     public static <T extends Serializable> T deserializeFromBase64(String base64) {
-        byte[] data = convertFromBase64String(base64);
+        byte[] data = convertFromBase64(base64);
         return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
     //endregion

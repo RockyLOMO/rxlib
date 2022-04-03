@@ -274,7 +274,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             resJson.put(typeField, obj.getClass().getName());
             resJson.put("value", obj);
         } else {
-            resJson.put("value", serializer.serialize(obj).toArray());
+            resJson.put("value", serializer.serializeToBytes(obj));
         }
     }
 

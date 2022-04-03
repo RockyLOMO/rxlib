@@ -11,7 +11,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
 import org.rx.exception.ApplicationException;
 import org.rx.io.Bytes;
-import org.rx.security.MD5Util;
+import org.rx.codec.MD5Util;
 
 import java.io.IOException;
 import java.io.Serializable;
