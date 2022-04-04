@@ -1,8 +1,6 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
-import com.github.sftwnd.crayfish.common.crc.CrcModel;
-import com.google.common.primitives.UnsignedLong;
 import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;

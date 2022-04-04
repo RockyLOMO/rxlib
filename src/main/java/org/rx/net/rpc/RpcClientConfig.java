@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class RpcClientConfig extends SocketConfig {
+    private static final long serialVersionUID = -4952694662640163676L;
     public static final ObjectEncoder DEFAULT_ENCODER = new ObjectEncoder();
     public static final ClassResolver DEFAULT_CLASS_RESOLVER = ClassResolvers.softCachingConcurrentResolver(RpcClientConfig.class.getClassLoader());
     public static final int NON_POOL_SIZE = -1;
@@ -44,7 +45,6 @@ public class RpcClientConfig extends SocketConfig {
         return config;
     }
 
-    private static final long serialVersionUID = -4952694662640163676L;
     @NotNull
     private InetSocketAddress serverEndpoint;
     private volatile boolean enableReconnect;

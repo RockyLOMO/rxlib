@@ -60,7 +60,7 @@ public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
      *
      * @param appName
      * @param weight
-     * @return
+     * @return dnsPort
      */
     int register(String appName, int weight, Set<InetSocketAddress> serverEndpoints);
 

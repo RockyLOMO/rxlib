@@ -54,8 +54,8 @@ public final class Remoting {
         }
 
         @Getter
-        private final RpcServer server;
-        private final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
+        final RpcServer server;
+        final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
     }
 
     private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
@@ -309,8 +309,12 @@ public final class Remoting {
         return p.fastInvokeSuper();
     }
 
-    public static RpcServer listen(Object contractInstance, int listenPort) {
-        return listen(contractInstance, new RpcServerConfig(listenPort));
+    public static RpcServer listen(Object contractInstance, int listenPort, boolean enableEventCompute) {
+        RpcServerConfig conf = new RpcServerConfig(listenPort);
+        if (enableEventCompute) {
+            conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+        }
+        return listen(contractInstance, conf);
     }
 
     public static RpcServer listen(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
@@ -331,20 +335,18 @@ public final class Remoting {
                                 synchronized (eventBean) {
                                     ServerBean.EventContext eCtx = new ServerBean.EventContext();
                                     eCtx.computedArgs = args;
-                                    if (config.getEventComputeVersion() == RpcServerConfig.DISABLE_VERSION) {
+                                    if (config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
                                         eCtx.computingClient = null;
                                     } else {
-                                        RpcClientMeta computingClient = null;
-                                        if (config.getEventComputeVersion() == RpcServerConfig.LATEST_COMPUTE) {
+                                        RpcClientMeta computingClient;
+                                        if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
                                             computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
                                                 int i = ThreadLocalRandom.current().nextInt(0, p2.count());
                                                 return p2.skip(i).first();
                                             }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
                                         } else {
-                                            List<RpcClientMeta> list = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion()).toList();
-                                            if (!list.isEmpty()) {
-                                                computingClient = list.get(ThreadLocalRandom.current().nextInt(0, list.size()));
-                                            }
+                                            computingClient = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion())
+                                                    .orderByRand().firstOrDefault();
                                         }
                                         if (computingClient == null) {
                                             log.warn("serverSide event {} subscribe empty", p.eventName);

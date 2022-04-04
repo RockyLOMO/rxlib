@@ -33,7 +33,7 @@ import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
-import org.rx.security.AESUtil;
+import org.rx.codec.AESUtil;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
 
@@ -322,7 +322,7 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void rpcPoolMode() {
-        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort());
+        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);

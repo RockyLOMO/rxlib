@@ -1,4 +1,4 @@
-package org.rx.security;
+package org.rx.codec;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

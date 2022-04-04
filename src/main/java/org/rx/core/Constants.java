@@ -18,6 +18,10 @@ public interface Constants {
     int KB = 1024, MB = KB * 1024, GB = MB * 1024;
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
+
+    String THREAD_POOL_QUEUE = "threadPoolQueue";
+    String DUPLICATE_KEY = "duplicateKey";
+
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";
 }

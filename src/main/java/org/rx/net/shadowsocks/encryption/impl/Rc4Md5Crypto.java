@@ -6,7 +6,7 @@ import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.engines.RC4Engine;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.rx.net.shadowsocks.encryption.CryptoSteamBase;
-import org.rx.security.MD5Util;
+import org.rx.codec.MD5Util;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;

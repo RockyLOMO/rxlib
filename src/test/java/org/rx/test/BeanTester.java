@@ -208,7 +208,7 @@ public class BeanTester extends TestUtil {
             System.out.println(App.combId(map.get(i), "" + i));
         }
         for (int i = 0; i < 10; i++) {
-            assert App.combId(map.get(i), "" + i).equals(App.combId(new Timestamp(map.get(i)), "" + i));
+            assert App.combId(map.get(i), "" + i).equals(App.combId(map.get(i), "" + i));
         }
 
         SUID suid = SUID.compute(TConfig.NAME_WYF);

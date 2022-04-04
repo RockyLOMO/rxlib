@@ -7,7 +7,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Constants;
-import org.rx.security.AESUtil;
+import org.rx.codec.AESUtil;
 
 import java.util.List;
 
