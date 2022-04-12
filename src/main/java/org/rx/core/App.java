@@ -431,6 +431,7 @@ public final class App extends SystemUtils {
         return hasher.hash().asLong();
     }
 
+    //When using 128-bits, the x86 and x64 versions do not produce the same values
     @SneakyThrows
     public static UUID murmurHash3_128(BiAction<Hasher> fn) {
         Hasher hasher = Hashing.murmur3_128().newHasher();

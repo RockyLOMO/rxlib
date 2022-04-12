@@ -21,6 +21,7 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
+import org.rx.security.MD5Util;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
@@ -31,6 +32,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -313,10 +315,13 @@ public class CoreTester extends TestUtil {
         db.createMapping(CollisionEntity.class);
         db.dropMapping(CollisionEntity.class);
         db.createMapping(CollisionEntity.class);
-        int c = 100000000;
+        int c = 200000000;
         AtomicInteger collision = new AtomicInteger();
         invoke("codec", i -> {
-            long id = App.hash64("codec", i);
+//            long id = App.hash64("codec", i);
+//            long id = App.hash64(h -> h.putBytes(MD5Util.md5("codec" + i)));
+            long id = CrcModel.CRC64_ECMA_182.getCRC((UUID.randomUUID().toString() + i).getBytes(StandardCharsets.UTF_8)).getCrc();
+//            long id = IOStream.checksum(MD5Util.md5("codec" + i));
             CollisionEntity po = db.findById(CollisionEntity.class, id);
             if (po != null) {
                 log.warn("collision: {}", collision.incrementAndGet());
@@ -325,11 +330,6 @@ public class CoreTester extends TestUtil {
             po = new CollisionEntity();
             po.setId(id);
             db.save(po, true);
-////            long checksum = Hashing.murmur3_128().hashBytes(MD5Util.md5("checksum" + i)).asLong();
-//            UnsignedLong unsignedLong = App.hashUnsigned64("checksum" + i);
-////            UnsignedLong unsignedLong = UnsignedLong.fromLongBits(CrcModel.CRC64_ECMA_182.getCRC(("checksum" + i).getBytes(StandardCharsets.UTF_8)).getCrc());
-//            Object checksum = unsignedLong.toString();
-//            System.out.println(checksum);
         }, c);
         assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
     }

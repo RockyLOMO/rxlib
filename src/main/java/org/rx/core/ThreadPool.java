@@ -254,7 +254,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     size -= resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, size);
-                    pool.setCorePoolSize(size);
+                    pool.setCorePoolSize(Math.max(1, size));
                     decrementCounter = 0;
                 }
             } else {
@@ -266,7 +266,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     size += resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), size);
-                    pool.setCorePoolSize(size);
+                    pool.setCorePoolSize(Math.max(1, size));
                     incrementCounter = 0;
                 }
             } else {
