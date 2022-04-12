@@ -6,7 +6,7 @@ public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
     final String poolName;
 
     public ScheduledThreadPool() {
-        super(Math.max(1, RxConfig.INSTANCE.threadPool.scheduleInitSize), ThreadPool.newThreadFactory("schedule"));
+        super(Math.max(2, RxConfig.INSTANCE.threadPool.scheduleInitSize), ThreadPool.newThreadFactory("schedule"));
         this.poolName = "schedule";
 
         ThreadPool.SIZER.register(this, ThreadPool.DEFAULT_CPU_WATER_MARK);
