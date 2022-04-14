@@ -27,11 +27,12 @@ import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class IOTester extends TestUtil {
+    //region h2db
     static final String h2Db = "~/h2/test";
 
     @SneakyThrows
     @Test
-    public synchronized void h2ShardingX() {
+    public synchronized void h2ShardingDb() {
         EntityDatabase db1 = new ShardingEntityDatabase("~/h2/s1", "192.168.31.5:854");
 //        EntityDatabase db2 = new ShardingEntityDatabase("~/h2/s2", "192.168.31.5:854");
 
@@ -56,7 +57,7 @@ public class IOTester extends TestUtil {
     }
 
     @Test
-    public synchronized void h2Sharding() {
+    public synchronized void h2DbShardingMethod() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
         db.createMapping(PersonBean.class);
 
@@ -106,7 +107,7 @@ public class IOTester extends TestUtil {
 
     @SneakyThrows
     @Test
-    public synchronized void h2Reduce() {
+    public synchronized void h2DbReduce() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, "yyyyMMddHH");
         db.setRollingHours(0);
         db.createMapping(PersonBean.class);
@@ -130,7 +131,7 @@ public class IOTester extends TestUtil {
     }
 
     @Test
-    public void h2() {
+    public void h2Db() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
 //        db.setAutoUnderscoreColumnName(true);
         db.createMapping(PersonBean.class);
@@ -179,13 +180,9 @@ public class IOTester extends TestUtil {
 
         System.out.println(q.orderByRand());
     }
+    //endregion
 
-    @Test
-    public void releaseBuffer() {
-        ByteBuffer buffer = ByteBuffer.allocateDirect(64);
-        IOStream.release(buffer);
-    }
-
+    //region kvstore
     final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
 
     @SneakyThrows
@@ -325,6 +322,13 @@ public class IOTester extends TestUtil {
         conf.setLogGrowSize(1024 * 1024);
         conf.setIndexGrowSize(1024 * 32);
         return conf;
+    }
+    //endregion
+
+    @Test
+    public void releaseBuffer() {
+        ByteBuffer buffer = ByteBuffer.allocateDirect(64);
+        IOStream.release(buffer);
     }
 
     @SneakyThrows
@@ -514,6 +518,15 @@ public class IOTester extends TestUtil {
     }
 
     @Test
+    public void serialize() {
+        GirlBean girlBean = new GirlBean();
+        girlBean.setAge(8);
+        IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
+        GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
+        assert girlBean.equals(deGirl);
+    }
+
+    @Test
     public void listFiles() {
         for (File p : Files.listFiles(TConfig.BASE_DIR, false)) {
             System.out.println(p);
@@ -537,15 +550,5 @@ public class IOTester extends TestUtil {
         for (File p : Files.listDirectories(TConfig.BASE_DIR, true)) {
             System.out.println(p);
         }
-    }
-
-    @Test
-    public void serialize() {
-        //json
-        GirlBean girlBean = new GirlBean();
-        girlBean.setAge(8);
-        IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
-        GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
-        assert girlBean.equals(deGirl);
     }
 }

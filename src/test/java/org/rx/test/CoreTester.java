@@ -288,6 +288,12 @@ public class CoreTester extends TestUtil {
     //region NQuery & NEvent
     @Test
     public void parallelNQuery() {
+        NQuery.of(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
+            Thread.sleep(200);
+            System.out.println(Thread.currentThread().getName() + "=" + p);
+            return true;
+        });
+
         NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
 //                .groupBy(p -> p > 5, (p, x) -> x.first())
                 ;
