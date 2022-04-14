@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
@@ -256,6 +257,11 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void codec() {
+        for (int i = 0; i < 10; i++) {
+            long ts = System.nanoTime();
+            assert App.orderedUUID(ts, i).equals(App.orderedUUID(ts, i));
+        }
+
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.createMapping(CollisionEntity.class);
         db.dropMapping(CollisionEntity.class);
@@ -279,217 +285,20 @@ public class CoreTester extends TestUtil {
     }
     //endregion
 
-    @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander("ping www.baidu.com", null);
-        ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.start().waitFor();
-
-        sleep(5000);
-    }
-
-    @Test
-    public void fluentWait() throws TimeoutException {
-        FluentWait.newInstance(2000, 200).until(s -> {
-            System.out.println(System.currentTimeMillis());
-            return false;
-        });
-    }
-
-    //region basic
-
-
-    @ErrorCode
-    @ErrorCode(cause = IllegalArgumentException.class)
-    @Test
-    public void exceptionHandle() {
-        ExceptionHandler handler = ExceptionHandler.INSTANCE;
-        handler.log(new InvalidException("test error"));
-        System.out.println(handler.queryTraces(null, null, null));
-
-
-        String err = "ERR";
-        ApplicationException ex = new ApplicationException(values(err));
-        assert eq(ex.getFriendlyMessage(), "Test error code, value=" + err);
-
-        ex = new ApplicationException(values(err), new IllegalArgumentException());
-        assert eq(ex.getFriendlyMessage(), "Test IAException, value=" + err);
-        $<IllegalArgumentException> out = $();
-        assert ex.tryGet(out, IllegalArgumentException.class);
-
-        String errCode = "ERR_CODE";
-        ex = new ApplicationException(UserManager.BizCode.USER_NOT_FOUND, values(errCode));
-        assert eq(ex.getFriendlyMessage(), "User " + errCode + " not found");
-
-        ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
-        assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
-
-        try {
-            Reflects.changeType("x", Date.class);
-        } catch (InvalidException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Test
-    public void json() {
-        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
-            throw new InvalidException("wont reach");
-        }), new ErrorBean()};
-        System.out.println(toJsonString(args));
-        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
-
-        String str = "abc";
-        assert str.equals(toJsonString(str));
-        String jObj = toJsonString(PersonBean.LeZhi);
-        System.out.println("encode jObj: " + jObj);
-        System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
-        List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
-        String jArr = toJsonString(arr);
-        System.out.println("encode jArr: " + jArr);
-        System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
-        }.getType()));
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("name", TConfig.NAME_WYF);
-        data.put("age", 10);
-        data.put("date", DateTime.now());
-        System.out.println(toJsonString(data));
-        System.out.println(fromJson(data, Map.class).toString());
-
-        Tuple<String, List<Float>> tuple1 = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
-        Tuple<String, List<Float>> tuple2 = fromJson(toJsonString(tuple1), new TypeReference<Tuple<String, List<Float>>>() {
-        }.getType());
-        assert tuple1.equals(tuple2);
-        Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
-        }.getType());
-        assert tuple1.equals(tuple3);
-    }
-
-    @Test
-    public void dynamicProxy() {
-        PersonBean leZhi = PersonBean.LeZhi;
-
-        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(proxy) == leZhi;
-
-        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(iproxy) == leZhi;
-    }
-
-    @SneakyThrows
-    @Test
-    public void reflect() {
-        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
-            System.out.println(resource);
-            assert resource != null;
-        }
-
-        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
-        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-
-        assert Reflects.stackClass(0) == this.getClass();
-//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
-//            System.out.println(traceElement);
-//        }
-
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
-
-        Method defMethod = IPerson.class.getMethod("enableCompress");
-        assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
-
-        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
-        assert bean != null;
-        int code = 1;
-        String msg = "Usr not found";
-        String r = code + msg;
-        assert eq("S-" + r, Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", code, msg));
-        assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
-        assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
-        assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
-
-
-        //convert
-        assert Reflects.changeType(1, boolean.class);
-        assert Reflects.changeType(1, Boolean.class);
-        assert Reflects.changeType(true, byte.class) == 1;
-        assert Reflects.changeType(true, Byte.class) == 1;
-        assert Reflects.changeType(new BigDecimal("1.002"), int.class) == 1;
-
-        assert Reflects.changeType("1", Integer.class) == 1;
-        assert Reflects.changeType(10, long.class) == 10L;
-
-        int enumVal = Reflects.changeType(PersonGender.BOY, Integer.class);
-        assert enumVal == 1;
-        PersonGender enumBoy = Reflects.changeType(enumVal, PersonGender.class);
-        assert enumBoy == PersonGender.BOY;
-
-        String date = "2017-08-24 02:02:02";
-        assert Reflects.changeType(date, DateTime.class) instanceof Date;
-
-        assert Reflects.defaultValue(Integer.class) == null;
-        assert Reflects.defaultValue(int.class) == 0;
-        assert Reflects.defaultValue(List.class) == Collections.emptyList();
-        assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
-
-    }
-
-    @Test
-    public void runNEvent() {
-        UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = PersonBean.YouFan;
-
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
-        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
-
-        mgr.onCreate.combine(a);
-        mgr.create(p);  //触发事件（a执行）
-
-        mgr.onCreate.combine(b);
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.combine(a, b);  //会去重
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.remove(b);
-        mgr.create(p); //触发事件（a执行）
-
-        mgr.onCreate.replace(a, c);
-        mgr.create(p); //触发事件（a, c执行）
-    }
-
-    //region NQuery
+    //region NQuery & NEvent
     @Test
     public void parallelNQuery() {
         NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
 //                .groupBy(p -> p > 5, (p, x) -> x.first())
                 ;
-        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
+        //not work
+        for (Integer p : pq) {
             log.info(p.toString());
         }
-        System.out.println("----");
-        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
+        pq.forEach(p -> {
             log.info(p.toString());
-        }
-//        //not work
-//        for (Integer p : pq) {
-//            log.info(p.toString());
-//        }
-//        pq.forEach(p -> {
-//            log.info(p.toString());
-//            throw new CircuitBreakingException();
-//        });
+            throw new CircuitBreakingException();
+        });
     }
 
     @Test
@@ -584,7 +393,194 @@ public class CoreTester extends TestUtil {
         System.out.println("showResult: " + n);
         System.out.println(toJsonString(q.toList()));
     }
+
+    @Test
+    public void runNEvent() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        PersonBean p = PersonBean.YouFan;
+
+        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
+
+        mgr.onCreate.combine(a);
+        mgr.create(p);  //触发事件（a执行）
+
+        mgr.onCreate.combine(b);
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.combine(a, b);  //会去重
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.remove(b);
+        mgr.create(p); //触发事件（a执行）
+
+        mgr.onCreate.replace(a, c);
+        mgr.create(p); //触发事件（a, c执行）
+    }
     //endregion
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping www.baidu.com", null);
+        ShellCommander finalExecutor = executor;
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
+
+        sleep(5000);
+    }
+
+    @Test
+    public void json() {
+        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
+            throw new InvalidException("wont reach");
+        }), new ErrorBean()};
+        System.out.println(toJsonString(args));
+        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
+
+        String str = "abc";
+        assert str.equals(toJsonString(str));
+        String jObj = toJsonString(PersonBean.LeZhi);
+        System.out.println("encode jObj: " + jObj);
+        System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
+        List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
+        String jArr = toJsonString(arr);
+        System.out.println("encode jArr: " + jArr);
+        System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
+        }.getType()));
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("name", TConfig.NAME_WYF);
+        data.put("age", 10);
+        data.put("date", DateTime.now());
+        System.out.println(toJsonString(data));
+        System.out.println(fromJson(data, Map.class).toString());
+
+        Tuple<String, List<Float>> tuple1 = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
+        Tuple<String, List<Float>> tuple2 = fromJson(toJsonString(tuple1), new TypeReference<Tuple<String, List<Float>>>() {
+        }.getType());
+        assert tuple1.equals(tuple2);
+        Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
+        }.getType());
+        assert tuple1.equals(tuple3);
+    }
+
+    @Test
+    public void fluentWait() throws TimeoutException {
+        FluentWait.newInstance(2000, 200).until(s -> {
+            System.out.println(System.currentTimeMillis());
+            return false;
+        });
+    }
+
+    @Test
+    public void dynamicProxy() {
+        PersonBean leZhi = PersonBean.LeZhi;
+
+        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(proxy) == leZhi;
+
+        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(iproxy) == leZhi;
+    }
+
+    @SneakyThrows
+    @Test
+    public void reflect() {
+        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
+            System.out.println(resource);
+            assert resource != null;
+        }
+
+        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+
+        assert Reflects.stackClass(0) == this.getClass();
+//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
+//            System.out.println(traceElement);
+//        }
+
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
+
+        Method defMethod = IPerson.class.getMethod("enableCompress");
+        assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
+
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
+        assert bean != null;
+        int code = 1;
+        String msg = "Usr not found";
+        String r = code + msg;
+        assert eq("S-" + r, Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", code, msg));
+        assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
+        assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
+        assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
+
+
+        //convert
+        assert Reflects.changeType(1, boolean.class);
+        assert Reflects.changeType(1, Boolean.class);
+        assert Reflects.changeType(true, byte.class) == 1;
+        assert Reflects.changeType(true, Byte.class) == 1;
+        assert Reflects.changeType(new BigDecimal("1.002"), int.class) == 1;
+
+        assert Reflects.changeType("1", Integer.class) == 1;
+        assert Reflects.changeType(10, long.class) == 10L;
+
+        int enumVal = Reflects.changeType(PersonGender.BOY, Integer.class);
+        assert enumVal == 1;
+        PersonGender enumBoy = Reflects.changeType(enumVal, PersonGender.class);
+        assert enumBoy == PersonGender.BOY;
+
+        String date = "2017-08-24 02:02:02";
+        assert Reflects.changeType(date, DateTime.class) instanceof Date;
+
+        assert Reflects.defaultValue(Integer.class) == null;
+        assert Reflects.defaultValue(int.class) == 0;
+        assert Reflects.defaultValue(List.class) == Collections.emptyList();
+        assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
+
+    }
+
+    @ErrorCode
+    @ErrorCode(cause = IllegalArgumentException.class)
+    @Test
+    public void exceptionHandle() {
+        ExceptionHandler handler = ExceptionHandler.INSTANCE;
+        handler.log(new InvalidException("test error"));
+        System.out.println(handler.queryTraces(null, null, null));
+
+
+        String err = "ERR";
+        ApplicationException ex = new ApplicationException(values(err));
+        assert eq(ex.getFriendlyMessage(), "Test error code, value=" + err);
+
+        ex = new ApplicationException(values(err), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Test IAException, value=" + err);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String errCode = "ERR_CODE";
+        ex = new ApplicationException(UserManager.BizCode.USER_NOT_FOUND, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "User " + errCode + " not found");
+
+        ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
+
+        try {
+            Reflects.changeType("x", Date.class);
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
+    }
 
     @Test
     public void rxConf() {
@@ -620,5 +616,4 @@ public class CoreTester extends TestUtil {
 
         sleep(60000);
     }
-    //endregion
 }

@@ -14,6 +14,7 @@ import org.rx.exception.InvalidException;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 import org.rx.test.bean.PersonBean;
+import org.rx.util.Snowflake;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.validation.annotation.Validated;
@@ -22,12 +23,27 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 @Slf4j
 public class UtilTester {
+    @Test
+    public void snowflake() {
+        Set<Long> set = new HashSet<>();
+        int len = 1 << 12;
+        System.out.println(len);
+        Snowflake snowflake = Snowflake.DEFAULT;
+        for (int i = 0; i < len; i++) {
+            Tasks.run(() -> {
+                assert set.add(snowflake.nextId());
+            });
+        }
+    }
+
     @Data
     public static class TwoPerson {
         //        @NotNull

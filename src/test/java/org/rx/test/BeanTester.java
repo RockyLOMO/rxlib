@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.*;
-import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
@@ -15,7 +14,6 @@ import org.rx.test.common.TestUtil;
 import org.rx.util.*;
 import org.rx.test.bean.GirlBean;
 
-import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
@@ -167,19 +165,6 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void snowflake() {
-        Set<Long> set = new HashSet<>();
-        int len = 1 << 12;
-        System.out.println(len);
-        Snowflake snowflake = Snowflake.DEFAULT;
-        for (int i = 0; i < len; i++) {
-            Tasks.run(() -> {
-                assert set.add(snowflake.nextId());
-            });
-        }
-    }
-
-    @Test
     public void ushortPair() {
         UShortPair x = new UShortPair();
         System.out.println(x.getShort0());
@@ -201,15 +186,6 @@ public class BeanTester extends TestUtil {
         String jstr = toJsonString(SUID.randomSUID());
         SUID sid = fromJson(jstr, SUID.class);
         assert jstr.substring(1, jstr.length() - 1).equals(sid.toString());
-
-        Map<Integer, Long> map = new HashMap<>();
-        for (int i = 0; i < 10; i++) {
-            map.put(i, System.nanoTime());
-            System.out.println(App.combId(map.get(i), "" + i));
-        }
-        for (int i = 0; i < 10; i++) {
-            assert App.combId(map.get(i), "" + i).equals(App.combId(map.get(i), "" + i));
-        }
 
         SUID suid = SUID.compute(TConfig.NAME_WYF);
         System.out.println(suid);

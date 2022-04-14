@@ -21,6 +21,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
+import org.rx.util.Snowflake;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
 
@@ -31,8 +32,6 @@ import java.lang.reflect.Type;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-
-import io.netty.util.internal.ThreadLocalRandom;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -388,30 +387,20 @@ public final class App extends SystemUtils {
         return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
     }
 
-    public static UUID combId() {
-        return combId(System.nanoTime(), null);
+    public static UUID orderedUUID() {
+        return orderedUUID(System.nanoTime(), Snowflake.DEFAULT.nextId());
     }
 
-    public static UUID combId(long timestamp, String key) {
-        return combId(timestamp, key, false);
-    }
-
-    //http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database
-    public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
-        long id;
-        if (key != null) {
-            id = hash64(key.getBytes(StandardCharsets.UTF_8));
-        } else {
-            id = ThreadLocalRandom.current().nextLong();
-        }
+    public static UUID orderedUUID(long timestamp, Object key) {
+        long id = key instanceof Long ? (long) key : hash64(key);
         long mostSigBits, leastSigBits;
-        if (sequentialAtEnd) {
-            mostSigBits = id;
-            leastSigBits = timestamp;
-        } else {
-            mostSigBits = timestamp;
-            leastSigBits = id;
-        }
+//        if (sequentialAtEnd) {
+//            mostSigBits = id;
+//            leastSigBits = timestamp;
+//        } else {
+        mostSigBits = timestamp;
+        leastSigBits = id;
+//        }
         return new UUID(mostSigBits, leastSigBits);
     }
 
