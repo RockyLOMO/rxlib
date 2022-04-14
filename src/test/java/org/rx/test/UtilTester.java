@@ -8,7 +8,6 @@ import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.Tasks;
-import org.rx.net.Sockets;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
@@ -19,7 +18,6 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
 
 import static org.rx.core.App.toJsonString;
 
@@ -176,11 +174,5 @@ public class UtilTester {
         Validator.validateMethod(TwoPerson.class.getMethod("renew", List.class), tp, new Object[]{null}, () -> "a");
         List<TwoPerson> list = Collections.singletonList(tp);
         Validator.validateBean(list);
-    }
-
-    @Test
-    public void netIp() {
-        String s = Sockets.DEFAULT_NAT_IPS.get(3);
-        System.out.println(Pattern.matches(s, "192.168.31.7"));
     }
 }
