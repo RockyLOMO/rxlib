@@ -244,17 +244,14 @@ public class ThreadPool extends ThreadPoolExecutor {
             int active = pool.getActiveCount();
             int size = pool.getCorePoolSize();
             float idle = (float) active / size * 100;
-            int resizeQuantity = RxConfig.INSTANCE.threadPool.resizeQuantity;
             log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
                     pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
 
-            if (size > resizeQuantity && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
+            if (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh())) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
-                    size -= resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, size);
-                    pool.setCorePoolSize(Math.max(1, size));
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrSize(pool));
                     decrementCounter = 0;
                 }
             } else {
@@ -263,10 +260,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
             if (active >= size && cpuLoad.lt(waterMark.getLow())) {
                 if (++incrementCounter >= SAMPLING_TIMES) {
-                    size += resizeQuantity;
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), size);
-                    pool.setCorePoolSize(Math.max(1, size));
+                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                     incrementCounter = 0;
                 }
             } else {
@@ -290,8 +285,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
     static final DynamicSizer SIZER = new DynamicSizer();
-    static final Runnable EMPTY = () -> {
-    };
+    static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
+//    static final Runnable EMPTY = () -> {
+//    };
 
     static ThreadFactory newThreadFactory(String name) {
         //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
@@ -301,8 +297,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static int incrSize(ThreadPoolExecutor pool) {
         int poolSize = pool.getCorePoolSize() + RxConfig.INSTANCE.threadPool.resizeQuantity;
-        if (poolSize > 1000) {
-            return 1000;
+        if (poolSize > MAX_CORE_SIZE) {
+            return MAX_CORE_SIZE;
         }
         pool.setCorePoolSize(poolSize);
 //        pool.execute(EMPTY);
@@ -311,8 +307,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static int decrSize(ThreadPoolExecutor pool) {
         int poolSize = pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity;
-        if (poolSize < 4) {
-            return 4;
+        if (poolSize < MIN_CORE_SIZE) {
+            return MIN_CORE_SIZE;
         }
         pool.setCorePoolSize(poolSize);
         return poolSize;
@@ -357,9 +353,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(checkSize(initSize), Integer.MAX_VALUE,
                 RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue<>(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
-                    if (r == EMPTY) {
-                        return;
-                    }
+//                    if (r == EMPTY) {
+//                        return;
+//                    }
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;

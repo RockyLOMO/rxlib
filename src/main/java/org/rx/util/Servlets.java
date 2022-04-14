@@ -68,7 +68,7 @@ public class Servlets extends ServletRequestUtils {
         if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
-        String[] ips = ip.split(",");
+        String[] ips = Strings.split(ip, ",");
         if (ips.length > 1) {
             ip = ips[0];
         }

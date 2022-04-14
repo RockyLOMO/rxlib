@@ -1,16 +1,160 @@
 package org.rx.core;
 
+import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 
 import io.netty.util.internal.ThreadLocalRandom;
+import org.rx.exception.InvalidException;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.values;
 
 public class Strings extends StringUtils {
+    public static String trimVarExpressionName(String exprName) {
+        if (exprName == null) {
+            return null;
+        }
+        int s = 0, e = exprName.length();
+        if (exprName.startsWith("${")) {
+            s = 2;
+        }
+        if (exprName.endsWith("}")) {
+            e = exprName.length() - 1;
+        }
+        return exprName.substring(s, e);
+    }
+
+    /**
+     * ${varName}
+     *
+     * @param expr This is ${name}
+     * @return name
+     */
+    public static List<String> getVarExpressionNames(String expr, boolean onlyName) {
+        List<String> list = new ArrayList<>();
+        int s = 0, e;
+        while ((s = expr.indexOf("${", s)) != -1) {
+            if ((e = expr.indexOf("}", s += 2)) == -1) {
+                throw new InvalidException("invalid expression");
+            }
+            list.add(onlyName ? expr.substring(s, e) : expr.substring(s - 2, e + 1));
+        }
+        return list;
+    }
+
+    public static String resolveVarExpression(String expr, Map<String, Object> vars) {
+        return resolveVarExpression(new StringBuilder(expr), vars);
+    }
+
+    /**
+     * 替换变量
+     * 变量格式: %{变量名}
+     *
+     * @param expr This is ${name}
+     * @param vars {\"${name}\": \"xf\"}
+     * @return This is xf
+     */
+    public static String resolveVarExpression(StringBuilder expr, Map<String, Object> vars) {
+        for (Map.Entry<String, Object> var : vars.entrySet()) {
+            expr.replace(var.getKey(), ifNull(var.getValue(), Strings.EMPTY).toString());
+        }
+        return expr.toString();
+    }
+
+    public static <T> T readValue(JSONObject json, String path) {
+        String[] paths = Strings.split(path, ".");
+        int last = paths.length - 1;
+        JSONObject tmp = json;
+        for (int i = 0; i < last; i++) {
+            if ((tmp = tmp.getJSONObject(paths[i])) == null) {
+                throw new InvalidException("get empty sub object by path %s", paths[i]);
+            }
+        }
+        return (T) tmp.get(paths[last]);
+    }
+
+    /**
+     * 简单的计算字符串
+     *
+     * @param expression 字符串
+     * @return 计算结果
+     */
+    public static double simpleEval(final String expression) {
+        return new Object() {
+            int pos = -1, ch;
+
+            void nextChar() {
+                ch = (++pos < expression.length()) ? expression.charAt(pos) : -1;
+            }
+
+            boolean eat(int charToEat) {
+                while (ch == ' ') nextChar();
+                if (ch == charToEat) {
+                    nextChar();
+                    return true;
+                }
+                return false;
+            }
+
+            double parse() {
+                nextChar();
+                double x = parseExpression();
+                if (pos < expression.length()) throw new RuntimeException("Unexpected: " + (char) ch);
+                return x;
+            }
+
+            // Grammar:
+            // expression = term | expression `+` term | expression `-` term
+            // term = factor | term `*` factor | term `/` factor
+            // factor = `+` factor | `-` factor | `(` expression `)`
+            //        | number | functionName factor | factor `^` factor
+            double parseExpression() {
+                double x = parseTerm();
+                for (; ; ) {
+                    if (eat('+')) x += parseTerm(); // addition
+                    else if (eat('-')) x -= parseTerm(); // subtraction
+                    else return x;
+                }
+            }
+
+            double parseTerm() {
+                double x = parseFactor();
+                for (; ; ) {
+                    if (eat('*')) x *= parseFactor(); // multiplication
+                    else if (eat('/')) x /= parseFactor(); // division
+                    else return x;
+                }
+            }
+
+            double parseFactor() {
+                if (eat('+')) return parseFactor(); // unary plus
+                if (eat('-')) return -parseFactor(); // unary minus
+
+                double x;
+                int startPos = this.pos;
+
+                if (eat('(')) { // parentheses
+                    x = parseExpression();
+                    eat(')');
+                } else if ((ch >= '0' && ch <= '9') || ch == '.') { // numbers
+                    while ((ch >= '0' && ch <= '9') || ch == '.') nextChar();
+                    x = Double.parseDouble(expression.substring(startPos, this.pos));
+                } else throw new RuntimeException("Unexpected: " + (char) ch);
+
+                if (eat('^')) x = Math.pow(x, parseFactor()); // exponentiation
+
+                return x;
+            }
+        }.parse();
+    }
+
     /**
      * 判断当前版本和最新版本的关系
      * <p>
@@ -31,8 +175,8 @@ public class Strings extends StringUtils {
      */
     public static int versionComparison(String currentVersion, String latestVersion) {
         if (currentVersion == null || latestVersion == null) return 0;
-        String[] currentVersionAfterSplit = removeInNumeric(currentVersion).split("\\.");
-        String[] latestVersionAfterSplit = removeInNumeric(latestVersion).split("\\.");
+        String[] currentVersionAfterSplit = toNumeric(currentVersion).split("\\.");
+        String[] latestVersionAfterSplit = toNumeric(latestVersion).split("\\.");
 
         int currentLength = currentVersionAfterSplit.length;
         int latestLength = latestVersionAfterSplit.length;
@@ -47,63 +191,20 @@ public class Strings extends StringUtils {
         return 0;
     }
 
-    /**
-     * 去掉字符串里除了数字/小数点外的字符
-     *
-     * @param string 源
-     * @return 处理后
-     */
-    public static String removeInNumeric(String string) {
-        if (isEmpty(string)) {
+    public static String toNumeric(String str) {
+        if (isEmpty(str)) {
             return EMPTY;
         }
-        java.lang.StringBuilder output = new java.lang.StringBuilder();
-        for (Character aChar : string.toCharArray()) {
-            if (Character.isDigit(aChar)) {
-                output.append(aChar);
+        StringBuilder output = new StringBuilder();
+        int len = str.length();
+        for (int i = 0; i < len; i++) {
+            char c = str.charAt(i);
+            if (!Character.isDigit(c) && c != '.') {
+                continue;
             }
-            if (aChar == '.') {
-                output.append('.');
-            }
+            output.append(c);
         }
         return output.toString();
-    }
-
-    /**
-     * 替换最后一个
-     *
-     * @param text        源字符串
-     * @param regex       要替换从的
-     * @param replacement 要替换成的
-     * @return 替换后的字符串
-     */
-    public static String replaceLast(String text, String regex, String replacement) {
-        return text.replaceFirst("(?s)" + regex + "(?!.*?" + regex + ")", replacement);
-    }
-
-    /**
-     * 替换变量
-     * 变量格式: %{变量名}
-     *
-     * @param original                 源字符串
-     * @param variablesAndReplacements 变量名和值
-     * @return 替换完的字符串
-     */
-    public static String replaceVariables(String original, Object... variablesAndReplacements) {
-        java.lang.StringBuilder builder = new java.lang.StringBuilder();
-        boolean first = true;
-        for (String line : original.split("\n")) {
-            for (int i = 0; i < variablesAndReplacements.length; i += 2) {
-                line = line.replace("%{" + variablesAndReplacements[i] + "}", String.valueOf(variablesAndReplacements[i + 1]));
-            }
-            if (first) {
-                builder.append(line);
-                first = false;
-            } else {
-                builder.append("\n").append(line);
-            }
-        }
-        return builder.toString();
     }
 
     public static String randomValue(int maxValue) {
@@ -159,6 +260,10 @@ public class Strings extends StringUtils {
             throw new ApplicationException("lengthError", values(fixedLength));
         }
         return result;
+    }
+
+    public static String replaceLast(String text, String regex, String replacement) {
+        return text.replaceFirst("(?s)" + regex + "(?!.*?" + regex + ")", replacement);
     }
 
     //region Nested
