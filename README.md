@@ -19,7 +19,7 @@ A set of utilities for Java.
 * [RestfulRpc - 基于netty实现的HttpServer & 类似FeignClient + 连接池化的Client](https://github.com/RockyLOMO/rxlib/wiki/RestfulRpc---%E7%B1%BB%E4%BC%BCFeignClient---%E8%BF%9E%E6%8E%A5%E6%B1%A0%E5%8C%96%E7%9A%84Client)
 * [Nameserver - 基于Dns协议的注册与发现]()
 * [EntityDatabase - 轻量级实体数据库，支持sharding](https://github.com/RockyLOMO/rxlib/wiki/EntityDatabase---%E8%BD%BB%E9%87%8F%E7%BA%A7%E5%AE%9E%E4%BD%93%E6%95%B0%E6%8D%AE%E5%BA%93%EF%BC%8C%E6%94%AF%E6%8C%81sharding)
-* [科学上网 - 自建梯子](https://github.com/RockyLOMO/rxlib/wiki/%E7%A7%91%E5%AD%A6%E4%B8%8A%E7%BD%91---%E8%87%AA%E5%BB%BA%E6%A2%AF%E5%AD%90)
+* [FQ梯子 - 你懂的](https://github.com/RockyLOMO/rxlib/wiki/KX%E4%B8%8A%E7%BD%91)
 * [KeyValueStore - WAL + MMAP 键值存储](https://github.com/RockyLOMO/rxlib/wiki/KeyValueStore---%E9%94%AE%E5%80%BC%E5%AD%98%E5%82%A8)
 * [HybridStream - heep/direct buffer & memory/file stream混用BIO](https://github.com/RockyLOMO/rxlib/wiki/HybridStream---heep-direct-buffer-&-memory-file-stream%E6%B7%B7%E7%94%A8BIO)
 * [DistributedId - 分布式Id](https://github.com/RockyLOMO/rxlib/wiki/DistributedId-%E5%88%86%E5%B8%83%E5%BC%8FId)
