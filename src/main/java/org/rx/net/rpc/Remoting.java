@@ -41,10 +41,10 @@ public final class Remoting {
 
     @RequiredArgsConstructor
     public static class ServerBean {
-        @NoArgsConstructor
         @AllArgsConstructor
+        @RequiredArgsConstructor
         static class EventContext {
-            volatile EventArgs computedArgs;
+            final EventArgs computedArgs;
             volatile RpcClientMeta computingClient;
         }
 
@@ -333,8 +333,7 @@ public final class Remoting {
                             EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
-                                    ServerBean.EventContext eCtx = new ServerBean.EventContext();
-                                    eCtx.computedArgs = args;
+                                    ServerBean.EventContext eCtx = new ServerBean.EventContext(args);
                                     if (config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
                                         eCtx.computingClient = null;
                                     } else {

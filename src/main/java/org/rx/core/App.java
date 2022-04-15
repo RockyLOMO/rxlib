@@ -21,6 +21,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
+import org.rx.util.Snowflake;
 import org.rx.util.function.*;
 import org.springframework.cglib.proxy.Enhancer;
 
@@ -31,8 +32,6 @@ import java.lang.reflect.Type;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-
-import io.netty.util.internal.ThreadLocalRandom;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,6 +68,7 @@ public final class App extends SystemUtils {
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
     }
 
+    //region basic
     public static File getJarFile(Object obj) {
         return getJarFile(obj.getClass());
     }
@@ -211,8 +211,7 @@ public final class App extends SystemUtils {
         }
     }
 
-    //region basic
-    public static List<String> argsOperations(String[] args) {
+    public static List<String> mainOperations(String[] args) {
         List<String> result = new ArrayList<>();
         for (String arg : args) {
             if (arg.startsWith("-")) {
@@ -223,7 +222,7 @@ public final class App extends SystemUtils {
         return result;
     }
 
-    public static Map<String, String> argsOptions(String[] args) {
+    public static Map<String, String> mainOptions(String[] args) {
         Map<String, String> result = new HashMap<>();
         for (String arg : args) {
             if (arg.startsWith("-")) {
@@ -235,87 +234,6 @@ public final class App extends SystemUtils {
         }
         return result;
     }
-
-    public static MainArgs parseArgs(String[] args) {
-        return new MainArgs(argsOperations(args), argsOptions(args));
-    }
-
-    /**
-     * 简单的计算字符串
-     *
-     * @param expression 字符串
-     * @return 计算结果
-     */
-    public static double simpleEval(final String expression) {
-        return new Object() {
-            int pos = -1, ch;
-
-            void nextChar() {
-                ch = (++pos < expression.length()) ? expression.charAt(pos) : -1;
-            }
-
-            boolean eat(int charToEat) {
-                while (ch == ' ') nextChar();
-                if (ch == charToEat) {
-                    nextChar();
-                    return true;
-                }
-                return false;
-            }
-
-            double parse() {
-                nextChar();
-                double x = parseExpression();
-                if (pos < expression.length()) throw new RuntimeException("Unexpected: " + (char) ch);
-                return x;
-            }
-
-            // Grammar:
-            // expression = term | expression `+` term | expression `-` term
-            // term = factor | term `*` factor | term `/` factor
-            // factor = `+` factor | `-` factor | `(` expression `)`
-            //        | number | functionName factor | factor `^` factor
-
-            double parseExpression() {
-                double x = parseTerm();
-                for (; ; ) {
-                    if (eat('+')) x += parseTerm(); // addition
-                    else if (eat('-')) x -= parseTerm(); // subtraction
-                    else return x;
-                }
-            }
-
-            double parseTerm() {
-                double x = parseFactor();
-                for (; ; ) {
-                    if (eat('*')) x *= parseFactor(); // multiplication
-                    else if (eat('/')) x /= parseFactor(); // division
-                    else return x;
-                }
-            }
-
-            double parseFactor() {
-                if (eat('+')) return parseFactor(); // unary plus
-                if (eat('-')) return -parseFactor(); // unary minus
-
-                double x;
-                int startPos = this.pos;
-
-                if (eat('(')) { // parentheses
-                    x = parseExpression();
-                    eat(')');
-                } else if ((ch >= '0' && ch <= '9') || ch == '.') { // numbers
-                    while ((ch >= '0' && ch <= '9') || ch == '.') nextChar();
-                    x = Double.parseDouble(expression.substring(startPos, this.pos));
-                } else throw new RuntimeException("Unexpected: " + (char) ch);
-
-                if (eat('^')) x = Math.pow(x, parseFactor()); // exponentiation
-
-                return x;
-            }
-        }.parse();
-    }
-
     //endregion
 
     //region json
@@ -469,30 +387,20 @@ public final class App extends SystemUtils {
         return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
     }
 
-    public static UUID combId() {
-        return combId(System.nanoTime(), null);
+    public static UUID orderedUUID() {
+        return orderedUUID(System.nanoTime(), Snowflake.DEFAULT.nextId());
     }
 
-    public static UUID combId(long timestamp, String key) {
-        return combId(timestamp, key, false);
-    }
-
-    //http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database
-    public static UUID combId(long timestamp, String key, boolean sequentialAtEnd) {
-        long id;
-        if (key != null) {
-            id = hash64(key.getBytes(StandardCharsets.UTF_8));
-        } else {
-            id = ThreadLocalRandom.current().nextLong();
-        }
+    public static UUID orderedUUID(long timestamp, Object key) {
+        long id = key instanceof Long ? (long) key : hash64(key);
         long mostSigBits, leastSigBits;
-        if (sequentialAtEnd) {
-            mostSigBits = id;
-            leastSigBits = timestamp;
-        } else {
-            mostSigBits = timestamp;
-            leastSigBits = id;
-        }
+//        if (sequentialAtEnd) {
+//            mostSigBits = id;
+//            leastSigBits = timestamp;
+//        } else {
+        mostSigBits = timestamp;
+        leastSigBits = id;
+//        }
         return new UUID(mostSigBits, leastSigBits);
     }
 

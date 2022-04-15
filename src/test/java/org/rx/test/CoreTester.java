@@ -9,10 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
+import org.rx.codec.CrcModel;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
@@ -21,7 +23,6 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
-import org.rx.security.MD5Util;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.TripleAction;
@@ -44,74 +45,14 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 public class CoreTester extends TestUtil {
-    static final long delayMillis = 5000;
-    static final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
-        @Override
-        protected void onRemoval(IntTuple<String> value) {
-            System.out.println("rm:" + value);
-        }
-    };
-
-    @SneakyThrows
-    @Test
-    public void timer() {
-        //jdk默认的ScheduledExecutorService只会创建coreSize的线程，当执行的任务blocking wait多时，任务都堆积不能按时处理。
-        //ScheduledThreadPool现改写maxSize会生效，再依据cpuLoad动态调整maxSize解决上面痛点问题。
-        //WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内存。单线程的HashedWheelTimer也使blocking wait痛点放大，好在动态调整maxSize的ThreadPool存在，WheelTimer只做调度，执行全交给ThreadPool异步执行，完美解决痛点。
-
-        Tasks.setTimeout(() -> System.out.println("delay <= 0"), -1);
-//        Tasks.schedule(() -> System.out.println("java delay <= 0"), 0);
-
-        Tasks.timer().setTimeout(() -> {
-            System.out.println(DateTime.now());
-            return false;
-        }, d -> Math.max(d, 100) * 2);
-
-        Timeout t = Tasks.timer().setTimeout(s -> {
-            System.out.println("loop: " + DateTime.now());
-            int i = s.incrementAndGet();
-            if (i > 4) {
-                return false;
-            }
-            if (i > 1) {
-                throw new InvalidException("max exec");
-            }
-            return true;
-        }, d -> Math.max(d, 100) * 2, new AtomicInteger());
-
-        sleep(1000);
-        t.cancel();
-
-        Tasks.timer().setTimeout(() -> {
-            System.out.println("c: " + DateTime.now());
-            sleep(2000);
-            return true;
-        }, 500);
-        Tasks.timer().setTimeout(() -> {
-            System.out.println("d: " + DateTime.now());
-            sleep(2000);
-            return true;
-        }, 50);
-
-        System.in.read();
-    }
-
+    //region thread pool
     @SneakyThrows
     @Test
     public void threadPool() {
-        //Executors.newCachedThreadPool(); 没有queue缓冲，一直new thread执行，当cpu负载高时加上更多线程上下文切换损耗，性能会急速下降。
-
-        //Executors.newFixedThreadPool(16); 执行的thread数量固定，但当thread 等待时间（IO时间）过长时会造成吞吐量下降。当thread 执行时间过长时无界的LinkedBlockingQueue可能会OOM。
-
-        //new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(10000));
-        //有界的LinkedBlockingQueue可以避免OOM，但吞吐量下降的情况避免不了，加上LinkedBlockingQueue使用的重量级锁ReentrantLock对并发下性能可能有影响
-
-        //最佳线程数=CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)，由于执行任务的不同，CPU 等待时间和执行时间无法确定，
-        //因此换一种思路，当列队满的情况下，如果CPU使用率小于40%，则会动态增大线程池maxThreads 最大线程数的值来提高吞吐量。如果CPU使用率大于60%，则会动态减小maxThreads 值来降低生产者的任务生产速度。
-        //当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
         //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
-        //FastThreadLocal 支持netty FastThreadLocal
+        //支持netty FastThreadLocal
+        long delayMillis = 5000;
         ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
         for (int i = 0; i < 100; i++) {
             int x = i;
@@ -136,15 +77,6 @@ public class CoreTester extends TestUtil {
             }, "myTaskId", RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("Done: " + x));
         }
 
-//        for (int i = 0; i < 5; i++) {
-//            int x = i;
-//            Tasks.schedule(() -> {
-//                log.info("exec {} begin..", x);
-//                sleep(delayMillis);
-//                log.info("exec {} end..", x);
-//            }, 1000);
-//        }
-
         System.out.println("main thread done");
         System.in.read();
     }
@@ -152,6 +84,12 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void inheritThreadLocal() {
+        final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
+            @Override
+            protected void onRemoval(IntTuple<String> value) {
+                System.out.println("rm:" + value);
+            }
+        };
         inherit.set(IntTuple.of(1, "a"));
         ThreadPool pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
         AtomicReference<Thread> t = new AtomicReference<>();
@@ -181,6 +119,39 @@ public class CoreTester extends TestUtil {
             System.out.println("ok");
             return null;
         }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+    }
+
+    @SneakyThrows
+    @Test
+    public void timer() {
+        Tasks.timer().setTimeout(() -> {
+            System.out.println("once: " + DateTime.now());
+            return false;
+        }, d -> Math.max(d, 100) * 2);
+
+        Timeout t = Tasks.timer().setTimeout(s -> {
+            System.out.println("loop: " + DateTime.now());
+            int i = s.incrementAndGet();
+            if (i > 4) {
+                return false;
+            }
+            if (i > 1) {
+                throw new InvalidException("max exec");
+            }
+            return true;
+        }, d -> Math.max(d, 100) * 2, new AtomicInteger());
+
+        sleep(1000);
+        t.cancel();
+
+        //TimeoutFlag.SINGLE  根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+        //TimeoutFlag.REPLACE 根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
+        //TimeoutFlag.PERIOD  定期重复执行，遇到异常不会终止直到return false 或 next delay = -1。
+        Tasks.setTimeout(() -> {
+            System.out.println(System.currentTimeMillis());
+        }, 50, this, TimeoutFlag.REPLACE);
+
+        System.in.read();
     }
 
     @SneakyThrows
@@ -226,6 +197,7 @@ public class CoreTester extends TestUtil {
 
         wait();
     }
+    //endregion
 
     @SneakyThrows
     @Test
@@ -276,33 +248,7 @@ public class CoreTester extends TestUtil {
         }, 4000);
     }
 
-    @Test
-    public void fluentWait() throws TimeoutException {
-        FluentWait.newInstance(2000, 200).until(s -> {
-            System.out.println(System.currentTimeMillis());
-            return false;
-        });
-    }
-
-    @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander("ping www.baidu.com", null);
-        ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.start().waitFor();
-
-        sleep(5000);
-    }
-
-    //region basic
+    //region codec
     @Data
     public static class CollisionEntity implements Serializable {
         @DbColumn(primaryKey = true)
@@ -311,6 +257,11 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void codec() {
+        for (int i = 0; i < 10; i++) {
+            long ts = System.nanoTime();
+            assert App.orderedUUID(ts, i).equals(App.orderedUUID(ts, i));
+        }
+
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.createMapping(CollisionEntity.class);
         db.dropMapping(CollisionEntity.class);
@@ -321,7 +272,6 @@ public class CoreTester extends TestUtil {
 //            long id = App.hash64("codec", i);
 //            long id = App.hash64(h -> h.putBytes(MD5Util.md5("codec" + i)));
             long id = CrcModel.CRC64_ECMA_182.getCRC((UUID.randomUUID().toString() + i).getBytes(StandardCharsets.UTF_8)).getCrc();
-//            long id = IOStream.checksum(MD5Util.md5("codec" + i));
             CollisionEntity po = db.findById(CollisionEntity.class, id);
             if (po != null) {
                 log.warn("collision: {}", collision.incrementAndGet());
@@ -333,189 +283,28 @@ public class CoreTester extends TestUtil {
         }, c);
         assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
     }
+    //endregion
 
-    @ErrorCode
-    @ErrorCode(cause = IllegalArgumentException.class)
-    @Test
-    public void exceptionHandle() {
-        ExceptionHandler handler = ExceptionHandler.INSTANCE;
-        handler.log(new InvalidException("test error"));
-        System.out.println(handler.queryTraces(null, null, null));
-
-
-        String err = "ERR";
-        ApplicationException ex = new ApplicationException(values(err));
-        assert eq(ex.getFriendlyMessage(), "Test error code, value=" + err);
-
-        ex = new ApplicationException(values(err), new IllegalArgumentException());
-        assert eq(ex.getFriendlyMessage(), "Test IAException, value=" + err);
-        $<IllegalArgumentException> out = $();
-        assert ex.tryGet(out, IllegalArgumentException.class);
-
-        String errCode = "ERR_CODE";
-        ex = new ApplicationException(UserManager.BizCode.USER_NOT_FOUND, values(errCode));
-        assert eq(ex.getFriendlyMessage(), "User " + errCode + " not found");
-
-        ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
-        assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
-
-        try {
-            Reflects.changeType("x", Date.class);
-        } catch (InvalidException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Test
-    public void json() {
-        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
-            throw new InvalidException("wont reach");
-        }), new ErrorBean()};
-        System.out.println(toJsonString(args));
-        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
-
-        String str = "abc";
-        assert str.equals(toJsonString(str));
-        String jObj = toJsonString(PersonBean.LeZhi);
-        System.out.println("encode jObj: " + jObj);
-        System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
-        List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
-        String jArr = toJsonString(arr);
-        System.out.println("encode jArr: " + jArr);
-        System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
-        }.getType()));
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("name", TConfig.NAME_WYF);
-        data.put("age", 10);
-        data.put("date", DateTime.now());
-        System.out.println(toJsonString(data));
-        System.out.println(fromJson(data, Map.class).toString());
-
-        Tuple<String, List<Float>> tuple1 = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
-        Tuple<String, List<Float>> tuple2 = fromJson(toJsonString(tuple1), new TypeReference<Tuple<String, List<Float>>>() {
-        }.getType());
-        assert tuple1.equals(tuple2);
-        Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
-        }.getType());
-        assert tuple1.equals(tuple3);
-    }
-
-    @Test
-    public void dynamicProxy() {
-        PersonBean leZhi = PersonBean.LeZhi;
-
-        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(proxy) == leZhi;
-
-        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(iproxy) == leZhi;
-    }
-
-    @SneakyThrows
-    @Test
-    public void reflect() {
-        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
-            System.out.println(resource);
-            assert resource != null;
-        }
-
-        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
-        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-
-        assert Reflects.stackClass(0) == this.getClass();
-//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
-//            System.out.println(traceElement);
-//        }
-
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
-
-        Method defMethod = IPerson.class.getMethod("enableCompress");
-        assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
-
-        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
-        assert bean != null;
-        int code = 1;
-        String msg = "Usr not found";
-        String r = code + msg;
-        assert eq("S-" + r, Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", code, msg));
-        assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
-        assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
-        assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
-
-
-        //convert
-        assert Reflects.changeType(1, boolean.class);
-        assert Reflects.changeType(1, Boolean.class);
-        assert Reflects.changeType(true, byte.class) == 1;
-        assert Reflects.changeType(true, Byte.class) == 1;
-        assert Reflects.changeType(new BigDecimal("1.002"), int.class) == 1;
-
-        assert Reflects.changeType("1", Integer.class) == 1;
-        assert Reflects.changeType(10, long.class) == 10L;
-
-        int enumVal = Reflects.changeType(PersonGender.BOY, Integer.class);
-        assert enumVal == 1;
-        PersonGender enumBoy = Reflects.changeType(enumVal, PersonGender.class);
-        assert enumBoy == PersonGender.BOY;
-
-        String date = "2017-08-24 02:02:02";
-        assert Reflects.changeType(date, DateTime.class) instanceof Date;
-
-        assert Reflects.defaultValue(Integer.class) == null;
-        assert Reflects.defaultValue(int.class) == 0;
-        assert Reflects.defaultValue(List.class) == Collections.emptyList();
-        assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
-
-    }
-
-    @Test
-    public void runNEvent() {
-        UserManagerImpl mgr = new UserManagerImpl();
-        PersonBean p = PersonBean.YouFan;
-
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
-        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
-        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
-        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
-
-        mgr.onCreate.combine(a);
-        mgr.create(p);  //触发事件（a执行）
-
-        mgr.onCreate.combine(b);
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.combine(a, b);  //会去重
-        mgr.create(p); //触发事件（a, b执行）
-
-        mgr.onCreate.remove(b);
-        mgr.create(p); //触发事件（a执行）
-
-        mgr.onCreate.replace(a, c);
-        mgr.create(p); //触发事件（a, c执行）
-    }
-
-    //region NQuery
+    //region NQuery & NEvent
     @Test
     public void parallelNQuery() {
+        NQuery.of(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
+            Thread.sleep(200);
+            System.out.println(Thread.currentThread().getName() + "=" + p);
+            return true;
+        });
+
         NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
 //                .groupBy(p -> p > 5, (p, x) -> x.first())
                 ;
-        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
+        //not work
+        for (Integer p : pq) {
             log.info(p.toString());
         }
-        System.out.println("----");
-        for (Integer p : pq.orderBy(p -> ThreadLocalRandom.current().nextInt(0, 100))) {
+        pq.forEach(p -> {
             log.info(p.toString());
-        }
-//        //not work
-//        for (Integer p : pq) {
-//            log.info(p.toString());
-//        }
-//        pq.forEach(p -> {
-//            log.info(p.toString());
-//            throw new CircuitBreakingException();
-//        });
+            throw new CircuitBreakingException();
+        });
     }
 
     @Test
@@ -610,7 +399,194 @@ public class CoreTester extends TestUtil {
         System.out.println("showResult: " + n);
         System.out.println(toJsonString(q.toList()));
     }
+
+    @Test
+    public void runNEvent() {
+        UserManagerImpl mgr = new UserManagerImpl();
+        PersonBean p = PersonBean.YouFan;
+
+        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
+        TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
+        TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
+
+        mgr.onCreate.combine(a);
+        mgr.create(p);  //触发事件（a执行）
+
+        mgr.onCreate.combine(b);
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.combine(a, b);  //会去重
+        mgr.create(p); //触发事件（a, b执行）
+
+        mgr.onCreate.remove(b);
+        mgr.create(p); //触发事件（a执行）
+
+        mgr.onCreate.replace(a, c);
+        mgr.create(p); //触发事件（a, c执行）
+    }
     //endregion
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping www.baidu.com", null);
+        ShellCommander finalExecutor = executor;
+        executor.onOutPrint.combine((s, e) -> {
+            System.out.println(e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.start().waitFor();
+
+        sleep(5000);
+    }
+
+    @Test
+    public void json() {
+        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
+            throw new InvalidException("wont reach");
+        }), new ErrorBean()};
+        System.out.println(toJsonString(args));
+        System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
+
+        String str = "abc";
+        assert str.equals(toJsonString(str));
+        String jObj = toJsonString(PersonBean.LeZhi);
+        System.out.println("encode jObj: " + jObj);
+        System.out.println("decode jObj: " + fromJson(jObj, PersonBean.class));
+        List<PersonBean> arr = Arrays.toList(PersonBean.LeZhi, PersonBean.LeZhi);
+        String jArr = toJsonString(arr);
+        System.out.println("encode jArr: " + jArr);
+        System.out.println("decode jArr: " + fromJson(jArr, new TypeReference<List<PersonBean>>() {
+        }.getType()));
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("name", TConfig.NAME_WYF);
+        data.put("age", 10);
+        data.put("date", DateTime.now());
+        System.out.println(toJsonString(data));
+        System.out.println(fromJson(data, Map.class).toString());
+
+        Tuple<String, List<Float>> tuple1 = Tuple.of("abc", Arrays.toList(1.2F, 2F, 3F));
+        Tuple<String, List<Float>> tuple2 = fromJson(toJsonString(tuple1), new TypeReference<Tuple<String, List<Float>>>() {
+        }.getType());
+        assert tuple1.equals(tuple2);
+        Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
+        }.getType());
+        assert tuple1.equals(tuple3);
+    }
+
+    @Test
+    public void fluentWait() throws TimeoutException {
+        FluentWait.newInstance(2000, 200).until(s -> {
+            System.out.println(System.currentTimeMillis());
+            return false;
+        });
+    }
+
+    @Test
+    public void dynamicProxy() {
+        PersonBean leZhi = PersonBean.LeZhi;
+
+        IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(proxy) == leZhi;
+
+        IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
+        assert rawObject(iproxy) == leZhi;
+    }
+
+    @SneakyThrows
+    @Test
+    public void reflect() {
+        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
+            System.out.println(resource);
+            assert resource != null;
+        }
+
+        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+
+        assert Reflects.stackClass(0) == this.getClass();
+//        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
+//            System.out.println(traceElement);
+//        }
+
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
+
+        Method defMethod = IPerson.class.getMethod("enableCompress");
+        assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
+
+        ErrorBean bean = Reflects.newInstance(ErrorBean.class, 1, null);
+        assert bean != null;
+        int code = 1;
+        String msg = "Usr not found";
+        String r = code + msg;
+        assert eq("S-" + r, Reflects.invokeStaticMethod(ErrorBean.class, "staticCall", code, msg));
+        assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
+        assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
+        assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
+
+
+        //convert
+        assert Reflects.changeType(1, boolean.class);
+        assert Reflects.changeType(1, Boolean.class);
+        assert Reflects.changeType(true, byte.class) == 1;
+        assert Reflects.changeType(true, Byte.class) == 1;
+        assert Reflects.changeType(new BigDecimal("1.002"), int.class) == 1;
+
+        assert Reflects.changeType("1", Integer.class) == 1;
+        assert Reflects.changeType(10, long.class) == 10L;
+
+        int enumVal = Reflects.changeType(PersonGender.BOY, Integer.class);
+        assert enumVal == 1;
+        PersonGender enumBoy = Reflects.changeType(enumVal, PersonGender.class);
+        assert enumBoy == PersonGender.BOY;
+
+        String date = "2017-08-24 02:02:02";
+        assert Reflects.changeType(date, DateTime.class) instanceof Date;
+
+        assert Reflects.defaultValue(Integer.class) == null;
+        assert Reflects.defaultValue(int.class) == 0;
+        assert Reflects.defaultValue(List.class) == Collections.emptyList();
+        assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
+
+    }
+
+    @ErrorCode
+    @ErrorCode(cause = IllegalArgumentException.class)
+    @Test
+    public void exceptionHandle() {
+        ExceptionHandler handler = ExceptionHandler.INSTANCE;
+        handler.log(new InvalidException("test error"));
+        System.out.println(handler.queryTraces(null, null, null));
+
+
+        String err = "ERR";
+        ApplicationException ex = new ApplicationException(values(err));
+        assert eq(ex.getFriendlyMessage(), "Test error code, value=" + err);
+
+        ex = new ApplicationException(values(err), new IllegalArgumentException());
+        assert eq(ex.getFriendlyMessage(), "Test IAException, value=" + err);
+        $<IllegalArgumentException> out = $();
+        assert ex.tryGet(out, IllegalArgumentException.class);
+
+        String errCode = "ERR_CODE";
+        ex = new ApplicationException(UserManager.BizCode.USER_NOT_FOUND, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "User " + errCode + " not found");
+
+        ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
+        assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
+
+        try {
+            Reflects.changeType("x", Date.class);
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
+    }
 
     @Test
     public void rxConf() {
@@ -646,5 +622,4 @@ public class CoreTester extends TestUtil {
 
         sleep(60000);
     }
-    //endregion
 }

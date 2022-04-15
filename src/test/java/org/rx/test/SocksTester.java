@@ -45,6 +45,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 import static org.rx.core.App.*;
 import static org.rx.core.Extends.eq;
@@ -416,8 +417,6 @@ public class SocksTester extends TConfig {
 //            return new Upstream(dstEp, srvEp);
         });
 
-//        ShadowsocksClient client = new ShadowsocksClient(1080, config);
-
         System.in.read();
     }
 
@@ -552,7 +551,6 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public synchronized void dns() {
-        //        System.out.println(HttpClient.godaddyDns("", "f-li.cn", "dd", "3.3.3.3"));
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
 
@@ -609,13 +607,6 @@ public class SocksTester extends TConfig {
         assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
 
         wait();
-    }
-
-    @Test
-    public void findProcess() {
-        for (SocketInfo sock : Sockets.socketInfos(SocketProtocol.TCP)) {
-            System.out.println(sock);
-        }
     }
 
     @Test
@@ -724,35 +715,21 @@ public class SocksTester extends TConfig {
     }
 
     @Test
-    public void restClient() {
+    public void restfulRpc() {
+        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
+        assert map.get("userId").equals("ft");
+        assert map.get("type").equals("1");
+        map.put("userId", "newId");
+        map.put("ok", "1");
+        System.out.println(HttpClient.buildUrl(url, map));
+
         HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
         System.out.println(facade.queryIp());
     }
 
     @Test
-    public void queryString() {
-        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
-        assert map.get("userId").equals("ft");
-        assert map.get("type").equals("1");
-
-        map.put("userId", "newId");
-        map.put("ok", "1");
-        System.out.println(HttpClient.buildUrl(url, map));
-        System.out.println(HttpClient.buildUrl("http://f-li.cn/blog/1.html", map));
-    }
-
-    @Test
     public void sftp() {
-//        SftpClient client = new SftpClient(new AuthenticEndpoint("jks:123456@mobile.f-li.cn:2222"));
-//        String dir = DateTime.now().toString("yyyyMMdd");
-//        for (SftpClient.FileEntry listDirectory : client.listDirectories("/", false)) {
-//            if (listDirectory.getFilename().equals(dir)) {
-//                continue;
-//            }
-//            client.delete(listDirectory.getPath());
-//        }
-
         SftpClient client = new SftpClient(AuthenticEndpoint.valueOf("rocky:@k8s.f-li.cn:22"));
         for (SftpFile directory : client.listDirectories("/home/rocky/df/", true)) {
             System.out.println(directory.getPath());
@@ -775,6 +752,14 @@ public class SocksTester extends TConfig {
     }
 
     @Test
+    public void ping() {
+        PingClient client = new PingClient();
+        assert client.isReachable("192.168.31.1");
+        PingClient.Result result = client.ping("www.baidu.com:80");
+        System.out.println(toJsonString(result));
+    }
+
+    @Test
     public void authenticEndpoint() {
         String aep = "yf:123456@f-li.cn:1080?w=9";
         AuthenticEndpoint endpoint = AuthenticEndpoint.valueOf(aep);
@@ -793,11 +778,15 @@ public class SocksTester extends TConfig {
     }
 
     @Test
-    public void ping() {
-        PingClient client = new PingClient();
-        assert client.isReachable("192.168.31.1");
-        PingClient.Result result = client.ping("www.baidu.com:80");
-        System.out.println(toJsonString(result));
-//        PingClient.test("cloud.f-li.cn:50112", r -> log.info(toJsonString(r)));
+    public void findProcess() {
+        for (SocketInfo sock : Sockets.socketInfos(SocketProtocol.TCP)) {
+            System.out.println(sock);
+        }
+    }
+
+    @Test
+    public void netIp() {
+        String s = Sockets.DEFAULT_NAT_IPS.get(3);
+        System.out.println(Pattern.matches(s, "192.168.31.7"));
     }
 }

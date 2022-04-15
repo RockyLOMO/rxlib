@@ -43,7 +43,7 @@ import static org.rx.core.Tasks.awaitQuietly;
 public final class Main implements SocksSupport {
     @SneakyThrows
     public static void main(String[] args) {
-        Map<String, String> options = App.argsOptions(args);
+        Map<String, String> options = App.mainOptions(args);
         Integer port = Reflects.tryConvert(options.get("port"), Integer.class);
         if (port == null) {
             log.info("Invalid port arg");
