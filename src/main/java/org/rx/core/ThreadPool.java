@@ -248,7 +248,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
 
-            if (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh())) {
+            if (size > MIN_CORE_SIZE && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
                     log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrSize(pool));
