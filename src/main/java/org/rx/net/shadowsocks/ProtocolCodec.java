@@ -6,7 +6,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.handler.codec.socks.SocksAddressType;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
@@ -27,14 +26,8 @@ import java.util.List;
  * The port number is a 2-byte big-endian unsigned integer.
  **/
 @Slf4j
-@RequiredArgsConstructor
 public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
-    private final boolean isClient;
     private boolean tcpAddressed;
-
-    public ProtocolCodec() {
-        this(false);
-    }
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
@@ -47,10 +40,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = ctx.channel().attr(!isClient ? SSCommon.REMOTE_SRC : SSCommon.REMOTE_DEST).get();
-        } else if (isClient && !tcpAddressed) {
-            addr = ctx.channel().attr(SSCommon.REMOTE_DEST).get();
-            tcpAddressed = true;
+            addr = ctx.channel().attr(SSCommon.REMOTE_SRC).get();
         }
 
         if (addr == null) {
@@ -88,7 +78,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
 
-        if (isUdp || (!isClient && !tcpAddressed)) {
+        if (isUdp || !tcpAddressed) {
             SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
             if (addrRequest == null) {
                 log.warn("fail to decode address request from {}, pls check client's cipher setting", ctx.channel().remoteAddress());
@@ -99,7 +89,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
             }
 
             InetSocketAddress addr = new InetSocketAddress(addrRequest.host(), addrRequest.port());
-            ctx.channel().attr(!isClient ? SSCommon.REMOTE_DEST : SSCommon.REMOTE_SRC).set(addr);
+            ctx.channel().attr(SSCommon.REMOTE_DEST).set(addr);
 
             if (!isUdp) {
                 tcpAddressed = true;

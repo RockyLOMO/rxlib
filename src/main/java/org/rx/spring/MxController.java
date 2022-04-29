@@ -67,6 +67,7 @@ public class MxController {
         }
         j.put("vmOptions", bean.getDiagnosticOptions());
         j.put("systemProperties", System.getProperties());
+        j.put("cpuThreads", Constants.CPU_THREADS);
         File root = new File("/");
         j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
         j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));

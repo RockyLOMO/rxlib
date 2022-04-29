@@ -306,10 +306,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static int decrSize(ThreadPoolExecutor pool) {
-        int poolSize = pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity;
-        if (poolSize < MIN_CORE_SIZE) {
-            return MIN_CORE_SIZE;
-        }
+        int poolSize = Math.max(MIN_CORE_SIZE, pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity);
         pool.setCorePoolSize(poolSize);
         return poolSize;
     }

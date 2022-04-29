@@ -43,7 +43,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                     }
                 }, new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override
-                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
+                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
                         ByteBuf outBuf = out.content();
                         if (upstream.getSocksServer() != null) {
                             UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
