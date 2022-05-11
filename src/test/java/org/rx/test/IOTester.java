@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
+import org.rx.core.NQuery;
 import org.rx.io.*;
+import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
@@ -524,6 +526,19 @@ public class IOTester extends TestUtil {
         IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
         GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
         assert girlBean.equals(deGirl);
+    }
+
+    @Test
+    public void downloadAndZip() {
+        List<String> fileUrls = Arrays.toList("https://cloud.f-li.cn:6400/static0/img/qrcode.jpg",
+                "https://cloud.f-li.cn:6400/static0/img/qrcode3.jpg");
+        String zipFilePath = String.format("./%s.zip", System.currentTimeMillis());
+
+        Files.zip(new File(zipFilePath), null, null, NQuery.of(fileUrls).select(p -> {
+            HybridStream stream = new HttpClient().get(p).toStream();
+            stream.setName(Files.getName(p));
+            return stream;
+        }).toList());
     }
 
     @Test

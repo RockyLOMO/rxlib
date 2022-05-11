@@ -176,12 +176,12 @@ public class Files extends FilenameUtils {
         zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
     }
 
-    public static void zip(String zipFile, InputStream srcStream) {
+    public static void zip(String zipFile, IOStream<?, ?> srcStream) {
         zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
     }
 
     @SneakyThrows
-    public static void zip(File zipFile, String password, List<File> srcPaths, List<InputStream> srcStreams) {
+    public static <T extends IOStream<?, ?>> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
         try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
             ZipParameters zipParameters = new ZipParameters();
             zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
@@ -201,8 +201,9 @@ public class Files extends FilenameUtils {
             }
 
             if (!CollectionUtils.isEmpty(srcStreams)) {
-                for (InputStream srcStream : srcStreams) {
-                    zip.addStream(srcStream, zipParameters);
+                for (IOStream<?, ?> srcStream : srcStreams) {
+                    zipParameters.setFileNameInZip(srcStream.getName());
+                    zip.addStream(srcStream.getReader(), zipParameters);
                 }
             }
         }
