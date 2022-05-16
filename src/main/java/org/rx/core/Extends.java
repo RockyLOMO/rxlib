@@ -196,7 +196,8 @@ public interface Extends extends Serializable {
     }
 
     static <T> boolean eq(T a, T b) {
-        return (a == b) || (a != null && a.equals(b));
+        //Objects.equals() 有坑
+        return a == b || (a != null && a.equals(b));
     }
 
     static CircuitBreakingException asyncBreak() {
