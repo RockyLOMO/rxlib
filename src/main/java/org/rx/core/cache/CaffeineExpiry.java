@@ -18,14 +18,9 @@ class CaffeineExpiry implements Expiry<Object, Object> {
         CachePolicy policy;
         if (value instanceof CachePolicy) {
             policy = (CachePolicy) value;
-            long absoluteExpiration = policy.getAbsoluteExpiration();
-            if (absoluteExpiration != Constants.NON_EXPIRE) {
-                long millis = absoluteExpiration - System.currentTimeMillis();
-                return TimeUnit.MILLISECONDS.toNanos(millis);
-            }
-            long slidingExpiration = policy.getSlidingExpiration();
-            if (slidingExpiration != Constants.NON_EXPIRE) {
-                return TimeUnit.MILLISECONDS.toNanos(slidingExpiration);
+            long expiration = policy.getExpiration();
+            if (expiration != Constants.NON_EXPIRE) {
+                return TimeUnit.MILLISECONDS.toNanos(expiration);
             }
         }
         //absolute

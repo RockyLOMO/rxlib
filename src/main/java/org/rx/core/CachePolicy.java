@@ -1,12 +1,10 @@
 package org.rx.core;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
 import org.rx.bean.DateTime;
 
 import java.io.Serializable;
 
-@Getter
 @AllArgsConstructor
 public class CachePolicy implements Serializable {
     private static final long serialVersionUID = 4378825072232415879L;
@@ -33,11 +31,9 @@ public class CachePolicy implements Serializable {
     protected long slidingExpiration = Constants.NON_EXPIRE;
 
     public long getExpiration() {
-        return absoluteExpiration != Constants.NON_EXPIRE ? absoluteExpiration : slidingExpiration;
-    }
-
-    public boolean hasExpiration() {
-        return getExpiration() > Constants.NON_EXPIRE;
+        return absoluteExpiration != Constants.NON_EXPIRE
+                ? absoluteExpiration - System.currentTimeMillis()
+                : slidingExpiration;
     }
 
     protected CachePolicy(CachePolicy policy) {

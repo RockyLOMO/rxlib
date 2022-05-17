@@ -37,7 +37,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.getExpire());
+        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.getExpiration());
     }
 
     @Override
@@ -82,7 +82,6 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         }
         long slidingExpiration = item.getSlidingExpiration();
         if (slidingExpiration > 0) {
-            item.setExpire(DateTime.now().addMilliseconds((int) slidingExpiration));
             cache.put(key, item);
         }
         return item.value;
