@@ -82,7 +82,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         }
         long slidingExpiration = item.getSlidingExpiration();
         if (slidingExpiration > 0) {
-            item.setExpire(DateTime.utcNow().addMilliseconds((int) slidingExpiration));
+            item.setExpire(DateTime.now().addMilliseconds((int) slidingExpiration));
             cache.put(key, item);
         }
         return item.value;
@@ -90,10 +90,6 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
 
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
-        if (policy == null) {
-            policy = CachePolicy.NON_EXPIRE;
-        }
-
         DiskCacheItem<TV> old = cache.put(key, new DiskCacheItem<>(value, policy));
         return unwrap(key, old);
     }

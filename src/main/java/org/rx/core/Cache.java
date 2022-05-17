@@ -16,11 +16,11 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<ThreadCache> THREAD_CACHE = ThreadCache.class;
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
-        return getOrSet(key, loadingFunc, CachePolicy.NON_EXPIRE);
+        return getOrSet(key, loadingFunc, (CachePolicy) null);
     }
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc, Class<?> cacheName) {
-        return getOrSet(key, loadingFunc, CachePolicy.NON_EXPIRE, cacheName);
+        return getOrSet(key, loadingFunc, null, cacheName);
     }
 
     static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration) {

@@ -2,6 +2,7 @@ package org.rx.core.cache;
 
 import org.rx.bean.DateTime;
 import org.rx.core.CachePolicy;
+import org.rx.core.Constants;
 
 import java.io.Serializable;
 
@@ -10,15 +11,15 @@ class DiskCacheItem<TV> extends CachePolicy implements Serializable {
     final TV value;
 
     public DateTime getExpire() {
-        return absoluteExpiration == null ? DateTime.MAX : absoluteExpiration;
+        return absoluteExpiration == Constants.NON_EXPIRE ? DateTime.MAX : new DateTime(absoluteExpiration);
     }
 
     public void setExpire(DateTime time) {
-        absoluteExpiration = time;
+        absoluteExpiration = time.getTime();
     }
 
     public boolean isExpired() {
-        return getExpire().before(DateTime.utcNow());
+        return getExpire().before(DateTime.now());
     }
 
     public DiskCacheItem(TV value, CachePolicy policy) {

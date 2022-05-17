@@ -4,13 +4,11 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import lombok.RequiredArgsConstructor;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.rx.bean.DateTime;
 import org.rx.core.CachePolicy;
+import org.rx.core.Constants;
 import org.rx.core.RxConfig;
 
 import java.util.concurrent.TimeUnit;
-
-import static org.rx.core.Extends.eq;
 
 @RequiredArgsConstructor
 class CaffeineExpiry implements Expiry<Object, Object> {
@@ -20,13 +18,13 @@ class CaffeineExpiry implements Expiry<Object, Object> {
         CachePolicy policy;
         if (value instanceof CachePolicy) {
             policy = (CachePolicy) value;
-            DateTime absoluteExpiration = policy.getAbsoluteExpiration();
-            if (!eq(absoluteExpiration, CachePolicy.NON_EXPIRE.getAbsoluteExpiration())) {
-                long millis = absoluteExpiration.getTime() - System.currentTimeMillis();
+            long absoluteExpiration = policy.getAbsoluteExpiration();
+            if (absoluteExpiration != Constants.NON_EXPIRE) {
+                long millis = absoluteExpiration - System.currentTimeMillis();
                 return TimeUnit.MILLISECONDS.toNanos(millis);
             }
             long slidingExpiration = policy.getSlidingExpiration();
-            if (slidingExpiration != CachePolicy.NON_EXPIRE.getSlidingExpiration()) {
+            if (slidingExpiration != Constants.NON_EXPIRE) {
                 return TimeUnit.MILLISECONDS.toNanos(slidingExpiration);
             }
         }
