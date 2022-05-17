@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.rx.bean.DateTime;
 
 import java.io.Serializable;
@@ -28,9 +29,10 @@ public class CachePolicy implements Serializable {
     }
 
     protected long absoluteExpiration = Constants.NON_EXPIRE;
+    @Getter
     protected long slidingExpiration = Constants.NON_EXPIRE;
 
-    public long getExpiration() {
+    public long expiration() {
         return absoluteExpiration != Constants.NON_EXPIRE
                 ? absoluteExpiration - System.currentTimeMillis()
                 : slidingExpiration;

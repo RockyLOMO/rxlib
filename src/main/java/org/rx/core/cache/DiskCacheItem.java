@@ -9,11 +9,7 @@ class DiskCacheItem<TV> extends CachePolicy implements Serializable {
     final TV value;
 
     public boolean isExpired() {
-        return getExpiration() <= 0;
-    }
-
-    public long getSlidingExpiration() {
-        return slidingExpiration;
+        return expiration() <= 0;
     }
 
     public DiskCacheItem(TV value, CachePolicy policy) {

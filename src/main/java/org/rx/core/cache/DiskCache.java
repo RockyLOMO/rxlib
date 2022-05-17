@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.io.*;
 
@@ -37,7 +36,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.getExpiration());
+        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.expiration());
     }
 
     @Override
