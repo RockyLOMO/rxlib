@@ -377,8 +377,12 @@ public final class App extends SystemUtils {
         return bigInt;
     }
 
-    public static long hash64(Object... args) {
-        return hash64(Serializer.DEFAULT.serializeToBytes(args));
+    public static long hash64(Object... data) {
+        return hash64(Serializer.DEFAULT.serializeToBytes(data));
+    }
+
+    public static long hash64(String data) {
+        return hash64(data.getBytes(StandardCharsets.UTF_8));
     }
 
     public static long hash64(byte[] buf) {

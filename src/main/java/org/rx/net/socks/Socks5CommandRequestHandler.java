@@ -39,8 +39,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
 
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
-        if (dstEp.getHost().endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
-            UnresolvedEndpoint realEp = SocksSupport.fakeDict().get(SUID.valueOf(dstEp.getHost().substring(0, 22)));
+        String dstEpHost = dstEp.getHost();
+        if (dstEpHost.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
+            UnresolvedEndpoint realEp = SocksSupport.fakeDict()
+                    .get(Long.valueOf(dstEpHost.substring(0, dstEpHost.length() - SocksSupport.FAKE_HOST_SUFFIX.length())));
             if (realEp == null) {
                 log.error("socks5[{}] recover dstEp {} fail", server.getConfig().getListenPort(), dstEp);
             } else {

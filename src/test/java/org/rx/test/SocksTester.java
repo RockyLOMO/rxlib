@@ -559,7 +559,7 @@ public class SocksTester extends TConfig {
         DnsServer server = new DnsServer(54, nsEp);
         server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
-            public void fakeEndpoint(SUID hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint) {
 
             }
 

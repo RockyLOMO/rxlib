@@ -3,7 +3,6 @@ package org.rx.net.socks.upstream;
 import io.netty.channel.Channel;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.bean.SUID;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
@@ -44,7 +43,7 @@ public class Socks5Upstream extends Upstream {
                 && (SocksSupport.FAKE_IPS.contains(destination.getHost()) || SocksSupport.FAKE_PORTS.contains(destination.getPort())
                 || !Sockets.isValidIp(destination.getHost()))) {
             String dstEpStr = destination.toString();
-            SUID hash = SUID.compute(dstEpStr);
+            long hash = App.hash64(dstEpStr);
             //先变更
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> awaitQuietly(() -> {

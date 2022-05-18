@@ -1,6 +1,5 @@
 package org.rx.net.support;
 
-import org.rx.bean.SUID;
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
 
@@ -17,11 +16,11 @@ public interface SocksSupport extends AutoCloseable {
     long ASYNC_TIMEOUT = 5 * 1000;
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
-    static Cache<SUID, UnresolvedEndpoint> fakeDict() {
+    static Cache<Long, UnresolvedEndpoint> fakeDict() {
         return Cache.getInstance(Cache.DISK_CACHE);
     }
 
-    void fakeEndpoint(SUID hash, String realEndpoint);
+    void fakeEndpoint(long hash, String realEndpoint);
 
     List<InetAddress> resolveHost(String host);
 

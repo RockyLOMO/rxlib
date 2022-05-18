@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
-import org.rx.bean.SUID;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -296,7 +295,7 @@ public final class Main implements SocksSupport {
     }
 
     @Override
-    public void fakeEndpoint(SUID hash, String endpoint) {
+    public void fakeEndpoint(long hash, String endpoint) {
         SocksSupport.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
