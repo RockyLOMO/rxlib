@@ -3,6 +3,7 @@ package org.rx.net.shadowsocks;
 import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.SUID;
+import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
@@ -35,8 +36,9 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             UnresolvedEndpoint dstEp = upstream.getDestination();
 
             if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
-                SUID hash = SUID.compute(dstEp.toString());
+                long hash = App.hash64(dstEp.toString());
                 SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
+//                log.info("fakeEp {} {}", hash, dstEp);
                 dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             }
 

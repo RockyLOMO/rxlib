@@ -1,7 +1,6 @@
 package org.rx.core;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
 import org.rx.bean.DateTime;
 
 import java.io.Serializable;
@@ -17,32 +16,52 @@ public class CachePolicy implements Serializable {
     public static CachePolicy today(int expireSeconds) {
         DateTime now = DateTime.now(), expire = now.addSeconds(expireSeconds);
         DateTime max = DateTime.valueOf(String.format("%s 23:59:59", now.toDateString()), DateTime.FORMATS.first());
-        return new CachePolicy((expire.before(max) ? expire : max).getTime(), Constants.NON_EXPIRE);
+        return new CachePolicy((expire.before(max) ? expire : max).getTime(), 0);
     }
 
     public static CachePolicy absolute(int expireSeconds) {
-        return new CachePolicy(DateTime.now().addSeconds(expireSeconds).getTime(), Constants.NON_EXPIRE);
+        return new CachePolicy(DateTime.now().addSeconds(expireSeconds).getTime(), 0);
     }
 
     public static CachePolicy sliding(int expireSeconds) {
-        return new CachePolicy(Constants.NON_EXPIRE, expireSeconds * 1000L);
+        return new CachePolicy(DateTime.now().addSeconds(expireSeconds).getTime(), expireSeconds * 1000);
     }
 
-    protected long absoluteExpiration = Constants.NON_EXPIRE;
-    @Getter
-    protected long slidingExpiration = Constants.NON_EXPIRE;
+    long expiration = Long.MAX_VALUE;
+    int slidingSpan;
 
-    public long expiration() {
-        return absoluteExpiration != Constants.NON_EXPIRE
-                ? absoluteExpiration - System.currentTimeMillis()
-                : slidingExpiration;
+    public boolean isExpired() {
+        return expiration <= System.currentTimeMillis();
     }
 
     protected CachePolicy(CachePolicy policy) {
         if (policy == null) {
             return;
         }
-        this.absoluteExpiration = policy.absoluteExpiration;
-        this.slidingExpiration = policy.slidingExpiration;
+        this.expiration = policy.expiration;
+        this.slidingSpan = policy.slidingSpan;
+    }
+
+    public long expiration() {
+        return expiration(slidingSpan > 0);
+    }
+
+    public long expiration(boolean slidingRenew) {
+        long ttl = Math.max(0, expiration - System.currentTimeMillis());
+        if (ttl > 0 && slidingRenew) {
+            slidingRenew();
+        }
+        return ttl;
+    }
+
+    public boolean slidingRenew() {
+        if (slidingSpan <= 0) {
+            return false;
+        }
+
+        if ((expiration += slidingSpan) < 0) {
+            expiration = Long.MAX_VALUE;
+        }
+        return true;
     }
 }

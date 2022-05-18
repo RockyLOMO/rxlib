@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.rx.core.CachePolicy;
-import org.rx.core.Constants;
 import org.rx.core.RxConfig;
 
 import java.util.concurrent.TimeUnit;
@@ -18,10 +17,7 @@ class CaffeineExpiry implements Expiry<Object, Object> {
         CachePolicy policy;
         if (value instanceof CachePolicy) {
             policy = (CachePolicy) value;
-            long expiration = policy.expiration();
-            if (expiration != Constants.NON_EXPIRE) {
-                return TimeUnit.MILLISECONDS.toNanos(expiration);
-            }
+            return TimeUnit.MILLISECONDS.toNanos(policy.expiration());
         }
         //absolute
 //                return currentDuration != -1 ? currentDuration : DEFAULT_SLIDING_NANOS;

@@ -79,8 +79,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
-        long slidingExpiration = item.getSlidingExpiration();
-        if (slidingExpiration > 0) {
+        if (item.slidingRenew()) {
             cache.put(key, item);
         }
         return item.value;
