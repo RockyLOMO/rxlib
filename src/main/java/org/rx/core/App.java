@@ -328,16 +328,18 @@ public final class App extends SystemUtils {
 
     //注意arg类型区分String和Number
     public static String cacheKey(String region, String method, Object... args) {
-        if (region == null) {
-            region = Strings.EMPTY;
-        }
-        StringBuilder buf = new StringBuilder(region);
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();
         }
-        buf.append(Constants.CACHE_KEY_SUFFIX).append(method);
+
+        StringBuilder buf = new StringBuilder();
+        if (region != null) {
+            buf.append(region).append(Constants.CACHE_KEY_SUFFIX);
+        }
+        buf.append(method);
         if (!Arrays.isEmpty(args)) {
-            buf.append(Constants.CACHE_KEY_SUFFIX).append(hash64(args));
+            Object p = args.length == 1 ? args[0] : args;
+            buf.append(Constants.CACHE_KEY_SUFFIX).append(p instanceof String ? p : hash64(p));
         }
         return buf.toString();
     }
