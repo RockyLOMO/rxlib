@@ -4,9 +4,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
-import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -19,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.App.proxy;
 import static org.rx.core.Extends.ifNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -268,28 +267,38 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit) {
-        Action fn = command::run;
-        Task<?> future = (Task<?>) setTimeout(fn, unit.convert(initialDelay, TimeUnit.MILLISECONDS));
-
-        $<LongUnaryOperator> nextDelay = $();
-        long convert = unit.convert(period, TimeUnit.MILLISECONDS);
-        FastThreadLocal<Boolean> check = new FastThreadLocal<>();
-        nextDelay.v = d -> {
-            if (!BooleanUtils.isTrue(check.getIfExists())
-//                    && !future.isCancelled()
-            ) {
-                check.set(true);
-                Task<?> t = (Task<?>) setTimeout(fn, nextDelay.v);
-                future.timeout = t.timeout;
-                future.future = (CompletableFuture) t.future;
-                future.expiredTime = t.expiredTime;
-                future.delay = t.delay;
+        long initDelay = unit.convert(initialDelay, TimeUnit.MILLISECONDS);
+        Task<?> t = (Task<?>) setTimeout(command::run, initDelay);
+        AtomicBoolean cancel = new AtomicBoolean();
+        ScheduledFuture<?> future = proxy(ScheduledFuture.class, (m, p) -> {
+            int h = m.getName().hashCode();
+            if (h == "isCancelled".hashCode()) {
+                return cancel.get();
+            } else if (h == "cancel".hashCode()) {
+                cancel.set(true);
             }
-            check.remove();
-            return convert;
-        };
-        setTimeout(fn, nextDelay.v);
+            return p.fastInvoke(t);
+        });
+
+        long nextDelay = initDelay + period;
+        long periodMillis = unit.convert(period, TimeUnit.MILLISECONDS);
+        nextFixedRate(future, t, nextDelay, command, periodMillis);
         return future;
+    }
+
+    private void nextFixedRate(ScheduledFuture<?> proxy, Task<?> future, long nextDelay, Runnable command, long period) {
+        $<Task<?>> t = $();
+        t.v = (Task<?>) setTimeout(() -> {
+            if (!proxy.isCancelled()) {
+                nextFixedRate(proxy, future, period - 100, command, period);
+
+                future.timeout = t.v.timeout;
+                future.future = (CompletableFuture) t.v.future;
+                future.expiredTime = t.v.expiredTime;
+                future.delay = t.v.delay;
+            }
+            command.run();
+        }, nextDelay);
     }
 
     @Override

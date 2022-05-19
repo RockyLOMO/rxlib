@@ -134,6 +134,8 @@ public class CoreTester extends TestUtil {
 
         log.info("fixedRate-0");
         ScheduledFuture<?> fixedRate = timer.scheduleAtFixedRate(() -> log.info("fixedRate"), 500, 1000, TimeUnit.MILLISECONDS);
+        sleep(5000);
+        fixedRate.cancel(true);
 
 //        timer.setTimeout(() -> {
 //            System.out.println("once: " + DateTime.now());
