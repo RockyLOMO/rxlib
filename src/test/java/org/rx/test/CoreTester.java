@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
@@ -127,32 +126,44 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void timer() {
-        Tasks.timer().setTimeout(() -> {
-            System.out.println("once: " + DateTime.now());
-            return false;
-        }, d -> Math.max(d, 100) * 2);
+        WheelTimer timer = Tasks.timer();
+//        ScheduledFuture<Integer> future = timer.schedule(() -> 1024, 1000, TimeUnit.MILLISECONDS);
+//        long start = System.currentTimeMillis();
+//        assert future.get() == 1024;
+//        System.out.println("wait: " + (System.currentTimeMillis() - start) + "ms");
 
-        Timeout t = Tasks.timer().setTimeout(s -> {
-            System.out.println("loop: " + DateTime.now());
-            int i = s.incrementAndGet();
-            if (i > 4) {
-                return false;
-            }
-            if (i > 1) {
-                throw new InvalidException("max exec");
-            }
-            return true;
-        }, d -> Math.max(d, 100) * 2, new AtomicInteger());
+        log.info("fixedRate-0");
+        ScheduledFuture<?> fixedRate = timer.scheduleAtFixedRate(() -> log.info("fixedRate"), 500, 1000, TimeUnit.MILLISECONDS);
 
-        sleep(1000);
-        t.cancel();
+//        timer.setTimeout(() -> {
+//            System.out.println("once: " + DateTime.now());
+//        }, d -> Math.max(d, 100) * 2);
+//
+//        timer.setTimeout(() -> {
+//            System.out.println("loop: " + DateTime.now());
+//            asyncContinue(true);
+//        }, d -> Math.max(d, 100) * 2);
 
         //TimeoutFlag.SINGLE  根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
         //TimeoutFlag.REPLACE 根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
-        //TimeoutFlag.PERIOD  定期重复执行，遇到异常不会终止直到return false 或 next delay = -1。
-        Tasks.setTimeout(() -> {
-            System.out.println(System.currentTimeMillis());
-        }, 50, this, TimeoutFlag.REPLACE);
+        //TimeoutFlag.PERIOD  定期重复执行，遇到异常不会终止直到asyncContinue(false) 或 next delay = -1。
+//        AtomicInteger c = new AtomicInteger();
+//        TimeoutFuture<Integer> f = timer.setTimeout(() -> {
+//            System.out.println("loop: " + DateTime.now());
+//            int i = c.incrementAndGet();
+//            if (i > 10) {
+//                asyncContinue(false);
+//                return null;
+//            }
+//            if (i == 2) {
+//                throw new InvalidException("Will exec next");
+//            }
+//            asyncContinue(true);
+//            return i;
+//        }, 1000, this, TimeoutFlag.PERIOD);
+//        sleep(8000);
+//        f.cancel();
+//        System.out.println("last: " + f.get());
 
         System.in.read();
     }
@@ -305,7 +316,7 @@ public class CoreTester extends TestUtil {
         }
         pq.forEach(p -> {
             log.info(p.toString());
-            throw new CircuitBreakingException();
+            throw new RuntimeException();
         });
     }
 

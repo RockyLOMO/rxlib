@@ -2,7 +2,6 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.Description;
@@ -25,6 +24,7 @@ import java.util.function.Supplier;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public interface Extends extends Serializable {
+    //region extend
     static <T> List<T> newConcurrentList(boolean readMore) {
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>();
     }
@@ -38,7 +38,22 @@ public interface Extends extends Serializable {
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
     }
 
-    //region extend
+    //todo checkerframework
+    @ErrorCode("test")
+    static void require(Object arg, boolean testResult) {
+        if (!testResult) {
+            throw new ApplicationException("test", values(arg));
+        }
+    }
+
+    static String description(@NonNull AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
     static boolean sneakyInvoke(Action action) {
         return sneakyInvoke(action, 1);
     }
@@ -84,37 +99,18 @@ public interface Extends extends Serializable {
         return null;
     }
 
-    //todo checkerframework
-    @ErrorCode("test")
-    static void require(Object arg, boolean testResult) {
-        if (!testResult) {
-            throw new ApplicationException("test", values(arg));
-        }
-    }
-
-    static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
-    }
-
     static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
         if (iterable == null) {
             return;
         }
 
-        for (T t : iterable) {
+        asyncEach(iterable, t -> {
             try {
                 fn.invoke(t);
             } catch (Throwable e) {
-                if (e instanceof CircuitBreakingException) {
-                    break;
-                }
                 ExceptionHandler.INSTANCE.log("eachQuietly", e);
             }
-        }
+        });
     }
 
     static boolean quietly(@NonNull Action action) {
@@ -175,6 +171,28 @@ public interface Extends extends Serializable {
         return true;
     }
 
+    @SneakyThrows
+    static <T> void asyncEach(Iterable<T> iterable, BiAction<T> fn) {
+        if (iterable == null) {
+            return;
+        }
+
+        for (T t : iterable) {
+            fn.invoke(t);
+            if (!ThreadPool.asyncContinueFlag(true)) {
+                break;
+            }
+        }
+    }
+
+    static void asyncContinue(boolean flag) {
+        ThreadPool.ASYNC_CONTINUE.set(flag);
+    }
+
+//    static CircuitBreakingException asyncBreak() {
+//        throw new CircuitBreakingException();
+//    }
+
     static <T> T as(Object obj, Class<T> type) {
         if (!TypeUtils.isInstance(obj, type)) {
             return null;
@@ -198,10 +216,6 @@ public interface Extends extends Serializable {
     static <T> boolean eq(T a, T b) {
         //Objects.equals() 有坑
         return a == b || (a != null && a.equals(b));
-    }
-
-    static CircuitBreakingException asyncBreak() {
-        throw new CircuitBreakingException();
     }
 
     static Object[] values(Object... args) {

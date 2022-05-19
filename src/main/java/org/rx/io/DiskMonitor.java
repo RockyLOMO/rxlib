@@ -1,7 +1,6 @@
 package org.rx.io;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.rx.bean.Decimal;
 import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
@@ -14,7 +13,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-import static org.rx.core.Extends.asyncBreak;
+import static org.rx.core.Extends.asyncContinue;
 import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
@@ -29,7 +28,8 @@ public class DiskMonitor {
             int up = Decimal.valueOf((double) (totalSpace - root.getUsableSpace()) / totalSpace).toPercentInt();
             eachQuietly(fns.entrySet(), entry -> {
                 if (entry.getKey() > up) {
-                    throw asyncBreak();
+                    asyncContinue(false);
+                    return;
                 }
                 log.debug("DiskMonitor Used={}% Threshold={} -> {}", up, entry.getKey(), entry.getValue().size());
                 eachQuietly(entry.getValue(), Action::invoke);

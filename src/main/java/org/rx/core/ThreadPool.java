@@ -5,6 +5,7 @@ import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
+import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
 import lombok.*;
@@ -286,6 +287,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
     static final DynamicSizer SIZER = new DynamicSizer();
     static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
+    static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
 //    static final Runnable EMPTY = () -> {
 //    };
 
@@ -309,6 +311,15 @@ public class ThreadPool extends ThreadPoolExecutor {
         int poolSize = Math.max(MIN_CORE_SIZE, pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity);
         pool.setCorePoolSize(poolSize);
         return poolSize;
+    }
+
+    static boolean asyncContinueFlag(boolean def) {
+        Boolean ac = ASYNC_CONTINUE.getIfExists();
+        ASYNC_CONTINUE.remove();
+        if (ac == null) {
+            return def;
+        }
+        return ac;
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {

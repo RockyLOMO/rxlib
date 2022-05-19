@@ -190,26 +190,11 @@ public final class Tasks {
         return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
-    public static long getDelay(@NonNull Date time) {
-        return time.getTime() - System.currentTimeMillis();
-    }
-
-    public static Future<Void> setTimeout(Action task, long delay) {
-        return setTimeout(task, delay, null, null);
-    }
-
-    public static Future<Void> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
-        return setTimeout(() -> {
-            task.invoke();
-            return flag == TimeoutFlag.PERIOD;
-        }, delay, taskId, flag);
-    }
-
-    public static Future<Void> setTimeout(PredicateAction task, long delay) {
+    public static TimeoutFuture<?> setTimeout(Action task, long delay) {
         return wheelTimer.setTimeout(task, delay);
     }
 
-    public static Future<Void> setTimeout(PredicateAction task, long delay, Object taskId, TimeoutFlag flag) {
+    public static TimeoutFuture<?> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
         return wheelTimer.setTimeout(task, delay, taskId, flag);
     }
 
