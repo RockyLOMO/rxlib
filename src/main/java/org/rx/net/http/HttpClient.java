@@ -414,7 +414,9 @@ public class HttpClient {
     public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie, Proxy proxy) {
         client = createClient(timeoutMillis, enableCookie, proxy);
         requestHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
-        requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
+        if (rawCookie != null) {
+            requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
+        }
     }
 
     private Request.Builder createRequest(String url) {
