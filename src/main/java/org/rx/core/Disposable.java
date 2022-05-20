@@ -18,7 +18,7 @@ public abstract class Disposable implements AutoCloseable {
         dispose();
     }
 
-    private void dispose() {
+    private synchronized void dispose() {
         if (closed) {
             return;
         }

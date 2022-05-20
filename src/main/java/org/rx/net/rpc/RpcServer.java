@@ -37,23 +37,17 @@ import static org.rx.core.Extends.*;
 @RequiredArgsConstructor
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     class ClientHandler extends ChannelInboundHandlerAdapter implements RpcClientMeta {
-        transient Channel channel;
-        transient InetSocketAddress lastRemoteEp;
-        @Getter
-        DateTime connectedTime;
         @Getter
         final HandshakePacket handshakePacket = new HandshakePacket();
+        transient Channel channel;
+        //cache meta
+        @Getter
+        InetSocketAddress remoteEndpoint;
+        @Getter
+        DateTime connectedTime;
 
         public boolean isConnected() {
             return channel != null && channel.isActive();
-        }
-
-        @Override
-        public InetSocketAddress getRemoteEndpoint() {
-            if (isConnected()) {
-                return (InetSocketAddress) channel.remoteAddress();
-            }
-            return lastRemoteEp;
         }
 
         @Override
@@ -67,8 +61,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
 
+            clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
             connectedTime = DateTime.now();
-            clients.put(lastRemoteEp = getRemoteEndpoint(), this);
             RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(this, null);
             raiseEvent(onConnected, args);
             if (args.isCancel()) {
@@ -148,16 +142,18 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public final Delegate<RpcServer, EventArgs> onClosed = Delegate.create();
 
     @Getter
-    private final RpcServerConfig config;
-    private ServerBootstrap bootstrap;
-    private Channel serverChannel;
-    private final Map<InetSocketAddress, ClientHandler> clients = new ConcurrentHashMap<>();
-    @Getter
-    private boolean isStarted;
+    final RpcServerConfig config;
+    final Map<InetSocketAddress, ClientHandler> clients = new ConcurrentHashMap<>();
+    ServerBootstrap bootstrap;
+    volatile Channel serverChannel;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
         return SCHEDULER;
+    }
+
+    public boolean isStarted() {
+        return serverChannel != null;
     }
 
     @Override
@@ -172,18 +168,22 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
     @Override
     protected void freeObjects() {
-        isStarted = false;
-        Sockets.closeOnFlushed(serverChannel);
+        if (isStarted()) {
+            Sockets.closeOnFlushed(serverChannel);
+        }
         Sockets.closeBootstrap(bootstrap);
         raiseEvent(onClosed, EventArgs.EMPTY);
     }
 
     @SneakyThrows
     public synchronized void start() {
-        if (isStarted) {
+        if (isStarted()) {
             throw new InvalidException("Server has started");
         }
 
+        if (bootstrap != null) {
+            Sockets.closeBootstrap(bootstrap);
+        }
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
@@ -194,24 +194,22 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                isStarted = false;
                 return;
             }
             serverChannel = f.channel();
         });
-        isStarted = true;
     }
 
-    public String dump() {
-        StringBuilder sb = new StringBuilder();
+    public String dumpClients() {
+        StringBuilder buf = new StringBuilder();
         int i = 1;
         for (RpcClientMeta client : NQuery.of(clients.values()).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
-            sb.append("\t%s", client.getRemoteEndpoint());
+            buf.append("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
-                sb.appendLine();
+                buf.appendLine();
             }
         }
-        return sb.toString();
+        return buf.toString();
     }
 
     public RpcClientMeta getClient(InetSocketAddress remoteEndpoint) {

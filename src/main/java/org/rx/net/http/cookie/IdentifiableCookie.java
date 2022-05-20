@@ -1,25 +1,11 @@
-/*
- * Copyright (C) 2016 Francisco José Montiel Navarro.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-package org.rx.net.http.cookie.cache;
+package org.rx.net.http.cookie;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import okhttp3.Cookie;
 
 /**
@@ -28,8 +14,10 @@ import okhttp3.Cookie;
  * <p>
  * This new behaviour will be useful in determining when an already existing cookie in session must be overwritten.
  */
+@RequiredArgsConstructor
+@Getter
 class IdentifiableCookie {
-    private Cookie cookie;
+    final Cookie cookie;
 
     static List<IdentifiableCookie> decorateAll(Collection<Cookie> cookies) {
         List<IdentifiableCookie> identifiableCookies = new ArrayList<>(cookies.size());
@@ -37,14 +25,6 @@ class IdentifiableCookie {
             identifiableCookies.add(new IdentifiableCookie(cookie));
         }
         return identifiableCookies;
-    }
-
-    IdentifiableCookie(Cookie cookie) {
-        this.cookie = cookie;
-    }
-
-    Cookie getCookie() {
-        return cookie;
     }
 
     @Override
