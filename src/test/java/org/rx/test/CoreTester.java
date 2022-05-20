@@ -132,11 +132,12 @@ public class CoreTester extends TestUtil {
 //        assert future.get() == 1024;
 //        System.out.println("wait: " + (System.currentTimeMillis() - start) + "ms");
 
-        log.info("fixedRate-0");
-        ScheduledFuture<?> fixedRate = timer.scheduleAtFixedRate(() -> log.info("fixedRate"), 500, 1000, TimeUnit.MILLISECONDS);
-        log.info("delay: {}ms", fixedRate.getDelay(TimeUnit.MILLISECONDS));
-        sleep(5000);
-        fixedRate.cancel(true);
+//        log.info("fixedRate-0");
+//        ScheduledFuture<?> fixedRate = timer.scheduleAtFixedRate(() -> log.info("fixedRate"), 500, 1000, TimeUnit.MILLISECONDS);
+//        log.info("delay: {}ms", fixedRate.getDelay(TimeUnit.MILLISECONDS));
+//        sleep(5000);
+//        fixedRate.cancel(true);
+        Tasks.schedulePeriod(() -> log.info("fixedRate"), 1000);
 
 //        timer.setTimeout(() -> {
 //            System.out.println("once: " + DateTime.now());

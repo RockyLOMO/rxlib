@@ -372,7 +372,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         getWriter().flush();
     }
 
-    public synchronized byte[] toArray() {
+    public byte[] toArray() {
         checkNotClosed();
 
         long pos = getPosition();
@@ -384,7 +384,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public final IOStream<TI, TO> rewind() {
-        setPosition(0L);
+        setPosition(0);
         return this;
     }
 }

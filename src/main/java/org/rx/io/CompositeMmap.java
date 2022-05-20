@@ -37,16 +37,6 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     }
 
     @Override
-    public synchronized long getPosition() {
-        return position;
-    }
-
-    @Override
-    public synchronized void setPosition(long position) {
-        this.position = position;
-    }
-
-    @Override
     protected InputStream initReader() {
         return new InputStream() {
             @Override
@@ -120,6 +110,16 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     @Override
     public boolean canSeek() {
         return true;
+    }
+
+    @Override
+    public synchronized long getPosition() {
+        return position;
+    }
+
+    @Override
+    public synchronized void setPosition(long position) {
+        this.position = position;
     }
 
     @SneakyThrows
