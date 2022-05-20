@@ -116,7 +116,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
             synchronized (this) {
                 if (future == null) {
-                    wait(unit.toMillis(timeout));
+                    wait(unit.convert(timeout, TimeUnit.MILLISECONDS));
                 }
             }
             if (future == null) {
@@ -171,7 +171,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
     }
 
-    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"));
+    static final long TICK_DURATION = 100;
+    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
     final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
     final EmptyTimeout nonTask = new EmptyTimeout();
 
@@ -288,7 +289,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         $<Task<?>> t = $();
         t.v = (Task<?>) setTimeout(() -> {
             if (!proxy.isCancelled()) {
-                nextFixedRate(proxy, future, period - 100, command, period);
+                nextFixedRate(proxy, future, period - TICK_DURATION, command, period);
 
                 Task<?> p = t.v;
                 future.timeout = p.timeout;

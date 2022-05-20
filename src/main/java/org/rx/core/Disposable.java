@@ -6,9 +6,9 @@ import org.rx.exception.ApplicationException;
 import static org.rx.core.Extends.values;
 
 public abstract class Disposable implements AutoCloseable {
-    private boolean closed;
+    private volatile boolean closed;
 
-    public synchronized boolean isClosed() {
+    public boolean isClosed() {
         return closed;
     }
 
@@ -18,7 +18,7 @@ public abstract class Disposable implements AutoCloseable {
         dispose();
     }
 
-    private synchronized void dispose() {
+    private void dispose() {
         if (closed) {
             return;
         }

@@ -126,11 +126,11 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
         return this;
     }
 
-    public void raiseChange() {
+    public synchronized void raiseChange() {
         raiseChange(outputFile);
     }
 
-    public void raiseChange(String filePath) {
+    public synchronized void raiseChange(String filePath) {
         if (filePath == null) {
             return;
         }
