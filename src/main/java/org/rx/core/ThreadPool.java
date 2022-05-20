@@ -26,14 +26,15 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
+    @RequiredArgsConstructor
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
-        private ThreadPool pool;
+        private static final long serialVersionUID = 4283369202482437480L;
         private final int queueCapacity;
         //todo cache len
         private final AtomicInteger counter = new AtomicInteger();
 
-        public ThreadQueue(int queueCapacity) {
-            this.queueCapacity = queueCapacity;
+        public boolean isFullLoad() {
+            return counter.get() >= queueCapacity;
         }
 
         @Override
@@ -44,20 +45,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(T t) {
-//            if (t == EMPTY) {
-//                return false;
-//            }
-//            Task<?> p = pool.getAs((Runnable) t, false);
-//            if (p != null && p.flags.has(RunFlag.PRIORITY)) {
-//                incrSize(pool);
-//                //New thread to execute
-//                return false;
-//            }
-
-            boolean isFull = counter.get() >= queueCapacity;
-            if (isFull) {
+            if (isFullLoad()) {
                 boolean logged = false;
-                while (counter.get() >= queueCapacity) {
+                while (isFullLoad()) {
                     if (!logged) {
                         log.warn("Block caller thread[{}] until queue[{}/{}] polled then offer {}", Thread.currentThread().getName(),
                                 counter.get(), queueCapacity, t);
@@ -288,8 +278,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final DynamicSizer SIZER = new DynamicSizer();
     static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
-//    static final Runnable EMPTY = () -> {
-//    };
 
     static ThreadFactory newThreadFactory(String name) {
         //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
@@ -303,7 +291,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             return MAX_CORE_SIZE;
         }
         pool.setCorePoolSize(poolSize);
-//        pool.execute(EMPTY);
         return poolSize;
     }
 
@@ -361,9 +348,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(checkSize(initSize), Integer.MAX_VALUE,
                 RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue<>(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
-//                    if (r == EMPTY) {
-//                        return;
-//                    }
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
@@ -371,7 +355,6 @@ public class ThreadPool extends ThreadPoolExecutor {
                     executor.getQueue().offer(r);
                 });
         super.allowCoreThreadTimeOut(true);
-        ((ThreadQueue<Runnable>) getQueue()).pool = this;
         this.poolName = poolName;
 
         setDynamicSize(cpuWaterMark);
@@ -464,6 +447,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                     locker.left.lock();
                     log.debug("{} {} lock", id, flags);
                 }
+            }
+            ThreadQueue<?> queue = (ThreadQueue<?>) getQueue();
+            if (!queue.isEmpty() && flags.has(RunFlag.PRIORITY)) {
+                incrSize(this);
             }
             //TransmittableThreadLocal
             if (task.parent != null) {

@@ -127,7 +127,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
     }
 
     private ManagementMonitor() {
-        Tasks.schedule(() -> {
+        Tasks.schedulePeriod(() -> {
             NEventArgs<MonitorInfo> args = new NEventArgs<>(getInfo());
             raiseEvent(onScheduled, args);
             if (args.getValue().getCpuLoad() >= cpuWarningThreshold) {

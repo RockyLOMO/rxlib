@@ -29,9 +29,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         final Func<T> fn;
         final LongUnaryOperator nextDelayFn;
         long delay;
-        Timeout timeout;
         long expiredTime;
-        CompletableFuture<T> future;
+        volatile Timeout timeout;
+        volatile CompletableFuture<T> future;
+        long p0, p1, p2;
 
         @SneakyThrows
         @Override
@@ -179,9 +180,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     public TimeoutFuture<?> setTimeout(@NonNull Action fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
-        Task<?> task = new Task<>(taskId, flag, fn.toFunc(), nextDelay);
-//        task.delay = nextDelay.applyAsLong(0);
-        return setTimeout(task);
+        return setTimeout(new Task<>(taskId, flag, fn.toFunc(), nextDelay));
     }
 
     public <T> TimeoutFuture<T> setTimeout(Func<T> fn, LongUnaryOperator nextDelay) {
@@ -189,9 +188,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     public <T> TimeoutFuture<T> setTimeout(@NonNull Func<T> fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
-        Task<T> task = new Task<>(taskId, flag, fn, nextDelay);
-//        task.delay = nextDelay.applyAsLong(0);
-        return setTimeout(task);
+        return setTimeout(new Task<>(taskId, flag, fn, nextDelay));
     }
 
     public TimeoutFuture<?> setTimeout(Action fn, long delay) {
@@ -252,6 +249,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     //region adapter
+    static final int M_0 = "isCancelled".hashCode(), M_1 = "cancel".hashCode();
     @Getter
     boolean shutdown;
 
@@ -272,9 +270,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         AtomicBoolean cancel = new AtomicBoolean();
         ScheduledFuture<?> future = proxy(ScheduledFuture.class, (m, p) -> {
             int h = m.getName().hashCode();
-            if (h == "isCancelled".hashCode()) {
+            if (h == M_0) {
                 return cancel.get();
-            } else if (h == "cancel".hashCode()) {
+            } else if (h == M_1) {
                 cancel.set(true);
             }
             return p.fastInvoke(t);
@@ -286,24 +284,25 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         return future;
     }
 
-    private void nextFixedRate(ScheduledFuture<?> proxy, Task<?> future, long nextDelay, Runnable command, long period) {
+    void nextFixedRate(ScheduledFuture<?> proxy, Task<?> future, long nextDelay, Runnable command, long period) {
         $<Task<?>> t = $();
         t.v = (Task<?>) setTimeout(() -> {
             if (!proxy.isCancelled()) {
                 nextFixedRate(proxy, future, period - 100, command, period);
 
-                future.timeout = t.v.timeout;
-                future.future = (CompletableFuture) t.v.future;
-                future.expiredTime = t.v.expiredTime;
-                future.delay = t.v.delay;
+                Task<?> p = t.v;
+                future.timeout = p.timeout;
+                future.future = (CompletableFuture) p.future;
+                future.delay = p.delay;
+                future.expiredTime = p.expiredTime;
             }
             command.run();
         }, nextDelay);
     }
 
     @Override
-    public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long delay, TimeUnit unit) {
-        return setTimeout(command::run, d -> d == 0 ? initialDelay : unit.convert(delay, TimeUnit.MILLISECONDS));
+    public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long period, TimeUnit unit) {
+        return setTimeout(command::run, d -> d == 0 ? initialDelay : unit.convert(period, TimeUnit.MILLISECONDS));
     }
 
     @Override
