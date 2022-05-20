@@ -35,7 +35,6 @@ import org.rx.util.function.BiAction;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -52,31 +51,29 @@ public final class Sockets {
     static final String SHARED_TCP_REACTOR = "_TCP";
     static final String SHARED_UDP_REACTOR = "_UDP";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
-    static final ReentrantLock nsLock = new ReentrantLock(true);
-    static DnsClient nsClient;
+    static volatile DnsClient nsClient;
 
     @SneakyThrows
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
         DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
-        nsLock.lock();
-        try {
-            if (nsClient == null) {
-                Class<?> type = InetAddress.class;
-                try {
-                    Field field = type.getDeclaredField("nameService");
-                    Reflects.setAccess(field);
-                    field.set(null, nsProxy(field.get(null), client));
-                } catch (NoSuchFieldException e) {
-                    Field field = type.getDeclaredField("nameServices");
-                    Reflects.setAccess(field);
-                    List<Object> nsList = (List<Object>) field.get(null);
-                    nsList.set(0, nsProxy(nsList.get(0), client));
+        if (nsClient == null) {
+            synchronized (Sockets.class) {
+                if (nsClient == null) {
+                    Class<?> type = InetAddress.class;
+                    try {
+                        Field field = type.getDeclaredField("nameService");
+                        Reflects.setAccess(field);
+                        field.set(null, nsProxy(field.get(null), client));
+                    } catch (NoSuchFieldException e) {
+                        Field field = type.getDeclaredField("nameServices");
+                        Reflects.setAccess(field);
+                        List<Object> nsList = (List<Object>) field.get(null);
+                        nsList.set(0, nsProxy(nsList.get(0), client));
+                    }
                 }
             }
-            nsClient = client;
-        } finally {
-            nsLock.unlock();
         }
+        nsClient = client;
     }
 
     private static Object nsProxy(Object ns, DnsClient client) {

@@ -1,26 +1,19 @@
-package org.rx.net.http.cookie.persistence;
+package org.rx.net.http.cookie;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 
 import okhttp3.Cookie;
-import org.rx.core.NQuery;
 
 public class MemoryCookiePersistor implements CookiePersistor {
-    private static String createCookieKey(Cookie cookie) {
+    static String createCookieKey(Cookie cookie) {
         return (cookie.secure() ? "https" : "http") + "://" + cookie.domain() + cookie.path() + "|" + cookie.name();
     }
 
-    private final ConcurrentHashMap<String, Cookie> store;
-
-    public MemoryCookiePersistor() {
-        store = new ConcurrentHashMap<>();
-    }
+    final Map<String, Cookie> store = new HashMap<>();
 
     @Override
     public List<Cookie> loadAll() {
-        return NQuery.of(store.values()).toList();
+        return new ArrayList<>(store.values());
     }
 
     @Override

@@ -74,7 +74,7 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
     }
 
     @Override
-    public synchronized byte[] toArray() {
+    public byte[] toArray() {
         long pos = getPosition();
         setPosition(0);
         ByteBuf buf = Bytes.heapBuffer();

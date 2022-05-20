@@ -7,17 +7,17 @@ import java.util.List;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
-import org.rx.net.http.cookie.cache.CookieCache;
-import org.rx.net.http.cookie.cache.SetCookieCache;
-import org.rx.net.http.cookie.persistence.CookiePersistor;
-import org.rx.net.http.cookie.persistence.MemoryCookiePersistor;
+import org.rx.net.http.cookie.CookieCache;
+import org.rx.net.http.cookie.MemoryCookieCache;
+import org.rx.net.http.cookie.CookiePersistor;
+import org.rx.net.http.cookie.MemoryCookiePersistor;
 
 public final class CookieContainer implements CookieJar {
-    private CookieCache cache;
-    private CookiePersistor persistor;
+    final CookieCache cache;
+    final CookiePersistor persistor;
 
     public CookieContainer() {
-        this(new SetCookieCache(), new MemoryCookiePersistor());
+        this(new MemoryCookieCache(), new MemoryCookiePersistor());
     }
 
     public CookieContainer(CookieCache cache, CookiePersistor persistor) {
@@ -35,7 +35,6 @@ public final class CookieContainer implements CookieJar {
 
     private static List<Cookie> filterPersistentCookies(List<Cookie> cookies) {
         List<Cookie> persistentCookies = new ArrayList<>();
-
         for (Cookie cookie : cookies) {
             if (cookie.persistent()) {
                 persistentCookies.add(cookie);
@@ -51,18 +50,15 @@ public final class CookieContainer implements CookieJar {
 
         for (Iterator<Cookie> it = cache.iterator(); it.hasNext(); ) {
             Cookie currentCookie = it.next();
-
             if (isCookieExpired(currentCookie)) {
                 cookiesToRemove.add(currentCookie);
                 it.remove();
-
             } else if (currentCookie.matches(url)) {
                 validCookies.add(currentCookie);
             }
         }
 
         persistor.removeAll(cookiesToRemove);
-
         return validCookies;
     }
 

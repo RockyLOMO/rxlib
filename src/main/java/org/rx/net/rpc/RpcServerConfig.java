@@ -19,6 +19,5 @@ public class RpcServerConfig extends SocketConfig {
     private final int listenPort;
     private int capacity = 10000;
     private final List<Integer> eventBroadcastVersions = new ArrayList<>();
-//    private int eventComputeVersion = EVENT_LATEST_COMPUTE;
     private int eventComputeVersion = EVENT_DISABLE_COMPUTE;
 }

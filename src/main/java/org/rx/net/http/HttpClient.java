@@ -64,7 +64,7 @@ public class HttpClient {
     static class JsonContent implements RequestContent {
         @Getter(value = AccessLevel.PRIVATE)
         final Object json;
-        Lazy<String> body = new Lazy<>(() -> toJsonString(getJson()));
+        final Lazy<String> body = new Lazy<>(() -> toJsonString(getJson()));
 
         @Override
         public RequestBody toBody() {
@@ -205,9 +205,9 @@ public class HttpClient {
     }
 
     public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
-    private static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
-    private static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
-    private static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
+    static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
+    static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
+    static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
         final X509Certificate[] empty = new X509Certificate[0];
 
         @Override
@@ -237,7 +237,7 @@ public class HttpClient {
     public static String godaddyDns(String ssoKey, String domain, String name, String ip) {
         String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
         HttpClient client = new HttpClient();
-        client.getHeaders().add("Authorization", "sso-key " + ssoKey);
+        client.getRequestHeaders().add("Authorization", "sso-key " + ssoKey);
         return client.putJson(url, String.format("[\n" +
                 "  {\n" +
                 "    \"data\": \"%s\",\n" +
@@ -249,11 +249,6 @@ public class HttpClient {
     public static String getWanIp() {
         HttpClient client = new HttpClient();
         return client.get("https://api.ipify.org").toString();
-    }
-
-    public static void saveRawCookies(@NonNull String url, @NonNull String raw) {
-        HttpUrl httpUrl = HttpUrl.get(url);
-        COOKIE_CONTAINER.saveFromResponse(httpUrl, decodeCookie(httpUrl, raw));
     }
 
     public static String encodeCookie(List<Cookie> cookies) {
@@ -367,8 +362,13 @@ public class HttpClient {
         return URLDecoder.decode(str, StandardCharsets.UTF_8.name()).replace("%20", "+");
     }
 
+    public static void saveRawCookie(@NonNull String url, @NonNull String cookie) {
+        HttpUrl httpUrl = HttpUrl.get(url);
+        COOKIE_CONTAINER.saveFromResponse(httpUrl, decodeCookie(httpUrl, cookie));
+    }
+
     @SneakyThrows
-    private static OkHttpClient createClient(int timeoutMillis, boolean cookieJar, Proxy proxy) {
+    static OkHttpClient createClient(long timeoutMillis, boolean enableCookie, Proxy proxy) {
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
@@ -380,7 +380,7 @@ public class HttpClient {
                 .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
                 .proxy(proxy)
                 .proxyAuthenticator(authenticator);
-        if (cookieJar) {
+        if (enableCookie) {
             builder = builder.cookieJar(COOKIE_CONTAINER);
         }
         return builder.build();
@@ -390,7 +390,7 @@ public class HttpClient {
     //Not thread safe
     final OkHttpClient client;
     @Getter
-    final HttpHeaders headers = new DefaultHttpHeaders();
+    final HttpHeaders requestHeaders = new DefaultHttpHeaders();
     @Setter
     boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
     ResponseContent responseContent;
@@ -399,22 +399,29 @@ public class HttpClient {
         this(RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
     }
 
-    public HttpClient(int timeoutMillis) {
-        this(timeoutMillis, null, null);
+    public HttpClient(long timeoutMillis) {
+        this(timeoutMillis, false, null, null);
     }
 
-    public HttpClient(int timeoutMillis, String rawCookie, Proxy proxy) {
-        headers.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
-        boolean cookieJar = Strings.isEmpty(rawCookie);
-        if (!cookieJar) {
-            headers.set(HttpHeaderNames.COOKIE, rawCookie);
+    public HttpClient(long timeoutMillis, boolean enableCookie, Proxy proxy) {
+        this(timeoutMillis, enableCookie, null, proxy);
+    }
+
+    public HttpClient(long timeoutMillis, String rawCookie, Proxy proxy) {
+        this(timeoutMillis, false, rawCookie, proxy);
+    }
+
+    public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie, Proxy proxy) {
+        client = createClient(timeoutMillis, enableCookie, proxy);
+        requestHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
+        if (rawCookie != null) {
+            requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
         }
-        client = createClient(timeoutMillis, cookieJar, proxy);
     }
 
     private Request.Builder createRequest(String url) {
         Request.Builder builder = new Request.Builder().url(url);
-        for (Map.Entry<String, String> entry : headers) {
+        for (Map.Entry<String, String> entry : requestHeaders) {
             builder.addHeader(entry.getKey(), entry.getValue());
         }
         return builder;
@@ -525,14 +532,14 @@ public class HttpClient {
             if ("host".equals(n)) {
                 continue;
             }
-            getHeaders().set(n, servletRequest.getHeader(n));
+            getRequestHeaders().set(n, servletRequest.getHeader(n));
         }
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
-        log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(headers));
+        log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(requestHeaders));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
         if (!servletRequest.getMethod().equalsIgnoreCase(HttpMethod.GET.name())) {

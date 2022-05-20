@@ -3,13 +3,13 @@ package org.rx.io;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.concurrent.CircuitBreakingException;
 import org.rx.bean.$;
 import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.NQuery;
 import org.rx.core.Strings;
+import org.rx.core.ThreadPool;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -30,7 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.asyncBreak;
+import static org.rx.core.Extends.asyncContinue;
+import static org.rx.core.Extends.asyncEach;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
@@ -133,7 +134,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.deleteById(entityType, id)) {
                     rf.set(true);
-                    asyncBreak();
+                    asyncContinue(false);
                 }
             });
             return rf.get();
@@ -161,7 +162,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             if (p.exists(query)) {
                 rf.set(true);
-                asyncBreak();
+                asyncContinue(false);
             }
         });
         return rf.get();
@@ -174,7 +175,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.existsById(entityType, id)) {
                     rf.set(true);
-                    asyncBreak();
+                    asyncContinue(false);
                 }
             });
             return rf.get();
@@ -189,7 +190,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 rf.v = p.findById(entityType, id);
                 if (rf.v != null) {
-                    asyncBreak();
+                    asyncContinue(false);
                 }
             });
             return rf.v;
@@ -203,7 +204,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             rf.v = p.findOne(query);
             if (rf.v != null) {
-                asyncBreak();
+                asyncContinue(false);
             }
         });
         return rf.v;
@@ -301,12 +302,6 @@ public class ShardingEntityDatabase implements EntityDatabase {
             return;
         }
 
-        for (Tuple<InetSocketAddress, EntityDatabase> tuple : nodes) {
-            try {
-                fn.invoke(tuple.right);
-            } catch (CircuitBreakingException e) {
-                break;
-            }
-        }
+        asyncEach(nodes, tuple -> fn.invoke(tuple.right));
     }
 }

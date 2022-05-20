@@ -8,17 +8,14 @@ import org.rx.bean.Tuple;
 import org.rx.exception.ExceptionHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
-import org.rx.util.function.PredicateAction;
 
 import java.sql.Time;
-import java.util.Date;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
-import static org.rx.core.Extends.quietly;
 
 //ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
@@ -26,7 +23,6 @@ public final class Tasks {
     private static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
     private static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
-    private static final ScheduledThreadPoolExecutor scheduler;
     private static final WheelTimer wheelTimer;
     private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
@@ -34,7 +30,6 @@ public final class Tasks {
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new ThreadPool(String.valueOf(i)));
         }
-        scheduler = new ScheduledThreadPool();
         wheelTimer = new WheelTimer();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -51,10 +46,6 @@ public final class Tasks {
 
     public static ThreadPool pool() {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
-    }
-
-    public static ScheduledExecutorService scheduler() {
-        return scheduler;
     }
 
     public static WheelTimer timer() {
@@ -190,26 +181,11 @@ public final class Tasks {
         return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
-    public static long getDelay(@NonNull Date time) {
-        return time.getTime() - System.currentTimeMillis();
-    }
-
-    public static Future<Void> setTimeout(Action task, long delay) {
-        return setTimeout(task, delay, null, null);
-    }
-
-    public static Future<Void> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
-        return setTimeout(() -> {
-            task.invoke();
-            return flag == TimeoutFlag.PERIOD;
-        }, delay, taskId, flag);
-    }
-
-    public static Future<Void> setTimeout(PredicateAction task, long delay) {
+    public static TimeoutFuture<?> setTimeout(Action task, long delay) {
         return wheelTimer.setTimeout(task, delay);
     }
 
-    public static Future<Void> setTimeout(PredicateAction task, long delay, Object taskId, TimeoutFlag flag) {
+    public static TimeoutFuture<?> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
         return wheelTimer.setTimeout(task, delay, taskId, flag);
     }
 
@@ -229,19 +205,14 @@ public final class Tasks {
         long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 
-        return schedule(task, initDelay, oneDay);
+        return schedulePeriod(task, initDelay, oneDay);
     }
 
-    public static ScheduledFuture<?> schedule(Action task, long delay) {
-        return schedule(task, delay, delay);
+    public static ScheduledFuture<?> schedulePeriod(Action task, long period) {
+        return schedulePeriod(task, period, period);
     }
 
-    public static ScheduledFuture<?> schedule(@NonNull Action task, long initialDelay, long delay) {
-        return scheduler.scheduleWithFixedDelay(wrap(task), initialDelay, delay, TimeUnit.MILLISECONDS);
-    }
-
-    static ThreadPool.Task<?> wrap(Action task) {
-        //schedule 抛出异常会终止
-        return new ThreadPool.Task<>(null, null, () -> quietly(task));
+    public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
+        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD);
     }
 }

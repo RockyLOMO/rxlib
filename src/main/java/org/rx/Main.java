@@ -202,7 +202,7 @@ public final class Main implements SocksSupport {
                 eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
             };
             fn.invoke();
-            Tasks.schedule(fn, conf.autoWhiteListSeconds * 1000L);
+            Tasks.schedulePeriod(fn, conf.autoWhiteListSeconds * 1000L);
 
             InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
@@ -277,7 +277,7 @@ public final class Main implements SocksSupport {
     final SocksProxyServer proxyServer;
 
     void ddns() {
-        Tasks.schedule(() -> {
+        Tasks.schedulePeriod(() -> {
             if (conf == null) {
                 log.warn("conf is null");
             }

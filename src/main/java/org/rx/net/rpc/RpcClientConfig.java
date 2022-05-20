@@ -46,7 +46,7 @@ public class RpcClientConfig extends SocketConfig {
     }
 
     @NotNull
-    private InetSocketAddress serverEndpoint;
+    private volatile InetSocketAddress serverEndpoint;
     private volatile boolean enableReconnect;
     private int eventVersion = DEFAULT_VERSION;
     private int minPoolSize;

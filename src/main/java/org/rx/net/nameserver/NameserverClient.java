@@ -116,7 +116,7 @@ public final class NameserverClient extends Disposable {
                                 tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                                 delayTasks.remove(appName); //优先
                                 reInject();
-                                return false;
+                                asyncContinue(false);
                             }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
                         }
                     };

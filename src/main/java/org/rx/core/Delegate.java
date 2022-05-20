@@ -57,8 +57,8 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     }
 
     final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
-    TripleAction<TSender, TArgs> headInvocation;
-    TripleAction<TSender, TArgs> tailInvocation;
+    volatile TripleAction<TSender, TArgs> headInvocation;
+    volatile TripleAction<TSender, TArgs> tailInvocation;
 
     public boolean isEmpty() {
         return invocations.isEmpty() && headInvocation == null && tailInvocation == null;
@@ -112,7 +112,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return this;
     }
 
-    public synchronized Delegate<TSender, TArgs> close() {
+    public Delegate<TSender, TArgs> close() {
         tryClose(headInvocation);
         for (TripleAction<TSender, TArgs> invocation : invocations) {
             tryClose(invocation);
@@ -121,7 +121,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         return purge();
     }
 
-    public synchronized Delegate<TSender, TArgs> purge() {
+    public Delegate<TSender, TArgs> purge() {
         invocations.clear();
         headInvocation = tailInvocation = null;
         return this;

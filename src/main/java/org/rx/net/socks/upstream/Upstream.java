@@ -8,10 +8,9 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.support.UnresolvedEndpoint;
 
 @AllArgsConstructor
+@Getter
 public class Upstream {
-    @Getter
     protected volatile UnresolvedEndpoint destination;
-    @Getter
     protected volatile AuthenticEndpoint socksServer;
 
     public Upstream(@NonNull UnresolvedEndpoint dstEp) {

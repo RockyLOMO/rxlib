@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Extends.tryAs;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class UdpClient implements EventTarget<UdpClient> {
@@ -139,7 +139,7 @@ public class UdpClient implements EventTarget<UdpClient> {
             queue.put(message.id, ctx);
             ctx.future = Tasks.setTimeout(() -> {
                 channel.writeAndFlush(serialize(remoteAddress, message));
-                return ++ctx.resend <= maxResend;
+                asyncContinue(++ctx.resend <= maxResend);
             }, waitAckTimeoutMillis / maxResend);
         }
         ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message));

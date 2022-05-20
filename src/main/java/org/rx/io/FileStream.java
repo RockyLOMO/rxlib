@@ -106,7 +106,6 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @Override
     protected OutputStream initWriter() {
-        //new BufferedOutputStream(new FileOutputStream(randomAccessFile.getFD()), BUFFER_SIZE_4K)
         return new OutputStream() {
             @Override
             public void write(byte[] b, int off, int len) throws IOException {
@@ -131,7 +130,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @Override
-    public boolean canWrite() {
+    public synchronized boolean canWrite() {
         return super.canWrite() && fileMode != FileMode.READ_ONLY;
     }
 
@@ -186,7 +185,12 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         randomAccessFile.close();
     }
 
-    public final FileStream flip() {
+    @Override
+    public synchronized byte[] toArray() {
+        return super.toArray();
+    }
+
+    public synchronized final FileStream flip() {
         setLength(getPosition());
         setPosition(0);
         return this;
@@ -194,7 +198,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
 
     @SneakyThrows
     @Override
-    public long available() {
+    public synchronized long available() {
         return randomAccessFile.bytesRemaining();
     }
 
@@ -277,7 +281,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @SneakyThrows
-    public void flush(boolean flushToDisk) {
+    public synchronized void flush(boolean flushToDisk) {
         randomAccessFile.flush();
         if (flushToDisk) {
             randomAccessFile.sync();

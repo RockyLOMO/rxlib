@@ -58,10 +58,10 @@ public final class Remoting {
         final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
     }
 
-    private static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
-    private static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
-    private static final IdGenerator generator = new IdGenerator();
-    private static final Map<StatefulRpcClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
+    static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
+    static final Map<RpcClientConfig, RpcClientPool> clientPools = new ConcurrentHashMap<>();
+    static final IdGenerator generator = new IdGenerator();
+    static final Map<StatefulRpcClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
 
     public static <T> T create(Class<T> contract, RpcClientConfig facadeConfig) {
         return create(contract, facadeConfig, null);

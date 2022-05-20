@@ -37,8 +37,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            lastRemoteEp = getRemoteEndpoint();
-            lastLocalEp = getLocalEndpoint();
             handshakePacket.setEventVersion(config.getEventVersion());
             ctx.writeAndFlush(handshakePacket).addListener(p -> {
                 if (p.isSuccess()) {
@@ -126,15 +124,17 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     public final Delegate<RpcClient, NEventArgs<PingMessage>> onPong = Delegate.create();
     public final Delegate<RpcClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
-    private final RpcClientConfig config;
-    private Bootstrap bootstrap;
-    private volatile Channel channel;
-    private volatile InetSocketAddress reconnectingEp;
-    InetSocketAddress lastRemoteEp, lastLocalEp;
-    @Getter
-    DateTime connectedTime;
+    final RpcClientConfig config;
     @Getter
     final HandshakePacket handshakePacket = new HandshakePacket();
+    Bootstrap bootstrap;
+    volatile Channel channel;
+    volatile InetSocketAddress reconnectingEp;
+    //cache meta
+    @Getter
+    InetSocketAddress remoteEndpoint, localEndpoint;
+    @Getter
+    DateTime connectedTime;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
@@ -143,21 +143,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     public boolean isConnected() {
         return channel != null && channel.isActive();
-    }
-
-    @Override
-    public InetSocketAddress getRemoteEndpoint() {
-        if (isConnected()) {
-            return (InetSocketAddress) channel.remoteAddress();
-        }
-        return lastRemoteEp;
-    }
-
-    public InetSocketAddress getLocalEndpoint() {
-        if (isConnected()) {
-            return (InetSocketAddress) channel.localAddress();
-        }
-        return lastLocalEp;
     }
 
     protected boolean isShouldReconnect() {
@@ -216,7 +201,6 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {
-                log.debug("reconnect skip");
                 return;
             }
 
@@ -246,6 +230,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             }
             reconnectingEp = null;
             config.setServerEndpoint(ep);
+            remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
+            localEndpoint = (InetSocketAddress) channel.localAddress();
             connectedTime = DateTime.now();
 
             if (syncRoot != null) {
@@ -285,11 +271,19 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 
     @Override
     public boolean hasAttr(String name) {
+        if (!isConnected()) {
+            throw new ClientDisconnectedException(channel.id());
+        }
+
         return channel.hasAttr(AttributeKey.valueOf(name));
     }
 
     @Override
     public <T> Attribute<T> attr(String name) {
+        if (!isConnected()) {
+            throw new ClientDisconnectedException(channel.id());
+        }
+
         return channel.attr(AttributeKey.valueOf(name));
     }
 }

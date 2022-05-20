@@ -91,12 +91,12 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     public final Delegate<ShellCommander, OutPrintEventArgs> onOutPrint = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
+    final File workspace;
+    final long intervalPeriod;
     @Getter
-    private String shell;
-    private final File workspace;
-    private final long intervalPeriod;
-    private Process process;
-    private CompletableFuture<Void> daemonFuture;
+    String shell;
+    Process process;
+    CompletableFuture<Void> daemonFuture;
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();

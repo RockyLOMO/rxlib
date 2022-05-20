@@ -26,7 +26,7 @@ public class Client {
             outboundForms.put("appName", appName);
             outboundForms.put("socksId", inboundSocksId);
             outboundForms.put("endpoint", remoteEndpoint);
-            Tasks.schedule(this::backendPoll, 100);
+            Tasks.schedulePeriod(this::backendPoll, 100);
         }
 
         public void backendOffer(IOStream<?, ?> binary) {
