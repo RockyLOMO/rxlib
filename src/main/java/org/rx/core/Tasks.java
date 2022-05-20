@@ -213,6 +213,6 @@ public final class Tasks {
     }
 
     public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
-        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period);
+        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD);
     }
 }
