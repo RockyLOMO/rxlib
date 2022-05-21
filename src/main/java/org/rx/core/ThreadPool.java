@@ -420,12 +420,12 @@ public class ThreadPool extends ThreadPoolExecutor {
     //endregion
 
     //region v1
-    public Future<?> run(Action task) {
+    public Future<Void> run(Action task) {
         return run(task, null, null);
     }
 
-    public Future<?> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return super.submit((Runnable) new Task<>(taskId, flags, task.toFunc()));
+    public Future<Void> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return (Future<Void>) super.submit((Runnable) new Task<>(taskId, flags, task.toFunc()));
     }
 
     public <T> Future<T> run(Func<T> task) {

@@ -117,11 +117,11 @@ public final class Tasks {
         return null;
     }
 
-    public static Future<?> run(Action task) {
+    public static Future<Void> run(Action task) {
         return pool().run(task);
     }
 
-    public static Future<?> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public static Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         return pool().run(task, taskId, flags);
     }
 
