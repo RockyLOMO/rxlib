@@ -167,7 +167,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         if (daemonFuture != null) {
             daemonFuture.cancel(true);
         }
-        daemonFuture = Tasks.run(() -> {
+        daemonFuture = Tasks.runAsync(() -> {
             LineNumberReader reader = null;
             try {
                 if (!onOutPrint.isEmpty()) {

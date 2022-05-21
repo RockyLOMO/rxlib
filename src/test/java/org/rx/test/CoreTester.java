@@ -27,6 +27,7 @@ import org.rx.io.*;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.yaml.snakeyaml.Yaml;
 
@@ -55,28 +56,52 @@ public class CoreTester extends TestUtil {
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //支持netty FastThreadLocal
         long delayMillis = 5000;
-        ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
-        for (int i = 0; i < 100; i++) {
-            int x = i;
-            pool.execute(() -> {
-                log.info("exec {} begin..", x);
-                sleep(delayMillis);
-                log.info("exec {} end..", x);
-            });
-        }
 
+//        ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
+//        for (int i = 0; i < 100; i++) {
+//            int x = i;
+//            pool.execute(() -> {
+//                log.info("exec {} begin..", x);
+//                sleep(delayMillis);
+//                log.info("exec {} end..", x);
+//            });
+//        }
+
+        Object id = new Object();
+        ThreadPool pool = Tasks.pool();
         for (int i = 0; i < 10; i++) {
             int x = i;
-            //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
             //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+            //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
             //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
             //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
             //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
-            Tasks.run(() -> {
-                log.info("exec {} begin..", x);
+//            Future<?> future = pool.run(() -> {
+//                log.info("TASK begin {}", x);
+//                sleep(delayMillis);
+//                log.info("TASK end {}", x);
+//            }, id, RunFlag.SYNCHRONIZED.flags());
+
+//            CompletableFuture<Void> completableFuture = pool.runAsync(() -> {
+//                log.info("TASK begin {}", x);
+//                sleep(delayMillis);
+//                log.info("TASK end {}", x);
+//            }, id, RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("TASK done {}", x));
+        }
+
+        List<Func<Integer>> tasks = new ArrayList<>();
+        for (int x = 0; x < 10; x++) {
+            int finalX = x;
+            tasks.add(() -> {
+                log.info("TASK begin {}", finalX);
                 sleep(delayMillis);
-                log.info("exec {} end..", x);
-            }, "myTaskId", RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("Done: " + x));
+                log.info("TASK end {}", finalX);
+                return finalX + 100;
+            });
+        }
+        List<Future<Integer>> futures = pool.runAll(tasks, 0);
+        for (Future<Integer> future : futures) {
+            System.out.println(future.get());
         }
 
         System.out.println("main thread done");

@@ -31,7 +31,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         long delay;
         long expiredTime;
         volatile Timeout timeout;
-        volatile CompletableFuture<T> future;
+        volatile Future<T> future;
         long p0, p1, p2;
 
         @SneakyThrows
