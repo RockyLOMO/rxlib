@@ -96,7 +96,7 @@ public final class NameserverClient extends Disposable {
         }
         svrEps.addAll(NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
 
-        return Tasks.run(() -> {
+        return Tasks.runAsync(() -> {
             for (InetSocketAddress regEp : svrEps) {
                 synchronized (hold) {
                     if (NQuery.of(hold).any(p -> eq(p.left, regEp))) {
@@ -160,7 +160,7 @@ public final class NameserverClient extends Disposable {
     }
 
     public CompletableFuture<?> deregisterAsync() {
-        return Tasks.run(() -> {
+        return Tasks.runAsync(() -> {
             for (BiTuple<InetSocketAddress, Nameserver, Integer> tuple : hold) {
                 sneakyInvoke(() -> tuple.middle.deregister(), DEFAULT_RETRY);
             }

@@ -4,7 +4,6 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.bean.Tuple;
 import org.rx.exception.ExceptionHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -14,10 +13,6 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
-import static org.rx.core.Constants.NON_RAW_TYPES;
-import static org.rx.core.Constants.NON_UNCHECKED;
-
-//ExecutorCompletionService
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 public final class Tasks {
     private static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
@@ -122,63 +117,36 @@ public final class Tasks {
         return null;
     }
 
-    public static CompletableFuture<Void> run(Action task) {
+    public static Future<?> run(Action task) {
+        return pool().run(task);
+    }
+
+    public static Future<?> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().run(task, taskId, flags);
+    }
+
+    public static <T> Future<T> run(Func<T> task) {
+        return pool().run(task);
+    }
+
+    public static <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return pool().run(task, taskId, flags);
+    }
+
+    public static CompletableFuture<Void> runAsync(Action task) {
         return pool().runAsync(task);
     }
 
-    public static CompletableFuture<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public static CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         return pool().runAsync(task, taskId, flags);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task) {
+    public static <T> CompletableFuture<T> runAsync(Func<T> task) {
         return pool().runAsync(task);
     }
 
-    public static <T> CompletableFuture<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public static <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return pool().runAsync(task, taskId, flags);
-    }
-
-    @SuppressWarnings(NON_RAW_TYPES)
-    public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> anyOf(Action... tasks) {
-        if (Arrays.isEmpty(tasks)) {
-            return nullReturn();
-        }
-        //Lambda method ref -> 对select的引用不明确
-        CompletableFuture<Void>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
-        return Tuple.of((CompletableFuture) CompletableFuture.anyOf(futures), futures);
-    }
-
-    @SuppressWarnings(NON_UNCHECKED)
-    private static <T1, T2> Tuple<CompletableFuture<T1>, CompletableFuture<T2>[]> nullReturn() {
-        return Tuple.of(CompletableFuture.completedFuture(null), new CompletableFuture[0]);
-    }
-
-    @SuppressWarnings(NON_UNCHECKED)
-    public static <T> Tuple<CompletableFuture<T>, CompletableFuture<T>[]> anyOf(Func<T>... tasks) {
-        if (Arrays.isEmpty(tasks)) {
-            return nullReturn();
-        }
-
-        CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
-        return Tuple.of((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
-    }
-
-    public static Tuple<CompletableFuture<Void>, CompletableFuture<Void>[]> allOf(Action... tasks) {
-        if (Arrays.isEmpty(tasks)) {
-            return nullReturn();
-        }
-
-        CompletableFuture<Void>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
-        return Tuple.of(CompletableFuture.allOf(futures), futures);
-    }
-
-    public static <T> Tuple<CompletableFuture<Void>, CompletableFuture<T>[]> allOf(Func<T>... tasks) {
-        if (Arrays.isEmpty(tasks)) {
-            return nullReturn();
-        }
-
-        CompletableFuture<T>[] futures = NQuery.of(tasks).select(p -> run(p)).toArray();
-        return Tuple.of(CompletableFuture.allOf(futures), futures);
     }
 
     public static TimeoutFuture<?> setTimeout(Action task, long delay) {

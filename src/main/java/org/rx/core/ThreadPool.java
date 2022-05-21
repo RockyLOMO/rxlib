@@ -10,8 +10,10 @@ import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.*;
 import org.rx.exception.ExceptionHandler;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -22,16 +24,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
+import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
 
+@SuppressWarnings(NON_UNCHECKED)
 @Slf4j
 public class ThreadPool extends ThreadPoolExecutor {
     @RequiredArgsConstructor
+    @Getter
+    public static class MultiTaskFuture<T, TS> {
+        static final MultiTaskFuture NULL = new MultiTaskFuture<>(CompletableFuture.completedFuture(null), new CompletableFuture[0]);
+        final CompletableFuture<T> future;
+        final CompletableFuture<TS>[] subFutures;
+    }
+
+    @RequiredArgsConstructor
     public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
         private static final long serialVersionUID = 4283369202482437480L;
-        private final int queueCapacity;
+        final int queueCapacity;
         //todo cache len
-        private final AtomicInteger counter = new AtomicInteger();
+        final AtomicInteger counter = new AtomicInteger();
 
         public boolean isFullLoad() {
             return counter.get() >= queueCapacity;
@@ -160,6 +172,25 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
+    static class FutureTaskAdapter<T> extends FutureTask<T> {
+        final Task<T> task;
+
+        public FutureTaskAdapter(Callable<T> callable) {
+            super(callable);
+            task = as(callable, Task.class);
+        }
+
+        public FutureTaskAdapter(Runnable runnable, T result) {
+            super(runnable, result);
+            task = (Task<T>) runnable;
+        }
+    }
+
+    static class TaskContext {
+        ReentrantLock lock;
+        AtomicInteger lockRefCnt;
+    }
+
     static class DynamicSizer implements TimerTask {
         static final long SAMPLING_PERIOD = 3000L;
         static final int SAMPLING_TIMES = 2;
@@ -272,11 +303,12 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
+    //region static members
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
-    static final DynamicSizer SIZER = new DynamicSizer();
     static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
+    static final DynamicSizer SIZER = new DynamicSizer();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
 
     static ThreadFactory newThreadFactory(String name) {
@@ -314,11 +346,13 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
+    //endregion
 
+    //region instance members
     @Getter
-    private final String poolName;
-    private final ConcurrentHashMap<Runnable, Task<?>> funcMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Object, Tuple<ReentrantLock, AtomicInteger>> syncRoots = new ConcurrentHashMap<>(8);
+    final String poolName;
+    final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
+    final Map<Object, TaskContext> taskCtxMap = new ConcurrentHashMap<>(8);
 
     @Override
     public void setMaximumPoolSize(int maximumPoolSize) {
@@ -383,7 +417,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         SIZER.register(this, cpuWaterMark);
     }
+    //endregion
 
+    //region v1
     public Future<?> run(Action task) {
         return run(task, null, null);
     }
@@ -399,6 +435,42 @@ public class ThreadPool extends ThreadPoolExecutor {
     public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return super.submit((Callable<T>) new Task<>(taskId, flags, task));
     }
+
+    //ExecutorCompletionService
+    @SneakyThrows
+    public <T> T runAny(@NonNull Collection<Func<T>> tasks, long timeoutMillis) {
+        List<Callable<T>> callables = NQuery.of(tasks).select(p -> (Callable<T>) () -> {
+            try {
+                return p.invoke();
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        }).toList();
+        return timeoutMillis > 0 ? super.invokeAny(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAny(callables);
+    }
+
+    @SneakyThrows
+    public <T> List<Future<T>> runAll(@NonNull Collection<Func<T>> tasks, long timeoutMillis) {
+        List<Callable<T>> callables = NQuery.of(tasks).select(p -> (Callable<T>) () -> {
+            try {
+                return p.invoke();
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        }).toList();
+        return timeoutMillis > 0 ? super.invokeAll(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAll(callables);
+    }
+
+    @Override
+    protected final <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
+        return new FutureTaskAdapter<>(runnable, value);
+    }
+
+    @Override
+    protected final <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
+        return new FutureTaskAdapter<>(callable);
+    }
+    //endregion
 
     public CompletableFuture<Void> runAsync(Action task) {
         return runAsync(task, null, null);
@@ -416,40 +488,53 @@ public class ThreadPool extends ThreadPoolExecutor {
         return CompletableFuture.supplyAsync(new Task<>(taskId, flags, task), this);
     }
 
+    public <T> MultiTaskFuture<T, T> runAnyAsync(Collection<Func<T>> tasks) {
+        if (CollectionUtils.isEmpty(tasks)) {
+            return MultiTaskFuture.NULL;
+        }
+
+        CompletableFuture<T>[] futures = NQuery.of(tasks).select(this::runAsync).toArray();
+        return new MultiTaskFuture<>((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
+    }
+
+    public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
+        if (CollectionUtils.isEmpty(tasks)) {
+            return MultiTaskFuture.NULL;
+        }
+
+        CompletableFuture<T>[] futures = NQuery.of(tasks).select(this::runAsync).toArray();
+        return new MultiTaskFuture<>(CompletableFuture.allOf(futures), futures);
+    }
+
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
         Task<?> task = null;
-        if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            Object fn = Reflects.readField(r, "fn");
-            task = as(fn, Task.class);
-        } else if (r instanceof FutureTask) {
-            Object fn = Reflects.readField(r, "callable");
-            task = as(fn, Task.class);
-            if (task == null) {
-                fn = Reflects.readField(fn, "task");
-            }
-            task = as(fn, Task.class);
+        if (r instanceof FutureTaskAdapter) {
+            task = ((FutureTaskAdapter<?>) r).task;
+        } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
+            task = as(Reflects.readField(r, "fn"), Task.class);
         }
         if (task != null) {
-            funcMap.put(r, task);
+            taskMap.put(r, task);
             Object id = task.id;
             FlagsEnum<RunFlag> flags = task.flags;
             if (id != null) {
                 if (flags.has(RunFlag.SINGLE)) {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(id);
-                    if (!locker.left.tryLock()) {
+                    TaskContext ctx = getContextForLock(id);
+                    if (!ctx.lock.tryLock()) {
                         throw new InterruptedException(String.format("SingleScope %s locked by other thread", id));
                     }
+                    ctx.lockRefCnt.incrementAndGet();
+                    log.debug("CTX tryLock {} -> {}", id, flags.name());
                 } else if (flags.has(RunFlag.SYNCHRONIZED)) {
-                    Tuple<ReentrantLock, AtomicInteger> locker = getLocker(id);
-                    locker.right.incrementAndGet();
-                    locker.left.lock();
-                    log.debug("{} {} lock", id, flags);
+                    TaskContext ctx = getContextForLock(id);
+                    ctx.lockRefCnt.incrementAndGet();
+                    ctx.lock.lock();
+                    log.debug("CTX lock {} -> {}", id, flags.name());
                 }
             }
-            ThreadQueue<?> queue = (ThreadQueue<?>) getQueue();
-            if (!queue.isEmpty() && flags.has(RunFlag.PRIORITY)) {
+            if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
                 incrSize(this);
             }
             //TransmittableThreadLocal
@@ -461,17 +546,19 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
-        Task<?> task = getAs(r, true);
+        Task<?> task = getTask(r, true);
         if (task != null) {
             Object id = task.id;
             if (id != null) {
-                Tuple<ReentrantLock, AtomicInteger> locker = syncRoots.get(id);
-                if (locker != null) {
-                    log.debug("{} {} unlock", id, task.flags);
-                    locker.left.unlock();
-                    if (locker.right.decrementAndGet() <= 0) {
-                        syncRoots.remove(id);
+                TaskContext ctx = getContextForLock(id);
+                if (ctx != null) {
+                    boolean doRemove = false;
+                    if (ctx.lockRefCnt.decrementAndGet() <= 0) {
+                        taskCtxMap.remove(id);
+                        doRemove = true;
                     }
+                    log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
+                    ctx.lock.unlock();
                 }
             }
             if (task.parent != null) {
@@ -494,12 +581,17 @@ public class ThreadPool extends ThreadPoolExecutor {
         slowThreadLocalMap.set(threadLocalMap);
     }
 
-    private Tuple<ReentrantLock, AtomicInteger> getLocker(Object id) {
-        return syncRoots.computeIfAbsent(id, k -> Tuple.of(new ReentrantLock(), new AtomicInteger()));
+    private TaskContext getContextForLock(Object id) {
+        return taskCtxMap.computeIfAbsent(id, k -> {
+            TaskContext ctx = new TaskContext();
+            ctx.lock = new ReentrantLock();
+            ctx.lockRefCnt = new AtomicInteger();
+            return ctx;
+        });
     }
 
-    private Task<?> getAs(Runnable command, boolean remove) {
-        return remove ? funcMap.remove(command) : funcMap.get(command);
+    private Task<?> getTask(Runnable command, boolean remove) {
+        return remove ? taskMap.remove(command) : taskMap.get(command);
     }
 
     @Override
