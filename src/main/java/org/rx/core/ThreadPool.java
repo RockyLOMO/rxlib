@@ -550,7 +550,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (task != null) {
             Object id = task.id;
             if (id != null) {
-                TaskContext ctx = getContextForLock(id);
+                TaskContext ctx = taskCtxMap.get(id);
                 if (ctx != null) {
                     boolean doRemove = false;
                     if (ctx.lockRefCnt.decrementAndGet() <= 0) {
