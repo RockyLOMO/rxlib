@@ -87,7 +87,7 @@ public class BeanMapper {
     }
 
     public <T> T map(Object source, Class<T> targetType) {
-        return map(source, Reflects.newInstance(targetType));
+        return map(source, (T) Reflects.newInstance(targetType));
     }
 
     public <T> T map(Object source, T target) {

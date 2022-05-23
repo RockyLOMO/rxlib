@@ -2,6 +2,7 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.FastThreadLocal;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -84,27 +85,29 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         public int incrementSize() {
+            int s = size.incrementAndGet();
             writeBack();
-            return size.incrementAndGet();
+            return s;
         }
 
         public int decrementSize() {
+            int s = size.decrementAndGet();
             writeBack();
-            return size.decrementAndGet();
+            return s;
         }
 
-        @SneakyThrows
         private void writeBack() {
             if (fileStream == null) {
                 return;
             }
-//            log.debug("write back {}", this);
+
             fileStream.queue.offer(0L, this, x -> fileStream.saveMeta());
         }
     }
 
     static final float GROW_FACTOR = 0.75f;
     static final int HEADER_SIZE = 256;
+    static final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final FileStream main;
     final CompositeLock lock;
     private final long growSize;
@@ -113,7 +116,6 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private boolean autoFlush;
     private IOStream<?, ?> writer;
     private final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
-    private final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     private final Serializer serializer;
     final MetaHeader meta;
     private final WriteBehindQueue<Long, MetaHeader> queue = new WriteBehindQueue<>(Constants.DEFAULT_INTERVAL, 2);
@@ -187,7 +189,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         return lock.readInvoke(main::getLength);
     }
 
-    public WALFileStream(File file, long growSize, int readerCount, Serializer serializer) {
+    public WALFileStream(File file, long growSize, int readerCount, @NonNull Serializer serializer) {
         this.growSize = growSize;
         this.readerCount = readerCount;
         this.serializer = serializer;
