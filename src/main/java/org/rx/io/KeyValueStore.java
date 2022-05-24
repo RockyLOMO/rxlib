@@ -30,7 +30,7 @@ import static org.rx.core.Extends.*;
  * logPosition + size
  *
  * <p>index
- * key.hashCode(4) + pos(8)
+ * crc64(8) + pos(8)
  *
  * <p>log
  * key + value + size(4)
@@ -104,7 +104,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     final KeyValueStoreConfig config;
     final File parentDirectory;
     final WALFileStream wal;
-    final HashFileIndexer<TK> indexer;
+    final HashKeyIndexer<TK> indexer;
     final Serializer serializer;
     final WriteBehindQueue<TK, TV> queue;
     final HttpServer apiServer;
@@ -137,7 +137,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         File logFile = new File(getParentDirectory(), LOG_FILE);
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
 
-        indexer = new HashFileIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
+        indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
 
         wal.lock.writeInvoke(() -> {
             long pos = wal.meta.getLogPosition();
@@ -148,9 +148,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             while ((val = findValue(pos, null, endPos)) != null) {
                 boolean incr = false;
                 TK k = val.key;
-                HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
+                HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
                 if (key == null) {
-                    key = new HashFileIndexer.KeyData<>(k, k.hashCode());
+                    key = new HashKeyIndexer.KeyData<>(k, k.hashCode());
                     incr = true;
                 }
                 if (key.logPosition == TOMB_MARK) {
@@ -280,9 +280,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     protected void write(TK k, TV v) {
         boolean incr = false;
-        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
+        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null) {
-            key = new HashFileIndexer.KeyData<>(k, k.hashCode());
+            key = new HashKeyIndexer.KeyData<>(k, k.hashCode());
             incr = true;
         }
         if (key.logPosition == TOMB_MARK) {
@@ -293,7 +293,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         Entry<TK, TV> val = new Entry<>(k, v);
-        HashFileIndexer.KeyData<TK> finalKey = key;
+        HashKeyIndexer.KeyData<TK> finalKey = key;
         wal.lock.writeInvoke(() -> {
             saveValue(finalKey, val);
             indexer.saveKey(finalKey);
@@ -304,7 +304,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     protected TV delete(TK k) {
-        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
+        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
@@ -323,7 +323,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     protected TV read(TK k) {
-        HashFileIndexer.KeyData<TK> key = indexer.findKey(k);
+        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
@@ -332,7 +332,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         return val != null ? val.value : null;
     }
 
-    private void saveValue(HashFileIndexer.KeyData<TK> key, Entry<TK, TV> value) {
+    private void saveValue(HashKeyIndexer.KeyData<TK> key, Entry<TK, TV> value) {
         checkNotClosed();
         require(key, !(key.logPosition == TOMB_MARK && value.value == null));
 
@@ -347,7 +347,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         log.debug("saveValue {} {}", key, value);
     }
 
-    private Entry<TK, TV> findValue(HashFileIndexer.KeyData<TK> key) {
+    private Entry<TK, TV> findValue(HashKeyIndexer.KeyData<TK> key) {
 //        require(key, key.logPosition >= 0);
         if (key.logPosition == TOMB_MARK) {
             log.warn("LogPosError {} == TOMB_MARK", key);
@@ -526,7 +526,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public TV remove(Object key) {
         TK k = (TK) key;
-        queue.replace(k, null);
+        queue.remove(k);
         return delete(k);
     }
 

@@ -22,7 +22,7 @@ import static org.rx.core.Extends.tryClose;
  * @param <TK>
  */
 @Slf4j
-final class HashFileIndexer<TK> extends Disposable {
+final class HashKeyIndexer<TK> extends Disposable {
     @RequiredArgsConstructor
     @EqualsAndHashCode
     @ToString
@@ -36,13 +36,13 @@ final class HashFileIndexer<TK> extends Disposable {
 
     @RequiredArgsConstructor
     static class Slot {
-        private final HashFileIndexer<?> owner;
+        private final HashKeyIndexer<?> owner;
         private final FileStream main;
         private final CompositeLock lock;
         private long _wroteBytes = HEADER_SIZE;
         private IOStream<?, ?> writer, reader;
 
-        Slot(HashFileIndexer<?> owner, File indexFile) {
+        Slot(HashKeyIndexer<?> owner, File indexFile) {
             this.owner = owner;
             main = new FileStream(indexFile, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
             lock = main.getLock();
@@ -144,7 +144,7 @@ final class HashFileIndexer<TK> extends Disposable {
     private final WriteBehindQueue<String, Integer> queue;
     private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 4 + 8));
 
-    public HashFileIndexer(@NonNull File directory, long slotSize, int growSize) {
+    public HashKeyIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);
         this.growSize = growSize;
         this.directory = directory;
