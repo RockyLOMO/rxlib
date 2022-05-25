@@ -385,6 +385,10 @@ public final class App extends SystemUtils {
         return hash64(data.getBytes(StandardCharsets.UTF_8));
     }
 
+    public static long hash64(long data) {
+        return hash64(Bytes.getBytes(data));
+    }
+
     public static long hash64(byte[] buf) {
         return hash64(buf, 0, buf.length);
     }

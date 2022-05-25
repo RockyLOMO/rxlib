@@ -29,7 +29,7 @@ public class KeyValueStoreConfig {
     /**
      * init big file for sequential write
      */
-    private long logGrowSize = Constants.GB; //1G
+    private long logGrowSize = Constants.MB * 512;
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.

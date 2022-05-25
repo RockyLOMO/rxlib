@@ -217,7 +217,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 if (isShouldReconnect()) {
                     Tasks.timer().setTimeout(() -> {
                         doConnect(true, syncRoot);
-                        return isShouldReconnect();
+                        asyncContinue(isShouldReconnect());
                     }, d -> {
                         long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
                         log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);

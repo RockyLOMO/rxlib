@@ -17,81 +17,69 @@ import static org.rx.core.Extends.quietly;
 @Slf4j
 final class WriteBehindQueue<K, V> extends Disposable {
     @Getter
-    private final long writeDelayed;
+    final long writeDelayed;
     @Getter
-    private final IntWaterMark waterMark;
+    final IntWaterMark funcWaterMark;
     //sequential
-    private final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> sortMap = new ConcurrentSkipListMap<>();
-    private final ManualResetEvent syncRoot = new ManualResetEvent();
-    private volatile boolean stop;  //避免consume时又offer 死循环
+    final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> funcs = new ConcurrentSkipListMap<>();
+    final ManualResetEvent syncRoot = new ManualResetEvent();
 
-    WriteBehindQueue(long writeDelayed, int highWaterMark) {
-        this(writeDelayed, new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
+    WriteBehindQueue(long writeDelayed, int highFuncWaterMark) {
+        this(writeDelayed, new IntWaterMark((int) Math.ceil(highFuncWaterMark / 2d), highFuncWaterMark));
     }
 
-    WriteBehindQueue(long writeDelayed, @NonNull IntWaterMark waterMark) {
+    WriteBehindQueue(long writeDelayed, @NonNull IntWaterMark funcWaterMark) {
         this.writeDelayed = writeDelayed;
-        this.waterMark = waterMark;
+        this.funcWaterMark = funcWaterMark;
     }
 
     @Override
     protected void freeObjects() {
-        stop = true;
         consume();
     }
 
     public void reset() {
-        sortMap.clear();
+        funcs.clear();
         syncRoot.set();
     }
 
-    public V peek(@NonNull K posKey) {
-        return sortMap.getOrDefault(posKey, new Tuple<>()).left;
-    }
-
     @SneakyThrows
-    public void offer(@NonNull K posKey, V writeVal, BiAction<V> writeAction) {
-        checkNotClosed();
-        if (stop) {
-            writeAction.invoke(writeVal);
+    public void offer(@NonNull K posKey, V writeVal, BiAction<V> writeFunc) {
+        if (isClosed()) {
+            writeFunc.invoke(writeVal);
             return;
         }
 
-        sortMap.put(posKey, Tuple.of(writeVal, writeAction));
-
-        if (sortMap.size() > waterMark.getHigh()) {
+        funcs.put(posKey, Tuple.of(writeVal, writeFunc));
+        if (funcs.size() > funcWaterMark.getHigh()) {
             log.warn("high water mark threshold");
-            Tasks.timer().setTimeout(() -> {
-                consume();
-                return false;
-            }, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE);
+            Tasks.timer().setTimeout(this::consume, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE);
             syncRoot.waitOne();
             syncRoot.reset();
             log.info("below low water mark");
         }
 
         Tasks.setTimeout(this::consume, writeDelayed, this, TimeoutFlag.SINGLE);
-        log.debug("offer {} {} delay={}", posKey, writeVal, writeDelayed);
+        log.debug("offer {} delay={}", posKey, writeDelayed);
     }
 
-    public boolean replace(@NonNull K posKey, V writeVal) {
-        if (writeVal == null) {
-            return sortMap.remove(posKey) != null;
-        }
+    public boolean remove(@NonNull K posKey) {
+        return funcs.remove(posKey) != null;
+    }
 
-        Tuple<V, BiAction<V>> tuple = sortMap.get(posKey);
+    public V peek(@NonNull K posKey) {
+        Tuple<V, BiAction<V>> tuple = funcs.get(posKey);
         if (tuple == null) {
-            return false;
+            return null;
         }
-        tuple.left = writeVal;
-        return true;
+        return tuple.left;
     }
 
-    public void consume() {
-        int size = sortMap.size();
+    public synchronized void consume() {
+        int size = funcs.size();
         while (size > 0) {
-            Map.Entry<K, Tuple<V, BiAction<V>>> entry = sortMap.pollFirstEntry();
-            if (sortMap.size() <= waterMark.getLow()) {
+            Map.Entry<K, Tuple<V, BiAction<V>>> entry = funcs.pollFirstEntry();
+            if (funcs.size() <= funcWaterMark.getLow()) {
                 log.debug("low water mark threshold");
                 syncRoot.set();
             }
@@ -100,7 +88,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
             }
             Tuple<V, BiAction<V>> tuple = entry.getValue();
             quietly(() -> tuple.right.invoke(tuple.left));
-            log.debug("consume {} {}", entry.getKey(), tuple.left);
+            log.debug("consume {}", entry.getKey());
             size--;
         }
     }
