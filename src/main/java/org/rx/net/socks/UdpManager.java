@@ -21,22 +21,22 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class UdpManager {
-    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
-        Channel outbound = f.channel();
-        InetSocketAddress srcEp = SocksContext.realSource(outbound);
-        if (!f.isSuccess()) {
-            closeChannel(srcEp);
-            return;
-        }
-
-//        sleep(1000);
-//        System.out.println(outbound.isActive());
-        int size = SocksContext.flushPendingQueue(outbound);
-        if (size > 0) {
-            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
-        }
-    };
+//    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
+//        Channel outbound = f.channel();
+//        InetSocketAddress srcEp = SocksContext.realSource(outbound);
+//        if (!f.isSuccess()) {
+//            closeChannel(srcEp);
+//            return;
+//        }
+//
+////        sleep(1000);
+////        System.out.println(outbound.isActive());
+//        int size = SocksContext.flushPendingQueue(outbound);
+//        if (size > 0) {
+//            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
+//            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
+//        }
+//    };
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {

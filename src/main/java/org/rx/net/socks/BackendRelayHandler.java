@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.proxy.ProxyConnectException;
@@ -9,6 +10,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.net.Sockets;
 
 @Slf4j
+@ChannelHandler.Sharable
 public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final BackendRelayHandler DEFAULT = new BackendRelayHandler();
 

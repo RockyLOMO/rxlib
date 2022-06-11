@@ -1,12 +1,14 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
 @Slf4j
+@ChannelHandler.Sharable
 public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final FrontendRelayHandler DEFAULT = new FrontendRelayHandler();
 

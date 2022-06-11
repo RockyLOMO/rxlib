@@ -3,9 +3,6 @@ package org.rx.net.shadowsocks;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
-import io.netty.handler.timeout.IdleStateHandler;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
@@ -16,7 +13,7 @@ import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.shadowsocks.obfs.ObfsFactory;
-import org.rx.net.socks.RouteEventArgs;
+import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
@@ -25,40 +22,33 @@ import java.util.List;
 
 @Slf4j
 public class ShadowsocksServer extends Disposable implements EventTarget<ShadowsocksServer> {
-    public static final TripleAction<ShadowsocksServer, RouteEventArgs> DIRECT_ROUTER = (s, e) -> e.setValue(new Upstream(e.getDestinationEndpoint()));
-    public final Delegate<ShadowsocksServer, RouteEventArgs> onRoute = Delegate.create(DIRECT_ROUTER),
+    public static final TripleAction<ShadowsocksServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
+    public final Delegate<ShadowsocksServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
-        bootstrap = Sockets.serverBootstrap(this.config = config, ctx -> {
-            ctx.attr(SSCommon.IS_UDP).set(false);
+        bootstrap = Sockets.serverBootstrap(this.config = config, channel -> {
+            channel.attr(SSCommon.IS_UDP).set(false);
 
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
-            ctx.attr(SSCommon.CIPHER).set(_crypto);
+            channel.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(new IdleStateHandler(0, 0, config.getIdleTimeout()) {
-                @Override
-                protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                    log.info("{} {}", ctx, state);
-                    Sockets.closeOnFlushed(ctx);
-                    return super.newIdleStateEvent(state, first);
-                }
-            });
+            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getIdleTimeout(), 0));
 
             //obfs pugin
             List<ChannelHandler> obfsHandlers = ObfsFactory.getObfsHandler(config.getObfs());
             if (obfsHandlers != null) {
                 for (ChannelHandler obfsHandler : obfsHandlers) {
-                    ctx.pipeline().addLast(obfsHandler);
+                    channel.pipeline().addLast(obfsHandler);
                 }
             }
 
-            SocksContext.ssServer(ctx, ShadowsocksServer.this);
-            ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
+            SocksContext.ssServer(channel, ShadowsocksServer.this);
+            channel.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
                     CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
         });
         bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));

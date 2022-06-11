@@ -22,7 +22,8 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 10;
     private int writeTimeoutSeconds;
-    private int udpTimeoutSeconds = 60 * 30;
+    private int udpReadTimeoutSeconds = 60 * 30;
+    private int udpWriteTimeoutSeconds;
     private boolean enableUdp2raw;
     private List<InetSocketAddress> udp2rawServers;
     @Getter(lazy = true)
