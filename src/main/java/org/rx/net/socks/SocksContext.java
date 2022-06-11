@@ -2,36 +2,57 @@ package org.rx.net.socks;
 
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
-import lombok.NonNull;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.core.Container;
+import org.rx.core.EventArgs;
 import org.rx.core.Reflects;
 import org.rx.core.ShellCommander;
+import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
-import org.rx.util.function.Func;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-public final class SocksContext {
+@RequiredArgsConstructor
+public final class SocksContext extends EventArgs {
+    private static final long serialVersionUID = 323020524764860674L;
     //common
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
-    private static final AttributeKey<InetSocketAddress> REAL_SOURCE = AttributeKey.valueOf("REAL_SOURCE");
-    private static final AttributeKey<UnresolvedEndpoint> REAL_DESTINATION = AttributeKey.valueOf("REAL_DESTINATION");
-    private static final AttributeKey<Upstream> UPSTREAM = AttributeKey.valueOf("UPSTREAM");
-    //tcp
-    private static final AttributeKey<Channel> TCP_OUTBOUND = AttributeKey.valueOf("TCP_OUTBOUND");
-    //udp
-    private static final AttributeKey<ConcurrentLinkedQueue<Object>> PENDING_QUEUE = AttributeKey.valueOf("PENDING_QUEUE");
+    private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
     //ss
     private static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
+
+    /**
+     * call this method before bind & connect
+     *
+     * @param inbound
+     * @param outbound
+     * @param sc
+     * @param pendingQueue
+     */
+    public static void mark(Channel inbound, Channel outbound, SocksContext sc, boolean pendingQueue) {
+        if (pendingQueue) {
+            sc.pendingPackages = new ConcurrentLinkedQueue<>();
+        }
+        sc.inbound = inbound;
+        sc.outbound = outbound;
+        inbound.attr(CTX).set(sc);
+        outbound.attr(CTX).set(sc);
+    }
+
+    public static SocksContext ctx(Channel channel) {
+        return Objects.requireNonNull(channel.attr(CTX).get());
+    }
 
     //region common
     public static SocksProxyServer server(Channel channel) {
@@ -41,49 +62,11 @@ public final class SocksContext {
     public static void server(Channel channel, SocksProxyServer server) {
         channel.attr(SERVER).set(server);
     }
-
-    public static InetSocketAddress realSource(Channel channel) {
-        return Objects.requireNonNull(channel.attr(REAL_SOURCE).get());
-    }
-
-    public static UnresolvedEndpoint realDestination(Channel channel) {
-        return Objects.requireNonNull(channel.attr(REAL_DESTINATION).get());
-    }
-
-    public static void realDestination(Channel channel, UnresolvedEndpoint destination) {
-        channel.attr(REAL_DESTINATION).set(destination);
-    }
-
-    public static Upstream upstream(Channel channel) {
-        return Objects.requireNonNull(channel.attr(UPSTREAM).get());
-    }
-
-//    public static void upstream(Channel channel, Upstream upstream) {
-//        channel.attr(UPSTREAM).set(upstream);
-//    }
     //endregion
 
-    public static Channel initOutbound(Channel outbound, InetSocketAddress srcEp, UnresolvedEndpoint dstEp, Upstream upstream) {
-        return initOutbound(outbound, srcEp, dstEp, upstream, true);
-    }
-
-    /**
-     * call this method before bind & connect
-     *
-     * @param outbound channel
-     */
-    public static Channel initOutbound(Channel outbound, InetSocketAddress srcEp, UnresolvedEndpoint dstEp, Upstream upstream, boolean pendingQueue) {
-        if (pendingQueue) {
-            outbound.attr(PENDING_QUEUE).set(new ConcurrentLinkedQueue<>());
-        }
-        outbound.attr(REAL_SOURCE).set(srcEp);
-        outbound.attr(REAL_DESTINATION).set(dstEp);
-        outbound.attr(UPSTREAM).set(upstream);
-        return outbound;
-    }
-
     public static boolean addPendingPacket(Channel outbound, Object packet) {
-        ConcurrentLinkedQueue<Object> queue = outbound.attr(PENDING_QUEUE).get();
+        SocksContext sc = ctx(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
         if (queue == null || outbound.isActive()) {
             return false;
         }
@@ -91,7 +74,8 @@ public final class SocksContext {
     }
 
     public static int flushPendingQueue(Channel outbound) {
-        ConcurrentLinkedQueue<Object> queue = outbound.attr(PENDING_QUEUE).getAndRemove();
+        SocksContext sc = ctx(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
         if (queue == null) {
             return 0;
         }
@@ -100,26 +84,12 @@ public final class SocksContext {
         return size;
     }
 
-
-    public static Channel tcpOutbound(Channel channel) {
-        synchronized (channel) {
-            return Objects.requireNonNull(channel.attr(TCP_OUTBOUND).get());
+    public static ShadowsocksServer ssServer(Channel channel, boolean throwOnEmpty) {
+        ShadowsocksServer shadowsocksServer = channel.attr(SS_SERVER).get();
+        if (throwOnEmpty && shadowsocksServer == null) {
+            throw new InvalidException("Set ssServer first");
         }
-    }
-
-    @SneakyThrows
-    public static void tcpOutbound(@NonNull Channel channel, @NonNull Func<Channel> outboundFn) {
-        synchronized (channel) {
-            Channel val = channel.attr(TCP_OUTBOUND).get();
-            if (val == null) {
-                channel.attr(TCP_OUTBOUND).set(outboundFn.invoke());
-            }
-        }
-    }
-
-
-    public static ShadowsocksServer ssServer(Channel channel) {
-        return Objects.requireNonNull(channel.attr(SS_SERVER).get());
+        return shadowsocksServer;
     }
 
     public static void ssServer(Channel channel, ShadowsocksServer server) {
@@ -151,5 +121,36 @@ public final class SocksContext {
                 o.invoke(new ShellCommander.OutPrintEventArgs(0, e.toString()));
             }
         }
+    }
+
+    @Getter
+    final InetSocketAddress firstSource;
+    @Getter
+    final UnresolvedEndpoint firstDestination;
+    Upstream upstream;
+    boolean upstreamChanged;
+    int upstreamFailCount;
+
+    public transient Channel inbound;
+    public transient Channel outbound;
+    transient ConcurrentLinkedQueue<Object> pendingPackages;
+    public transient Action onClose;
+
+    public synchronized Upstream getUpstream() {
+        return upstream;
+    }
+
+    public synchronized void setUpstream(Upstream upstream) {
+        upstreamChanged = upstreamChanged || this.upstream != upstream;
+        this.upstream = upstream;
+    }
+
+    public synchronized boolean isUpstreamChanged() {
+        return upstreamChanged;
+    }
+
+    public synchronized void reset() {
+        upstreamChanged = false;
+        upstreamFailCount++;
     }
 }

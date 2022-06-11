@@ -368,57 +368,57 @@ public class SocksTester extends TConfig {
 
     int connectTimeoutMillis = 30000;
 
-    @SneakyThrows
-    @Test
-    public void ssProxy() {
-        int shadowDnsPort = 853;
-        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
-        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-
-        String defPwd = "123456";
-        SocksConfig backConf = new SocksConfig(2080);
-        backConf.setEnableUdp2raw(true);
-        backConf.setUdp2rawServers(Collections.emptyList());
-        SocksUser usr = new SocksUser("rocky");
-        usr.setPassword(defPwd);
-        usr.setMaxIpCount(-1);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
-
-        AuthenticEndpoint srvEp = new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword());
-        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
-                CipherKind.AES_128_GCM.getCipherName(), defPwd);
-        ShadowsocksServer server = new ShadowsocksServer(config);
-        server.onRoute.combine((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-            //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                e.setValue(shadowDnsUpstream);
-                return;
-            }
-            //bypass
-            if (config.isBypass(dstEp.getHost())) {
-                e.setValue(new Upstream(dstEp));
-                return;
-            }
-            e.setValue(new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null)));
-        });
-        server.onUdpRoute.combine((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-            //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                e.setValue(shadowDnsUpstream);
-            }
-            //bypass
-            if (config.isBypass(dstEp.getHost())) {
-                e.setValue(new Upstream(dstEp));
-            }
-            e.setValue(new Upstream(dstEp));
-//            return new Upstream(dstEp, srvEp);
-        });
-
-        System.in.read();
-    }
+//    @SneakyThrows
+//    @Test
+//    public void ssProxy() {
+//        int shadowDnsPort = 853;
+//        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+//        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+//        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+//
+//        String defPwd = "123456";
+//        SocksConfig backConf = new SocksConfig(2080);
+//        backConf.setEnableUdp2raw(true);
+//        backConf.setUdp2rawServers(Collections.emptyList());
+//        SocksUser usr = new SocksUser("rocky");
+//        usr.setPassword(defPwd);
+//        usr.setMaxIpCount(-1);
+//        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
+//
+//        AuthenticEndpoint srvEp = new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword());
+//        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
+//                CipherKind.AES_128_GCM.getCipherName(), defPwd);
+//        ShadowsocksServer server = new ShadowsocksServer(config);
+//        server.onRoute.combine((s, e) -> {
+//            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+//            //must first
+//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+//                e.setValue(shadowDnsUpstream);
+//                return;
+//            }
+//            //bypass
+//            if (config.isBypass(dstEp.getHost())) {
+//                e.setValue(new Upstream(dstEp));
+//                return;
+//            }
+//            e.setValue(new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null)));
+//        });
+//        server.onUdpRoute.combine((s, e) -> {
+//            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+//            //must first
+//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+//                e.setValue(shadowDnsUpstream);
+//            }
+//            //bypass
+//            if (config.isBypass(dstEp.getHost())) {
+//                e.setValue(new Upstream(dstEp));
+//            }
+//            e.setValue(new Upstream(dstEp));
+////            return new Upstream(dstEp, srvEp);
+//        });
+//
+//        System.in.read();
+//    }
 
     @SneakyThrows
     @Test
@@ -463,38 +463,39 @@ public class SocksTester extends TConfig {
         }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-        TripleAction<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+        TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
             //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                e.setValue(shadowDnsUpstream);
-                return;
-            }
+//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+//                e.setUpstream(shadowDnsUpstream);
+//                return;
+//            }
             //bypass
-            if (frontConf.isBypass(dstEp.getHost())) {
-                e.setValue(new Upstream(dstEp));
-            }
+//            if (frontConf.isBypass(dstEp.getHost())) {
+//                e.setUpstream(new Upstream(dstEp));
+//            }
         };
-        frontSvr.onRoute.combine(firstRoute, (s, e) -> {
-            if (e.getValue() != null) {
+        frontSvr.onRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
                 return;
             }
-            e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next()));
+            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, shadowServers::next));
+            System.out.println("abc"+e.getUpstream());
         });
-        frontSvr.onUdpRoute.combine(firstRoute, (s, e) -> {
-            if (e.getValue() != null) {
+        frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
                 return;
             }
-            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (frontConf.isEnableUdp2raw()) {
                 if (!udp2rawDirect) {
-                    e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                    e.setUpstream(new Upstream(dstEp, shadowServers.next().getEndpoint()));
                 } else {
-                    e.setValue(new Upstream(dstEp));
+                    e.setUpstream(new Upstream(dstEp));
                 }
                 return;
             }
-            e.setValue(new Socks5UdpUpstream(dstEp, frontConf, shadowServers::next));
+            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
@@ -506,19 +507,19 @@ public class SocksTester extends TConfig {
         System.in.read();
     }
 
-    @SneakyThrows
-    @Test
-    public void directProxy() {
-        DirectConfig frontConf = new DirectConfig(3307);
-        frontConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
-        DirectProxyServer frontSvr = new DirectProxyServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
-
-        DirectConfig backConf = new DirectConfig(3308);
-        backConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
-        DirectProxyServer backSvr = new DirectProxyServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
-
-        System.in.read();
-    }
+//    @SneakyThrows
+//    @Test
+//    public void directProxy() {
+//        DirectConfig frontConf = new DirectConfig(3307);
+//        frontConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+//        DirectProxyServer frontSvr = new DirectProxyServer(frontConf, p -> Sockets.parseEndpoint("127.0.0.1:3308"));
+//
+//        DirectConfig backConf = new DirectConfig(3308);
+//        backConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
+//        DirectProxyServer backSvr = new DirectProxyServer(backConf, p -> Sockets.parseEndpoint("rm-bp1hddend5q83p03g674.mysql.rds.aliyuncs.com:3306"));
+//
+//        System.in.read();
+//    }
 
     @Test
     public void isBypass() {

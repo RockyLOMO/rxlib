@@ -1,22 +1,28 @@
 package org.rx.net.socks;
 
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
 @Slf4j
-@ChannelHandler.Sharable
-public class ProxyChannelIdleHandler extends ChannelInboundHandlerAdapter {
-    public static final ProxyChannelIdleHandler DEFAULT = new ProxyChannelIdleHandler();
+public class ProxyChannelIdleHandler extends IdleStateHandler {
+    public ProxyChannelIdleHandler(int readerIdleTimeSeconds, int writerIdleTimeSeconds) {
+        super(readerIdleTimeSeconds, writerIdleTimeSeconds, 0);
+    }
 
+    @SneakyThrows
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
-            log.info("{} {} idle timeout: {}", Sockets.protocolName(ctx.channel()), ctx.channel(), ((IdleStateEvent) evt).state());
+            log.info("{} {} idle: {}", Sockets.protocolName(ctx.channel()), ctx.channel(), ((IdleStateEvent) evt).state());
             Sockets.closeOnFlushed(ctx.channel());
+            SocksContext sc = SocksContext.ctx(ctx.channel());
+            if (sc.onClose != null) {
+                sc.onClose.invoke();
+            }
             return;
         }
         super.userEventTriggered(ctx, evt);

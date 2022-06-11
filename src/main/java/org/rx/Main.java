@@ -149,37 +149,37 @@ public final class Main implements SocksSupport {
             }
             SocksProxyServer frontSvr = new SocksProxyServer(frontConf, Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1));
             Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-            TripleAction<SocksProxyServer, RouteEventArgs> firstRoute = (s, e) -> {
-                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+            TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
                 //must first
                 if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                    e.setValue(shadowDnsUpstream);
+                    e.setUpstream(shadowDnsUpstream);
                     return;
                 }
                 //bypass
                 if (frontConf.isBypass(dstEp.getHost())) {
-                    e.setValue(new Upstream(dstEp));
+                    e.setUpstream(new Upstream(dstEp));
                 }
             };
             frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-                if (e.getValue() != null) {
+                if (e.getUpstream() != null) {
                     return;
                 }
-                e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
+                e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next(e.getFirstSource(), conf.steeringTTL, true)));
             });
             frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
-                if (e.getValue() != null) {
+                if (e.getUpstream() != null) {
                     return;
                 }
 
-                UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-                if (conf.pcap2socks && e.getSourceEndpoint().getAddress().isLoopbackAddress()) {
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                if (conf.pcap2socks && e.getFirstSource().getAddress().isLoopbackAddress()) {
                     Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-                    if (cache.get(hashKey("pcap", e.getSourceEndpoint().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
-                            .any(p -> p.getSource().getPort() == e.getSourceEndpoint().getPort()
+                    if (cache.get(hashKey("pcap", e.getFirstSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
+                            .any(p -> p.getSource().getPort() == e.getFirstSource().getPort()
                                     && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
                         log.info("pcap2socks forward");
-                        e.setValue(new Upstream(dstEp));
+                        e.setUpstream(new Upstream(dstEp));
                         return;
                     }
                 }
@@ -191,8 +191,7 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-//                e.setValue(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSourceEndpoint(), conf.steeringTTL, true)));
-                e.setValue(new Upstream(dstEp));
+                e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getFirstSource(), conf.steeringTTL, true)));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
@@ -216,36 +215,36 @@ public final class Main implements SocksSupport {
                 frontConf.setMemoryMode(MemoryMode.MEDIUM);
                 frontConf.setConnectTimeoutMillis(connectTimeout);
                 ShadowsocksServer server = new ShadowsocksServer(ssConfig);
-                TripleAction<ShadowsocksServer, RouteEventArgs> ssFirstRoute = (s, e) -> {
-                    UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
+                TripleAction<ShadowsocksServer, SocksContext> ssFirstRoute = (s, e) -> {
+                    UnresolvedEndpoint dstEp = e.getFirstDestination();
                     //must first
                     if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                        e.setValue(shadowDnsUpstream);
+                        e.setUpstream(shadowDnsUpstream);
                         return;
                     }
                     //bypass
                     if (ssConfig.isBypass(dstEp.getHost())) {
                         log.info("ss bypass: {}", dstEp);
-                        e.setValue(new Upstream(dstEp));
+                        e.setUpstream(new Upstream(dstEp));
                     }
                 };
                 server.onRoute.replace(ssFirstRoute, (s, e) -> {
-                    if (e.getValue() != null) {
+                    if (e.getUpstream() != null) {
                         return;
                     }
                     //gateway
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getDestinationEndpoint().getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getFirstDestination().getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
                     if (ipAddress != null && ipAddress.isChina()) {
-                        e.setValue(new Upstream(e.getDestinationEndpoint()));
+                        e.setUpstream(new Upstream(e.getFirstDestination()));
                         return;
                     }
-                    e.setValue(new Socks5Upstream(e.getDestinationEndpoint(), directConf, () -> new UpstreamSupport(srvEp, null)));
+                    e.setUpstream(new Socks5Upstream(e.getFirstDestination(), directConf, () -> new UpstreamSupport(srvEp, null)));
                 });
                 server.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
-                    if (e.getValue() != null) {
+                    if (e.getUpstream() != null) {
                         return;
                     }
-                    e.setValue(new Upstream(e.getDestinationEndpoint(), srvEp));
+                    e.setUpstream(new Upstream(e.getFirstDestination(), srvEp));
                 });
             }
 

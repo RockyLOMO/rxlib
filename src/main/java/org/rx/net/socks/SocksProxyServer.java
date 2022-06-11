@@ -22,13 +22,13 @@ import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
 public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
-    public static final TripleAction<SocksProxyServer, RouteEventArgs> DIRECT_ROUTER = (s, e) -> e.setValue(new Upstream(e.getDestinationEndpoint()));
+    public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
 //            || dstEp.getPort() == 80
             ;
-    public final Delegate<SocksProxyServer, RouteEventArgs> onRoute = Delegate.create(DIRECT_ROUTER),
+    public final Delegate<SocksProxyServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
-    public final Delegate<SocksProxyServer, RouteEventArgs> onReconnecting = Delegate.create();
+    public final Delegate<SocksProxyServer, SocksContext> onReconnecting = Delegate.create();
     @Getter
     final SocksConfig config;
     final ServerBootstrap bootstrap;
@@ -57,8 +57,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
                 pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(authenticator, config.getTrafficShapingInterval()));
             }
             //超时处理
-            pipeline.addLast(new IdleStateHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), 0),
-                    ProxyChannelIdleHandler.DEFAULT);
+            pipeline.addLast(new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)

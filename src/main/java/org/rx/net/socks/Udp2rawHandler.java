@@ -51,9 +51,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (udp2rawServers != null) {
             if (!udp2rawServers.contains(srcEp0) && !clientRoutes.containsKey(srcEp0)) {
                 final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-                RouteEventArgs e = new RouteEventArgs(srcEp0, dstEp);
+                SocksContext e = new SocksContext(srcEp0, dstEp);
                 server.raiseEvent(server.onUdpRoute, e);
-                Upstream upstream = e.getValue();
+                Upstream upstream = e.getUpstream();
 
                 AuthenticEndpoint svrEp = upstream.getSocksServer();
                 if (svrEp != null) {
@@ -104,34 +104,35 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         final UnresolvedEndpoint srcEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
         Channel outbound = UdpManager.openChannel(srcEp.socketAddress(), k -> {
-            RouteEventArgs e = new RouteEventArgs(srcEp.socketAddress(), dstEp);
+            SocksContext e = new SocksContext(srcEp.socketAddress(), dstEp);
             server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getValue();
-            return SocksContext.initOutbound(Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+            Upstream upstream = e.getUpstream();
+            return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                 SocksContext.server(ob, server);
                 upstream.initChannel(ob);
 
-                ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
-                    @Override
-                    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        UdpManager.closeChannel(SocksContext.realSource(ob));
-                        return super.newIdleStateEvent(state, first);
-                    }
-                }, new SimpleChannelInboundHandler<DatagramPacket>() {
-                    @Override
-                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
-                        ByteBuf outBuf = Bytes.directBuffer(64 + out.content().readableBytes());
-                        outBuf.writeShort(STREAM_MAGIC);
-                        outBuf.writeByte(STREAM_VERSION);
-                        UdpManager.encode(outBuf, srcEp);
-                        UdpManager.encode(outBuf, dstEp);
-                        outBuf.writeBytes(out.content());
-                        inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp0));
-//                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, srcEp0, srcEp);
-                    }
-                });
+//                ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
+//                    @Override
+//                    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
+////                        UdpManager.closeChannel(SocksContext.realSource(ob));
+//                        return super.newIdleStateEvent(state, first);
+//                    }
+//                }, new SimpleChannelInboundHandler<DatagramPacket>() {
+//                    @Override
+//                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
+//                        ByteBuf outBuf = Bytes.directBuffer(64 + out.content().readableBytes());
+//                        outBuf.writeShort(STREAM_MAGIC);
+//                        outBuf.writeByte(STREAM_VERSION);
+//                        UdpManager.encode(outBuf, srcEp);
+//                        UdpManager.encode(outBuf, dstEp);
+//                        outBuf.writeBytes(out.content());
+//                        inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp0));
+////                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, srcEp0, srcEp);
+//                    }
+//                });
             }).bind(0).addListener(Sockets.logBind(0))
-                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp.socketAddress(), dstEp, upstream)
+//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE)
+                    .channel()
 //                    .syncUninterruptibly().channel(), srcEp.socketAddress(), dstEp, upstream, false)
                     ;
         });

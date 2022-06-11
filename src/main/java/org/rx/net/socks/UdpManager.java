@@ -23,9 +23,9 @@ import static org.rx.core.Extends.tryClose;
 public final class UdpManager {
     public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
         Channel outbound = f.channel();
-        InetSocketAddress srcEp = SocksContext.realSource(outbound);
+        SocksContext sc = SocksContext.ctx(outbound);
         if (!f.isSuccess()) {
-            closeChannel(srcEp);
+            closeChannel(sc.firstSource);
             return;
         }
 
@@ -33,17 +33,15 @@ public final class UdpManager {
 //        System.out.println(outbound.isActive());
         int size = SocksContext.flushPendingQueue(outbound);
         if (size > 0) {
-            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
+            log.debug("PENDING_QUEUE {} => {} flush {} packets", sc.firstSource, sc.firstDestination, size);
         }
     };
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
         if (SocksContext.addPendingPacket(outbound, packet)) {
-            InetSocketAddress srcEp = SocksContext.realSource(outbound);
-            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
+            SocksContext sc = SocksContext.ctx(outbound);
+            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.firstSource, sc.firstDestination);
             return;
         }
         outbound.writeAndFlush(packet);
@@ -59,20 +57,16 @@ public final class UdpManager {
             log.error("CloseChannel fail {} <> {}", incomingEp, HOLD.keySet());
             return;
         }
-        tryClose(SocksContext.upstream(channel));
+        tryClose(SocksContext.ctx(channel).upstream);
         channel.close();
     }
 
     public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
-//        try {
         ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
         outBuf.writeZero(3);
         encode(outBuf, dstEp);
         outBuf.writeBytes(buf);
         return outBuf;
-//        } finally {
-//            buf.release();
-//        }
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
