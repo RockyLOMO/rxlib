@@ -27,18 +27,19 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
      * | 2  |  1   |  1   | Variable |    2     | Variable |
      * +----+------+------+----------+----------+----------+
      *
-     * @param inbound
+     * @param ctx
      * @param in
      * @throws Exception
      */
     @Override
-    protected void channelRead0(ChannelHandlerContext inbound, DatagramPacket in) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
         if (inBuf.readableBytes() < 4) {
             return;
         }
 
-        SocksProxyServer server = SocksContext.server(inbound.channel());
+        Channel inbound = ctx.channel();
+        SocksProxyServer server = SocksContext.server(inbound);
         final InetSocketAddress srcEp = in.sender();
         if (!Sockets.isNatIp(srcEp.getAddress()) && !server.config.getWhiteList().contains(srcEp.getAddress())) {
             log.warn("security error, package from {}", srcEp);
@@ -47,17 +48,18 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
 
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
-            RouteEventArgs e = new RouteEventArgs(srcEp, dstEp);
+            SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getValue();
-            return SocksContext.initOutbound(Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                SocksContext.server(ob, server);
-                upstream.initChannel(ob);
+            Upstream upstream = e.getUpstream();
 
+            return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+                SocksContext.server(ob, server);
+                SocksContext.mark(inbound, ob, e, false);
+
+                upstream.initChannel(ob);
                 ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
                     @Override
                     protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-//                        UdpManager.closeChannel(SocksContext.realSource(ob));
                         UdpManager.closeChannel(srcEp);
                         return super.newIdleStateEvent(state, first);
                     }
@@ -79,16 +81,16 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             }).bind(0).addListener(Sockets.logBind(0))
                     //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
 //                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
-                    .sync().channel(), srcEp, dstEp, upstream, false);
+                    .syncUninterruptibly().channel();
         });
         //todo sync改eventcallback
 
-        Upstream upstream = SocksContext.upstream(outbound);
+        SocksContext sc = SocksContext.ctx(outbound);
 //        UnresolvedEndpoint upDstEp = upstream.getDestination();  //udp dstEp可能多个，但upstream只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp = dstEp;
-        AuthenticEndpoint socksServer = upstream.getSocksServer();
-        if (socksServer != null) {
-            upDstEp = new UnresolvedEndpoint(socksServer.getEndpoint());
+        AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();
+        if (upSvrEp != null) {
+            upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
         }
         UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));

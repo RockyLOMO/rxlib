@@ -3,44 +3,42 @@ package org.rx.net.socks;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
-import java.util.Collection;
-
 @Slf4j
-@RequiredArgsConstructor
 public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
-    public static final String PIPELINE_NAME = "to-upstream";
-    final Channel outbound;
-    final Collection<Object> pendingPackages;
+    public static final FrontendRelayHandler DEFAULT = new FrontendRelayHandler();
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel inbound = ctx.channel();
-        if (!outbound.isActive()) {
-            if (pendingPackages != null) {
-                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), outbound);
-                pendingPackages.add(msg);
+        SocksContext sc = SocksContext.ctx(inbound);
+        if (!sc.outbound.isActive()) {
+            if (sc.pendingPackages != null) {
+                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), sc.outbound);
+                sc.pendingPackages.add(msg);
             }
             return;
         }
 
-        log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        outbound.writeAndFlush(msg);
+        log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), sc.outbound.localAddress(), sc.outbound.remoteAddress());
+        sc.outbound.writeAndFlush(msg);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        Sockets.closeOnFlushed(outbound);
+        Channel inbound = ctx.channel();
+        SocksContext sc = SocksContext.ctx(inbound);
+        Sockets.closeOnFlushed(sc.outbound);
         super.channelInactive(ctx);
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel inbound = ctx.channel();
-        log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
+        SocksContext sc = SocksContext.ctx(inbound);
+        log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), sc.outbound.localAddress(), sc.outbound.remoteAddress(), cause);
         Sockets.closeOnFlushed(inbound);
     }
 }

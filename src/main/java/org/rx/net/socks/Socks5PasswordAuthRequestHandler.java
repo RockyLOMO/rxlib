@@ -17,7 +17,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         ChannelPipeline pipeline = ctx.pipeline();
         pipeline.remove(Socks5PasswordAuthRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        log.debug("socks5 auth {}:{}", msg.username(), msg.password());
+//        log.debug("socks5 auth {}:{}", msg.username(), msg.password());
 
         SocksProxyServer server = SocksContext.server(ctx.channel());
         SocksUser user;

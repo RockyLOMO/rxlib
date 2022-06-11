@@ -40,12 +40,12 @@ public final class UdpManager {
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
-        if (SocksContext.addPendingPacket(outbound, packet)) {
-            InetSocketAddress srcEp = SocksContext.realSource(outbound);
-            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
-            return;
-        }
+//        if (SocksContext.addPendingPacket(outbound, packet)) {
+//            InetSocketAddress srcEp = SocksContext.realSource(outbound);
+//            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
+//            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
+//            return;
+//        }
         outbound.writeAndFlush(packet);
     }
 
@@ -59,20 +59,16 @@ public final class UdpManager {
             log.error("CloseChannel fail {} <> {}", incomingEp, HOLD.keySet());
             return;
         }
-        tryClose(SocksContext.upstream(channel));
+        tryClose(SocksContext.ctx(channel).upstream);
         channel.close();
     }
 
     public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
-//        try {
         ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
         outBuf.writeZero(3);
         encode(outBuf, dstEp);
         outBuf.writeBytes(buf);
         return outBuf;
-//        } finally {
-//            buf.release();
-//        }
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
