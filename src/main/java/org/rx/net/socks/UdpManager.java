@@ -21,31 +21,29 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class UdpManager {
-//    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
-//        Channel outbound = f.channel();
-//        InetSocketAddress srcEp = SocksContext.realSource(outbound);
-//        if (!f.isSuccess()) {
-//            closeChannel(srcEp);
-//            return;
-//        }
-//
-////        sleep(1000);
-////        System.out.println(outbound.isActive());
-//        int size = SocksContext.flushPendingQueue(outbound);
-//        if (size > 0) {
-//            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-//            log.debug("PENDING_QUEUE {} => {} flush {} packets", srcEp, dstEp, size);
-//        }
-//    };
+    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
+        Channel outbound = f.channel();
+        SocksContext sc = SocksContext.ctx(outbound);
+        if (!f.isSuccess()) {
+            closeChannel(sc.firstSource);
+            return;
+        }
+
+//        sleep(1000);
+//        System.out.println(outbound.isActive());
+        int size = SocksContext.flushPendingQueue(outbound);
+        if (size > 0) {
+            log.debug("PENDING_QUEUE {} => {} flush {} packets", sc.firstSource, sc.firstDestination, size);
+        }
+    };
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
-//        if (SocksContext.addPendingPacket(outbound, packet)) {
-//            InetSocketAddress srcEp = SocksContext.realSource(outbound);
-//            UnresolvedEndpoint dstEp = SocksContext.realDestination(outbound);
-//            log.debug("PENDING_QUEUE {} => {} pend a packet", srcEp, dstEp);
-//            return;
-//        }
+        if (SocksContext.addPendingPacket(outbound, packet)) {
+            SocksContext sc = SocksContext.ctx(outbound);
+            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.firstSource, sc.firstDestination);
+            return;
+        }
         outbound.writeAndFlush(packet);
     }
 

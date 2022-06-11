@@ -69,11 +69,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksProxyServer server = SocksContext.server(inbound);
 
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
+            e.getUpstream().initChannel(outbound);
+
             SocksContext.server(outbound, server);
             SocksContext.mark(inbound, outbound, e, true);
             inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);
-
-            e.getUpstream().initChannel(outbound);
         }).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {

@@ -466,22 +466,23 @@ public class SocksTester extends TConfig {
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                e.setUpstream(shadowDnsUpstream);
-                return;
-            }
+//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+//                e.setUpstream(shadowDnsUpstream);
+//                return;
+//            }
             //bypass
-            if (frontConf.isBypass(dstEp.getHost())) {
-                e.setUpstream(new Upstream(dstEp));
-            }
+//            if (frontConf.isBypass(dstEp.getHost())) {
+//                e.setUpstream(new Upstream(dstEp));
+//            }
         };
-        frontSvr.onRoute.combine(firstRoute, (s, e) -> {
+        frontSvr.onRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next()));
+            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, shadowServers::next));
+            System.out.println("abc"+e.getUpstream());
         });
-        frontSvr.onUdpRoute.combine(firstRoute, (s, e) -> {
+        frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }

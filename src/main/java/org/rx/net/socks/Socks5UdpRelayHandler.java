@@ -20,8 +20,9 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         public static final UdpBackendRelayHandler DEFAULT = new UdpBackendRelayHandler();
 
         @Override
-        protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) throws Exception {
-            SocksContext sc = SocksContext.ctx(outbound.channel());
+        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
+            Channel outbound = ctx.channel();
+            SocksContext sc = SocksContext.ctx(outbound);
             InetSocketAddress srcEp = sc.firstSource;
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
@@ -32,7 +33,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
-            SocksProxyServer server = SocksContext.server(outbound.channel());
+            SocksProxyServer server = SocksContext.server(outbound);
             log.debug("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
         }
     }
@@ -80,10 +81,20 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).bind(0).addListener(Sockets.logBind(0))
-                    //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
-//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
-                    .syncUninterruptibly().channel();
+            }).bind(0).addListener(Sockets.logBind(0)).sync().channel();
+
+//            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+//                SocksContext.server(ob, server);
+//                e.onClose = () -> UdpManager.closeChannel(srcEp);
+//
+//                upstream.initChannel(ob);
+//                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
+//                        UdpBackendRelayHandler.DEFAULT);
+//            }).bind(0).addListener(Sockets.logBind(0))
+//                    //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
+//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+//            SocksContext.mark(inbound, ob2, e, true);
+//            return ob2;
         });
         //todo sync改eventcallback
 

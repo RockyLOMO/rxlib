@@ -29,8 +29,6 @@ public final class SocksContext extends EventArgs {
     //common
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
     private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
-    //udp
-    private static final AttributeKey<ConcurrentLinkedQueue<Object>> PENDING_QUEUE = AttributeKey.valueOf("PENDING_QUEUE");
     //ss
     private static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
 
@@ -67,7 +65,8 @@ public final class SocksContext extends EventArgs {
     //endregion
 
     public static boolean addPendingPacket(Channel outbound, Object packet) {
-        ConcurrentLinkedQueue<Object> queue = outbound.attr(PENDING_QUEUE).get();
+        SocksContext sc = ctx(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
         if (queue == null || outbound.isActive()) {
             return false;
         }
@@ -75,7 +74,8 @@ public final class SocksContext extends EventArgs {
     }
 
     public static int flushPendingQueue(Channel outbound) {
-        ConcurrentLinkedQueue<Object> queue = outbound.attr(PENDING_QUEUE).getAndRemove();
+        SocksContext sc = ctx(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
         if (queue == null) {
             return 0;
         }

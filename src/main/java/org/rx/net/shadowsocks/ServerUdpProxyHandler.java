@@ -3,15 +3,10 @@ package org.rx.net.shadowsocks;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
-import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
-import org.rx.net.socks.RouteEventArgs;
-import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.UdpManager;
+import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -20,55 +15,64 @@ import java.net.InetSocketAddress;
 @Slf4j
 @ChannelHandler.Sharable
 public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
+    @Slf4j
+    @ChannelHandler.Sharable
+    public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+        public static final UdpBackendRelayHandler DEFAULT = new UdpBackendRelayHandler();
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
+            Channel outbound = ctx.channel();
+            SocksContext sc = SocksContext.ctx(outbound);
+            InetSocketAddress srcEp = sc.getFirstSource();
+            UnresolvedEndpoint dstEp = sc.getFirstDestination();
+            ByteBuf outBuf = out.content();
+            if (sc.getUpstream().getSocksServer() != null) {
+                UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
+                if (!dstEp.equals(tmp)) {
+                    log.error("UDP SOCKS ERROR {} != {}", dstEp, tmp);
+                }
+            }
+
+            sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
+            sc.inbound.writeAndFlush(outBuf.retain());
+            log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
+        }
+    }
+
     public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
 
     @Override
-    protected void channelRead0(ChannelHandlerContext inbound, ByteBuf inBuf) throws Exception {
-        InetSocketAddress srcEp = inbound.channel().attr(SSCommon.REMOTE_ADDRESS).get();
-        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.channel().attr(SSCommon.REMOTE_DEST).get());
-        ShadowsocksServer server = SocksContext.ssServer(inbound.channel());
+    protected void channelRead0(ChannelHandlerContext ctx, ByteBuf inBuf) throws Exception {
+        Channel inbound = ctx.channel();
+        InetSocketAddress srcEp = inbound.attr(SSCommon.REMOTE_ADDRESS).get();
+        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
+        ShadowsocksServer server = SocksContext.ssServer(inbound, true);
 
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
-            RouteEventArgs e = new RouteEventArgs(srcEp, dstEp);
+            SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getValue();
-            return SocksContext.initOutbound(Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+            Upstream upstream = e.getUpstream();
+
+            return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+                SocksContext.ssServer(ob, server);
+                SocksContext.mark(inbound, ob, e, false);
+                e.onClose = () -> UdpManager.closeChannel(srcEp);
+
                 upstream.initChannel(ob);
-
-                ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getIdleTimeout()) {
-                    @Override
-                    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-                        UdpManager.closeChannel(srcEp);
-                        return super.newIdleStateEvent(state, first);
-                    }
-                }, new SimpleChannelInboundHandler<DatagramPacket>() {
-                    @Override
-                    protected void channelRead0(ChannelHandlerContext outbound, DatagramPacket out) {
-                        ByteBuf outBuf = out.content();
-                        if (upstream.getSocksServer() != null) {
-                            UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
-                            if (!dstEp.equals(tmp)) {
-                                log.error("UDP SOCKS ERROR {} != {}", dstEp, tmp);
-                            }
-                        }
-
-                        inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
-                        inbound.writeAndFlush(outBuf.retain());
-                        log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
-                    }
-                });
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getIdleTimeout(), 0),
+                        UdpBackendRelayHandler.DEFAULT);
             }).bind(0)
-                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel(), srcEp, dstEp, upstream)
-//                    .syncUninterruptibly().channel(), clientSender, upstream.getDestination(), upstream, false)
-                    ;
+//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+                    .syncUninterruptibly().channel();
         });
 
-        Upstream upstream = SocksContext.upstream(outbound);
-        UnresolvedEndpoint upDstEp = upstream.getDestination();
-        AuthenticEndpoint svrEp = upstream.getSocksServer();
-        if (svrEp != null) {
+        SocksContext sc = SocksContext.ctx(outbound);
+        UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();
+        AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();
+        if (upSvrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
-            upDstEp = new UnresolvedEndpoint(svrEp.getEndpoint());
+            upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
         } else {
             inBuf.retain();
         }
