@@ -20,9 +20,9 @@ public class SocksConfig extends SocketConfig {
     private static final long serialVersionUID = 3526543718065617052L;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 10;
+    private int readTimeoutSeconds = 60 * 5;
     private int writeTimeoutSeconds;
-    private int udpReadTimeoutSeconds = 60 * 20;
+    private int udpReadTimeoutSeconds = 60 * 10;
     private int udpWriteTimeoutSeconds;
     private boolean enableUdp2raw;
     private List<InetSocketAddress> udp2rawServers;
