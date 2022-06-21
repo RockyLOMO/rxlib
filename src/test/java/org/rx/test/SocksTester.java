@@ -564,9 +564,12 @@ public class SocksTester extends TConfig {
 
             }
 
+            @SneakyThrows
             @Override
             public List<InetAddress> resolveHost(String host) {
-                return DnsClient.inlandClient().resolveAll(host);
+                log.info("resolveHost {}", host);
+                return Collections.singletonList(InetAddress.getByName("1.2.3.4"));
+//                return DnsClient.inlandClient().resolveAll(host);
             }
 
             @Override
@@ -606,6 +609,8 @@ public class SocksTester extends TConfig {
 
         server.addHostsFile(path("hosts.txt"));
         assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
+
+        assert client.resolve("www.baidu.com").equals(InetAddress.getByName("1.2.3.4"));
 
         wait();
     }
