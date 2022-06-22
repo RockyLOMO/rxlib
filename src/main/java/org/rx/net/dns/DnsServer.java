@@ -32,6 +32,8 @@ public class DnsServer extends Disposable {
     int ttl = 1800;
     @Setter
     int hostsTtl = 180;
+    @Setter
+    boolean enableHostsWeight;
     @Getter
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
     @Setter
