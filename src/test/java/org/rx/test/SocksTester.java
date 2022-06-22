@@ -368,57 +368,68 @@ public class SocksTester extends TConfig {
 
     int connectTimeoutMillis = 30000;
 
-//    @SneakyThrows
-//    @Test
-//    public void ssProxy() {
-//        int shadowDnsPort = 853;
-//        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-//        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
-//        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-//
-//        String defPwd = "123456";
-//        SocksConfig backConf = new SocksConfig(2080);
-//        backConf.setEnableUdp2raw(true);
-//        backConf.setUdp2rawServers(Collections.emptyList());
-//        SocksUser usr = new SocksUser("rocky");
-//        usr.setPassword(defPwd);
-//        usr.setMaxIpCount(-1);
-//        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
-//
-//        AuthenticEndpoint srvEp = new AuthenticEndpoint(Sockets.localEndpoint(backConf.getListenPort()), usr.getUsername(), usr.getPassword());
-//        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
-//                CipherKind.AES_128_GCM.getCipherName(), defPwd);
-//        ShadowsocksServer server = new ShadowsocksServer(config);
-//        server.onRoute.combine((s, e) -> {
-//            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-//            //must first
-//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-//                e.setValue(shadowDnsUpstream);
-//                return;
-//            }
-//            //bypass
-//            if (config.isBypass(dstEp.getHost())) {
-//                e.setValue(new Upstream(dstEp));
-//                return;
-//            }
-//            e.setValue(new Socks5Upstream(dstEp, backConf, () -> new UpstreamSupport(srvEp, null)));
-//        });
-//        server.onUdpRoute.combine((s, e) -> {
-//            UnresolvedEndpoint dstEp = e.getDestinationEndpoint();
-//            //must first
-//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-//                e.setValue(shadowDnsUpstream);
-//            }
-//            //bypass
-//            if (config.isBypass(dstEp.getHost())) {
-//                e.setValue(new Upstream(dstEp));
-//            }
-//            e.setValue(new Upstream(dstEp));
-////            return new Upstream(dstEp, srvEp);
-//        });
-//
-//        System.in.read();
-//    }
+    @SneakyThrows
+    @Test
+    public void ssProxy() {
+        //dns
+        int shadowDnsPort = 853;
+        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+
+        //backend
+        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
+        String defPwd = "123456";
+        SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
+        backConf.setConnectTimeoutMillis(connectTimeoutMillis);
+        SocksUser usr = new SocksUser("rocky");
+        usr.setPassword(defPwd);
+        usr.setMaxIpCount(-1);
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
+
+        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
+        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.listen(new Main(backSvr), rpcServerConf);
+
+        //frontend
+        RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
+        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
+
+        AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
+        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
+                CipherKind.AES_128_GCM.getCipherName(), defPwd);
+        ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
+        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+        TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            //must first
+            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                e.setUpstream(shadowDnsUpstream);
+                return;
+            }
+            //bypass
+            if (frontConf.isBypass(dstEp.getHost())) {
+                e.setUpstream(new Upstream(dstEp));
+            }
+        };
+        frontSvr.onRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
+                return;
+            }
+            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, () -> new UpstreamSupport(srvEp, null)));
+//            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
+        });
+        frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
+                return;
+            }
+            e.setUpstream(new Upstream(e.getFirstDestination(), srvEp));
+//            e.setUpstream(new Upstream(e.getFirstDestination()));
+        });
+
+        System.in.read();
+    }
 
     @SneakyThrows
     @Test
@@ -427,9 +438,14 @@ public class SocksTester extends TConfig {
         boolean udp2rawDirect = false;
         Udp2rawHandler.DEFAULT.setGzipMinLength(40);
 
-        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
+        //dns
         int shadowDnsPort = 853;
+        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+//        Sockets.injectNameService(shadowDnsEp);
+
         //backend
+        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
@@ -440,11 +456,6 @@ public class SocksTester extends TConfig {
         RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
         rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         Remoting.listen(new Main(backSvr), rpcServerConf);
-
-        //dns
-        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
-//        Sockets.injectNameService(shadowDnsEp);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
@@ -466,21 +477,20 @@ public class SocksTester extends TConfig {
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             //must first
-//            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-//                e.setUpstream(shadowDnsUpstream);
-//                return;
-//            }
+            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+                e.setUpstream(shadowDnsUpstream);
+                return;
+            }
             //bypass
-//            if (frontConf.isBypass(dstEp.getHost())) {
-//                e.setUpstream(new Upstream(dstEp));
-//            }
+            if (frontConf.isBypass(dstEp.getHost())) {
+                e.setUpstream(new Upstream(dstEp));
+            }
         };
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
             e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, shadowServers::next));
-            System.out.println("abc"+e.getUpstream());
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
@@ -498,11 +508,6 @@ public class SocksTester extends TConfig {
             e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
-
-//        sleep(2000);
-//        for (UpstreamSupport support : shadowServers) {
-//            support.getSupport().addWhiteList(InetAddress.getByName(HttpClient.getWanIp()));
-//        }
 
         System.in.read();
     }
@@ -536,27 +541,13 @@ public class SocksTester extends TConfig {
 
     @SneakyThrows
     @Test
-    public void dnsInject() {
-        Sockets.injectNameService(Collections.singletonList(Sockets.parseEndpoint("192.168.137.2:853")));
-
-        InetAddress localHost = InetAddress.getLocalHost();
-        System.out.println(localHost);
-
-        InetAddress loopbackAddress = InetAddress.getLoopbackAddress();
-        System.out.println(loopbackAddress.equals(Sockets.loopbackAddress()));
-
-        InetAddress[] all = InetAddress.getAllByName(host_devops);
-        System.out.println(java.util.Arrays.toString(all));
-    }
-
-    @SneakyThrows
-    @Test
     public synchronized void dns() {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
 
         final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
+        final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
         DnsServer server = new DnsServer(54, nsEp);
         server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
@@ -568,7 +559,7 @@ public class SocksTester extends TConfig {
             @Override
             public List<InetAddress> resolveHost(String host) {
                 log.info("resolveHost {}", host);
-                return Collections.singletonList(InetAddress.getByName("1.2.3.4"));
+                return Collections.singletonList(aopIp);
 //                return DnsClient.inlandClient().resolveAll(host);
             }
 
@@ -578,6 +569,7 @@ public class SocksTester extends TConfig {
             }
         }))));
         server.setHostsTtl(5);
+        server.setEnableHostsWeight(true);
         server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
 
         //hostTtl
@@ -610,7 +602,7 @@ public class SocksTester extends TConfig {
         server.addHostsFile(path("hosts.txt"));
         assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
 
-        assert client.resolve("www.baidu.com").equals(InetAddress.getByName("1.2.3.4"));
+        assert client.resolve("www.baidu.com").equals(aopIp);
 
         wait();
     }

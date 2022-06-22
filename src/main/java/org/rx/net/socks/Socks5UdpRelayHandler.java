@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -26,15 +27,17 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             InetSocketAddress srcEp = sc.firstSource;
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
+            SocksProxyServer server = SocksContext.server(outbound);
             if (sc.upstream.getSocksServer() == null) {
+//                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
                 outBuf = UdpManager.socks5Encode(outBuf, dstEp);
             } else {
                 outBuf.retain();
             }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
-            SocksProxyServer server = SocksContext.server(outbound);
             log.debug("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
+//            log.debug("socks5[{}] UDP IN {}[{}] => {}\n{}", server.config.getListenPort(), out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf.retain()));
         }
     }
 

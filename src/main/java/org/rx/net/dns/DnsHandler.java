@@ -78,7 +78,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = question.name().substring(0, question.name().length() - 1);
 
-        List<InetAddress> ips = server.getAllHosts(domain);
+        List<InetAddress> ips = server.enableHostsWeight ? server.getHosts(domain) : server.getAllHosts(domain);
         log.debug("query domain {} -> {} hosts", domain, ips.size());
         if (!ips.isEmpty()) {
             ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(ips).select(InetAddress::getAddress).toArray()));

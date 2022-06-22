@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.*;
@@ -32,11 +33,14 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 if (!dstEp.equals(tmp)) {
                     log.error("UDP SOCKS ERROR {} != {}", dstEp, tmp);
                 }
+                sc.inbound.attr(SSCommon.REMOTE_SRC).set(tmp.socketAddress());
+            } else {
+                sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
             }
 
-            sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
             sc.inbound.writeAndFlush(outBuf.retain());
             log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
+//            log.info("UDP IN {}[{}] => {}\n{}", out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf));
         }
     }
 
@@ -55,14 +59,13 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             Upstream upstream = e.getUpstream();
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                SocksContext.ssServer(ob, server);
-                SocksContext.mark(inbound, ob, e, false);
-                e.onClose = () -> UdpManager.closeChannel(srcEp);
+                        SocksContext.ssServer(ob, server);
+                        SocksContext.mark(inbound, ob, e, false);
+                        e.onClose = () -> UdpManager.closeChannel(srcEp);
 
-                upstream.initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getIdleTimeout(), 0),
-                        UdpBackendRelayHandler.DEFAULT);
-            }).bind(0)
+                        upstream.initChannel(ob);
+                        ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getIdleTimeout(), 0), UdpBackendRelayHandler.DEFAULT);
+                    }).bind(0)
 //                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
                     .syncUninterruptibly().channel();
         });

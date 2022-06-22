@@ -26,7 +26,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
-    //common
     private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
     private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
     //ss
