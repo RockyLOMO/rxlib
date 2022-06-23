@@ -165,7 +165,7 @@ public final class Main implements SocksSupport {
                 if (e.getUpstream() != null) {
                     return;
                 }
-                e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next(e.getFirstSource(), conf.steeringTTL, true)));
+                e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next(e.getSource(), conf.steeringTTL, true)));
             });
             frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
                 if (e.getUpstream() != null) {
@@ -173,10 +173,10 @@ public final class Main implements SocksSupport {
                 }
 
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                if (conf.pcap2socks && e.getFirstSource().getAddress().isLoopbackAddress()) {
+                if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
                     Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-                    if (cache.get(hashKey("pcap", e.getFirstSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
-                            .any(p -> p.getSource().getPort() == e.getFirstSource().getPort()
+                    if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
+                            .any(p -> p.getSource().getPort() == e.getSource().getPort()
                                     && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
                         log.info("pcap2socks forward");
                         e.setUpstream(new Upstream(dstEp));
@@ -191,7 +191,7 @@ public final class Main implements SocksSupport {
 //                    }
 //                    return;
 //                }
-                e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getFirstSource(), conf.steeringTTL, true)));
+                e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSource(), conf.steeringTTL, true)));
             });
             frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
             app = new Main(frontSvr);
