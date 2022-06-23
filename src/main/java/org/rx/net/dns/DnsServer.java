@@ -88,7 +88,7 @@ public class DnsServer extends Disposable {
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
         DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nsEndpoints);
-        Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
+        Sockets.udpServerBootstrap(MemoryMode.MEDIUM, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
                 .bind(port).addListener(Sockets.logBind(port));
     }
 
