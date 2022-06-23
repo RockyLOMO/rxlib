@@ -10,12 +10,14 @@ import io.netty.util.NetUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
+import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.Extends.tryClose;
 
@@ -25,22 +27,28 @@ public final class UdpManager {
         Channel outbound = f.channel();
         SocksContext sc = SocksContext.ctx(outbound);
         if (!f.isSuccess()) {
+//            sc.pendingPackages = null;
             closeChannel(sc.source);
             return;
         }
 
-//        sleep(1000);
-//        System.out.println(outbound.isActive());
-        int size = SocksContext.flushPendingQueue(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
+        if (queue == null) {
+            return;
+        }
+        int size = queue.size();
+        Sockets.writeAndFlush(outbound, queue);
+        sc.pendingPackages = null;
         if (size > 0) {
-            log.debug("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
+            log.info("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
         }
     };
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
-        if (SocksContext.addPendingPacket(outbound, packet)) {
-            SocksContext sc = SocksContext.ctx(outbound);
+        SocksContext sc = SocksContext.ctx(outbound);
+        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
+        if (queue != null && queue.add(packet)) {
             log.debug("PENDING_QUEUE {} => {} pend a packet", sc.source, sc.firstDestination);
             return;
         }
