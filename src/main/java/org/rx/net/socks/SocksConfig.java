@@ -20,7 +20,7 @@ public class SocksConfig extends SocketConfig {
     private static final long serialVersionUID = 3526543718065617052L;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 5;
+    private int readTimeoutSeconds = 60 * 4;
     private int writeTimeoutSeconds;
     private int udpReadTimeoutSeconds = 60 * 10;
     private int udpWriteTimeoutSeconds;
