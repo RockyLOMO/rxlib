@@ -123,6 +123,8 @@ public final class Main implements SocksSupport {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
                         CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
+                config.setTcpTimeoutSeconds(conf.tcpTimeoutSeconds);
+                config.setUdpTimeoutSeconds(conf.udpTimeoutSeconds);
                 SocksUser user = new SocksUser(sArgs[2]);
                 user.setPassword(conf.socksPwd);
                 user.setMaxIpCount(Integer.parseInt(sArgs[3]));
@@ -140,7 +142,9 @@ public final class Main implements SocksSupport {
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
             frontConf.setMemoryMode(MemoryMode.MEDIUM);
             frontConf.setConnectTimeoutMillis(connectTimeout);
-            frontConf.setEnableUdp2raw(conf.udp2raw);
+            frontConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
+            frontConf.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
+            frontConf.setEnableUdp2raw(udp2raw);
             frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
             if (frontConf.isEnableUdp2raw() && conf.udp2rawEndpoint != null) {
                 log.info("udp2rawEndpoint: {}", conf.udp2rawEndpoint);
@@ -173,16 +177,16 @@ public final class Main implements SocksSupport {
                 }
 
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
-                    Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-                    if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
-                            .any(p -> p.getSource().getPort() == e.getSource().getPort()
-                                    && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
-                        log.info("pcap2socks forward");
-                        e.setUpstream(new Upstream(dstEp));
-                        return;
-                    }
-                }
+//                if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
+//                    Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+//                    if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
+//                            .any(p -> p.getSource().getPort() == e.getSource().getPort()
+//                                    && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
+//                        log.info("pcap2socks forward");
+//                        e.setUpstream(new Upstream(dstEp));
+//                        return;
+//                    }
+//                }
 //                if (frontConf.isEnableUdp2raw()) {
 //                    if (udp2rawSvrEp != null) {
 //                        e.setValue(new Upstream(dstEp, udp2rawSvrEp));
@@ -260,6 +264,8 @@ public final class Main implements SocksSupport {
     public static class SSConf {
         public List<String> shadowServer;
         public String socksPwd;
+        public int tcpTimeoutSeconds = 60 * 2;
+        public int udpTimeoutSeconds = 60 * 10;
         public int autoWhiteListSeconds;
         public List<String> bypassHosts;
         public int steeringTTL;
@@ -268,7 +274,6 @@ public final class Main implements SocksSupport {
         public String godaddyKey;
 
         public boolean pcap2socks;
-        public boolean udp2raw;
         public String udp2rawEndpoint;
     }
 

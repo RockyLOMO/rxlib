@@ -33,7 +33,7 @@ public class ShadowsocksServer extends Disposable implements EventTarget<Shadows
             _crypto.setForUdp(false);
             channel.attr(SSCommon.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getIdleTimeout(), 0));
+            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getTcpTimeoutSeconds(), 0));
 
             SocksContext.ssServer(channel, ShadowsocksServer.this);
             channel.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,

@@ -11,7 +11,6 @@ import org.rx.core.Reflects;
 import org.rx.core.ShellCommander;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
-import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
@@ -62,26 +61,6 @@ public final class SocksContext extends EventArgs {
         channel.attr(SERVER).set(server);
     }
     //endregion
-
-    public static boolean addPendingPacket(Channel outbound, Object packet) {
-        SocksContext sc = ctx(outbound);
-        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
-        if (queue == null || outbound.isActive()) {
-            return false;
-        }
-        return queue.add(packet);
-    }
-
-    public static int flushPendingQueue(Channel outbound) {
-        SocksContext sc = ctx(outbound);
-        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
-        if (queue == null) {
-            return 0;
-        }
-        int size = queue.size();
-        Sockets.writeAndFlush(outbound, queue);
-        return size;
-    }
 
     public static ShadowsocksServer ssServer(Channel channel, boolean throwOnEmpty) {
         ShadowsocksServer shadowsocksServer = channel.attr(SS_SERVER).get();

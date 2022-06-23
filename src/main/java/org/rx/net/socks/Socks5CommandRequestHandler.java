@@ -54,7 +54,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             server.raiseEvent(server.onRoute, e);
             connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            inbound.pipeline().addLast(Socks5UdpAssociateHandler.DEFAULT);
+            pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
+            pipeline.addLast(Socks5UdpAssociateHandler.DEFAULT);
 
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
             Socks5AddressType bindAddrType = bindEp.getAddress() instanceof Inet6Address ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
