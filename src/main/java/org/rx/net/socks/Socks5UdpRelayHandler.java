@@ -81,7 +81,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 e.onClose = () -> UdpManager.closeChannel(srcEp);
 
                 upstream.initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds(), server.config.getUdpReadTimeoutSeconds()),
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).bind(0).addListener(Sockets.logBind(0)).sync().channel();
 

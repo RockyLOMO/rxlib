@@ -21,7 +21,6 @@ import org.rx.net.TransportUtil;
 import org.rx.net.rpc.*;
 import org.rx.net.rpc.protocol.ErrorPacket;
 import org.rx.net.rpc.protocol.HandshakePacket;
-import org.rx.net.rpc.protocol.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -60,8 +59,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
                 return;
             }
-            if (tryAs(pack, PingMessage.class, p -> {
-                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p.getTimestamp());
+            if (tryAs(pack, Long.class, p -> {
+                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p);
                 raiseEventAsync(onPong, new NEventArgs<>(p));
             })) {
                 return;
@@ -91,7 +90,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         break;
                     case WRITER_IDLE:
                         log.debug("clientHeartbeat ping {}", channel.remoteAddress());
-                        ctx.writeAndFlush(new PingMessage());
+                        ctx.writeAndFlush(System.currentTimeMillis());
                         break;
                 }
             }
@@ -121,7 +120,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             onReconnected = Delegate.create();
     public final Delegate<RpcClient, NEventArgs<Serializable>> onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcClient, NEventArgs<PingMessage>> onPong = Delegate.create();
+    public final Delegate<RpcClient, NEventArgs<Long>> onPong = Delegate.create();
     public final Delegate<RpcClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
     final RpcClientConfig config;

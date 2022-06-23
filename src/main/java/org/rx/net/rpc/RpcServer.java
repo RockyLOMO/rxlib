@@ -21,7 +21,6 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.rpc.protocol.HandshakePacket;
-import org.rx.net.rpc.protocol.PingMessage;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -86,7 +85,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 log.debug("Handshake: {}", toJsonString(getHandshakePacket()));
                 return;
             }
-            if (tryAs(pack, PingMessage.class, p -> {
+            if (tryAs(pack, Long.class, p -> {
                 ctx.writeAndFlush(p);
                 raiseEventAsync(onPing, new RpcServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
@@ -137,7 +136,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcServer, RpcServerEventArgs<PingMessage>> onPing = Delegate.create();
+    public final Delegate<RpcServer, RpcServerEventArgs<Long>> onPing = Delegate.create();
     public final Delegate<RpcServer, RpcServerEventArgs<Throwable>> onError = Delegate.create();
     public final Delegate<RpcServer, EventArgs> onClosed = Delegate.create();
 

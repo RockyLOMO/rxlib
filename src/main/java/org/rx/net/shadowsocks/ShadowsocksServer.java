@@ -2,7 +2,6 @@ package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandler;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
@@ -12,13 +11,10 @@ import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
-import org.rx.net.shadowsocks.obfs.ObfsFactory;
 import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
-
-import java.util.List;
 
 @Slf4j
 public class ShadowsocksServer extends Disposable implements EventTarget<ShadowsocksServer> {
@@ -38,14 +34,6 @@ public class ShadowsocksServer extends Disposable implements EventTarget<Shadows
             channel.attr(SSCommon.CIPHER).set(_crypto);
 
             channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getIdleTimeout(), 0));
-
-            //obfs pugin
-            List<ChannelHandler> obfsHandlers = ObfsFactory.getObfsHandler(config.getObfs());
-            if (obfsHandlers != null) {
-                for (ChannelHandler obfsHandler : obfsHandlers) {
-                    channel.pipeline().addLast(obfsHandler);
-                }
-            }
 
             SocksContext.ssServer(channel, ShadowsocksServer.this);
             channel.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
