@@ -50,7 +50,7 @@ public final class Sockets {
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SHARED_TCP_REACTOR = "_TCP";
     static final String SHARED_UDP_REACTOR = "_UDP";
-    static final String SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
+    static final String SHARED_UDP_SVR_REACTOR = "_UDP";//"_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static volatile DnsClient nsClient;
 
@@ -240,6 +240,7 @@ public final class Sockets {
         return udpBootstrap(SHARED_UDP_REACTOR, mode, initChannel);
     }
 
+    //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
         if (mode == null) {
