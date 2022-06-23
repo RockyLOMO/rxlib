@@ -18,24 +18,22 @@ public class ProxyChannelIdleHandler extends IdleStateHandler {
         super(readerIdleTimeSeconds, writerIdleTimeSeconds, allIdleTimeSeconds);
     }
 
-    @Override
-    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
-        log.info("idle {}", state);
-        return super.newIdleStateEvent(state, first);
-    }
+//    @Override
+//    protected IdleStateEvent newIdleStateEvent(IdleState state, boolean first) {
+//        log.info("idle0 {}", state);
+//        return super.newIdleStateEvent(state, first);
+//    }
 
+    //userEventTriggered 不触发
     @SneakyThrows
     @Override
-    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-        if (evt instanceof IdleStateEvent) {
-            log.info("{} {} idle: {}", Sockets.protocolName(ctx.channel()), ctx.channel(), ((IdleStateEvent) evt).state());
-            Sockets.closeOnFlushed(ctx.channel());
-            SocksContext sc = SocksContext.ctx(ctx.channel());
-            if (sc.onClose != null) {
-                sc.onClose.invoke();
-            }
-            return;
+    protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
+        log.info("{} {} idle: {}", Sockets.protocolName(ctx.channel()), ctx.channel(), evt.state());
+        Sockets.closeOnFlushed(ctx.channel());
+        SocksContext sc = SocksContext.ctx(ctx.channel());
+        if (sc.onClose != null) {
+            sc.onClose.invoke();
         }
-        super.userEventTriggered(ctx, evt);
+        super.channelIdle(ctx, evt);
     }
 }
