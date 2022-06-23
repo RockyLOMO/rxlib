@@ -25,7 +25,7 @@ public final class UdpManager {
         Channel outbound = f.channel();
         SocksContext sc = SocksContext.ctx(outbound);
         if (!f.isSuccess()) {
-            closeChannel(sc.firstSource);
+            closeChannel(sc.source);
             return;
         }
 
@@ -33,7 +33,7 @@ public final class UdpManager {
 //        System.out.println(outbound.isActive());
         int size = SocksContext.flushPendingQueue(outbound);
         if (size > 0) {
-            log.debug("PENDING_QUEUE {} => {} flush {} packets", sc.firstSource, sc.firstDestination, size);
+            log.debug("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
         }
     };
     static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
@@ -41,7 +41,7 @@ public final class UdpManager {
     public static void pendOrWritePacket(Channel outbound, Object packet) {
         if (SocksContext.addPendingPacket(outbound, packet)) {
             SocksContext sc = SocksContext.ctx(outbound);
-            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.firstSource, sc.firstDestination);
+            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.source, sc.firstDestination);
             return;
         }
         outbound.writeAndFlush(packet);

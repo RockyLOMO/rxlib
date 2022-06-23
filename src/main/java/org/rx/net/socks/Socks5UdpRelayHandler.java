@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -24,7 +23,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
-            InetSocketAddress srcEp = sc.firstSource;
+            InetSocketAddress srcEp = sc.source;
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
             SocksProxyServer server = SocksContext.server(outbound);
@@ -82,7 +81,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 e.onClose = () -> UdpManager.closeChannel(srcEp);
 
                 upstream.initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds(), server.config.getUdpReadTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).bind(0).addListener(Sockets.logBind(0)).sync().channel();
 

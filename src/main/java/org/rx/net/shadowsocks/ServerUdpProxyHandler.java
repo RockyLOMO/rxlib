@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.*;
@@ -25,7 +24,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
-            InetSocketAddress srcEp = sc.getFirstSource();
+            InetSocketAddress srcEp = sc.getSource();
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
             ByteBuf outBuf = out.content();
             if (sc.getUpstream().getSocksServer() != null) {

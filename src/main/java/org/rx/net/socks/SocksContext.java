@@ -123,7 +123,7 @@ public final class SocksContext extends EventArgs {
     }
 
     @Getter
-    final InetSocketAddress firstSource;
+    final InetSocketAddress source;
     @Getter
     final UnresolvedEndpoint firstDestination;
     Upstream upstream;
