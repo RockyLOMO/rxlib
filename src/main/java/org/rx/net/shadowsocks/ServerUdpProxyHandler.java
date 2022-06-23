@@ -55,9 +55,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
         ShadowsocksServer server = SocksContext.ssServer(inbound, true);
 
-        $<ManualResetEvent> h = $();
+//        $<ManualResetEvent> h = $();
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
-            h.v = new ManualResetEvent();
+//            h.v = new ManualResetEvent();
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
@@ -65,20 +65,20 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                         SocksContext.ssServer(ob, server);
                         e.onClose = () -> UdpManager.closeChannel(srcEp);
-                        SocksContext.mark(inbound, ob, e, true);
-                        h.v.set();
-//                        SocksContext.mark(inbound, ob, e, false);
+//                        SocksContext.mark(inbound, ob, e, true);
+//                        h.v.set();
+                        SocksContext.mark(inbound, ob, e, false);
 
                         upstream.initChannel(ob);
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
                     }).bind(0)
-                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-//                    .syncUninterruptibly().channel();
+//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+                    .syncUninterruptibly().channel();
         });
 
-        if (h.v != null) {
-            h.v.waitOne();
-        }
+//        if (h.v != null) {
+//            h.v.waitOne();
+//        }
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();
         AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();
