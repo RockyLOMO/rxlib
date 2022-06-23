@@ -1,6 +1,5 @@
 package org.rx.net.dns;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
@@ -12,12 +11,13 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
+import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.Disposable;
-import org.rx.core.NQuery;
+import org.rx.core.cache.DiskCache;
 import org.rx.io.Files;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
+import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
@@ -25,8 +25,12 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.Extends.as;
+import static org.rx.core.Tasks.awaitQuietly;
+
 @Slf4j
 public class DnsServer extends Disposable {
+    static final String DOMAIN_PREFIX = "resolveHost:";
     final ServerBootstrap serverBootstrap;
     @Setter
     int ttl = 1800;
@@ -36,27 +40,56 @@ public class DnsServer extends Disposable {
     boolean enableHostsWeight;
     @Getter
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
-    @Setter
     RandomList<UpstreamSupport> shadowServers;
+    Cache<String, List<InetAddress>> shadowCache;
+
+    public void setShadowServers(RandomList<UpstreamSupport> shadowServers) {
+        if (CollectionUtils.isEmpty(this.shadowServers = shadowServers)) {
+            return;
+        }
+
+        DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(Cache.DISK_CACHE);
+        cache.onExpired.combine((s, e) -> {
+            Map.Entry<Object, Object> entry = e.getValue();
+            String key;
+            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
+                entry.setValue(null);
+                return;
+            }
+
+            String domain = key.substring(DOMAIN_PREFIX.length());
+            List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
+            List<InetAddress> addresses = awaitQuietly(() -> {
+                List<InetAddress> list = shadowServers.next().getSupport().resolveHost(domain);
+                if (CollectionUtils.isEmpty(list)) {
+                    return null;
+                }
+                cache.put(key, list, CachePolicy.absolute(ttl));
+                log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
+                return list;
+            }, SocksSupport.ASYNC_TIMEOUT);
+            if (!CollectionUtils.isEmpty(addresses)) {
+                entry.setValue(addresses);
+            }
+            log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
+        });
+        shadowCache = (Cache) cache;
+    }
 
     public DnsServer() {
         this(53);
     }
 
     public DnsServer(int port, InetSocketAddress... nameServerList) {
-        List<InetSocketAddress> addresses = Arrays.toList(nameServerList);
+        List<InetSocketAddress> nsEndpoints = Arrays.toList(nameServerList);
 
-        serverBootstrap = Sockets.serverBootstrap(channel -> {
-            channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, true, addresses));
-        });
+        DnsHandler tcpHandler = new DnsHandler(DnsServer.this, true, nsEndpoints);
+        serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), tcpHandler));
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        Bootstrap bootstrap = Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> {
-            channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(),
-                    new DnsHandler(DnsServer.this, false, addresses));
-        });
-        bootstrap.bind(port).addListener(Sockets.logBind(port));
+        DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nsEndpoints);
+        Sockets.udpBootstrap(MemoryMode.MEDIUM, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
+                .bind(port).addListener(Sockets.logBind(port));
     }
 
     @Override
@@ -70,15 +103,15 @@ public class DnsServer extends Disposable {
             return Collections.emptyList();
         }
         //根据权重取2个
-        return NQuery.of(ips.next(), ips.next()).distinct().toList();
+        return enableHostsWeight ? NQuery.of(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
     }
 
     public List<InetAddress> getAllHosts(String host) {
-        RandomList<InetAddress> list = hosts.get(host);
-        if (list == null) {
+        RandomList<InetAddress> ips = hosts.get(host);
+        if (ips == null) {
             return Collections.emptyList();
         }
-        return new ArrayList<>(list);
+        return new ArrayList<>(ips);
     }
 
     public boolean addHosts(String host, @NonNull String... ips) {
@@ -105,7 +138,7 @@ public class DnsServer extends Disposable {
         return hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
     }
 
-    public DnsServer addHostsFile(String filePath) {
+    public void addHostsFile(String filePath) {
         Files.readLines(filePath).forEach(line -> {
             if (line.startsWith("#")) {
                 return;
@@ -119,6 +152,5 @@ public class DnsServer extends Disposable {
             }
             addHosts(line.substring(e + t.length()), line.substring(0, s));
         });
-        return this;
     }
 }

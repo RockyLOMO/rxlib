@@ -14,6 +14,7 @@ import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -43,13 +44,13 @@ public class DnsClient extends Disposable {
     }
 
     @Getter
-    final Set<InetSocketAddress> serverAddresses;
+    final Set<InetSocketAddress> serverEndpoints;
     final DnsNameResolver nameResolver;
 
-    public DnsClient(@NonNull List<InetSocketAddress> nameServerList) {
-        serverAddresses = new LinkedHashSet<>(nameServerList);
+    public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
+        serverEndpoints = new LinkedHashSet<>(nameServerList);
         nameResolver = new DnsNameResolverBuilder(Sockets.udpReactor().next())
-                .nameServerProvider(!serverAddresses.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverAddresses)
+                .nameServerProvider(!serverEndpoints.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverEndpoints)
                         : DnsServerAddressStreamProviders.platformDefault())
                 .channelType(NioDatagramChannel.class)
                 .socketChannelType(Sockets.channelClass()).build();

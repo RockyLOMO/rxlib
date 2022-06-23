@@ -543,12 +543,13 @@ public class SocksTester extends TConfig {
     @Test
     public synchronized void dns() {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
-        InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:54");
+        InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
 
         final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
-        DnsServer server = new DnsServer(54, nsEp);
+        DnsServer server = new DnsServer(localNsEp.getPort(), nsEp);
+//        DnsServer server = new DnsServer(localNsEp.getPort());
         server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override
             public void fakeEndpoint(long hash, String realEndpoint) {
@@ -569,7 +570,7 @@ public class SocksTester extends TConfig {
             }
         }))));
         server.setHostsTtl(5);
-        server.setEnableHostsWeight(true);
+        server.setEnableHostsWeight(false);
         server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
 
         //hostTtl
@@ -605,6 +606,7 @@ public class SocksTester extends TConfig {
         assert client.resolve("www.baidu.com").equals(aopIp);
 
         wait();
+//        System.in.read();
     }
 
     @Test
