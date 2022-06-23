@@ -104,7 +104,7 @@ public class UdpClient implements EventTarget<UdpClient> {
     int maxResend = 2;
 
     public UdpClient(int bindPort) {
-        bootstrap = Sockets.udpBootstrap(ch -> ch.pipeline().addLast(HANDLER));
+        bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(HANDLER));
         channel = bootstrap.bind(bindPort).addListener(Sockets.logBind(bindPort)).channel();
         channel.attr(OWNER).set(this);
     }

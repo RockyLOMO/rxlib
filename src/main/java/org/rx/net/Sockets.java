@@ -50,6 +50,7 @@ public final class Sockets {
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SHARED_TCP_REACTOR = "_TCP";
     static final String SHARED_UDP_REACTOR = "_UDP";
+    static final String SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static volatile DnsClient nsClient;
 
@@ -104,7 +105,11 @@ public final class Sockets {
     }
 
     public static EventLoopGroup udpReactor() {
-        return reactors.computeIfAbsent(SHARED_UDP_REACTOR, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
+        return udpReactor(SHARED_UDP_REACTOR);
+    }
+
+    static EventLoopGroup udpReactor(@NonNull String reactorName) {
+        return reactors.computeIfAbsent(reactorName, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
     }
 
     // not executor
@@ -227,17 +232,21 @@ public final class Sockets {
         return b;
     }
 
-    public static Bootstrap udpBootstrap(BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(null, initChannel);
+    public static Bootstrap udpServerBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(SHARED_UDP_SVR_REACTOR, mode, initChannel);
+    }
+
+    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(SHARED_UDP_REACTOR, mode, initChannel);
     }
 
     //DefaultDatagramChannelConfig
-    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+    static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
 
-        Bootstrap b = new Bootstrap().group(udpReactor()).channel(NioDatagramChannel.class)
+        Bootstrap b = new Bootstrap().group(udpReactor(reactorName)).channel(NioDatagramChannel.class)
 //                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())

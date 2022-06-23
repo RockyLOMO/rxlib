@@ -74,7 +74,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
 
         //udp server
         int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, channel -> {
+        udpChannel = Sockets.udpServerBootstrap(MemoryMode.HIGH, channel -> {
             SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
