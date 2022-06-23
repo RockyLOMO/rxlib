@@ -24,6 +24,7 @@ import static org.rx.core.Extends.*;
 import static org.rx.net.dns.DnsServer.DOMAIN_PREFIX;
 
 @Slf4j
+@ChannelHandler.Sharable
 public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final DnsServer server;
     final boolean isTcp;
