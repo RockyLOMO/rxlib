@@ -50,7 +50,7 @@ public final class Sockets {
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SHARED_TCP_REACTOR = "_TCP";
     static final String SHARED_UDP_REACTOR = "_UDP";
-    static final String SHARED_UDP_SVR_REACTOR = "_UDP";//"_UDP:SVR";
+    static final String SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static volatile DnsClient nsClient;
 
