@@ -83,22 +83,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).bind(0).addListener(Sockets.logBind(0)).sync().channel();
-
-//            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-//                SocksContext.server(ob, server);
-//                e.onClose = () -> UdpManager.closeChannel(srcEp);
-//
-//                upstream.initChannel(ob);
-//                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
-//                        UdpBackendRelayHandler.DEFAULT);
-//            }).bind(0).addListener(Sockets.logBind(0))
-//                    //pendingQueue模式flush时需要等待一会(1000ms)才能发送，故先用sync()方式。
-//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-//            SocksContext.mark(inbound, ob2, e, true);
-//            return ob2;
+            }).bind(0).addListener(Sockets.logBind(0)).syncUninterruptibly().channel();
         });
-        //todo sync改eventcallback
 
         SocksContext sc = SocksContext.ctx(outbound);
 //        UnresolvedEndpoint upDstEp = upstream.getDestination();  //udp dstEp可能多个，但upstream只有一个，所以直接用dstEp。

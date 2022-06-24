@@ -24,19 +24,18 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .weigher((k, v) -> entryWeigh);
     }
 
-    public static Caffeine<Object, Object> slidingBuilder(long expireSeconds) {
-        return rootBuilder()
-                .expireAfterAccess(expireSeconds, TimeUnit.SECONDS);
-    }
-
-    public static Caffeine<Object, Object> absoluteBuilder(long expireSeconds) {
-        return rootBuilder()
-                .expireAfterWrite(expireSeconds, TimeUnit.SECONDS);
-    }
+//    public static Caffeine<Object, Object> slidingBuilder(long expireSeconds) {
+//        return rootBuilder()
+//                .expireAfterAccess(expireSeconds, TimeUnit.SECONDS);
+//    }
+//
+//    public static Caffeine<Object, Object> absoluteBuilder(long expireSeconds) {
+//        return rootBuilder()
+//                .expireAfterWrite(expireSeconds, TimeUnit.SECONDS);
+//    }
 
     static Caffeine<Object, Object> rootBuilder() {
-        return Caffeine.newBuilder().executor(Tasks.pool())
-                .scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
+        return Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;

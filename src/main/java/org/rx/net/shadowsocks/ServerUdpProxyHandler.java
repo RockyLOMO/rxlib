@@ -4,8 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.$;
-import org.rx.core.ManualResetEvent;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.*;
@@ -13,8 +11,6 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
-
-import static org.rx.bean.$.$;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -55,30 +51,31 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
         ShadowsocksServer server = SocksContext.ssServer(inbound, true);
 
-//        $<ManualResetEvent> h = $();
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
-//            h.v = new ManualResetEvent();
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                        SocksContext.ssServer(ob, server);
-                        e.onClose = () -> UdpManager.closeChannel(srcEp);
-//                        SocksContext.mark(inbound, ob, e, true);
-//                        h.v.set();
-                        SocksContext.mark(inbound, ob, e, false);
+                SocksContext.ssServer(ob, server);
+                e.onClose = () -> UdpManager.closeChannel(srcEp);
+                SocksContext.mark(inbound, ob, e, false);
 
-                        upstream.initChannel(ob);
-                        ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
-                    }).bind(0)
-//                    .addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
-                    .syncUninterruptibly().channel();
+                upstream.initChannel(ob);
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
+            }).bind(0).syncUninterruptibly().channel();
+
+//            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+//                SocksContext.ssServer(ob, server);
+//                e.onClose = () -> UdpManager.closeChannel(srcEp);
+//
+//                upstream.initChannel(ob);
+//                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
+//            }).bind(0).addListener(UdpManager.FLUSH_PENDING_QUEUE).channel();
+//            SocksContext.mark(inbound, ob2, e, true);
+//            return ob2;
         });
 
-//        if (h.v != null) {
-//            h.v.waitOne();
-//        }
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();
         AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();

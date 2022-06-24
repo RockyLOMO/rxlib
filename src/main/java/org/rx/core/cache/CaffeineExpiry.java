@@ -23,6 +23,7 @@ class CaffeineExpiry implements Expiry<Object, Object> {
 //                return currentDuration != -1 ? currentDuration : DEFAULT_SLIDING_NANOS;
         //sliding
         return DEFAULT_SLIDING_NANOS;
+//        return TimeUnit.SECONDS.toNanos(10);
     }
 
     @Override

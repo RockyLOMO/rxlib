@@ -53,12 +53,11 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         RandomList<UpstreamSupport> shadowServers = server.shadowServers;
         if (shadowServers != null) {
-            Cache<String, List<InetAddress>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
             String k = DOMAIN_PREFIX + domain;
-            List<InetAddress> sIps = cache.get(k);
+            List<InetAddress> sIps = server.shadowCache.get(k);
             if (sIps == null) {
                 //未命中也缓存
-                cache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections::emptyList),
+                server.shadowCache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections::emptyList),
                         CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));//缓存必须有值
             }
             if (CollectionUtils.isEmpty(sIps)) {
