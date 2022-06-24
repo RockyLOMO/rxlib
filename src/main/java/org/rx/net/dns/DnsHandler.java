@@ -58,11 +58,12 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> sIps = cache.get(k);
             if (sIps == null) {
                 //未命中也缓存
-                cache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2)),
-                        CachePolicy.absolute(CollectionUtils.isEmpty(sIps) ? 20 : server.ttl));
+                cache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections::emptyList),
+                        CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));//缓存必须有值
             }
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+                log.info("query domain by shadow {} -> EMPTY", domain);
                 return;
             }
             ctx.writeAndFlush(newResponse(query, question, server.ttl, NQuery.of(sIps).select(InetAddress::getAddress)));

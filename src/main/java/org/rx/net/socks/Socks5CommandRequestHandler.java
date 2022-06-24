@@ -57,7 +57,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
             int max = Math.max(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds());
-            Tasks.setTimeout(() -> Sockets.closeOnFlushed(inbound.channel()), max * 1000L);
+            Tasks.setTimeout(() -> {
+                log.info("UDP_ASSOCIATE END");
+                Sockets.closeOnFlushed(inbound.channel());
+            }, max * 1000L);
             pipeline.addLast(Socks5UdpAssociateHandler.DEFAULT);
 
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
