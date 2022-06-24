@@ -5,6 +5,7 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.StringBuilder;
+import org.rx.core.Tasks;
 import org.rx.exception.ExceptionHandler;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
@@ -55,6 +56,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
+            int max = Math.max(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds());
+            Tasks.setTimeout(() -> Sockets.closeOnFlushed(inbound.channel()), max * 1000L);
             pipeline.addLast(Socks5UdpAssociateHandler.DEFAULT);
 
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
