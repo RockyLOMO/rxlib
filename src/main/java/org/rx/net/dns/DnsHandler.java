@@ -5,8 +5,8 @@ import io.netty.channel.*;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.rx.bean.$;
 import org.rx.bean.RandomList;
+import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
 import org.rx.exception.ExceptionHandler;
@@ -19,7 +19,6 @@ import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
 
-import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
 import static org.rx.net.dns.DnsServer.DOMAIN_PREFIX;
 
@@ -54,16 +53,14 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         RandomList<UpstreamSupport> shadowServers = server.shadowServers;
         if (shadowServers != null) {
-            //未命中也缓存
-//            $<Boolean> isEmpty = $(false);
-//            List<InetAddress> sIps = server.shadowCache.get(DOMAIN_PREFIX + domain,
-//                    k -> {
-//                        List<InetAddress> tmp = ifNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
-//                        isEmpty.v = tmp.isEmpty();
-//                        return tmp;
-//                    },
-//                    CachePolicy.absolute(isEmpty.v ? 20 : server.ttl));
-            List<InetAddress> sIps = shadowServers.next().getSupport().resolveHost(domain);
+            Cache<String, List<InetAddress>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+            String k = DOMAIN_PREFIX + domain;
+            List<InetAddress> sIps = cache.get(k);
+            if (sIps == null) {
+                //未命中也缓存
+                cache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2)),
+                        CachePolicy.absolute(CollectionUtils.isEmpty(sIps) ? 20 : server.ttl));
+            }
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
