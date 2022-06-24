@@ -116,7 +116,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
             synchronized (this) {
                 if (future == null) {
-                    wait(unit.convert(timeout, TimeUnit.MILLISECONDS));
+                    wait(TimeUnit.MILLISECONDS.convert(timeout, unit));
                 }
             }
             if (future == null) {
@@ -256,17 +256,17 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
-        return setTimeout(command::run, unit.convert(delay, TimeUnit.MILLISECONDS));
+        return setTimeout(command::run, TimeUnit.MILLISECONDS.convert(delay, unit));
     }
 
     @Override
     public <V> ScheduledFuture<V> schedule(Callable<V> callable, long delay, TimeUnit unit) {
-        return setTimeout(callable::call, unit.convert(delay, TimeUnit.MILLISECONDS));
+        return setTimeout(callable::call, TimeUnit.MILLISECONDS.convert(delay, unit));
     }
 
     @Override
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit) {
-        long initDelay = unit.convert(initialDelay, TimeUnit.MILLISECONDS);
+        long initDelay = TimeUnit.MILLISECONDS.convert(initialDelay, unit);
         Task<?> t = (Task<?>) setTimeout(command::run, initDelay);
         AtomicBoolean cancel = new AtomicBoolean();
         ScheduledFuture<?> future = proxy(ScheduledFuture.class, (m, p) -> {
@@ -280,7 +280,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         });
 
         long nextDelay = initDelay + period;
-        long periodMillis = unit.convert(period, TimeUnit.MILLISECONDS);
+        long periodMillis = TimeUnit.MILLISECONDS.convert(period, unit);
         nextFixedRate(future, t, nextDelay, command, periodMillis);
         return future;
     }
@@ -303,7 +303,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long period, TimeUnit unit) {
-        return setTimeout(command::run, d -> d == 0 ? initialDelay : unit.convert(period, TimeUnit.MILLISECONDS), null, TimeoutFlag.PERIOD);
+        return setTimeout(command::run, d -> d == 0 ? initialDelay : TimeUnit.MILLISECONDS.convert(period, unit), null, TimeoutFlag.PERIOD);
     }
 
     @Override

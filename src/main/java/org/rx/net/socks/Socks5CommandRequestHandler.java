@@ -58,7 +58,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
             int max = Math.max(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds());
             Tasks.setTimeout(() -> {
-                log.info("UDP_ASSOCIATE END");
+                log.info("UdpAssociate client close");
                 Sockets.closeOnFlushed(inbound.channel());
             }, max * 1000L);
             pipeline.addLast(Socks5UdpAssociateHandler.DEFAULT);

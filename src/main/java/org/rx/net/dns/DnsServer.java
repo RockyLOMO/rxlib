@@ -13,15 +13,20 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.cache.DiskCache;
 import org.rx.io.Files;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
+import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static org.rx.core.Extends.as;
+import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
 public class DnsServer extends Disposable {
@@ -35,8 +40,41 @@ public class DnsServer extends Disposable {
     boolean enableHostsWeight;
     @Getter
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
-    @Setter
     RandomList<UpstreamSupport> shadowServers;
+    Cache<String, List<InetAddress>> shadowCache;
+
+    public void setShadowServers(RandomList<UpstreamSupport> shadowServers) {
+        if (CollectionUtils.isEmpty(this.shadowServers = shadowServers)) {
+            return;
+        }
+
+        DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(Cache.DISK_CACHE);
+        cache.onExpired.combine((s, e) -> {
+            Map.Entry<Object, Object> entry = e.getValue();
+            String key;
+            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
+                entry.setValue(null);
+                return;
+            }
+
+            String domain = key.substring(DOMAIN_PREFIX.length());
+            List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
+            List<InetAddress> addresses = awaitQuietly(() -> {
+                List<InetAddress> list = shadowServers.next().getSupport().resolveHost(domain);
+                if (CollectionUtils.isEmpty(list)) {
+                    return null;
+                }
+                cache.put(key, list, CachePolicy.absolute(ttl));
+                log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
+                return list;
+            }, SocksSupport.ASYNC_TIMEOUT);
+            if (!CollectionUtils.isEmpty(addresses)) {
+                entry.setValue(addresses);
+            }
+            log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
+        });
+        shadowCache = (Cache) cache;
+    }
 
     public DnsServer() {
         this(53);
