@@ -55,14 +55,15 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         RandomList<UpstreamSupport> shadowServers = server.shadowServers;
         if (shadowServers != null) {
             //未命中也缓存
-            $<Boolean> isEmpty = $(false);
-            List<InetAddress> sIps = server.shadowCache.get(DOMAIN_PREFIX + domain,
-                    k -> {
-                        List<InetAddress> tmp = ifNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
-                        isEmpty.v = tmp.isEmpty();
-                        return tmp;
-                    },
-                    CachePolicy.absolute(isEmpty.v ? 20 : server.ttl));
+//            $<Boolean> isEmpty = $(false);
+//            List<InetAddress> sIps = server.shadowCache.get(DOMAIN_PREFIX + domain,
+//                    k -> {
+//                        List<InetAddress> tmp = ifNull(sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections.emptyList());
+//                        isEmpty.v = tmp.isEmpty();
+//                        return tmp;
+//                    },
+//                    CachePolicy.absolute(isEmpty.v ? 20 : server.ttl));
+            List<InetAddress> sIps = shadowServers.next().getSupport().resolveHost(domain);
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 return;
