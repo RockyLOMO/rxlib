@@ -21,12 +21,12 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(Short.MAX_VALUE).removalListener(this::onRemoval));
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(5000).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
     private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
-//        log.info("onRemoval {} {}", key, removalCause);
+        log.info("onRemoval {} -> {}", key, removalCause);
         if (key == null || item == null || item.value == null
                 || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT
                 || item.isExpired()) {
@@ -36,7 +36,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval[{}] copy to store {} {}", removalCause, key, item.expiration());
+        log.info("onRemoval copy to store {} -> {} {}", removalCause, key, item.expiration());
     }
 
     @Override
