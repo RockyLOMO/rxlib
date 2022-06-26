@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.rx.bean.DateTime;
 
 import java.io.Serializable;
@@ -27,6 +28,7 @@ public class CachePolicy implements Serializable {
         return new CachePolicy(DateTime.now().addSeconds(expireSeconds).getTime(), expireSeconds * 1000);
     }
 
+    @Getter
     long expiration = Long.MAX_VALUE;
     int slidingSpan;
 
@@ -42,11 +44,11 @@ public class CachePolicy implements Serializable {
         this.slidingSpan = policy.slidingSpan;
     }
 
-    public long expiration() {
-        return expiration(slidingSpan > 0);
+    public long ttl() {
+        return ttl(slidingSpan > 0);
     }
 
-    public long expiration(boolean slidingRenew) {
+    public long ttl(boolean slidingRenew) {
         long ttl = Math.max(0, expiration - System.currentTimeMillis());
         if (ttl > 0 && slidingRenew) {
             slidingRenew();

@@ -17,7 +17,7 @@ class CaffeineExpiry implements Expiry<Object, Object> {
         CachePolicy policy;
         if (value instanceof CachePolicy) {
             policy = (CachePolicy) value;
-            return TimeUnit.MILLISECONDS.toNanos(policy.expiration());
+            return TimeUnit.MILLISECONDS.toNanos(policy.ttl());
         }
         //absolute
 //                return currentDuration != -1 ? currentDuration : DEFAULT_SLIDING_NANOS;
