@@ -245,8 +245,7 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void cache() {
-        System.out.println(cacheKey("prefix", "login", "12345"));
-        System.out.println(cacheKey("login", 12345));
+        System.out.println(cacheKey("prefix", "login", 12345));
 
 //        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
 //        testCache(new MemoryCache<>(dump));
@@ -262,30 +261,25 @@ public class CoreTester extends TestUtil {
         Tuple<Integer, String> key2 = Tuple.of(2, "b");
         Tuple<Integer, String> key3 = Tuple.of(3, "c");
 
-        cache.put(key1, 100);
-        assert cache.get(key1).equals(100);
-        cache.put(key2, 100, CachePolicy.absolute(10));
-        assert cache.get(key2).equals(100);
-        cache.put(key3, 100, CachePolicy.sliding(5));
-        assert cache.get(key3).equals(100);
+        for (int i = 0; i < 2; i++) {
+//            cache.put(key1, 100);
+//            assert cache.get(key1).equals(100);
+//            cache.put(key2, 200, CachePolicy.absolute(10));
+//            assert cache.get(key2).equals(200);
+            cache.put(key3, 300, CachePolicy.sliding(5));
+            assert cache.get(key3).equals(300);
+        }
 
-        cache.put(key1, 100);
-        assert cache.get(key1).equals(100);
-        cache.put(key2, 100, CachePolicy.absolute(10));
-        assert cache.get(key2).equals(100);
-        cache.put(key3, 100, CachePolicy.sliding(5));
-        assert cache.get(key3).equals(100);
-
-        assert cache.containsKey(key1);
-        assert cache.containsKey(key2);
-        assert cache.containsKey(key3);
-        assert cache.size() == 3;
-        Integer val2 = cache.remove(key1);
-        assert 100 == val2;
-        assert cache.size() == 2;
+//        assert cache.containsKey(key1);
+//        assert cache.containsKey(key2);
+//        assert cache.containsKey(key3);
+//        assert cache.size() == 3;
+//        Integer val1 = cache.remove(key1);
+//        assert 100 == val1;
+//        assert cache.size() == 2;
 
         Tasks.setTimeout(() -> {
-            assert cache.get(key3).equals(100);
+            assert cache.get(key3).equals(300);
             log.info("check sliding ok");
         }, 4000);
     }
