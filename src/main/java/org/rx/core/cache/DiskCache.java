@@ -26,9 +26,11 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
     private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
-        log.info("onRemoval {} -> {}", key, removalCause);
-        if (key == null || item == null || item.value == null
-                || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT
+        if (item == null) {
+            return;
+        }
+        log.info("onRemoval {}[{}] -> {}", key, item.getExpiration(), removalCause);
+        if (item.value == null || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT
                 || item.isExpired()) {
             return;
         }
@@ -36,7 +38,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval copy to store {} -> {} {}", removalCause, key, item.expiration());
+        log.info("onRemoval copy to store {} -> {} {}", removalCause, key, item.ttl());
     }
 
     @Override
