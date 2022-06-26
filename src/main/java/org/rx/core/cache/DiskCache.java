@@ -38,7 +38,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         getStore().put(key, item);
-        log.info("onRemoval copy to store {} -> {} {}", removalCause, key, item.ttl());
+        log.info("onRemoval copy to store {} -> {}ms", key, item.getExpiration() - System.currentTimeMillis());
     }
 
     @Override
@@ -61,14 +61,16 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
+        boolean doRenew = false;
         DiskCacheItem<TV> item = cache.get(key);
         if (item == null) {
             item = getStore().get(key);
+            doRenew = true;
         }
-        return unwrap((TK) key, item);
+        return unwrap((TK) key, item, doRenew);
     }
 
-    private TV unwrap(TK key, DiskCacheItem<TV> item) {
+    private TV unwrap(TK key, DiskCacheItem<TV> item, boolean doRenew) {
         if (item == null) {
             return null;
         }
@@ -81,7 +83,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
-        if (item.slidingRenew()) {
+        if (doRenew && item.slidingRenew()) {
             cache.put(key, item);
         }
         return item.value;
@@ -90,7 +92,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
         DiskCacheItem<TV> old = cache.put(key, new DiskCacheItem<>(value, policy));
-        return unwrap(key, old);
+        return unwrap(key, old, false);
     }
 
     @Override
