@@ -21,7 +21,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(5000).removalListener(this::onRemoval));
+    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(2000).removalListener(this::onRemoval));
     @Getter(lazy = true)
     private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
 
@@ -53,9 +53,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.containsValue(value)
-//                || getStore().containsValue(value)
-                ;
+        return cache.containsValue(value) || getStore().containsValue(value);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
