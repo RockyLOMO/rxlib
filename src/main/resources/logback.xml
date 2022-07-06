@@ -8,7 +8,7 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder charset="UTF-8">
-            <pattern>%yellow(%d{HH:mm:ss.SSS}) %highlight(%-5p) %magenta([%t]) %cyan(%c) - %m%n</pattern>
+            <pattern>%yellow(%d{HH:mm:ss.SSS}) %highlight(%-5p) %magenta([%t]) %cyan(%c{20}) - %m%n</pattern>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>DEBUG</level>
@@ -27,12 +27,12 @@
             <maxHistory>${days}</maxHistory>
         </rollingPolicy>
         <encoder charset="UTF-8">
-            <pattern>%d %-5p [%t] %c - %m%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %-5p [%t] %c{20} - %m%n</pattern>
         </encoder>
     </appender>
 
     <root level="${logLevel}">
-        <appender-ref ref="STDOUT"/>
+<!--        <appender-ref ref="STDOUT"/>-->
         <appender-ref ref="infoAppender"/>
     </root>
 </configuration>
