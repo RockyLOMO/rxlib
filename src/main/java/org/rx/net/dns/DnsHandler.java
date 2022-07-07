@@ -6,7 +6,6 @@ import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
-import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.NQuery;
 import org.rx.exception.ExceptionHandler;
@@ -16,6 +15,7 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -29,7 +29,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final boolean isTcp;
     final DnsClient client;
 
-    public DnsHandler(DnsServer server, boolean isTcp, List<InetSocketAddress> nameServerList) {
+    public DnsHandler(DnsServer server, boolean isTcp, Collection<InetSocketAddress> nameServerList) {
         this.server = server;
         this.isTcp = isTcp;
         client = new DnsClient(nameServerList);

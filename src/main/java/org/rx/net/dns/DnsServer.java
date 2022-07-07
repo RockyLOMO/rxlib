@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
-import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
 import org.rx.io.Files;
 import org.rx.net.MemoryMode;
@@ -76,18 +75,21 @@ public class DnsServer extends Disposable {
         shadowCache = (Cache) cache;
     }
 
-    public DnsServer() {
-        this(53);
+    public DnsServer(int port) {
+        this(port, null);
     }
 
-    public DnsServer(int port, InetSocketAddress... nameServerList) {
-        List<InetSocketAddress> nsEndpoints = Arrays.toList(nameServerList);
+    //aes tls 主要针对TCP
+    public DnsServer(int port, Collection<InetSocketAddress> nameServerList) {
+        if (nameServerList == null) {
+            nameServerList = Collections.emptyList();
+        }
 
-        DnsHandler tcpHandler = new DnsHandler(DnsServer.this, true, nsEndpoints);
+        DnsHandler tcpHandler = new DnsHandler(DnsServer.this, true, nameServerList);
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), tcpHandler));
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nsEndpoints);
+        DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nameServerList);
         Sockets.udpServerBootstrap(MemoryMode.MEDIUM, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
                 .bind(port).addListener(Sockets.logBind(port));
     }

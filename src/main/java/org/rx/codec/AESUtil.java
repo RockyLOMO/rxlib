@@ -96,8 +96,7 @@ public class AESUtil {
     @SneakyThrows
     public static ByteBuf decrypt(@NonNull ByteBuf buf, @NonNull byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        SecretKey secretKey = generateKey(key);
-        cipher.init(Cipher.DECRYPT_MODE, secretKey);
+        cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
         ByteBuffer in = buf.nioBuffer();
         int outputSize = cipher.getOutputSize(in.remaining());
         ByteBuffer out = ByteBuffer.allocateDirect(outputSize);
