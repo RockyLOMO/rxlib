@@ -32,6 +32,7 @@ import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,32 +53,37 @@ public final class Sockets {
     static final String SHARED_UDP_REACTOR = "_UDP";
     static final String SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
-    static volatile DnsClient nsClient;
+    static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
 
-    @SneakyThrows
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
         DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
-        if (nsClient == null) {
+        injectNameService(client::resolveAll);
+    }
+
+    @SneakyThrows
+    public static void injectNameService(@NonNull BiFunc<String, List<InetAddress>> fn) {
+        if (nsInterceptor == null) {
             synchronized (Sockets.class) {
-                if (nsClient == null) {
+                if (nsInterceptor == null) {
+                    nsInterceptor = fn;
                     Class<?> type = InetAddress.class;
                     try {
                         Field field = type.getDeclaredField("nameService");
                         Reflects.setAccess(field);
-                        field.set(null, nsProxy(field.get(null), client));
+                        field.set(null, nsProxy(field.get(null)));
                     } catch (NoSuchFieldException e) {
                         Field field = type.getDeclaredField("nameServices");
                         Reflects.setAccess(field);
                         List<Object> nsList = (List<Object>) field.get(null);
-                        nsList.set(0, nsProxy(nsList.get(0), client));
+                        nsList.set(0, nsProxy(nsList.get(0)));
                     }
                 }
             }
         }
-        nsClient = client;
+        nsInterceptor = fn;
     }
 
-    private static Object nsProxy(Object ns, DnsClient client) {
+    private static Object nsProxy(Object ns) {
         Class<?> type = ns.getClass();
         InetAddress[] empty = new InetAddress[0];
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
@@ -85,7 +91,7 @@ public final class Sockets {
                 String host = (String) args[0];
                 //处理不了会交给源对象处理
                 try {
-                    List<InetAddress> addresses = client.resolveAll(host);
+                    List<InetAddress> addresses = nsInterceptor.invoke(host);
                     if (!CollectionUtils.isEmpty(addresses)) {
                         return addresses.toArray(empty);
                     }

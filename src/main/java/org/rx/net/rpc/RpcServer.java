@@ -45,6 +45,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         @Getter
         DateTime connectedTime;
 
+        @Override
         public boolean isConnected() {
             return channel != null && channel.isActive();
         }
