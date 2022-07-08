@@ -30,12 +30,10 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
             return;
         }
         log.info("onRemoval {}[{}] -> {}", key, item.getExpiration(), removalCause);
-        if (item.value == null || removalCause == RemovalCause.REPLACED) {
+        if (item.value == null || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT) {
             return;
         }
-        if (removalCause == RemovalCause.EXPLICIT
-//                || item.isExpired()
-        ) {
+        if (item.isExpired()) {
             raiseEvent(onExpired, new NEventArgs<>(new DefaultMapEntry<>(key, item.value)));
             return;
         }
