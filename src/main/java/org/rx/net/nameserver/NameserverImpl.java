@@ -67,6 +67,7 @@ public class NameserverImpl implements Nameserver {
 
             doDeregister(appName, e.getClient().getRemoteEndpoint().getAddress(), true, true);
         });
+        rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress()).put("ping", e.getValue() - System.currentTimeMillis()));
 
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {

@@ -548,7 +548,7 @@ public class SocksTester extends TConfig {
         final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
-        DnsServer server = new DnsServer(localNsEp.getPort(), nsEp);
+        DnsServer server = new DnsServer(localNsEp.getPort(), Collections.singletonList(nsEp));
 //        DnsServer server = new DnsServer(localNsEp.getPort());
         server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
             @Override

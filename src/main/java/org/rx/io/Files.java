@@ -120,6 +120,9 @@ public class Files extends FilenameUtils {
 
     public static void deleteBefore(@NonNull String directoryPath, @NonNull Date time, String wildcard) {
         File dir = new File(directoryPath);
+        if (!dir.exists()) {
+            return;
+        }
 
         IOFileFilter fileFilter = FileFilterUtils.ageFileFilter(time);
         if (wildcard != null) {
