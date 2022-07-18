@@ -148,7 +148,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 TK k = val.key;
                 HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
                 if (key == null) {
-                    key = new HashKeyIndexer.KeyData<>(k, k.hashCode());
+                    key = new HashKeyIndexer.KeyData<>(k);
                     incr = true;
                 }
                 if (key.logPosition == TOMB_MARK) {
@@ -280,7 +280,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         boolean incr = false;
         HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
         if (key == null) {
-            key = new HashKeyIndexer.KeyData<>(k, k.hashCode());
+            key = new HashKeyIndexer.KeyData<>(k);
             incr = true;
         }
         if (key.logPosition == TOMB_MARK) {
@@ -389,7 +389,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (k != null && !k.equals(val.key)) {
             AtomicInteger counter = (AtomicInteger) wal.meta.extra;
             int total = counter == null ? -1 : counter.incrementAndGet();
-            log.warn("Hash collision {} {} total={}", k.hashCode(), k, total);
+            log.warn("LogPosError Hash collision {} total={}", k, total);
             return null;
         }
         return val;
