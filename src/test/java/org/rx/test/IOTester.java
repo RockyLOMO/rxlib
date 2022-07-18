@@ -169,8 +169,8 @@ public class IOTester extends TestUtil {
                 .between(PersonBean::getAge, 6, 14)
                 .notLike(PersonBean::getName, "王%");
         q.and(q.newClause()
-                .ne(PersonBean::getAge, 10)
-                .ne(PersonBean::getAge, 11))
+                        .ne(PersonBean::getAge, 10)
+                        .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
@@ -203,24 +203,31 @@ public class IOTester extends TestUtil {
         System.in.read();
     }
 
+    @SneakyThrows
     @Test
     public void kvIterator() {
+        int c = 20;
+//        int c = 10;
         KeyValueStoreConfig conf = tstConf();
         conf.setIteratorPrefetchCount(4);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
 
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < c; i++) {
             kv.put(i, i + " " + DateTime.now().toString());
         }
 
-        assert kv.size() == 100;
-        int j = 99;
+        assert kv.size() == c;
+//        assert kv.size() == c * 2;
+        int j = c - 1;
         for (Map.Entry<Integer, String> entry : kv) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
             assert j == entry.getKey();
             assert entry.getValue().startsWith(j + " ");
             j--;
         }
+
+        System.out.println("done");
+        System.in.read();
     }
 
     @Test

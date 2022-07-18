@@ -2,8 +2,6 @@ package org.rx.io;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.AbstractSequentialIterator;
-import com.google.common.hash.BloomFilter;
-import com.google.common.hash.Funnels;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
@@ -87,7 +85,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @RequiredArgsConstructor
     class IteratorContext {
         long logPos = wal.meta.getLogPosition();
-        final BloomFilter<Integer> filter;
+        final Set<TK> filter;
         final Entry<TK, TV>[] buf;
         int writePos;
         int readPos;
@@ -406,11 +404,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         require(offset, offset >= 0);
         require(size, size >= 0);
 
-        if (size() <= offset) {
+        int total = size();
+        if (total <= offset) {
             return IteratorUtils.emptyIterator();
         }
 
-        IteratorContext ctx = new IteratorContext(BloomFilter.create(Funnels.integerFunnel(), offset + size, 0.001), new Entry[config.getIteratorPrefetchCount()]);
+        IteratorContext ctx = new IteratorContext(new HashSet<>(offset + size), new Entry[config.getIteratorPrefetchCount()]);
         if (offset > 0 && !backwardFindValue(ctx, offset)) {
             return IteratorUtils.emptyIterator();
         }
@@ -418,20 +417,26 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (ctx.writePos == 0) {
             return IteratorUtils.emptyIterator();
         }
-        ctx.remaining = size - 1;
+        ctx.remaining = size;
         return new AbstractSequentialIterator<Map.Entry<TK, TV>>(ctx.buf[ctx.readPos]) {
             @Override
             protected Map.Entry<TK, TV> computeNext(Map.Entry<TK, TV> current) {
-                if (--ctx.remaining < 0) {
+                if (--ctx.remaining <= 0) {
                     return null;
                 }
-                if (++ctx.readPos == ctx.buf.length) {
-                    backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
-                    if (ctx.writePos == 0) {
-                        return null;
+                while (true) {
+                    if (++ctx.readPos == ctx.buf.length) {
+                        backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
+                        if (ctx.writePos == 0) {
+                            return null;
+                        }
                     }
+                    Entry<TK, TV> entry = ctx.buf[ctx.readPos];
+                    if (entry == null) {
+                        continue;
+                    }
+                    return entry;
                 }
-                return ctx.buf[ctx.readPos];
             }
         };
     }
@@ -452,29 +457,22 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                     int size = reader.readInt();
                     log.debug("contentLength: {}", size);
                     ctx.logPos -= size;
-                } catch (Exception e) {
-                    if (e instanceof EOFException) {
-                        ctx.remaining = 0;
-                        return false;
-                    }
-                    throw e;
-                }
-                reader.setPosition(ctx.logPos);
-                try {
+
+                    reader.setPosition(ctx.logPos);
+
                     Entry<TK, TV> val = serializer.deserialize(reader, true);
                     log.debug("read {}", val);
                     TV v = queue.peek(val.key);
                     if (v != null) {
                         val.value = v;
                     }
-                    if (ctx.filter.mightContain(val.key.hashCode())) {
-                        log.info("mightContain {}", val.key);
-                        continue;
+                    if (!ctx.filter.add(val.key)) {
+                        log.debug("skip read {}", val.key);
+                        val = null;
                     }
-                    ctx.filter.put(val.key.hashCode());
                     ctx.buf[ctx.writePos++] = val;
                 } catch (Exception e) {
-                    if (e instanceof StreamCorruptedException) {
+                    if (e instanceof StreamCorruptedException | e instanceof EOFException) {
                         ctx.remaining = 0;
                         return false;
                     }
