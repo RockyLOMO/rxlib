@@ -3,10 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Cache;
-import org.rx.core.Constants;
-import org.rx.core.Disposable;
-import org.rx.core.Strings;
+import org.rx.core.*;
 import org.rx.core.cache.MemoryCache;
 
 import java.io.File;
@@ -23,15 +20,18 @@ import static org.rx.core.Extends.tryClose;
  */
 @Slf4j
 final class HashKeyIndexer<TK> extends Disposable {
-    @RequiredArgsConstructor
     @EqualsAndHashCode
     @ToString
     static class KeyData<TK> {
         final TK key;
         private long position = Constants.IO_EOF;
 
-        final int hashCode;
+        final long hashId;
         long logPosition;
+
+        public KeyData(TK key) {
+            hashId = App.hash64(Serializer.DEFAULT.serializeToBytes(this.key = key));
+        }
     }
 
     @RequiredArgsConstructor
@@ -130,7 +130,7 @@ final class HashKeyIndexer<TK> extends Disposable {
 
     static final boolean HEX_DUMP = false;
     static final int HEADER_SIZE = 4;
-    static final int KEY_SIZE = 12;
+    static final int KEY_SIZE = 16;
     //    static final int READ_PAGE_CACHE_SIZE = (int) Math.floor(1024d * 4 / KEY_SIZE) * KEY_SIZE;
     static final int HASH_BITS = 0x7fffffff;
 
@@ -178,7 +178,8 @@ final class HashKeyIndexer<TK> extends Disposable {
         }
     }
 
-    private Slot slot(int hashCode) {
+    private Slot slot(long hashId) {
+        int hashCode = Long.hashCode(hashId);
         int i = (slots.length - 1) & spread(hashCode);
         synchronized (slots) {
             Slot slot = slots[i];
@@ -194,7 +195,7 @@ final class HashKeyIndexer<TK> extends Disposable {
         checkNotClosed();
         require(key, key.position >= Constants.IO_EOF);
 
-        Slot slot = slot(key.hashCode);
+        Slot slot = slot(key.hashId);
         slot.lock.writeInvoke(() -> {
             slot.ensureGrow();
 
@@ -204,7 +205,7 @@ final class HashKeyIndexer<TK> extends Disposable {
 
             ByteBuf buf = Bytes.directBuffer(KEY_SIZE);
             try {
-                buf.writeInt(key.hashCode);
+                buf.writeLong(key.hashId);
                 buf.writeLong(key.logPosition);
                 out.write(buf);
 //                out.flush();
@@ -228,8 +229,9 @@ final class HashKeyIndexer<TK> extends Disposable {
 
     public KeyData<TK> findKey(@NonNull TK k) {
         return cache.get(k, x -> {
-            int hashCode = k.hashCode();
-            Slot slot = slot(hashCode);
+            KeyData<TK> keyData = new KeyData<>(k);
+            long hashId = keyData.hashId;
+            Slot slot = slot(hashId);
 
             return slot.lock.readInvoke(() -> {
                 IOStream<?, ?> in = slot.reader;
@@ -241,14 +243,13 @@ final class HashKeyIndexer<TK> extends Disposable {
                 try {
                     while (pos < endPos && in.read(buf, KEY_SIZE) > 0) {
 //                    log.debug("findKey {} -> {} pos={}{}", slot.main.getName(), hashCode, pos, dump(buf));
-                        int hash = buf.readInt();
-                        if (hash != hashCode) {
+                        long hash = buf.readLong();
+                        if (hash != hashId) {
                             pos += KEY_SIZE;
                             buf.clear();
                             continue;
                         }
 
-                        KeyData<TK> keyData = new KeyData<>(k, hashCode);
                         keyData.position = in.getPosition() - KEY_SIZE;
                         keyData.logPosition = buf.readLong();
                         return keyData;
