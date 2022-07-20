@@ -37,8 +37,8 @@ public class Files extends FilenameUtils {
         return CURD_FILE.isDirectoryPath(path);
     }
 
-    public static void createDirectory(String path) {
-        CURD_FILE.createDirectory(path);
+    public static String createDirectory(String path) {
+        return CURD_FILE.createDirectory(path);
     }
 
     public static void saveFile(String filePath, InputStream in) {
@@ -71,6 +71,10 @@ public class Files extends FilenameUtils {
             p.append(paths[l]);
         }
         return p.toString();
+    }
+
+    public static String changeExtension(@NonNull String filePath, String ext) {
+        return String.format("%s.%s", removeExtension(filePath), ext);
     }
 
     @SneakyThrows

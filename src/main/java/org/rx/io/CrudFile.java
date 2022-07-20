@@ -33,7 +33,7 @@ public interface CrudFile<T> {
         return path + separatorChar;
     }
 
-    void createDirectory(String path);
+    String createDirectory(String path);
 
     NQuery<T> listDirectories(String directoryPath, boolean recursive);
 

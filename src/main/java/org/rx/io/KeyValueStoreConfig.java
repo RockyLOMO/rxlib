@@ -25,7 +25,7 @@ public class KeyValueStoreConfig {
         return conf;
     }
 
-    private final String directoryPath;
+    private final String filePath;
     /**
      * init big file for sequential write
      */
@@ -38,8 +38,8 @@ public class KeyValueStoreConfig {
     private int logReaderCount = 1;
     private int iteratorPrefetchCount = 2;
 
-    private int indexSlotSize = Constants.MB * 128; //128M
-    private int indexGrowSize = Constants.MB * 64; //32M
+    private int indexSlotSize = Constants.MB * 256; //128M
+    private int indexGrowSize = Constants.MB * 32; //32M
 
     private long writeBehindDelayed = 1000;
     private int writeBehindHighWaterMark = 8;

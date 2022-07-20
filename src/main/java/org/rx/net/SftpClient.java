@@ -120,12 +120,12 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     @Override
-    public void createDirectory(String remotePath) {
-        String dirPath = FilenameUtils.getFullPath(remotePath);
-        if (exists(dirPath)) {
-            return;
+    public String createDirectory(String remotePath) {
+        String dirPath = getDirectoryPath(remotePath);
+        if (!exists(dirPath)) {
+            channel.mkdir(dirPath);
         }
-        channel.mkdir(dirPath);
+        return dirPath;
     }
 
     @Override

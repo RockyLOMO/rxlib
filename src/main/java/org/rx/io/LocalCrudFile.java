@@ -16,9 +16,11 @@ import java.nio.file.StandardCopyOption;
 class LocalCrudFile implements CrudFile<File> {
     @SneakyThrows
     @Override
-    public void createDirectory(String path) {
+    public String createDirectory(String path) {
         //Do not use FileUtils.createParentDirectories() || File.getParentFile();
-        Files.createDirectories(Paths.get(getDirectoryPath(path)));
+        String dirPath = getDirectoryPath(path);
+        Files.createDirectories(Paths.get(dirPath));
+        return dirPath;
     }
 
     @SneakyThrows
