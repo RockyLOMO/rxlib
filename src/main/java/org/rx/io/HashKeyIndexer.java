@@ -13,7 +13,6 @@ import static org.rx.core.Extends.require;
 import static org.rx.core.Extends.tryClose;
 
 /**
- * murmur3_128  com.google.common.hash.Hashing.goodFastHash(128);
  * only cache key position
  *
  * @param <TK>

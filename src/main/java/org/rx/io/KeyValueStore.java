@@ -92,7 +92,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int remaining;
     }
 
-    static final String LOG_FILE = "bin.log";
     static final int TOMB_MARK = -1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     @Getter(lazy = true)
@@ -101,19 +100,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
+    final String filename;
     final WALFileStream wal;
     final HashKeyIndexer<TK> indexer;
     final Serializer serializer;
     final WriteBehindQueue<TK, TV> queue;
     final HttpServer apiServer;
 
-    File getParentDirectory() {
-        parentDirectory.mkdirs();
-        return parentDirectory;
-    }
-
     File getIndexDirectory() {
-        File dir = new File(parentDirectory, "index");
+        File dir = new File(parentDirectory, Files.changeExtension(filename, "idx"));
         dir.mkdirs();
         return dir;
     }
@@ -128,11 +123,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
         this.config = config;
+        filename = Files.getName(config.getFilePath());
+        if (Strings.isEmpty(filename)) {
+            throw new InvalidException("Empty file name");
+        }
 
-        parentDirectory = new File(config.getDirectoryPath());
+        parentDirectory = new File(Files.createDirectory(config.getFilePath()));
         this.serializer = serializer;
 
-        File logFile = new File(getParentDirectory(), LOG_FILE);
+        File logFile = new File(Files.changeExtension(config.getFilePath(), "log"));
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
 
         indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
