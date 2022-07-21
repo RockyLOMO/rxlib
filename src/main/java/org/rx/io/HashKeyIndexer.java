@@ -141,7 +141,7 @@ final class HashKeyIndexer<TK> extends Disposable {
     private final int growSize;
     private final Slot[] slots;
     private final WriteBehindQueue<String, Integer> queue;
-    private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 4 + 8));
+    private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 8 + 8));
 
     public HashKeyIndexer(@NonNull File directory, long slotSize, int growSize) {
         require(slotSize, slotSize > 0);
@@ -256,21 +256,7 @@ final class HashKeyIndexer<TK> extends Disposable {
                 } finally {
                     buf.release();
                 }
-
-//                if (pos > HEADER_SIZE) {
-//                    try (FileChannel open = FileChannel.open(Paths.get(slot.main.getPath()))) {
-//                        open.position(pos - KEY_SIZE);
-//                        ByteBuffer b = ByteBuffer.allocate(KEY_SIZE);
-//                        int r = open.read(b);
-//                        assert r == KEY_SIZE;
-//                        b.flip();
-//                        KeyData<TK> tmp = new KeyData<>(null, b.getInt());
-//                        tmp.position = pos - KEY_SIZE;
-//                        tmp.logPosition = b.getLong();
-//                        log.error("syncErr {} -> {} pos={}/{} redo={}", slot.main.getName(), hashCode, pos, endPos, tmp);
-//                    }
-//                }
-//                log.warn("findKey fail {} -> {} pos={}/{}{}", slot.main.getName(), hashCode, pos, endPos, dump(buf));
+//                log.debug("findKey fail {} -> {} pos={}/{}{}", slot.main.getName(), hashCode, pos, endPos, dump(buf));
                 return null;
             }, HEADER_SIZE);
         });

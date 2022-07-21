@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 import static org.rx.core.Extends.eq;
 
 class ComboIPSearcher implements IPSearcher {
-    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.miniConfig("./data/ip"));
+    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/ip"));
 
     @Override
     public IPAddress current() {

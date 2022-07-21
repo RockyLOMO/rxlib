@@ -14,14 +14,14 @@ public class KeyValueStoreConfig {
     public static final String DEFAULT_DIRECTORY = "./data/def";
 
     public static KeyValueStoreConfig defaultConfig() {
-        return miniConfig(DEFAULT_DIRECTORY);
+        return defaultConfig(DEFAULT_DIRECTORY);
     }
 
-    public static KeyValueStoreConfig miniConfig(String directoryPath) {
+    public static KeyValueStoreConfig defaultConfig(String directoryPath) {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(directoryPath);
-        //init 1G
-        conf.setLogGrowSize(Constants.MB * 256);
-        conf.setIndexGrowSize(Constants.MB * 4);
+        conf.setLogGrowSize(Constants.MB * 64);
+        conf.setIndexSlotSize(Constants.MB * 512);
+        conf.setIndexGrowSize(Constants.MB * 2);
         return conf;
     }
 
@@ -38,7 +38,7 @@ public class KeyValueStoreConfig {
     private int logReaderCount = 1;
     private int iteratorPrefetchCount = 2;
 
-    private int indexSlotSize = Constants.MB * 256; //128M
+    private int indexSlotSize = Constants.MB * 128; //128M
     private int indexGrowSize = Constants.MB * 32; //32M
 
     private long writeBehindDelayed = 1000;

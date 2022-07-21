@@ -1,7 +1,6 @@
 package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.RemovalCause;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.checkerframework.checker.nullness.qual.NonNull;
@@ -21,11 +20,19 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     }
 
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache = new MemoryCache<>(b -> b.maximumSize(2000).removalListener(this::onRemoval));
-    @Getter(lazy = true)
-    private final KeyValueStore<TK, DiskCacheItem<TV>> store = KeyValueStore.getInstance();
+    final Cache<TK, DiskCacheItem<TV>> cache;
+    final KeyValueStore<TK, DiskCacheItem<TV>> store;
 
-    private void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
+    public DiskCache() {
+        this(1000, null);
+    }
+
+    public DiskCache(int cacheSize, KeyValueStoreConfig config) {
+        cache = new MemoryCache<>(b -> b.maximumSize(cacheSize).removalListener(this::onRemoval));
+        store = config == null ? KeyValueStore.getInstance() : new KeyValueStore<>(config);
+    }
+
+    void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
         if (item == null) {
             return;
         }
@@ -40,23 +47,23 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {
             return;
         }
-        getStore().put(key, item);
+        store.put(key, item);
         log.info("onRemoval copy to store {} -> {}ms", key, item.getExpiration() - System.currentTimeMillis());
     }
 
     @Override
     public int size() {
-        return cache.size() + getStore().size();
+        return cache.size() + store.size();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return cache.containsKey(key) || getStore().containsKey(key);
+        return get(key) != null;
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.containsValue(value) || getStore().containsValue(value);
+        return cache.containsValue(value) || store.containsValue(value);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -65,7 +72,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
         boolean doRenew = false;
         DiskCacheItem<TV> item = cache.get(key);
         if (item == null) {
-            item = getStore().get(key);
+            item = store.get(key);
             doRenew = true;
         }
         return unwrap((TK) key, item, doRenew);
@@ -100,7 +107,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     public TV remove(Object key) {
         DiskCacheItem<TV> remove = cache.remove(key);
         if (remove == null) {
-            remove = getStore().remove(key);
+            remove = store.remove(key);
         }
         return remove == null ? null : remove.value;
     }
@@ -108,7 +115,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
     @Override
     public void clear() {
         cache.clear();
-        getStore().clear();
+        store.clear();
     }
 
     @Override
