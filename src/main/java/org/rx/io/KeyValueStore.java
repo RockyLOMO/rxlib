@@ -388,7 +388,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (k != null && !k.equals(val.key)) {
             AtomicInteger counter = (AtomicInteger) wal.meta.extra;
             int total = counter == null ? -1 : counter.incrementAndGet();
-            log.warn("LogPosError Hash collision {} total={}", k, total);
+            log.warn("LogPosError hash collision {} total={}", k, total);
+            Files.createDirectory("./hc.err");
             return null;
         }
         return val;

@@ -17,22 +17,15 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
         Container.register(MemoryCache.class, new MemoryCache<>());
     }
 
-    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryWeigh) {
+    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryBytes) {
         require(memoryPercent, 0 < memoryPercent && memoryPercent <= 1);
 
-        return b.maximumWeight((long) (Runtime.getRuntime().maxMemory() * memoryPercent))
-                .weigher((k, v) -> entryWeigh);
+        return weightBuilder(b, (long) (Runtime.getRuntime().maxMemory() * memoryPercent), entryBytes);
     }
 
-//    public static Caffeine<Object, Object> slidingBuilder(long expireSeconds) {
-//        return rootBuilder()
-//                .expireAfterAccess(expireSeconds, TimeUnit.SECONDS);
-//    }
-//
-//    public static Caffeine<Object, Object> absoluteBuilder(long expireSeconds) {
-//        return rootBuilder()
-//                .expireAfterWrite(expireSeconds, TimeUnit.SECONDS);
-//    }
+    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, long maxBytes, int entryBytes) {
+        return b.maximumWeight(maxBytes).weigher((k, v) -> entryBytes);
+    }
 
     static Caffeine<Object, Object> rootBuilder() {
         return Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));

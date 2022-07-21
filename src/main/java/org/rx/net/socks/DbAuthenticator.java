@@ -19,7 +19,7 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public DbAuthenticator(List<SocksUser> initUsers, Integer apiPort) {
-        KeyValueStoreConfig config = KeyValueStoreConfig.miniConfig("./data/socks");
+        KeyValueStoreConfig config = KeyValueStoreConfig.defaultConfig("./data/socks");
         config.setWriteBehindDelayed(15000);
         if (apiPort != null) {
             config.setApiPort(apiPort);
