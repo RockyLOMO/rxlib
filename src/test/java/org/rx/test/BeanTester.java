@@ -185,6 +185,8 @@ public class BeanTester extends TestUtil {
         System.out.println(now);
         System.out.println(utc);
         System.out.println(d.toDateTimeString());
+
+        assert d.setTimeComponent("14:30:01").toDateTimeString().equals("2010-08-24 14:30:01");
     }
 
     @Test

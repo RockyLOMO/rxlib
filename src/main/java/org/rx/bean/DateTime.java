@@ -25,11 +25,11 @@ public final class DateTime extends Date {
     private static final long serialVersionUID = 414744178681347341L;
     public static final DateTime MIN = new DateTime(2000, 1, 1), MAX = new DateTime(9999, 12, 31);
     public static final NQuery<String> FORMATS = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
-    private static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
+    static final String DATE_PART = "yyyMMdd";
+    static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static boolean isToday(Date time) {
-        String f = "yyyMMdd";
-        return DateTime.now().toString(f).equals(new DateTime(time).toString(f));
+        return DateTime.now().toString(DATE_PART).equals(new DateTime(time).toString(DATE_PART));
     }
 
     public static DateTime now() {
@@ -76,13 +76,17 @@ public final class DateTime extends Date {
     }
 
     public DateTime getDateComponent() {
-        String format = "yyyyMMdd";
-        return DateTime.valueOf(toString(format), format);
+        return DateTime.valueOf(toString(DATE_PART), DATE_PART);
     }
 
     public DateTime getDateTimeComponent() {
-        String format = "yyyyMMddHHmmss";
-        return DateTime.valueOf(toString(format), format);
+        String f = "yyyyMMddHHmmss";
+        return DateTime.valueOf(toString(f), f);
+    }
+
+    public DateTime setTimeComponent(String time) {
+        String f = "yyyyMMddHH:mm:ss";
+        return DateTime.valueOf(toString(DATE_PART) + time, f);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -164,12 +168,12 @@ public final class DateTime extends Date {
         super.setTime(c.getTimeInMillis());
     }
 
-    public DateTime(long ticks) {
-        super(ticks);
-    }
-
     public DateTime(Date date) {
         super(date.getTime());
+    }
+
+    public DateTime(long ticks) {
+        super(ticks);
     }
 
     @Override
