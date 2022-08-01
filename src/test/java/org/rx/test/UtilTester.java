@@ -7,7 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.Tuple;
+import org.rx.core.NQuery;
+import org.rx.core.Strings;
 import org.rx.core.Tasks;
+import org.rx.exception.InvalidException;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
@@ -149,6 +153,40 @@ public class UtilTester {
         mapper.map(f, t, BeanMapFlag.LOG_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
+
+
+        String input = "VerifyCouponDTO(businessId=512101, storeId=2752182412101, storeName=null, userId=2598980608312101, couponId=52413912101, couponCode=88130205610006083, showCouponCode=88130205610006083, channel=1, businessType=null, type=1, verifyBy=2610449899512101, verifyName=null, verifyDate=2022-07-30 15:35:34, orderType=null, orderId=220730039949230215, bizId=203547#0, extendMap={sendOrderId=65187421241005834})";
+        int c = 0;
+        for (String str : Strings.split(input, "\n")) {
+            if (!str.startsWith("VerifyCouponDTO")) {
+                continue;
+            }
+            System.out.println(++c);
+            System.out.println(toJsonString(convert(str, true)));
+            System.out.println();
+        }
+        System.out.println(c);
+    }
+
+    Map<String, Object> convert(String str, boolean root) {
+        String startFlag = root ? "(" : "{", endFlag = root ? ")" : "}";
+        int s = Strings.indexOf(str, startFlag);
+        if (s == -1) {
+            return Collections.emptyMap();
+        }
+        int e = Strings.lastIndexOf(str, endFlag);
+        if (e == -1) {
+            return Collections.emptyMap();
+        }
+        return NQuery.of(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
+            int i = Strings.indexOf(p, "=");
+            if (i == -1) {
+                throw new InvalidException("Parse error %s", p);
+            }
+            String k = p.substring(0, i);
+            String v = p.substring(i + 1);
+            return Tuple.of(k, Strings.startsWith(v, "{") ? convert(v, false) : v);
+        }).toMap(p -> p.left, p -> p.right);
     }
 
     @Data
