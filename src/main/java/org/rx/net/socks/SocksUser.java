@@ -25,7 +25,7 @@ public class SocksUser implements Serializable {
         public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
             JSONObject map = parser.parseObject();
             SocksUser user = new SocksUser(map.getString("username"));
-            BeanMapper.INSTANCE.map(map, user);
+            BeanMapper.DEFAULT.map(map, user);
             return (T) user;
         }
 

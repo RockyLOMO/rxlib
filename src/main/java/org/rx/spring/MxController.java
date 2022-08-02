@@ -9,20 +9,13 @@ import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.ExceptionLevel;
 import org.rx.io.Bytes;
-import org.rx.io.IOStream;
-import org.rx.net.Sockets;
-import org.rx.net.http.tunnel.ReceivePack;
-import org.rx.net.http.tunnel.SendPack;
 import org.rx.net.http.tunnel.Server;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
-import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -51,7 +44,7 @@ public class MxController {
 
     @RequestMapping("setConfig")
     public RxConfig setConfig(@RequestBody RxConfig config) {
-        return BeanMapper.INSTANCE.map(config, RxConfig.INSTANCE);
+        return BeanMapper.DEFAULT.map(config, RxConfig.INSTANCE);
     }
 
     @RequestMapping("svr")

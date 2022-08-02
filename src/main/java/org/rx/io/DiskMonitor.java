@@ -18,7 +18,7 @@ import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
 public class DiskMonitor {
-    public static DiskMonitor INSTANCE = new DiskMonitor();
+    public static final DiskMonitor INSTANCE = new DiskMonitor();
     final Map<Integer, Set<Action>> fns = new ConcurrentSkipListMap<>();
 
     private DiskMonitor() {
