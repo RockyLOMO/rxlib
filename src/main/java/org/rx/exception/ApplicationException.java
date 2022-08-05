@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.util.Snowflake;
+import org.slf4j.helpers.MessageFormatter;
 
 import static org.rx.core.Extends.*;
 
@@ -54,28 +55,16 @@ public class ApplicationException extends InvalidException {
         this(Strings.EMPTY, codeValues, cause);
     }
 
-    public <T extends Enum<T>> ApplicationException(T errorCode) {
-        this(errorCode, null, null);
+    public <T extends Enum<T>> ApplicationException(T errorCode, Object... codeValues) {
+        this(errorCode,
+                MessageFormatter.getThrowableCandidate(codeValues) != null ? MessageFormatter.trimmedCopy(codeValues) : codeValues,
+                MessageFormatter.getThrowableCandidate(codeValues));
     }
 
-    public <T extends Enum<T>> ApplicationException(T errorCode, Throwable cause) {
-        this(errorCode, null, cause);
-    }
-
-    public <T extends Enum<T>> ApplicationException(T errorCode, Object[] codeValues) {
-        this(errorCode, codeValues, null);
-    }
-
-    public <T extends Enum<T>> ApplicationException(T errorCode, Object[] codeValues, Throwable cause) {
-        this((Object) errorCode, codeValues, cause);
-    }
-
-    public ApplicationException(String errorCode, Object[] codeValues) {
-        this(errorCode, codeValues, null);
-    }
-
-    public ApplicationException(String errorCode, Object[] codeValues, Throwable cause) {
-        this((Object) errorCode, codeValues, cause);
+    public ApplicationException(String errorCode, Object... codeValues) {
+        this(errorCode,
+                MessageFormatter.getThrowableCandidate(codeValues) != null ? MessageFormatter.trimmedCopy(codeValues) : codeValues,
+                MessageFormatter.getThrowableCandidate(codeValues));
     }
 
     @SneakyThrows

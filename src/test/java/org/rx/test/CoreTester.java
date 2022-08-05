@@ -617,11 +617,10 @@ public class CoreTester extends TestUtil {
         ex = new ApplicationException(UserManager.BizCode.COMPUTE_FAIL, values(errCode));
         assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
 
-        try {
-            Reflects.changeType("x", Date.class);
-        } catch (InvalidException e) {
-            e.printStackTrace();
-        }
+
+        assert new InvalidException(err).getMessage().equals(err);
+        assert new InvalidException("have %s err", 2).getMessage().equals("have 2 err");
+        assert new InvalidException("have %s err", 2, new RuntimeException()).getMessage().equals("have 2 err; nested exception is java.lang.RuntimeException");
     }
 
     @Test
