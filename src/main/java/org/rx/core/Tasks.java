@@ -170,7 +170,7 @@ public final class Tasks {
      */
     public static ScheduledFuture<?> scheduleDaily(@NonNull Action task, @NonNull Time time) {
         long oneDay = Constants.ONE_DAY_TOTAL_SECONDS * 1000;
-        long initDelay = DateTime.valueOf(DateTime.now().toDateString() + " " + time).getTime() - System.currentTimeMillis();
+        long initDelay = DateTime.now().setTimeComponent(time.toString()).getTime() - System.currentTimeMillis();
         initDelay = initDelay > 0 ? initDelay : oneDay + initDelay;
 
         return schedulePeriod(task, initDelay, oneDay);

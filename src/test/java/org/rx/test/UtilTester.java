@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
@@ -82,7 +83,7 @@ public class UtilTester {
 
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
-        PersonMapper INSTANCE = BeanMapper.INSTANCE.define(PersonMapper.class);
+        PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
 
         //该interface下所有map方法的执行flags
         default FlagsEnum<BeanMapFlag> getFlags() {
@@ -144,11 +145,24 @@ public class UtilTester {
         t.setKids(10L);
 
         //普通用法，属性名一致
-        BeanMapper mapper = BeanMapper.INSTANCE;
+        BeanMapper mapper = BeanMapper.DEFAULT;
 //        mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
         mapper.map(f, t, BeanMapFlag.LOG_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
         System.out.println(toJsonString(f));
         System.out.println(toJsonString(t));
+
+
+        String input = "VerifyCouponDTO(businessId=512101, storeId=2752182412101, storeName=null, userId=2598980608312101, couponId=52413912101, couponCode=88130205610006083, showCouponCode=88130205610006083, channel=1, businessType=null, type=1, verifyBy=2610449899512101, verifyName=null, verifyDate=2022-07-30 15:35:34, orderType=null, orderId=220730039949230215, bizId=203547#0, extendMap={sendOrderId=65187421241005834})";
+        int c = 0;
+        for (String str : Strings.split(input, "\n")) {
+            if (!str.startsWith("VerifyCouponDTO")) {
+                continue;
+            }
+            System.out.println(++c);
+            System.out.println(toJsonString(BeanMapper.convertFromObjectString(str, true)));
+            System.out.println();
+        }
+        System.out.println(c);
     }
 
     @Data

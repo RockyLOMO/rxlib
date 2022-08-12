@@ -130,23 +130,4 @@ public final class RSAUtil {
         byte[] b = App.convertFromBase64(cryptograph);
         return new String(cipher.doFinal(b));
     }
-
-//    public static void main(String[] args) {
-//        UUID id = UUID.randomUUID();
-//        String[] kp = RSAUtil.generateKeyPair();
-//        System.out.println("id=" + id + ", kp=" + toJsonString(kp));
-//
-//        String publicKey = kp[0];
-//        String privateKey = kp[1];
-//        String content = "这是一个使用RSA公私钥对加解密的例子";
-//
-//        String signMsg = sign(content, privateKey);
-//        System.out.println("sign: " + signMsg);
-//        boolean verifySignResult = verify(content, signMsg, publicKey);
-//        System.out.println("verify: " + verifySignResult);
-//
-//        signMsg = encrypt(content, publicKey);
-//        System.out.println("encrypt: " + signMsg);
-//        System.out.println("decrypt: " + decrypt(signMsg, privateKey));
-//    }
 }

@@ -94,9 +94,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     static final int TOMB_MARK = -1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
+    static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
     @Getter(lazy = true)
     private static final KeyValueStore instance = new KeyValueStore<>();
-    static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
 
     final KeyValueStoreConfig config;
     final File parentDirectory;

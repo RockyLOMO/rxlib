@@ -4,6 +4,7 @@ import lombok.Getter;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.$;
 import org.rx.core.Strings;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.core.NestedRuntimeException;
 
 public class InvalidException extends NestedRuntimeException {
@@ -33,19 +34,10 @@ public class InvalidException extends NestedRuntimeException {
     }
 
     public InvalidException(String format, Object... args) {
-        this(format, args, null);
-    }
-
-    public InvalidException(String format, Object[] args, Throwable cause) {
-        this(String.format(format, args), cause);
-    }
-
-    public InvalidException(String msg) {
-        this(msg, (Throwable) null);
-    }
-
-    public InvalidException(String msg, Throwable cause) {
-        super(msg, cause);
+        super(format != null
+                        ? String.format(format, (MessageFormatter.getThrowableCandidate(args) != null ? MessageFormatter.trimmedCopy(args) : args))
+                        : null,
+                MessageFormatter.getThrowableCandidate(args));
     }
 
     public <T extends Throwable> boolean tryGet($<T> out, Class<T> exType) {

@@ -390,7 +390,7 @@ public final class Remoting {
                                     log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
                                 } else {
                                     //赋值原引用对象
-                                    BeanMapper.INSTANCE.map(p.eventArgs, ctx.computedArgs);
+                                    BeanMapper.DEFAULT.map(p.eventArgs, ctx.computedArgs);
                                     log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getRemoteEndpoint(), toJsonString(ctx.computedArgs));
                                 }
                                 eventBean.notifyAll();

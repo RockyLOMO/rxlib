@@ -5,8 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 import org.springframework.cglib.beans.BeanCopier;
 
 import java.lang.reflect.Method;
@@ -26,8 +28,29 @@ public class BeanMapper {
         private FlagsEnum<BeanMapFlag> flags;
     }
 
-    public static final BeanMapper INSTANCE = new BeanMapper();
+    public static final BeanMapper DEFAULT = new BeanMapper();
     private static final Mapping[] empty = new Mapping[0];
+
+    public static Map<String, Object> convertFromObjectString(String str, boolean root) {
+        String startFlag = root ? "(" : "{", endFlag = root ? ")" : "}";
+        int s = Strings.indexOf(str, startFlag);
+        if (s == -1) {
+            return Collections.emptyMap();
+        }
+        int e = Strings.lastIndexOf(str, endFlag);
+        if (e == -1) {
+            return Collections.emptyMap();
+        }
+        return NQuery.of(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
+            int i = Strings.indexOf(p, "=");
+            if (i == -1) {
+                throw new InvalidException("Parse error %s", p);
+            }
+            String k = p.substring(0, i);
+            String v = p.substring(i + 1);
+            return Tuple.of(k, Strings.startsWith(v, "{") ? convertFromObjectString(v, false) : v);
+        }).toMap(p -> p.left, p -> p.right);
+    }
 
     private final Map<Integer, MapConfig> config = new ConcurrentHashMap<>();
     private final FlagsEnum<BeanMapFlag> flags = BeanMapFlag.LOG_ON_MISS_MAPPING.flags();
