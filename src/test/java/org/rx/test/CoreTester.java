@@ -15,6 +15,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.*;
 import org.rx.codec.CrcModel;
+import org.rx.codec.RSAUtil;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
@@ -319,6 +320,26 @@ public class CoreTester extends TestUtil {
         }, c);
         assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
     }
+
+    @Test
+    public void rasTest() {
+        UUID id = UUID.randomUUID();
+        String[] kp = RSAUtil.generateKeyPair();
+        System.out.println("id=" + id + ", kp=" + toJsonString(kp));
+
+        String publicKey = kp[0];
+        String privateKey = kp[1];
+        String content = "这是一个使用RSA公私钥对加解密的例子";
+
+        String signMsg = RSAUtil.sign(content, privateKey);
+        System.out.println("sign: " + signMsg);
+        boolean verifySignResult = RSAUtil.verify(content, signMsg, publicKey);
+        System.out.println("verify: " + verifySignResult);
+
+        signMsg = RSAUtil.encrypt(content, publicKey);
+        System.out.println("encrypt: " + signMsg);
+        System.out.println("decrypt: " + RSAUtil.decrypt(signMsg, privateKey));
+    }
     //endregion
 
     //region NQuery & NEvent
@@ -589,7 +610,6 @@ public class CoreTester extends TestUtil {
         assert Reflects.defaultValue(int.class) == 0;
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
-
     }
 
     @ErrorCode

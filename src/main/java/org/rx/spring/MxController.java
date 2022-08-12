@@ -115,9 +115,11 @@ public class MxController {
     @PostConstruct
     public void init() {
         Class.forName(App.class.getName());
-        String omega = RxConfig.INSTANCE.getOmega();
-        if (omega != null) {
-            SocksContext.omega(omega, null);
-        }
+        Tasks.setTimeout(() -> {
+            String omega = RxConfig.INSTANCE.getOmega();
+            if (omega != null) {
+                SocksContext.omega(omega, null);
+            }
+        }, 60 * 1000);
     }
 }
