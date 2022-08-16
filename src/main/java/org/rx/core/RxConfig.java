@@ -40,6 +40,7 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
+        String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
@@ -157,8 +158,12 @@ public final class RxConfig {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
+        String v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
+        if (v != null) {
+            logStrategy = LogStrategy.valueOf(v);
+        }
         jsonSkipTypes.clear();
-        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
+        v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {
             //method ref will match multi methods
             jsonSkipTypes.addAll(NQuery.of(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
