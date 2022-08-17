@@ -638,9 +638,11 @@ public class CoreTester extends TestUtil {
         assert eq(ex.getFriendlyMessage(), "Compute user level error " + errCode);
 
 
-        assert new InvalidException(err).getMessage().equals(err);
-        assert new InvalidException("have %s err", 2).getMessage().equals("have 2 err");
-        assert new InvalidException("have %s err", 2, new RuntimeException()).getMessage().equals("have 2 err; nested exception is java.lang.RuntimeException");
+        assert eq(new InvalidException(err).getMessage(), err);
+        err += "x%sy";
+        assert eq(new InvalidException(err).getMessage(), err);
+        assert eq(new InvalidException("have %s err", 2).getMessage(), "have 2 err");
+        assert eq(new InvalidException("have %s err", 2, new RuntimeException()).getMessage(), "have 2 err; nested exception is java.lang.RuntimeException");
     }
 
     @Test
