@@ -1,8 +1,6 @@
 package org.rx.test;
 
 import com.alibaba.fastjson.TypeReference;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import io.netty.util.Timeout;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -20,14 +18,12 @@ import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
 import org.rx.core.YamlConfiguration;
-import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
-import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.yaml.snakeyaml.Yaml;
@@ -539,9 +535,24 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void fluentWait() throws TimeoutException {
+        AtomicInteger i = new AtomicInteger();
         FluentWait.newInstance(2000, 200).until(s -> {
-            System.out.println(System.currentTimeMillis());
-            return false;
+            log.info("each[{}] {}", i.incrementAndGet(), s);
+            return true;
+        });
+        assert i.get() == 1;
+        FluentWait.newInstance(2000, 200).until(s -> {
+            log.info("each[{}] {}", i.incrementAndGet(), s);
+            return s.getEvaluatedCount() == 9;
+        });
+        assert i.get() == 11;
+
+        FluentWait.newInstance(2000, 200).retryEvery(500).until(s -> {
+            log.info("each {}", s);
+            return s.getEvaluatedCount() == 9;
+        }, s -> {
+            log.info("doRetry {}", s);
+            return true;
         });
     }
 

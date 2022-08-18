@@ -2,29 +2,29 @@ package org.rx.core;
 
 import com.google.common.base.Throwables;
 import lombok.*;
-import org.rx.bean.DateTime;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.PredicateFunc;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 import static org.rx.core.Extends.require;
 
+@Slf4j
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class FluentWait {
     @Data
     public static class UntilState {
-        private final DateTime endTime;
-        private int invokedCount;
+        final long endTime;
+        private int evaluatedCount;
     }
 
     public static UntilState emptyState() {
-        return new UntilState(DateTime.now());
+        return new UntilState(TIMEOUT_INFINITE);
     }
 
     public static FluentWait newInstance(long timeoutMillis) {
@@ -39,46 +39,53 @@ public class FluentWait {
     }
 
     @Getter
-    private final long timeout;
+    final long timeout;
     @Getter
-    private final long interval;
+    final long interval;
     private long retryMillis = TIMEOUT_INFINITE;
-    private boolean retryCallFirst;
-    private boolean throwOnFail = true;
+    private boolean doRetryFirst;
+    private boolean throwOnTimeout = true;
     private String message;
-    private final List<Class<? extends Throwable>> ignoredExceptions = new ArrayList<>();
+    private List<Class<? extends Throwable>> ignoredExceptions;
 
-    public FluentWait retryMillis(long retryMillis) {
-        require(retryMillis, retryMillis >= TIMEOUT_INFINITE);
-        this.retryMillis = retryMillis;
+    public FluentWait retryEvery(long interval) {
+        return retryEvery(interval, false);
+    }
+
+    public FluentWait retryEvery(long interval, boolean doRetryFirst) {
+        require(interval, interval >= TIMEOUT_INFINITE);
+        this.retryMillis = interval;
+        this.doRetryFirst = doRetryFirst;
         return this;
     }
 
-    public FluentWait retryCallFirst(boolean retryFirstCall) {
-        this.retryCallFirst = retryFirstCall;
+    public FluentWait throwOnTimeout(boolean throwOnTimeout) {
+        this.throwOnTimeout = throwOnTimeout;
         return this;
     }
 
-    public FluentWait throwOnFail(boolean throwOnFail) {
-        this.throwOnFail = throwOnFail;
-        return this;
-    }
-
-    public FluentWait message(String message) {
+    public FluentWait withMessage(String message) {
         this.message = message;
         return this;
     }
 
     @SafeVarargs
-    public final FluentWait ignoredExceptions(Class<? extends Throwable>... exceptions) {
+    public final FluentWait ignoreExceptions(Class<? extends Throwable>... exceptions) {
+        if (ignoredExceptions == null) {
+            ignoredExceptions = new ArrayList<>();
+        }
         ignoredExceptions.addAll(Arrays.toList(exceptions));
         return this;
     }
 
-    @SneakyThrows
     public FluentWait sleep() {
         if (interval > 0) {
-            Thread.sleep(interval);
+            try {
+                Thread.sleep(interval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw InvalidException.wrap(e);
+            }
         }
         return this;
     }
@@ -88,27 +95,46 @@ public class FluentWait {
     }
 
     /**
-     * until
+     * Repeatedly applies this instance's input value to the given function until one of the following
+     * occurs:
+     * <ol>
+     * <li>the function returns neither null nor false</li>
+     * <li>the function throws an unignored exception</li>
+     * <li>the timeout expires</li>
+     * <li>the current thread is interrupted</li>
+     * </ol>
      *
-     * @param func      renew
-     * @param retryFunc return true continue, false break
-     * @param <T>       result
-     * @return result
-     * @throws TimeoutException timeout
+     * @param isTrue the parameter to pass to the {@link BiFunc}
+     * @param <T>    The function's expected return type.
+     * @return The function's return value if the function returned something different
+     * from null or false before the timeout expired.
+     * @throws TimeoutException If the timeout expires.
      */
-    @SneakyThrows
-    public <T> T until(@NonNull BiFunc<UntilState, T> func, PredicateFunc<UntilState> retryFunc) throws TimeoutException {
-        Throwable lastException;
-        T lastResult = null;
-        UntilState state = new UntilState(DateTime.now().addMilliseconds((int) timeout));
-        if (retryCallFirst && retryFunc != null) {
-            retryFunc.invoke(state);
+    public <T> T until(@NonNull BiFunc<UntilState, T> isTrue, PredicateFunc<UntilState> retryCondition) throws TimeoutException {
+        if (retryCondition != null && retryMillis == TIMEOUT_INFINITE) {
+            log.warn("Not call retryEvery() before until()");
         }
 
-        int retryCount = retryMillis == TIMEOUT_INFINITE ? TIMEOUT_INFINITE : (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
+        UntilState state = new UntilState(System.currentTimeMillis() + timeout);
+        int retryCount = TIMEOUT_INFINITE;
+        if (retryCondition != null) {
+            if (doRetryFirst) {
+                try {
+                    retryCondition.invoke(state);
+                } catch (Throwable e) {
+                    throw InvalidException.sneaky(e);
+                }
+            }
+            if (retryMillis > TIMEOUT_INFINITE) {
+                retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
+            }
+        }
+
+        Throwable lastException;
+        T lastResult = null;
         do {
             try {
-                lastResult = func.invoke(state);
+                lastResult = isTrue.invoke(state);
                 if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
                     return lastResult;
                 }
@@ -116,38 +142,41 @@ public class FluentWait {
             } catch (Throwable e) {
                 lastException = propagateIfNotIgnored(e);
             } finally {
-                state.invokedCount++;
+                state.evaluatedCount++;
             }
 
             sleep();
 
-            if (retryMillis > TIMEOUT_INFINITE && (retryCount == 0 || state.invokedCount % retryCount == 0)) {
-                if (retryFunc != null && !retryFunc.invoke(state)) {
-                    break;
+            if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || state.evaluatedCount % retryCount == 0)) {
+                try {
+                    if (!retryCondition.invoke(state)) {
+                        break;
+                    }
+                } catch (Throwable e) {
+                    throw InvalidException.sneaky(e);
                 }
             }
         }
-        while (DateTime.now().before(state.endTime));
-        if (!throwOnFail) {
+        while (state.endTime > System.currentTimeMillis());
+        if (!throwOnTimeout) {
             return lastResult;
         }
 
-        String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval%s)",
-                message == null ? "waiting for " + func : message,
-                timeout, interval, lastException == null ? "" : " with ignoredException " + lastException);
-        throw new TimeoutException(timeoutMessage);
+        String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
+                message == null ? "waiting for " + isTrue : message,
+                timeout, interval);
+        throw ManualResetEvent.newTimeoutException(timeoutMessage, lastException);
     }
 
     private Throwable propagateIfNotIgnored(Throwable e) {
-        Iterator<Class<? extends Throwable>> tor = this.ignoredExceptions.iterator();
-        Class<? extends Throwable> ignoredException;
-        do {
-            if (!tor.hasNext()) {
-                Throwables.throwIfUnchecked(e);
-                throw InvalidException.sneaky(e);
+        if (ignoredExceptions != null) {
+            for (Class<? extends Throwable> ignoredException : ignoredExceptions) {
+                if (ignoredException.isInstance(e)) {
+                    return e;
+                }
             }
-            ignoredException = tor.next();
-        } while (!ignoredException.isInstance(e));
-        return e;
+        }
+        Throwables.throwIfUnchecked(e);
+        throw new RuntimeException(e);
     }
 }
