@@ -44,7 +44,7 @@ public class BeanMapper {
         return NQuery.of(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
             int i = Strings.indexOf(p, "=");
             if (i == -1) {
-                throw new InvalidException("Parse error %s", p);
+                throw new InvalidException("Parse error {}", p);
             }
             String k = p.substring(0, i);
             String v = p.substring(i + 1);

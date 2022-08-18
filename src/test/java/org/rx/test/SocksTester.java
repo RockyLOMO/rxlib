@@ -40,6 +40,7 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -716,16 +717,20 @@ public class SocksTester extends TConfig {
 
     @Test
     public void restfulRpc() {
-        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
-        assert map.get("userId").equals("ft");
-        assert map.get("type").equals("1");
-        map.put("userId", "newId");
-        map.put("ok", "1");
-        System.out.println(HttpClient.buildUrl(url, map));
+        HttpClient client = new HttpClient(10000, false,
+                new Proxy(Proxy.Type.SOCKS, Sockets.parseEndpoint("192.168.31.7:1080")));
+        System.out.println(client.get("https://google.com").toString());
 
-        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
-        System.out.println(facade.queryIp());
+//        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
+//        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
+//        assert map.get("userId").equals("ft");
+//        assert map.get("type").equals("1");
+//        map.put("userId", "newId");
+//        map.put("ok", "1");
+//        System.out.println(HttpClient.buildUrl(url, map));
+//
+//        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
+//        System.out.println(facade.queryIp());
     }
 
     @Test
@@ -746,9 +751,6 @@ public class SocksTester extends TConfig {
 //        client.uploadFile(p,"/test/");
 //        client.downloadFile("/test/f0.jpg","F:\\test\\1.jpg");
 //        client.delete("/test/");
-//        for (SftpClient.FileEntry lsEntry : client.listFiles("/", true)) {
-//            System.out.println(toJsonString(lsEntry));
-//        }
     }
 
     @Test

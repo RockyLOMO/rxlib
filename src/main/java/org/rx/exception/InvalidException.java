@@ -33,12 +33,8 @@ public class InvalidException extends NestedRuntimeException {
         return this;
     }
 
-    public InvalidException(String format, Object... args) {
-        super(format != null
-                        ? (MessageFormatter.getThrowableCandidate(args) != null ? MessageFormatter.trimmedCopy(args) : args).length > 0
-                        ? String.format(format, MessageFormatter.getThrowableCandidate(args) != null ? MessageFormatter.trimmedCopy(args) : args)
-                        : format
-                        : null,
+    public InvalidException(String messagePattern, Object... args) {
+        super(MessageFormatter.arrayFormat(messagePattern, args).getMessage(),
                 MessageFormatter.getThrowableCandidate(args));
     }
 

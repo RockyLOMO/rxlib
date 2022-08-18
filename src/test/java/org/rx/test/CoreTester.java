@@ -639,10 +639,10 @@ public class CoreTester extends TestUtil {
 
 
         assert eq(new InvalidException(err).getMessage(), err);
-        err += "x%sy";
+        err += "x{}y";
         assert eq(new InvalidException(err).getMessage(), err);
-        assert eq(new InvalidException("have %s err", 2).getMessage(), "have 2 err");
-        assert eq(new InvalidException("have %s err", 2, new RuntimeException()).getMessage(), "have 2 err; nested exception is java.lang.RuntimeException");
+        assert eq(new InvalidException("have {} err", 2).getMessage(), "have 2 err");
+        assert eq(new InvalidException("have {} err", 2, new RuntimeException()).getMessage(), "have 2 err; nested exception is java.lang.RuntimeException");
     }
 
     @Test

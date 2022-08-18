@@ -81,7 +81,7 @@ public class Files extends FilenameUtils {
     public static boolean isEmptyDirectory(String directoryPath) {
         Path dir = Paths.get(directoryPath);
         if (!java.nio.file.Files.isDirectory(dir)) {
-            throw new InvalidException("%s is not a directory", directoryPath);
+            throw new InvalidException("Path {} is not a directory", directoryPath);
         }
         try (Stream<Path> entries = java.nio.file.Files.list(dir)) {
             return !entries.findFirst().isPresent();

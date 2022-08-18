@@ -356,7 +356,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         long logPosition = meta.getLogPosition();
         lock.writeInvoke(() -> {
             if (logPosition != meta.getLogPosition()) {
-                throw new InvalidException("concurrent error");
+                throw new InvalidException("Concurrent error");
             }
 
             ensureGrow();

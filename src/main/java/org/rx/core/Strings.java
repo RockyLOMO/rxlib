@@ -42,7 +42,7 @@ public class Strings extends StringUtils {
         int s = 0, e;
         while ((s = expr.indexOf("${", s)) != -1) {
             if ((e = expr.indexOf("}", s += 2)) == -1) {
-                throw new InvalidException("invalid expression");
+                throw new InvalidException("Invalid expression");
             }
             list.add(onlyName ? expr.substring(s, e) : expr.substring(s - 2, e + 1));
         }
@@ -74,7 +74,7 @@ public class Strings extends StringUtils {
         JSONObject tmp = json;
         for (int i = 0; i < last; i++) {
             if ((tmp = tmp.getJSONObject(paths[i])) == null) {
-                throw new InvalidException("get empty sub object by path %s", paths[i]);
+                throw new InvalidException("Get empty sub object by path {}", paths[i]);
             }
         }
         return (T) tmp.get(paths[last]);

@@ -243,7 +243,7 @@ public final class App extends SystemUtils {
         try {
             return JSON.parseObject(js, type, PARSE_FLAGS);
         } catch (Exception e) {
-            throw new InvalidException("fromJson %s", new Object[]{js}, e);
+            throw new InvalidException("Invalid json {}", js, e);
         }
     }
 
@@ -259,7 +259,7 @@ public final class App extends SystemUtils {
         try {
             return JSON.parseObject(js);
         } catch (Exception e) {
-            throw new InvalidException("toJsonObject %s", new Object[]{js}, e);
+            throw new InvalidException("Invalid json {}", js, e);
         }
     }
 
@@ -275,7 +275,7 @@ public final class App extends SystemUtils {
         try {
             return JSON.parseArray(js);
         } catch (Exception e) {
-            throw new InvalidException("toJsonArray %s", new Object[]{js}, e);
+            throw new InvalidException("Invalid json {}", js, e);
         }
     }
 

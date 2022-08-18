@@ -149,7 +149,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     @SneakyThrows
     public synchronized ShellCommander start() {
         if (isRunning()) {
-            throw new InvalidException("already started");
+            throw new InvalidException("Already started");
         }
 
         //Runtime.getRuntime().exec(shell, null, workspace)

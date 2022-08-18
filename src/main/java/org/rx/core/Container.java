@@ -37,7 +37,7 @@ public final class Container {
             Class.forName(type.getName());
             instance = (T) HOLDER.get(type);
             if (instance == null) {
-                throw new InvalidException("Bean %s not registered", type.getName());
+                throw new InvalidException("Bean {} not registered", type.getName());
             }
         }
         return instance;
