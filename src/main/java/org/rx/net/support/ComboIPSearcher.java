@@ -41,12 +41,11 @@ class ComboIPSearcher implements IPSearcher {
         HttpClient client = new HttpClient();
         String text = client.get(url).toString();
         if (Strings.isEmpty(text)) {
-            throw new InvalidException(String.format("Empty Response from %s", url));
+            throw new InvalidException("Empty response from {}", url);
         }
         JSONObject json = App.toJsonObject(text);
         if (!check.test(json)) {
-            throw new InvalidException(String.format("Request:\t%s\n" +
-                    "Response:\t%s", url, text));
+            throw new InvalidException("Request:\t{}\n" + "Response:\t{}", url, text);
         }
         return json;
     }

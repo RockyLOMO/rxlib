@@ -4,7 +4,7 @@ import org.rx.exception.InvalidException;
 
 public class ClientDisconnectedException extends InvalidException {
     public ClientDisconnectedException(Object clientId) {
-        super("The client %s disconnected", clientId);
+        super("The client {} disconnected", clientId);
     }
 
     public ClientDisconnectedException(Throwable cause) {

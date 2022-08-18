@@ -45,11 +45,11 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
         if (field != null) {
             d = (Delegate<TSender, TArgs>) field.get(target);
             if (d == null) {
-                throw new InvalidException("Event %s not defined", fnName);
+                throw new InvalidException("Event {} not defined", fnName);
             }
         } else {
             if (!target.eventFlags().has(EventTarget.EventFlags.DYNAMIC_ATTACH)) {
-                throw new InvalidException("Event %s not defined", fnName);
+                throw new InvalidException("Event {} not defined", fnName);
             }
             d = Extends.<String, Delegate<TSender, TArgs>>weakMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
         }

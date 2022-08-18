@@ -18,4 +18,9 @@ public class Numbers extends NumberUtils {
     public static double doubleValue(Number num) {
         return isEmpty(num) ? DOUBLE_ZERO : num.doubleValue();
     }
+
+    //是否包含小数
+    public static boolean hasPrecision(double n) {
+        return n % 1 == 0;
+    }
 }

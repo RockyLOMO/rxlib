@@ -2,6 +2,7 @@ package org.rx.core;
 
 import lombok.Getter;
 import lombok.SneakyThrows;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.exception.InvalidException;
 
 import java.util.concurrent.TimeoutException;
@@ -9,16 +10,25 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
 //synchronized 没有TimeoutException
-public final class ManualResetEvent {
+public final class ResetEventWait {
+    public static TimeoutException newTimeoutException(String message, Throwable e) {
+        StringBuilder buf = new StringBuilder(message);
+        if (e != null) {
+            buf.append("\n").append(ExceptionUtils.getStackTrace(e));
+            System.out.println(111);
+        }
+        return new TimeoutException(buf.toString());
+    }
+
     private volatile boolean open;
     @Getter
     private int holdCount;
 
-    public ManualResetEvent() {
+    public ResetEventWait() {
         this(false);
     }
 
-    public ManualResetEvent(boolean initialState) {
+    public ResetEventWait(boolean initialState) {
         this.open = initialState;
     }
 
@@ -41,7 +51,7 @@ public final class ManualResetEvent {
             }
             if (timeout > 0) {
                 if (!open) {
-                    throw new TimeoutException("wait unpark timeout");
+                    throw new TimeoutException("Wait unpark timeout");
                 }
                 break;
             }

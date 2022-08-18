@@ -48,7 +48,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             if (msg instanceof ErrorPacket) {
-                exceptionCaught(ctx, new InvalidException("Server error message: %s", ((ErrorPacket) msg).getErrorMessage()));
+                exceptionCaught(ctx, new InvalidException("Server error: {}", ((ErrorPacket) msg).getErrorMessage()));
                 return;
             }
 
@@ -180,8 +180,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
-        ManualResetEvent syncRoot = null;
-        doConnect(false, wait ? syncRoot = new ManualResetEvent() : null);
+        ResetEventWait syncRoot = null;
+        doConnect(false, wait ? syncRoot = new ResetEventWait() : null);
         if (syncRoot == null) {
             return;
         }
@@ -192,11 +192,11 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
             throw new InvalidException("Client connect fail", e);
         }
         if (!config.isEnableReconnect() && !isConnected()) {
-            throw new InvalidException("Client connect %s fail", config.getServerEndpoint());
+            throw new InvalidException("Client connect {} fail", config.getServerEndpoint());
         }
     }
 
-    synchronized void doConnect(boolean reconnect, ManualResetEvent syncRoot) {
+    synchronized void doConnect(boolean reconnect, ResetEventWait syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {

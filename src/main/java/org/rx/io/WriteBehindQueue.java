@@ -22,7 +22,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
     final IntWaterMark funcWaterMark;
     //sequential
     final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> funcs = new ConcurrentSkipListMap<>();
-    final ManualResetEvent syncRoot = new ManualResetEvent();
+    final ResetEventWait syncRoot = new ResetEventWait();
 
     WriteBehindQueue(long writeDelayed, int highFuncWaterMark) {
         this(writeDelayed, new IntWaterMark((int) Math.ceil(highFuncWaterMark / 2d), highFuncWaterMark));

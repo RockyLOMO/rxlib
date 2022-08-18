@@ -14,6 +14,7 @@ import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
+import org.rx.exception.InvalidException;
 import org.rx.util.Lazy;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
@@ -163,7 +164,7 @@ public class HttpClient {
 
             ResponseBody body = response.body();
             if (body == null) {
-                throw new EmptyResponseException("Empty response from url %s", getResponseUrl());
+                throw new InvalidException("Empty response from url {}", getResponseUrl());
             }
             try {
                 action.invoke(body.byteStream());

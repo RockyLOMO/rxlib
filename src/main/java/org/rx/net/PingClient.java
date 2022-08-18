@@ -12,6 +12,7 @@ import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 
 @Slf4j
@@ -70,9 +71,13 @@ public final class PingClient {
         return new Result(value);
     }
 
-    @SneakyThrows
     public boolean isReachable(String host) {
-        return isReachable(InetAddress.getByName(host));
+        try {
+            return isReachable(InetAddress.getByName(host));
+        } catch (UnknownHostException e) {
+            log.warn("isReachable {}", e.getMessage());
+            return false;
+        }
     }
 
     @SneakyThrows

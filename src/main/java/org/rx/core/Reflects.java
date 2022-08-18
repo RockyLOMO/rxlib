@@ -121,7 +121,7 @@ public class Reflects extends ClassUtils {
         }
         InputStream in = getResources(namePattern).firstOrDefault();
         if (in == null) {
-            throw new InvalidException("Resource %s not found", namePattern);
+            throw new InvalidException("Resource {} not found", namePattern);
         }
         return in;
     }
@@ -375,7 +375,7 @@ public class Reflects extends ClassUtils {
             name = getterOrSetter;
         }
         if (name.isEmpty()) {
-            throw new InvalidException("Invalid name %s", getterOrSetter);
+            throw new InvalidException("Invalid name {}", getterOrSetter);
         }
 
 //        Introspector.decapitalize

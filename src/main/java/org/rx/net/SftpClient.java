@@ -188,7 +188,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     public void uploadFile(@NonNull IOStream<?, ?> stream, @NonNull String remotePath) {
         if (Files.isDirectory(remotePath)) {
             if (Strings.isEmpty(stream.getName())) {
-                throw new InvalidException("stream name is empty");
+                throw new InvalidException("Empty stream name");
             }
             remotePath = padDirectoryPath(remotePath) + stream.getName();
         }

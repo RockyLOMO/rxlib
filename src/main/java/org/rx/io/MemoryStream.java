@@ -105,7 +105,7 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     @Override
     public void setPosition(long position) {
         if (position > Integer.MAX_VALUE) {
-            throw new InvalidException("position > Integer.MAX_VALUE");
+            throw new InvalidException("Position > Integer.MAX_VALUE");
         }
 
         buffer.readerIndex((int) position);

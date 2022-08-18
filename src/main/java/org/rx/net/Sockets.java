@@ -299,12 +299,12 @@ public final class Sockets {
     }
 
     public static ByteBuf getMessageBuf(Object msg) {
-        if (msg instanceof io.netty.channel.socket.DatagramPacket) {
+        if (msg instanceof DatagramPacket) {
             return ((DatagramPacket) msg).content();
         } else if (msg instanceof ByteBuf) {
             return (ByteBuf) msg;
         } else {
-            throw new InvalidException("unsupported msg type:" + msg.getClass());
+            throw new InvalidException("Unsupported msg type: {}", msg.getClass());
         }
     }
 
@@ -439,7 +439,7 @@ public final class Sockets {
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
         int i = endpoint.lastIndexOf(":");
         if (i == -1) {
-            throw new InvalidException("Invalid endpoint %s", endpoint);
+            throw new InvalidException("Invalid endpoint {}", endpoint);
         }
 
         String ip = endpoint.substring(0, i);

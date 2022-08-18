@@ -16,6 +16,7 @@ import static org.rx.core.App.*;
 import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
+    static final int MAX_FIELD_SIZE = 1024 * 4;
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
@@ -83,16 +84,15 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                     return r;
                 }
             }
-            int maxLen = 1024 * 8;
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
-                if (b.length > maxLen) {
+                if (b.length > MAX_FIELD_SIZE) {
                     return "[BigBytes]";
                 }
             }
             if (p instanceof String) {
                 String s = (String) p;
-                if (Strings.length(s) > maxLen) {
+                if (s.length() > MAX_FIELD_SIZE) {
                     return "[BigString]";
                 }
             }

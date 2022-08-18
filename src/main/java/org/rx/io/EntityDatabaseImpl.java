@@ -434,7 +434,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     SqlMeta getMeta(Class<?> entityType) {
         SqlMeta meta = SQL_META.get(entityType);
         if (meta == null) {
-            throw new InvalidException("Entity %s mapping not found", entityType);
+            throw new InvalidException("Entity {} mapping not found", entityType);
         }
         return meta;
     }
@@ -520,7 +520,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 insert.append("?,");
             }
             if (pkName == null) {
-                throw new InvalidException("require a primaryKey mapping");
+                throw new InvalidException("Require a primaryKey mapping");
             }
 
 //            createCols.setLength(createCols.length() - 3);
@@ -786,7 +786,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 //                        Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
                         Tuple<Field, DbColumn> bi = meta.upperColumns.get(metaData.getColumnName(i)).right;
                         if (bi == null) {
-                            throw new InvalidException("Mapping %s not found", metaData.getColumnName(i));
+                            throw new InvalidException("Mapping {} not found", metaData.getColumnName(i));
                         }
                         Class<?> type = bi.left.getType();
                         bi.left.set(t, convertCell(type, rs.getObject(i)));

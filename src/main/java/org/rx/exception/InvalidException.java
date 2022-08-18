@@ -3,7 +3,6 @@ package org.rx.exception;
 import lombok.Getter;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.$;
-import org.rx.core.Strings;
 import org.slf4j.helpers.MessageFormatter;
 import org.springframework.core.NestedRuntimeException;
 
@@ -22,7 +21,7 @@ public class InvalidException extends NestedRuntimeException {
         if (cause instanceof InvalidException) {
             return (InvalidException) cause;
         }
-        return new InvalidException(Strings.EMPTY, cause);
+        return new InvalidException(cause);
     }
 
     @Getter
@@ -33,10 +32,12 @@ public class InvalidException extends NestedRuntimeException {
         return this;
     }
 
-    public InvalidException(String format, Object... args) {
-        super(format != null
-                        ? String.format(format, (MessageFormatter.getThrowableCandidate(args) != null ? MessageFormatter.trimmedCopy(args) : args))
-                        : null,
+    protected InvalidException(Throwable e) {
+        this(null, e);
+    }
+
+    public InvalidException(String messagePattern, Object... args) {
+        super(messagePattern != null ? MessageFormatter.arrayFormat(messagePattern, args).getMessage() : null,
                 MessageFormatter.getThrowableCandidate(args));
     }
 
