@@ -180,8 +180,8 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
-        ManualResetEvent syncRoot = null;
-        doConnect(false, wait ? syncRoot = new ManualResetEvent() : null);
+        ResetEventWait syncRoot = null;
+        doConnect(false, wait ? syncRoot = new ResetEventWait() : null);
         if (syncRoot == null) {
             return;
         }
@@ -196,7 +196,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
-    synchronized void doConnect(boolean reconnect, ManualResetEvent syncRoot) {
+    synchronized void doConnect(boolean reconnect, ResetEventWait syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {

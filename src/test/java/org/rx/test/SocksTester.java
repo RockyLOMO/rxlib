@@ -651,7 +651,7 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void httpServer() {
-        ManualResetEvent wait = new ManualResetEvent();
+        ResetEventWait wait = new ResetEventWait();
         Map<String, Object> qs = new HashMap<>();
         qs.put("a", "1");
         qs.put("b", "乐之");

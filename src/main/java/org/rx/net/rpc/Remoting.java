@@ -35,7 +35,7 @@ import static org.rx.core.Extends.*;
 @Slf4j
 public final class Remoting {
     public static class ClientBean {
-        final ManualResetEvent syncRoot = new ManualResetEvent();
+        final ResetEventWait syncRoot = new ResetEventWait();
         MethodMessage pack;
     }
 

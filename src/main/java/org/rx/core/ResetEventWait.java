@@ -10,7 +10,7 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
 //synchronized 没有TimeoutException
-public final class ManualResetEvent {
+public final class ResetEventWait {
     public static TimeoutException newTimeoutException(String message, Throwable e) {
         StringBuilder buf = new StringBuilder(message);
         if (e != null) {
@@ -24,11 +24,11 @@ public final class ManualResetEvent {
     @Getter
     private int holdCount;
 
-    public ManualResetEvent() {
+    public ResetEventWait() {
         this(false);
     }
 
-    public ManualResetEvent(boolean initialState) {
+    public ResetEventWait(boolean initialState) {
         this.open = initialState;
     }
 

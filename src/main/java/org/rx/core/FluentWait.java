@@ -165,7 +165,7 @@ public class FluentWait {
         String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
                 message == null ? "waiting for " + isTrue : message,
                 timeout, interval);
-        throw ManualResetEvent.newTimeoutException(timeoutMessage, lastException);
+        throw ResetEventWait.newTimeoutException(timeoutMessage, lastException);
     }
 
     private Throwable propagateIfNotIgnored(Throwable e) {

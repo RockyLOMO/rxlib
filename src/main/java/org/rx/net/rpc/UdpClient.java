@@ -34,7 +34,7 @@ public class UdpClient implements EventTarget<UdpClient> {
     @RequiredArgsConstructor
     static class Context {
         public final UdpMessage message;
-        public final ManualResetEvent syncRoot = new ManualResetEvent();
+        public final ResetEventWait syncRoot = new ResetEventWait();
 
         public int resend;
         public Future<?> future;
