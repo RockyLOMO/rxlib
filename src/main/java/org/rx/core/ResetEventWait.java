@@ -15,7 +15,6 @@ public final class ResetEventWait {
         StringBuilder buf = new StringBuilder(message);
         if (e != null) {
             buf.append("\n").append(ExceptionUtils.getStackTrace(e));
-            System.out.println(111);
         }
         return new TimeoutException(buf.toString());
     }

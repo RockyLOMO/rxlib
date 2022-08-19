@@ -4,7 +4,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
@@ -24,7 +24,7 @@ import static org.rx.core.Extends.values;
 public final class DateTime extends Date {
     private static final long serialVersionUID = 414744178681347341L;
     public static final DateTime MIN = new DateTime(2000, 1, 1), MAX = new DateTime(9999, 12, 31);
-    public static final NQuery<String> FORMATS = NQuery.of("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
+    public static final Linq<String> FORMATS = Linq.from("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
     static final String DATE_PART = "yyyMMdd";
     static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 

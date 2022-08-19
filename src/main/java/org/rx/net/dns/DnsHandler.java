@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.CachePolicy;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.exception.ExceptionHandler;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
@@ -42,7 +42,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
         List<InetAddress> hIps = server.getHosts(domain);
         if (!hIps.isEmpty()) {
-            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, NQuery.of(hIps).select(InetAddress::getAddress)));
+            ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, Linq.from(hIps).select(InetAddress::getAddress)));
             log.debug("query domain by hosts {} -> {}", domain, hIps.size());
             return;
         }
@@ -65,7 +65,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 log.info("query domain by shadow {} -> EMPTY", domain);
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, question, server.ttl, NQuery.of(sIps).select(InetAddress::getAddress)));
+            ctx.writeAndFlush(newResponse(query, question, server.ttl, Linq.from(sIps).select(InetAddress::getAddress)));
             log.info("query domain by shadow {} -> {}", domain, sIps.size());
             return;
         }

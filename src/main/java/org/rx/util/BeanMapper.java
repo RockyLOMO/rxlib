@@ -41,7 +41,7 @@ public class BeanMapper {
         if (e == -1) {
             return Collections.emptyMap();
         }
-        return NQuery.of(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
+        return Linq.from(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
             int i = Strings.indexOf(p, "=");
             if (i == -1) {
                 throw new InvalidException("Parse error {}", p);
@@ -127,7 +127,7 @@ public class BeanMapper {
         }
         boolean skipNull = flags.has(BeanMapFlag.SKIP_NULL);
         Class<?> from = source.getClass(), to = target.getClass();
-        final NQuery<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
+        final Linq<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
 
         Map<Object, Object> sourceMap = as(source, Map.class);
@@ -148,7 +148,7 @@ public class BeanMapper {
             }
         } else {
             MapConfig config = getConfig(from, to);
-            NQuery<Mapping> mappings = NQuery.of(method != null ? config.mappings.getOrDefault(method, empty) : empty);
+            Linq<Mapping> mappings = Linq.from(method != null ? config.mappings.getOrDefault(method, empty) : empty);
             config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
                 String propertyName = Reflects.propertyName(methodName.toString());
                 copiedNames.add(propertyName);
@@ -182,7 +182,7 @@ public class BeanMapper {
 
         boolean logOnFail = flags.has(BeanMapFlag.LOG_ON_MISS_MAPPING), throwOnFail = flags.has(BeanMapFlag.THROW_ON_MISS_MAPPING);
         if (logOnFail || throwOnFail) {
-            NQuery<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
+            Linq<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
             if (missedProperties.any()) {
                 String failMsg = String.format("Map %s to %s missed properties: %s", from.getSimpleName(), to.getSimpleName(), String.join(", ", missedProperties));
                 if (throwOnFail) {
@@ -198,7 +198,7 @@ public class BeanMapper {
         return target;
     }
 
-    private Object processMapping(Mapping mapping, Object sourceValue, Class<?> targetType, String propertyName, Object source, Object target, boolean skipNull, NQuery<Reflects.PropertyNode> toProperties) {
+    private Object processMapping(Mapping mapping, Object sourceValue, Class<?> targetType, String propertyName, Object source, Object target, boolean skipNull, Linq<Reflects.PropertyNode> toProperties) {
         if (mapping.ignore()
                 || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore)))) {
             return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);

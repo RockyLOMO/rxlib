@@ -136,10 +136,10 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     }
 
     @Override
-    public NQuery<SftpFile> listDirectories(String remotePath, boolean recursive) {
+    public Linq<SftpFile> listDirectories(String remotePath, boolean recursive) {
         List<SftpFile> root = new ArrayList<>();
         listDirectories(root, recursive, remotePath);
-        return NQuery.of(root);
+        return Linq.from(root);
     }
 
     @SneakyThrows
@@ -157,10 +157,10 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     }
 
     @Override
-    public NQuery<SftpFile> listFiles(String remotePath, boolean recursive) {
+    public Linq<SftpFile> listFiles(String remotePath, boolean recursive) {
         List<SftpFile> root = new ArrayList<>();
         listFiles(root, recursive, remotePath);
-        return NQuery.of(root);
+        return Linq.from(root);
     }
 
     @SneakyThrows

@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 
 import java.io.Serializable;
 import java.util.*;
@@ -121,7 +121,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public List<T> aliveList() {
         lock.readLock().lock();
         try {
-            return NQuery.of(elements).where(p -> p.weight > 0).select(p -> p.element).toList();
+            return Linq.from(elements).where(p -> p.weight > 0).select(p -> p.element).toList();
         } finally {
             lock.readLock().unlock();
         }
@@ -170,7 +170,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     private WeightElement<T> findElement(T element, boolean throwOnEmpty) {
-        WeightElement<T> node = NQuery.of(elements).firstOrDefault(p -> eq(p.element, element));
+        WeightElement<T> node = Linq.from(elements).firstOrDefault(p -> eq(p.element, element));
         if (throwOnEmpty && node == null) {
             throw new NoSuchElementException();
         }
@@ -321,7 +321,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         lock.readLock().lock();
         try {
             if (temp == null) {
-                temp = new CopyOnWriteArrayList<>(NQuery.of(elements).select(p -> p.element).toList());
+                temp = new CopyOnWriteArrayList<>(Linq.from(elements).select(p -> p.element).toList());
             }
             return temp.iterator();
         } finally {
@@ -349,7 +349,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public boolean removeAll(Collection<?> c) {
         lock.writeLock().lock();
         try {
-            return change(elements.removeAll(NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList()));
+            return change(elements.removeAll(Linq.from(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList()));
         } finally {
             lock.writeLock().unlock();
         }
@@ -359,7 +359,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public boolean retainAll(Collection<?> c) {
         lock.writeLock().lock();
         try {
-            List<WeightElement<T>> items = NQuery.of(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
+            List<WeightElement<T>> items = Linq.from(elements).join(c, (p, x) -> eq(p.element, x), (p, x) -> p).toList();
             elements.clear();
             return change(elements.addAll(items));
         } finally {

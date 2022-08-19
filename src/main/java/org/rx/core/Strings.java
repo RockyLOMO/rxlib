@@ -241,7 +241,7 @@ public class Strings extends StringUtils {
     }
 
     public static boolean containsAll(String str, CharSequence... searches) {
-        return str != null && NQuery.of(searches).all(str::contains);
+        return str != null && Linq.from(searches).all(str::contains);
     }
 
     public static String[] split(String str, String delimiter) {

@@ -158,7 +158,7 @@ public final class Tasks {
     }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
-        return NQuery.of(timeArray).select(p -> scheduleDaily(task, Time.valueOf(p))).toList();
+        return Linq.from(timeArray).select(p -> scheduleDaily(task, Time.valueOf(p))).toList();
     }
 
     /**

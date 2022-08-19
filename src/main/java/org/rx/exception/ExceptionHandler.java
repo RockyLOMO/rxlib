@@ -56,7 +56,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 if (lastIndex == 0) {
                     return Arrays.EMPTY_OBJECT_ARRAY;
                 }
-                return NQuery.of(args).take(lastIndex).toArray();
+                return Linq.from(args).take(lastIndex).toArray();
             }
         }
         return args;

@@ -339,12 +339,12 @@ public final class Remoting {
                                     } else {
                                         RpcClientMeta computingClient;
                                         if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
-                                            computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
+                                            computingClient = Linq.from(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
                                                 int i = ThreadLocalRandom.current().nextInt(0, p2.count());
                                                 return p2.skip(i).first();
                                             }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
                                         } else {
-                                            computingClient = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion())
+                                            computingClient = Linq.from(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion())
                                                     .orderByRand().firstOrDefault();
                                         }
                                         if (computingClient == null) {

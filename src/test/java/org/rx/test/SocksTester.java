@@ -717,20 +717,16 @@ public class SocksTester extends TConfig {
 
     @Test
     public void restfulRpc() {
-        HttpClient client = new HttpClient(10000, false,
-                new Proxy(Proxy.Type.SOCKS, Sockets.parseEndpoint("192.168.31.7:1080")));
-        System.out.println(client.get("https://google.com").toString());
+        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
+        assert map.get("userId").equals("ft");
+        assert map.get("type").equals("1");
+        map.put("userId", "newId");
+        map.put("ok", "1");
+        System.out.println(HttpClient.buildUrl(url, map));
 
-//        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
-//        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
-//        assert map.get("userId").equals("ft");
-//        assert map.get("type").equals("1");
-//        map.put("userId", "newId");
-//        map.put("ok", "1");
-//        System.out.println(HttpClient.buildUrl(url, map));
-//
-//        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
-//        System.out.println(facade.queryIp());
+        HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
+        System.out.println(facade.queryIp());
     }
 
     @Test

@@ -8,7 +8,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import org.rx.annotation.ValidRegex;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.spring.SpringContext;
 import org.rx.util.function.Func;
 
@@ -49,7 +49,7 @@ public class Validator {
      * @param bean
      */
     public static void validateBean(Object bean) {
-        List<Object> list = NQuery.asList(bean, false);
+        List<Object> list = Linq.asList(bean, false);
         javax.validation.Validator validator = getValidator();
         for (Object b : list) {
             for (ConstraintViolation<Object> violation : validator.validate(b)) {

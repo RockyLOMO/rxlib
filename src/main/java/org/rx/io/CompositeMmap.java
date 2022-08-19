@@ -7,7 +7,7 @@ import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
 import org.rx.util.Lazy;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -129,7 +129,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     }
 
     public MappedByteBuffer[] buffers() {
-        return NQuery.of(buffers).select(p -> p.left).toArray();
+        return Linq.from(buffers).select(p -> p.left).toArray();
     }
 
     @SneakyThrows

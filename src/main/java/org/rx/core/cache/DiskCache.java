@@ -125,12 +125,12 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<T
 
     @Override
     public Collection<TV> values() {
-        return NQuery.of(keySet()).select(k -> get(k)).where(Objects::nonNull).toList();
+        return Linq.from(keySet()).select(k -> get(k)).where(Objects::nonNull).toList();
     }
 
     @Override
     public Set<Map.Entry<TK, TV>> entrySet() {
-        return NQuery.of(keySet()).select(k -> {
+        return Linq.from(keySet()).select(k -> {
             TV v = get(k);
             return v == null ? null : (Map.Entry<TK, TV>) new DefaultMapEntry<>(k, v);
         }).where(Objects::nonNull).toSet();

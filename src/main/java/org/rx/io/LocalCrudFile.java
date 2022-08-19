@@ -4,7 +4,7 @@ import lombok.SneakyThrows;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 
 import java.io.File;
 import java.io.InputStream;
@@ -25,11 +25,11 @@ class LocalCrudFile implements CrudFile<File> {
 
     @SneakyThrows
     @Override
-    public NQuery<File> listDirectories(String directoryPath, boolean recursive) {
+    public Linq<File> listDirectories(String directoryPath, boolean recursive) {
         if (!recursive) {
-            return NQuery.of(Files.newDirectoryStream(Paths.get(directoryPath), java.nio.file.Files::isDirectory)).select(Path::toFile);
+            return Linq.from(Files.newDirectoryStream(Paths.get(directoryPath), java.nio.file.Files::isDirectory)).select(Path::toFile);
         }
-        return NQuery.of(FileUtils.listFilesAndDirs(new File(directoryPath), FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
+        return Linq.from(FileUtils.listFilesAndDirs(new File(directoryPath), FileFilterUtils.falseFileFilter(), FileFilterUtils.directoryFileFilter()));
     }
 
     @SneakyThrows
@@ -39,9 +39,9 @@ class LocalCrudFile implements CrudFile<File> {
     }
 
     @Override
-    public NQuery<File> listFiles(String directoryPath, boolean recursive) {
+    public Linq<File> listFiles(String directoryPath, boolean recursive) {
         IOFileFilter df = recursive ? FileFilterUtils.directoryFileFilter() : FileFilterUtils.falseFileFilter();
-        return NQuery.of(FileUtils.listFiles(new File(directoryPath), FileFilterUtils.fileFileFilter(), df));
+        return Linq.from(FileUtils.listFiles(new File(directoryPath), FileFilterUtils.fileFileFilter(), df));
     }
 
     @Override

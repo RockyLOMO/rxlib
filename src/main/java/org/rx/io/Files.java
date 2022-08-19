@@ -13,7 +13,7 @@ import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.rx.core.Arrays;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
@@ -49,11 +49,11 @@ public class Files extends FilenameUtils {
         CURD_FILE.delete(path);
     }
 
-    public static NQuery<File> listDirectories(String directoryPath, boolean recursive) {
+    public static Linq<File> listDirectories(String directoryPath, boolean recursive) {
         return CURD_FILE.listDirectories(directoryPath, recursive);
     }
 
-    public static NQuery<File> listFiles(String directoryPath, boolean recursive) {
+    public static Linq<File> listFiles(String directoryPath, boolean recursive) {
         return CURD_FILE.listFiles(directoryPath, recursive);
     }
 

@@ -36,7 +36,7 @@ import static org.rx.core.Extends.*;
  */
 @Slf4j
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public final class NQuery<T> implements Iterable<T>, Serializable {
+public final class Linq<T> implements Iterable<T>, Serializable {
     private static final long serialVersionUID = -7167070585936243198L;
 
     //region staticMembers
@@ -77,32 +77,32 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return list;
     }
 
-    public static <T> NQuery<T> ofCollection(Object collection) {
-        return new NQuery<>(asList(collection, true), false);
+    public static <T> Linq<T> fromCollection(Object collection) {
+        return new Linq<>(asList(collection, true), false);
     }
 
-    public static <T> NQuery<T> of(T one) {
-        return of(Arrays.toList(one));
+    public static <T> Linq<T> from(T single) {
+        return from(Arrays.toList(single));
     }
 
     @SafeVarargs
-    public static <T> NQuery<T> of(T... array) {
-        return of(Arrays.toList(array));
+    public static <T> Linq<T> from(T... array) {
+        return from(Arrays.toList(array));
     }
 
-    public static <T> NQuery<T> of(@NonNull Stream<T> stream) {
-        return of(stream::iterator, stream.isParallel());
+    public static <T> Linq<T> from(@NonNull Stream<T> stream) {
+        return from(stream::iterator, stream.isParallel());
     }
 
-    public static <T> NQuery<T> of(Iterable<T> iterable) {
-        return of(iterable, false);
+    public static <T> Linq<T> from(Iterable<T> iterable) {
+        return from(iterable, false);
     }
 
-    public static <T> NQuery<T> of(Iterable<T> iterable, boolean isParallel) {
+    public static <T> Linq<T> from(Iterable<T> iterable, boolean isParallel) {
         if (iterable == null) {
             iterable = Collections.emptyList();
         }
-        return new NQuery<>(iterable, isParallel);
+        return new Linq<>(iterable, isParallel);
     }
     //endregion
 
@@ -133,16 +133,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return StreamSupport.stream(iterable.spliterator(), isParallel);
     }
 
-    private <TR> NQuery<TR> me(Iterable<TR> set) {
-        return of(set, isParallel);
+    private <TR> Linq<TR> me(Iterable<TR> set) {
+        return from(set, isParallel);
     }
 
-    private <TR> NQuery<TR> me(Stream<TR> stream) {
+    private <TR> Linq<TR> me(Stream<TR> stream) {
         return me(stream.collect(Collectors.toList()));
     }
 
     @SneakyThrows
-    private NQuery<T> me(EachFunc<T> func, String prevMethod) {
+    private Linq<T> me(EachFunc<T> func, String prevMethod) {
         if (isParallel) {
             log.warn("Not supported parallel {}", prevMethod);
         }
@@ -192,11 +192,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         stream().forEachOrdered(action);
     }
 
-    public <TR> NQuery<TR> select(BiFunc<T, TR> selector) {
+    public <TR> Linq<TR> select(BiFunc<T, TR> selector) {
         return me(stream().map(selector.toFunction()));
     }
 
-    public <TR> NQuery<TR> select(BiFuncWithIndex<T, TR> selector) {
+    public <TR> Linq<TR> select(BiFuncWithIndex<T, TR> selector) {
         AtomicInteger counter = new AtomicInteger();
         return me(stream().map(p -> {
             try {
@@ -207,16 +207,16 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }));
     }
 
-    public <TR> NQuery<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
+    public <TR> Linq<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
         return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p)))));
     }
 
-    public <TR> NQuery<TR> selectMany(BiFuncWithIndex<T, Iterable<TR>> selector) {
+    public <TR> Linq<TR> selectMany(BiFuncWithIndex<T, Iterable<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
         return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement())))));
     }
 
-    public NQuery<T> where(PredicateFunc<T> predicate) {
+    public Linq<T> where(PredicateFunc<T> predicate) {
         return me(stream().filter(p -> {
             try {
                 return predicate.invoke(p);
@@ -226,7 +226,7 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }));
     }
 
-    public NQuery<T> where(PredicateFuncWithIndex<T> predicate) {
+    public Linq<T> where(PredicateFuncWithIndex<T> predicate) {
         AtomicInteger counter = new AtomicInteger();
         return me(stream().filter(p -> {
             try {
@@ -237,19 +237,19 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }));
     }
 
-    public <TI, TR> NQuery<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
-    public <TI, TR> NQuery<TR> join(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> join(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return join(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return join(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
             if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
                 return Stream.of(resultSelector.apply(p, null));
@@ -258,11 +258,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }));
     }
 
-    public <TI, TR> NQuery<TR> leftJoin(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoin(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return leftJoin(stream().map(innerSelector.toFunction()).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> NQuery<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
         return leftJoin(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
@@ -282,35 +282,35 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return stream().anyMatch(p -> p.equals(item));
     }
 
-    public NQuery<T> concat(Iterable<T> set) {
+    public Linq<T> concat(Iterable<T> set) {
         return me(Stream.concat(stream(), newStream(set)));
     }
 
-    public NQuery<T> distinct() {
+    public Linq<T> distinct() {
         return me(stream().distinct());
     }
 
-    public NQuery<T> except(Iterable<T> set) {
+    public Linq<T> except(Iterable<T> set) {
         return me(stream().filter(p -> !newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public NQuery<T> intersection(Iterable<T> set) {
+    public Linq<T> intersection(Iterable<T> set) {
         return me(stream().filter(p -> newStream(set).anyMatch(p2 -> p2.equals(p))));
     }
 
-    public NQuery<T> difference(Iterable<T> set) {
-        return NQuery.of(CollectionUtils.disjunction(this, set));
+    public Linq<T> difference(Iterable<T> set) {
+        return Linq.from(CollectionUtils.disjunction(this, set));
     }
 
-    public NQuery<T> union(Iterable<T> set) {
-        return NQuery.of(CollectionUtils.union(this, set));
+    public Linq<T> union(Iterable<T> set) {
+        return Linq.from(CollectionUtils.union(this, set));
     }
 
-    public NQuery<T> orderByRand() {
+    public Linq<T> orderByRand() {
         return me(stream().sorted(getComparator(p -> ThreadLocalRandom.current().nextInt(0, 100))));
     }
 
-    public <TK> NQuery<T> orderBy(BiFunc<T, TK> keySelector) {
+    public <TK> Linq<T> orderBy(BiFunc<T, TK> keySelector) {
 //        return me(stream().sorted(Comparator.nullsLast(Comparator.comparing((Function) keySelector.toFunction()))));
         return me(stream().sorted(getComparator(keySelector)));
     }
@@ -331,11 +331,11 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         };
     }
 
-    public <TK> NQuery<T> orderByDescending(BiFunc<T, TK> keySelector) {
+    public <TK> Linq<T> orderByDescending(BiFunc<T, TK> keySelector) {
         return me(stream().sorted(getComparator(keySelector).reversed()));
     }
 
-    public NQuery<T> orderByMany(BiFunc<T, List<Object>> keySelector) {
+    public Linq<T> orderByMany(BiFunc<T, List<Object>> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector)));
     }
 
@@ -363,12 +363,12 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         };
     }
 
-    public NQuery<T> orderByDescendingMany(BiFunc<T, List<Object>> keySelector) {
+    public Linq<T> orderByDescendingMany(BiFunc<T, List<Object>> keySelector) {
         return me(stream().sorted(getComparatorMany(keySelector).reversed()));
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    public NQuery<T> reverse() {
+    public Linq<T> reverse() {
         try {
             return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
         } catch (Exception e) {
@@ -379,29 +379,29 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }
     }
 
-    public <TK, TR> NQuery<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
+    public <TK, TR> Linq<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, Linq<T>, TR> resultSelector) {
         Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
-            result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
+            result.add(resultSelector.apply(entry.getKey(), from(entry.getValue())));
         }
         return me(result);
     }
 
-    public <TK, TR> Map<TK, TR> groupByIntoMap(BiFunc<T, TK> keySelector, BiFunction<TK, NQuery<T>, TR> resultSelector) {
+    public <TK, TR> Map<TK, TR> groupByIntoMap(BiFunc<T, TK> keySelector, BiFunction<TK, Linq<T>, TR> resultSelector) {
         Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         Map<TK, TR> result = newMap();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
-            result.put(entry.getKey(), resultSelector.apply(entry.getKey(), NQuery.of(entry.getValue())));
+            result.put(entry.getKey(), resultSelector.apply(entry.getKey(), Linq.from(entry.getValue())));
         }
         return result;
     }
 
-    public <TR> NQuery<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, NQuery<T>, TR> resultSelector) {
+    public <TR> Linq<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, Linq<T>, TR> resultSelector) {
         Map<List<Object>, List<T>> map = stream().collect(Collectors.groupingBy(keySelector.toFunction(), this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<List<Object>, List<T>> entry : map.entrySet()) {
-            result.add(resultSelector.apply(entry.getKey(), of(entry.getValue())));
+            result.add(resultSelector.apply(entry.getKey(), from(entry.getValue())));
         }
         return me(result);
     }
@@ -471,12 +471,12 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    public <TR> NQuery<TR> cast() {
-        return (NQuery<TR>) this;
+    public <TR> Linq<TR> cast() {
+        return (Linq<TR>) this;
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    public <TR> NQuery<TR> ofType(Class<TR> type) {
+    public <TR> Linq<TR> ofType(Class<TR> type) {
         return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
@@ -562,15 +562,15 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    public NQuery<T> skip(int count) {
+    public Linq<T> skip(int count) {
         return me(stream().skip(count));
     }
 
-    public NQuery<T> skipWhile(PredicateFunc<T> predicate) {
+    public Linq<T> skipWhile(PredicateFunc<T> predicate) {
         return skipWhile((p, i) -> predicate.invoke(p));
     }
 
-    public NQuery<T> skipWhile(PredicateFuncWithIndex<T> predicate) {
+    public Linq<T> skipWhile(PredicateFuncWithIndex<T> predicate) {
         AtomicBoolean doAccept = new AtomicBoolean();
         return me((p, i) -> {
             int flags = EachFunc.NONE;
@@ -586,15 +586,15 @@ public final class NQuery<T> implements Iterable<T>, Serializable {
         }, "skipWhile");
     }
 
-    public NQuery<T> take(int count) {
+    public Linq<T> take(int count) {
         return me(stream().limit(count));
     }
 
-    public NQuery<T> takeWhile(PredicateFunc<T> predicate) {
+    public Linq<T> takeWhile(PredicateFunc<T> predicate) {
         return takeWhile((p, i) -> predicate.invoke(p));
     }
 
-    public NQuery<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
+    public Linq<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
         return me((p, i) -> {
             int flags = EachFunc.NONE;
             if (!sneakyInvoke(() -> predicate.invoke(p, i))) {

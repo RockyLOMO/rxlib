@@ -45,9 +45,9 @@ public final class App extends SystemUtils {
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
-            NQuery<Class<?>> q = NQuery.of(RxConfig.INSTANCE.jsonSkipTypes);
-            if (NQuery.couldBeCollection(v.getClass())) {
-                List<Object> list = NQuery.asList(v, true);
+            Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
+            if (Linq.couldBeCollection(v.getClass())) {
+                List<Object> list = Linq.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
                 return list;
             }
@@ -181,7 +181,7 @@ public final class App extends SystemUtils {
         if (doWrite) {
             Set<String> whitelist = eventArgs.getLogTypeWhitelist();
             if (!CollectionUtils.isEmpty(whitelist)) {
-                doWrite = NQuery.of(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
+                doWrite = Linq.from(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
             }
         }
         if (doWrite) {
@@ -292,15 +292,15 @@ public final class App extends SystemUtils {
 //            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
             return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Throwable e) {
-            NQuery<Object> q;
-            if (NQuery.couldBeCollection(src.getClass())) {
-                q = NQuery.ofCollection(src);
+            Linq<Object> q;
+            if (Linq.couldBeCollection(src.getClass())) {
+                q = Linq.fromCollection(src);
             } else {
-                q = NQuery.of(src);
+                q = Linq.from(src);
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
             jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", NQuery.of(jsonSkipTypes).toJoinString(",", Class::getName), e);
+            ExceptionHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

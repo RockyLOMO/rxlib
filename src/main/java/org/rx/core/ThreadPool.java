@@ -439,7 +439,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     //ExecutorCompletionService
     @SneakyThrows
     public <T> T runAny(@NonNull Collection<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = NQuery.of(tasks).select(p -> (Callable<T>) () -> {
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) () -> {
             try {
                 return p.invoke();
             } catch (Throwable e) {
@@ -451,7 +451,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @SneakyThrows
     public <T> List<Future<T>> runAll(@NonNull Collection<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = NQuery.of(tasks).select(p -> (Callable<T>) () -> {
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) () -> {
             try {
                 return p.invoke();
             } catch (Throwable e) {
@@ -493,7 +493,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             return MultiTaskFuture.NULL;
         }
 
-        CompletableFuture<T>[] futures = NQuery.of(tasks).select(this::runAsync).toArray();
+        CompletableFuture<T>[] futures = Linq.from(tasks).select(this::runAsync).toArray();
         return new MultiTaskFuture<>((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
     }
 
@@ -502,7 +502,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             return MultiTaskFuture.NULL;
         }
 
-        CompletableFuture<T>[] futures = NQuery.of(tasks).select(this::runAsync).toArray();
+        CompletableFuture<T>[] futures = Linq.from(tasks).select(this::runAsync).toArray();
         return new MultiTaskFuture<>(CompletableFuture.allOf(futures), futures);
     }
 

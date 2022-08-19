@@ -257,7 +257,7 @@ public class HttpClient {
             return Strings.EMPTY;
         }
 
-        return String.join("; ", NQuery.of(cookies).select(p -> p.name() + "=" + p.value()));
+        return String.join("; ", Linq.from(cookies).select(p -> p.name() + "=" + p.value()));
     }
 
     public static List<Cookie> decodeCookie(@NonNull HttpUrl httpUrl, @NonNull String raw) {

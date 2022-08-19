@@ -95,7 +95,7 @@ public final class Main implements SocksSupport {
                 }
 
                 conf = changed;
-                NQuery<AuthenticEndpoint> svrs = NQuery.of(conf.shadowServer).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
+                Linq<AuthenticEndpoint> svrs = Linq.from(conf.shadowServer).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
                 if (!svrs.any() || svrs.any(Objects::isNull)) {
                     throw new InvalidException("Invalid shadowServer arg");
                 }
@@ -119,7 +119,7 @@ public final class Main implements SocksSupport {
                 }
             });
             watcher.raiseChange();
-            NQuery<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = NQuery.of(arg1).select(shadowUser -> {
+            Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
                 ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
                         CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
@@ -145,7 +145,7 @@ public final class Main implements SocksSupport {
             frontConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
             frontConf.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
             frontConf.setEnableUdp2raw(udp2raw);
-            frontConf.setUdp2rawServers(NQuery.of(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
+            frontConf.setUdp2rawServers(Linq.from(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
             if (frontConf.isEnableUdp2raw() && conf.udp2rawEndpoint != null) {
                 log.info("udp2rawEndpoint: {}", conf.udp2rawEndpoint);
                 AuthenticEndpoint udp2rawSvrEp = AuthenticEndpoint.valueOf(conf.udp2rawEndpoint);

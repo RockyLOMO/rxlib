@@ -77,7 +77,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         if (Arrays.isEmpty(args)) {
             return "{}";
         }
-        List<Object> list = NQuery.of(args).select(p -> {
+        List<Object> list = Linq.from(args).select(p -> {
             if (argShortSelector != null) {
                 Object r = argShortSelector.invoke(signature, p);
                 if (r != null) {

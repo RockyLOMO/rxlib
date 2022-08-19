@@ -17,16 +17,6 @@ import static org.rx.core.Extends.require;
 @Slf4j
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public class FluentWait {
-    @Data
-    public static class UntilState {
-        final long endTime;
-        private int evaluatedCount;
-    }
-
-    public static UntilState emptyState() {
-        return new UntilState(TIMEOUT_INFINITE);
-    }
-
     public static FluentWait newInstance(long timeoutMillis) {
         return newInstance(timeoutMillis, Constants.DEFAULT_INTERVAL);
     }
@@ -47,12 +37,16 @@ public class FluentWait {
     private boolean throwOnTimeout = true;
     private String message;
     private List<Class<? extends Throwable>> ignoredExceptions;
+    @Getter
+    private long endTime;
+    @Getter
+    private int evaluatedCount;
 
     public FluentWait retryEvery(long interval) {
         return retryEvery(interval, false);
     }
 
-    public FluentWait retryEvery(long interval, boolean doRetryFirst) {
+    public synchronized FluentWait retryEvery(long interval, boolean doRetryFirst) {
         require(interval, interval >= TIMEOUT_INFINITE);
         this.retryMillis = interval;
         this.doRetryFirst = doRetryFirst;
@@ -90,8 +84,8 @@ public class FluentWait {
         return this;
     }
 
-    public <T> T until(BiFunc<UntilState, T> func) throws TimeoutException {
-        return until(func, null);
+    public <T> T until(BiFunc<FluentWait, T> isTrue) throws TimeoutException {
+        return until(isTrue, null);
     }
 
     /**
@@ -110,17 +104,18 @@ public class FluentWait {
      * from null or false before the timeout expired.
      * @throws TimeoutException If the timeout expires.
      */
-    public <T> T until(@NonNull BiFunc<UntilState, T> isTrue, PredicateFunc<UntilState> retryCondition) throws TimeoutException {
+    public synchronized <T> T until(@NonNull BiFunc<FluentWait, T> isTrue, PredicateFunc<FluentWait> retryCondition) throws TimeoutException {
         if (retryCondition != null && retryMillis == TIMEOUT_INFINITE) {
             log.warn("Not call retryEvery() before until()");
         }
 
-        UntilState state = new UntilState(System.currentTimeMillis() + timeout);
+        endTime = System.currentTimeMillis() + timeout;
+        evaluatedCount = 0;
         int retryCount = TIMEOUT_INFINITE;
         if (retryCondition != null) {
             if (doRetryFirst) {
                 try {
-                    retryCondition.invoke(state);
+                    retryCondition.invoke(this);
                 } catch (Throwable e) {
                     throw InvalidException.sneaky(e);
                 }
@@ -134,7 +129,7 @@ public class FluentWait {
         T lastResult = null;
         do {
             try {
-                lastResult = isTrue.invoke(state);
+                lastResult = isTrue.invoke(this);
                 if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
                     return lastResult;
                 }
@@ -142,14 +137,14 @@ public class FluentWait {
             } catch (Throwable e) {
                 lastException = propagateIfNotIgnored(e);
             } finally {
-                state.evaluatedCount++;
+                evaluatedCount++;
             }
 
             sleep();
 
-            if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || state.evaluatedCount % retryCount == 0)) {
+            if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
                 try {
-                    if (!retryCondition.invoke(state)) {
+                    if (!retryCondition.invoke(this)) {
                         break;
                     }
                 } catch (Throwable e) {
@@ -157,7 +152,7 @@ public class FluentWait {
                 }
             }
         }
-        while (state.endTime > System.currentTimeMillis());
+        while (endTime > System.currentTimeMillis());
         if (!throwOnTimeout) {
             return lastResult;
         }

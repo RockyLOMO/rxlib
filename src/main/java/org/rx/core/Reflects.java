@@ -21,7 +21,6 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
@@ -65,7 +64,7 @@ public class Reflects extends ClassUtils {
     }
     //endregion
 
-    public static final NQuery<String> COLLECTION_WRITE_METHOD_NAMES = NQuery.of("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
+    public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final Set<Method> OBJECT_METHODS = ConcurrentHashMap.newKeySet();
     static final int CLOSE_METHOD_HASH = "close".hashCode();
@@ -73,7 +72,7 @@ public class Reflects extends ClassUtils {
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
-    static final Lazy<Cache<Class<?>, Map<String, NQuery<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
     static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
     static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
@@ -104,9 +103,9 @@ public class Reflects extends ClassUtils {
         }
     }
 
-    public static NQuery<StackTraceElement> stackTrace(int takeCount) {
+    public static Linq<StackTraceElement> stackTrace(int takeCount) {
         //Thread.currentThread().getStackTrace()性能略差
-        return NQuery.of(new Throwable().getStackTrace()).skip(2).take(takeCount);
+        return Linq.from(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
     public static Class<?> stackClass(int depth) {
@@ -127,9 +126,9 @@ public class Reflects extends ClassUtils {
     }
 
     @SneakyThrows
-    public static NQuery<InputStream> getResources(String namePattern) {
+    public static Linq<InputStream> getResources(String namePattern) {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        return NQuery.of(resolver.getResources("classpath*:" + namePattern)).select(InputStreamSource::getInputStream);
+        return Linq.from(resolver.getResources("classpath*:" + namePattern)).select(InputStreamSource::getInputStream);
     }
 
     //ClassLoader.getSystemClassLoader()
@@ -275,7 +274,7 @@ public class Reflects extends ClassUtils {
         boolean isStatic = type != null;
         Class<?> searchType = isStatic ? type : instance.getClass();
         Method method = null;
-        NQuery<Method> methods = getMethodMap(searchType).get(name);
+        Linq<Method> methods = getMethodMap(searchType).get(name);
         if (methods != null) {
             for (Method p : methods) {
                 if (p.getParameterCount() != args.length) {
@@ -328,7 +327,7 @@ public class Reflects extends ClassUtils {
         return (T) method.invoke(instance, args);
     }
 
-    public static Map<String, NQuery<Method>> getMethodMap(@NonNull Class<?> type) {
+    public static Map<String, Linq<Method>> getMethodMap(@NonNull Class<?> type) {
         return METHOD_CACHE.getValue().get(type, k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
@@ -339,7 +338,7 @@ public class Reflects extends ClassUtils {
                 Collections.addAll(all, declared);
             }
 
-            NQuery<Method> defMethods = NQuery.of(type.getInterfaces()).selectMany(p -> NQuery.of(p.getMethods())).where(p -> {
+            Linq<Method> defMethods = Linq.from(type.getInterfaces()).selectMany(p -> Linq.from(p.getMethods())).where(p -> {
                 boolean d = p.isDefault();
                 if (d) {
                     setAccess(p);
@@ -347,18 +346,18 @@ public class Reflects extends ClassUtils {
                 return d;
             });
             all.addAll(defMethods.toList());
-            return Collections.unmodifiableMap(NQuery.of(all).groupByIntoMap(Method::getName, (p, x) -> x));
+            return Collections.unmodifiableMap(Linq.from(all).groupByIntoMap(Method::getName, (p, x) -> x));
         });
     }
     //endregion
 
     //region fields
-    public static NQuery<PropertyNode> getProperties(Class<?> to) {
-        return (NQuery<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
+    public static Linq<PropertyNode> getProperties(Class<?> to) {
+        return (Linq<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
-            NQuery<Method> q = NQuery.of(to.getMethods());
-            NQuery<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
-            NQuery<Tuple<String, Method>> getters = q.where(p -> p.getParameterCount() == 0 && p != getClass && (p.getName().startsWith(GET_PROPERTY) || p.getName().startsWith(GET_BOOL_PROPERTY))).select(p -> Tuple.of(propertyName(p.getName()), p));
+            Linq<Method> q = Linq.from(to.getMethods());
+            Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
+            Linq<Tuple<String, Method>> getters = q.where(p -> p.getParameterCount() == 0 && p != getClass && (p.getName().startsWith(GET_PROPERTY) || p.getName().startsWith(GET_BOOL_PROPERTY))).select(p -> Tuple.of(propertyName(p.getName()), p));
             return setters.join(getters.toList(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
         });
     }
@@ -427,7 +426,7 @@ public class Reflects extends ClassUtils {
             for (Field field : all) {
                 setAccess(field);
             }
-            return Collections.unmodifiableMap(NQuery.of(all).toMap(Field::getName, p -> p));
+            return Collections.unmodifiableMap(Linq.from(all).toMap(Field::getName, p -> p));
         });
     }
 
@@ -516,7 +515,7 @@ public class Reflects extends ClassUtils {
             }
             if (failBack) {
                 String val = value.toString();
-                value = NQuery.of(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
+                value = Linq.from(toType.getEnumConstants()).singleOrDefault(p -> ((Enum) p).name().equals(val));
             }
             if (value == null) {
                 throw new ApplicationException("enumError", values(fValue, toType.getSimpleName()));
@@ -538,10 +537,10 @@ public class Reflects extends ClassUtils {
                         throw new InvalidException("Value should be 0 or 1");
                     }
                 } else {
-                    NQuery<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
+                    Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {
                         Class<T> fType = toType;
-                        ConvertBean convertBean = NQuery.of(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
+                        ConvertBean convertBean = Linq.from(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {
                             return (T) convertBean.converter.apply(value, convertBean.toType);
                         }

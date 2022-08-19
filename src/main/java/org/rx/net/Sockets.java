@@ -394,7 +394,7 @@ public final class Sockets {
 
     @SneakyThrows
     public static InetAddress getLocalAddress() {
-        Inet4Address first = NQuery.of(getLocalAddresses()).orderByDescending(p -> p.isSiteLocalAddress()).firstOrDefault();
+        Inet4Address first = Linq.from(getLocalAddresses()).orderByDescending(p -> p.isSiteLocalAddress()).firstOrDefault();
         if (first != null) {
             return first;
         }
@@ -436,6 +436,7 @@ public final class Sockets {
         return new InetSocketAddress(anyLocalAddress(), port);
     }
 
+    //check jdk11 unknown host
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
         int i = endpoint.lastIndexOf(":");
         if (i == -1) {
@@ -461,7 +462,7 @@ public final class Sockets {
 
     @SneakyThrows
     public static List<InetSocketAddress> allEndpoints(@NonNull InetSocketAddress endpoint) {
-        return NQuery.of(InetAddress.getAllByName(endpoint.getHostString())).select(p -> new InetSocketAddress(p, endpoint.getPort())).toList();
+        return Linq.from(InetAddress.getAllByName(endpoint.getHostString())).select(p -> new InetSocketAddress(p, endpoint.getPort())).toList();
     }
 
     public static String toString(InetSocketAddress endpoint) {
@@ -490,7 +491,7 @@ public final class Sockets {
         });
     }
 
-    public static NQuery<SocketInfo> socketInfos(SocketProtocol protocol) {
+    public static Linq<SocketInfo> socketInfos(SocketProtocol protocol) {
         try (ShellCommander cmd = new ShellCommander("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
             cmd.onOutPrint.combine((s, e) -> {
@@ -499,7 +500,7 @@ public final class Sockets {
                     return;
                 }
 
-                String[] arr = NQuery.of(Strings.split(line, "  ")).select(String::trim).where(p -> !p.isEmpty()).toArray();
+                String[] arr = Linq.from(Strings.split(line, "  ")).select(String::trim).where(p -> !p.isEmpty()).toArray();
                 try {
                     SocketProtocol p = SocketProtocol.valueOf(arr[0]);
                     SocketInfo sockInfo;
@@ -517,7 +518,7 @@ public final class Sockets {
             });
             cmd.start().waitFor();
 
-            NQuery<SocketInfo> q = NQuery.of(list, true);
+            Linq<SocketInfo> q = Linq.from(list, true);
             q.forEach(p -> p.setProcessName(processName(p.pid)));
             return q;
         }

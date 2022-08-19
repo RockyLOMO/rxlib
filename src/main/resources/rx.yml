@@ -35,7 +35,7 @@ org:
         require[test]: Parameter {0} test failed
       Disposable:
         checkNotClosed: Cannot access a closed {0}
-      NQuery:
+      Linq:
         asList: Invalid collection type {0}
         single: Require 1 element, current set has {0} elements
         singleOrDefault: Require less than 1 element, current set has {0} elements

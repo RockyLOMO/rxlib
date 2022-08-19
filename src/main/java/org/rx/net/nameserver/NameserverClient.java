@@ -32,7 +32,7 @@ public final class NameserverClient extends Disposable {
 
     static void reInject() {
         Tasks.setTimeout(() -> {
-            NQuery<BiTuple<InetSocketAddress, Nameserver, Integer>> q = NQuery.of(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
+            Linq<BiTuple<InetSocketAddress, Nameserver, Integer>> q = Linq.from(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
                 return;
@@ -53,11 +53,11 @@ public final class NameserverClient extends Disposable {
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     public Set<InetSocketAddress> registerEndpoints() {
-        return NQuery.of(hold).select(p -> p.left).toSet();
+        return Linq.from(hold).select(p -> p.left).toSet();
     }
 
     public Set<InetSocketAddress> discoveryEndpoints() {
-        return NQuery.of(hold).where(p -> p.right != null).select(p -> Sockets.newEndpoint(p.left, p.right)).toSet();
+        return Linq.from(hold).where(p -> p.right != null).select(p -> Sockets.newEndpoint(p.left, p.right)).toSet();
     }
 
     public NameserverClient(String appName) {
@@ -87,19 +87,19 @@ public final class NameserverClient extends Disposable {
             throw new InvalidException("At least one server that required");
         }
 
-        return registerAsync(NQuery.of(registerEndpoints).select(Sockets::parseEndpoint).toSet());
+        return registerAsync(Linq.from(registerEndpoints).select(Sockets::parseEndpoint).toSet());
     }
 
     public CompletableFuture<?> registerAsync(@NonNull Set<InetSocketAddress> registerEndpoints) {
         if (registerEndpoints.isEmpty()) {
             throw new InvalidException("At least one server that required");
         }
-        svrEps.addAll(NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
+        svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
 
         return Tasks.runAsync(() -> {
             for (InetSocketAddress regEp : svrEps) {
                 synchronized (hold) {
-                    if (NQuery.of(hold).any(p -> eq(p.left, regEp))) {
+                    if (Linq.from(hold).any(p -> eq(p.left, regEp))) {
                         continue;
                     }
 
@@ -131,7 +131,7 @@ public final class NameserverClient extends Disposable {
                                     reInject();
                                 });
                                 rc.onReconnecting.combine((s, e) -> {
-                                    if (svrEps.addAll(NQuery.of(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
+                                    if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
                                         registerAsync(svrEps);
                                     }
                                 });
