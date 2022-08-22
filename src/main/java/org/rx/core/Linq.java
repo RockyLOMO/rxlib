@@ -40,7 +40,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     private static final long serialVersionUID = -7167070585936243198L;
 
     //region staticMembers
-    public static boolean couldBeCollection(Class<?> type) {
+    public static boolean canBeCollection(Class<?> type) {
         return Iterable.class.isAssignableFrom(type)
                 || type.isArray()
                 || Iterator.class.isAssignableFrom(type);
@@ -81,8 +81,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return new Linq<>(asList(collection, true), false);
     }
 
-    public static <T> Linq<T> from(T single) {
-        return from(Arrays.toList(single));
+    public static <T> Linq<T> from(T one) {
+        return from(Arrays.toList(one));
     }
 
     @SafeVarargs
@@ -108,33 +108,33 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     //region Member
     private final Iterable<T> data;
-    private final boolean isParallel;
+    private final boolean parallel;
 
     public Stream<T> stream() {
-        return StreamSupport.stream(data.spliterator(), isParallel);
+        return StreamSupport.stream(data.spliterator(), parallel);
     }
 
     private <TR> List<TR> newList() {
         int count = count();
-        return isParallel ? newConcurrentList(count, false) : new ArrayList<>(count);
+        return parallel ? newConcurrentList(count, false) : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {
         int count = count();
-        return isParallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
+        return parallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
         int count = count();
-        return isParallel ? Collections.synchronizedMap(new LinkedHashMap<>(count)) : new LinkedHashMap<>(count);
+        return parallel ? Collections.synchronizedMap(new LinkedHashMap<>(count)) : new LinkedHashMap<>(count);
     }
 
     private <TR> Stream<TR> newStream(Iterable<TR> iterable) {
-        return StreamSupport.stream(iterable.spliterator(), isParallel);
+        return StreamSupport.stream(iterable.spliterator(), parallel);
     }
 
     private <TR> Linq<TR> me(Iterable<TR> set) {
-        return from(set, isParallel);
+        return from(set, parallel);
     }
 
     private <TR> Linq<TR> me(Stream<TR> stream) {
@@ -143,8 +143,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     @SneakyThrows
     private Linq<T> me(EachFunc<T> func, String prevMethod) {
-        if (isParallel) {
-            log.warn("Not supported parallel {}", prevMethod);
+        if (parallel) {
+            log.warn("Not support parallel {}", prevMethod);
         }
 
         Spliterator<T> spliterator = data.spliterator();
@@ -164,7 +164,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
                     }
                 }) && !breaker.get();
             }
-        }, isParallel);
+        }, parallel);
         return me(r);
     }
 
@@ -372,7 +372,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         try {
             return me(stream().sorted((Comparator<T>) Comparator.reverseOrder()));
         } catch (Exception e) {
-            log.warn("reverse fail, {}", e.getMessage());
+            log.warn("Try reverse fail, {}", e.getMessage());
             List<T> list = toList();
             Collections.reverse(list);
             return me(list);

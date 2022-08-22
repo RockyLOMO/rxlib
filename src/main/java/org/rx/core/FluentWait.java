@@ -105,62 +105,69 @@ public class FluentWait {
      * @throws TimeoutException If the timeout expires.
      */
     public synchronized <T> T until(@NonNull BiFunc<FluentWait, T> isTrue, PredicateFunc<FluentWait> retryCondition) throws TimeoutException {
+        if (endTime != 0) {
+            throw new InvalidException("Not support invoke nested");
+        }
         if (retryCondition != null && retryMillis == TIMEOUT_INFINITE) {
             log.warn("Not call retryEvery() before until()");
         }
 
         endTime = System.currentTimeMillis() + timeout;
         evaluatedCount = 0;
-        int retryCount = TIMEOUT_INFINITE;
-        if (retryCondition != null) {
-            if (doRetryFirst) {
-                try {
-                    retryCondition.invoke(this);
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
-                }
-            }
-            if (retryMillis > TIMEOUT_INFINITE) {
-                retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
-            }
-        }
-
-        Throwable lastException;
-        T lastResult = null;
-        do {
-            try {
-                lastResult = isTrue.invoke(this);
-                if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
-                    return lastResult;
-                }
-                lastException = null;
-            } catch (Throwable e) {
-                lastException = propagateIfNotIgnored(e);
-            } finally {
-                evaluatedCount++;
-            }
-
-            sleep();
-
-            if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
-                try {
-                    if (!retryCondition.invoke(this)) {
-                        break;
+        try {
+            int retryCount = TIMEOUT_INFINITE;
+            if (retryCondition != null) {
+                if (doRetryFirst) {
+                    try {
+                        retryCondition.invoke(this);
+                    } catch (Throwable e) {
+                        throw InvalidException.sneaky(e);
                     }
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
+                }
+                if (retryMillis > TIMEOUT_INFINITE) {
+                    retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
                 }
             }
-        }
-        while (endTime > System.currentTimeMillis());
-        if (!throwOnTimeout) {
-            return lastResult;
-        }
 
-        String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
-                message == null ? "waiting for " + isTrue : message,
-                timeout, interval);
-        throw ResetEventWait.newTimeoutException(timeoutMessage, lastException);
+            Throwable lastException;
+            T lastResult = null;
+            do {
+                try {
+                    lastResult = isTrue.invoke(this);
+                    if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
+                        return lastResult;
+                    }
+                    lastException = null;
+                } catch (Throwable e) {
+                    lastException = propagateIfNotIgnored(e);
+                } finally {
+                    evaluatedCount++;
+                }
+
+                sleep();
+
+                if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
+                    try {
+                        if (!retryCondition.invoke(this)) {
+                            break;
+                        }
+                    } catch (Throwable e) {
+                        throw InvalidException.sneaky(e);
+                    }
+                }
+            }
+            while (endTime > System.currentTimeMillis());
+            if (!throwOnTimeout) {
+                return lastResult;
+            }
+
+            String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
+                    message == null ? "waiting for " + isTrue : message,
+                    timeout, interval);
+            throw ResetEventWait.newTimeoutException(timeoutMessage, lastException);
+        } finally {
+            endTime = 0;
+        }
     }
 
     private Throwable propagateIfNotIgnored(Throwable e) {

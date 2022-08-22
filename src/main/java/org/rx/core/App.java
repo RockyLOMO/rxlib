@@ -46,7 +46,7 @@ public final class App extends SystemUtils {
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-            if (Linq.couldBeCollection(v.getClass())) {
+            if (Linq.canBeCollection(v.getClass())) {
                 List<Object> list = Linq.asList(v, true);
                 list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
                 return list;
@@ -293,7 +293,7 @@ public final class App extends SystemUtils {
             return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
         } catch (Throwable e) {
             Linq<Object> q;
-            if (Linq.couldBeCollection(src.getClass())) {
+            if (Linq.canBeCollection(src.getClass())) {
                 q = Linq.fromCollection(src);
             } else {
                 q = Linq.from(src);
