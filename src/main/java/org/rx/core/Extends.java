@@ -99,6 +99,10 @@ public interface Extends extends Serializable {
         return null;
     }
 
+    static <T> void eachQuietly(Object array, BiAction<T> fn) {
+        eachQuietly(Linq.asList(array, true), fn);
+    }
+
     static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
         if (iterable == null) {
             return;
