@@ -230,13 +230,10 @@ public final class Remoting {
                         msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                 Sockets.toString(client.getLocalEndpoint()),
                                 Sockets.toString(client.getConfig().getServerEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
+                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters))
+                                .appendLine("Response:\t%s", clientBean.pack == null ? "NULL" : toJsonString(clientBean.pack.returnValue));
                         if (eventArgs.getError() != null) {
-                            msg.appendLine("Response:\t%s", eventArgs.getError().getMessage());
-                        } else if (clientBean.pack == null) {
-                            msg.appendLine("Response:\tNULL");
-                        } else {
-                            msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
+                            msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                         }
                     });
                 }
@@ -415,11 +412,10 @@ public final class Remoting {
                     log(args, msg -> {
                         msg.appendLine("Server invoke %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
                                 s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
+                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()))
+                                .appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
                         if (args.getError() != null) {
-                            msg.appendLine("Response:\t%s", pack.errorMessage);
-                        } else {
-                            msg.appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
+                            msg.appendLine("Error:\t%s", pack.errorMessage);
                         }
                     });
                 }

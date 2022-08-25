@@ -145,11 +145,10 @@ public final class App extends SystemUtils {
         eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
         log(eventArgs, msg -> {
             msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()));
+                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
+                    .appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
             if (eventArgs.getError() != null) {
                 msg.appendLine("Error:\t%s", eventArgs.getError());
-            } else {
-                msg.appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
             }
         });
     }

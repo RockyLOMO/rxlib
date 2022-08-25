@@ -59,11 +59,10 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 raiseEvent(onProceed, eventArgs);
                 App.log(eventArgs, msg -> {
                     msg.appendLine("Call:\t%s", signature.getName());
-                    msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()));
+                    msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
+                            .appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
                     if (eventArgs.getError() != null) {
                         msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
-                    } else {
-                        msg.appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
                     }
                 });
             }
