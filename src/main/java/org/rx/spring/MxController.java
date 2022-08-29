@@ -66,7 +66,7 @@ public class MxController {
         j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
 
 //        j.put("conf", conf);
-        j.put("requestHeaders", NQuery.of(Collections.list(request.getHeaderNames()))
+        j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.put("errorTraces", queryTraces(null, null, 10));
         j.put("metrics", queryMetrics(null, 15));
@@ -91,7 +91,7 @@ public class MxController {
     @SneakyThrows
     @RequestMapping("resolveHost")
     public Object[] resolveHost(String host) {
-        return NQuery.of(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
+        return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
     }
 
 //    @PostMapping("directOffer")

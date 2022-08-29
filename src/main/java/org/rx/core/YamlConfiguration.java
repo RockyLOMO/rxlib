@@ -34,12 +34,12 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
     public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.RX_CONFIG_FILE, DEFAULT_CONFIG_FILE);
 
     public static Map<String, Object> loadYaml(String... fileNames) {
-        return loadYaml(NQuery.of(fileNames).selectMany(p -> {
+        return loadYaml(Linq.from(fileNames).selectMany(p -> {
             File file = new File(p);
             if (file.exists()) {
                 return Arrays.toList(new FileStream(file).getReader());
             }
-            NQuery<InputStream> resources = Reflects.getResources(p);
+            Linq<InputStream> resources = Reflects.getResources(p);
             if (resources.any()) {
                 return resources.reverse();
             }
@@ -53,7 +53,7 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
             return result;
         }
         Yaml yaml = new Yaml();
-        for (Object data : NQuery.of(streams).selectMany(yaml::loadAll)) {
+        for (Object data : Linq.from(streams).selectMany(yaml::loadAll)) {
             Map<String, Object> sub = (Map<String, Object>) data;
             fill(sub, result);
         }

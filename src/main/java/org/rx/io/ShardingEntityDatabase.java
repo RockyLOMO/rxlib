@@ -7,9 +7,8 @@ import org.rx.bean.$;
 import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
-import org.rx.core.ThreadPool;
 import org.rx.exception.ExceptionHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -66,7 +65,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
                 return;
             }
             nodes.add(Tuple.of(new InetSocketAddress(Sockets.loopbackAddress(), rpcPort), local));
-            nodes.addAll(NQuery.of(nsClient.discoverAll(APP_NAME, true)).select(p -> {
+            nodes.addAll(Linq.from(nsClient.discoverAll(APP_NAME, true)).select(p -> {
                 InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
                 return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
             }).toList());
@@ -84,11 +83,11 @@ public class ShardingEntityDatabase implements EntityDatabase {
             }
             InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);
             log.info("{} address registered: {} -> {} isUp={}", APP_NAME,
-                    NQuery.of(nodes).toJoinString(",", p -> p.left.toString()),
+                    Linq.from(nodes).toJoinString(",", p -> p.left.toString()),
                     ep, e.isUp());
             synchronized (nodes) {
                 if (e.isUp()) {
-                    if (!NQuery.of(nodes).any(p -> p.left.equals(ep))) {
+                    if (!Linq.from(nodes).any(p -> p.left.equals(ep))) {
                         nodes.add(Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections))));
                     }
                 } else {
@@ -292,7 +291,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
     @SneakyThrows
     void invokeAll(BiAction<EntityDatabase> fn) {
         if (enableAsync) {
-            NQuery.of(nodes, true).forEach(tuple -> {
+            Linq.from(nodes, true).forEach(tuple -> {
                 try {
                     fn.invoke(tuple.right);
                 } catch (Throwable e) {

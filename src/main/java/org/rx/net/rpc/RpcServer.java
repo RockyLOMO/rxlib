@@ -203,7 +203,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public String dumpClients() {
         StringBuilder buf = new StringBuilder();
         int i = 1;
-        for (RpcClientMeta client : NQuery.of(clients.values()).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
+        for (RpcClientMeta client : Linq.from(clients.values()).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
             buf.append("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();

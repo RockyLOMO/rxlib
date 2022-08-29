@@ -3,7 +3,7 @@ package org.rx.bean;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.core.Arrays;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.util.function.BiFunc;
 
@@ -38,7 +38,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, @NonNull String names) {
-        return valueOf(type, EnumSet.copyOf(NQuery.of(Strings.split(names, ", "))
+        return valueOf(type, EnumSet.copyOf(Linq.from(Strings.split(names, ", "))
                 .join(Arrays.toList(type.getEnumConstants()), (p1, p2) -> p1.equals(p2.name()), (p1, p2) -> p2)
                 .toList()));
     }
@@ -47,7 +47,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     private int flags;
 
     public String name() {
-        return String.join(", ", NQuery.of(toSet()).select(Enum::name));
+        return String.join(", ", Linq.from(toSet()).select(Enum::name));
     }
 
     @Override
@@ -57,7 +57,7 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
 
     @Override
     public String description() {
-        return String.join(", ", NQuery.of(toSet()).select(NEnum::description));
+        return String.join(", ", Linq.from(toSet()).select(NEnum::description));
     }
 
     @SuppressWarnings(NON_UNCHECKED)

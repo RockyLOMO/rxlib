@@ -109,7 +109,7 @@ public class YamlCodeHandler {
     }
 
     private ErrorCode findCode(AccessibleObject member, String code, Throwable cause) {
-        NQuery<ErrorCode> errorCodes = NQuery.of(member.getAnnotationsByType(ErrorCode.class));
+        Linq<ErrorCode> errorCodes = Linq.from(member.getAnnotationsByType(ErrorCode.class));
         if (!errorCodes.any()) {
             log.debug("SystemException: Not found @ErrorCode in {}", member);
             return null;

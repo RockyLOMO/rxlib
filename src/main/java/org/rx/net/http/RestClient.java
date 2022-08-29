@@ -96,10 +96,10 @@ public final class RestClient {
     }
 
     private static boolean isPostMethod(RequestMapping mapping) {
-        return Arrays.isEmpty(mapping.method()) || NQuery.of(mapping.method()).contains(RequestMethod.POST);
+        return Arrays.isEmpty(mapping.method()) || Linq.from(mapping.method()).contains(RequestMethod.POST);
     }
 
     private static String getFirstPath(RequestMapping mapping) {
-        return mapping != null ? NQuery.of(!Arrays.isEmpty(mapping.value()) ? mapping.value() : mapping.path()).firstOrDefault() : null;
+        return mapping != null ? Linq.from(!Arrays.isEmpty(mapping.value()) ? mapping.value() : mapping.path()).firstOrDefault() : null;
     }
 }

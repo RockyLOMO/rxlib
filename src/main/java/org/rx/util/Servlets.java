@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.io.IOStream;
@@ -25,7 +25,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.quietly;
 
 @Slf4j
@@ -118,7 +117,7 @@ public class Servlets extends ServletRequestUtils {
             if (ArrayUtils.isEmpty(request.getCookies())) {
                 return null;
             }
-            return NQuery.of(request.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
+            return Linq.from(request.getCookies()).where(p -> p.getName().equals(name)).select(p -> HttpClient.decodeUrl(p.getValue())).firstOrDefault();
         });
     }
 

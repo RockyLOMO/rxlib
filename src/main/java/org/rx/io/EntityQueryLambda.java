@@ -173,7 +173,7 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
-        NQuery<T> q = NQuery.of(result);
+        Linq<T> q = Linq.from(result);
         if (!lambda.orders.isEmpty()) {
             boolean isDescFirst = false;
             List<BiFunc<T, ?>> asc = new ArrayList<>(), desc = new ArrayList<>();
@@ -189,11 +189,11 @@ public class EntityQueryLambda<T> implements Extends {
                 }
             }
             if (isDescFirst) {
-                q = q.orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList())
-                        .orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList());
+                q = q.orderByDescendingMany(p -> Linq.from(desc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByMany(p -> Linq.from(asc).select(x -> (Object) x.invoke(p)).toList());
             } else {
-                q = q.orderByMany(p -> NQuery.of(asc).select(x -> (Object) x.invoke(p)).toList())
-                        .orderByDescendingMany(p -> NQuery.of(desc).select(x -> (Object) x.invoke(p)).toList());
+                q = q.orderByMany(p -> Linq.from(asc).select(x -> (Object) x.invoke(p)).toList())
+                        .orderByDescendingMany(p -> Linq.from(desc).select(x -> (Object) x.invoke(p)).toList());
             }
         }
         if (lambda.offset != null) {
@@ -246,7 +246,7 @@ public class EntityQueryLambda<T> implements Extends {
                         params.add(condition.right);
                         valHold = PARAM_HOLD;
                     } else {
-                        valHold = NQuery.of((Object[]) condition.right).toJoinString(",", EntityQueryLambda::toValueString);
+                        valHold = Linq.from((Object[]) condition.right).toJoinString(",", EntityQueryLambda::toValueString);
                     }
                     b.append(op.format, colName, valHold);
                 }

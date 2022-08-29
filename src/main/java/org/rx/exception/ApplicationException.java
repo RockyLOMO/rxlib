@@ -36,7 +36,7 @@ public class ApplicationException extends InvalidException {
     private final Object[] codeValues;
     @Setter
     private String friendlyMessage;
-    private final NQuery<StackTraceElement> stacks;
+    private final Linq<StackTraceElement> stacks;
 
     @Override
     public String getMessage() {
@@ -70,7 +70,7 @@ public class ApplicationException extends InvalidException {
     @SneakyThrows
     protected ApplicationException(@NonNull Object errorCode, Object[] codeValues, Throwable cause) {
         super(cause != null ? cause.getMessage() : null, cause);
-        require(errorCode, NQuery.of(Enum.class, String.class).any(p -> Reflects.isInstance(errorCode, p)));
+        require(errorCode, Linq.from(Enum.class, String.class).any(p -> Reflects.isInstance(errorCode, p)));
 
         this.errorCode = errorCode;
         if (codeValues == null) {

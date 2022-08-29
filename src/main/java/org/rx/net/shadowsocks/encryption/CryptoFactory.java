@@ -1,7 +1,7 @@
 package org.rx.net.shadowsocks.encryption;
 
 import lombok.SneakyThrows;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 
 import java.lang.reflect.Constructor;
 
@@ -12,7 +12,7 @@ public class CryptoFactory {
 
     @SneakyThrows
     public static ICrypto get(String name, String password, boolean forUdp) {
-        CipherKind cipherKind = NQuery.of(CipherKind.values()).first(p -> p.getCipherName().equals(name));
+        CipherKind cipherKind = Linq.from(CipherKind.values()).first(p -> p.getCipherName().equals(name));
         Constructor<?> constructor = cipherKind.type.getConstructor(String.class, String.class);
         ICrypto crypt = (ICrypto) constructor.newInstance(name, password);
         crypt.setForUdp(forUdp);

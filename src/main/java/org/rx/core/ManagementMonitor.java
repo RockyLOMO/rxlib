@@ -67,7 +67,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         private final int liveThreadCount;
         private final long usedMemory;
         private final long totalMemory;
-        private final NQuery<DiskMonitorInfo> disks;
+        private final Linq<DiskMonitorInfo> disks;
 
         public int getCpuLoadPercent() {
             return toPercent(cpuLoad);
@@ -148,7 +148,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         long totalMemory = os.getTotalPhysicalMemorySize();
         return new MonitorInfo(os.getAvailableProcessors(), os.getSystemCpuLoad(), threads.getThreadCount(),
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
-                Cache.getOrSet(hashKey("monitorInfo"), k -> NQuery.of(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace())), Cache.MEMORY_CACHE));
+                Cache.getOrSet(hashKey("monitorInfo"), k -> Linq.from(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace())), Cache.MEMORY_CACHE));
     }
 
     public ThreadInfo[] findDeadlockedThreads() {
@@ -160,7 +160,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         if (!threads.isThreadCpuTimeEnabled()) {
             threads.setThreadCpuTimeEnabled(true);
         }
-        NQuery<ThreadInfo> allThreads = NQuery.of(threads.dumpAllThreads(true, true));
+        Linq<ThreadInfo> allThreads = Linq.from(threads.dumpAllThreads(true, true));
         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadInfo::getThreadId).toArray());
         long[] threadCpuTime = threads.getThreadCpuTime(tids);
 //        long[] threadUserTime = threads.getThreadUserTime(tids);

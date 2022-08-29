@@ -210,7 +210,7 @@ public class DataTable implements Extends {
     }
 
     public List<DataColumn<?>> addColumns(String... columnNames) {
-        List<DataColumn<Object>> columns = NQuery.of(columnNames).select(this::addColumn).toList();
+        List<DataColumn<Object>> columns = Linq.from(columnNames).select(this::addColumn).toList();
         return (List) columns;
     }
 
@@ -236,7 +236,7 @@ public class DataTable implements Extends {
     }
 
     public <T> DataColumn<T> getColumn(String columnName) {
-        return NQuery.of(columns).first(p -> eq(p.columnName, columnName));
+        return Linq.from(columns).first(p -> eq(p.columnName, columnName));
     }
 
     <T> void setOrdinal(DataColumn<T> column, int ordinal) {

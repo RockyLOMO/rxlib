@@ -48,8 +48,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         @Getter
         final Map<String, Tuple<Field, DbColumn>> columns;
         final Map<String, Tuple<String, Tuple<Field, DbColumn>>> upperColumns = new HashMap<>();
-        final NQuery<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
-        final NQuery<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
+        final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
+        final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
         final String insertSql;
         final String updateSql;
         final String deleteSql;
@@ -62,8 +62,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             for (Map.Entry<String, Tuple<Field, DbColumn>> entry : columns.entrySet()) {
                 upperColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
             }
-            insertView = NQuery.of(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
-            secondaryView = NQuery.of(columns.entrySet()).where(p -> !eq(p.getKey(), getPrimaryKey().getKey()));
+            insertView = Linq.from(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
+            secondaryView = Linq.from(columns.entrySet()).where(p -> !eq(p.getKey(), getPrimaryKey().getKey()));
 
             this.insertSql = insertSql;
             this.updateSql = updateSql;
@@ -142,7 +142,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
             connPool.setMaxConnections(maxConnections);
             if (!mappedEntityTypes.isEmpty()) {
-                createMapping(NQuery.of(mappedEntityTypes).toArray());
+                createMapping(Linq.from(mappedEntityTypes).toArray());
             }
         }
         return connPool;

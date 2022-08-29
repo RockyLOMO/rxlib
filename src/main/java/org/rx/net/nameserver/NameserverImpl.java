@@ -48,7 +48,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InstanceInfo>> getInstances() {
-        return NQuery.of(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
+        return Linq.from(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
                 (k, p) -> getDiscoverInfos(p.select(x -> x.getRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
@@ -56,7 +56,7 @@ public class NameserverImpl implements Nameserver {
         this.config = config;
         dnsServer = new DnsServer(config.getDnsPort());
         dnsServer.setTtl(config.getDnsTtl());
-        svrEps.addAll(NQuery.of(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
+        svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
 
         rs = Remoting.listen(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {
@@ -89,7 +89,7 @@ public class NameserverImpl implements Nameserver {
             return;
         }
 
-        dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, NQuery.of(svrEps).select(InetSocketAddress::getAddress).toList());
+        dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, Linq.from(svrEps).select(InetSocketAddress::getAddress).toList());
         raiseEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : serverEndpoints) {
@@ -147,7 +147,7 @@ public class NameserverImpl implements Nameserver {
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
         //同app同ip多实例，比如k8s滚动更新
-        int c = NQuery.of(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
+        int c = Linq.from(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
@@ -219,10 +219,10 @@ public class NameserverImpl implements Nameserver {
     }
 
     List<InstanceInfo> getDiscoverInfos(List<InetAddress> hosts, List<String> instanceAttrKeys) {
-        return NQuery.of(hosts).select(p -> {
+        return Linq.from(hosts).select(p -> {
             Map<String, Serializable> attrs = attrs(p);
             return new InstanceInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID),
-                    NQuery.of(!CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet()).toMap(x -> x, attrs::get));
+                    Linq.from(!CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet()).toMap(x -> x, attrs::get));
         }).toList();
     }
 }

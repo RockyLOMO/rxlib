@@ -1,7 +1,7 @@
 package org.rx.io;
 
 import org.apache.commons.io.FilenameUtils;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
 
 import java.io.InputStream;
@@ -35,11 +35,11 @@ public interface CrudFile<T> {
 
     String createDirectory(String path);
 
-    NQuery<T> listDirectories(String directoryPath, boolean recursive);
+    Linq<T> listDirectories(String directoryPath, boolean recursive);
 
     void saveFile(String filePath, InputStream in);
 
-    NQuery<T> listFiles(String directoryPath, boolean recursive);
+    Linq<T> listFiles(String directoryPath, boolean recursive);
 
     boolean exists(String path);
 

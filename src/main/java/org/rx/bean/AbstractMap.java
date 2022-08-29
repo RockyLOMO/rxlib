@@ -1,6 +1,6 @@
 package org.rx.bean;
 
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 
 import java.util.Collection;
 import java.util.Map;
@@ -58,12 +58,12 @@ public interface AbstractMap<K, V> extends Map<K, V> {
 
     @Override
     default Set<K> keySet() {
-        return NQuery.of(entrySet()).select(Entry::getKey).toSet();
+        return Linq.from(entrySet()).select(Entry::getKey).toSet();
     }
 
     @Override
     default Collection<V> values() {
-        return NQuery.of(entrySet()).select(Entry::getValue).toList();
+        return Linq.from(entrySet()).select(Entry::getValue).toList();
     }
 
     @Override

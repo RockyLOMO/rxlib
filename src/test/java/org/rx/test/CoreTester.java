@@ -338,16 +338,16 @@ public class CoreTester extends TestUtil {
     }
     //endregion
 
-    //region NQuery & NEvent
+    //region Linq & NEvent
     @Test
-    public void parallelNQuery() {
-        NQuery.of(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
+    public void parallelLinq() {
+        Linq.from(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
             Thread.sleep(200);
             System.out.println(Thread.currentThread().getName() + "=" + p);
             return true;
         });
 
-        NQuery<Integer> pq = NQuery.of(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+        Linq<Integer> pq = Linq.from(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
 //                .groupBy(p -> p > 5, (p, x) -> x.first())
                 ;
         //not work
@@ -361,7 +361,7 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void runNQuery() {
+    public void runLinq() {
         Collection<PersonBean> personSet = new HashSet<>();
         personSet.add(PersonBean.LeZhi);
         for (int i = 0; i < 5; i++) {
@@ -373,7 +373,7 @@ public class CoreTester extends TestUtil {
             personSet.add(p);
         }
 
-        showResult("leftJoin", NQuery.of(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
+        showResult("leftJoin", Linq.from(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
                 new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
                 new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
                 new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)).leftJoin(
@@ -385,56 +385,56 @@ public class CoreTester extends TestUtil {
                         new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
-        showResult("groupBy(p -> p.index2...", NQuery.of(personSet).groupBy(p -> p.index2, (p, x) -> {
+        showResult("groupBy(p -> p.index2...", Linq.from(personSet).groupBy(p -> p.index2, (p, x) -> {
             System.out.println("groupKey: " + p);
             List<PersonBean> list = x.toList();
             System.out.println("items: " + toJsonString(list));
             return list.get(0);
         }));
         showResult("groupByMany(p -> new Object[] { p.index2, p.index3 })",
-                NQuery.of(personSet).groupByMany(p -> Arrays.toList(p.index, p.index2), (p, x) -> {
+                Linq.from(personSet).groupByMany(p -> Arrays.toList(p.index, p.index2), (p, x) -> {
                     System.out.println("groupKey: " + toJsonString(p));
                     List<PersonBean> list = x.toList();
                     System.out.println("items: " + toJsonString(list));
                     return list.get(0);
                 }));
 
-        showResult("orderBy(p->p.index)", NQuery.of(personSet).orderBy(p -> p.index));
-        showResult("orderByDescending(p->p.index)", NQuery.of(personSet).orderByDescending(p -> p.index));
+        showResult("orderBy(p->p.index)", Linq.from(personSet).orderBy(p -> p.index));
+        showResult("orderByDescending(p->p.index)", Linq.from(personSet).orderByDescending(p -> p.index));
         showResult("orderByMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByMany(p -> Arrays.toList(p.index2, p.index)));
+                Linq.from(personSet).orderByMany(p -> Arrays.toList(p.index2, p.index)));
         showResult("orderByDescendingMany(p -> new Object[] { p.index2, p.index })",
-                NQuery.of(personSet).orderByDescendingMany(p -> Arrays.toList(p.index2, p.index)));
+                Linq.from(personSet).orderByDescendingMany(p -> Arrays.toList(p.index2, p.index)));
 
         showResult("select(p -> p.index).reverse()",
-                NQuery.of(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
+                Linq.from(personSet).orderBy(p -> p.index).select(p -> p.index).reverse());
 
-        showResult(".max(p -> p.index)", NQuery.of(personSet).<Integer>max(p -> p.index));
-        showResult(".min(p -> p.index)", NQuery.of(personSet).<Integer>min(p -> p.index));
+        showResult(".max(p -> p.index)", Linq.from(personSet).<Integer>max(p -> p.index));
+        showResult(".min(p -> p.index)", Linq.from(personSet).<Integer>min(p -> p.index));
 
-        showResult("take(0).average(p -> p.index)", NQuery.of(personSet).take(0).average(p -> p.index));
-        showResult("average(p -> p.index)", NQuery.of(personSet).average(p -> p.index));
-        showResult("take(0).sum(p -> p.index)", NQuery.of(personSet).take(0).sum(p -> p.index));
-        showResult("sum(p -> p.index)", NQuery.of(personSet).sum(p -> p.index));
-        showResult("sumMoney(p -> p.index)", NQuery.of(personSet).sumDecimal(p -> Decimal.valueOf((double) p.index)));
+        showResult("take(0).average(p -> p.index)", Linq.from(personSet).take(0).average(p -> p.index));
+        showResult("average(p -> p.index)", Linq.from(personSet).average(p -> p.index));
+        showResult("take(0).sum(p -> p.index)", Linq.from(personSet).take(0).sum(p -> p.index));
+        showResult("sum(p -> p.index)", Linq.from(personSet).sum(p -> p.index));
+        showResult("sumMoney(p -> p.index)", Linq.from(personSet).sumDecimal(p -> Decimal.valueOf((double) p.index)));
 
-        showResult("cast<IPerson>", NQuery.of(personSet).<IPerson>cast());
-        NQuery<?> oq = NQuery.of(personSet).cast().union(Arrays.toList(1, 2, 3));
+        showResult("cast<IPerson>", Linq.from(personSet).<IPerson>cast());
+        Linq<?> oq = Linq.from(personSet).cast().union(Arrays.toList(1, 2, 3));
         showResult("ofType(Integer.class)", oq.ofType(Integer.class));
 
-        showResult("firstOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).firstOrDefault());
-        showResult("lastOrDefault()", NQuery.of(personSet).orderBy(p -> p.index).lastOrDefault());
-        showResult("skip(2)", NQuery.of(personSet).orderBy(p -> p.index).skip(2));
-        showResult("take(2)", NQuery.of(personSet).orderBy(p -> p.index).take(2));
+        showResult("firstOrDefault()", Linq.from(personSet).orderBy(p -> p.index).firstOrDefault());
+        showResult("lastOrDefault()", Linq.from(personSet).orderBy(p -> p.index).lastOrDefault());
+        showResult("skip(2)", Linq.from(personSet).orderBy(p -> p.index).skip(2));
+        showResult("take(2)", Linq.from(personSet).orderBy(p -> p.index).take(2));
 
         showResult(".skipWhile((p, i) -> p.index < 3)",
-                NQuery.of(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
+                Linq.from(personSet).orderBy(p -> p.index).skipWhile((p, i) -> p.index < 3));
 
         showResult(".takeWhile((p, i) -> p.index < 3)",
-                NQuery.of(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
+                Linq.from(personSet).orderBy(p -> p.index).takeWhile((p, i) -> p.index < 3));
 
-        NQuery<PersonBean> set0 = NQuery.of(personSet);
-        NQuery<PersonBean> set1 = set0.take(1);
+        Linq<PersonBean> set0 = Linq.from(personSet);
+        Linq<PersonBean> set1 = set0.take(1);
         System.out.printf("set a=%s,b=%s%n", set0.count(), set1.count());
         assert set0.count() > set1.count();
     }
@@ -446,7 +446,7 @@ public class CoreTester extends TestUtil {
         System.out.println(toJsonString(q));
     }
 
-    private void showResult(String n, NQuery<?> q) {
+    private void showResult(String n, Linq<?> q) {
         System.out.println();
         System.out.println();
         System.out.println("showResult: " + n);

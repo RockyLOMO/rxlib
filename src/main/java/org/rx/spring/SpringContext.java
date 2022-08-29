@@ -1,7 +1,7 @@
 package org.rx.spring;
 
 import lombok.Setter;
-import org.rx.core.NQuery;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.util.function.TripleFunc;
 import org.springframework.context.ApplicationContext;
@@ -44,7 +44,7 @@ public class SpringContext implements ApplicationContextAware {
         if (Strings.isEmpty(yamlArray)) {
             return new String[0];
         }
-        return NQuery.of(Strings.split(yamlArray, "\n")).select(p -> {
+        return Linq.from(Strings.split(yamlArray, "\n")).select(p -> {
             if (p.startsWith("- ")) {
                 return p.substring(2);
             }

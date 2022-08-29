@@ -105,7 +105,7 @@ public class DnsServer extends Disposable {
             return Collections.emptyList();
         }
         //根据权重取2个
-        return enableHostsWeight ? NQuery.of(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
+        return enableHostsWeight ? Linq.from(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
     }
 
     public List<InetAddress> getAllHosts(String host) {
@@ -117,7 +117,7 @@ public class DnsServer extends Disposable {
     }
 
     public boolean addHosts(String host, @NonNull String... ips) {
-        return addHosts(host, RandomList.DEFAULT_WEIGHT, NQuery.of(ips).select(InetAddress::getByName).toSet());
+        return addHosts(host, RandomList.DEFAULT_WEIGHT, Linq.from(ips).select(InetAddress::getByName).toSet());
     }
 
     public boolean addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {

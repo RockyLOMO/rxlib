@@ -230,13 +230,10 @@ public final class Remoting {
                         msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                 Sockets.toString(client.getLocalEndpoint()),
                                 Sockets.toString(client.getConfig().getServerEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters));
+                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters))
+                                .appendLine("Response:\t%s", clientBean.pack == null ? "NULL" : toJsonString(clientBean.pack.returnValue));
                         if (eventArgs.getError() != null) {
-                            msg.appendLine("Response:\t%s", eventArgs.getError().getMessage());
-                        } else if (clientBean.pack == null) {
-                            msg.appendLine("Response:\tNULL");
-                        } else {
-                            msg.appendLine("Response:\t%s", toJsonString(clientBean.pack.returnValue));
+                            msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                         }
                     });
                 }
@@ -339,12 +336,12 @@ public final class Remoting {
                                     } else {
                                         RpcClientMeta computingClient;
                                         if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
-                                            computingClient = NQuery.of(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
+                                            computingClient = Linq.from(eventBean.subscribe).groupBy(x -> x.getHandshakePacket().getEventVersion(), (p1, p2) -> {
                                                 int i = ThreadLocalRandom.current().nextInt(0, p2.count());
                                                 return p2.skip(i).first();
                                             }).orderByDescending(x -> x.getHandshakePacket().getEventVersion()).firstOrDefault();
                                         } else {
-                                            computingClient = NQuery.of(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion())
+                                            computingClient = Linq.from(eventBean.subscribe).where(x -> x.getHandshakePacket().getEventVersion() == config.getEventComputeVersion())
                                                     .orderByRand().firstOrDefault();
                                         }
                                         if (computingClient == null) {
@@ -410,16 +407,15 @@ public final class Remoting {
                 } catch (Throwable ex) {
                     Throwable cause = ifNull(ex.getCause(), ex);
                     args.setError(ex);
-                    pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
+                    pack.errorMessage = String.format("%s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
                     log(args, msg -> {
                         msg.appendLine("Server invoke %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
                                 s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
+                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()))
+                                .appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
                         if (args.getError() != null) {
-                            msg.appendLine("Response:\t%s", pack.errorMessage);
-                        } else {
-                            msg.appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
+                            msg.appendLine("Error:\t%s", pack.errorMessage);
                         }
                     });
                 }
