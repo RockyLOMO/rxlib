@@ -407,7 +407,7 @@ public final class Remoting {
                 } catch (Throwable ex) {
                     Throwable cause = ifNull(ex.getCause(), ex);
                     args.setError(ex);
-                    pack.errorMessage = String.format("ERROR: %s %s", cause.getClass().getSimpleName(), cause.getMessage());
+                    pack.errorMessage = String.format("%s %s", cause.getClass().getSimpleName(), cause.getMessage());
                 } finally {
                     log(args, msg -> {
                         msg.appendLine("Server invoke %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
