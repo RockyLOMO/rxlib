@@ -155,38 +155,26 @@ public class Strings extends StringUtils {
         }.parse();
     }
 
-    /**
-     * 判断当前版本和最新版本的关系
-     * <p>
-     * 如果当前版本小于最新版本, 返回1,
-     * 如果当前版本大于最新版本, 返回-1,
-     * 如果当前版本等于最新版本, 返回0
-     * <p>
-     * 注意: 所有非数字字符都会被忽略
-     * <p>
-     * 例子: 0.1.6.9 和 0.1.6.9 返回0
-     * 例子: 0.1.6.9 和 0.1.7.0 返回1
-     * 例子: 0.1.69  和 0.17.0  返回1
-     * 例子: 0.16.9  和 0.1.70  返回-1
-     *
-     * @param currentVersion 当前版本
-     * @param latestVersion  最新版本
-     * @return 对比值
-     */
-    public static int versionComparison(String currentVersion, String latestVersion) {
-        if (currentVersion == null || latestVersion == null) return 0;
-        String[] currentVersionAfterSplit = toNumeric(currentVersion).split("\\.");
-        String[] latestVersionAfterSplit = toNumeric(latestVersion).split("\\.");
-
-        int currentLength = currentVersionAfterSplit.length;
-        int latestLength = latestVersionAfterSplit.length;
-
-        for (int i = 0; i < Math.max(currentLength, latestLength); i++) {
-            int currentVersionAtI = i < currentLength ? Integer.parseInt(currentVersionAfterSplit[i]) : 0;
-            int latestVersionAtI = i < latestLength ? Integer.parseInt(latestVersionAfterSplit[i]) : 0;
-
-            if (currentVersionAtI < latestVersionAtI) return 1;
-            if (currentVersionAtI > latestVersionAtI) return -1;
+    public static int compareVersion(String version1, String version2) {
+        int len1 = version1.length();
+        int len2 = version2.length();
+        int p1 = 0;
+        int p2 = 0;
+        while (p1 < len1 || p2 < len2) {
+            int num1 = 0;
+            int num2 = 0;
+            while (p1 < len1 && version1.charAt(p1) != '.') {
+                num1 = num1 * 10 + version1.charAt(p1++) - '0';
+            }
+            p1++;
+            while (p2 < len2 && version2.charAt(p2) != '.') {
+                num2 = num2 * 10 + version2.charAt(p2++) - '0';
+            }
+            p2++;
+            if (num1 == num2) {
+                continue;
+            }
+            return num1 > num2 ? 1 : -1;
         }
         return 0;
     }
@@ -384,6 +372,10 @@ public class Strings extends StringUtils {
          * 通过文件扩展名验证图像格式
          */
         String ImageFormat = "\\.(?i:jpg|bmp|gif|ico|pcx|jpeg|tif|png|raw|tga)$";
+        /**
+         * 大小写+数字
+         */
+        String PWD_STRENGTH = "^(?=.*\\d)(?=.*[a-z])(?=.*[A-Z]).{8,40}$";
     }
     //#endregion
 

@@ -189,4 +189,11 @@ public class UtilTester {
         List<TwoPerson> list = Collections.singletonList(tp);
         Validator.validateBean(list);
     }
+
+    @Test
+    public void version() {
+        assert Strings.compareVersion("1.01", "1.001") == 0;
+        assert Strings.compareVersion("1.0", "1.0.0") == 0;
+        assert Strings.compareVersion("0.1", "1.1") == -1;
+    }
 }
