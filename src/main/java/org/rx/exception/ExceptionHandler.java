@@ -16,6 +16,8 @@ import java.sql.Time;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.as;
@@ -26,9 +28,9 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
     public static class ErrorEntity implements Serializable {
         private static final long serialVersionUID = 8387064071982888474L;
         @DbColumn(primaryKey = true)
-        int id;
+        long id;
         ExceptionLevel level;
-        String message;
+        Queue<String> messages;
         String stackTrace;
         int occurCount;
 
@@ -160,7 +162,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
         }
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
-        int pk = msg != null ? java.util.Arrays.hashCode(new Object[]{msg, stackTrace}) : stackTrace.hashCode();
+        long pk = App.hash64(stackTrace);
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
         try {
@@ -173,9 +175,14 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
                         : ExceptionLevel.SYSTEM;
                 entity.setLevel(level);
-                entity.setMessage(msg);
+                entity.setMessages(new ConcurrentLinkedQueue<>());
                 entity.setStackTrace(stackTrace);
             }
+            Queue<String> queue = entity.getMessages();
+            if (queue.size() > 10) {
+                queue.poll();
+            }
+            queue.offer(String.format("%s -> %s", DateTime.now().toDateTimeString(), msg));
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(t.getName());
