@@ -1,9 +1,11 @@
 package org.rx.test;
 
 import io.netty.buffer.ByteBuf;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.annotation.DbColumn;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.core.Arrays;
@@ -15,6 +17,7 @@ import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
+import org.rx.util.Snowflake;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -31,6 +34,15 @@ import static org.rx.core.Extends.sleep;
 public class IOTester extends TestUtil {
     //region h2db
     static final String h2Db = "~/h2/test";
+
+    @Data
+    public static class UserAuth implements Serializable {
+        @DbColumn(primaryKey = true, autoIncrement = true)
+        Long id;
+        String tableX;
+        Long rowId;
+        String json;
+    }
 
     @SneakyThrows
     @Test
@@ -133,6 +145,22 @@ public class IOTester extends TestUtil {
     }
 
     @Test
+    public void h2DbAutoIncr() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
+        db.createMapping(UserAuth.class);
+
+        for (int i = 0; i < 2; i++) {
+            UserAuth ua = new UserAuth();
+            ua.setTableX("t_usr_auth");
+            ua.setRowId(i + 1L);
+            ua.setJson("{\"time\":\"" + DateTime.now() + "\"}");
+            db.save(ua);
+        }
+
+        System.out.println(db.findBy(new EntityQueryLambda<>(UserAuth.class)));
+    }
+
+    @Test
     public void h2Db() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
 //        db.setAutoUnderscoreColumnName(true);
@@ -141,6 +169,7 @@ public class IOTester extends TestUtil {
 
         db.begin();
 
+        db.save(PersonBean.YouFan);
         PersonBean entity = PersonBean.LeZhi;
         db.save(entity);
 
@@ -153,9 +182,8 @@ public class IOTester extends TestUtil {
         System.out.println(db.executeQuery("select * from `person` limit 2", PersonBean.class));
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
-        System.out.println(toJsonString(list));
-        assert !list.isEmpty() && list.get(0).getName().equals("乐之");
-        UUID pk = list.get(0).getId();
+        assert list.isEmpty();
+        UUID pk = entity.getId();
         assert db.existsById(PersonBean.class, pk);
         PersonBean byId = db.findById(PersonBean.class, pk);
         System.out.println(byId);
@@ -175,11 +203,10 @@ public class IOTester extends TestUtil {
                         .ne(PersonBean::getAge, 12)
                         .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
                 .limit(100);
-        System.out.println(q.toString());
+        System.out.println(q);
         List<Object> params = new ArrayList<>();
         System.out.println(q.toString(params));
         System.out.println(toJsonString(params));
-
         System.out.println(q.orderByRand());
     }
     //endregion
