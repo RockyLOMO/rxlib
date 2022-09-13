@@ -40,7 +40,6 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -142,7 +141,7 @@ public class SocksTester extends TConfig {
         NameserverClient c1 = new NameserverClient(appUsercenter);
 
         c1.registerAsync(node1, node2);
-        c1.wait4Inject();
+        c1.waitInject();
 
         sleep4Sync();
         System.out.println("ns1:" + ns1.getDnsServer().getHosts());

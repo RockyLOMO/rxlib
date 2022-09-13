@@ -2,6 +2,7 @@ package org.rx.net.nameserver;
 
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 import org.rx.bean.BiTuple;
@@ -25,20 +26,29 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 public final class NameserverClient extends Disposable {
+    @RequiredArgsConstructor
+    static class NsInfo {
+        final InetSocketAddress registerEndpoint;
+        Nameserver ns;
+        Future<?> healthTask;
+        volatile Integer dnsPort;
+    }
+
     static final int DEFAULT_RETRY_PERIOD = 1000;
     static final int DEFAULT_RETRY = 2;
-    static final List<RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>>> LISTS = new CopyOnWriteArrayList<>();
+    static final int DEFAULT_HEALTH_PERIOD = 120 * 1000;
+    static final List<RandomList<NsInfo>> GROUP = new CopyOnWriteArrayList<>();
     static final ResetEventWait syncRoot = new ResetEventWait();
 
     static void reInject() {
         Tasks.setTimeout(() -> {
-            Linq<BiTuple<InetSocketAddress, Nameserver, Integer>> q = Linq.from(LISTS).selectMany(RandomList::aliveList).where(p -> p.right != null);
+            Linq<NsInfo> q = Linq.from(GROUP).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
                 return;
             }
 
-            List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.left, p.right)).distinct().toList();
+            List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.registerEndpoint, p.dnsPort)).distinct().toList();
             Sockets.injectNameService(ns);
             log.info("inject ns {}", toJsonString(ns));
             syncRoot.set();
@@ -48,36 +58,36 @@ public final class NameserverClient extends Disposable {
     public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();
     @Getter
     final String appName;
-    final RandomList<BiTuple<InetSocketAddress, Nameserver, Integer>> hold = new RandomList<>();
+    final RandomList<NsInfo> hold = new RandomList<>();
     final Map<String, Future<?>> delayTasks = new ConcurrentHashMap<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     public Set<InetSocketAddress> registerEndpoints() {
-        return Linq.from(hold).select(p -> p.left).toSet();
+        return Linq.from(hold).select(p -> p.registerEndpoint).toSet();
     }
 
     public Set<InetSocketAddress> discoveryEndpoints() {
-        return Linq.from(hold).where(p -> p.right != null).select(p -> Sockets.newEndpoint(p.left, p.right)).toSet();
+        return Linq.from(hold).where(p -> p.dnsPort != null).select(p -> Sockets.newEndpoint(p.registerEndpoint, p.dnsPort)).toSet();
     }
 
     public NameserverClient(String appName) {
         this.appName = appName;
-        LISTS.add(hold);
+        GROUP.add(hold);
     }
 
     @Override
     protected void freeObjects() {
-        LISTS.remove(hold);
-        for (BiTuple<InetSocketAddress, Nameserver, Integer> tuple : hold) {
-            tryClose(tuple.middle);
+        GROUP.remove(hold);
+        for (NsInfo tuple : hold) {
+            tryClose(tuple.ns);
         }
     }
 
-    public void wait4Inject() throws TimeoutException {
-        wait4Inject(30 * 1000);
+    public void waitInject() throws TimeoutException {
+        waitInject(30 * 1000);
     }
 
-    public void wait4Inject(long timeout) throws TimeoutException {
+    public void waitInject(long timeout) throws TimeoutException {
         syncRoot.waitOne(timeout);
         syncRoot.set();
     }
@@ -99,28 +109,34 @@ public final class NameserverClient extends Disposable {
         return Tasks.runAsync(() -> {
             for (InetSocketAddress regEp : svrEps) {
                 synchronized (hold) {
-                    if (Linq.from(hold).any(p -> eq(p.left, regEp))) {
+                    if (Linq.from(hold).any(p -> eq(p.registerEndpoint, regEp))) {
                         continue;
                     }
 
-                    BiTuple<InetSocketAddress, Nameserver, Integer> tuple = BiTuple.of(regEp, null, null);
+                    NsInfo tuple = new NsInfo(regEp);
                     hold.add(tuple);
-                    Action doReg = () -> {
+                    Action handshake = () -> {
                         try {
-                            tuple.right = tuple.middle.register(appName, svrEps);
-                            tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+                            Integer lastDp = tuple.dnsPort;
+                            if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
+                                log.debug("login ns ok {} -> {}", regEp, tuple.dnsPort);
+                                return;
+                            }
+                            log.info("login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
+                            tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                             reInject();
                         } catch (Throwable e) {
+                            log.debug("login error", e);
                             delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
-                                tuple.right = tuple.middle.register(appName, svrEps);
-                                tuple.middle.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+                                tuple.dnsPort = tuple.ns.register(appName, svrEps);
+                                tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                                 delayTasks.remove(appName); //优先
                                 reInject();
                                 asyncContinue(false);
                             }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
                         }
                     };
-                    tuple.middle = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
+                    tuple.ns = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
                             (ns, rc) -> {
                                 rc.onConnected.combine((s, e) -> {
                                     hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
@@ -136,8 +152,8 @@ public final class NameserverClient extends Disposable {
                                     }
                                 });
                                 rc.onReconnected.combine((s, e) -> {
-                                    tuple.right = null;
-                                    doReg.invoke();
+                                    tuple.dnsPort = null;
+                                    handshake.invoke();
                                 });
                                 ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
                                     log.info("sync server endpoints: {}", toJsonString(e.getValue()));
@@ -153,7 +169,8 @@ public final class NameserverClient extends Disposable {
                                     onAppAddressChanged.invoke(s, e);
                                 }, false);
                             });
-                    doReg.invoke();
+                    tuple.healthTask = Tasks.schedulePeriod(handshake, DEFAULT_HEALTH_PERIOD);
+                    handshake.invoke();
                 }
             }
         });
@@ -161,25 +178,25 @@ public final class NameserverClient extends Disposable {
 
     public CompletableFuture<?> deregisterAsync() {
         return Tasks.runAsync(() -> {
-            for (BiTuple<InetSocketAddress, Nameserver, Integer> tuple : hold) {
-                sneakyInvoke(() -> tuple.middle.deregister(), DEFAULT_RETRY);
+            for (NsInfo tuple : hold) {
+                sneakyInvoke(() -> tuple.ns.deregister(), DEFAULT_RETRY);
             }
         });
     }
 
     public List<InetAddress> discover(@NonNull String appName) {
-        return hold.next().middle.discover(appName);
+        return hold.next().ns.discover(appName);
     }
 
     public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
-        return hold.next().middle.discoverAll(appName, exceptCurrent);
+        return hold.next().ns.discoverAll(appName, exceptCurrent);
     }
 
     public List<Nameserver.InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
-        return hold.next().middle.discover(appName, instanceAttrKeys);
+        return hold.next().ns.discover(appName, instanceAttrKeys);
     }
 
     public List<Nameserver.InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
-        return hold.next().middle.discoverAll(appName, exceptCurrent, instanceAttrKeys);
+        return hold.next().ns.discoverAll(appName, exceptCurrent, instanceAttrKeys);
     }
 }

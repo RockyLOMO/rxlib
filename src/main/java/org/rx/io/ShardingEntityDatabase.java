@@ -71,7 +71,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             }).toList());
             log.info("{} init {} sharding nodes", APP_NAME, nodes.size());
             try {
-                nsClient.wait4Inject();
+                nsClient.waitInject();
             } catch (TimeoutException ex) {
                 ExceptionHandler.INSTANCE.log(ex);
             }
