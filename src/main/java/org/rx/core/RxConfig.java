@@ -40,6 +40,7 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
+        String TRACE_MESSAGE_SIZE = "app.traceMessageSize";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
@@ -101,6 +102,7 @@ public final class RxConfig {
     NetConfig net = new NetConfig();
     String id;
     int traceKeepDays;
+    int traceMessageSize;
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
@@ -158,6 +160,7 @@ public final class RxConfig {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
+        traceMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_MESSAGE_SIZE, 10);
         String v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);

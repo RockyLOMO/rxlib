@@ -179,7 +179,7 @@ public final class ExceptionHandler implements Thread.UncaughtExceptionHandler {
                 entity.setStackTrace(stackTrace);
             }
             Queue<String> queue = entity.getMessages();
-            if (queue.size() > 5) {
+            if (queue.size() > RxConfig.INSTANCE.getTraceMessageSize()) {
                 queue.poll();
             }
             queue.offer(String.format("%s -> %s", DateTime.now().toDateTimeString(), msg));
