@@ -517,7 +517,11 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     }
                 }
                 createCols.appendLine("\t`%s` %s%s,", colName, h2Type, extra);
-                insert.append("?,");
+                if (dbColumn == null || !dbColumn.autoIncrement()) {
+                    insert.append("?,");
+                }else {
+                    insert.append("null,");
+                }
             }
             if (pkName == null) {
                 throw new InvalidException("Require a primaryKey mapping");

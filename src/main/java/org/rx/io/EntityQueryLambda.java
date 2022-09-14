@@ -300,6 +300,10 @@ public class EntityQueryLambda<T> implements Extends {
                 b.append("%s,", offset);
             }
             b.append(limit);
+//            b.append(LIMIT).append(limit);
+//            if (offset != null) {
+//                b.append(" OFFSET %s", offset);
+//            }
         }
         return b.toString();
     }
