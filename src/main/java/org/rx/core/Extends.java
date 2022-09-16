@@ -88,7 +88,7 @@ public interface Extends extends Serializable {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
+                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}/{}", i, retryCount, e);
                 }
                 last = e;
             }

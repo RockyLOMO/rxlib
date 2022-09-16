@@ -11,7 +11,6 @@ import org.rx.exception.InvalidException;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.HttpClient;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -201,7 +200,7 @@ public final class Main implements SocksSupport {
             app = new Main(frontSvr);
 
             Action fn = () -> {
-                InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.current().getIp());
+                InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.searchCurrent().getIp());
                 eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
             };
             fn.invoke();
@@ -285,7 +284,7 @@ public final class Main implements SocksSupport {
                 log.warn("conf is null");
             }
 
-            InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
+            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
             for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {
@@ -294,7 +293,7 @@ public final class Main implements SocksSupport {
                 int i = ddns.indexOf(".");
                 String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
                 log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
-                HttpClient.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress());
+                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress());
             }
         }, conf.ddnsSeconds * 1000L);
     }

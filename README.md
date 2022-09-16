@@ -8,7 +8,7 @@ A set of utilities for Java.
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.18.0</version>
+    <version>2.18.2</version>
 </dependency>
 ```
 ### FEATURE

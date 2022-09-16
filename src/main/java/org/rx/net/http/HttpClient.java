@@ -231,27 +231,6 @@ public class HttpClient {
 //    }
 
     //region StaticMembers
-    public static String godaddyDns(String ssoKey, String domain, String name) {
-        return godaddyDns(ssoKey, domain, name, getWanIp());
-    }
-
-    public static String godaddyDns(String ssoKey, String domain, String name, String ip) {
-        String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
-        HttpClient client = new HttpClient();
-        client.getRequestHeaders().add("Authorization", "sso-key " + ssoKey);
-        return client.putJson(url, String.format("[\n" +
-                "  {\n" +
-                "    \"data\": \"%s\",\n" +
-                "    \"ttl\": 600\n" +
-                "  }\n" +
-                "]", ip)).toString();
-    }
-
-    public static String getWanIp() {
-        HttpClient client = new HttpClient();
-        return client.get("https://api.ipify.org").toString();
-    }
-
     public static String encodeCookie(List<Cookie> cookies) {
         if (cookies == null) {
             return Strings.EMPTY;
