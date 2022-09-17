@@ -35,6 +35,8 @@ import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.codec.AESUtil;
 import org.rx.test.bean.*;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
@@ -527,6 +529,7 @@ public class SocksTester extends TConfig {
 //    }
 
     @Test
+    @SneakyThrows
     public void isBypass() {
         SocketConfig conf = new SocketConfig();
         assert conf.isBypass("127.0.0.1");
@@ -537,6 +540,25 @@ public class SocksTester extends TConfig {
 
         IPAddress ipAddress = IPSearcher.DEFAULT.search("x.f-li.cn");
         System.out.println(ipAddress);
+
+        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
+        BiAction<String> fn = p -> {
+            IPAddress last = null;
+            for (BiFunc<String, IPAddress> api : apis) {
+                IPAddress cur = api.invoke(p);
+                System.out.println(cur);
+                if (last == null) {
+                    last = cur;
+                    continue;
+                }
+                assert last.getIp().equals(cur.getIp())
+//                        && last.getCountryCode().equals(cur.getCountryCode())
+                        ;
+                last = cur;
+            }
+        };
+        fn.invoke(Sockets.loopbackAddress().getHostAddress());
+        fn.invoke("x.f-li.cn");
     }
 
     @SneakyThrows
@@ -587,7 +609,7 @@ public class SocksTester extends TConfig {
             _exit();
         }, 6000);
 
-        InetAddress wanIp = InetAddress.getByName(HttpClient.getWanIp());
+        InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
 //        IPAddress current = IPSearcher.DEFAULT.current();
 //        System.out.println(current);
         List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
