@@ -2,6 +2,7 @@ package org.rx.net.support;
 
 import com.alibaba.fastjson.JSONObject;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.RandomList;
 import org.rx.core.App;
@@ -24,6 +25,8 @@ class ComboIPSearcher implements IPSearcher {
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>();
     final int retryCount;
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/ip"));
+    @Setter
+    boolean resolveHost = true;
 
     public ComboIPSearcher() {
         apis.add(this::ip_Api, 240);
@@ -56,10 +59,15 @@ class ComboIPSearcher implements IPSearcher {
         return store.computeIfAbsent(ip, k -> rndRetry(ip));
     }
 
+    @SneakyThrows
     IPAddress rndRetry(String ip) {
+        if (resolveHost) {
+            ip = InetAddress.getByName(ip).getHostAddress();
+        }
 //        return Tasks.randomRetry(() -> ip_Api(ip), () -> ipGeo(ip),
 //                () -> ipData(ip), () -> ipWho(ip));
-        return sneakyInvoke(() -> apis.next().invoke(ip), retryCount);
+        String finalIp = ip;
+        return sneakyInvoke(() -> apis.next().invoke(finalIp), retryCount);
     }
 
     //6k/d
