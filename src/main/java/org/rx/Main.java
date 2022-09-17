@@ -236,7 +236,7 @@ public final class Main implements SocksSupport {
                         return;
                     }
                     //gateway
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getFirstDestination().getHost()), SocksSupport.ASYNC_TIMEOUT / 2);
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getFirstDestination().getHost(), true), SocksSupport.ASYNC_TIMEOUT / 2);
                     if (ipAddress != null && ipAddress.isChina()) {
                         e.setUpstream(new Upstream(e.getFirstDestination()));
                         return;

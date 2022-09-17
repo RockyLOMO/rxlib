@@ -25,5 +25,9 @@ public interface IPSearcher {
 
     IPAddress searchCurrent();
 
-    IPAddress search(String ip);
+    default IPAddress search(String host) {
+        return search(host, false);
+    }
+
+    IPAddress search(String host, boolean resolveHostRemotely);
 }

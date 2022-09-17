@@ -2,7 +2,6 @@ package org.rx.net.support;
 
 import com.alibaba.fastjson.JSONObject;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.bean.RandomList;
 import org.rx.core.App;
@@ -22,11 +21,11 @@ import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sneakyInvoke;
 
 class ComboIPSearcher implements IPSearcher {
-    final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>();
+    final static int TIMEOUT_SECONDS = 10000;
+    final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
+            dApis = new RandomList<>();
     final int retryCount;
-    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/ip"));
-    @Setter
-    boolean resolveHost = true;
+    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
 
     public ComboIPSearcher() {
         apis.add(this::ip_Api, 240);
@@ -36,11 +35,14 @@ class ComboIPSearcher implements IPSearcher {
         apis.add(this::ipWho, 20);
         apis.add(this::ipApi, 2);
         retryCount = Math.max(apis.size() / 2, 2);
+
+        dApis.add(this::ip_Api, 120);
+        dApis.add(this::ipApi, 1);
     }
 
     @Override
     public String currentIp() {
-        return Tasks.randomRetry(() -> new HttpClient().get("https://api.ipify.org").toString(),
+        return Tasks.randomRetry(() -> new HttpClient(TIMEOUT_SECONDS).get("https://api.ipify.org").toString(),
                 () -> searchCurrent().getIp());
     }
 
@@ -51,36 +53,48 @@ class ComboIPSearcher implements IPSearcher {
 
     @SneakyThrows
     @Override
-    public IPAddress search(@NonNull String ip) {
-        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
-            return rndRetry(ip);
+    public IPAddress search(@NonNull String host, boolean resolveHostRemotely) {
+        if (host.equals(Sockets.loopbackAddress().getHostAddress())) {
+            return rndRetry(host, resolveHostRemotely);
         }
 
-        return store.computeIfAbsent(ip, k -> rndRetry(ip));
+        return store.computeIfAbsent(String.format("%s:%s", host, resolveHostRemotely ? 1 : 0), k -> rndRetry(host, resolveHostRemotely));
     }
 
     @SneakyThrows
-    IPAddress rndRetry(String ip) {
-        if (resolveHost) {
-            ip = InetAddress.getByName(ip).getHostAddress();
+    IPAddress rndRetry(String host, boolean resolveHostRemotely) {
+        if (!resolveHostRemotely) {
+            host = InetAddress.getByName(host).getHostAddress();
         }
-//        return Tasks.randomRetry(() -> ip_Api(ip), () -> ipGeo(ip),
-//                () -> ipData(ip), () -> ipWho(ip));
-        String finalIp = ip;
-        return sneakyInvoke(() -> apis.next().invoke(finalIp), retryCount);
+//        return Tasks.randomRetry(() -> ip_Api(host), () -> ipGeo(host),
+//                () -> ipData(host), () -> ipWho(host));
+        String finalHost = host;
+        return sneakyInvoke(() -> (resolveHostRemotely ? dApis : apis).next().invoke(finalHost), retryCount);
     }
 
     //6k/d
-    IPAddress ip_Api(String ip) {
-        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
-            ip = Strings.EMPTY;
+    IPAddress ip_Api(String host) {
+        if (host.equals(Sockets.loopbackAddress().getHostAddress())) {
+            host = Strings.EMPTY;
         }
-        String url = String.format("http://ip-api.com/json/%s", ip);
+        String url = String.format("http://ip-api.com/json/%s", host);
         JSONObject json = getJson(url, p -> eq(p.getString("status"), "success"));
 
         return new IPAddress(json.getString("query"), json.getString("country"), json.getString("countryCode"), json.getString("city"),
                 json.getString("isp"),
                 String.format("%s %s", json.getString("as"), json.getString("org")));
+    }
+
+    //1k/m
+    IPAddress ipApi(String host) {
+        if (host.equals(Sockets.loopbackAddress().getHostAddress())) {
+            host = "check";
+        }
+        String url = String.format("http://api.ipapi.com/%s?access_key=8da5fe816dba52150d4c40ba72705954", host);
+        JSONObject json = getJson(url, p -> p.getString("country_name") != null);
+
+        return new IPAddress(json.getString("ip"), json.getString("country_name"), json.getString("country_code"), json.getString("city"),
+                null, null);
     }
 
     //1k/d
@@ -154,20 +168,9 @@ class ComboIPSearcher implements IPSearcher {
                 json.getString("org"), null);
     }
 
-    //1k/m
-    IPAddress ipApi(String ip) {
-        if (ip.equals(Sockets.loopbackAddress().getHostAddress())) {
-            ip = "check";
-        }
-        String url = String.format("http://api.ipapi.com/%s?access_key=8da5fe816dba52150d4c40ba72705954", ip);
-        JSONObject json = getJson(url, p -> p.getString("country_name") != null);
-
-        return new IPAddress(json.getString("ip"), json.getString("country_name"), json.getString("country_code"), json.getString("city"),
-                null, null);
-    }
-
     private JSONObject getJson(String url, Predicate<JSONObject> check) {
-        HttpClient client = new HttpClient(15 * 1000);
+        HttpClient client = new HttpClient(TIMEOUT_SECONDS);
+        client.setEnableLog(true);
         String text = client.get(url).toString();
         if (Strings.isEmpty(text)) {
             throw new InvalidException("Empty response from {}", url);
