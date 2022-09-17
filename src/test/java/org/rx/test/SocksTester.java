@@ -538,27 +538,29 @@ public class SocksTester extends TConfig {
         assert conf.isBypass("localhost");
         assert !conf.isBypass("google.cn");
 
-        IPAddress ipAddress = IPSearcher.DEFAULT.search("x.f-li.cn");
-        System.out.println(ipAddress);
+        String h = "google.com";
+        h = "facebook.com";
+        System.out.println(IPSearcher.DEFAULT.search(h));
+        System.out.println(IPSearcher.DEFAULT.search(h, true));
 
-        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
-        BiAction<String> fn = p -> {
-            IPAddress last = null;
-            for (BiFunc<String, IPAddress> api : apis) {
-                IPAddress cur = api.invoke(p);
-                System.out.println(cur);
-                if (last == null) {
-                    last = cur;
-                    continue;
-                }
-                assert last.getIp().equals(cur.getIp())
-//                        && last.getCountryCode().equals(cur.getCountryCode())
-                        ;
-                last = cur;
-            }
-        };
-        fn.invoke(Sockets.loopbackAddress().getHostAddress());
-        fn.invoke("x.f-li.cn");
+//        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
+//        BiAction<String> fn = p -> {
+//            IPAddress last = null;
+//            for (BiFunc<String, IPAddress> api : apis) {
+//                IPAddress cur = api.invoke(p);
+//                System.out.println(cur);
+//                if (last == null) {
+//                    last = cur;
+//                    continue;
+//                }
+//                assert last.getIp().equals(cur.getIp())
+////                        && last.getCountryCode().equals(cur.getCountryCode())
+//                        ;
+//                last = cur;
+//            }
+//        };
+//        fn.invoke(Sockets.loopbackAddress().getHostAddress());
+//        fn.invoke("x.f-li.cn");
     }
 
     @SneakyThrows
