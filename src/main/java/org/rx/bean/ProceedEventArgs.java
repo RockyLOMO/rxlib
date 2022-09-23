@@ -1,12 +1,10 @@
 package org.rx.bean;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.core.EventArgs;
-import org.rx.util.Snowflake;
 import org.rx.util.function.Func;
 
 import java.util.Set;
@@ -15,12 +13,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ProceedEventArgs extends EventArgs {
     private static final long serialVersionUID = -2969747570419733673L;
-    static final FastThreadLocal<Long> TS_TRACE_ID = new FastThreadLocal<Long>() {
-        @Override
-        protected Long initialValue() throws Exception {
-            return Snowflake.DEFAULT.nextId();
-        }
-    };
 
     private final Class<?> declaringType;
     private final Object[] parameters;
@@ -34,10 +26,6 @@ public class ProceedEventArgs extends EventArgs {
     private LogStrategy logStrategy;
     @Setter
     private Set<String> logTypeWhitelist;
-
-    public Long getTraceId() {
-        return TS_TRACE_ID.get();
-    }
 
     public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {
         long start = System.currentTimeMillis();

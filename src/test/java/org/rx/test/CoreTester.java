@@ -108,41 +108,78 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void inheritThreadLocal() {
-        final FastThreadLocal<IntTuple<String>> inherit = new FastThreadLocal<IntTuple<String>>() {
+        final ThreadLocal<String> jdkTL = new InheritableThreadLocal<>();//new ThreadLocal<>();
+        jdkTL.set("JDK-TL");
+        final FastThreadLocal<String> nettyTL = new FastThreadLocal<String>();
+        nettyTL.set("NETTY-TL");
+        final FastThreadLocal<String> autoRmTL = new FastThreadLocal<String>() {
             @Override
-            protected void onRemoval(IntTuple<String> value) {
+            protected void onRemoval(String value) {
                 System.out.println("rm:" + value);
             }
         };
-        inherit.set(IntTuple.of(1, "a"));
-        ThreadPool pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
-        AtomicReference<Thread> t = new AtomicReference<>();
-        pool.run(() -> {
-            t.set(Thread.currentThread());
-            IntTuple<String> tuple = inherit.get();
-            assert IntTuple.of(1, "a").equals(tuple);
-            System.out.println("ok");
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+        autoRmTL.set("AUTO");
+        ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         pool.run(() -> {
-            IntTuple<String> tuple = inherit.get();
-            assert IntTuple.of(1, "a").equals(tuple);
-            System.out.println("ok");
+//            sleep(1000);
+            System.out.println(jdkTL.get());
+            assert nettyTL.get() == null;
+            log.info("Not inherit ok 1");
+        });
+
+        final String NETTY_NV = "NV";
+        pool.run(() -> {
+            sleep(100);
+            System.out.println("x:"+jdkTL.get());
+            assert "NETTY-TL".equals(nettyTL.get());
+            assert "AUTO".equals(autoRmTL.get());
+            log.info("Inherit ok 1");
+            jdkTL.set("asd");
+            nettyTL.set(NETTY_NV);
+            pool.run(() -> {
+                assert nettyTL.get() == null;
+                log.info("Inherit ok 1 - not inherit ok");
+            });
+            pool.run(() -> {
+                System.out.println("x:"+jdkTL.get());
+                assert NETTY_NV.equals(nettyTL.get());
+                assert "AUTO".equals(autoRmTL.get());
+                log.info("Inherit ok 1 - nested inherit ok");
+            }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+
+        pool.run(() -> {
+            sleep(1000);
+            System.out.println(jdkTL.get());
+            assert NETTY_NV.equals(nettyTL.get());
+            log.info("Inherit ok 2");
             return null;
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
 
         pool.runAsync(() -> {
-            IntTuple<String> tuple = inherit.get();
-            assert IntTuple.of(1, "a").equals(tuple);
-            System.out.println("ok");
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+            assert "NETTY-TL".equals(nettyTL.get());
+            log.info("Inherit ok 3");
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
 
         pool.runAsync(() -> {
-            IntTuple<String> tuple = inherit.get();
-            assert IntTuple.of(1, "a").equals(tuple);
-            System.out.println("ok");
+            sleep(1000);
+            assert NETTY_NV.equals(nettyTL.get());
+            log.info("Inherit ok 4");
             return null;
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags()).get();
+        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+
+        log.info("wait..");
+        sleep(5000);
+
+        pool.run(() -> {
+            sleep(1000);
+//            System.out.println(jdkTL.get());
+            assert nettyTL.get() == null;
+            log.info("Not inherit ok 2 | {}",jdkTL.get());
+        });
+
+        sleep(2000);
     }
 
     @SneakyThrows

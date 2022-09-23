@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -23,6 +24,8 @@ import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.Snowflake;
 import org.rx.util.function.*;
+import org.slf4j.MDC;
+import org.slf4j.spi.MDCAdapter;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.io.*;
@@ -58,7 +61,6 @@ public final class App extends SystemUtils {
         return v;
     };
     static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
-    static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
@@ -135,8 +137,24 @@ public final class App extends SystemUtils {
         });
     }
 
+    public static void logExtraIfAbsent(String name, Object value) {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        String v = mdc.get(name);
+        if (v != null) {
+            return;
+        }
+        mdc.put(name, toJsonString(value));
+    }
+
     public static void logExtra(String name, Object value) {
-        Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        mdc.put(name, toJsonString(value));
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
@@ -144,7 +162,7 @@ public final class App extends SystemUtils {
         eventArgs.setLogStrategy(conf.logStrategy);
         eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
         log(eventArgs, msg -> {
-            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
+            msg.appendLine("Url:\t%s", url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
                     .appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
             if (eventArgs.getError() != null) {
@@ -155,8 +173,18 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<Object, Object> extra = Cache.getInstance(Cache.THREAD_CACHE);
-        boolean doWrite = !MapUtils.isEmpty(extra);
+        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
+
+        Map<String, String> extra = Collections.emptyMap();
+        MDCAdapter mdcAdapter = MDC.getMDCAdapter();
+        if (mdcAdapter != null) {
+            LogbackMDCAdapter lb = as(mdcAdapter, LogbackMDCAdapter.class);
+            Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdcAdapter.getCopyOfContextMap();
+            if (pm != null) {
+                extra = pm;
+            }
+        }
+        boolean doWrite = !extra.isEmpty();
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
                 eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
@@ -188,16 +216,12 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<Object, Object> entry : extra.entrySet()) {
-                String key;
-                if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
-                    continue;
-                }
+            for (Map.Entry<String, String> entry : extra.entrySet()) {
                 if (first) {
                     msg.append("Extra:\t");
                     first = false;
                 }
-                msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
+                msg.append("%s=%s ", entry.getKey(), entry.getValue());
             }
             if (!first) {
                 msg.appendLine();
