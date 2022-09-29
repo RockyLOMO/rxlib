@@ -211,11 +211,14 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMillis) {
+        if (parameters == null) {
+            parameters = Arrays.EMPTY_OBJECT_ARRAY;
+        }
         if (getKeepDays() <= 0 || elapsedMillis < RxConfig.INSTANCE.getTraceSlowElapsedMillis()) {
             return;
         }
 
-        String fullName = String.format("%s.%s", declaringType.getName(), methodName);
+        String fullName = String.format("%s.%s[%s]", declaringType.getName(), methodName, parameters.length);
         long pk = App.hash64(fullName);
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
