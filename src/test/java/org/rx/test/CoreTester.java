@@ -19,7 +19,7 @@ import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
 import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.test.bean.*;
@@ -37,7 +37,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.*;
@@ -664,7 +663,7 @@ public class CoreTester extends TestUtil {
     @ErrorCode(cause = IllegalArgumentException.class)
     @Test
     public void exceptionHandle() {
-        ExceptionHandler handler = ExceptionHandler.INSTANCE;
+        TraceHandler handler = TraceHandler.INSTANCE;
         handler.log(new InvalidException("test error"));
         System.out.println(handler.queryTraces(null, null, null));
 

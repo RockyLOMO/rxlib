@@ -9,7 +9,7 @@ import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverClient;
@@ -73,7 +73,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             try {
                 nsClient.waitInject();
             } catch (TimeoutException ex) {
-                ExceptionHandler.INSTANCE.log(ex);
+                TraceHandler.INSTANCE.log(ex);
             }
         }).join();
 

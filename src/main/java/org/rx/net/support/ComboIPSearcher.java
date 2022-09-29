@@ -29,7 +29,7 @@ class ComboIPSearcher implements IPSearcher {
 
     public ComboIPSearcher() {
 //        apis.add(this::ip_Api, 240);
-        apis.add(this::ip_Api, 160);
+        apis.add(this::ip_Api, 120);
         apis.add(this::ipGeo, 40);
         apis.add(this::ipData, 40);
         apis.add(this::ipInfo, 100);

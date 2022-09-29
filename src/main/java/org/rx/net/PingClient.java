@@ -57,7 +57,7 @@ public final class PingClient {
             long startTime;
             Socket sock = new Socket();
             try {
-                startTime = System.currentTimeMillis();
+                startTime = System.nanoTime();
                 sock.connect(endpoint, timeoutSeconds * 1000);
             } catch (IOException e) {
                 log.info("Ping error {}", e.toString());
@@ -66,7 +66,7 @@ public final class PingClient {
             } finally {
                 Sockets.closeOnFlushed(sock);
             }
-            value[i] = System.currentTimeMillis() - startTime;
+            value[i] = System.nanoTime() - startTime;
         }
         return new Result(value);
     }

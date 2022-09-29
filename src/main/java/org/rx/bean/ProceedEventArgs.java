@@ -28,13 +28,13 @@ public class ProceedEventArgs extends EventArgs {
     private Set<String> logTypeWhitelist;
 
     public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {
-        long start = System.currentTimeMillis();
+        long start = System.nanoTime();
         try {
             T retVal = proceed.invoke();
             returnValue = retVal;
             return retVal;
         } finally {
-            elapsedMillis = System.currentTimeMillis() - start;
+            elapsedMillis = System.nanoTime() - start;
         }
     }
 }

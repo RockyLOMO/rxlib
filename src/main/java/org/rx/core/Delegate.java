@@ -2,7 +2,7 @@ package org.rx.core;
 
 import com.google.common.eventbus.EventBus;
 import lombok.*;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.TripleAction;
 
@@ -153,7 +153,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
             if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
                 throw e;
             }
-            ExceptionHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.log(e);
         }
         return true;
     }

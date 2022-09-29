@@ -16,7 +16,7 @@ import org.rx.core.Constants;
 import org.rx.bean.IdGenerator;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
@@ -118,7 +118,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel channel = ctx.channel();
-            ExceptionHandler.INSTANCE.log("serverCaught {}", channel.remoteAddress(), cause);
+            TraceHandler.INSTANCE.log("serverCaught {}", channel.remoteAddress(), cause);
             if (!channel.isActive()) {
                 return;
             }

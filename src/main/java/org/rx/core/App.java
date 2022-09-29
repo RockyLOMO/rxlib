@@ -13,11 +13,10 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
 import org.rx.codec.CrcModel;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
@@ -77,29 +76,27 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static File getJarFile(Class<?> klass) {
-        String path = klass.getPackage().getName().replace(".", "/");
-        String url = klass.getClassLoader().getResource(path).toString();
-        url = url.replace(" ", "%20");
+        String url = klass.getClassLoader()
+                .getResource(klass.getPackage().getName().replace(".", "/")).toString()
+                .replace(" ", "%20");
         java.net.URI uri = new java.net.URI(url);
-        if (uri.getPath() == null) {
-            path = uri.toString();
-            if (path.startsWith("jar:file:")) {
-                //Update Path and Define Zipped File
-                path = path.substring(path.indexOf("file:/"));
-                path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
-
-                if (path.startsWith("file://")) { //UNC Path
-                    path = "C:/" + path.substring(path.indexOf("file:/") + 7);
-                    path = "/" + new java.net.URI(path).getPath();
-                } else {
-                    path = new java.net.URI(path).getPath();
-                }
-                return new File(path);
-            }
-        } else {
+        if (uri.getPath() != null) {
             return new File(uri);
         }
-        return null;
+        String path = uri.toString();
+        if (!path.startsWith("jar:file:")) {
+            return null;
+        }
+        //Update Path and Define Zipped File
+        path = path.substring(path.indexOf("file:/"));
+        path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
+        if (path.startsWith("file://")) { //UNC Path
+            path = "C:/" + path.substring(path.indexOf("file:/") + 7);
+            path = "/" + new java.net.URI(path).getPath();
+        } else {
+            path = new java.net.URI(path).getPath();
+        }
+        return new File(path);
     }
 
     public static <T> T rawObject(Object proxyObject) {
@@ -146,12 +143,20 @@ public final class App extends SystemUtils {
         if (v != null) {
             return;
         }
+        if (value == null) {
+            mdc.remove(name);
+            return;
+        }
         mdc.put(name, toJsonString(value));
     }
 
     public static void logExtra(String name, Object value) {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
+            return;
+        }
+        if (value == null) {
+            mdc.remove(name);
             return;
         }
         mdc.put(name, toJsonString(value));
@@ -173,7 +178,7 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
+//        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
 
         Map<String, String> extra = Collections.emptyMap();
         MDCAdapter mdcAdapter = MDC.getMDCAdapter();
@@ -227,7 +232,7 @@ public final class App extends SystemUtils {
                 msg.appendLine();
             }
             if (eventArgs.getError() != null) {
-                ExceptionHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
+                TraceHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }
@@ -323,7 +328,7 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
             jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
+            TraceHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

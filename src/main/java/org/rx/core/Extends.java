@@ -7,7 +7,7 @@ import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
@@ -66,7 +66,7 @@ public interface Extends extends Serializable {
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
+                    TraceHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
                 }
                 last = e;
             }
@@ -88,7 +88,7 @@ public interface Extends extends Serializable {
                 return action.invoke();
             } catch (Throwable e) {
                 if (last != null) {
-                    ExceptionHandler.INSTANCE.log("sneakyInvoke retry={}/{}", i, retryCount, e);
+                    TraceHandler.INSTANCE.log("sneakyInvoke retry={}/{}", i, retryCount, e);
                 }
                 last = e;
             }
@@ -112,7 +112,7 @@ public interface Extends extends Serializable {
             try {
                 fn.invoke(t);
             } catch (Throwable e) {
-                ExceptionHandler.INSTANCE.log("eachQuietly", e);
+                TraceHandler.INSTANCE.log("eachQuietly", e);
             }
         });
     }
@@ -122,7 +122,7 @@ public interface Extends extends Serializable {
             action.invoke();
             return true;
         } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
+            TraceHandler.INSTANCE.log("quietly", e);
         }
         return false;
     }
@@ -135,7 +135,7 @@ public interface Extends extends Serializable {
         try {
             return action.invoke();
         } catch (Throwable e) {
-            ExceptionHandler.INSTANCE.log("quietly", e);
+            TraceHandler.INSTANCE.log("quietly", e);
         }
         if (defaultValue != null) {
             try {

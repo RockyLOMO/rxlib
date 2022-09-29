@@ -12,7 +12,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.*;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -118,7 +118,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             synchronized (this) {
                 if (c < 0) {
                     counter.set(super.size());
-                    ExceptionHandler.INSTANCE.saveMetrics(Constants.THREAD_POOL_QUEUE, String.format("FIX SIZE %s -> %s", c, counter));
+                    TraceHandler.INSTANCE.saveMetrics(Constants.THREAD_POOL_QUEUE, String.format("FIX SIZE %s -> %s", c, counter));
                 }
                 notify();
             }
@@ -151,7 +151,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return fn.invoke();
             } catch (Throwable e) {
-                ExceptionHandler.INSTANCE.log(toString(), e);
+                TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
             }
         }

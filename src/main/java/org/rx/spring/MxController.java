@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.ExceptionLevel;
 import org.rx.io.Bytes;
 import org.rx.net.http.tunnel.Server;
@@ -28,18 +28,23 @@ import java.util.List;
 public class MxController {
     final Server server;
 
-    @RequestMapping("queryTraces")
-    public List<ExceptionHandler.ErrorEntity> queryTraces(Boolean newest, String level, Integer take) {
+    @RequestMapping("queryErrorTraces")
+    public List<TraceHandler.ErrorEntity> queryErrorTraces(Boolean newest, String level, Integer take) {
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);
         }
-        return ExceptionHandler.INSTANCE.queryTraces(newest, el, take);
+        return TraceHandler.INSTANCE.queryTraces(newest, el, take);
+    }
+
+    @RequestMapping("queryMethodTraces")
+    public List<TraceHandler.MethodEntity> queryMethodTraces(String methodNamePrefix, Integer take) {
+        return TraceHandler.INSTANCE.queryTraces(methodNamePrefix, take);
     }
 
     @RequestMapping("queryMetrics")
-    public List<ExceptionHandler.MetricsEntity> queryMetrics(String name, Integer take) {
-        return ExceptionHandler.INSTANCE.queryMetrics(name, take);
+    public List<TraceHandler.MetricsEntity> queryMetrics(String name, Integer take) {
+        return TraceHandler.INSTANCE.queryMetrics(name, take);
     }
 
     @RequestMapping("setConfig")
@@ -68,7 +73,8 @@ public class MxController {
 //        j.put("conf", conf);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("errorTraces", queryTraces(null, null, 10));
+        j.put("errorTraces", queryErrorTraces(null, null, 10));
+        j.put("methodTraces", queryMethodTraces(null, 10));
         j.put("metrics", queryMetrics(null, 15));
         return j;
     }

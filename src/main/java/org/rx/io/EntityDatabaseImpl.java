@@ -19,7 +19,7 @@ import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -178,7 +178,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 try {
                     clearTimeRollingFiles();
                 } catch (Exception e) {
-                    ExceptionHandler.INSTANCE.log(e);
+                    TraceHandler.INSTANCE.log(e);
                 }
 
                 connPool = null;
@@ -519,7 +519,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 createCols.appendLine("\t`%s` %s%s,", colName, h2Type, extra);
                 if (dbColumn == null || !dbColumn.autoIncrement()) {
                     insert.append("?,");
-                }else {
+                } else {
                     insert.append("null,");
                 }
             }
@@ -900,7 +900,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (!isInTx) {
             conn = getConnectionPool().getConnection();
         }
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
         try {
             fn.invoke(conn);
         } catch (Throwable e) {
@@ -909,7 +909,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = System.currentTimeMillis() - startTime;
+            long elapsed = System.nanoTime() - startTime;
             if (!isInTx) {
                 conn.close();
             }
@@ -930,7 +930,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (!isInTx) {
             conn = getConnectionPool().getConnection();
         }
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
         try {
             return fn.invoke(conn);
         } catch (Throwable e) {
@@ -939,7 +939,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = System.currentTimeMillis() - startTime;
+            long elapsed = System.nanoTime() - startTime;
             if (!isInTx) {
                 conn.close();
             }
