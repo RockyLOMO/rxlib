@@ -35,6 +35,7 @@ import java.util.*;
 import java.util.AbstractMap;
 import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.App.toJsonString;
 import static org.rx.core.Extends.eq;
@@ -909,7 +910,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = System.nanoTime() - startTime;
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
             if (!isInTx) {
                 conn.close();
             }
@@ -939,7 +940,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = System.nanoTime() - startTime;
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
             if (!isInTx) {
                 conn.close();
             }

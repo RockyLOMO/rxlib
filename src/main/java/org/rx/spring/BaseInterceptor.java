@@ -52,7 +52,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
             try {
                 eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
-                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMillis());
+                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMicros());
             } catch (Throwable e) {
                 eventArgs.setError(e);
                 raiseEvent(onError, eventArgs);
@@ -65,7 +65,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 App.log(eventArgs, msg -> {
                     msg.appendLine("Call:\t%s", signature.getName());
                     msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
-                            .appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
+                            .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), App.formatElapsed(eventArgs.getElapsedMicros()));
                     if (eventArgs.getError() != null) {
                         msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                     }

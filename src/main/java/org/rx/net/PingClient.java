@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public final class PingClient {
@@ -66,7 +67,7 @@ public final class PingClient {
             } finally {
                 Sockets.closeOnFlushed(sock);
             }
-            value[i] = System.nanoTime() - startTime;
+            value[i] = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
         }
         return new Result(value);
     }

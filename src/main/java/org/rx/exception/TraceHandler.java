@@ -46,7 +46,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         long id;
         String methodName;
         String parameters;
-        long elapsedMillis;
+        long elapsedMicros;
         int occurCount;
 
         String appName;
@@ -210,11 +210,11 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMillis) {
+    public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
         if (parameters == null) {
             parameters = Arrays.EMPTY_OBJECT_ARRAY;
         }
-        if (getKeepDays() <= 0 || elapsedMillis < RxConfig.INSTANCE.getTraceSlowElapsedMillis()) {
+        if (getKeepDays() <= 0 || elapsedMicros < RxConfig.INSTANCE.getTraceSlowElapsedMicros()) {
             return;
         }
 
@@ -231,7 +231,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 entity.setMethodName(fullName);
             }
             entity.setParameters(toJsonString(parameters));
-            entity.elapsedMillis = Math.max(entity.elapsedMillis, elapsedMillis);
+            entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(Thread.currentThread().getName());
@@ -250,7 +250,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
 
         EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class)
-                .orderByDescending(MethodEntity::getElapsedMillis).limit(limit);
+                .orderByDescending(MethodEntity::getElapsedMicros).limit(limit);
         if (methodNamePrefix != null) {
             q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
         }

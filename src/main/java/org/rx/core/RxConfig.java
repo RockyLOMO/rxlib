@@ -41,7 +41,7 @@ public final class RxConfig {
         String APP_ID = "app.id";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
-        String TRACE_SLOW_ELAPSED_MILLIS = "app.traceSlowElapsedMillis";
+        String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
@@ -104,7 +104,7 @@ public final class RxConfig {
     String id;
     int traceKeepDays;
     int traceErrorMessageSize;
-    long traceSlowElapsedMillis;
+    long traceSlowElapsedMicros;
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
@@ -163,7 +163,7 @@ public final class RxConfig {
         }
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
-        traceSlowElapsedMillis = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MILLIS, 100);
+        traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);
         String v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);

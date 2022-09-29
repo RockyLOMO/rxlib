@@ -239,6 +239,11 @@ public final class App extends SystemUtils {
         }
     }
 
+    public static String formatElapsed(long microSeconds) {
+        long d = 1000;
+        return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
+    }
+
     public static List<String> mainOperations(String[] args) {
         List<String> result = new ArrayList<>();
         for (String arg : args) {
