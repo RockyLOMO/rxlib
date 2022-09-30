@@ -74,7 +74,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return eventArgs.getReturnValue();
         } finally {
             idempotent.remove();
-            App.logExtraIfAbsent(TRACE_ID, null);
+            App.clearLogExtras();
         }
     }
 

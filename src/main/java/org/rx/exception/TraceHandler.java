@@ -218,7 +218,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             return;
         }
 
-        String fullName = String.format("%s.%s[%s]", declaringType.getName(), methodName, parameters.length);
+        String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters.length);
         long pk = App.hash64(fullName);
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
@@ -244,13 +244,20 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
-    public List<MethodEntity> queryTraces(String methodNamePrefix, Integer limit) {
+    public List<MethodEntity> queryTraces(Boolean methodOccurMost, String methodNamePrefix, Integer limit) {
+        if (methodOccurMost == null) {
+            methodOccurMost = Boolean.FALSE;
+        }
         if (limit == null) {
             limit = 20;
         }
 
-        EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class)
-                .orderByDescending(MethodEntity::getElapsedMicros).limit(limit);
+        EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class).limit(limit);
+        if (methodOccurMost) {
+            q.orderByDescending(MethodEntity::getOccurCount);
+        } else {
+            q.orderByDescending(MethodEntity::getElapsedMicros);
+        }
         if (methodNamePrefix != null) {
             q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
         }
@@ -268,14 +275,14 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public List<MetricsEntity> queryMetrics(String name, Integer limit) {
-        EntityQueryLambda<MetricsEntity> q = new EntityQueryLambda<>(MetricsEntity.class);
-        if (name != null) {
-            q.eq(MetricsEntity::getName, name);
-        }
         if (limit == null) {
             limit = 20;
         }
 
+        EntityQueryLambda<MetricsEntity> q = new EntityQueryLambda<>(MetricsEntity.class);
+        if (name != null) {
+            q.eq(MetricsEntity::getName, name);
+        }
         EntityDatabase db = EntityDatabase.DEFAULT;
         return db.findBy(q.orderByDescending(MetricsEntity::getCreateTime).limit(limit));
     }

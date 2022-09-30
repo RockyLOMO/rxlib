@@ -19,6 +19,7 @@ import org.rx.core.Arrays;
 import org.rx.core.cache.DiskCache;
 import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.ExceptionLevel;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
@@ -130,7 +131,7 @@ public class CoreTester extends TestUtil {
         final String NETTY_NV = "NV";
         pool.run(() -> {
             sleep(100);
-            System.out.println("x:"+jdkTL.get());
+            System.out.println("x:" + jdkTL.get());
             assert "NETTY-TL".equals(nettyTL.get());
             assert "AUTO".equals(autoRmTL.get());
             log.info("Inherit ok 1");
@@ -141,7 +142,7 @@ public class CoreTester extends TestUtil {
                 log.info("Inherit ok 1 - not inherit ok");
             });
             pool.run(() -> {
-                System.out.println("x:"+jdkTL.get());
+                System.out.println("x:" + jdkTL.get());
                 assert NETTY_NV.equals(nettyTL.get());
                 assert "AUTO".equals(autoRmTL.get());
                 log.info("Inherit ok 1 - nested inherit ok");
@@ -175,7 +176,7 @@ public class CoreTester extends TestUtil {
             sleep(1000);
 //            System.out.println(jdkTL.get());
             assert nettyTL.get() == null;
-            log.info("Not inherit ok 2 | {}",jdkTL.get());
+            log.info("Not inherit ok 2 | {}", jdkTL.get());
         });
 
         sleep(2000);
@@ -665,7 +666,7 @@ public class CoreTester extends TestUtil {
     public void exceptionHandle() {
         TraceHandler handler = TraceHandler.INSTANCE;
         handler.log(new InvalidException("test error"));
-        System.out.println(handler.queryTraces(null, null, null));
+        System.out.println(handler.queryTraces(null, (ExceptionLevel) null, null));
 
 
         String err = "ERR";

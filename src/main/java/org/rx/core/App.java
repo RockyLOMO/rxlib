@@ -134,6 +134,14 @@ public final class App extends SystemUtils {
         });
     }
 
+    public static void clearLogExtras() {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        mdc.clear();
+    }
+
     public static void logExtraIfAbsent(String name, Object value) {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
@@ -143,11 +151,7 @@ public final class App extends SystemUtils {
         if (v != null) {
             return;
         }
-        if (value == null) {
-            mdc.remove(name);
-            return;
-        }
-        mdc.put(name, toJsonString(value));
+        logExtra(name, value);
     }
 
     public static void logExtra(String name, Object value) {
@@ -181,10 +185,10 @@ public final class App extends SystemUtils {
 //        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
 
         Map<String, String> extra = Collections.emptyMap();
-        MDCAdapter mdcAdapter = MDC.getMDCAdapter();
-        if (mdcAdapter != null) {
-            LogbackMDCAdapter lb = as(mdcAdapter, LogbackMDCAdapter.class);
-            Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdcAdapter.getCopyOfContextMap();
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc != null) {
+            LogbackMDCAdapter lb = as(mdc, LogbackMDCAdapter.class);
+            Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdc.getCopyOfContextMap();
             if (pm != null) {
                 extra = pm;
             }

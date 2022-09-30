@@ -20,7 +20,9 @@ import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RequiredArgsConstructor
 @RestController
@@ -28,23 +30,28 @@ import java.util.List;
 public class MxController {
     final Server server;
 
-    @RequestMapping("queryErrorTraces")
-    public List<TraceHandler.ErrorEntity> queryErrorTraces(Boolean newest, String level, Integer take) {
+    @RequestMapping("queryTraces")
+    public Map<String, Object> queryTraces(Boolean newest, String level,
+                                           Boolean methodOccurMost, String methodNamePrefix,
+                                           String metricsName,
+                                           Integer take) {
+        Map<String, Object> result = new HashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);
         }
-        return TraceHandler.INSTANCE.queryTraces(newest, el, take);
-    }
+        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
 
-    @RequestMapping("queryMethodTraces")
-    public List<TraceHandler.MethodEntity> queryMethodTraces(String methodNamePrefix, Integer take) {
-        return TraceHandler.INSTANCE.queryTraces(methodNamePrefix, take);
-    }
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take))
+                .select(p -> {
+                    JSONObject t = App.toJsonObject(p);
+                    t.remove("elapsedMicros");
+                    t.put("elapsed", App.formatElapsed(p.getElapsedMicros()));
+                    return t;
+                }));
 
-    @RequestMapping("queryMetrics")
-    public List<TraceHandler.MetricsEntity> queryMetrics(String name, Integer take) {
-        return TraceHandler.INSTANCE.queryMetrics(name, take);
+        result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
+        return result;
     }
 
     @RequestMapping("setConfig")
@@ -73,9 +80,7 @@ public class MxController {
 //        j.put("conf", conf);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("errorTraces", queryErrorTraces(null, null, 10));
-        j.put("methodTraces", queryMethodTraces(null, 10));
-        j.put("metrics", queryMetrics(null, 15));
+        j.putAll(queryTraces(null, null, null, null, null, 10));
         return j;
     }
 
