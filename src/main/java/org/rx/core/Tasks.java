@@ -4,7 +4,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -33,7 +33,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    ExceptionHandler.INSTANCE.log(e);
+                    TraceHandler.INSTANCE.log(e);
                 }
             }
         }));
@@ -110,9 +110,9 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            ExceptionHandler.INSTANCE.log("awaitNow {} timeout", Reflects.stackClass(2).getName());
+            TraceHandler.INSTANCE.log("awaitNow {} timeout", Reflects.stackClass(2).getName());
         } catch (Exception e) {
-            ExceptionHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.log(e);
         }
         return null;
     }

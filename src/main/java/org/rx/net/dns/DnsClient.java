@@ -9,7 +9,7 @@ import io.netty.util.concurrent.Future;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.*;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -67,7 +67,7 @@ public class DnsClient extends Disposable {
                 return;
             }
 
-            ExceptionHandler.INSTANCE.log("Dns query fail question={}", question, f.cause());
+            TraceHandler.INSTANCE.log("Dns query fail question={}", question, f.cause());
         });
     }
 

@@ -6,7 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.socksx.SocksMessage;
 import io.netty.handler.codec.socksx.v5.*;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.SSCommon;
 
@@ -81,7 +81,7 @@ public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksM
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        ExceptionHandler.INSTANCE.log(cause);
+        TraceHandler.INSTANCE.log(cause);
         Sockets.closeOnFlushed(ctx.channel());
     }
 }

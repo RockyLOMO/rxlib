@@ -3,10 +3,10 @@ package org.rx.spring;
 import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
-import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.TraceHandler;
 import org.rx.util.Servlets;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -56,7 +56,7 @@ public class ControllerInterceptor extends BaseInterceptor {
     @ResponseStatus(HttpStatus.OK)
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
-        org.rx.exception.ExceptionHandler.INSTANCE.log(request.getRequestURL().toString(), e);
+        TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
         String msg = ApplicationException.getMessage(e);
         if (SpringContext.controllerExceptionHandler == null) {
             return msg;

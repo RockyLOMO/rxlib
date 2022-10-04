@@ -8,6 +8,8 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
+import org.rx.exception.TraceHandler;
+import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
 
 import java.util.List;
@@ -17,6 +19,7 @@ import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;
+    static final String TRACE_ID = "rx-traceId";
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
@@ -32,6 +35,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         if (BooleanUtils.isTrue(idempotent.get())) {
             return joinPoint.proceed();
         }
+        App.logExtraIfAbsent(TRACE_ID, Snowflake.DEFAULT.nextId());
         idempotent.set(Boolean.TRUE);
         try {
             Signature signature = joinPoint.getSignature();
@@ -48,6 +52,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
             try {
                 eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
+                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMicros());
             } catch (Throwable e) {
                 eventArgs.setError(e);
                 raiseEvent(onError, eventArgs);
@@ -60,7 +65,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 App.log(eventArgs, msg -> {
                     msg.appendLine("Call:\t%s", signature.getName());
                     msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
-                            .appendLine("ReturnValue:\t%s\tElapsed=%sms", jsonString(signature, eventArgs.getReturnValue()), eventArgs.getElapsedMillis());
+                            .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), App.formatElapsed(eventArgs.getElapsedMicros()));
                     if (eventArgs.getError() != null) {
                         msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                     }
@@ -69,6 +74,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return eventArgs.getReturnValue();
         } finally {
             idempotent.remove();
+            App.clearLogExtras();
         }
     }
 

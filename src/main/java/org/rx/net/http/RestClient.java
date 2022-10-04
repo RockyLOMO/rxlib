@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.util.Snowflake;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -78,11 +79,12 @@ public final class RestClient {
                 args.setError(e);
                 throw e;
             } finally {
+//                App.logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
                 App.log(args, msg -> {
                     if (doPost) {
-                        msg.appendLine("POST: %s %s", args.getTraceId(), reqUrl);
+                        msg.appendLine("POST:\t%s", reqUrl);
                     } else {
-                        msg.appendLine("GET: %s %s", args.getTraceId(), reqUrl);
+                        msg.appendLine("GET:\t%s", reqUrl);
                     }
                     msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
                     msg.append("Response:\t%s", args.getReturnValue());

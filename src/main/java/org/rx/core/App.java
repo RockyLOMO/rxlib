@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -12,17 +13,18 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
 import org.rx.codec.CrcModel;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.Snowflake;
 import org.rx.util.function.*;
+import org.slf4j.MDC;
+import org.slf4j.spi.MDCAdapter;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.io.*;
@@ -58,7 +60,6 @@ public final class App extends SystemUtils {
         return v;
     };
     static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
-    static final String LOG_METRIC_PREFIX = "LM:";
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
@@ -75,29 +76,27 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static File getJarFile(Class<?> klass) {
-        String path = klass.getPackage().getName().replace(".", "/");
-        String url = klass.getClassLoader().getResource(path).toString();
-        url = url.replace(" ", "%20");
+        String url = klass.getClassLoader()
+                .getResource(klass.getPackage().getName().replace(".", "/")).toString()
+                .replace(" ", "%20");
         java.net.URI uri = new java.net.URI(url);
-        if (uri.getPath() == null) {
-            path = uri.toString();
-            if (path.startsWith("jar:file:")) {
-                //Update Path and Define Zipped File
-                path = path.substring(path.indexOf("file:/"));
-                path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
-
-                if (path.startsWith("file://")) { //UNC Path
-                    path = "C:/" + path.substring(path.indexOf("file:/") + 7);
-                    path = "/" + new java.net.URI(path).getPath();
-                } else {
-                    path = new java.net.URI(path).getPath();
-                }
-                return new File(path);
-            }
-        } else {
+        if (uri.getPath() != null) {
             return new File(uri);
         }
-        return null;
+        String path = uri.toString();
+        if (!path.startsWith("jar:file:")) {
+            return null;
+        }
+        //Update Path and Define Zipped File
+        path = path.substring(path.indexOf("file:/"));
+        path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
+        if (path.startsWith("file://")) { //UNC Path
+            path = "C:/" + path.substring(path.indexOf("file:/") + 7);
+            path = "/" + new java.net.URI(path).getPath();
+        } else {
+            path = new java.net.URI(path).getPath();
+        }
+        return new File(path);
     }
 
     public static <T> T rawObject(Object proxyObject) {
@@ -135,8 +134,36 @@ public final class App extends SystemUtils {
         });
     }
 
+    public static void clearLogExtras() {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        mdc.clear();
+    }
+
+    public static void logExtraIfAbsent(String name, Object value) {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        String v = mdc.get(name);
+        if (v != null) {
+            return;
+        }
+        logExtra(name, value);
+    }
+
     public static void logExtra(String name, Object value) {
-        Cache.getInstance(Cache.THREAD_CACHE).put(LOG_METRIC_PREFIX + name, value);
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return;
+        }
+        if (value == null) {
+            mdc.remove(name);
+            return;
+        }
+        mdc.put(name, toJsonString(value));
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
@@ -144,7 +171,7 @@ public final class App extends SystemUtils {
         eventArgs.setLogStrategy(conf.logStrategy);
         eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
         log(eventArgs, msg -> {
-            msg.appendLine("Url:\t%s %s", eventArgs.getTraceId(), url)
+            msg.appendLine("Url:\t%s", url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
                     .appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
             if (eventArgs.getError() != null) {
@@ -155,8 +182,18 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<Object, Object> extra = Cache.getInstance(Cache.THREAD_CACHE);
-        boolean doWrite = !MapUtils.isEmpty(extra);
+//        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
+
+        Map<String, String> extra = Collections.emptyMap();
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc != null) {
+            LogbackMDCAdapter lb = as(mdc, LogbackMDCAdapter.class);
+            Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdc.getCopyOfContextMap();
+            if (pm != null) {
+                extra = pm;
+            }
+        }
+        boolean doWrite = !extra.isEmpty();
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
                 eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
@@ -188,26 +225,27 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<Object, Object> entry : extra.entrySet()) {
-                String key;
-                if ((key = as(entry.getKey(), String.class)) == null || !Strings.startsWith(key, LOG_METRIC_PREFIX)) {
-                    continue;
-                }
+            for (Map.Entry<String, String> entry : extra.entrySet()) {
                 if (first) {
                     msg.append("Extra:\t");
                     first = false;
                 }
-                msg.append("%s=%s ", key.substring(LOG_METRIC_PREFIX.length()), toJsonString(entry.getValue()));
+                msg.append("%s=%s ", entry.getKey(), entry.getValue());
             }
             if (!first) {
                 msg.appendLine();
             }
             if (eventArgs.getError() != null) {
-                ExceptionHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
+                TraceHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
             }
         }
+    }
+
+    public static String formatElapsed(long microSeconds) {
+        long d = 1000;
+        return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
     }
 
     public static List<String> mainOperations(String[] args) {
@@ -299,7 +337,7 @@ public final class App extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
             jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
-            ExceptionHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
+            TraceHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

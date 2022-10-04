@@ -28,7 +28,8 @@ class ComboIPSearcher implements IPSearcher {
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
 
     public ComboIPSearcher() {
-        apis.add(this::ip_Api, 240);
+//        apis.add(this::ip_Api, 240);
+        apis.add(this::ip_Api, 120);
         apis.add(this::ipGeo, 40);
         apis.add(this::ipData, 40);
         apis.add(this::ipInfo, 100);

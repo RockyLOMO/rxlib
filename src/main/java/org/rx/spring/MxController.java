@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.exception.ExceptionLevel;
 import org.rx.io.Bytes;
 import org.rx.net.http.tunnel.Server;
@@ -20,7 +20,9 @@ import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RequiredArgsConstructor
 @RestController
@@ -29,17 +31,27 @@ public class MxController {
     final Server server;
 
     @RequestMapping("queryTraces")
-    public List<ExceptionHandler.ErrorEntity> queryTraces(Boolean newest, String level, Integer take) {
+    public Map<String, Object> queryTraces(Boolean newest, String level,
+                                           Boolean methodOccurMost, String methodNamePrefix,
+                                           String metricsName,
+                                           Integer take) {
+        Map<String, Object> result = new HashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);
         }
-        return ExceptionHandler.INSTANCE.queryTraces(newest, el, take);
-    }
+        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
 
-    @RequestMapping("queryMetrics")
-    public List<ExceptionHandler.MetricsEntity> queryMetrics(String name, Integer take) {
-        return ExceptionHandler.INSTANCE.queryMetrics(name, take);
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take))
+                .select(p -> {
+                    JSONObject t = App.toJsonObject(p);
+                    t.remove("elapsedMicros");
+                    t.put("elapsed", App.formatElapsed(p.getElapsedMicros()));
+                    return t;
+                }));
+
+        result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
+        return result;
     }
 
     @RequestMapping("setConfig")
@@ -68,8 +80,7 @@ public class MxController {
 //        j.put("conf", conf);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("errorTraces", queryTraces(null, null, 10));
-        j.put("metrics", queryMetrics(null, 15));
+        j.putAll(queryTraces(null, null, null, null, null, 10));
         return j;
     }
 

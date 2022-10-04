@@ -8,7 +8,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
-import org.rx.exception.ExceptionHandler;
+import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UpstreamSupport;
@@ -73,7 +73,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         client.query(question).addListener(f -> {
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
             if (!f.isSuccess()) {
-                ExceptionHandler.INSTANCE.log("query domain fail {} -> {}", domain, envelope, f.cause());
+                TraceHandler.INSTANCE.log("query domain fail {} -> {}", domain, envelope, f.cause());
 //                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
 //                ctx.writeAndFlush(newResponse(query, question, server.ttl));
                 if (envelope == null) {
@@ -103,6 +103,6 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        ExceptionHandler.INSTANCE.log(cause);
+        TraceHandler.INSTANCE.log(cause);
     }
 }
