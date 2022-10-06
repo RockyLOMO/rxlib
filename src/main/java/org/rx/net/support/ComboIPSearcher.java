@@ -37,7 +37,8 @@ class ComboIPSearcher implements IPSearcher {
         apis.add(this::ipApi, 2);
         retryCount = Math.max(apis.size() / 2, 2);
 
-        dApis.add(this::ip_Api, 120);
+//        dApis.add(this::ip_Api, 120);
+        dApis.add(this::ip_Api, 60);
         dApis.add(this::ipApi, 1);
     }
 
