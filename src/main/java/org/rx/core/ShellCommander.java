@@ -58,7 +58,6 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
         @Override
         public void invoke(ShellCommander s, OutPrintEventArgs e) throws Throwable {
-            //            System.out.print("[debug]:" + l.toString());
             ByteBuf buf = Bytes.directBuffer();
             buf.writeCharSequence(String.valueOf(e.lineNumber), StandardCharsets.UTF_8);
             buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
