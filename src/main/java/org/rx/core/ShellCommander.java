@@ -13,6 +13,7 @@ import org.rx.util.function.TripleAction;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.StringTokenizer;
 import java.util.concurrent.Future;
@@ -86,6 +87,86 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         return new ShellCommander(shell, workspace).start().waitFor();
     }
 
+    public static int exec(String shell, String workspace, int timeoutSeconds) {
+        ShellCommander cmd = new ShellCommander(shell, workspace).start();
+        if (!cmd.waitFor(timeoutSeconds)) {
+            cmd.kill();
+        }
+        return cmd.exitValue();
+    }
+
+    /**
+     * Crack a command line.
+     *
+     * @param toProcess the command line to process
+     * @return the command line broken into strings. An empty or null toProcess parameter results in a zero sized array
+     */
+    private static String[] translateCommandline(final String toProcess) {
+        if (toProcess == null || toProcess.isEmpty()) {
+            // no command? no string
+            return new String[0];
+        }
+
+        // parse with a simple finite state machine
+
+        final int normal = 0;
+        final int inQuote = 1;
+        final int inDoubleQuote = 2;
+        int state = normal;
+        final StringTokenizer tok = new StringTokenizer(toProcess, "\"\' ", true);
+        final ArrayList<String> list = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean lastTokenHasBeenQuoted = false;
+
+        while (tok.hasMoreTokens()) {
+            final String nextTok = tok.nextToken();
+            switch (state) {
+                case inQuote:
+                    if ("\'".equals(nextTok)) {
+                        lastTokenHasBeenQuoted = true;
+                        state = normal;
+                    } else {
+                        current.append(nextTok);
+                    }
+                    break;
+                case inDoubleQuote:
+                    if ("\"".equals(nextTok)) {
+                        lastTokenHasBeenQuoted = true;
+                        state = normal;
+                    } else {
+                        current.append(nextTok);
+                    }
+                    break;
+                default:
+                    if ("\'".equals(nextTok)) {
+                        state = inQuote;
+                    } else if ("\"".equals(nextTok)) {
+                        state = inDoubleQuote;
+                    } else if (" ".equals(nextTok)) {
+                        if (lastTokenHasBeenQuoted || current.length() != 0) {
+                            list.add(current.toString());
+                            current = new StringBuilder();
+                        }
+                    } else {
+                        current.append(nextTok);
+                    }
+                    lastTokenHasBeenQuoted = false;
+                    break;
+            }
+        }
+
+        if (lastTokenHasBeenQuoted || current.length() != 0) {
+            list.add(current.toString());
+        }
+
+        if (state == inQuote || state == inDoubleQuote) {
+            throw new IllegalArgumentException("Unbalanced quotes in " + toProcess);
+        }
+
+        final String[] args = new String[list.size()];
+        return list.toArray(args);
+    }
+
     public final Delegate<ShellCommander, PrintOutEventArgs> onPrintOut = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
@@ -95,8 +176,6 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     String shell;
     Process process;
     Future<Void> daemonFuture;
-    @Getter
-    Integer exitValue;
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();
@@ -152,18 +231,17 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             throw new InvalidException("Already started");
         }
 
-        //Runtime.getRuntime().exec(shell, null, workspace)
-        StringTokenizer st = new StringTokenizer(shell);
-        String[] cmdarray = new String[st.countTokens()];
-        for (int i = 0; st.hasMoreTokens(); i++) {
-            cmdarray[i] = st.nextToken();
-        }
-        Process tmp = process = new ProcessBuilder(cmdarray)
+//        Runtime.getRuntime().exec(shell, null, workspace)
+//        StringTokenizer st = new StringTokenizer(shell);
+//        String[] cmdarray = new String[st.countTokens()];
+//        for (int i = 0; st.hasMoreTokens(); i++) {
+//            cmdarray[i] = st.nextToken();
+//        }
+        log.debug("start {}", shell);
+        Process tmp = process = new ProcessBuilder(translateCommandline(shell))
                 .directory(workspace)
                 .redirectErrorStream(true)  //合并getInputStream和getErrorStream
                 .start();
-        log.debug("start {}", shell);
-        exitValue = null;
 
         if (daemonFuture != null) {
             daemonFuture.cancel(true);
@@ -176,22 +254,27 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                 }
 
                 while (tmp.isAlive()) {
-                    Thread.sleep(daemonPeriod);
                     try {
                         if (reader != null) {
                             String line;
-                            while (tmp.isAlive() && (line = reader.readLine()) != null) {
+                            while (
+//                                    tmp.isAlive() &&
+                                    (line = reader.readLine()) != null) {
                                 raiseEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
                             }
                         }
                     } catch (Throwable e) {
                         TraceHandler.INSTANCE.log("onPrintOut", e);
                     }
+                    if (!tmp.isAlive()) {
+                        break;
+                    }
+                    Thread.sleep(daemonPeriod);
                 }
             } finally {
                 tryClose(reader);
                 synchronized (this) {
-                    exitValue = tmp.exitValue();
+                    int exitValue = tmp.exitValue();
                     log.debug("exit={} {}", exitValue, shell);
                     raiseEvent(onExited, new ExitedEventArgs(exitValue));
                 }
@@ -200,13 +283,17 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         return this;
     }
 
+    public synchronized int exitValue() {
+        if (process == null) {
+            throw new InvalidException("Not start");
+        }
+        return process.exitValue();
+    }
+
     @SneakyThrows
     public synchronized int waitFor() {
         if (!isRunning()) {
-            if (exitValue == null) {
-                throw new InvalidException("Not start");
-            }
-            return exitValue;
+            return exitValue();
         }
         return process.waitFor();
     }
@@ -214,9 +301,6 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     @SneakyThrows
     public synchronized boolean waitFor(int timeoutSeconds) {
         if (!isRunning()) {
-            if (exitValue == null) {
-                throw new InvalidException("Not start");
-            }
             return true;
         }
         return process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
@@ -241,7 +325,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         log.debug("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
-        raiseEvent(onExited, new ExitedEventArgs(exitValue = process.exitValue()));
+        raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
     }
 
     public synchronized void restart() {
