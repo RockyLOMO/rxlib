@@ -3,6 +3,7 @@ package org.rx.net.support;
 import com.alibaba.fastjson.JSONObject;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.App;
 import org.rx.core.Strings;
@@ -20,22 +21,21 @@ import java.util.function.Predicate;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sneakyInvoke;
 
+@Slf4j
 class ComboIPSearcher implements IPSearcher {
     final static int TIMEOUT_SECONDS = 10000;
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
             dApis = new RandomList<>();
-    final int retryCount;
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
 
     public ComboIPSearcher() {
 //        apis.add(this::ip_Api, 240);
-        apis.add(this::ip_Api, 60);
+        apis.add(this::ip_Api, 90);
         apis.add(this::ipGeo, 40);
         apis.add(this::ipData, 40);
         apis.add(this::ipInfo, 100);
         apis.add(this::ipWho, 20);
         apis.add(this::ipApi, 2);
-        retryCount = Math.max(apis.size() / 2, 2);
 
 //        dApis.add(this::ip_Api, 120);
         dApis.add(this::ip_Api, 60);
@@ -60,18 +60,27 @@ class ComboIPSearcher implements IPSearcher {
             return rndRetry(host, resolveHostRemotely);
         }
 
-        return store.computeIfAbsent(String.format("%s:%s", host, resolveHostRemotely ? 1 : 0), k -> rndRetry(host, resolveHostRemotely));
+        return store.computeIfAbsent(String.format("%s:%s", host, resolveHostRemotely ? 1 : 0), k -> {
+            if (resolveHostRemotely) {
+                log.info("resolveHostRemotely: {}", k);
+            }
+            return rndRetry(host, resolveHostRemotely);
+        });
     }
 
     @SneakyThrows
     IPAddress rndRetry(String host, boolean resolveHostRemotely) {
+        if (Sockets.isValidIp(host)) {
+            resolveHostRemotely = false;
+        }
         if (!resolveHostRemotely) {
             host = InetAddress.getByName(host).getHostAddress();
         }
 //        return Tasks.randomRetry(() -> ip_Api(host), () -> ipGeo(host),
 //                () -> ipData(host), () -> ipWho(host));
+        RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
-        return sneakyInvoke(() -> (resolveHostRemotely ? dApis : apis).next().invoke(finalHost), retryCount);
+        return sneakyInvoke(() -> fns.next().invoke(finalHost), fns.size());
     }
 
     //6k/d

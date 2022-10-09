@@ -75,7 +75,7 @@ public final class SocksContext extends EventArgs {
     }
 
     @SneakyThrows
-    public static void omega(String n, BiAction<ShellCommander.OutPrintEventArgs> o) {
+    public static void omega(String n, BiAction<ShellCommander.PrintOutEventArgs> o) {
         try {
             int d = 100;
             String k = "omega", c = "./m/", z = c + "o", i = c + "c";
@@ -91,12 +91,12 @@ public final class SocksContext extends EventArgs {
             ShellCommander.exec("chmod 777 f", c);
             ShellCommander sc = new ShellCommander("./f -c c", c);
             if (o != null) {
-                sc.onOutPrint.combine((s, e) -> o.invoke(e));
+                sc.onPrintOut.combine((s, e) -> o.invoke(e));
             }
             Container.register(ShellCommander.class, sc.start());
         } catch (Throwable e) {
             if (o != null) {
-                o.invoke(new ShellCommander.OutPrintEventArgs(0, e.toString()));
+                o.invoke(new ShellCommander.PrintOutEventArgs(0, e.toString()));
             }
         }
     }

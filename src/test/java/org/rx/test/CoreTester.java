@@ -520,18 +520,20 @@ public class CoreTester extends TestUtil {
     @Test
     public void shellExec() {
         ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onOutPrint.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.onPrintOut.combine(ShellCommander.CONSOLE_OUT_HANDLER);
         executor.start().waitFor();
 
-        executor = new ShellCommander("ping www.baidu.com", null);
+        executor = new ShellCommander("ping f-li.cn", null);
         ShellCommander finalExecutor = executor;
-        executor.onOutPrint.combine((s, e) -> {
-            System.out.println(e.getLine());
+        executor.onPrintOut.combine((s, e) -> {
+            System.out.println("K: " + e.getLine());
             finalExecutor.kill();
         });
-        executor.onOutPrint.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.onPrintOut.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
+        executor.onExited.combine((s, e) -> System.out.println("shell exit"));
         executor.start().waitFor();
 
+        System.out.println("done");
         sleep(5000);
     }
 

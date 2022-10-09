@@ -494,7 +494,7 @@ public final class Sockets {
     public static Linq<SocketInfo> socketInfos(SocketProtocol protocol) {
         try (ShellCommander cmd = new ShellCommander("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
-            cmd.onOutPrint.combine((s, e) -> {
+            cmd.onPrintOut.combine((s, e) -> {
                 String line = e.getLine();
                 if (!line.contains(protocol.name())) {
                     return;
@@ -529,7 +529,7 @@ public final class Sockets {
             $<String> name = $();
             try (ShellCommander cmd = new ShellCommander(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);
-                cmd.onOutPrint.combine((s, e) -> {
+                cmd.onPrintOut.combine((s, e) -> {
                     int i = e.getLine().indexOf(t);
                     if (i == -1) {
                         return;
