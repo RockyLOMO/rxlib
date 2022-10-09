@@ -15,17 +15,16 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.StringTokenizer;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.Extends.newConcurrentList;
-import static org.rx.core.Extends.tryClose;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ShellCommander extends Disposable implements EventTarget<ShellCommander> {
     @RequiredArgsConstructor
     @Getter
-    public static class OutPrintEventArgs extends EventArgs {
+    public static class PrintOutEventArgs extends EventArgs {
         private static final long serialVersionUID = 4598104225029493537L;
         final int lineNumber;
         final String line;
@@ -36,14 +35,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
     }
 
-    @RequiredArgsConstructor
-    @Getter
-    public static class ExitedEventArgs extends EventArgs {
-        private static final long serialVersionUID = 6563058539741657972L;
-        final int exitValue;
-    }
-
-    public static class FileOutHandler extends Disposable implements TripleAction<ShellCommander, OutPrintEventArgs> {
+    public static class FileOutHandler extends Disposable implements TripleAction<ShellCommander, PrintOutEventArgs> {
         final FileStream fileStream;
 
         public FileOutHandler(String filePath) {
@@ -57,9 +49,9 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
 
         @Override
-        public void invoke(ShellCommander s, OutPrintEventArgs e) throws Throwable {
+        public void invoke(ShellCommander s, PrintOutEventArgs e) throws Throwable {
             ByteBuf buf = Bytes.directBuffer();
-            buf.writeCharSequence(String.valueOf(e.lineNumber), StandardCharsets.UTF_8);
+            buf.writeInt(e.lineNumber);
             buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
             buf.writeCharSequence(e.line, StandardCharsets.UTF_8);
             buf.writeCharSequence("\n", StandardCharsets.UTF_8);
@@ -71,7 +63,14 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
     }
 
-    public static final TripleAction<ShellCommander, OutPrintEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
+    @RequiredArgsConstructor
+    @Getter
+    public static class ExitedEventArgs extends EventArgs {
+        private static final long serialVersionUID = 6563058539741657972L;
+        final int exitValue;
+    }
+
+    public static final TripleAction<ShellCommander, PrintOutEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
     static final String LINUX_BASH = "bash -c ", WIN_CMD = "cmd /c ";
     static final List<ShellCommander> KILL_LIST = newConcurrentList(true);
 
@@ -87,21 +86,23 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         return new ShellCommander(shell, workspace).start().waitFor();
     }
 
-    public final Delegate<ShellCommander, OutPrintEventArgs> onOutPrint = Delegate.create();
+    public final Delegate<ShellCommander, PrintOutEventArgs> onPrintOut = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
     final File workspace;
-    final long intervalPeriod;
+    final long daemonPeriod;
     @Getter
     String shell;
     Process process;
-    CompletableFuture<Void> daemonFuture;
+    Future<Void> daemonFuture;
+    @Getter
+    Integer exitValue;
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();
     }
 
-    public ShellCommander setReadThenExit() {
+    public synchronized ShellCommander setReadFullyThenExit() {
         if (!Files.isPath(shell)) {
             if (App.IS_OS_WINDOWS && !Strings.startsWithIgnoreCase(shell, WIN_CMD)) {
                 shell = WIN_CMD + shell;
@@ -112,7 +113,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         return this;
     }
 
-    public ShellCommander setAutoRestart() {
+    public synchronized ShellCommander setAutoRestart() {
         onExited.tail((s, e) -> restart());
         return this;
     }
@@ -125,14 +126,14 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         this(shell, workspace, Constants.DEFAULT_INTERVAL, true);
     }
 
-    public ShellCommander(@NonNull String shell, String workspace, long intervalPeriod, boolean killOnExited) {
+    public ShellCommander(@NonNull String shell, String workspace, long daemonPeriod, boolean killOnExited) {
         this.shell = shell = shell.trim();
         if (Files.isPath(shell)) {
             workspace = FilenameUtils.getFullPathNoEndSeparator(shell);
         }
         this.workspace = workspace == null ? null : new File(workspace);
 
-        this.intervalPeriod = Math.max(1, intervalPeriod);
+        this.daemonPeriod = Math.max(1, daemonPeriod);
         if (killOnExited) {
             KILL_LIST.add(this);
         }
@@ -140,7 +141,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
     @Override
     protected void freeObjects() {
-        onOutPrint.close();
+        onPrintOut.close();
         kill();
         KILL_LIST.remove(this);
     }
@@ -162,35 +163,38 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
                 .redirectErrorStream(true)  //合并getInputStream和getErrorStream
                 .start();
         log.debug("start {}", shell);
+        exitValue = null;
 
         if (daemonFuture != null) {
             daemonFuture.cancel(true);
         }
-        daemonFuture = Tasks.runAsync(() -> {
+        daemonFuture = Tasks.run(() -> {
             LineNumberReader reader = null;
             try {
-                if (!onOutPrint.isEmpty()) {
+                if (!onPrintOut.isEmpty()) {
                     reader = new LineNumberReader(new InputStreamReader(tmp.getInputStream(), StandardCharsets.UTF_8));
                 }
 
                 while (tmp.isAlive()) {
+                    Thread.sleep(daemonPeriod);
                     try {
                         if (reader != null) {
                             String line;
-                            while ((line = reader.readLine()) != null) {
-                                raiseEvent(onOutPrint, new OutPrintEventArgs(reader.getLineNumber(), line));
+                            while (tmp.isAlive() && (line = reader.readLine()) != null) {
+                                raiseEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
                             }
                         }
                     } catch (Throwable e) {
-                        TraceHandler.INSTANCE.log("onOutPrint", e);
+                        TraceHandler.INSTANCE.log("onPrintOut", e);
                     }
-                    Thread.sleep(intervalPeriod);
                 }
             } finally {
                 tryClose(reader);
-                int exitValue = tmp.exitValue();
-                log.debug("exit={} {}", exitValue, shell);
-                raiseEvent(onExited, new ExitedEventArgs(exitValue));
+                synchronized (this) {
+                    exitValue = tmp.exitValue();
+                    log.debug("exit={} {}", exitValue, shell);
+                    raiseEvent(onExited, new ExitedEventArgs(exitValue));
+                }
             }
         });
         return this;
@@ -199,14 +203,34 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     @SneakyThrows
     public synchronized int waitFor() {
         if (!isRunning()) {
-            return 0;
+            if (exitValue == null) {
+                throw new InvalidException("Not start");
+            }
+            return exitValue;
         }
         return process.waitFor();
     }
 
     @SneakyThrows
     public synchronized boolean waitFor(int timeoutSeconds) {
-        return isRunning() && process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!isRunning()) {
+            if (exitValue == null) {
+                throw new InvalidException("Not start");
+            }
+            return true;
+        }
+        return process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+    }
+
+    @SneakyThrows
+    public synchronized void inputKeys(String keys) {
+        if (!isRunning()) {
+            throw new InvalidException("Not start");
+        }
+
+        OutputStream out = process.getOutputStream();
+        out.write(keys.getBytes(StandardCharsets.UTF_8));
+        out.flush();
     }
 
     public synchronized void kill() {
@@ -217,11 +241,10 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         log.debug("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
-        raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
+        raiseEvent(onExited, new ExitedEventArgs(exitValue = process.exitValue()));
     }
 
     public synchronized void restart() {
-        log.debug("restart {}", shell);
         kill();
         start();
     }

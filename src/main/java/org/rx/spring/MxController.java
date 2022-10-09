@@ -93,7 +93,7 @@ public class MxController {
     public String shell(String shell, String workspace) {
         StringBuilder echo = new StringBuilder();
         ShellCommander cmd = new ShellCommander(shell, workspace);
-        cmd.onOutPrint.combine((s, e) -> echo.append(e.toString()));
+        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
         cmd.start().waitFor(60);
         return echo.toString();
     }
