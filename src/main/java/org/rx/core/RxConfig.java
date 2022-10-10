@@ -58,7 +58,6 @@ public final class RxConfig {
         int highCpuWaterMark;
         int resizeQuantity;
         int scheduleInitSize;
-        boolean enableInheritFastThreadLocals;
         String traceName;
         int replicas;
     }
@@ -134,7 +133,6 @@ public final class RxConfig {
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
         threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
-        threadPool.enableInheritFastThreadLocals = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_ENABLE_INHERIT_FAST_THREAD_LOCALS, false);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
 
