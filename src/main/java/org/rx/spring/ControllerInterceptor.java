@@ -28,6 +28,7 @@ public class ControllerInterceptor extends BaseInterceptor {
 
     @PostConstruct
     public void init() {
+        super.enableTrace();
         super.argShortSelector = (s, p) -> {
             if (p instanceof MultipartFile) {
                 return "[MultipartFile]";

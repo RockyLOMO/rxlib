@@ -9,7 +9,6 @@ import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
-import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
 
 import java.util.List;
@@ -19,12 +18,17 @@ import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;
-    static final String TRACE_ID = "rx-traceId";
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
             onError = Delegate.create();
     protected TripleFunc<Signature, Object, Object> argShortSelector;
+
+    protected final void enableTrace() {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        conf.setTraceName("rx-traceId");
+        ThreadPool.traceIdChangedHandler = p -> App.logExtra(conf.getTraceName(), p);
+    }
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
@@ -35,8 +39,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         if (BooleanUtils.isTrue(idempotent.get())) {
             return joinPoint.proceed();
         }
-        App.logExtraIfAbsent(TRACE_ID, Snowflake.DEFAULT.nextId());
         idempotent.set(Boolean.TRUE);
+        String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
+        if (tn != null) {
+            App.logExtraIfAbsent(tn, ThreadPool.traceId(true));
+        }
         try {
             Signature signature = joinPoint.getSignature();
             MethodSignature methodSignature = as(signature, MethodSignature.class);
@@ -73,8 +80,8 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return eventArgs.getReturnValue();
         } finally {
-            idempotent.remove();
             App.clearLogExtras();
+            idempotent.remove();
         }
     }
 

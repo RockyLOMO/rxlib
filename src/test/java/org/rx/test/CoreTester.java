@@ -27,6 +27,7 @@ import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
+import org.slf4j.MDC;
 import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
@@ -108,8 +109,10 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void inheritThreadLocal() {
-        final ThreadLocal<String> jdkTL = new InheritableThreadLocal<>();//new ThreadLocal<>();
-        jdkTL.set("JDK-TL");
+        String jdk = "JDK-TL";
+        final ThreadLocal<String> jdkTL = new InheritableThreadLocal<>();
+        jdkTL.set(jdk);
+        final ThreadLocal<Map<String, Object>> jdkTLMap = new InheritableThreadLocal<>();
         final FastThreadLocal<String> nettyTL = new FastThreadLocal<String>();
         nettyTL.set("NETTY-TL");
         final FastThreadLocal<String> autoRmTL = new FastThreadLocal<String>() {
@@ -123,61 +126,77 @@ public class CoreTester extends TestUtil {
 
         pool.run(() -> {
 //            sleep(1000);
-            System.out.println(jdkTL.get());
+            System.out.println("depth-1:" + jdkTL.get());
+            Tasks.run(() -> {
+                sleep(1000);
+//                jdkTL.set("NV");
+                System.out.println("depth-2_1:" + jdkTL.get());
+            });
+//            jdkTL.set("NEW_VAL");
+            jdkTL.remove();
+//            sleep(1000);
+            System.out.println("depth-1_1:" + jdkTL.get());
+            Tasks.run(() -> {
+                System.out.println("depth-2_2:" + jdkTL.get());
+            });
+
             assert nettyTL.get() == null;
             log.info("Not inherit ok 1");
         });
 
-        final String NETTY_NV = "NV";
-        pool.run(() -> {
-            sleep(100);
-            System.out.println("x:" + jdkTL.get());
-            assert "NETTY-TL".equals(nettyTL.get());
-            assert "AUTO".equals(autoRmTL.get());
-            log.info("Inherit ok 1");
-            jdkTL.set("asd");
-            nettyTL.set(NETTY_NV);
-            pool.run(() -> {
-                assert nettyTL.get() == null;
-                log.info("Inherit ok 1 - not inherit ok");
-            });
-            pool.run(() -> {
-                System.out.println("x:" + jdkTL.get());
-                assert NETTY_NV.equals(nettyTL.get());
-                assert "AUTO".equals(autoRmTL.get());
-                log.info("Inherit ok 1 - nested inherit ok");
-            }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+        sleep(3000);
+        System.out.println("main:" + jdkTL.get());
 
-        pool.run(() -> {
-            sleep(1000);
-            System.out.println(jdkTL.get());
-            assert NETTY_NV.equals(nettyTL.get());
-            log.info("Inherit ok 2");
-            return null;
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
-
-        pool.runAsync(() -> {
-            assert "NETTY-TL".equals(nettyTL.get());
-            log.info("Inherit ok 3");
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
-
-        pool.runAsync(() -> {
-            sleep(1000);
-            assert NETTY_NV.equals(nettyTL.get());
-            log.info("Inherit ok 4");
-            return null;
-        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
-
-        log.info("wait..");
-        sleep(5000);
-
-        pool.run(() -> {
-            sleep(1000);
+//        final String NETTY_NV = "NV";
+//        pool.run(() -> {
+//            sleep(100);
+//            System.out.println("x:" + jdkTL.get());
+//            assert "NETTY-TL".equals(nettyTL.get());
+//            assert "AUTO".equals(autoRmTL.get());
+//            log.info("Inherit ok 1");
+//            jdkTL.set("asd");
+//            nettyTL.set(NETTY_NV);
+//            pool.run(() -> {
+//                assert nettyTL.get() == null;
+//                log.info("Inherit ok 1 - not inherit ok");
+//            });
+//            pool.run(() -> {
+//                System.out.println("x:" + jdkTL.get());
+//                assert NETTY_NV.equals(nettyTL.get());
+//                assert "AUTO".equals(autoRmTL.get());
+//                log.info("Inherit ok 1 - nested inherit ok");
+//            }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+//        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+//
+//        pool.run(() -> {
+//            sleep(1000);
 //            System.out.println(jdkTL.get());
-            assert nettyTL.get() == null;
-            log.info("Not inherit ok 2 | {}", jdkTL.get());
-        });
+//            assert NETTY_NV.equals(nettyTL.get());
+//            log.info("Inherit ok 2");
+//            return null;
+//        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+//
+//        pool.runAsync(() -> {
+//            assert "NETTY-TL".equals(nettyTL.get());
+//            log.info("Inherit ok 3");
+//        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+//
+//        pool.runAsync(() -> {
+//            sleep(1000);
+//            assert NETTY_NV.equals(nettyTL.get());
+//            log.info("Inherit ok 4");
+//            return null;
+//        }, null, RunFlag.INHERIT_THREAD_LOCALS.flags());
+//
+//        log.info("wait..");
+//        sleep(5000);
+//
+//        pool.run(() -> {
+//            sleep(1000);
+////            System.out.println(jdkTL.get());
+//            assert nettyTL.get() == null;
+//            log.info("Not inherit ok 2 | {}", jdkTL.get());
+//        });
 
         sleep(2000);
     }

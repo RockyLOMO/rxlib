@@ -21,7 +21,8 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
         String THREAD_POOL_SCHEDULE_INIT_SIZE = "app.threadPool.scheduleInitSize";
-        String THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS = "app.threadPool.enableInheritThreadLocals";
+        String THREAD_POOL_ENABLE_INHERIT_FAST_THREAD_LOCALS = "app.threadPool.enableInheritFastThreadLocals";
+        String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
 
         String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
@@ -57,7 +58,8 @@ public final class RxConfig {
         int highCpuWaterMark;
         int resizeQuantity;
         int scheduleInitSize;
-        boolean enableInheritThreadLocals;
+        boolean enableInheritFastThreadLocals;
+        String traceName;
         int replicas;
     }
 
@@ -132,7 +134,8 @@ public final class RxConfig {
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
         threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
-        threadPool.enableInheritThreadLocals = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_ENABLE_INHERIT_THREAD_LOCALS, false);
+        threadPool.enableInheritFastThreadLocals = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_ENABLE_INHERIT_FAST_THREAD_LOCALS, false);
+        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
 
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);

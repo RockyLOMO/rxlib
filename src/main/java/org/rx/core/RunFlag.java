@@ -11,7 +11,8 @@ public enum RunFlag implements NEnum<RunFlag> {
     SINGLE(1),
     SYNCHRONIZED(1 << 1),
     PRIORITY(1 << 2),
-    INHERIT_THREAD_LOCALS(1 << 3);
+    INHERIT_FAST_THREAD_LOCALS(1 << 3),
+    THREAD_TRACE(1 << 4);
 
     final int value;
 }

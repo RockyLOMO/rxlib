@@ -182,8 +182,6 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-//        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
-
         Map<String, String> extra = Collections.emptyMap();
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc != null) {
