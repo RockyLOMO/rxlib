@@ -27,7 +27,6 @@ import org.rx.test.bean.*;
 import org.rx.test.common.TestUtil;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
-import org.slf4j.MDC;
 import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
@@ -120,11 +119,11 @@ public class CoreTester extends TestUtil {
         autoRmTL.set("AUTO");
 
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
-        ThreadPool.traceIdChangedHandler = t -> App.logCtx("rx-traceId", t);
+        ThreadPool.traceStatusChangedHandler = t -> App.logCtx("rx-traceId", t);
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         for (int i = 0; i < 3; i++) {
-            ThreadPool.initTraceId(null);
+            ThreadPool.startTrace(null);
             int finalI = i;
             pool.run(() -> {
                 log.info("{} depth-1_1", finalI);
@@ -141,7 +140,7 @@ public class CoreTester extends TestUtil {
                 log.info("{} depth-1_2", finalI);
             });
 
-            ThreadPool.removeTraceId();
+            ThreadPool.endTrace();
 
             sleep(3000);
         }

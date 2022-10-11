@@ -43,18 +43,18 @@ public class ControllerInterceptor extends BaseInterceptor {
     }
 
     @Override
-    protected String linkTraceId(String parentTraceId) {
+    protected String startTrace(String parentTraceId) {
         Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
         if (httpEnv != null) {
             String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
             if (parentTraceId == null) {
                 parentTraceId = httpEnv.left.getHeader(tn);
             }
-            String tid = super.linkTraceId(parentTraceId);
+            String tid = super.startTrace(parentTraceId);
             httpEnv.right.setHeader(tn, tid);
             return tid;
         }
-        return super.linkTraceId(parentTraceId);
+        return super.startTrace(parentTraceId);
     }
 
     @Override

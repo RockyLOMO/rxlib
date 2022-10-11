@@ -30,11 +30,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     protected final void enableTrace() {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         conf.setTraceName("rx-traceId");
-        ThreadPool.traceIdChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
+        ThreadPool.traceStatusChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
     }
 
-    protected String linkTraceId(String parentTraceId) {
-        return ThreadPool.initTraceId(parentTraceId);
+    protected String startTrace(String parentTraceId) {
+        return ThreadPool.startTrace(parentTraceId);
     }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -44,7 +44,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            App.logCtxIfAbsent(tn, linkTraceId(null));
+            App.logCtxIfAbsent(tn, startTrace(null));
         }
         try {
             Signature signature = joinPoint.getSignature();
@@ -82,7 +82,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return eventArgs.getReturnValue();
         } finally {
-            ThreadPool.removeTraceId();
+            ThreadPool.endTrace();
             App.clearLogCtx();
             idempotent.remove();
         }

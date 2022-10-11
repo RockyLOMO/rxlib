@@ -308,7 +308,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     //region static members
-    public static volatile BiAction<String> traceIdChangedHandler;
+    public static volatile BiAction<String> traceStatusChangedHandler;
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
@@ -318,7 +318,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
 
     @SneakyThrows
-    public static String initTraceId(String traceId) {
+    public static String startTrace(String traceId) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
 //            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
@@ -328,7 +328,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
         }
 //        log.info("trace init {}", tid);
-        BiAction<String> fn = traceIdChangedHandler;
+        BiAction<String> fn = traceStatusChangedHandler;
         if (fn != null) {
             fn.invoke(tid);
         }
@@ -336,10 +336,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @SneakyThrows
-    public static void removeTraceId() {
+    public static void endTrace() {
 //        log.info("trace remove");
         CTX_TRACE_ID.remove();
-        BiAction<String> fn = traceIdChangedHandler;
+        BiAction<String> fn = traceStatusChangedHandler;
         if (fn != null) {
             fn.invoke(null);
         }
@@ -576,7 +576,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             setThreadLocalMap(t, task.parent);
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
-            initTraceId(task.traceId);
+            startTrace(task.traceId);
         }
     }
 
@@ -605,7 +605,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             setThreadLocalMap(Thread.currentThread(), null);
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
-            removeTraceId();
+            endTrace();
         }
     }
 
