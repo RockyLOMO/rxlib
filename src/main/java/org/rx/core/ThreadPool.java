@@ -136,9 +136,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
-//            if (RxConfig.INSTANCE.threadPool.enableInheritFastThreadLocals) {
-//                flags.add(RunFlag.INHERIT_FAST_THREAD_LOCALS);
-//            }
             if (RxConfig.INSTANCE.threadPool.traceName != null) {
                 flags.add(RunFlag.THREAD_TRACE);
             }

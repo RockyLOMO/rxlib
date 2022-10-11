@@ -27,7 +27,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     protected final void enableTrace() {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         conf.setTraceName("rx-traceId");
-        ThreadPool.traceIdChangedHandler = p -> App.logExtra(conf.getTraceName(), p);
+        ThreadPool.traceIdChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
     }
 
     @Override
@@ -42,7 +42,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            App.logExtraIfAbsent(tn, ThreadPool.traceId(true));
+            App.logCtxIfAbsent(tn, ThreadPool.traceId(true));
         }
         try {
             Signature signature = joinPoint.getSignature();
@@ -80,7 +80,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return eventArgs.getReturnValue();
         } finally {
-            App.clearLogExtras();
+            App.clearLogCtx();
             idempotent.remove();
         }
     }
