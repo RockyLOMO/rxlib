@@ -131,6 +131,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         final FlagsEnum<RunFlag> flags;
         final Object id;
         final InternalThreadLocalMap parent;
+        final String traceId;
 
         Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -144,6 +145,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             this.flags = flags;
             this.id = id;
             parent = flags.has(RunFlag.INHERIT_FAST_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
+            traceId = CTX_TRACE_ID.get();
         }
 
         @SneakyThrows
@@ -319,20 +321,23 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static String initTraceId(String traceId) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
-            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
+//            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
+            tid = traceId != null ? traceId : SUID.randomSUID().toString();
             CTX_TRACE_ID.set(tid);
-            BiAction<String> fn = traceIdChangedHandler;
-            if (fn != null) {
-                fn.invoke(tid);
-            }
-        } else if (traceId != null) {
+        } else if (traceId != null && !traceId.equals(tid)) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
+        }
+//        log.info("trace init {}", tid);
+        BiAction<String> fn = traceIdChangedHandler;
+        if (fn != null) {
+            fn.invoke(tid);
         }
         return tid;
     }
 
     @SneakyThrows
     public static void removeTraceId() {
+//        log.info("trace remove");
         CTX_TRACE_ID.remove();
         BiAction<String> fn = traceIdChangedHandler;
         if (fn != null) {
@@ -571,9 +576,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             setThreadLocalMap(t, task.parent);
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
-            if (CTX_TRACE_ID.get() == null) {
-                initTraceId(null);
-            }
+            initTraceId(task.traceId);
         }
     }
 

@@ -109,10 +109,6 @@ public class CoreTester extends TestUtil {
     @SneakyThrows
     @Test
     public void inheritThreadLocal() {
-        String jdk = "JDK-TL";
-        final ThreadLocal<String> jdkTL = new InheritableThreadLocal<>();
-        jdkTL.set(jdk);
-        final ThreadLocal<Map<String, Object>> jdkTLMap = new InheritableThreadLocal<>();
         final FastThreadLocal<String> nettyTL = new FastThreadLocal<String>();
         nettyTL.set("NETTY-TL");
         final FastThreadLocal<String> autoRmTL = new FastThreadLocal<String>() {
@@ -122,30 +118,35 @@ public class CoreTester extends TestUtil {
             }
         };
         autoRmTL.set("AUTO");
+
+        RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
+        ThreadPool.traceIdChangedHandler = t -> App.logCtx("rx-traceId", t);
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
-        pool.run(() -> {
-//            sleep(1000);
-            System.out.println("depth-1:" + jdkTL.get());
-            Tasks.run(() -> {
-                sleep(1000);
-//                jdkTL.set("NV");
-                System.out.println("depth-2_1:" + jdkTL.get());
+        for (int i = 0; i < 3; i++) {
+            ThreadPool.initTraceId(null);
+            int finalI = i;
+            pool.run(() -> {
+                log.info("{} depth-1_1", finalI);
+                pool.run(() -> {
+                    sleep(500);
+                    log.info("trace depth-2");
+                });
+
+                assert nettyTL.get() == null;
+                log.info("Not inherit ok 1");
             });
-//            jdkTL.set("NEW_VAL");
-            jdkTL.remove();
-//            sleep(1000);
-            System.out.println("depth-1_1:" + jdkTL.get());
-            Tasks.run(() -> {
-                System.out.println("depth-2_2:" + jdkTL.get());
+            log.info("{} depth-0", finalI);
+            pool.run(() -> {
+                log.info("{} depth-1_2", finalI);
             });
 
-            assert nettyTL.get() == null;
-            log.info("Not inherit ok 1");
-        });
+            ThreadPool.removeTraceId();
 
-        sleep(3000);
-        System.out.println("main:" + jdkTL.get());
+            sleep(3000);
+        }
+
+        sleep(5000);
 
 //        final String NETTY_NV = "NV";
 //        pool.run(() -> {
