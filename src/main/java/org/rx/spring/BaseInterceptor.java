@@ -33,8 +33,8 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         ThreadPool.traceIdChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
     }
 
-    protected String linkTraceId() {
-        return null;
+    protected String linkTraceId(String parentTraceId) {
+        return ThreadPool.initTraceId(parentTraceId);
     }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -44,7 +44,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            App.logCtxIfAbsent(tn, ThreadPool.initTraceId(linkTraceId()));
+            App.logCtxIfAbsent(tn, linkTraceId(null));
         }
         try {
             Signature signature = joinPoint.getSignature();
@@ -56,9 +56,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 return joinPoint.proceed();
             }
 
-            RxConfig rxConfig = RxConfig.INSTANCE;
-            eventArgs.setLogStrategy(rxConfig.getLogStrategy());
-            eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
+            RxConfig conf = RxConfig.INSTANCE;
+            eventArgs.setLogStrategy(conf.getLogStrategy());
+            eventArgs.setLogTypeWhitelist(conf.getLogTypeWhitelist());
             try {
                 eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
                 TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMicros());
@@ -91,25 +91,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         if (Arrays.isEmpty(args)) {
             return "{}";
         }
-        List<Object> list = Linq.from(args).select(p -> {
-            Object sa = shortArg(signature, p);
-            if (sa != null) {
-                return sa;
-            }
-            if (p instanceof byte[]) {
-                byte[] b = (byte[]) p;
-                if (b.length > MAX_FIELD_SIZE) {
-                    return "[BigBytes]";
-                }
-            }
-            if (p instanceof String) {
-                String s = (String) p;
-                if (s.length() > MAX_FIELD_SIZE) {
-                    return "[BigString]";
-                }
-            }
-            return p;
-        }).toList();
+        List<Object> list = Linq.from(args).select(p -> shortArg(signature, p)).toList();
         return toJsonString(list.size() == 1 ? list.get(0) : list);
     }
 
@@ -122,6 +104,18 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     }
 
     protected Object shortArg(Signature signature, Object arg) {
-        return null;
+        if (arg instanceof byte[]) {
+            byte[] b = (byte[]) arg;
+            if (b.length > MAX_FIELD_SIZE) {
+                return "[BigBytes]";
+            }
+        }
+        if (arg instanceof String) {
+            String s = (String) arg;
+            if (s.length() > MAX_FIELD_SIZE) {
+                return "[BigString]";
+            }
+        }
+        return arg;
     }
 }

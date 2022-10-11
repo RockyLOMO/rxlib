@@ -166,6 +166,14 @@ public final class App extends SystemUtils {
         mdc.put(name, toJsonString(value));
     }
 
+    public static <T> T logCtx(String name) {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return null;
+        }
+        return (T) mdc.get(name);
+    }
+
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
         RxConfig conf = RxConfig.INSTANCE;
         eventArgs.setLogStrategy(conf.logStrategy);
