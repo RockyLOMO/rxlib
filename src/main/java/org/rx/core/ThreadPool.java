@@ -315,10 +315,16 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final DynamicSizer SIZER = new DynamicSizer();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
 
+    @SneakyThrows
     public static String initTraceId(String traceId) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
-            tid = setTraceId(traceId);
+            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
+            CTX_TRACE_ID.set(tid);
+            BiAction<String> fn = traceIdChangedHandler;
+            if (fn != null) {
+                fn.invoke(tid);
+            }
         } else if (traceId != null) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
         }
@@ -326,18 +332,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @SneakyThrows
-    static String setTraceId(String tid) {
-        tid = tid != null ? tid : UUID.randomUUID().toString().replace("-", "");
-        CTX_TRACE_ID.set(tid);
-        BiAction<String> fn = traceIdChangedHandler;
-        if (fn != null) {
-            fn.invoke(tid);
-        }
-        return tid;
-    }
-
-    @SneakyThrows
-    static void removeTraceId() {
+    public static void removeTraceId() {
         CTX_TRACE_ID.remove();
         BiAction<String> fn = traceIdChangedHandler;
         if (fn != null) {
@@ -577,7 +572,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
             if (CTX_TRACE_ID.get() == null) {
-                setTraceId(null);
+                initTraceId(null);
             }
         }
     }

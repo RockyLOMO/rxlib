@@ -82,6 +82,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return eventArgs.getReturnValue();
         } finally {
+            ThreadPool.removeTraceId();
             App.clearLogCtx();
             idempotent.remove();
         }
