@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
@@ -15,26 +16,39 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.quietly;
 
 //@Aspect
 @Component
 @ControllerAdvice
 public class ControllerInterceptor extends BaseInterceptor {
-    private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
+    final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
     @PostConstruct
     public void init() {
         super.enableTrace();
-        super.argShortSelector = (s, p) -> {
-            if (p instanceof MultipartFile) {
-                return "[MultipartFile]";
-            }
-            return p;
-        };
+    }
+
+    @Override
+    protected Object shortArg(Signature signature, Object arg) {
+        if (arg instanceof MultipartFile) {
+            return "[MultipartFile]";
+        }
+        return super.shortArg(signature, arg);
+    }
+
+    @Override
+    protected String linkTraceId() {
+        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
+        if (httpEnv != null) {
+            return httpEnv.left.getHeader(RxConfig.INSTANCE.getThreadPool().getTraceName());
+        }
+        return super.linkTraceId();
     }
 
     @Override

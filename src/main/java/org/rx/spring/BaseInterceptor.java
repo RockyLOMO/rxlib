@@ -9,7 +9,6 @@ import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
-import org.rx.util.function.TripleFunc;
 
 import java.util.List;
 
@@ -22,7 +21,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
             onError = Delegate.create();
-    protected TripleFunc<Signature, Object, Object> argShortSelector;
+
+    @Override
+    public FlagsEnum<EventFlags> eventFlags() {
+        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
+    }
 
     protected final void enableTrace() {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
@@ -30,9 +33,8 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         ThreadPool.traceIdChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
     }
 
-    @Override
-    public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
+    protected String linkTraceId() {
+        return null;
     }
 
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -42,7 +44,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            App.logCtxIfAbsent(tn, ThreadPool.traceId(true));
+            App.logCtxIfAbsent(tn, ThreadPool.initTraceId(linkTraceId()));
         }
         try {
             Signature signature = joinPoint.getSignature();
@@ -90,11 +92,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return "{}";
         }
         List<Object> list = Linq.from(args).select(p -> {
-            if (argShortSelector != null) {
-                Object r = argShortSelector.invoke(signature, p);
-                if (r != null) {
-                    return r;
-                }
+            Object sa = shortArg(signature, p);
+            if (sa != null) {
+                return sa;
             }
             if (p instanceof byte[]) {
                 byte[] b = (byte[]) p;
@@ -119,5 +119,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return null;
         }
         return Reflects.defaultValue(methodSignature.getReturnType());
+    }
+
+    protected Object shortArg(Signature signature, Object arg) {
+        return null;
     }
 }
