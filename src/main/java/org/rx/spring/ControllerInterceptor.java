@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -28,11 +27,6 @@ import static org.rx.core.Extends.quietly;
 @ControllerAdvice
 public class ControllerInterceptor extends BaseInterceptor {
     final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
-
-//    @PostConstruct
-//    public void init() {
-//        super.enableTrace();
-//    }
 
     public ControllerInterceptor() {
         super.enableTrace();
