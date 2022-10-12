@@ -67,8 +67,7 @@ public class Reflects extends ClassUtils {
     public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final Set<Method> OBJECT_METHODS = ConcurrentHashMap.newKeySet();
-    static final int CLOSE_METHOD_HASH = "close".hashCode();
-    static final String CHANGE_TYPE_METHOD = "valueOf";
+    static final String CLOSE_METHOD = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
@@ -256,8 +255,7 @@ public class Reflects extends ClassUtils {
     }
 
     public static boolean isCloseMethod(Method method) {
-        //String hashcode has cached
-        return method.getName().hashCode() == CLOSE_METHOD_HASH && method.getParameterCount() == 0;
+        return Strings.hashEquals(method.getName(), CLOSE_METHOD) && method.getParameterCount() == 0;
     }
 
     public static <T, TT> T invokeStaticMethod(Class<? extends TT> type, String name, Object... args) {
@@ -358,7 +356,7 @@ public class Reflects extends ClassUtils {
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
             Linq<Tuple<String, Method>> getters = q.where(p -> p.getParameterCount() == 0 && p != getClass && (p.getName().startsWith(GET_PROPERTY) || p.getName().startsWith(GET_BOOL_PROPERTY))).select(p -> Tuple.of(propertyName(p.getName()), p));
-            return setters.join(getters.toList(), (p, x) -> p.left.equals(x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
+            return setters.join(getters.toList(), (p, x) -> Strings.hashEquals(p.left, x.left), (p, x) -> new PropertyNode(p.left, p.right, x.right));
         });
     }
 

@@ -139,7 +139,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         String methodName = "viewedBuffer";
         Method[] methods = buffer.getClass().getMethods();
         for (Method method : methods) {
-            if (method.getName().equals("attachment")) {
+            if (Strings.hashEquals(method.getName(), "attachment")) {
                 methodName = "attachment";
                 break;
             }

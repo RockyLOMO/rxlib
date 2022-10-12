@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.App;
+import org.rx.core.Strings;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -26,7 +27,7 @@ public class AESUtil {
 
     public static byte[] dailyKey() {
         String date = DateTime.utcNow().toDateString();
-        if (date.equals(lastDate)) {
+        if (Strings.hashEquals(lastDate, date)) {
             return dateKey;
         }
         lastDate = date;

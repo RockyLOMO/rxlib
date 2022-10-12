@@ -250,7 +250,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     //region adapter
-    static final int M_0 = "isCancelled".hashCode(), M_1 = "cancel".hashCode();
+    static final String M_0 = "isCancelled", M_1 = "cancel";
     @Getter
     boolean shutdown;
 
@@ -270,10 +270,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         Task<?> t = (Task<?>) setTimeout(command::run, initDelay);
         AtomicBoolean cancel = new AtomicBoolean();
         ScheduledFuture<?> future = proxy(ScheduledFuture.class, (m, p) -> {
-            int h = m.getName().hashCode();
-            if (h == M_0) {
+            if (Strings.hashEquals(m.getName(), M_0)) {
                 return cancel.get();
-            } else if (h == M_1) {
+            } else if (Strings.hashEquals(m.getName(), M_1)) {
                 cancel.set(true);
             }
             return p.fastInvoke(t);

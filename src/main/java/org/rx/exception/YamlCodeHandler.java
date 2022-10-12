@@ -84,7 +84,7 @@ public class YamlCodeHandler {
             Method targetSite = null;
             ErrorCode errorCode = null;
             for (Method method : caller.right) {
-                if (!method.getName().equals(stack.getMethodName())) {
+                if (!Strings.hashEquals(method.getName(), stack.getMethodName())) {
                     continue;
                 }
                 if ((errorCode = findCode(method, e.getErrorCode().toString(), e.getCause())) == null) {
