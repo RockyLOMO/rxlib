@@ -29,8 +29,11 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
 
     protected final void enableTrace() {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        if (conf.getTraceName() != null) {
+            return;
+        }
         conf.setTraceName("rx-traceId");
-        ThreadPool.traceStatusChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
+        ThreadPool.traceStatusChangedHandler = p -> logCtx(conf.getTraceName(), p);
     }
 
     protected String startTrace(String parentTraceId) {
@@ -44,7 +47,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            App.logCtxIfAbsent(tn, startTrace(null));
+            logCtxIfAbsent(tn, startTrace(null));
         }
         try {
             Signature signature = joinPoint.getSignature();
@@ -71,7 +74,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 eventArgs.setError(e);
             } finally {
                 raiseEvent(onProceed, eventArgs);
-                App.log(eventArgs, msg -> {
+                log(eventArgs, msg -> {
                     msg.appendLine("Call:\t%s", signature.getName());
                     msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
                             .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), App.formatElapsed(eventArgs.getElapsedMicros()));
@@ -83,7 +86,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return eventArgs.getReturnValue();
         } finally {
             ThreadPool.endTrace();
-            App.clearLogCtx();
+            clearLogCtx();
             idempotent.remove();
         }
     }

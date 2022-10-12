@@ -29,8 +29,12 @@ import static org.rx.core.Extends.quietly;
 public class ControllerInterceptor extends BaseInterceptor {
     final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
-    @PostConstruct
-    public void init() {
+//    @PostConstruct
+//    public void init() {
+//        super.enableTrace();
+//    }
+
+    public ControllerInterceptor() {
         super.enableTrace();
     }
 
