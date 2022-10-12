@@ -134,7 +134,7 @@ public final class App extends SystemUtils {
         });
     }
 
-    public static void clearLogExtras() {
+    public static void clearLogCtx() {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
             return;
@@ -142,7 +142,7 @@ public final class App extends SystemUtils {
         mdc.clear();
     }
 
-    public static void logExtraIfAbsent(String name, Object value) {
+    public static void logCtxIfAbsent(String name, Object value) {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
             return;
@@ -151,10 +151,10 @@ public final class App extends SystemUtils {
         if (v != null) {
             return;
         }
-        logExtra(name, value);
+        logCtx(name, value);
     }
 
-    public static void logExtra(String name, Object value) {
+    public static void logCtx(String name, Object value) {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
             return;
@@ -164,6 +164,14 @@ public final class App extends SystemUtils {
             return;
         }
         mdc.put(name, toJsonString(value));
+    }
+
+    public static <T> T logCtx(String name) {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return null;
+        }
+        return (T) mdc.get(name);
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
@@ -182,18 +190,16 @@ public final class App extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-//        logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
-
-        Map<String, String> extra = Collections.emptyMap();
+        Map<String, String> mappedDiagnosticCtx = Collections.emptyMap();
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc != null) {
             LogbackMDCAdapter lb = as(mdc, LogbackMDCAdapter.class);
             Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdc.getCopyOfContextMap();
             if (pm != null) {
-                extra = pm;
+                mappedDiagnosticCtx = pm;
             }
         }
-        boolean doWrite = !extra.isEmpty();
+        boolean doWrite = !mappedDiagnosticCtx.isEmpty();
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
                 eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
@@ -225,9 +231,9 @@ public final class App extends SystemUtils {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             formatMessage.invoke(msg);
             boolean first = true;
-            for (Map.Entry<String, String> entry : extra.entrySet()) {
+            for (Map.Entry<String, String> entry : mappedDiagnosticCtx.entrySet()) {
                 if (first) {
-                    msg.append("Extra:\t");
+                    msg.append("MDC:\t");
                     first = false;
                 }
                 msg.append("%s=%s ", entry.getKey(), entry.getValue());

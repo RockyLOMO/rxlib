@@ -78,7 +78,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         }).join();
 
         nsClient.onAppAddressChanged.combine((s, e) -> {
-            if (!e.getAppName().equals(APP_NAME)) {
+            if (!Strings.hashEquals(APP_NAME, e.getAppName())) {
                 return;
             }
             InetSocketAddress ep = new InetSocketAddress(e.getAddress(), rpcPort);

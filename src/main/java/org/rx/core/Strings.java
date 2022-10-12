@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
@@ -13,8 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Extends.ifNull;
-import static org.rx.core.Extends.values;
+import static org.rx.core.Extends.*;
 
 public class Strings extends StringUtils {
     public static String trimVarExpressionName(String exprName) {
@@ -68,12 +66,12 @@ public class Strings extends StringUtils {
         return expr.toString();
     }
 
-    public static <T> T readValue(JSONObject json, String path) {
+    public static <T> T readValue(Map<String, Object> json, String path) {
         String[] paths = Strings.split(path, ".");
         int last = paths.length - 1;
-        JSONObject tmp = json;
+        Map<String, Object> tmp = json;
         for (int i = 0; i < last; i++) {
-            if ((tmp = tmp.getJSONObject(paths[i])) == null) {
+            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
                 throw new InvalidException("Get empty sub object by path {}", paths[i]);
             }
         }
@@ -248,6 +246,17 @@ public class Strings extends StringUtils {
             throw new ApplicationException("lengthError", values(fixedLength));
         }
         return result;
+    }
+
+    //String hashcode has cached
+    public static boolean hashEquals(String a, String b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        if (a.hashCode() != b.hashCode()) {
+            return false;
+        }
+        return a.equals(b);
     }
 
     public static String replaceLast(String text, String regex, String replacement) {

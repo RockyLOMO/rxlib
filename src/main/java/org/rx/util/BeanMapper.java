@@ -153,7 +153,7 @@ public class BeanMapper {
                 String propertyName = Reflects.propertyName(methodName.toString());
                 copiedNames.add(propertyName);
                 for (Mapping mapping : mappings) {
-                    if (mapping.target().hashCode() != propertyName.hashCode()) {
+                    if (!Strings.hashEquals(mapping.target(), propertyName)) {
                         continue;
                     }
                     sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);

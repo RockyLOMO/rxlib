@@ -132,13 +132,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     boolean autoRollbackOnError;
     @Setter
     int slowSqlElapsed = 200;
-    int hash;
+    String curFilePath;
     JdbcConnectionPool connPool;
 
     JdbcConnectionPool getConnectionPool() {
         if (connPool == null) {
             String filePath = getFilePath();
-            hash = filePath.hashCode();
+            curFilePath = filePath;
             //http://www.h2database.com/html/commands.html#set_cache_size
             connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL", filePath), null, null);
             connPool.setMaxConnections(maxConnections);
@@ -172,7 +172,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         if (timeRollingPattern != null) {
             Tasks.setTimeout(() -> {
-                if (connPool == null || getFilePath().hashCode() == hash) {
+                if (connPool == null || Strings.hashEquals(curFilePath, getFilePath())) {
                     return;
                 }
 

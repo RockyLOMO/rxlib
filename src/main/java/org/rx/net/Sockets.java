@@ -48,10 +48,9 @@ import static org.rx.core.Extends.quietly;
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
+    static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    static final String SHARED_TCP_REACTOR = "_TCP";
-    static final String SHARED_UDP_REACTOR = "_UDP";
-    static final String SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
+    static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
 
@@ -87,7 +86,7 @@ public final class Sockets {
         Class<?> type = ns.getClass();
         InetAddress[] empty = new InetAddress[0];
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
-            if (method.getName().equals("lookupAllHostAddr")) {
+            if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
                 //处理不了会交给源对象处理
                 try {

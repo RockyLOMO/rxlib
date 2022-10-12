@@ -4,13 +4,13 @@ import com.google.common.net.HttpHeaders;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.rx.bean.DateTime;
 import org.rx.bean.Tuple;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
 import org.springframework.http.MediaType;
@@ -27,9 +27,8 @@ import java.util.Date;
 
 import static org.rx.core.Extends.quietly;
 
-@Slf4j
 public class Servlets extends ServletRequestUtils {
-    private static FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new FastThreadLocal<>();
+    static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new FastThreadLocal<>();
 
     public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
         holder.set(Tuple.of(request, response));
@@ -80,8 +79,9 @@ public class Servlets extends ServletRequestUtils {
         } catch (Exception e) {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
+            } else {
+                TraceHandler.INSTANCE.log(e);
             }
-            log.warn("requestIp {}", e.getMessage());
             return "0.0.0.0";
         }
     }

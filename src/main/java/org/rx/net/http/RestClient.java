@@ -79,7 +79,6 @@ public final class RestClient {
                 args.setError(e);
                 throw e;
             } finally {
-//                App.logExtraIfAbsent("rx-traceId", Snowflake.DEFAULT.nextId());
                 App.log(args, msg -> {
                     if (doPost) {
                         msg.appendLine("POST:\t%s", reqUrl);

@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
@@ -15,25 +16,45 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.quietly;
 
 //@Aspect
 @Component
 @ControllerAdvice
 public class ControllerInterceptor extends BaseInterceptor {
-    private final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
+    final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
     @PostConstruct
     public void init() {
-        super.argShortSelector = (s, p) -> {
-            if (p instanceof MultipartFile) {
-                return "[MultipartFile]";
+        super.enableTrace();
+    }
+
+    @Override
+    protected Object shortArg(Signature signature, Object arg) {
+        if (arg instanceof MultipartFile) {
+            return "[MultipartFile]";
+        }
+        return super.shortArg(signature, arg);
+    }
+
+    @Override
+    protected String startTrace(String parentTraceId) {
+        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
+        if (httpEnv != null) {
+            String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
+            if (parentTraceId == null) {
+                parentTraceId = httpEnv.left.getHeader(tn);
             }
-            return p;
-        };
+            String tid = super.startTrace(parentTraceId);
+            httpEnv.right.setHeader(tn, tid);
+            return tid;
+        }
+        return super.startTrace(parentTraceId);
     }
 
     @Override
@@ -47,7 +68,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        App.logExtra("url", Servlets.currentRequest().left.getRequestURL().toString());
+        App.logCtx("url", Servlets.currentRequest().left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 

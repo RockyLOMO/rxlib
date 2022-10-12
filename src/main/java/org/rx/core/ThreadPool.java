@@ -15,6 +15,7 @@ import org.rx.bean.*;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 
 import java.lang.management.ManagementFactory;
@@ -126,23 +127,25 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
-        final InternalThreadLocalMap parent;
-        final Object id;
-        final FlagsEnum<RunFlag> flags;
         final Func<T> fn;
+        final FlagsEnum<RunFlag> flags;
+        final Object id;
+        final InternalThreadLocalMap parent;
+        final String traceId;
 
-        Task(Object id, FlagsEnum<RunFlag> flags, Func<T> fn) {
+        Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
-            if (RxConfig.INSTANCE.threadPool.enableInheritThreadLocals) {
-                flags.add(RunFlag.INHERIT_THREAD_LOCALS);
+            if (RxConfig.INSTANCE.threadPool.traceName != null) {
+                flags.add(RunFlag.THREAD_TRACE);
             }
 
-            this.id = id;
-            this.flags = flags;
-            parent = flags.has(RunFlag.INHERIT_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
             this.fn = fn;
+            this.flags = flags;
+            this.id = id;
+            parent = flags.has(RunFlag.INHERIT_FAST_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
+            traceId = CTX_TRACE_ID.get();
         }
 
         @SneakyThrows
@@ -168,8 +171,14 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public String toString() {
-            return String.format("Task-%s[%s]", ifNull(id, 0), flags.getValue());
+            String hc = id != null ? id.toString() : Integer.toHexString(hashCode());
+            return String.format("Task-%s[%s]", hc, flags.getValue());
         }
+    }
+
+    static class TaskContext {
+        ReentrantLock lock;
+        AtomicInteger lockRefCnt;
     }
 
     static class FutureTaskAdapter<T> extends FutureTask<T> {
@@ -184,11 +193,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             super(runnable, result);
             task = (Task<T>) runnable;
         }
-    }
-
-    static class TaskContext {
-        ReentrantLock lock;
-        AtomicInteger lockRefCnt;
     }
 
     static class DynamicSizer implements TimerTask {
@@ -304,12 +308,48 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     //region static members
+    public static volatile BiAction<String> traceStatusChangedHandler;
+    static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
     static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
     static final DynamicSizer SIZER = new DynamicSizer();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
+
+    @SneakyThrows
+    public static String startTrace(String traceId) {
+        String tid = CTX_TRACE_ID.get();
+        if (tid == null) {
+//            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
+            tid = traceId != null ? traceId : SUID.randomSUID().toString();
+            CTX_TRACE_ID.set(tid);
+        } else if (traceId != null && !traceId.equals(tid)) {
+            log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
+        }
+//        log.info("trace init {}", tid);
+        BiAction<String> fn = traceStatusChangedHandler;
+        if (fn != null) {
+            fn.invoke(tid);
+        }
+        return tid;
+    }
+
+    @SneakyThrows
+    public static void endTrace() {
+//        log.info("trace remove");
+        CTX_TRACE_ID.remove();
+        BiAction<String> fn = traceStatusChangedHandler;
+        if (fn != null) {
+            fn.invoke(null);
+        }
+    }
+
+    public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
+        require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
+
+        return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
+    }
 
     static ThreadFactory newThreadFactory(String name) {
         //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
@@ -339,12 +379,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             return def;
         }
         return ac;
-    }
-
-    public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
-        require(cpuUtilization, 0 <= cpuUtilization && cpuUtilization <= 1);
-
-        return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
     //endregion
 
@@ -425,7 +459,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public Future<Void> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return (Future<Void>) super.submit((Runnable) new Task<>(taskId, flags, task.toFunc()));
+        return (Future<Void>) super.submit((Runnable) new Task<>(task.toFunc(), flags, taskId));
     }
 
     public <T> Future<T> run(Func<T> task) {
@@ -433,7 +467,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return super.submit((Callable<T>) new Task<>(taskId, flags, task));
+        return super.submit((Callable<T>) new Task<>(task, flags, taskId));
     }
 
     //ExecutorCompletionService
@@ -477,7 +511,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return CompletableFuture.runAsync(new Task<>(taskId, flags, task.toFunc()), this);
+        return CompletableFuture.runAsync(new Task<>(task.toFunc(), flags, taskId), this);
     }
 
     public <T> CompletableFuture<T> runAsync(Func<T> task) {
@@ -485,7 +519,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return CompletableFuture.supplyAsync(new Task<>(taskId, flags, task), this);
+        return CompletableFuture.supplyAsync(new Task<>(task, flags, taskId), this);
     }
 
     public <T> MultiTaskFuture<T, T> runAnyAsync(Collection<Func<T>> tasks) {
@@ -515,55 +549,63 @@ public class ThreadPool extends ThreadPoolExecutor {
         } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
             task = as(Reflects.readField(r, "fn"), Task.class);
         }
-        if (task != null) {
-            taskMap.put(r, task);
-            Object id = task.id;
-            FlagsEnum<RunFlag> flags = task.flags;
-            if (id != null) {
-                if (flags.has(RunFlag.SINGLE)) {
-                    TaskContext ctx = getContextForLock(id);
-                    if (!ctx.lock.tryLock()) {
-                        throw new InterruptedException(String.format("SingleScope %s locked by other thread", id));
-                    }
-                    ctx.lockRefCnt.incrementAndGet();
-                    log.debug("CTX tryLock {} -> {}", id, flags.name());
-                } else if (flags.has(RunFlag.SYNCHRONIZED)) {
-                    TaskContext ctx = getContextForLock(id);
-                    ctx.lockRefCnt.incrementAndGet();
-                    ctx.lock.lock();
-                    log.debug("CTX lock {} -> {}", id, flags.name());
-                }
+        if (task == null) {
+            return;
+        }
+
+        taskMap.put(r, task);
+        FlagsEnum<RunFlag> flags = task.flags;
+        if (flags.has(RunFlag.SINGLE)) {
+            TaskContext ctx = getContextForLock(task.id);
+            if (!ctx.lock.tryLock()) {
+                throw new InterruptedException(String.format("SingleScope %s locked by other thread", task.id));
             }
-            if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
-                incrSize(this);
-            }
-            //TransmittableThreadLocal
-            if (task.parent != null) {
-                setThreadLocalMap(t, task.parent);
-            }
+            ctx.lockRefCnt.incrementAndGet();
+            log.debug("CTX tryLock {} -> {}", task.id, flags.name());
+        } else if (flags.has(RunFlag.SYNCHRONIZED)) {
+            TaskContext ctx = getContextForLock(task.id);
+            ctx.lockRefCnt.incrementAndGet();
+            ctx.lock.lock();
+            log.debug("CTX lock {} -> {}", task.id, flags.name());
+        }
+        if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
+            incrSize(this);
+        }
+        //TransmittableThreadLocal
+        if (task.parent != null) {
+            setThreadLocalMap(t, task.parent);
+        }
+        if (flags.has(RunFlag.THREAD_TRACE)) {
+            startTrace(task.traceId);
         }
     }
 
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
         Task<?> task = getTask(r, true);
-        if (task != null) {
-            Object id = task.id;
-            if (id != null) {
-                TaskContext ctx = taskCtxMap.get(id);
-                if (ctx != null) {
-                    boolean doRemove = false;
-                    if (ctx.lockRefCnt.decrementAndGet() <= 0) {
-                        taskCtxMap.remove(id);
-                        doRemove = true;
-                    }
-                    log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
-                    ctx.lock.unlock();
+        if (task == null) {
+            return;
+        }
+
+        FlagsEnum<RunFlag> flags = task.flags;
+        Object id = task.id;
+        if (id != null) {
+            TaskContext ctx = taskCtxMap.get(id);
+            if (ctx != null) {
+                boolean doRemove = false;
+                if (ctx.lockRefCnt.decrementAndGet() <= 0) {
+                    taskCtxMap.remove(id);
+                    doRemove = true;
                 }
+                log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
+                ctx.lock.unlock();
             }
-            if (task.parent != null) {
-                setThreadLocalMap(Thread.currentThread(), null);
-            }
+        }
+        if (task.parent != null) {
+            setThreadLocalMap(Thread.currentThread(), null);
+        }
+        if (flags.has(RunFlag.THREAD_TRACE)) {
+            endTrace();
         }
     }
 
@@ -582,6 +624,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private TaskContext getContextForLock(Object id) {
+        if (id == null) {
+            throw new InvalidException("SINGLE or SYNCHRONIZED flag require a taskId");
+        }
+
         return taskCtxMap.computeIfAbsent(id, k -> {
             TaskContext ctx = new TaskContext();
             ctx.lock = new ReentrantLock();

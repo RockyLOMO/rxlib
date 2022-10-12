@@ -443,7 +443,7 @@ public class HttpClient {
         } finally {
             if (enableLog) {
                 if (responseContent != null) {
-                    App.logExtra("body", responseContent.toString());
+                    App.logCtx("body", responseContent.toString());
                 }
                 logHttp(args, url);
             }

@@ -9,8 +9,6 @@ import org.rx.bean.FlagsEnum;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
-import org.rx.util.Snowflake;
-import org.rx.util.function.TripleFunc;
 
 import java.util.List;
 
@@ -19,24 +17,35 @@ import static org.rx.core.Extends.as;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;
-    static final String TRACE_ID = "rx-traceId";
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),
             onProceed = Delegate.create(),
             onError = Delegate.create();
-    protected TripleFunc<Signature, Object, Object> argShortSelector;
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
         return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
     }
 
+    protected final void enableTrace() {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        conf.setTraceName("rx-traceId");
+        ThreadPool.traceStatusChangedHandler = p -> App.logCtx(conf.getTraceName(), p);
+    }
+
+    protected String startTrace(String parentTraceId) {
+        return ThreadPool.startTrace(parentTraceId);
+    }
+
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         if (BooleanUtils.isTrue(idempotent.get())) {
             return joinPoint.proceed();
         }
-        App.logExtraIfAbsent(TRACE_ID, Snowflake.DEFAULT.nextId());
         idempotent.set(Boolean.TRUE);
+        String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
+        if (tn != null) {
+            App.logCtxIfAbsent(tn, startTrace(null));
+        }
         try {
             Signature signature = joinPoint.getSignature();
             MethodSignature methodSignature = as(signature, MethodSignature.class);
@@ -47,9 +56,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 return joinPoint.proceed();
             }
 
-            RxConfig rxConfig = RxConfig.INSTANCE;
-            eventArgs.setLogStrategy(rxConfig.getLogStrategy());
-            eventArgs.setLogTypeWhitelist(rxConfig.getLogTypeWhitelist());
+            RxConfig conf = RxConfig.INSTANCE;
+            eventArgs.setLogStrategy(conf.getLogStrategy());
+            eventArgs.setLogTypeWhitelist(conf.getLogTypeWhitelist());
             try {
                 eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
                 TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMicros());
@@ -73,8 +82,9 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             }
             return eventArgs.getReturnValue();
         } finally {
+            ThreadPool.endTrace();
+            App.clearLogCtx();
             idempotent.remove();
-            App.clearLogExtras();
         }
     }
 
@@ -82,27 +92,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         if (Arrays.isEmpty(args)) {
             return "{}";
         }
-        List<Object> list = Linq.from(args).select(p -> {
-            if (argShortSelector != null) {
-                Object r = argShortSelector.invoke(signature, p);
-                if (r != null) {
-                    return r;
-                }
-            }
-            if (p instanceof byte[]) {
-                byte[] b = (byte[]) p;
-                if (b.length > MAX_FIELD_SIZE) {
-                    return "[BigBytes]";
-                }
-            }
-            if (p instanceof String) {
-                String s = (String) p;
-                if (s.length() > MAX_FIELD_SIZE) {
-                    return "[BigString]";
-                }
-            }
-            return p;
-        }).toList();
+        List<Object> list = Linq.from(args).select(p -> shortArg(signature, p)).toList();
         return toJsonString(list.size() == 1 ? list.get(0) : list);
     }
 
@@ -112,5 +102,21 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return null;
         }
         return Reflects.defaultValue(methodSignature.getReturnType());
+    }
+
+    protected Object shortArg(Signature signature, Object arg) {
+        if (arg instanceof byte[]) {
+            byte[] b = (byte[]) arg;
+            if (b.length > MAX_FIELD_SIZE) {
+                return "[BigBytes]";
+            }
+        }
+        if (arg instanceof String) {
+            String s = (String) arg;
+            if (s.length() > MAX_FIELD_SIZE) {
+                return "[BigString]";
+            }
+        }
+        return arg;
     }
 }
