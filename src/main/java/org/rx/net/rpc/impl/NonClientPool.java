@@ -12,7 +12,7 @@ public class NonClientPool implements RpcClientPool {
     public StatefulRpcClient borrowClient() {
         RpcClientConfig config = template.deepClone();
         StatefulRpcClient client = new StatefulRpcClient(config);
-        client.connect(true);
+        client.connect(config.getServerEndpoint());
         return client;
     }
 

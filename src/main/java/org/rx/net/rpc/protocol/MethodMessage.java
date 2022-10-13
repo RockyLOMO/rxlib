@@ -10,6 +10,7 @@ public class MethodMessage implements Serializable {
     public final int id;
     public final String methodName;
     public final Object[] parameters;
+    public final String traceId;
     public Object returnValue;
     public String errorMessage;
 }

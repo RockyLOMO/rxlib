@@ -33,7 +33,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             return;
         }
         conf.setTraceName("rx-traceId");
-        ThreadPool.traceStatusChangedHandler = p -> logCtx(conf.getTraceName(), p);
+        ThreadPool.traceIdChangedHandler = p -> logCtx(conf.getTraceName(), p);
     }
 
     protected String startTrace(String parentTraceId) {

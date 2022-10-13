@@ -308,7 +308,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     //region static members
-    public static volatile BiAction<String> traceStatusChangedHandler;
+    public static volatile BiAction<String> traceIdChangedHandler;
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
@@ -328,18 +328,22 @@ public class ThreadPool extends ThreadPoolExecutor {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
         }
 //        log.info("trace init {}", tid);
-        BiAction<String> fn = traceStatusChangedHandler;
+        BiAction<String> fn = traceIdChangedHandler;
         if (fn != null) {
             fn.invoke(tid);
         }
         return tid;
     }
 
+    public static String traceId() {
+        return CTX_TRACE_ID.get();
+    }
+
     @SneakyThrows
     public static void endTrace() {
 //        log.info("trace remove");
         CTX_TRACE_ID.remove();
-        BiAction<String> fn = traceStatusChangedHandler;
+        BiAction<String> fn = traceIdChangedHandler;
         if (fn != null) {
             fn.invoke(null);
         }

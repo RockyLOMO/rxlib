@@ -35,14 +35,14 @@ import static org.rx.core.Extends.*;
 @Slf4j
 @RequiredArgsConstructor
 public class RpcServer extends Disposable implements EventTarget<RpcServer> {
-    class ClientHandler extends ChannelInboundHandlerAdapter implements RpcClient {
+    class RpcClientImpl extends ChannelInboundHandlerAdapter implements RpcClient {
         final Delegate<RpcClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter
         Channel channel;
         //cache meta
         @Getter
         InetSocketAddress remoteEndpoint;
-        HandshakePacket handshakeMeta;
+        HandshakePacket handshakeMeta = NULL;
 
         @Override
         public boolean isConnected() {
@@ -175,6 +175,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
     }
 
+    static final HandshakePacket NULL = new HandshakePacket();
     public static final ThreadPool SCHEDULER = new ThreadPool(RpcServerConfig.REACTOR_NAME);
     public final Delegate<RpcServer, RpcServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
@@ -186,7 +187,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
 
     @Getter
     final RpcServerConfig config;
-    final Map<InetSocketAddress, ClientHandler> clients = new ConcurrentHashMap<>();
+    final Map<InetSocketAddress, RpcClientImpl> clients = new ConcurrentHashMap<>();
     ServerBootstrap bootstrap;
     volatile Channel serverChannel;
 
@@ -233,7 +234,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientHandler());
+                    new RpcClientImpl());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -246,7 +247,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public String dumpClients() {
         StringBuilder buf = new StringBuilder();
         int i = 1;
-        for (RpcClient client : Linq.from(clients.values()).orderByDescending(p -> p.handshakeMeta != null ? p.handshakeMeta.getEventVersion() : -1)) {
+        for (RpcClient client : Linq.from(clients.values()).orderByDescending(p -> p.handshakeMeta.getEventVersion())) {
             buf.append("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();
@@ -262,7 +263,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public RpcClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
         checkNotClosed();
 
-        ClientHandler handler = clients.get(remoteEp);
+        RpcClientImpl handler = clients.get(remoteEp);
         if (handler == null && throwOnEmpty) {
             throw new ClientDisconnectedException(remoteEp);
         }

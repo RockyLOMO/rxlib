@@ -34,7 +34,7 @@ public class RpcClientPoolImpl extends Disposable implements RpcClientPool {
             public StatefulRpcClient create() throws Exception {
                 RpcClientConfig config = template.deepClone();
                 StatefulRpcClient client = new StatefulRpcClient(config);
-                client.connect(true);
+                client.connect(config.getServerEndpoint());
                 log.debug("Create RpcClient {}", client);
                 return client;
             }

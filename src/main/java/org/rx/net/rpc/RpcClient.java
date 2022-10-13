@@ -27,18 +27,18 @@ public interface RpcClient extends AutoCloseable, EventTarget<RpcClient> {
     Channel getChannel();
 
     default boolean hasAttr(String name) {
-        if (!isConnected()) {
-            throw new ClientDisconnectedException("");
-        }
-
         return getChannel().hasAttr(AttributeKey.valueOf(name));
     }
 
-    default <T> Attribute<T> attr(String name) {
+    default <T> T attr(String name) {
+        return (T) getChannel().attr(AttributeKey.valueOf(name)).get();
+    }
+
+    default <T> void attr(String name, T val) {
         if (!isConnected()) {
             throw new ClientDisconnectedException("");
         }
 
-        return getChannel().attr(AttributeKey.valueOf(name));
+        getChannel().attr(AttributeKey.valueOf(name)).set(val);
     }
 }
