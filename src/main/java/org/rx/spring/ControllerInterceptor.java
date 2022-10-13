@@ -10,7 +10,10 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.Servlets;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -76,10 +79,20 @@ public class ControllerInterceptor extends BaseInterceptor {
     @ResponseBody
     public Object onException(Exception e, HttpServletRequest request) {
         TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
-        String msg = ApplicationException.getMessage(e);
-        if (SpringContext.controllerExceptionHandler == null) {
-            return msg;
+        String msg = null;
+        if (e instanceof MethodArgumentNotValidException) {
+            FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();
+            if (fieldError != null) {
+                msg = String.format("Field '%s' %s", fieldError.getField(), fieldError.getDefaultMessage());
+            }
         }
-        return SpringContext.controllerExceptionHandler.invoke(e, msg);
+        if (msg == null) {
+            msg = ApplicationException.getMessage(e);
+        }
+
+        if (SpringContext.controllerExceptionHandler != null) {
+            return SpringContext.controllerExceptionHandler.invoke(e, msg);
+        }
+        return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
