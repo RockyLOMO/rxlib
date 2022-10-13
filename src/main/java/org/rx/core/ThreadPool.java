@@ -308,6 +308,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     //region static members
+    public static volatile Func<String> traceIdGenerator;
     public static volatile BiAction<String> traceIdChangedHandler;
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
@@ -321,8 +322,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static String startTrace(String traceId) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
-//            tid = traceId != null ? traceId : UUID.randomUUID().toString().replace("-", "");
-            tid = traceId != null ? traceId : SUID.randomSUID().toString();
+            tid = traceId != null ? traceId :
+                    traceIdGenerator != null ? traceIdGenerator.invoke() : SUID.randomSUID().toString();
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);

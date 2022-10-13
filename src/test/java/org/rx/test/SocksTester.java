@@ -35,8 +35,6 @@ import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.codec.AESUtil;
 import org.rx.test.bean.*;
-import org.rx.util.function.BiAction;
-import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
@@ -115,11 +113,6 @@ public class SocksTester extends TConfig {
         assert CollectionUtils.isEmpty(discover);
     }
 
-    private void sleep4Sync() {
-        sleep(5000);
-        System.out.println("-等待异步同步-");
-    }
-
     @Test
     public void multiNode2() {
         NameserverClient c1 = new NameserverClient(appUsercenter);
@@ -150,6 +143,11 @@ public class SocksTester extends TConfig {
         System.out.println("ns2:" + ns2.getDnsServer().getHosts());
     }
 
+    private void sleep4Sync() {
+        sleep(5000);
+        System.out.println("-等待异步同步-");
+    }
+
     @SneakyThrows
     @Test
     public void rpcStatefulApi() {
@@ -160,15 +158,15 @@ public class SocksTester extends TConfig {
         facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
         facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
-        tst(svcImpl, facadeGroup);
+        rpcApiEvent(svcImpl, facadeGroup);
         //重启server，客户端自动重连
         restartServer(svcImpl, endpoint_3307, startDelay);
-        tst(svcImpl, facadeGroup);
+        rpcApiEvent(svcImpl, facadeGroup);
 
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
     }
 
-    private void tst(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
+    private void rpcApiEvent(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
         for (UserManager facade : facadeGroup) {
             try {
                 facade.triggerError();
@@ -181,24 +179,27 @@ public class SocksTester extends TConfig {
         for (int i = 0; i < facadeGroup.size(); i++) {
             int x = i;
             facadeGroup.get(i).<UserEventArgs>attachEvent(eventName, (s, e) -> {
-                System.out.printf("!!facade%s - args.flag=%s!!%n", x, e.getFlag());
+                log.info("facade{} {} -> args.flag={}", x, eventName, e.getFlag());
                 e.setFlag(e.getFlag() + 1);
             }, false);
         }
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 1; i++) {
             UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
             facadeGroup.get(0).raiseEvent(eventName, args);
-            System.out.println("flag:" + args.getFlag());
+            log.info("facade0 flag:" + args.getFlag());
             assert args.getFlag() == 1;
 
             args = new UserEventArgs(PersonBean.LeZhi);
             args.setFlag(1);
             facadeGroup.get(1).raiseEvent(eventName, args);
+            log.info("facade1 flag:" + args.getFlag());
             assert args.getFlag() == 2;
 
             svcImpl.raiseEvent(eventName, args);
             sleep(50);
-            assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+            log.info("svr flag:" + args.getFlag());
+            //开启计算广播是3，没开启是2
+            assert args.getFlag() == 2;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
     }
 
@@ -226,11 +227,11 @@ public class SocksTester extends TConfig {
         config.setEventVersion(2);
         UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
         //注册事件（广播）
-        attachEvent(facade1, "0x00");
+        rpcImplEvent(facade1, "0x00");
         //服务端触发事件，只有facade1注册会被广播到
         server.create(PersonBean.LeZhi);
 
-        attachEvent(facade2, "0x01");
+        rpcImplEvent(facade2, "0x01");
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
         server.create(PersonBean.LeZhi);
 
@@ -239,12 +240,12 @@ public class SocksTester extends TConfig {
         sleep(5000);
     }
 
-    private void attachEvent(UserManagerImpl facade, String id) {
+    private void rpcImplEvent(UserManagerImpl facade, String id) {
         facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
 //          Tasks.run(()->  facade.computeInt(0, -1));
-            System.out.println("xxx111");
-            facade.computeLevel(0, -1);
-            System.out.println("xxx222");
+            System.out.println("onInnerCall start");
+            assert facade.computeLevel(0, -1) == -1;
+            System.out.println("onInnerCall end");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
             e.getStatefulList().add(id + ":" + SUID.randomSUID());
             e.setCancel(false); //是否取消事件
@@ -294,15 +295,6 @@ public class SocksTester extends TConfig {
         }
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
-
-//        restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
-//        max = 10;
-//        for (int i = 0; i < max; ) {
-//            assert userManager.computeInt(i, 1) == i + 1;
-//            i++;
-//        }
-//        userManager.raiseEvent(eventName, EventArgs.EMPTY);
-//        userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
         sleep(5000);
     }
@@ -630,7 +622,6 @@ public class SocksTester extends TConfig {
         assert client.resolve("www.baidu.com").equals(aopIp);
 
         wait();
-//        System.in.read();
     }
 
     @Test
@@ -657,6 +648,7 @@ public class SocksTester extends TConfig {
 //        String decrypt = AESUtil.decryptFromBase64(encrypt, String.format("℞%s", DateTime.utcNow().addDays(-1).toDateString()));
         String decrypt = AESUtil.decryptFromBase64(encrypt);
         System.out.println(decrypt);
+        assert content.equals(decrypt);
     }
 
     @Test
