@@ -1,23 +1,18 @@
 package org.rx.net.rpc;
 
 import lombok.Data;
-import lombok.EqualsAndHashCode;
-import org.rx.net.SocketConfig;
+import org.rx.net.transport.TcpServerConfig;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Data
-@EqualsAndHashCode(callSuper = true)
-public class RpcServerConfig extends SocketConfig {
+public class RpcServerConfig {
     private static final long serialVersionUID = 8065323693541916068L;
-    public static final String REACTOR_NAME = "℞Rpc";
-    public static final int HEARTBEAT_TIMEOUT = 60;
     public static final int EVENT_DISABLE_COMPUTE = -1;
     public static final int EVENT_LATEST_COMPUTE = 0;
 
-    private final int listenPort;
-    private int capacity = 10000;
+    private final TcpServerConfig tcpConfig;
     private final List<Integer> eventBroadcastVersions = new ArrayList<>();
     private int eventComputeVersion = EVENT_DISABLE_COMPUTE;
 }

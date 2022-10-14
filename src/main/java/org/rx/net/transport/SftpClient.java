@@ -1,4 +1,4 @@
-package org.rx.net;
+package org.rx.net.transport;
 
 import com.jcraft.jsch.*;
 import lombok.NonNull;
@@ -11,6 +11,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.CrudFile;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
+import org.rx.net.AuthenticEndpoint;
 
 import java.io.InputStream;
 import java.util.*;

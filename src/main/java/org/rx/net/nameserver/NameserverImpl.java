@@ -9,6 +9,8 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.*;
+import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.UdpClient;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -30,7 +32,7 @@ public class NameserverImpl implements Nameserver {
 
     static final String NAME = "nameserver";
     final NameserverConfig config;
-    final RpcServer rs;
+    final TcpServer rs;
     @Getter
     final DnsServer dnsServer;
     @Setter
@@ -58,7 +60,7 @@ public class NameserverImpl implements Nameserver {
         dnsServer.setTtl(config.getDnsTtl());
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
 
-        rs = Remoting.listen(this, config.getRegisterPort(), false);
+        rs = Remoting.register(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {
             String appName = e.getClient().attr(APP_NAME_KEY);
             if (appName == null) {
@@ -67,7 +69,7 @@ public class NameserverImpl implements Nameserver {
 
             doDeregister(appName, e.getClient().getRemoteEndpoint().getAddress(), true, true);
         });
-        rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress()).put("ping", e.getValue() - System.currentTimeMillis()));
+        rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress()).put("ping", System.currentTimeMillis() - e.getValue().getTimestamp()));
 
         ss = new UdpClient(getSyncPort());
         ss.onReceive.combine((s, e) -> {

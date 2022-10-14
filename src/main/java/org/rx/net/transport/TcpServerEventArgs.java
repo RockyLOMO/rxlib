@@ -1,4 +1,4 @@
-package org.rx.net.rpc;
+package org.rx.net.transport;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -8,11 +8,11 @@ import java.io.Serializable;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class RpcServerEventArgs<T extends Serializable> extends NEventArgs<T> {
+public class TcpServerEventArgs<T extends Serializable> extends NEventArgs<T> {
     private static final long serialVersionUID = 6292438476559047718L;
-    private final RpcClient client;
+    private final TcpClient client;
 
-    public RpcServerEventArgs(RpcClient client, T value) {
+    public TcpServerEventArgs(TcpClient client, T value) {
         super(value);
         this.client = client;
     }

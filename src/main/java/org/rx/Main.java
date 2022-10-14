@@ -22,6 +22,7 @@ import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
 import org.rx.util.function.TripleAction;
 
@@ -74,9 +75,9 @@ public final class Main implements SocksSupport {
             backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
             //server port + 1 = rpc
-            RpcServerConfig rpcConf = new RpcServerConfig(port + 1);
-            rpcConf.setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
-            Remoting.listen(app = new Main(backSvr), rpcConf);
+            RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
+            rpcConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
+            Remoting.register(app = new Main(backSvr), rpcConf);
         } else {
             String[] arg1 = Strings.split(options.get("shadowUsers"), ",");
             if (arg1.length == 0) {
@@ -103,13 +104,13 @@ public final class Main implements SocksSupport {
                 }
                 shadowServers.clear();
                 for (AuthenticEndpoint shadowServer : svrs) {
-                    RpcClientConfig rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
-                    rpcConf.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+                    RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
+                    rpcConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
                     String weight = shadowServer.getParameters().get("w");
                     if (Strings.isEmpty(weight)) {
                         continue;
                     }
-                    shadowServers.add(new UpstreamSupport(shadowServer, Remoting.create(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
+                    shadowServers.add(new UpstreamSupport(shadowServer, Remoting.createFacade(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
                 }
                 log.info("reload svrs {}", toJsonString(svrs));
 

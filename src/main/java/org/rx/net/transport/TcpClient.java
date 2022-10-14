@@ -1,7 +1,6 @@
-package org.rx.net.rpc;
+package org.rx.net.transport;
 
 import io.netty.channel.Channel;
-import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import org.rx.core.Delegate;
 import org.rx.core.EventTarget;
@@ -11,7 +10,7 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 
-public interface RpcClient extends AutoCloseable, EventTarget<RpcClient> {
+public interface TcpClient extends AutoCloseable, EventTarget<TcpClient> {
     boolean isConnected();
 
     InetSocketAddress getRemoteEndpoint();
@@ -22,7 +21,7 @@ public interface RpcClient extends AutoCloseable, EventTarget<RpcClient> {
 
     void send(Serializable pack);
 
-    Delegate<RpcClient, NEventArgs<Serializable>> onReceive();
+    Delegate<TcpClient, NEventArgs<Serializable>> onReceive();
 
     Channel getChannel();
 

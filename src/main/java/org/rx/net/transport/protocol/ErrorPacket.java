@@ -1,4 +1,4 @@
-package org.rx.net.rpc.protocol;
+package org.rx.net.transport.protocol;
 
 import lombok.Data;
 

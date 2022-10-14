@@ -1,4 +1,4 @@
-package org.rx.net;
+package org.rx.net.transport;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

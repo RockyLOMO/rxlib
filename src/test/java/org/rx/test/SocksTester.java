@@ -34,6 +34,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.codec.AESUtil;
+import org.rx.net.transport.*;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
 
@@ -53,7 +54,7 @@ import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class SocksTester extends TConfig {
-    final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
@@ -155,8 +156,8 @@ public class SocksTester extends TConfig {
         startServer(svcImpl, endpoint_3307);
 
         List<UserManager> facadeGroup = new ArrayList<>();
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
         rpcApiEvent(svcImpl, facadeGroup);
         //重启server，客户端自动重连
@@ -206,17 +207,18 @@ public class SocksTester extends TConfig {
     @Test
     public void rpcStatefulImpl() {
         //服务端监听
-        RpcServerConfig serverConfig = new RpcServerConfig(3307);
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(3307));
         serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
 //        serverConfig.getEventBroadcastVersions().add(2);  //版本号一致才广播
         UserManagerImpl server = new UserManagerImpl();
-        Remoting.listen(server, serverConfig);
+        Remoting.register(server, serverConfig);
 
         //客户端 facade
-        RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
-        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (p, c) -> {
+        RpcClientConfig<UserManagerImpl> config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
+        config.setInitHandler((p, c) -> {
             System.out.println("onHandshake: " + p.computeLevel(1, 2));
         });
+        UserManagerImpl facade1 = Remoting.createFacade(UserManagerImpl.class, config);
         assert facade1.computeLevel(1, 1) == 2; //服务端计算并返回
         try {
             facade1.triggerError(); //测试异常
@@ -225,7 +227,7 @@ public class SocksTester extends TConfig {
         assert facade1.computeLevel(17, 1) == 18;
 
         config.setEventVersion(2);
-        UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
+        UserManagerImpl facade2 = Remoting.createFacade(UserManagerImpl.class, config);
         //注册事件（广播）
         rpcImplEvent(facade1, "0x00");
         //服务端触发事件，只有facade1注册会被广播到
@@ -257,7 +259,8 @@ public class SocksTester extends TConfig {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint_3307);
         AtomicBoolean connected = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0), (p, c) -> {
+        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint_3307, 0);
+        config.setInitHandler((p, c) -> {
             p.attachEvent(eventName, (s, e) -> {
                 System.out.println("attachEvent callback");
             }, false);
@@ -276,6 +279,7 @@ public class SocksTester extends TConfig {
             log.debug("init ok");
             connected.set(true);
         });
+        UserManager userManager = Remoting.createFacade(UserManager.class, config);
         assert userManager.computeLevel(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
@@ -300,14 +304,14 @@ public class SocksTester extends TConfig {
     }
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
-        RpcServerConfig svr = new RpcServerConfig(ep.getPort());
-        svr.setUseSharedTcpEventLoop(false);
-        serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, svr));
+        RpcServerConfig svr = new RpcServerConfig(new TcpServerConfig(ep.getPort()));
+        svr.getTcpConfig().setUseSharedTcpEventLoop(false);
+        serverHost.computeIfAbsent(svcImpl, k -> Remoting.register(k, svr));
         System.out.println("Start server on port " + ep.getPort());
     }
 
     <T> Future<?> restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
-        RpcServer rs = serverHost.remove(svcImpl);
+        TcpServer rs = serverHost.remove(svcImpl);
         sleep(startDelay);
         rs.close();
         System.out.println("Close server on port " + rs.getConfig().getListenPort());
@@ -317,13 +321,13 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void rpcPoolMode() {
-        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
+        Remoting.register(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
+        HttpUserManager facade = Remoting.createFacade(HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
@@ -380,15 +384,15 @@ public class SocksTester extends TConfig {
         usr.setMaxIpCount(-1);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
-        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
-        Remoting.listen(new Main(backSvr), rpcServerConf);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
+        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
@@ -447,15 +451,15 @@ public class SocksTester extends TConfig {
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
-        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
-        Remoting.listen(new Main(backSvr), rpcServerConf);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
+        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());

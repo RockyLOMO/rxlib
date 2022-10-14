@@ -1,4 +1,4 @@
-package org.rx.net.rpc;
+package org.rx.net.transport;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -16,9 +16,9 @@ import org.rx.exception.TraceHandler;
 import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
-import org.rx.net.rpc.protocol.Ack;
-import org.rx.net.rpc.protocol.AckSync;
-import org.rx.net.rpc.protocol.UdpMessage;
+import org.rx.net.transport.protocol.Ack;
+import org.rx.net.transport.protocol.AckSync;
+import org.rx.net.transport.protocol.UdpMessage;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
