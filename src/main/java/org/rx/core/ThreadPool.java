@@ -323,7 +323,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
             tid = traceId != null ? traceId :
-                    traceIdGenerator != null ? traceIdGenerator.invoke() : SUID.randomSUID().toString();
+                    traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);

@@ -9,11 +9,12 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.text.DecimalFormat;
 import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
+    static final SecureRandom DEF = new SecureRandom();
+
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
     }
@@ -173,7 +174,7 @@ public class Bytes {
 
     public static byte[] randomBytes(int size) {
         byte[] bytes = new byte[size];
-        new SecureRandom().nextBytes(bytes);
+        DEF.nextBytes(bytes);
         return bytes;
     }
 

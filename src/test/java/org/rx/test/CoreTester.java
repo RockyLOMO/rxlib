@@ -346,11 +346,6 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void codec() {
-        for (int i = 0; i < 10; i++) {
-            long ts = System.nanoTime();
-            assert App.orderedUUID(ts, i).equals(App.orderedUUID(ts, i));
-        }
-
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.createMapping(CollisionEntity.class);
         db.dropMapping(CollisionEntity.class);

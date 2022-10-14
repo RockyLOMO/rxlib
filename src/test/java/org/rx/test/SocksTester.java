@@ -11,7 +11,7 @@ import org.rx.Main;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
-import org.rx.bean.SUID;
+import org.rx.bean.ULID;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
@@ -249,7 +249,7 @@ public class SocksTester extends TConfig {
             assert facade.computeLevel(0, -1) == -1;
             System.out.println("onInnerCall end");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
-            e.getStatefulList().add(id + ":" + SUID.randomSUID());
+            e.getStatefulList().add(id + ":" + ULID.randomULID());
             e.setCancel(false); //是否取消事件
         });
     }

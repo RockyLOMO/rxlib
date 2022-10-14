@@ -21,7 +21,6 @@ import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.util.Snowflake;
 import org.rx.util.function.*;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
@@ -396,10 +395,10 @@ public final class App extends SystemUtils {
 
     //When using 128-bits, the x86 and x64 versions do not produce the same values
     @SneakyThrows
-    public static UUID murmurHash3_128(BiAction<Hasher> fn) {
+    public static ULID murmurHash3_128(BiAction<Hasher> fn) {
         Hasher hasher = Hashing.murmur3_128().newHasher();
         fn.invoke(hasher);
-        return SUID.newUUID(hasher.hash().asBytes());
+        return ULID.valueOf(hasher.hash().asBytes());
     }
 
     public static BigInteger hashUnsigned64(Object... args) {
@@ -438,23 +437,6 @@ public final class App extends SystemUtils {
 
     public static long hash64(byte[] buf, int offset, int len) {
         return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
-    }
-
-    public static UUID orderedUUID() {
-        return orderedUUID(System.nanoTime(), Snowflake.DEFAULT.nextId());
-    }
-
-    public static UUID orderedUUID(long timestamp, Object key) {
-        long id = key instanceof Long ? (long) key : hash64(key);
-        long mostSigBits, leastSigBits;
-//        if (sequentialAtEnd) {
-//            mostSigBits = id;
-//            leastSigBits = timestamp;
-//        } else {
-        mostSigBits = timestamp;
-        leastSigBits = id;
-//        }
-        return new UUID(mostSigBits, leastSigBits);
     }
 
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准

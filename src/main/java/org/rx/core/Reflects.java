@@ -92,7 +92,7 @@ public class Reflects extends ClassUtils {
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
-        registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
+        registerConvert(String.class, ULID.class, (sv, tt) -> ULID.valueOf(sv));
     }
 
     //region class
