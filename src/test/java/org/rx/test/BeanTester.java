@@ -110,7 +110,7 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void uuid() {
+    public void ulid() {
         String jstr = toJsonString(ULID.randomULID());
         ULID id = fromJson(jstr, ULID.class);
         assert jstr.substring(1, jstr.length() - 1).equals(id.toString());
