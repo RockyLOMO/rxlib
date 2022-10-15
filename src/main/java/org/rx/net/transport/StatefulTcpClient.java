@@ -1,57 +1,46 @@
-package org.rx.net.rpc.impl;
+package org.rx.net.transport;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.Attribute;
-import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.SneakyThrows;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.rpc.*;
-import org.rx.net.rpc.protocol.ErrorPacket;
-import org.rx.net.rpc.protocol.HandshakePacket;
+import org.rx.net.transport.protocol.ErrorPacket;
+import org.rx.net.transport.protocol.PingPacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Extends.*;
 
 @Slf4j
-public class StatefulRpcClient extends Disposable implements RpcClient {
+public class StatefulTcpClient extends Disposable implements TcpClient {
     class ClientHandler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            handshakePacket.setEventVersion(config.getEventVersion());
-            ctx.writeAndFlush(handshakePacket).addListener(p -> {
-                if (p.isSuccess()) {
-                    //握手需要异步
-                    raiseEventAsync(onConnected, EventArgs.EMPTY);
-                }
-            });
+            //握手需要异步
+            raiseEventAsync(onConnected, EventArgs.EMPTY);
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-            if (msg instanceof ErrorPacket) {
-                exceptionCaught(ctx, new InvalidException("Server error: {}", ((ErrorPacket) msg).getErrorMessage()));
-                return;
-            }
-
             Channel channel = ctx.channel();
             log.debug("clientRead {} {}", channel.remoteAddress(), msg.getClass());
             Serializable pack;
@@ -59,8 +48,11 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
                 return;
             }
-            if (tryAs(pack, Long.class, p -> {
-                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p);
+            if (tryAs(pack, ErrorPacket.class, p -> exceptionCaught(ctx, new InvalidException("Server error: {}", p.getErrorMessage())))) {
+                return;
+            }
+            if (tryAs(pack, PingPacket.class, p -> {
+                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p.getTimestamp());
                 raiseEventAsync(onPong, new NEventArgs<>(p));
             })) {
                 return;
@@ -90,7 +82,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                         break;
                     case WRITER_IDLE:
                         log.debug("clientHeartbeat ping {}", channel.remoteAddress());
-                        ctx.writeAndFlush(System.currentTimeMillis());
+                        ctx.writeAndFlush(new PingPacket());
                         break;
                 }
             }
@@ -113,31 +105,31 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
-    private static final RpcClientConfig NULL_CONF = new RpcClientConfig();
-    public final Delegate<RpcClient, EventArgs> onConnected = Delegate.create(),
+    static final TcpClientConfig NULL_CONF = new TcpClientConfig();
+    public final Delegate<TcpClient, EventArgs> onConnected = Delegate.create(),
             onDisconnected = Delegate.create();
-    public final Delegate<RpcClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
+    public final Delegate<TcpClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
             onReconnected = Delegate.create();
-    public final Delegate<RpcClient, NEventArgs<Serializable>> onSend = Delegate.create(),
+    public final Delegate<TcpClient, NEventArgs<Serializable>> onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcClient, NEventArgs<Long>> onPong = Delegate.create();
-    public final Delegate<RpcClient, NEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<TcpClient, NEventArgs<PingPacket>> onPong = Delegate.create();
+    public final Delegate<TcpClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
-    final RpcClientConfig config;
-    @Getter
-    final HandshakePacket handshakePacket = new HandshakePacket();
-    Bootstrap bootstrap;
-    volatile Channel channel;
-    volatile InetSocketAddress reconnectingEp;
+    final TcpClientConfig config;
+    @Setter
+    long sendWaitConnectMillis = 5000;
     //cache meta
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
+    Bootstrap bootstrap;
     @Getter
-    DateTime connectedTime;
+    volatile Channel channel;
+    volatile ChannelFuture connectingFuture;
+    volatile InetSocketAddress connectingEp;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
-        return RpcServer.SCHEDULER;
+        return TcpServer.SCHEDULER;
     }
 
     public boolean isConnected() {
@@ -148,11 +140,11 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         return config.isEnableReconnect() && !isConnected();
     }
 
-    public StatefulRpcClient(@NonNull RpcClientConfig config) {
+    public StatefulTcpClient(@NonNull TcpClientConfig config) {
         this.config = config;
     }
 
-    protected StatefulRpcClient() {
+    protected StatefulTcpClient() {
         this.config = NULL_CONF;
     }
 
@@ -163,28 +155,22 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
 //        bootstrap.config().group().shutdownGracefully();
     }
 
-    public void connect() {
-        connect(false);
-    }
-
-    @SneakyThrows
-    public synchronized void connect(boolean wait) {
+    @Override
+    public synchronized void connect(@NonNull InetSocketAddress remoteEp) {
         if (isConnected()) {
             throw new InvalidException("Client has connected");
         }
 
-        bootstrap = Sockets.bootstrap(RpcServerConfig.REACTOR_NAME, config, channel -> {
-            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, RpcServerConfig.HEARTBEAT_TIMEOUT / 2, 0));
+        config.setServerEndpoint(remoteEp);
+        bootstrap = Sockets.bootstrap(TcpServerConfig.REACTOR_NAME, config, channel -> {
+            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
-            pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
+            pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
-        ResetEventWait syncRoot = null;
-        doConnect(false, wait ? syncRoot = new ResetEventWait() : null);
-        if (syncRoot == null) {
-            return;
-        }
+        ResetEventWait syncRoot = new ResetEventWait();
+        doConnect(false, syncRoot);
         try {
             syncRoot.waitOne(config.getConnectTimeoutMillis());
             syncRoot.reset();
@@ -196,6 +182,50 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         }
     }
 
+    @Override
+    public synchronized Future<Void> connectAsync(@NonNull InetSocketAddress remoteEp) {
+        if (isConnected()) {
+            throw new InvalidException("Client has connected");
+        }
+
+        config.setServerEndpoint(remoteEp);
+        bootstrap = Sockets.bootstrap(TcpServerConfig.REACTOR_NAME, config, channel -> {
+            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
+            TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
+            pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
+                    new ClientHandler());
+        });
+        doConnect(false, null);
+        return new Future<Void>() {
+            @Override
+            public boolean cancel(boolean mayInterruptIfRunning) {
+                config.setEnableReconnect(false);
+                return true;
+            }
+
+            @Override
+            public boolean isCancelled() {
+                return !config.isEnableReconnect();
+            }
+
+            @Override
+            public boolean isDone() {
+                return isConnected();
+            }
+
+            @Override
+            public Void get() throws InterruptedException, ExecutionException {
+                return connectingFuture.get();
+            }
+
+            @Override
+            public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+                return connectingFuture.get(timeout, unit);
+            }
+        };
+    }
+
     synchronized void doConnect(boolean reconnect, ResetEventWait syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
@@ -203,14 +233,14 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 return;
             }
 
-            NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(reconnectingEp, config.getServerEndpoint()));
+            NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(connectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
-            ep = reconnectingEp = args.getValue();
+            ep = connectingEp = args.getValue();
         } else {
             ep = config.getServerEndpoint();
         }
 
-        bootstrap.connect(ep).addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
+        connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
             channel = f.channel();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
@@ -227,11 +257,11 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
                 }
                 return;
             }
-            reconnectingEp = null;
+            connectingEp = null;
+            connectingFuture = null;
             config.setServerEndpoint(ep);
             remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
             localEndpoint = (InetSocketAddress) channel.localAddress();
-            connectedTime = DateTime.now();
 
             if (syncRoot != null) {
                 syncRoot.set();
@@ -243,18 +273,22 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
         });
     }
 
+    ChannelId channelId() {
+        return channel != null ? channel.id() : null;
+    }
+
     @Override
     public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
             if (isShouldReconnect()) {
                 try {
-                    FluentWait.newInstance(4000).until(s -> isConnected());
+                    FluentWait.newInstance(sendWaitConnectMillis).until(s -> isConnected());
                 } catch (TimeoutException e) {
                     throw new ClientDisconnectedException(e);
                 }
             }
             if (!isConnected()) {
-                throw new ClientDisconnectedException(channel.id());
+                throw new ClientDisconnectedException(channelId());
             }
         }
 
@@ -269,20 +303,7 @@ public class StatefulRpcClient extends Disposable implements RpcClient {
     }
 
     @Override
-    public boolean hasAttr(String name) {
-        if (!isConnected()) {
-            throw new ClientDisconnectedException(channel.id());
-        }
-
-        return channel.hasAttr(AttributeKey.valueOf(name));
-    }
-
-    @Override
-    public <T> Attribute<T> attr(String name) {
-        if (!isConnected()) {
-            throw new ClientDisconnectedException(channel.id());
-        }
-
-        return channel.attr(AttributeKey.valueOf(name));
+    public Delegate<TcpClient, NEventArgs<Serializable>> onReceive() {
+        return onReceive;
     }
 }

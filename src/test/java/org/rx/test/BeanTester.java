@@ -4,9 +4,11 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.*;
+import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
+import org.rx.io.Bytes;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.test.common.TestUtil;
@@ -108,29 +110,38 @@ public class BeanTester extends TestUtil {
     }
 
     @Test
-    public void suid() {
-        String jstr = toJsonString(SUID.randomSUID());
-        SUID sid = fromJson(jstr, SUID.class);
-        assert jstr.substring(1, jstr.length() - 1).equals(sid.toString());
+    public void ulid() {
+        String jstr = toJsonString(ULID.randomULID());
+        ULID id = fromJson(jstr, ULID.class);
+        assert jstr.substring(1, jstr.length() - 1).equals(id.toString());
 
-        SUID suid = SUID.compute(TConfig.NAME_WYF);
-        System.out.println(suid);
-
-        SUID valueOf = SUID.valueOf(suid.toString());
+        ULID id1 = ULID.newULID(TConfig.NAME_WYF);
+        System.out.println(id1);
+        ULID valueOf = ULID.valueOf(id1.toString());
         System.out.println(valueOf);
+        assert id1.equals(valueOf);
+        valueOf = ULID.valueOf(id1.toBase64String());
+        assert id1.equals(valueOf);
 
-        assert suid.equals(valueOf);
-
-        Set<SUID> set = new HashSet<>();
+        Set<ULID> set = new HashSet<>();
         int len = 100;  //1530ms
-        invoke("suid", i -> {
-            SUID suid1 = SUID.randomSUID();
-            System.out.println(suid1);
-            set.add(suid1);
-
-            assert SUID.valueOf(suid1.toString()).equals(suid1);
+        invoke("ulid", i -> {
+            ULID x = ULID.randomULID();
+            System.out.println(x);
+            set.add(x);
+            assert ULID.valueOf(x.toString()).equals(x);
         }, len);
         assert set.size() == len;
+
+        for (int i = 0; i < 20; i++) {
+            long ts = System.currentTimeMillis();
+            assert ULID.newULID(Bytes.getBytes(i), ts).equals(ULID.newULID(Bytes.getBytes(i), ts));
+        }
+
+        for (int i = 0; i < 20; i++) {
+            long ts = System.currentTimeMillis();
+            assert ts == ULID.newULID(Bytes.getBytes(i), ts).getTimestamp();
+        }
     }
 
     @Test

@@ -1,4 +1,4 @@
-package org.rx.net.rpc;
+package org.rx.net.transport;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -11,7 +11,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.bean.IdGenerator;
 import org.rx.core.*;
@@ -20,7 +19,7 @@ import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
-import org.rx.net.rpc.protocol.HandshakePacket;
+import org.rx.net.transport.protocol.PingPacket;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -28,26 +27,49 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Future;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class RpcServer extends Disposable implements EventTarget<RpcServer> {
-    class ClientHandler extends ChannelInboundHandlerAdapter implements RpcClientMeta {
+public class TcpServer extends Disposable implements EventTarget<TcpServer> {
+    class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
+        final Delegate<TcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter
-        final HandshakePacket handshakePacket = new HandshakePacket();
-        transient Channel channel;
+        Channel channel;
         //cache meta
         @Getter
         InetSocketAddress remoteEndpoint;
-        @Getter
-        DateTime connectedTime;
 
         @Override
         public boolean isConnected() {
             return channel != null && channel.isActive();
+        }
+
+        @Override
+        public void send(Serializable pack) {
+            checkNotClosed();
+
+            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
+            TcpServer.this.raiseEvent(onSend, args);
+            if (args.isCancel() || !isConnected()) {
+                log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
+                return;
+            }
+
+            channel.writeAndFlush(pack);
+            log.debug("serverWrite {} {}", channel.remoteAddress(), pack.getClass());
+        }
+
+        @Override
+        public Delegate<TcpClient, NEventArgs<Serializable>> onReceive() {
+            return onReceive;
+        }
+
+        @Override
+        public void close() {
+            Sockets.closeOnFlushed(channel);
         }
 
         @Override
@@ -62,9 +84,8 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
             }
 
             clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
-            connectedTime = DateTime.now();
-            RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(this, null);
-            raiseEvent(onConnected, args);
+            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, null);
+            TcpServer.this.raiseEvent(onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
                 Sockets.closeOnFlushed(channel);
@@ -82,26 +103,24 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 Sockets.closeOnFlushed(channel);
                 return;
             }
-            if (tryAs(pack, HandshakePacket.class, p -> getHandshakePacket().setEventVersion(p.getEventVersion()))) {
-                log.debug("Handshake: {}", toJsonString(getHandshakePacket()));
-                return;
-            }
-            if (tryAs(pack, Long.class, p -> {
+            if (tryAs(pack, PingPacket.class, p -> {
                 ctx.writeAndFlush(p);
-                raiseEventAsync(onPing, new RpcServerEventArgs<>(this, p));
+                TcpServer.this.raiseEventAsync(onPing, new TcpServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
             }
 
-            raiseEventAsync(onReceive, new RpcServerEventArgs<>(this, pack));
+            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
+            raiseEvent(onReceive, args);
+            TcpServer.this.raiseEventAsync(TcpServer.this.onReceive, args);
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
-            log.info("serverInactive {}", ctx.channel().remoteAddress());
+            log.debug("serverInactive {}", ctx.channel().remoteAddress());
             clients.remove(getRemoteEndpoint());
-            raiseEventAsync(onDisconnected, new RpcServerEventArgs<>(this, null));
+            TcpServer.this.raiseEventAsync(onDisconnected, new TcpServerEventArgs<>(this, null));
         }
 
         @Override
@@ -123,27 +142,45 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
                 return;
             }
 
-            RpcServerEventArgs<Throwable> args = new RpcServerEventArgs<>(this, cause);
-            quietly(() -> raiseEvent(onError, args));
+            TcpServerEventArgs<Throwable> args = new TcpServerEventArgs<>(this, cause);
+            quietly(() -> TcpServer.this.raiseEvent(onError, args));
             if (args.isCancel()) {
                 return;
             }
             Sockets.closeOnFlushed(channel);
         }
+
+        @Override
+        public void connect(InetSocketAddress remoteEp) {
+            checkNotClosed();
+            if (isConnected()) {
+                return;
+            }
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Future<Void> connectAsync(InetSocketAddress remoteEp) {
+            checkNotClosed();
+            if (isConnected()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            throw new UnsupportedOperationException();
+        }
     }
 
-    public static final ThreadPool SCHEDULER = new ThreadPool(RpcServerConfig.REACTOR_NAME);
-    public final Delegate<RpcServer, RpcServerEventArgs<Serializable>> onConnected = Delegate.create(),
+    public static final ThreadPool SCHEDULER = new ThreadPool(TcpServerConfig.REACTOR_NAME);
+    public final Delegate<TcpServer, TcpServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcServer, RpcServerEventArgs<Long>> onPing = Delegate.create();
-    public final Delegate<RpcServer, RpcServerEventArgs<Throwable>> onError = Delegate.create();
-    public final Delegate<RpcServer, EventArgs> onClosed = Delegate.create();
+    public final Delegate<TcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
+    public final Delegate<TcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<TcpServer, EventArgs> onClosed = Delegate.create();
 
     @Getter
-    final RpcServerConfig config;
-    final Map<InetSocketAddress, ClientHandler> clients = new ConcurrentHashMap<>();
+    final TcpServerConfig config;
+    final Map<InetSocketAddress, ClientImpl> clients = new ConcurrentHashMap<>();
     ServerBootstrap bootstrap;
     volatile Channel serverChannel;
 
@@ -157,12 +194,12 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     }
 
     @Override
-    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<RpcServer, TArgs> event, TArgs args) {
+    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
         ThreadPool scheduler = asyncScheduler();
         return scheduler.runAsync(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
 
-    public Map<InetSocketAddress, RpcClientMeta> getClients() {
+    public Map<InetSocketAddress, TcpClient> getClients() {
         return Collections.unmodifiableMap(clients);
     }
 
@@ -186,11 +223,11 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         }
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS层面，IdleStateHandler应用层面
-            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(RpcServerConfig.HEARTBEAT_TIMEOUT, 0, 0));
+            ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
             TransportUtil.addFrontendHandler(channel, config);
-            pipeline.addLast(RpcClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, RpcClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientHandler());
+            pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
+                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
+                    new ClientImpl());
         }).option(ChannelOption.SO_REUSEADDR, true);
         bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -203,7 +240,7 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
     public String dumpClients() {
         StringBuilder buf = new StringBuilder();
         int i = 1;
-        for (RpcClientMeta client : Linq.from(clients.values()).orderByDescending(p -> p.getHandshakePacket().getEventVersion())) {
+        for (TcpClient client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
             buf.append("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();
@@ -212,46 +249,21 @@ public class RpcServer extends Disposable implements EventTarget<RpcServer> {
         return buf.toString();
     }
 
-    public RpcClientMeta getClient(InetSocketAddress remoteEndpoint) {
-        return getHandler(remoteEndpoint, true);
+    public TcpClient getClient(InetSocketAddress remoteEndpoint) {
+        return getClient(remoteEndpoint, true);
     }
 
-    protected ClientHandler getHandler(InetSocketAddress remoteEp, boolean throwOnDisconnected) {
+    public TcpClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
         checkNotClosed();
 
-        ClientHandler handler = clients.get(remoteEp);
-        if (handler == null && throwOnDisconnected) {
+        ClientImpl handler = clients.get(remoteEp);
+        if (handler == null && throwOnEmpty) {
             throw new ClientDisconnectedException(remoteEp);
         }
         return handler;
     }
 
     public void send(InetSocketAddress remoteEndpoint, Serializable pack) {
-        send(getClient(remoteEndpoint), pack);
-    }
-
-    protected void send(@NonNull RpcClientMeta client, Serializable pack) {
-        checkNotClosed();
-
-        RpcServerEventArgs<Serializable> args = new RpcServerEventArgs<>(client, pack);
-        raiseEvent(onSend, args);
-        ClientHandler handler;
-        if (args.isCancel()
-                || (handler = getHandler(client.getRemoteEndpoint(), false)) == null || !handler.isConnected()) {
-            log.warn("The client {} disconnected", client.getRemoteEndpoint());
-            return;
-        }
-
-        handler.channel.writeAndFlush(pack);
-        log.debug("serverWrite {} {}", handler.channel.remoteAddress(), pack.getClass());
-    }
-
-    public void close(@NonNull RpcClientMeta client) {
-        ClientHandler handler = getHandler(client.getRemoteEndpoint(), false);
-        if (handler == null) {
-            return;
-        }
-
-        Sockets.closeOnFlushed(handler.channel);
+        getClient(remoteEndpoint).send(pack);
     }
 }

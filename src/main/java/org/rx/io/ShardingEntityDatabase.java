@@ -59,7 +59,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         local = new EntityDatabaseImpl(filePath, timeRollingPattern, maxConnections);
         this.rpcPort = rpcPort;
 
-        Remoting.listen(local, rpcPort, false);
+        Remoting.register(local, rpcPort, false);
         nsClient.registerAsync(registerEndpoints).whenComplete((r, e) -> {
             if (e != null) {
                 return;
@@ -67,7 +67,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             nodes.add(Tuple.of(new InetSocketAddress(Sockets.loopbackAddress(), rpcPort), local));
             nodes.addAll(Linq.from(nsClient.discoverAll(APP_NAME, true)).select(p -> {
                 InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
-                return Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
+                return Tuple.of(ep, Remoting.createFacade(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));
             }).toList());
             log.info("{} init {} sharding nodes", APP_NAME, nodes.size());
             try {
@@ -88,7 +88,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             synchronized (nodes) {
                 if (e.isUp()) {
                     if (!Linq.from(nodes).any(p -> p.left.equals(ep))) {
-                        nodes.add(Tuple.of(ep, Remoting.create(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections))));
+                        nodes.add(Tuple.of(ep, Remoting.createFacade(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections))));
                     }
                 } else {
                     nodes.removeIf(p -> p.left.equals(ep));

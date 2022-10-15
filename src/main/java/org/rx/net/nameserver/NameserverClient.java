@@ -5,7 +5,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.bean.BiTuple;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -136,39 +135,40 @@ public final class NameserverClient extends Disposable {
                             }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
                         }
                     };
-                    tuple.ns = Remoting.create(Nameserver.class, RpcClientConfig.statefulMode(regEp, 0),
-                            (ns, rc) -> {
-                                rc.onConnected.combine((s, e) -> {
-                                    hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
-                                    reInject();
-                                });
-                                rc.onDisconnected.combine((s, e) -> {
-                                    hold.setWeight(tuple, 0);
-                                    reInject();
-                                });
-                                rc.onReconnecting.combine((s, e) -> {
-                                    if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
-                                        registerAsync(svrEps);
-                                    }
-                                });
-                                rc.onReconnected.combine((s, e) -> {
-                                    tuple.dnsPort = null;
-                                    handshake.invoke();
-                                });
-                                ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
-                                    log.info("sync server endpoints: {}", toJsonString(e.getValue()));
-                                    if (e.getValue().isEmpty()) {
-                                        return;
-                                    }
+                    RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
+                    config.setInitHandler((ns, rc) -> {
+                        rc.onConnected.combine((s, e) -> {
+                            hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
+                            reInject();
+                        });
+                        rc.onDisconnected.combine((s, e) -> {
+                            hold.setWeight(tuple, 0);
+                            reInject();
+                        });
+                        rc.onReconnecting.combine((s, e) -> {
+                            if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
+                                registerAsync(svrEps);
+                            }
+                        });
+                        rc.onReconnected.combine((s, e) -> {
+                            tuple.dnsPort = null;
+                            handshake.invoke();
+                        });
+                        ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
+                            log.info("sync server endpoints: {}", toJsonString(e.getValue()));
+                            if (e.getValue().isEmpty()) {
+                                return;
+                            }
 
-                                    registerAsync(e.getValue());
-                                }, false);
-                                //onAppAddressChanged for arg#1 not work
-                                ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
-                                    log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
-                                    onAppAddressChanged.invoke(s, e);
-                                }, false);
-                            });
+                            registerAsync(e.getValue());
+                        }, false);
+                        //onAppAddressChanged for arg#1 not work
+                        ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
+                            log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
+                            onAppAddressChanged.invoke(s, e);
+                        }, false);
+                    });
+                    tuple.ns = Remoting.createFacade(Nameserver.class, config);
                     tuple.healthTask = Tasks.schedulePeriod(handshake, DEFAULT_HEALTH_PERIOD);
                     handshake.invoke();
                 }

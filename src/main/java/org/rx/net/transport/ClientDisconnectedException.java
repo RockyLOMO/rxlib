@@ -1,4 +1,4 @@
-package org.rx.net.rpc;
+package org.rx.net.transport;
 
 import org.rx.exception.InvalidException;
 

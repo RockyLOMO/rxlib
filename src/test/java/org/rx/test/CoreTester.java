@@ -119,7 +119,7 @@ public class CoreTester extends TestUtil {
         autoRmTL.set("AUTO");
 
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
-        ThreadPool.traceStatusChangedHandler = t -> App.logCtx("rx-traceId", t);
+        ThreadPool.traceIdChangedHandler = t -> App.logCtx("rx-traceId", t);
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         for (int i = 0; i < 3; i++) {
@@ -346,11 +346,6 @@ public class CoreTester extends TestUtil {
 
     @Test
     public void codec() {
-        for (int i = 0; i < 10; i++) {
-            long ts = System.nanoTime();
-            assert App.orderedUUID(ts, i).equals(App.orderedUUID(ts, i));
-        }
-
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.createMapping(CollisionEntity.class);
         db.dropMapping(CollisionEntity.class);

@@ -67,7 +67,7 @@ public class Reflects extends ClassUtils {
     public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final Set<Method> OBJECT_METHODS = ConcurrentHashMap.newKeySet();
-    static final String CLOSE_METHOD = "close", CHANGE_TYPE_METHOD = "valueOf";
+    static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     //must lazy before thread pool init.
     static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
@@ -92,7 +92,7 @@ public class Reflects extends ClassUtils {
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
-        registerConvert(String.class, SUID.class, (sv, tt) -> SUID.valueOf(sv));
+        registerConvert(String.class, ULID.class, (sv, tt) -> ULID.valueOf(sv));
     }
 
     //region class
@@ -255,7 +255,7 @@ public class Reflects extends ClassUtils {
     }
 
     public static boolean isCloseMethod(Method method) {
-        return Strings.hashEquals(method.getName(), CLOSE_METHOD) && method.getParameterCount() == 0;
+        return Strings.hashEquals(method.getName(), M_0) && method.getParameterCount() == 0;
     }
 
     public static <T, TT> T invokeStaticMethod(Class<? extends TT> type, String name, Object... args) {

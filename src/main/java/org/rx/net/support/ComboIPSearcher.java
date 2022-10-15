@@ -81,7 +81,7 @@ class ComboIPSearcher implements IPSearcher {
 //                () -> ipData(host), () -> ipWho(host));
         RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
-        return sneakyInvoke(() -> fns.next().invoke(finalHost), fns.size());
+        return sneakyInvoke(() -> fns.next().invoke(finalHost), 3);
     }
 
     //6k/d

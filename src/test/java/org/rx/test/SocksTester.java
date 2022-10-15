@@ -11,7 +11,7 @@ import org.rx.Main;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
-import org.rx.bean.SUID;
+import org.rx.bean.ULID;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
@@ -34,9 +34,8 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.codec.AESUtil;
+import org.rx.net.transport.*;
 import org.rx.test.bean.*;
-import org.rx.util.function.BiAction;
-import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
@@ -55,7 +54,7 @@ import static org.rx.core.Extends.sleep;
 
 @Slf4j
 public class SocksTester extends TConfig {
-    final Map<Object, RpcServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
@@ -115,11 +114,6 @@ public class SocksTester extends TConfig {
         assert CollectionUtils.isEmpty(discover);
     }
 
-    private void sleep4Sync() {
-        sleep(5000);
-        System.out.println("-等待异步同步-");
-    }
-
     @Test
     public void multiNode2() {
         NameserverClient c1 = new NameserverClient(appUsercenter);
@@ -150,6 +144,11 @@ public class SocksTester extends TConfig {
         System.out.println("ns2:" + ns2.getDnsServer().getHosts());
     }
 
+    private void sleep4Sync() {
+        sleep(5000);
+        System.out.println("-等待异步同步-");
+    }
+
     @SneakyThrows
     @Test
     public void rpcStatefulApi() {
@@ -157,18 +156,18 @@ public class SocksTester extends TConfig {
         startServer(svcImpl, endpoint_3307);
 
         List<UserManager> facadeGroup = new ArrayList<>();
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
-        facadeGroup.add(Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
-        tst(svcImpl, facadeGroup);
+        rpcApiEvent(svcImpl, facadeGroup);
         //重启server，客户端自动重连
         restartServer(svcImpl, endpoint_3307, startDelay);
-        tst(svcImpl, facadeGroup);
+        rpcApiEvent(svcImpl, facadeGroup);
 
 //        facadeGroup.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
     }
 
-    private void tst(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
+    private void rpcApiEvent(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
         for (UserManager facade : facadeGroup) {
             try {
                 facade.triggerError();
@@ -181,41 +180,45 @@ public class SocksTester extends TConfig {
         for (int i = 0; i < facadeGroup.size(); i++) {
             int x = i;
             facadeGroup.get(i).<UserEventArgs>attachEvent(eventName, (s, e) -> {
-                System.out.printf("!!facade%s - args.flag=%s!!%n", x, e.getFlag());
+                log.info("facade{} {} -> args.flag={}", x, eventName, e.getFlag());
                 e.setFlag(e.getFlag() + 1);
             }, false);
         }
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 1; i++) {
             UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
             facadeGroup.get(0).raiseEvent(eventName, args);
-            System.out.println("flag:" + args.getFlag());
+            log.info("facade0 flag:" + args.getFlag());
             assert args.getFlag() == 1;
 
             args = new UserEventArgs(PersonBean.LeZhi);
             args.setFlag(1);
             facadeGroup.get(1).raiseEvent(eventName, args);
+            log.info("facade1 flag:" + args.getFlag());
             assert args.getFlag() == 2;
 
             svcImpl.raiseEvent(eventName, args);
             sleep(50);
-            assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
+            log.info("svr flag:" + args.getFlag());
+            //开启计算广播是3，没开启是2
+            assert args.getFlag() == 2;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
         }
     }
 
     @Test
     public void rpcStatefulImpl() {
         //服务端监听
-        RpcServerConfig serverConfig = new RpcServerConfig(3307);
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(3307));
         serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
 //        serverConfig.getEventBroadcastVersions().add(2);  //版本号一致才广播
         UserManagerImpl server = new UserManagerImpl();
-        Remoting.listen(server, serverConfig);
+        Remoting.register(server, serverConfig);
 
         //客户端 facade
-        RpcClientConfig config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
-        UserManagerImpl facade1 = Remoting.create(UserManagerImpl.class, config, (p, c) -> {
+        RpcClientConfig<UserManagerImpl> config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
+        config.setInitHandler((p, c) -> {
             System.out.println("onHandshake: " + p.computeLevel(1, 2));
         });
+        UserManagerImpl facade1 = Remoting.createFacade(UserManagerImpl.class, config);
         assert facade1.computeLevel(1, 1) == 2; //服务端计算并返回
         try {
             facade1.triggerError(); //测试异常
@@ -224,13 +227,13 @@ public class SocksTester extends TConfig {
         assert facade1.computeLevel(17, 1) == 18;
 
         config.setEventVersion(2);
-        UserManagerImpl facade2 = Remoting.create(UserManagerImpl.class, config, null);
+        UserManagerImpl facade2 = Remoting.createFacade(UserManagerImpl.class, config);
         //注册事件（广播）
-        attachEvent(facade1, "0x00");
+        rpcImplEvent(facade1, "0x00");
         //服务端触发事件，只有facade1注册会被广播到
         server.create(PersonBean.LeZhi);
 
-        attachEvent(facade2, "0x01");
+        rpcImplEvent(facade2, "0x01");
         //服务端触发事件，facade1,facade2随机触发计算eventArgs，然后用计算出的eventArgs广播非计算的facade
         server.create(PersonBean.LeZhi);
 
@@ -239,14 +242,14 @@ public class SocksTester extends TConfig {
         sleep(5000);
     }
 
-    private void attachEvent(UserManagerImpl facade, String id) {
+    private void rpcImplEvent(UserManagerImpl facade, String id) {
         facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
 //          Tasks.run(()->  facade.computeInt(0, -1));
-            System.out.println("xxx111");
-            facade.computeLevel(0, -1);
-            System.out.println("xxx222");
+            System.out.println("onInnerCall start");
+            assert facade.computeLevel(0, -1) == -1;
+            System.out.println("onInnerCall end");
             log.info("facade{} onCreate -> {}", id, toJsonString(e));
-            e.getStatefulList().add(id + ":" + SUID.randomSUID());
+            e.getStatefulList().add(id + ":" + ULID.randomULID());
             e.setCancel(false); //是否取消事件
         });
     }
@@ -256,7 +259,8 @@ public class SocksTester extends TConfig {
         UserManagerImpl svcImpl = new UserManagerImpl();
         startServer(svcImpl, endpoint_3307);
         AtomicBoolean connected = new AtomicBoolean(false);
-        UserManager userManager = Remoting.create(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0), (p, c) -> {
+        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint_3307, 0);
+        config.setInitHandler((p, c) -> {
             p.attachEvent(eventName, (s, e) -> {
                 System.out.println("attachEvent callback");
             }, false);
@@ -275,6 +279,7 @@ public class SocksTester extends TConfig {
             log.debug("init ok");
             connected.set(true);
         });
+        UserManager userManager = Remoting.createFacade(UserManager.class, config);
         assert userManager.computeLevel(1, 1) == 2;
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
@@ -295,27 +300,18 @@ public class SocksTester extends TConfig {
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
-//        restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
-//        max = 10;
-//        for (int i = 0; i < max; ) {
-//            assert userManager.computeInt(i, 1) == i + 1;
-//            i++;
-//        }
-//        userManager.raiseEvent(eventName, EventArgs.EMPTY);
-//        userManager.raiseEvent(eventName, EventArgs.EMPTY);
-
         sleep(5000);
     }
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
-        RpcServerConfig svr = new RpcServerConfig(ep.getPort());
-        svr.setUseSharedTcpEventLoop(false);
-        serverHost.computeIfAbsent(svcImpl, k -> Remoting.listen(k, svr));
+        RpcServerConfig svr = new RpcServerConfig(new TcpServerConfig(ep.getPort()));
+        svr.getTcpConfig().setUseSharedTcpEventLoop(false);
+        serverHost.computeIfAbsent(svcImpl, k -> Remoting.register(k, svr));
         System.out.println("Start server on port " + ep.getPort());
     }
 
     <T> Future<?> restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
-        RpcServer rs = serverHost.remove(svcImpl);
+        TcpServer rs = serverHost.remove(svcImpl);
         sleep(startDelay);
         rs.close();
         System.out.println("Close server on port " + rs.getConfig().getListenPort());
@@ -325,13 +321,13 @@ public class SocksTester extends TConfig {
     @SneakyThrows
     @Test
     public void rpcPoolMode() {
-        Remoting.listen(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
+        Remoting.register(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true);
 
         int tcount = 200;
         CountDownLatch latch = new CountDownLatch(tcount);
         //没有事件订阅，无状态会使用连接池模式
         int threadCount = 8;
-        HttpUserManager facade = Remoting.create(HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
+        HttpUserManager facade = Remoting.createFacade(HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
@@ -388,15 +384,15 @@ public class SocksTester extends TConfig {
         usr.setMaxIpCount(-1);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
-        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
-        Remoting.listen(new Main(backSvr), rpcServerConf);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
+        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
@@ -455,15 +451,15 @@ public class SocksTester extends TConfig {
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
-        RpcServerConfig rpcServerConf = new RpcServerConfig(backSrvEp.getPort() + 1);
-        rpcServerConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
-        Remoting.listen(new Main(backSvr), rpcServerConf);
+        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        RpcClientConfig rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
-        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.create(SocksSupport.class, rpcClientConf)));
+        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
@@ -630,7 +626,6 @@ public class SocksTester extends TConfig {
         assert client.resolve("www.baidu.com").equals(aopIp);
 
         wait();
-//        System.in.read();
     }
 
     @Test
@@ -657,6 +652,7 @@ public class SocksTester extends TConfig {
 //        String decrypt = AESUtil.decryptFromBase64(encrypt, String.format("℞%s", DateTime.utcNow().addDays(-1).toDateString()));
         String decrypt = AESUtil.decryptFromBase64(encrypt);
         System.out.println(decrypt);
+        assert content.equals(decrypt);
     }
 
     @Test

@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.rx.net.transport.TcpClient;
+import org.rx.net.transport.TcpServer;
 import org.rx.util.function.Func;
 
 import java.util.Objects;
@@ -12,24 +14,24 @@ import java.util.Objects;
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class RemotingContext {
-    static final FastThreadLocal<RemotingContext> TL = new FastThreadLocal<>();
+    static final FastThreadLocal<RemotingContext> CTX = new FastThreadLocal<>();
 
     public static RemotingContext context() {
-        RemotingContext ctx = TL.getIfExists();
+        RemotingContext ctx = CTX.getIfExists();
         Objects.requireNonNull(ctx, "No context");
         return ctx;
     }
 
     @SneakyThrows
-    static <T> T invoke(Func<T> fn, RpcServer rs, RpcClientMeta rc) {
-        TL.set(new RemotingContext(rs, rc));
+    static <T> T invoke(Func<T> fn, TcpServer rs, TcpClient rc) {
+        CTX.set(new RemotingContext(rs, rc));
         try {
             return fn.invoke();
         } finally {
-            TL.remove();
+            CTX.remove();
         }
     }
 
-    final RpcServer server;
-    final RpcClientMeta client;
+    final TcpServer server;
+    final TcpClient client;
 }

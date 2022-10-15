@@ -34,11 +34,11 @@ public class MD5Util {
         return md.digest(data);
     }
 
-    public static String md5Hex(@NonNull String data) {
-        return md5Hex(data.getBytes(StandardCharsets.UTF_8));
+    public static String hexMd5(@NonNull String data) {
+        return hexMd5(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    public static String md5Hex(byte[] data) {
+    public static String hexMd5(byte[] data) {
         return ByteBufUtil.hexDump(md5(data));
     }
 

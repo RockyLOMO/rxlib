@@ -1,4 +1,4 @@
-package org.rx.net.rpc.protocol;
+package org.rx.net.transport.protocol;
 
 public enum AckSync {
     NONE, SEMI, FULL
