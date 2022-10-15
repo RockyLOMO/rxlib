@@ -232,11 +232,6 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
         }
 
 //        Runtime.getRuntime().exec(shell, null, workspace)
-//        StringTokenizer st = new StringTokenizer(shell);
-//        String[] cmdarray = new String[st.countTokens()];
-//        for (int i = 0; st.hasMoreTokens(); i++) {
-//            cmdarray[i] = st.nextToken();
-//        }
         log.debug("start {}", shell);
         Process tmp = process = new ProcessBuilder(translateCommandline(shell))
                 .directory(workspace)
@@ -322,7 +317,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             return;
         }
 
-        log.debug("kill {}", shell);
+        log.info("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
         raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
