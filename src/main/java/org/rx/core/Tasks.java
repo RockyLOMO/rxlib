@@ -9,6 +9,7 @@ import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
 import java.sql.Time;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
@@ -41,6 +42,39 @@ public final class Tasks {
 
     public static ThreadPool pool() {
         return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
+    }
+
+    public static ExecutorService poolProxy() {
+        return new AbstractExecutorService() {
+            @Getter
+            boolean shutdown;
+
+            @Override
+            public void execute(Runnable command) {
+                pool().execute(command);
+            }
+
+            @Override
+            public void shutdown() {
+                shutdown = true;
+            }
+
+            @Override
+            public List<Runnable> shutdownNow() {
+                shutdown = true;
+                return Collections.emptyList();
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return shutdown;
+            }
+
+            @Override
+            public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+                return shutdown;
+            }
+        };
     }
 
     public static WheelTimer timer() {

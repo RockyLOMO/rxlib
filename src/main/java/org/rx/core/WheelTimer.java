@@ -318,6 +318,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public List<Runnable> shutdownNow() {
+        shutdown = true;
         return Collections.emptyList();
     }
 

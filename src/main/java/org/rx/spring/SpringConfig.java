@@ -2,6 +2,8 @@ package org.rx.spring;
 
 import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
+import org.rx.core.Tasks;
+import org.rx.core.ThreadPool;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.http.tunnel.Server;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
@@ -14,13 +16,20 @@ import org.springframework.stereotype.Component;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
+import java.util.concurrent.ExecutorService;
 
 @Configuration
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
 public class SpringConfig {
+//    @Bean
+//    public Server server() {
+//        return new Server();
+//    }
+
     @Bean
-    public Server server() {
-        return new Server();
+    public ExecutorService executorService() {
+        return new ThreadPool("rx-spring");
+//        return Tasks.poolProxy();
     }
 
     @Bean
