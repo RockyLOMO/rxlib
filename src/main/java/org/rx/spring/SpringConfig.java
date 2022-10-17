@@ -24,22 +24,23 @@ import java.util.concurrent.ExecutorService;
 
 @Configuration
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
-public class SpringConfig implements AsyncConfigurer {
-    @Override
-    public Executor getAsyncExecutor() {
-        return new ThreadPool("rx-spring-1");
-    }
+public class SpringConfig
+//        implements AsyncConfigurer
+{
+//    @Override
+//    public Executor getAsyncExecutor() {
+//        return new ThreadPool("rx-spring-1");
+//    }
+//
+//    @Override
+//    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
+//        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
+//    }
 
-    @Override
-    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
-    }
-
-    @Bean
-    public ExecutorService executorService() {
-        return new ThreadPool("rx-spring-2");
-//        return Tasks.poolProxy();
-    }
+//    @Bean
+//    public ExecutorService executorService() {
+//        return new ThreadPool("rx-spring-2");
+//    }
 
     @Bean
     public Server server() {
