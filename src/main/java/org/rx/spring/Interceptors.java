@@ -6,8 +6,11 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.annotation.EnableLogging;
 import org.rx.util.Validator;
 import org.springframework.stereotype.Component;
+
+import java.lang.reflect.Executable;
 
 //@within 对象级别
 //@annotation 方法级别
@@ -20,11 +23,22 @@ public class Interceptors {
             Signature signature = joinPoint.getSignature();
             if (signature instanceof ConstructorSignature) {
                 ConstructorSignature cs = (ConstructorSignature) signature;
-                Validator.validateConstructor(cs.getConstructor(), joinPoint.getTarget(), joinPoint.getArgs());
+                if (doValidate(cs.getConstructor())) {
+                    Validator.validateConstructor(cs.getConstructor(), joinPoint.getTarget(), joinPoint.getArgs());
+                }
                 return super.doAround(joinPoint);
             }
+
             MethodSignature ms = (MethodSignature) signature;
-            return Validator.validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), () -> super.doAround(joinPoint));
+            if (doValidate(ms.getMethod())) {
+                return Validator.validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), () -> super.doAround(joinPoint));
+            }
+            return super.doAround(joinPoint);
+        }
+
+        boolean doValidate(Executable r) {
+            EnableLogging a = r.getAnnotation(EnableLogging.class);
+            return a != null && a.enableValidate();
         }
     }
 
@@ -32,7 +46,7 @@ public class Interceptors {
     @Component
     public static class TraceInterceptor extends BaseInterceptor {
         public TraceInterceptor() {
-            super.enableTrace();
+            super.enableTrace(null);
         }
 
         @Around("@annotation(org.rx.annotation.NewTrace) || @within(org.rx.annotation.NewTrace)")

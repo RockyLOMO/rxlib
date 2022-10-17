@@ -27,12 +27,12 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
     }
 
-    protected final void enableTrace() {
-        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        if (conf.getTraceName() != null) {
-            return;
+    protected final void enableTrace(String traceName) {
+        if (traceName == null) {
+            traceName = Constants.DEFAULT_TRACE_NAME;
         }
-        conf.setTraceName("rx-traceId");
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        conf.setTraceName(traceName);
         ThreadPool.traceIdChangedHandler = p -> logCtx(conf.getTraceName(), p);
     }
 

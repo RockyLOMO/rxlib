@@ -32,7 +32,7 @@ public class ControllerInterceptor extends BaseInterceptor {
     final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
     public ControllerInterceptor() {
-        super.enableTrace();
+        super.enableTrace(null);
     }
 
     @Override

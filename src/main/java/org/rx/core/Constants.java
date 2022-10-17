@@ -20,6 +20,7 @@ public interface Constants {
     int SIZE_4K = KB * 4;
 
     String THREAD_POOL_QUEUE = "threadPoolQueue";
+    String DEFAULT_TRACE_NAME = "rx-traceId";
     String DUPLICATE_KEY = "duplicateKey";
 
     String NON_UNCHECKED = "unchecked";
