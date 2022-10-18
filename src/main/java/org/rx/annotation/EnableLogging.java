@@ -7,5 +7,5 @@ import java.lang.annotation.*;
 @Documented
 @Inherited
 public @interface EnableLogging {
-    boolean enableValidate() default false;
+    boolean doValidate() default false;
 }

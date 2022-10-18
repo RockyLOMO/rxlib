@@ -38,15 +38,15 @@ public class Interceptors {
 
         boolean doValidate(Executable r) {
             EnableLogging a = r.getAnnotation(EnableLogging.class);
-            return a != null && a.enableValidate();
+            return a != null && a.doValidate();
         }
     }
 
     @Aspect
     @Component
     public static class TraceInterceptor extends BaseInterceptor {
-        public TraceInterceptor() {
-            super.enableTrace(null);
+        public void setTraceName(String traceName) {
+            super.enableTrace(traceName);
         }
 
         @Around("@annotation(org.rx.annotation.NewTrace) || @within(org.rx.annotation.NewTrace)")

@@ -2,6 +2,7 @@ package org.rx.spring;
 
 import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.commons.lang3.BooleanUtils;
+import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -36,7 +37,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         ThreadPool.traceIdChangedHandler = p -> logCtx(conf.getTraceName(), p);
     }
 
-    protected String startTrace(String parentTraceId) {
+    protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
         return ThreadPool.startTrace(parentTraceId);
     }
 
@@ -47,7 +48,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
         idempotent.set(Boolean.TRUE);
         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
         if (tn != null) {
-            logCtxIfAbsent(tn, startTrace(null));
+            logCtxIfAbsent(tn, startTrace(joinPoint, null));
         }
         try {
             Signature signature = joinPoint.getSignature();

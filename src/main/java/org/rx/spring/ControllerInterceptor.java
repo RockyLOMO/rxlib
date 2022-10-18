@@ -1,6 +1,7 @@
 package org.rx.spring;
 
 import lombok.SneakyThrows;
+import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -31,10 +32,6 @@ import static org.rx.core.Extends.quietly;
 public class ControllerInterceptor extends BaseInterceptor {
     final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
-    public ControllerInterceptor() {
-        super.enableTrace(null);
-    }
-
     @Override
     protected Object shortArg(Signature signature, Object arg) {
         if (arg instanceof MultipartFile) {
@@ -44,22 +41,28 @@ public class ControllerInterceptor extends BaseInterceptor {
     }
 
     @Override
-    protected String startTrace(String parentTraceId) {
+    protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
         Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
-        if (httpEnv != null) {
-            String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-            if (parentTraceId == null) {
-                parentTraceId = httpEnv.left.getHeader(tn);
-            }
-            String tid = super.startTrace(parentTraceId);
-            httpEnv.right.setHeader(tn, tid);
-            return tid;
+        if (httpEnv == null) {
+            return super.startTrace(joinPoint, parentTraceId);
         }
-        return super.startTrace(parentTraceId);
+
+        String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
+        if (parentTraceId == null) {
+            parentTraceId = httpEnv.left.getHeader(tn);
+        }
+        String tid = super.startTrace(joinPoint, parentTraceId);
+        httpEnv.right.setHeader(tn, tid);
+        return tid;
     }
 
     @Override
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
+        if (httpEnv == null) {
+            return super.doAround(joinPoint);
+        }
+
         Signature signature = joinPoint.getSignature();
         MethodSignature methodSignature = as(signature, MethodSignature.class);
         if (methodSignature == null || skipMethods.contains(signature.getName())) {
@@ -69,7 +72,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        App.logCtx("url", Servlets.currentRequest().left.getRequestURL().toString());
+        App.logCtx("url", httpEnv.left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 
