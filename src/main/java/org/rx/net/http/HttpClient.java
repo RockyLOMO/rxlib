@@ -145,6 +145,10 @@ public class HttpClient {
             return response.request().url().toString();
         }
 
+        public String getResponseText() {
+            return toString();
+        }
+
         @JSONField(serialize = false)
         public Headers getHeaders() {
             return response.headers();
@@ -442,9 +446,6 @@ public class HttpClient {
             throw e;
         } finally {
             if (enableLog) {
-                if (responseContent != null) {
-                    App.logCtx("body", responseContent.toString());
-                }
                 logHttp(args, url);
             }
         }
