@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
+import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
@@ -156,7 +157,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
-        long pk = App.hash64(stackTrace);
+        long pk = CodecUtil.hash64(stackTrace);
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
         try {
@@ -219,7 +220,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
 
         String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters.length);
-        long pk = App.hash64(fullName);
+        long pk = CodecUtil.hash64(fullName);
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
         try {

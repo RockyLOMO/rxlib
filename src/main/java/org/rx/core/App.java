@@ -7,18 +7,15 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
-import com.google.common.hash.Hasher;
-import com.google.common.hash.Hashing;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.bean.*;
-import org.rx.codec.CrcModel;
+import org.rx.codec.CodecUtil;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
-import org.rx.io.*;
 import org.rx.net.Sockets;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
@@ -30,8 +27,7 @@ import java.io.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.util.*;
 
 import java.util.regex.Matcher;
@@ -69,6 +65,30 @@ public final class App extends SystemUtils {
     }
 
     //region basic
+    public static Map<String, String> mainOptions(String[] args) {
+        Map<String, String> result = new HashMap<>();
+        for (String arg : args) {
+            if (arg.startsWith("-")) {
+                Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
+                if (matcher.find()) {
+                    result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
+                }
+            }
+        }
+        return result;
+    }
+
+    public static List<String> mainOperations(String[] args) {
+        List<String> result = new ArrayList<>();
+        for (String arg : args) {
+            if (arg.startsWith("-")) {
+                break;
+            }
+            result.add(arg);
+        }
+        return result;
+    }
+
     public static File getJarFile(Object obj) {
         return getJarFile(obj.getClass());
     }
@@ -78,7 +98,7 @@ public final class App extends SystemUtils {
         String url = klass.getClassLoader()
                 .getResource(klass.getPackage().getName().replace(".", "/")).toString()
                 .replace(" ", "%20");
-        java.net.URI uri = new java.net.URI(url);
+        URI uri = new URI(url);
         if (uri.getPath() != null) {
             return new File(uri);
         }
@@ -91,9 +111,9 @@ public final class App extends SystemUtils {
         path = path.substring(0, path.toLowerCase().indexOf(".jar") + 4);
         if (path.startsWith("file://")) { //UNC Path
             path = "C:/" + path.substring(path.indexOf("file:/") + 7);
-            path = "/" + new java.net.URI(path).getPath();
+            path = "/" + new URI(path).getPath();
         } else {
-            path = new java.net.URI(path).getPath();
+            path = new URI(path).getPath();
         }
         return new File(path);
     }
@@ -253,28 +273,36 @@ public final class App extends SystemUtils {
         return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
     }
 
-    public static List<String> mainOperations(String[] args) {
-        List<String> result = new ArrayList<>();
-        for (String arg : args) {
-            if (arg.startsWith("-")) {
-                break;
-            }
-            result.add(arg);
+    public static String fastCacheKey(String method, Object... args) {
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
         }
-        return result;
+        if (!Arrays.isEmpty(args)) {
+            method += java.util.Arrays.hashCode(args);
+        }
+        return method;
+//        return method.intern();
     }
 
-    public static Map<String, String> mainOptions(String[] args) {
-        Map<String, String> result = new HashMap<>();
-        for (String arg : args) {
-            if (arg.startsWith("-")) {
-                Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
-                if (matcher.find()) {
-                    result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
-                }
-            }
+    public static String cacheKey(String method, Object... args) {
+        return cacheKey(null, method, args);
+    }
+
+    public static String cacheKey(String region, String method, Object... args) {
+        if (method == null) {
+            method = Reflects.stackClass(1).getSimpleName();
         }
-        return result;
+
+        StringBuilder buf = new StringBuilder();
+        if (region != null) {
+            buf.append(region).append(Constants.CACHE_KEY_SUFFIX);
+        }
+        buf.append(method);
+        if (!Arrays.isEmpty(args)) {
+            Object p = args.length == 1 ? args[0] : args;
+            buf.append(Constants.CACHE_KEY_SUFFIX).append(p instanceof String ? p : CodecUtil.hash64(p));
+        }
+        return buf.toString();
     }
     //endregion
 
@@ -349,115 +377,6 @@ public final class App extends SystemUtils {
             json.put("_error", e.getMessage());
             return json.toString();
         }
-    }
-    //endregion
-
-    //region codec
-    public static String hashKey(String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
-        }
-        if (!Arrays.isEmpty(args)) {
-            method += java.util.Arrays.hashCode(args);
-        }
-        return method;
-//        return method.intern();
-    }
-
-    public static String cacheKey(String method, Object... args) {
-        return cacheKey(null, method, args);
-    }
-
-    //注意arg类型区分String和Number
-    public static String cacheKey(String region, String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
-        }
-
-        StringBuilder buf = new StringBuilder();
-        if (region != null) {
-            buf.append(region).append(Constants.CACHE_KEY_SUFFIX);
-        }
-        buf.append(method);
-        if (!Arrays.isEmpty(args)) {
-            Object p = args.length == 1 ? args[0] : args;
-            buf.append(Constants.CACHE_KEY_SUFFIX).append(p instanceof String ? p : hash64(p));
-        }
-        return buf.toString();
-    }
-
-    @SneakyThrows
-    public static long murmurHash3_64(BiAction<Hasher> fn) {
-        Hasher hasher = Hashing.murmur3_128().newHasher();
-        fn.invoke(hasher);
-        return hasher.hash().asLong();
-    }
-
-    //When using 128-bits, the x86 and x64 versions do not produce the same values
-    @SneakyThrows
-    public static ULID murmurHash3_128(BiAction<Hasher> fn) {
-        Hasher hasher = Hashing.murmur3_128().newHasher();
-        fn.invoke(hasher);
-        return ULID.valueOf(hasher.hash().asBytes());
-    }
-
-    public static BigInteger hashUnsigned64(Object... args) {
-        return hashUnsigned64(Serializer.DEFAULT.serializeToBytes(args));
-    }
-
-    public static BigInteger hashUnsigned64(byte[] buf) {
-        return hashUnsigned64(buf, 0, buf.length);
-    }
-
-    //UnsignedLong.fromLongBits
-    public static BigInteger hashUnsigned64(byte[] buf, int offset, int len) {
-        long value = hash64(buf, offset, len);
-        BigInteger bigInt = BigInteger.valueOf(value & 9223372036854775807L);
-        if (value < 0L) {
-            bigInt = bigInt.setBit(63);
-        }
-        return bigInt;
-    }
-
-    public static long hash64(Object... dataArray) {
-        return hash64(Serializer.DEFAULT.serializeToBytes(dataArray));
-    }
-
-    public static long hash64(String data) {
-        return hash64(data.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public static long hash64(long data) {
-        return hash64(Bytes.getBytes(data));
-    }
-
-    public static long hash64(byte[] buf) {
-        return hash64(buf, 0, buf.length);
-    }
-
-    public static long hash64(byte[] buf, int offset, int len) {
-        return CrcModel.CRC64_ECMA_182.getCRC(buf, offset, len).getCrc();
-    }
-
-    //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
-    public static String convertToBase64(byte[] data) {
-        byte[] ret = Base64.getEncoder().encode(data);
-        return new String(ret, StandardCharsets.UTF_8);
-    }
-
-    public static byte[] convertFromBase64(@NonNull String base64) {
-        byte[] data = base64.getBytes(StandardCharsets.UTF_8);
-        return Base64.getDecoder().decode(data);
-    }
-
-    public static <T extends Serializable> String serializeToBase64(T obj) {
-        byte[] data = Serializer.DEFAULT.serializeToBytes(obj);
-        return convertToBase64(data);
-    }
-
-    public static <T extends Serializable> T deserializeFromBase64(String base64) {
-        byte[] data = convertFromBase64(base64);
-        return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
     //endregion
 }

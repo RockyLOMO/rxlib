@@ -15,7 +15,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.util.List;
 
-import static org.rx.core.App.hashKey;
+import static org.rx.core.App.fastCacheKey;
 import static org.rx.core.Constants.PERCENT;
 
 //JMX监控JVM，K8S监控网络，这里简单处理Thread相关
@@ -148,7 +148,7 @@ public class ManagementMonitor implements EventTarget<ManagementMonitor> {
         long totalMemory = os.getTotalPhysicalMemorySize();
         return new MonitorInfo(os.getAvailableProcessors(), os.getSystemCpuLoad(), threads.getThreadCount(),
                 totalMemory - os.getFreePhysicalMemorySize(), totalMemory,
-                Cache.getOrSet(hashKey("monitorInfo"), k -> Linq.from(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace())), Cache.MEMORY_CACHE));
+                Cache.getOrSet(fastCacheKey("monitorInfo"), k -> Linq.from(File.listRoots()).select(p -> new DiskMonitorInfo(p.getPath(), p.getTotalSpace() - p.getFreeSpace(), p.getTotalSpace())), Cache.MEMORY_CACHE));
     }
 
     public ThreadInfo[] findDeadlockedThreads() {

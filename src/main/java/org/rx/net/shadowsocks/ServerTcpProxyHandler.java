@@ -2,7 +2,7 @@ package org.rx.net.shadowsocks;
 
 import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
+import org.rx.codec.CodecUtil;
 import org.rx.core.Arrays;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
@@ -30,7 +30,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
 
         if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
-            long hash = App.hash64(dstEp.toString());
+            long hash = CodecUtil.hash64(dstEp.toString());
             SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
 //            log.info("fakeEp {} {}", hash, dstEp);
             dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));

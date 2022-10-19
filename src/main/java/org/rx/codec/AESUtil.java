@@ -6,7 +6,6 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
-import org.rx.core.App;
 import org.rx.core.Strings;
 
 import javax.crypto.BadPaddingException;
@@ -45,7 +44,7 @@ public class AESUtil {
     public static String encryptToBase64(@NonNull String data, String key) {
         byte[] k = key == null ? dailyKey() : key.getBytes(StandardCharsets.UTF_8);
         byte[] valueByte = encrypt(data.getBytes(StandardCharsets.UTF_8), k);
-        return App.convertToBase64(valueByte);
+        return CodecUtil.convertToBase64(valueByte);
     }
 
     public static String decryptFromBase64(@NonNull String data) {
@@ -55,7 +54,7 @@ public class AESUtil {
     public static String decryptFromBase64(@NonNull String data, String key) {
         boolean dk = key == null;
         byte[] k = dk ? dailyKey() : key.getBytes(StandardCharsets.UTF_8);
-        byte[] rawBytes = App.convertFromBase64(data);
+        byte[] rawBytes = CodecUtil.convertFromBase64(data);
         byte[] valueByte;
         try {
             valueByte = decrypt(rawBytes, k);

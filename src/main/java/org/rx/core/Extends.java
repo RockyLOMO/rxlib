@@ -189,13 +189,10 @@ public interface Extends extends Serializable {
         }
     }
 
+    //CircuitBreakingException
     static void asyncContinue(boolean flag) {
         ThreadPool.ASYNC_CONTINUE.set(flag);
     }
-
-//    static CircuitBreakingException asyncBreak() {
-//        throw new CircuitBreakingException();
-//    }
 
     static <T> T as(Object obj, Class<T> type) {
         if (!TypeUtils.isInstance(obj, type)) {

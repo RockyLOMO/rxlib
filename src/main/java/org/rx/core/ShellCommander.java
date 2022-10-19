@@ -317,7 +317,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             return;
         }
 
-        log.info("kill {}", shell);
+        log.debug("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
         raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));

@@ -9,7 +9,6 @@ import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.rx.codec.CodecUtil;
-import org.rx.codec.MD5Util;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 
@@ -99,7 +98,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
     }
 
     public static ULID newULID(byte[] key, long timestamp) {
-        return new ULID(MD5Util.md5(key), timestamp);
+        return new ULID(CodecUtil.md5(key), timestamp);
     }
 
     final byte[] buf;

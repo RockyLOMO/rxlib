@@ -2,7 +2,6 @@ package org.rx.codec;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.core.App;
 
 import javax.crypto.Cipher;
 import java.nio.charset.StandardCharsets;
@@ -26,8 +25,8 @@ public final class RSAUtil {
         PublicKey pubkey = keys.getPublic();
         PrivateKey prikey = keys.getPrivate();
 
-        String pubKeyStr = App.convertToBase64(pubkey.getEncoded());
-        String priKeyStr = App.convertToBase64(prikey.getEncoded());
+        String pubKeyStr = CodecUtil.convertToBase64(pubkey.getEncoded());
+        String priKeyStr = CodecUtil.convertToBase64(prikey.getEncoded());
         return new String[]{pubKeyStr, priKeyStr};
     }
 
@@ -56,14 +55,14 @@ public final class RSAUtil {
      */
     @SneakyThrows
     public static String sign(@NonNull String content, @NonNull String privateKey, boolean isSHA1) {
-        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(App.convertFromBase64(privateKey));
+        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(CodecUtil.convertFromBase64(privateKey));
         KeyFactory keyf = KeyFactory.getInstance("RSA");
         PrivateKey priKey = keyf.generatePrivate(keySpec);
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initSign(priKey);
         signature.update(content.getBytes(StandardCharsets.UTF_8));
-        return App.convertToBase64(signature.sign());
+        return CodecUtil.convertToBase64(signature.sign());
     }
 
     public static boolean verify(@NonNull TreeMap<String, Object> map, @NonNull String sign, @NonNull String publicKey) {
@@ -93,12 +92,12 @@ public final class RSAUtil {
     @SneakyThrows
     public static boolean verify(@NonNull String content, @NonNull String sign, @NonNull String publicKey, boolean isSHA1) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64(publicKey)));
+        PublicKey pubKey = keyFactory.generatePublic(new X509EncodedKeySpec(CodecUtil.convertFromBase64(publicKey)));
 
         Signature signature = Signature.getInstance(isSHA1 ? SIGN_ALGORITHMS2 : SIGN_ALGORITHMS);
         signature.initVerify(pubKey);
         signature.update(content.getBytes(StandardCharsets.UTF_8));
-        return signature.verify(App.convertFromBase64(sign));
+        return signature.verify(CodecUtil.convertFromBase64(sign));
     }
 
     /**
@@ -109,11 +108,11 @@ public final class RSAUtil {
     @SneakyThrows
     public static String encrypt(@NonNull String source, @NonNull String publicKey) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(App.convertFromBase64(publicKey)));
+        PublicKey key = keyFactory.generatePublic(new X509EncodedKeySpec(CodecUtil.convertFromBase64(publicKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, key);
         byte[] b = cipher.doFinal(source.getBytes(StandardCharsets.UTF_8));
-        return App.convertToBase64(b);
+        return CodecUtil.convertToBase64(b);
     }
 
     /**
@@ -124,10 +123,10 @@ public final class RSAUtil {
     @SneakyThrows
     public static String decrypt(@NonNull String cryptograph, @NonNull String privateKey) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(App.convertFromBase64(privateKey)));
+        PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(CodecUtil.convertFromBase64(privateKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, key);
-        byte[] b = App.convertFromBase64(cryptograph);
+        byte[] b = CodecUtil.convertFromBase64(cryptograph);
         return new String(cipher.doFinal(b));
     }
 }

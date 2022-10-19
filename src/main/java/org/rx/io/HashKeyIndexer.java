@@ -3,6 +3,7 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.core.cache.MemoryCache;
 
@@ -29,7 +30,7 @@ final class HashKeyIndexer<TK> extends Disposable {
         long logPosition;
 
         public KeyData(TK key) {
-            hashId = App.hash64(Serializer.DEFAULT.serializeToBytes(this.key = key));
+            hashId = CodecUtil.hash64(Serializer.DEFAULT.serializeToBytes(this.key = key));
         }
     }
 

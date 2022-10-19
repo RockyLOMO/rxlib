@@ -524,7 +524,7 @@ public final class Sockets {
     }
 
     static String processName(long pid) {
-        return Cache.getOrSet(hashKey("processName", pid), k -> {
+        return Cache.getOrSet(fastCacheKey("processName", pid), k -> {
             $<String> name = $();
             try (ShellCommander cmd = new ShellCommander(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);

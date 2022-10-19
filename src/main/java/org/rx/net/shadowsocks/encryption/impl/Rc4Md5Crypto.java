@@ -5,8 +5,8 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.engines.RC4Engine;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.rx.codec.CodecUtil;
 import org.rx.net.shadowsocks.encryption.CryptoSteamBase;
-import org.rx.codec.MD5Util;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -41,7 +41,7 @@ public class Rc4Md5Crypto extends CryptoSteamBase {
         byte[] bts = new byte[_keyLength + _ivLength];
         System.arraycopy(_key.getEncoded(), 0, bts, 0, _keyLength);
         System.arraycopy(iv, 0, bts, _keyLength, _ivLength);
-        return new KeyParameter(MD5Util.md5(bts));
+        return new KeyParameter(CodecUtil.md5(bts));
     }
 
     @Override

@@ -351,7 +351,7 @@ public class Reflects extends ClassUtils {
 
     //region fields
     public static Linq<PropertyNode> getProperties(Class<?> to) {
-        return (Linq<PropertyNode>) LAZY_CACHE.getValue().get(hashKey("properties", to), k -> {
+        return (Linq<PropertyNode>) LAZY_CACHE.getValue().get(fastCacheKey("properties", to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
