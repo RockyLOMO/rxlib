@@ -187,8 +187,8 @@ public final class Tasks {
         return wheelTimer.setTimeout(task, delay);
     }
 
-    public static TimeoutFuture<?> setTimeout(Action task, long delay, Object taskId, TimeoutFlag flag) {
-        return wheelTimer.setTimeout(task, delay, taskId, flag);
+    public static TimeoutFuture<?> setTimeout(Action task, long delay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
+        return wheelTimer.setTimeout(task, delay, taskId, flags);
     }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
@@ -215,6 +215,6 @@ public final class Tasks {
     }
 
     public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
-        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD);
+        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD.flags());
     }
 }

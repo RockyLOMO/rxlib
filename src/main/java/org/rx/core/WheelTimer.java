@@ -6,6 +6,7 @@ import io.netty.util.Timer;
 import io.netty.util.TimerTask;
 import lombok.*;
 import org.rx.bean.$;
+import org.rx.bean.FlagsEnum;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -22,11 +23,10 @@ import static org.rx.core.Extends.ifNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
-    @RequiredArgsConstructor
     class Task<T> implements TimerTask, TimeoutFuture<T> {
-        final Object id;
-        final TimeoutFlag flag;
         final Func<T> fn;
+        final FlagsEnum<TimeoutFlag> flags;
+        final Object id;
         final LongUnaryOperator nextDelayFn;
         long delay;
         long expiredTime;
@@ -34,11 +34,22 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         volatile Future<T> future;
         long p0, p1, p2;
 
+        Task(Func<T> fn, FlagsEnum<TimeoutFlag> flags, Object id, LongUnaryOperator nextDelayFn) {
+            if (flags == null) {
+                flags = TimeoutFlag.NONE.flags();
+            }
+
+            this.fn = fn;
+            this.flags = flags;
+            this.id = id;
+            this.nextDelayFn = nextDelayFn;
+        }
+
         @SneakyThrows
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
             future = Tasks.run(() -> {
-                boolean doContinue = flag == TimeoutFlag.PERIOD;
+                boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                 try {
                     return fn.invoke();
                 } finally {
@@ -54,7 +65,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         @Override
         public String toString() {
-            return String.format("WheelTask-%s[%s]", ifNull(id, Strings.EMPTY), ifNull(flag, TimeoutFlag.SINGLE));
+            String hc = id != null ? id.toString() : Integer.toHexString(hashCode());
+            return String.format("WheelTask-%s[%s]", hc, flags.getValue());
         }
 
         @Override
@@ -180,24 +192,24 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         return setTimeout(fn, nextDelay, null, null);
     }
 
-    public TimeoutFuture<?> setTimeout(@NonNull Action fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
-        return setTimeout(new Task<>(taskId, flag, fn.toFunc(), nextDelay));
+    public TimeoutFuture<?> setTimeout(@NonNull Action fn, LongUnaryOperator nextDelay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
+        return setTimeout(new Task<>(fn.toFunc(), flags, taskId, nextDelay));
     }
 
     public <T> TimeoutFuture<T> setTimeout(Func<T> fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null, null);
     }
 
-    public <T> TimeoutFuture<T> setTimeout(@NonNull Func<T> fn, LongUnaryOperator nextDelay, Object taskId, TimeoutFlag flag) {
-        return setTimeout(new Task<>(taskId, flag, fn, nextDelay));
+    public <T> TimeoutFuture<T> setTimeout(@NonNull Func<T> fn, LongUnaryOperator nextDelay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
+        return setTimeout(new Task<>(fn, flags, taskId, nextDelay));
     }
 
     public TimeoutFuture<?> setTimeout(Action fn, long delay) {
         return setTimeout(fn, delay, null, null);
     }
 
-    public TimeoutFuture<?> setTimeout(@NonNull Action fn, long delay, Object taskId, TimeoutFlag flag) {
-        Task<?> task = new Task<>(taskId, flag, fn.toFunc(), null);
+    public TimeoutFuture<?> setTimeout(@NonNull Action fn, long delay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
+        Task<?> task = new Task<>(fn.toFunc(), flags, taskId, null);
         task.delay = delay;
         return setTimeout(task);
     }
@@ -206,8 +218,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         return setTimeout(fn, delay, null, null);
     }
 
-    public <T> TimeoutFuture<T> setTimeout(@NonNull Func<T> fn, long delay, Object taskId, TimeoutFlag flag) {
-        Task<T> task = new Task<>(taskId, flag, fn, null);
+    public <T> TimeoutFuture<T> setTimeout(@NonNull Func<T> fn, long delay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
+        Task<T> task = new Task<>(fn, flags, taskId, null);
         task.delay = delay;
         return setTimeout(task);
     }
@@ -218,11 +230,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             return task;
         }
 
-        TimeoutFlag flag = task.flag;
-        if (flag == null) {
-            flag = TimeoutFlag.SINGLE;
-        }
-        if (flag == TimeoutFlag.SINGLE) {
+        FlagsEnum<TimeoutFlag> flags = task.flags;
+        if (flags.has(TimeoutFlag.SINGLE)) {
             TimeoutFuture<T> ot = hold.get(task.id);
             if (ot != null) {
                 return ot;
@@ -231,7 +240,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         TimeoutFuture<T> ot = hold.put(task.id, task);
         newTimeout(task, 0, timer);
-        if (flag == TimeoutFlag.REPLACE && ot != null) {
+        if (flags.has(TimeoutFlag.REPLACE) && ot != null) {
             ot.cancel();
         }
         return task;
@@ -302,7 +311,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long period, TimeUnit unit) {
-        return setTimeout(command::run, d -> d == 0 ? initialDelay : TimeUnit.MILLISECONDS.convert(period, unit), null, TimeoutFlag.PERIOD);
+        return setTimeout(command::run, d -> d == 0 ? initialDelay : TimeUnit.MILLISECONDS.convert(period, unit), null, TimeoutFlag.PERIOD.flags());
     }
 
     @Override

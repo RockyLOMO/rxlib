@@ -53,13 +53,13 @@ final class WriteBehindQueue<K, V> extends Disposable {
         funcs.put(posKey, Tuple.of(writeVal, writeFunc));
         if (funcs.size() > funcWaterMark.getHigh()) {
             log.warn("high water mark threshold");
-            Tasks.timer().setTimeout(this::consume, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE);
+            Tasks.timer().setTimeout(this::consume, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE.flags());
             syncRoot.waitOne();
             syncRoot.reset();
             log.info("below low water mark");
         }
 
-        Tasks.setTimeout(this::consume, writeDelayed, this, TimeoutFlag.SINGLE);
+        Tasks.setTimeout(this::consume, writeDelayed, this, TimeoutFlag.SINGLE.flags());
         log.debug("offer {} delay={}", posKey, writeDelayed);
     }
 

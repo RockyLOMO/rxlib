@@ -251,7 +251,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                         long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
                         log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
                         return delay;
-                    }, this, TimeoutFlag.SINGLE);
+                    }, this, TimeoutFlag.SINGLE.flags());
                 } else {
                     log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
                 }

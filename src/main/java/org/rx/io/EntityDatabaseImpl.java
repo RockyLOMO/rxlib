@@ -183,7 +183,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
 
                 connPool = null;
-            }, RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD);
+            }, RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD.flags());
         }
     }
 

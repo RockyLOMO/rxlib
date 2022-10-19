@@ -13,6 +13,8 @@ import java.util.EnumSet;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
+    private static final long serialVersionUID = -8582923090238462905L;
+
     @SuppressWarnings(NON_UNCHECKED)
     public static <T extends Enum<T> & NEnum<T>> FlagsEnum<T> valueOf(@NonNull Class<T> type, int flags) {
         FlagsEnum<T> flagsEnum = null;
@@ -66,32 +68,47 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
         flags = nEnum.getValue();
     }
 
+    public FlagsEnum<T> add(FlagsEnum<T> fEnum) {
+        flags |= fEnum.flags;
+        return this;
+    }
+
+    public FlagsEnum<T> remove(FlagsEnum<T> fEnum) {
+        flags &= ~fEnum.flags;
+        return this;
+    }
+
+    public boolean has(FlagsEnum<T> fEnum) {
+        return (flags & fEnum.flags) == fEnum.flags;
+    }
+
     @SuppressWarnings(NON_UNCHECKED)
-    public FlagsEnum<T> add(@NonNull T... nEnum) {
-        for (T t : nEnum) {
-            flags |= t.getValue();
+    public FlagsEnum<T> add(T... nEnum) {
+        if (!Arrays.isEmpty(nEnum)) {
+            for (T t : nEnum) {
+                flags |= t.getValue();
+            }
         }
         return this;
     }
 
-    public FlagsEnum<T> add(FlagsEnum<T> flagsEnum) {
-        flags |= flagsEnum.flags;
-        return this;
-    }
-
     @SuppressWarnings(NON_UNCHECKED)
-    public FlagsEnum<T> remove(@NonNull T... nEnum) {
-        for (T t : nEnum) {
-            flags &= ~t.getValue();
+    public FlagsEnum<T> remove(T... nEnum) {
+        if (!Arrays.isEmpty(nEnum)) {
+            for (T t : nEnum) {
+                flags &= ~t.getValue();
+            }
         }
         return this;
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    public boolean has(@NonNull T... nEnum) {
+    public boolean has(T... nEnum) {
         int val = 0;
-        for (T t : nEnum) {
-            val |= t.getValue();
+        if (!Arrays.isEmpty(nEnum)) {
+            for (T t : nEnum) {
+                val |= t.getValue();
+            }
         }
         return (flags & val) == val;
     }

@@ -25,7 +25,7 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
     }
 
     @SuppressWarnings(NON_UNCHECKED)
-    default FlagsEnum<T> flags(@NonNull T... nEnum) {
+    default FlagsEnum<T> flags(T... nEnum) {
         FlagsEnum<T> flagsEnum = flags();
         flagsEnum.add(nEnum);
         return flagsEnum;

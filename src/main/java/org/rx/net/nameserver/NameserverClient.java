@@ -16,7 +16,6 @@ import org.rx.util.function.Action;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
 
@@ -51,14 +50,13 @@ public final class NameserverClient extends Disposable {
             Sockets.injectNameService(ns);
             log.info("inject ns {}", toJsonString(ns));
             syncRoot.set();
-        }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE);
+        }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE.flags());
     }
 
     public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();
     @Getter
     final String appName;
     final RandomList<NsInfo> hold = new RandomList<>();
-    final Map<String, Future<?>> delayTasks = new ConcurrentHashMap<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     public Set<InetSocketAddress> registerEndpoints() {
@@ -126,13 +124,12 @@ public final class NameserverClient extends Disposable {
                             reInject();
                         } catch (Throwable e) {
                             log.debug("login error", e);
-                            delayTasks.computeIfAbsent(appName, k -> Tasks.setTimeout(() -> {
+                            Tasks.setTimeout(() -> {
                                 tuple.dnsPort = tuple.ns.register(appName, svrEps);
                                 tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
-                                delayTasks.remove(appName); //优先
                                 reInject();
                                 asyncContinue(false);
-                            }, DEFAULT_RETRY_PERIOD, null, TimeoutFlag.PERIOD));
+                            }, DEFAULT_RETRY_PERIOD, appName, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
                         }
                     };
                     RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);

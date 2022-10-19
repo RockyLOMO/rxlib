@@ -34,7 +34,7 @@ public class DiskMonitor {
                 log.debug("DiskMonitor Used={}% Threshold={} -> {}", up, entry.getKey(), entry.getValue().size());
                 eachQuietly(entry.getValue(), Action::invoke);
             });
-        }, RxConfig.INSTANCE.getDisk().getMonitorPeriod(), null, TimeoutFlag.PERIOD);
+        }, RxConfig.INSTANCE.getDisk().getMonitorPeriod(), null, TimeoutFlag.PERIOD.flags());
     }
 
     public void register(int usedPercent, Action callback) {
