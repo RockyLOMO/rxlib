@@ -28,11 +28,13 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         final FlagsEnum<TimeoutFlag> flags;
         final Object id;
         final LongUnaryOperator nextDelayFn;
+        final String traceId;
         long delay;
         long expiredTime;
         volatile Timeout timeout;
         volatile Future<T> future;
-        long p0, p1, p2;
+        long p0, p1;
+        int p2;
 
         Task(Func<T> fn, FlagsEnum<TimeoutFlag> flags, Object id, LongUnaryOperator nextDelayFn) {
             if (flags == null) {
@@ -43,12 +45,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             this.flags = flags;
             this.id = id;
             this.nextDelayFn = nextDelayFn;
+            traceId = ThreadPool.CTX_TRACE_ID.get();
         }
 
         @SneakyThrows
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
             future = Tasks.run(() -> {
+                ThreadPool.startTrace(traceId);
                 boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                 try {
                     return fn.invoke();
@@ -58,6 +62,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     } else if (id != null) {
                         hold.remove(id);
                     }
+                    ThreadPool.endTrace();
                 }
             });
             notifyAll();
