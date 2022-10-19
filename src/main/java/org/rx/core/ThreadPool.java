@@ -23,7 +23,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Supplier;
+import java.util.function.*;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
@@ -193,6 +193,337 @@ public class ThreadPool extends ThreadPoolExecutor {
             super(runnable, result);
             task = (Task<T>) runnable;
         }
+    }
+
+    @RequiredArgsConstructor
+    static class CompletableFutureWrapper<T> extends CompletableFuture<T> {
+        final Executor pool;
+        final String traceId;
+        CompletableFuture<T> delegate;
+
+        <R> CompletableFutureWrapper<R> uniStage(CompletableFuture<R> delegate) {
+//            return new CompletableFutureWrapper<>(delegate, pool, traceId);
+            CompletableFutureWrapper<R> wrapper = (CompletableFutureWrapper<R>) this;
+            wrapper.delegate = delegate;
+            return wrapper;
+        }
+
+        <X, R> Function<X, R> wrap(Function<X, R> fn) {
+            return t -> {
+                ThreadPool.startTrace(traceId);
+                try {
+                    return fn.apply(t);
+                } finally {
+                    ThreadPool.endTrace();
+                }
+            };
+        }
+
+        <X> Consumer<X> wrap(Consumer<X> fn) {
+            return t -> {
+                ThreadPool.startTrace(traceId);
+                try {
+                    fn.accept(t);
+                } finally {
+                    ThreadPool.endTrace();
+                }
+            };
+        }
+
+        Runnable wrap(Runnable fn) {
+            return () -> {
+                ThreadPool.startTrace(traceId);
+                try {
+                    fn.run();
+                } finally {
+                    ThreadPool.endTrace();
+                }
+            };
+        }
+
+        <X, Y, R> BiFunction<X, Y, R> wrap(BiFunction<X, Y, R> fn) {
+            return (t, u) -> {
+                ThreadPool.startTrace(traceId);
+                try {
+                    return fn.apply(t, u);
+                } finally {
+                    ThreadPool.endTrace();
+                }
+            };
+        }
+
+        <X, Y> BiConsumer<X, Y> wrap(BiConsumer<X, Y> fn) {
+            return (t, u) -> {
+                ThreadPool.startTrace(traceId);
+                try {
+                    fn.accept(t, u);
+                } finally {
+                    ThreadPool.endTrace();
+                }
+            };
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenApply(Function<? super T, ? extends U> fn) {
+            return uniStage(delegate.thenApply(wrap(fn)));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenApplyAsync(Function<? super T, ? extends U> fn) {
+            return thenApplyAsync(fn, null);
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenApplyAsync(Function<? super T, ? extends U> fn, Executor executor) {
+            return uniStage(delegate.thenApplyAsync(wrap(fn), pool));
+        }
+
+        @Override
+        public CompletableFuture<Void> thenAccept(Consumer<? super T> action) {
+            return uniStage(delegate.thenAccept(wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action) {
+            return thenAcceptAsync(action, null);
+        }
+
+        @Override
+        public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action, Executor executor) {
+            return uniStage(delegate.thenAcceptAsync(wrap(action), pool));
+        }
+
+        @Override
+        public CompletableFuture<Void> thenRun(Runnable action) {
+            return uniStage(delegate.thenRun(wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<Void> thenRunAsync(Runnable action) {
+            return thenRunAsync(action, null);
+        }
+
+        @Override
+        public CompletableFuture<Void> thenRunAsync(Runnable action, Executor executor) {
+            return uniStage(delegate.thenRunAsync(wrap(action), pool));
+        }
+
+        @Override
+        public <U, V> CompletableFuture<V> thenCombine(CompletionStage<? extends U> other, BiFunction<? super T, ? super U, ? extends V> fn) {
+            return uniStage(delegate.thenCombine(other, wrap(fn)));
+        }
+
+        @Override
+        public <U, V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T, ? super U, ? extends V> fn) {
+            return thenCombineAsync(other, fn, null);
+        }
+
+        @Override
+        public <U, V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T, ? super U, ? extends V> fn, Executor executor) {
+            return uniStage(delegate.thenCombineAsync(other, wrap(fn), pool));
+        }
+
+        @Override
+        public <U> CompletableFuture<Void> thenAcceptBoth(CompletionStage<? extends U> other, BiConsumer<? super T, ? super U> action) {
+            return uniStage(delegate.thenAcceptBoth(other, wrap(action)));
+        }
+
+        @Override
+        public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T, ? super U> action) {
+            return thenAcceptBothAsync(other, action, null);
+        }
+
+        @Override
+        public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T, ? super U> action, Executor executor) {
+            return uniStage(delegate.thenAcceptBothAsync(other, wrap(action), pool));
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterBoth(CompletionStage<?> other, Runnable action) {
+            return uniStage(delegate.runAfterBoth(other, wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterBothAsync(CompletionStage<?> other, Runnable action) {
+            return runAfterBothAsync(other, action, null);
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterBothAsync(CompletionStage<?> other, Runnable action, Executor executor) {
+            return uniStage(delegate.runAfterBothAsync(other, wrap(action), pool));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> applyToEither(CompletionStage<? extends T> other, Function<? super T, U> fn) {
+            return uniStage(delegate.applyToEither(other, wrap(fn)));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T, U> fn) {
+            return applyToEitherAsync(other, fn, null);
+        }
+
+        @Override
+        public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T, U> fn, Executor executor) {
+            return uniStage(delegate.applyToEitherAsync(other, wrap(fn), pool));
+        }
+
+        @Override
+        public CompletableFuture<Void> acceptEither(CompletionStage<? extends T> other, Consumer<? super T> action) {
+            return uniStage(delegate.acceptEither(other, wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<Void> acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action) {
+            return acceptEitherAsync(other, action, null);
+        }
+
+        @Override
+        public CompletableFuture<Void> acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action, Executor executor) {
+            return uniStage(delegate.acceptEitherAsync(other, wrap(action), pool));
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterEither(CompletionStage<?> other, Runnable action) {
+            return uniStage(delegate.runAfterEither(other, wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterEitherAsync(CompletionStage<?> other, Runnable action) {
+            return runAfterEitherAsync(other, action, null);
+        }
+
+        @Override
+        public CompletableFuture<Void> runAfterEitherAsync(CompletionStage<?> other, Runnable action, Executor executor) {
+            return uniStage(delegate.runAfterEitherAsync(other, wrap(action), pool));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenCompose(Function<? super T, ? extends CompletionStage<U>> fn) {
+            return uniStage(delegate.thenCompose(wrap(fn)));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenComposeAsync(Function<? super T, ? extends CompletionStage<U>> fn) {
+            return thenComposeAsync(fn, null);
+        }
+
+        @Override
+        public <U> CompletableFuture<U> thenComposeAsync(Function<? super T, ? extends CompletionStage<U>> fn, Executor executor) {
+            return uniStage(delegate.thenComposeAsync(wrap(fn), pool));
+        }
+
+        @Override
+        public CompletableFuture<T> whenComplete(BiConsumer<? super T, ? super Throwable> action) {
+            return uniStage(delegate.whenComplete(wrap(action)));
+        }
+
+        @Override
+        public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T, ? super Throwable> action) {
+            return whenCompleteAsync(action, null);
+        }
+
+        @Override
+        public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T, ? super Throwable> action, Executor executor) {
+            return uniStage(delegate.whenCompleteAsync(action, pool));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> handle(BiFunction<? super T, Throwable, ? extends U> fn) {
+            return uniStage(delegate.handle(wrap(fn)));
+        }
+
+        @Override
+        public <U> CompletableFuture<U> handleAsync(BiFunction<? super T, Throwable, ? extends U> fn) {
+            return handleAsync(fn, null);
+        }
+
+        @Override
+        public <U> CompletableFuture<U> handleAsync(BiFunction<? super T, Throwable, ? extends U> fn, Executor executor) {
+            return uniStage(delegate.handleAsync(wrap(fn), pool));
+        }
+
+        @Override
+        public CompletableFuture<T> toCompletableFuture() {
+            return uniStage(delegate.toCompletableFuture());
+        }
+
+        @Override
+        public CompletableFuture<T> exceptionally(Function<Throwable, ? extends T> fn) {
+            return uniStage(delegate.exceptionally(wrap(fn)));
+        }
+
+        //region ignore
+        @Override
+        public boolean isDone() {
+            return delegate.isDone();
+        }
+
+        @Override
+        public T get() throws InterruptedException, ExecutionException {
+            return delegate.get();
+        }
+
+        @Override
+        public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return delegate.get(timeout, unit);
+        }
+
+        @Override
+        public T join() {
+            return delegate.join();
+        }
+
+        @Override
+        public T getNow(T valueIfAbsent) {
+            return delegate.getNow(valueIfAbsent);
+        }
+
+        @Override
+        public boolean complete(T value) {
+            return delegate.complete(value);
+        }
+
+        @Override
+        public boolean completeExceptionally(Throwable ex) {
+            return delegate.completeExceptionally(ex);
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return delegate.cancel(mayInterruptIfRunning);
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return delegate.isCancelled();
+        }
+
+        @Override
+        public boolean isCompletedExceptionally() {
+            return delegate.isCompletedExceptionally();
+        }
+
+        @Override
+        public void obtrudeValue(T value) {
+            delegate.obtrudeValue(value);
+        }
+
+        @Override
+        public void obtrudeException(Throwable ex) {
+            delegate.obtrudeException(ex);
+        }
+
+        @Override
+        public int getNumberOfDependents() {
+            return delegate.getNumberOfDependents();
+        }
+
+        @Override
+        public String toString() {
+            return delegate.toString();
+        }
+        //endregion
     }
 
     static class DynamicSizer implements TimerTask {
@@ -516,7 +847,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return CompletableFuture.runAsync(new Task<>(task.toFunc(), flags, taskId), this);
+        Task<Void> t = new Task<>(task.toFunc(), flags, taskId);
+        return wrap(CompletableFuture.runAsync(t, this), t.traceId);
     }
 
     public <T> CompletableFuture<T> runAsync(Func<T> task) {
@@ -524,7 +856,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return CompletableFuture.supplyAsync(new Task<>(task, flags, taskId), this);
+        Task<T> t = new Task<>(task, flags, taskId);
+        return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
     }
 
     public <T> MultiTaskFuture<T, T> runAnyAsync(Collection<Func<T>> tasks) {
@@ -533,7 +866,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         CompletableFuture<T>[] futures = Linq.from(tasks).select(this::runAsync).toArray();
-        return new MultiTaskFuture<>((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
+        return new MultiTaskFuture<>(wrap((CompletableFuture<T>) CompletableFuture.anyOf(futures), CTX_TRACE_ID.get()), futures);
     }
 
     public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
@@ -542,7 +875,13 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         CompletableFuture<T>[] futures = Linq.from(tasks).select(this::runAsync).toArray();
-        return new MultiTaskFuture<>(CompletableFuture.allOf(futures), futures);
+        return new MultiTaskFuture<>(wrap(CompletableFuture.allOf(futures), CTX_TRACE_ID.get()), futures);
+    }
+
+    private <T> CompletableFutureWrapper<T> wrap(CompletableFuture<T> delegate, String traceId) {
+        CompletableFutureWrapper<T> wrapper = new CompletableFutureWrapper<>(this, traceId);
+        wrapper.delegate = delegate;
+        return wrapper;
     }
 
     @SneakyThrows
@@ -614,7 +953,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {
+    private void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {
         if (t instanceof FastThreadLocalThread) {
             ((FastThreadLocalThread) t).setThreadLocalMap(threadLocalMap);
             return;

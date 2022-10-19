@@ -10,7 +10,8 @@ public enum TimeoutFlag implements NEnum<TimeoutFlag> {
     NONE(0),
     SINGLE(1),
     REPLACE(1 << 1),
-    PERIOD(1 << 2);
+    PERIOD(1 << 2),
+    THREAD_TRACE(1 << 3);
 
     final int value;
 }

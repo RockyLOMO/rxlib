@@ -19,7 +19,6 @@ import java.util.function.LongUnaryOperator;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.App.proxy;
-import static org.rx.core.Extends.ifNull;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
@@ -40,6 +39,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             if (flags == null) {
                 flags = TimeoutFlag.NONE.flags();
             }
+            if (RxConfig.INSTANCE.threadPool.traceName != null) {
+                flags.add(TimeoutFlag.THREAD_TRACE);
+            }
 
             this.fn = fn;
             this.flags = flags;
@@ -52,7 +54,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
             future = Tasks.run(() -> {
-                ThreadPool.startTrace(traceId);
+                boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
+                if (traceFlag) {
+                    ThreadPool.startTrace(traceId);
+                }
                 boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                 try {
                     return fn.invoke();
@@ -62,7 +67,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     } else if (id != null) {
                         hold.remove(id);
                     }
-                    ThreadPool.endTrace();
+                    if (traceFlag) {
+                        ThreadPool.endTrace();
+                    }
                 }
             });
             notifyAll();
