@@ -60,36 +60,81 @@ public class CoreTester extends AbstractTester {
 //            });
 //        }
 
-        Object id = new Object();
         ThreadPool pool = Tasks.pool();
-        for (int i = 0; i < 10; i++) {
-            int x = i;
-            //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-            //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
-            //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-            //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-            //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
-//            Future<?> future = pool.run(() -> {
-//                log.info("TASK begin {}", x);
-//                sleep(delayMillis);
-//                log.info("TASK end {}", x);
-//            }, id, RunFlag.SYNCHRONIZED.flags());
+        //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+        //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
+        //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
+        //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+        //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
+        //RunFlag.THREAD_TRACE  开启trace,支持timer和CompletableFuture
+//        AtomicInteger c = new AtomicInteger();
+//        for (int i = 0; i < 5; i++) {
+//            int x = i;
+//            Future<Void> f1 = pool.run(() -> {
+//                log.info("exec SINGLE begin {}", x);
+//                c.incrementAndGet();
+//                sleep(oneSecond);
+//                wait.set();
+//                log.info("exec SINGLE end {}", x);
+//            }, c, RunFlag.SINGLE.flags());
+//        }
+//        wait.waitOne();
+//        wait.reset();
+//        assert c.get() == 1;
+//
+//        for (int i = 0; i < 5; i++) {
+//            int x = i;
+//            Future<Void> f1 = pool.run(() -> {
+//                log.info("exec SYNCHRONIZED begin {}", x);
+//                c.incrementAndGet();
+//                sleep(oneSecond);
+//                log.info("exec SYNCHRONIZED end {}", x);
+//            }, c, RunFlag.SYNCHRONIZED.flags());
+//        }
+//        sleep(8000);
+//        assert c.get() == 6;
+//
+//
+//        c.set(0);
+//        for (int i = 0; i < 5; i++) {
+//            int x = i;
+//            CompletableFuture<Void> f1 = pool.runAsync(() -> {
+//                log.info("exec SINGLE begin {}", x);
+//                c.incrementAndGet();
+//                sleep(oneSecond);
+//                wait.set();
+//                log.info("exec SINGLE end {}", x);
+//            }, c, RunFlag.SINGLE.flags());
+//            f1.whenCompleteAsync((r, e) -> log.info("exec SINGLE uni"));
+//        }
+//        wait.waitOne();
+//        wait.reset();
+//        assert c.get() == 1;
+//
+//        for (int i = 0; i < 5; i++) {
+//            int x = i;
+//            CompletableFuture<Void> f1 = pool.runAsync(() -> {
+//                log.info("exec SYNCHRONIZED begin {}", x);
+//                c.incrementAndGet();
+//                sleep(oneSecond);
+//                log.info("exec SYNCHRONIZED end {}", x);
+//            }, c, RunFlag.SYNCHRONIZED.flags());
+//            f1.whenCompleteAsync((r, e) -> log.info("exec SYNCHRONIZED uni"));
+//        }
+//        sleep(8000);
+//        assert c.get() == 6;
 
-//            CompletableFuture<Void> completableFuture = pool.runAsync(() -> {
-//                log.info("TASK begin {}", x);
-//                sleep(delayMillis);
-//                log.info("TASK end {}", x);
-//            }, id, RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("TASK done {}", x));
-        }
-
+        pool.runAsync(() -> System.out.println("runAsync"))
+                .whenCompleteAsync((r, e) -> System.out.println("whenCompleteAsync"))
+                .join();
         List<Func<Integer>> tasks = new ArrayList<>();
-        for (int x = 0; x < 10; x++) {
-            int finalX = x;
+        for (int i = 0; i < 5; i++) {
+            int x = i;
             tasks.add(() -> {
-                log.info("TASK begin {}", finalX);
-                sleep(delayMillis);
-                log.info("TASK end {}", finalX);
-                return finalX + 100;
+                log.info("TASK begin {}", x);
+                sleep(oneSecond);
+                log.info("TASK end {}", x);
+                return x + 100;
             });
         }
         List<Future<Integer>> futures = pool.runAll(tasks, 0);
@@ -97,8 +142,16 @@ public class CoreTester extends AbstractTester {
             System.out.println(future.get());
         }
 
-        System.out.println("main thread done");
-        System.in.read();
+        ThreadPool.MultiTaskFuture<Void, Integer> mf = pool.runAllAsync(tasks);
+        mf.getFuture().whenCompleteAsync((r, e) -> log.info("TASK MAIN uni"));
+        for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
+            sf.whenCompleteAsync((r, e) -> log.info("TASK uni {}", r));
+        }
+        for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
+            sf.join();
+        }
+        log.info("wait TASK MAIN");
+        mf.getFuture().get();
     }
 
     @SneakyThrows
