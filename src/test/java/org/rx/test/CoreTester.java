@@ -6,8 +6,6 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
-import org.apache.commons.collections4.IterableUtils;
-import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
@@ -24,10 +22,8 @@ import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.io.*;
 import org.rx.test.bean.*;
-import org.rx.test.common.TestUtil;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
-import org.yaml.snakeyaml.Yaml;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
@@ -44,7 +40,7 @@ import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
 
 @Slf4j
-public class CoreTester extends TestUtil {
+public class CoreTester extends AbstractTester {
     //region thread pool
     @SneakyThrows
     @Test
@@ -205,49 +201,82 @@ public class CoreTester extends TestUtil {
     @Test
     public void timer() {
         WheelTimer timer = Tasks.timer();
-//        ScheduledFuture<Integer> future = timer.schedule(() -> 1024, 1000, TimeUnit.MILLISECONDS);
-//        long start = System.currentTimeMillis();
-//        assert future.get() == 1024;
-//        System.out.println("wait: " + (System.currentTimeMillis() - start) + "ms");
+        //TimeoutFlag.SINGLE       根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+        //TimeoutFlag.REPLACE      根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
+        //TimeoutFlag.PERIOD       定期重复执行，遇到异常不会终止直到asyncContinue(false) 或 next delay = -1。
+        //TimeoutFlag.THREAD_TRACE 开启trace
+        AtomicInteger c = new AtomicInteger();
+        for (int i = 0; i < 5; i++) {
+            int finalI = i;
+            timer.setTimeout(() -> {
+                log.info("exec SINGLE plus by {}", finalI);
+                assert finalI == 0;
+                c.incrementAndGet();
+                sleep(oneSecond);
+                wait.set();
+            }, oneSecond, c, TimeoutFlag.SINGLE.flags());
+        }
+        wait.waitOne();
+        wait.reset();
+        assert c.get() == 1;
+        log.info("exec SINGLE flag ok..");
 
-//        log.info("fixedRate-0");
-//        ScheduledFuture<?> fixedRate = timer.scheduleAtFixedRate(() -> log.info("fixedRate"), 500, 1000, TimeUnit.MILLISECONDS);
-//        log.info("delay: {}ms", fixedRate.getDelay(TimeUnit.MILLISECONDS));
-//        sleep(5000);
-//        fixedRate.cancel(true);
-        Tasks.schedulePeriod(() -> log.info("fixedRate"), 1000);
+        for (int i = 0; i < 5; i++) {
+            int finalI = i;
+            timer.setTimeout(() -> {
+                log.info("exec REPLACE plus by {}", finalI);
+                assert finalI == 4;
+                c.incrementAndGet();
+                sleep(oneSecond);
+                wait.set();
+            }, oneSecond, c, TimeoutFlag.REPLACE.flags());
+        }
+        wait.waitOne();
+        wait.reset();
+        assert c.get() == 2;
+        log.info("exec REPLACE flag ok..");
 
-//        timer.setTimeout(() -> {
-//            System.out.println("once: " + DateTime.now());
-//        }, d -> Math.max(d, 100) * 2);
-//
-//        timer.setTimeout(() -> {
-//            System.out.println("loop: " + DateTime.now());
-//            asyncContinue(true);
-//        }, d -> Math.max(d, 100) * 2);
+        TimeoutFuture<Integer> f = timer.setTimeout(() -> {
+            log.info("exec PERIOD");
+            int i = c.incrementAndGet();
+            if (i > 10) {
+                asyncContinue(false);
+                return null;
+            }
+            if (i == 4) {
+                throw new InvalidException("Will exec next");
+            }
+            asyncContinue(true);
+            return i;
+        }, oneSecond, c, TimeoutFlag.PERIOD.flags());
+        sleep(8000);
+        f.cancel();
+        log.info("exec PERIOD flag ok and last value={}", f.get());
+        assert f.get() == 9;
 
-        //TimeoutFlag.SINGLE  根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-        //TimeoutFlag.REPLACE 根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
-        //TimeoutFlag.PERIOD  定期重复执行，遇到异常不会终止直到asyncContinue(false) 或 next delay = -1。
-//        AtomicInteger c = new AtomicInteger();
-//        TimeoutFuture<Integer> f = timer.setTimeout(() -> {
-//            System.out.println("loop: " + DateTime.now());
-//            int i = c.incrementAndGet();
-//            if (i > 10) {
-//                asyncContinue(false);
-//                return null;
-//            }
-//            if (i == 2) {
-//                throw new InvalidException("Will exec next");
-//            }
-//            asyncContinue(true);
-//            return i;
-//        }, 1000, this, TimeoutFlag.PERIOD);
-//        sleep(8000);
-//        f.cancel();
-//        System.out.println("last: " + f.get());
+        c.set(0);
+        timer.setTimeout(() -> {
+            log.info("exec nextDelayFn");
+            c.incrementAndGet();
+            asyncContinue(true);
+        }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
+        sleep(5000);
+        log.info("exec nextDelayFn ok");
+        assert c.get() == 4;
 
-        System.in.read();
+        //包装为ScheduledExecutorService
+        ScheduledExecutorService ses = timer;
+        ScheduledFuture<Integer> f1 = ses.schedule(() -> 1024, oneSecond, TimeUnit.MILLISECONDS);
+        long start = System.currentTimeMillis();
+        assert f1.get() == 1024;
+        log.info("schedule wait {}ms", (System.currentTimeMillis() - start));
+
+        log.info("scheduleAtFixedRate step 1");
+        ScheduledFuture<?> f2 = ses.scheduleAtFixedRate(() -> log.info("scheduleAtFixedRate step 2"), 500, oneSecond, TimeUnit.MILLISECONDS);
+        log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
+        sleep(5000);
+        f2.cancel(true);
+        log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
     }
 
     @SneakyThrows
@@ -353,7 +382,6 @@ public class CoreTester extends TestUtil {
         int c = 200000000;
         AtomicInteger collision = new AtomicInteger();
         invoke("codec", i -> {
-//            long id = App.hash64("codec", i);
 //            long id = App.hash64(h -> h.putBytes(MD5Util.md5("codec" + i)));
             long id = CrcModel.CRC64_ECMA_182.getCRC((UUID.randomUUID().toString() + i).getBytes(StandardCharsets.UTF_8)).getCrc();
             CollisionEntity po = db.findById(CollisionEntity.class, id);
@@ -376,16 +404,16 @@ public class CoreTester extends TestUtil {
 
         String publicKey = kp[0];
         String privateKey = kp[1];
-        String content = "这是一个使用RSA公私钥对加解密的例子";
 
-        String signMsg = RSAUtil.sign(content, privateKey);
+        String signMsg = RSAUtil.sign(str_name_wyf, privateKey);
         System.out.println("sign: " + signMsg);
-        boolean verifySignResult = RSAUtil.verify(content, signMsg, publicKey);
+        boolean verifySignResult = RSAUtil.verify(str_name_wyf, signMsg, publicKey);
         System.out.println("verify: " + verifySignResult);
+        assert verifySignResult;
 
-        signMsg = RSAUtil.encrypt(content, publicKey);
+        signMsg = RSAUtil.encrypt(str_name_wyf, publicKey);
         System.out.println("encrypt: " + signMsg);
-        System.out.println("decrypt: " + RSAUtil.decrypt(signMsg, privateKey));
+        assert str_name_wyf.equals(RSAUtil.decrypt(signMsg, privateKey));
     }
     //endregion
 
@@ -532,28 +560,8 @@ public class CoreTester extends TestUtil {
     //endregion
 
     @Test
-    public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onPrintOut.combine(ShellCommander.CONSOLE_OUT_HANDLER);
-        executor.start().waitFor();
-
-        executor = new ShellCommander("ping f-li.cn", null);
-        ShellCommander finalExecutor = executor;
-        executor.onPrintOut.combine((s, e) -> {
-            System.out.println("K: " + e.getLine());
-            finalExecutor.kill();
-        });
-        executor.onPrintOut.combine(new ShellCommander.FileOutHandler(TConfig.path("out.txt")));
-        executor.onExited.combine((s, e) -> System.out.println("shell exit"));
-        executor.start().waitFor();
-
-        System.out.println("done");
-        sleep(5000);
-    }
-
-    @Test
     public void json() {
-        Object[] args = new Object[]{TConfig.NAME_WYF, proxy(HttpServletResponse.class, (m, i) -> {
+        Object[] args = new Object[]{str_name_wyf, proxy(HttpServletResponse.class, (m, i) -> {
             throw new InvalidException("wont reach");
         }), new ErrorBean()};
         System.out.println(toJsonString(args));
@@ -571,7 +579,7 @@ public class CoreTester extends TestUtil {
         }.getType()));
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("name", TConfig.NAME_WYF);
+        data.put("name", str_name_wyf);
         data.put("age", 10);
         data.put("date", DateTime.now());
         System.out.println(toJsonString(data));
@@ -584,6 +592,26 @@ public class CoreTester extends TestUtil {
         Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
         }.getType());
         assert tuple1.equals(tuple3);
+    }
+
+    @Test
+    public void shellExec() {
+        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
+        executor.onPrintOut.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        executor.start().waitFor();
+
+        executor = new ShellCommander("ping f-li.cn", null);
+        ShellCommander finalExecutor = executor;
+        executor.onPrintOut.combine((s, e) -> {
+            System.out.println("K: " + e.getLine());
+            finalExecutor.kill();
+        });
+        executor.onPrintOut.combine(new ShellCommander.FileOutHandler(AbstractTester.path("out.txt")));
+        executor.onExited.combine((s, e) -> System.out.println("shell exit"));
+        executor.start().waitFor();
+
+        System.out.println("done");
+        sleep(5000);
     }
 
     @Test
@@ -630,13 +658,12 @@ public class CoreTester extends TestUtil {
 
         Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
         assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
 
         assert Reflects.stackClass(0) == this.getClass();
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
-
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
 
         Method defMethod = IPerson.class.getMethod("enableCompress");
         assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
@@ -710,16 +737,16 @@ public class CoreTester extends TestUtil {
     }
 
     @Test
-    public void rxConf() {
-        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
-        List<Object> list = IterableUtils.toList(all);
+    public void yamlConf() {
+//        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
+//        List<Object> list = IterableUtils.toList(all);
 
         YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        System.out.println(conf.getYaml());
+        conf.enableWatch();
 
+        System.out.println(conf.getYaml());
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
         System.out.println(codeMap);
-
         String codeFormat = conf.readAs("org.rx.test.CoreTester.exceptionHandle<IllegalArgumentException>", String.class);
         System.out.println(codeFormat);
         assert eq(codeFormat, "Test IAException, value={0}");
@@ -730,16 +757,6 @@ public class CoreTester extends TestUtil {
         assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
         assert rxConf.getLogTypeWhitelist().size() == 2;
         assert rxConf.getJsonSkipTypes().size() == 1;
-    }
-
-    @Test
-    public void yamlConf() {
-        System.out.println(FilenameUtils.getFullPath("b.txt"));
-        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
-        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
-
-        YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        conf.enableWatch();
 
         sleep(60000);
     }

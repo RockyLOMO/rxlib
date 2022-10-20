@@ -1,4 +1,5 @@
 ## 常见线程池
+
 * Executors.newCachedThreadPool(); 
   没有queue缓冲，一直new thread执行，当CPU负载高时加上更多线程上下文切换损耗，性能会急速下降。
 * Executors.newFixedThreadPool(16); 
@@ -49,8 +50,6 @@ public void threadPool() {
 }
 ```
 
-
-
 ## 定时任务
 
 ### ScheduledExecutorService
@@ -65,34 +64,82 @@ WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内
 @SneakyThrows
 @Test
 public void timer() {
-    Tasks.timer().setTimeout(() -> {
-        System.out.println("once: " + DateTime.now());
-        return false;
-    }, d -> Math.max(d, 100) * 2);
+    WheelTimer timer = Tasks.timer();
+    //TimeoutFlag.SINGLE       根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+    //TimeoutFlag.REPLACE      根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
+    //TimeoutFlag.PERIOD       定期重复执行，遇到异常不会终止直到asyncContinue(false) 或 next delay = -1。
+    //TimeoutFlag.THREAD_TRACE 开启trace
+    AtomicInteger c = new AtomicInteger();
+    for (int i = 0; i < 5; i++) {
+        int finalI = i;
+        timer.setTimeout(() -> {
+            log.info("exec SINGLE plus by {}", finalI);
+            assert finalI == 0;
+            c.incrementAndGet();
+            sleep(oneSecond);
+            wait.set();
+        }, oneSecond, c, TimeoutFlag.SINGLE.flags());
+    }
+    wait.waitOne();
+    wait.reset();
+    assert c.get() == 1;
+    log.info("exec SINGLE flag ok..");
 
-    Timeout t = Tasks.timer().setTimeout(s -> {
-        System.out.println("loop: " + DateTime.now());
-        int i = s.incrementAndGet();
-        if (i > 4) {
-            return false;
+    for (int i = 0; i < 5; i++) {
+        int finalI = i;
+        timer.setTimeout(() -> {
+            log.info("exec REPLACE plus by {}", finalI);
+            assert finalI == 4;
+            c.incrementAndGet();
+            sleep(oneSecond);
+            wait.set();
+        }, oneSecond, c, TimeoutFlag.REPLACE.flags());
+    }
+    wait.waitOne();
+    wait.reset();
+    assert c.get() == 2;
+    log.info("exec REPLACE flag ok..");
+
+    TimeoutFuture<Integer> f = timer.setTimeout(() -> {
+        log.info("exec PERIOD");
+        int i = c.incrementAndGet();
+        if (i > 10) {
+            asyncContinue(false);
+            return null;
         }
-        if (i > 1) {
-            throw new InvalidException("max exec");
+        if (i == 4) {
+            throw new InvalidException("Will exec next");
         }
-        return true;
-    }, d -> Math.max(d, 100) * 2, new AtomicInteger());
+        asyncContinue(true);
+        return i;
+    }, oneSecond, c, TimeoutFlag.PERIOD.flags());
+    sleep(8000);
+    f.cancel();
+    log.info("exec PERIOD flag ok and last value={}", f.get());
+    assert f.get() == 9;
 
-    sleep(1000);
-    t.cancel();
+    c.set(0);
+    timer.setTimeout(() -> {
+        log.info("exec nextDelayFn");
+        c.incrementAndGet();
+        asyncContinue(true);
+    }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
+    sleep(5000);
+    log.info("exec nextDelayFn ok");
+    assert c.get() == 4;
 
-    //TimeoutFlag.SINGLE  根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-    //TimeoutFlag.REPLACE 根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
-    //TimeoutFlag.PERIOD  定期重复执行，遇到异常不会终止直到return false 或 next delay = -1。
-    Tasks.setTimeout(() -> {
-        System.out.println(System.currentTimeMillis());
-    }, 50, this, TimeoutFlag.REPLACE);
+    //包装为ScheduledExecutorService
+    ScheduledExecutorService ses = timer;
+    ScheduledFuture<Integer> f1 = ses.schedule(() -> 1024, oneSecond, TimeUnit.MILLISECONDS);
+    long start = System.currentTimeMillis();
+    assert f1.get() == 1024;
+    log.info("schedule wait {}ms", (System.currentTimeMillis() - start));
 
-    System.in.read();
+    log.info("scheduleAtFixedRate step 1");
+    ScheduledFuture<?> f2 = ses.scheduleAtFixedRate(() -> log.info("scheduleAtFixedRate step 2"), 500, oneSecond, TimeUnit.MILLISECONDS);
+    log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
+    sleep(5000);
+    f2.cancel(true);
+    log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
 }
 ```
-

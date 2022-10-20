@@ -313,7 +313,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
                 Task<?> p = t.v;
                 future.timeout = p.timeout;
-                future.future = (CompletableFuture) p.future;
+                future.future = (Future) p.future;
                 future.delay = p.delay;
                 future.expiredTime = p.expiredTime;
             }
