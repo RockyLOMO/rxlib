@@ -3,6 +3,7 @@ package org.rx.test;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
@@ -23,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.rx.core.App.toJsonString;
 
 @Slf4j
-public class UtilTester {
+public class UtilTester extends AbstractTester {
     List<Integer> queue = new ArrayList<>();
 
     @SneakyThrows
@@ -136,7 +137,7 @@ public class UtilTester {
     public void normalMapBean() {
         PersonBean f = new PersonBean();
         f.setIndex(2);
-        f.setName(TConfig.NAME_WYF);
+        f.setName(str_name_wyf);
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.BOY);
@@ -192,6 +193,10 @@ public class UtilTester {
 
     @Test
     public void version() {
+//        System.out.println(FilenameUtils.getFullPath("b.txt"));
+//        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+//        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;

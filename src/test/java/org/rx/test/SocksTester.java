@@ -53,7 +53,7 @@ import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
-public class SocksTester extends TConfig {
+public class SocksTester extends AbstractTester {
     final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
@@ -604,7 +604,7 @@ public class SocksTester extends TConfig {
             List<InetAddress> x = client.resolveAll(host_devops);
             System.out.println(toJsonString(x));
             assert x.contains(ip4);
-            _exit();
+            _notify();
         }, 6000);
 
         InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());

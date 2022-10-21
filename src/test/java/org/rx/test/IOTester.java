@@ -16,8 +16,6 @@ import org.rx.net.socks.SocksUser;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
-import org.rx.test.common.TestUtil;
-import org.rx.util.Snowflake;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -31,7 +29,7 @@ import static org.rx.core.App.*;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
-public class IOTester extends TestUtil {
+public class IOTester extends AbstractTester {
     //region h2db
     static final String h2Db = "~/h2/test";
 
@@ -273,7 +271,7 @@ public class IOTester extends TestUtil {
         KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         int loopCount = 10000;
-        TestUtil.invokeAsync("kvdb", i -> {
+        invokeAsync("kvdb", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
             int k = i;
             String val = kv.get(k);
@@ -296,7 +294,7 @@ public class IOTester extends TestUtil {
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
         int loopCount = 100, removeK = 99;
-        TestUtil.invoke("put", i -> {
+        invoke("put", i -> {
             String val = kv.get(i);
             if (val == null) {
                 val = DateTime.now().toString();
@@ -437,7 +435,7 @@ public class IOTester extends TestUtil {
         assert stream.getPosition() == read;
         System.out.println(buf.toString(StandardCharsets.UTF_8));
 
-        FileStream fs = new FileStream(TConfig.path("mmap.txt"));
+        FileStream fs = new FileStream(AbstractTester.path("mmap.txt"));
         CompositeMmap mmap = fs.mmap(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE * 2L + 1);
         testMmapStream(mmap);
 
@@ -577,26 +575,26 @@ public class IOTester extends TestUtil {
 
     @Test
     public void listFiles() {
-        for (File p : Files.listFiles(TConfig.BASE_DIR, false)) {
+        for (File p : Files.listFiles(AbstractTester.BASE_DIR, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listFiles(TConfig.BASE_DIR, true)) {
+        for (File p : Files.listFiles(AbstractTester.BASE_DIR, true)) {
             System.out.println(p);
         }
     }
 
     @Test
     public void listDirectories() {
-        Path path = Paths.get(TConfig.BASE_DIR);
+        Path path = Paths.get(AbstractTester.BASE_DIR);
         System.out.println(path.getRoot());
         System.out.println(path.getFileName());
         System.out.println("---");
-        for (File p : Files.listDirectories(TConfig.BASE_DIR, false)) {
+        for (File p : Files.listDirectories(AbstractTester.BASE_DIR, false)) {
             System.out.println(p);
         }
         System.out.println("---");
-        for (File p : Files.listDirectories(TConfig.BASE_DIR, true)) {
+        for (File p : Files.listDirectories(AbstractTester.BASE_DIR, true)) {
             System.out.println(p);
         }
     }

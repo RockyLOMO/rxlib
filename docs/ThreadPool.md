@@ -17,6 +17,113 @@
 @SneakyThrows
 @Test
 public void threadPool() {
+    ThreadPool pool = Tasks.pool();
+    //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
+    //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
+    //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
+    //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
+    //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
+    //RunFlag.THREAD_TRACE  开启trace,支持timer和CompletableFuture
+    AtomicInteger c = new AtomicInteger();
+    for (int i = 0; i < 5; i++) {
+        int x = i;
+        Future<Void> f1 = pool.run(() -> {
+            log.info("exec SINGLE begin {}", x);
+            c.incrementAndGet();
+            sleep(oneSecond);
+            wait.set();
+            log.info("exec SINGLE end {}", x);
+        }, c, RunFlag.SINGLE.flags());
+    }
+    wait.waitOne();
+    wait.reset();
+    assert c.get() == 1;
+
+    for (int i = 0; i < 5; i++) {
+        int x = i;
+        Future<Void> f1 = pool.run(() -> {
+            log.info("exec SYNCHRONIZED begin {}", x);
+            c.incrementAndGet();
+            sleep(oneSecond);
+            log.info("exec SYNCHRONIZED end {}", x);
+        }, c, RunFlag.SYNCHRONIZED.flags());
+    }
+    sleep(8000);
+    assert c.get() == 6;
+
+
+    c.set(0);
+    for (int i = 0; i < 5; i++) {
+        int x = i;
+        CompletableFuture<Void> f1 = pool.runAsync(() -> {
+            log.info("exec SINGLE begin {}", x);
+            c.incrementAndGet();
+            sleep(oneSecond);
+            wait.set();
+            log.info("exec SINGLE end {}", x);
+        }, c, RunFlag.SINGLE.flags());
+        f1.whenCompleteAsync((r, e) -> log.info("exec SINGLE uni"));
+    }
+    wait.waitOne();
+    wait.reset();
+    assert c.get() == 1;
+
+    for (int i = 0; i < 5; i++) {
+        int x = i;
+        CompletableFuture<Void> f1 = pool.runAsync(() -> {
+            log.info("exec SYNCHRONIZED begin {}", x);
+            c.incrementAndGet();
+            sleep(oneSecond);
+            log.info("exec SYNCHRONIZED end {}", x);
+        }, c, RunFlag.SYNCHRONIZED.flags());
+        f1.whenCompleteAsync((r, e) -> log.info("exec SYNCHRONIZED uni"));
+    }
+    sleep(8000);
+    assert c.get() == 6;
+
+    pool.runAsync(() -> System.out.println("runAsync"))
+            .whenCompleteAsync((r, e) -> System.out.println("whenCompleteAsync"))
+            .join();
+    List<Func<Integer>> tasks = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+        int x = i;
+        tasks.add(() -> {
+            log.info("TASK begin {}", x);
+            sleep(oneSecond);
+            log.info("TASK end {}", x);
+            return x + 100;
+        });
+    }
+    List<Future<Integer>> futures = pool.runAll(tasks, 0);
+    for (Future<Integer> future : futures) {
+        System.out.println(future.get());
+    }
+
+    ThreadPool.MultiTaskFuture<Integer, Integer> anyMf = pool.runAnyAsync(tasks);
+    anyMf.getFuture().whenCompleteAsync((r, e) -> log.info("ANY TASK MAIN uni"));
+    for (CompletableFuture<Integer> sf : anyMf.getSubFutures()) {
+        sf.whenCompleteAsync((r, e) -> log.info("ANY TASK uni {}", r));
+    }
+    for (CompletableFuture<Integer> sf : anyMf.getSubFutures()) {
+        sf.join();
+    }
+    log.info("wait ANY TASK");
+    anyMf.getFuture().get();
+
+    ThreadPool.MultiTaskFuture<Void, Integer> mf = pool.runAllAsync(tasks);
+    mf.getFuture().whenCompleteAsync((r, e) -> log.info("ALL TASK MAIN uni"));
+    for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
+        sf.whenCompleteAsync((r, e) -> log.info("ALL TASK uni {}", r));
+    }
+    for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
+        sf.join();
+    }
+    log.info("wait ALL TASK");
+    mf.getFuture().get();
+}
+
+@Test
+public void threadPoolAutosize() {
     //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
     //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
     //支持netty FastThreadLocal
@@ -30,23 +137,92 @@ public void threadPool() {
             log.info("exec {} end..", x);
         });
     }
+}
+```
 
-    for (int i = 0; i < 10; i++) {
-        int x = i;
-        //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
-        //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-        //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-        //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-        //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
-        Tasks.run(() -> {
-            log.info("exec {} begin..", x);
-            sleep(delayMillis);
-            log.info("exec {} end..", x);
-        }, "myTaskId", RunFlag.SINGLE.flags()).whenCompleteAsync((r, e) -> log.info("Done: " + x));
+## 异步trace
+
+zipkin不支持异步trace，rxlib提供支持支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
+
+```java
+@SneakyThrows
+@Test
+public void inheritThreadLocal() {
+    //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
+    RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
+    ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
+    ThreadPool.traceIdChangedHandler = t -> MDC.put("rx-traceId", t);
+    ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
+
+    //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
+    ThreadPool.startTrace(null);
+    for (int i = 0; i < 2; i++) {
+        int finalI = i;
+        pool.run(() -> {
+            log.info("TRACE DELAY-1 {}", finalI);
+            pool.run(() -> {
+                log.info("TRACE DELAY-1_1 {}", finalI);
+                sleep(oneSecond);
+            });
+            sleep(oneSecond);
+        });
+        log.info("TRACE DELAY MAIN {}", finalI);
+        pool.run(() -> {
+            log.info("TRACE DELAY-2 {}", finalI);
+            sleep(oneSecond);
+        });
     }
+    ThreadPool.endTrace();
+    sleep(8000);
 
-    System.out.println("main thread done");
-    System.in.read();
+    //WheelTimer(ScheduledExecutorService) 异步trace
+    WheelTimer timer = Tasks.timer();
+    ThreadPool.startTrace(null);
+    for (int i = 0; i < 2; i++) {
+        int finalI = i;
+        timer.setTimeout(() -> {
+            log.info("TRACE TIMER {}", finalI);
+            sleep(oneSecond);
+        }, oneSecond);
+        log.info("TRACE TIMER MAIN {}", finalI);
+    }
+    ThreadPool.endTrace();
+    sleep(4000);
+
+    //CompletableFuture.xxAsync异步方法正确获取trace
+    ThreadPool.startTrace(null);
+    for (int i = 0; i < 2; i++) {
+        int finalI = i;
+        pool.runAsync(() -> {
+            log.info("TRACE ASYNC-1 {}", finalI);
+            pool.runAsync(() -> {
+                log.info("TRACE ASYNC-1_1 {}", finalI);
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
+            sleep(oneSecond);
+        }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
+        log.info("TRACE ASYNC MAIN {}", finalI);
+        pool.runAsync(() -> {
+            log.info("TRACE ASYNC-2 {}", finalI);
+            sleep(oneSecond);
+        }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
+    }
+    ThreadPool.endTrace();
+    sleep(10000);
+
+    //netty FastThreadLocal 支持继承
+    FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
+    ftl.set(64);
+    pool.run(() -> {
+        assert ftl.get() == 64;
+        log.info("Inherit ok 1");
+    }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+
+    pool.runAsync(() -> {
+        assert ftl.get() == 64;
+        log.info("Inherit ok 2");
+    }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+    sleep(2000);
 }
 ```
 

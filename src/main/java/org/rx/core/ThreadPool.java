@@ -209,8 +209,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         Executor uniPool(Executor executor) {
+            return executor != null ? executor : pool;
 //            return ForkJoinPool.commonPool();
-            return pool;
         }
 
         @Override
@@ -440,7 +440,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T, ? super Throwable> action, Executor executor) {
-            return uniStage(delegate.whenCompleteAsync(action, uniPool(executor)));
+            return uniStage(delegate.whenCompleteAsync(wrap(action), uniPool(executor)));
         }
 
         @Override

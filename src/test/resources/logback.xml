@@ -8,7 +8,7 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder charset="UTF-8">
-            <pattern>%yellow(%d{HH:mm:ss.SSS}) %highlight(%-5p) %magenta([%t]) %X{rx-traceId} %cyan(%c) %X{rx-traceId} - %m%n</pattern>
+            <pattern>%yellow(%d{HH:mm:ss.SSS}) %highlight(%-5p) %magenta([%t]) %cyan(%c) %X{rx-traceId} - %m%n</pattern>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>DEBUG</level>

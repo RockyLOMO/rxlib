@@ -4,14 +4,12 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.*;
-import org.rx.core.App;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
-import org.rx.test.common.TestUtil;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -21,7 +19,7 @@ import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j
-public class BeanTester extends TestUtil {
+public class BeanTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void randomList() {
@@ -115,7 +113,7 @@ public class BeanTester extends TestUtil {
         ULID id = fromJson(jstr, ULID.class);
         assert jstr.substring(1, jstr.length() - 1).equals(id.toString());
 
-        ULID id1 = ULID.newULID(TConfig.NAME_WYF);
+        ULID id1 = ULID.newULID(str_name_wyf);
         System.out.println(id1);
         ULID valueOf = ULID.valueOf(id1.toString());
         System.out.println(valueOf);
