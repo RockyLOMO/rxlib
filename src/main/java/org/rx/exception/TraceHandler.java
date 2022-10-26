@@ -148,46 +148,45 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, String msg, Throwable e) {
-        if (Strings.contains(e.getMessage(), "Duplicate entry ")) {
-            saveMetrics(Constants.DUPLICATE_KEY, e.getMessage());
-        }
-
         if (getKeepDays() <= 0) {
             return;
         }
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
         long pk = CodecUtil.hash64(stackTrace);
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        db.begin();
-        try {
-            ErrorEntity entity = db.findById(ErrorEntity.class, pk);
-            boolean doInsert = entity == null;
-            if (doInsert) {
-                entity = new ErrorEntity();
-                entity.setId(pk);
-                InvalidException invalidException = as(e, InvalidException.class);
-                ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
-                        : ExceptionLevel.SYSTEM;
-                entity.setLevel(level);
-                entity.setMessages(new ConcurrentLinkedQueue<>());
-                entity.setStackTrace(stackTrace);
+        Tasks.pool().runSerialAsync(() -> {
+            EntityDatabase db = EntityDatabase.DEFAULT;
+            db.begin();
+            try {
+                ErrorEntity entity = db.findById(ErrorEntity.class, pk);
+                boolean doInsert = entity == null;
+                if (doInsert) {
+                    entity = new ErrorEntity();
+                    entity.setId(pk);
+                    InvalidException invalidException = as(e, InvalidException.class);
+                    ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
+                            : ExceptionLevel.SYSTEM;
+                    entity.setLevel(level);
+                    entity.setMessages(new ConcurrentLinkedQueue<>());
+                    entity.setStackTrace(stackTrace);
+                }
+                Queue<String> queue = entity.getMessages();
+                if (queue.size() > RxConfig.INSTANCE.getTraceErrorMessageSize()) {
+                    queue.poll();
+                }
+                queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
+                entity.occurCount++;
+                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setThreadName(t.getName());
+                entity.setModifyTime(DateTime.now());
+                db.save(entity, doInsert);
+                db.commit();
+            } catch (Throwable ex) {
+                log.error("dbTrace", ex);
+                db.rollback();
             }
-            Queue<String> queue = entity.getMessages();
-            if (queue.size() > RxConfig.INSTANCE.getTraceErrorMessageSize()) {
-                queue.poll();
-            }
-            queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
-            entity.occurCount++;
-            entity.setAppName(RxConfig.INSTANCE.getId());
-            entity.setThreadName(t.getName());
-            entity.setModifyTime(DateTime.now());
-            db.save(entity, doInsert);
-            db.commit();
-        } catch (Throwable ex) {
-            log.error("dbTrace", ex);
-            db.rollback();
-        }
+            return null;
+        }, pk);
     }
 
     public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {
@@ -212,37 +211,39 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
-        if (parameters == null) {
-            parameters = Arrays.EMPTY_OBJECT_ARRAY;
-        }
         if (getKeepDays() <= 0 || elapsedMicros < RxConfig.INSTANCE.getTraceSlowElapsedMicros()) {
             return;
         }
 
-        String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters.length);
+        String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters == null ? 0 : parameters.length);
         long pk = CodecUtil.hash64(fullName);
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        db.begin();
-        try {
-            MethodEntity entity = db.findById(MethodEntity.class, pk);
-            boolean doInsert = entity == null;
-            if (doInsert) {
-                entity = new MethodEntity();
-                entity.setId(pk);
-                entity.setMethodName(fullName);
+        Tasks.pool().runSerialAsync(() -> {
+            EntityDatabase db = EntityDatabase.DEFAULT;
+            db.begin();
+            try {
+                MethodEntity entity = db.findById(MethodEntity.class, pk);
+                boolean doInsert = entity == null;
+                if (doInsert) {
+                    entity = new MethodEntity();
+                    entity.setId(pk);
+                    entity.setMethodName(fullName);
+                }
+                if (parameters != null) {
+                    entity.setParameters(toJsonString(parameters));
+                }
+                entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
+                entity.occurCount++;
+                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setThreadName(Thread.currentThread().getName());
+                entity.setModifyTime(DateTime.now());
+                db.save(entity, doInsert);
+                db.commit();
+            } catch (Throwable e) {
+                log.error("dbTrace", e);
+                db.rollback();
             }
-            entity.setParameters(toJsonString(parameters));
-            entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
-            entity.occurCount++;
-            entity.setAppName(RxConfig.INSTANCE.getId());
-            entity.setThreadName(Thread.currentThread().getName());
-            entity.setModifyTime(DateTime.now());
-            db.save(entity, doInsert);
-            db.commit();
-        } catch (Throwable e) {
-            log.error("dbTrace", e);
-            db.rollback();
-        }
+            return null;
+        }, pk);
     }
 
     public List<MethodEntity> queryTraces(Boolean methodOccurMost, String methodNamePrefix, Integer limit) {

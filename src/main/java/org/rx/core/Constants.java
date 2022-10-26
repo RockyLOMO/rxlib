@@ -21,7 +21,6 @@ public interface Constants {
 
     String THREAD_POOL_QUEUE = "threadPoolQueue";
     String DEFAULT_TRACE_NAME = "rx-traceId";
-    String DUPLICATE_KEY = "duplicateKey";
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";
