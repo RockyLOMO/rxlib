@@ -8,6 +8,12 @@ app:
     resizeQuantity: 2
     scheduleInitSize: 1
     replicas: 2
+  ntp:
+    syncPeriod: 128000
+    servers:
+      - ntp.aliyun.com
+      - ntp.tencent.com
+      - cn.pool.ntp.org
   disk:
     monitorPeriod: 60000
     entityDatabaseRollPeriod: 10000
@@ -18,10 +24,6 @@ app:
     poolMaxSize: 0
     poolKeepAliveSeconds: 120
     userAgent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat
-  ntpServers:
-    - ntp.aliyun.com
-    - ntp.tencent.com
-    - cn.pool.ntp.org
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

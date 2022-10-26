@@ -417,6 +417,14 @@ public class CoreTester extends AbstractTester {
     }
     //endregion
 
+    @Test
+    public void ntpClock() {
+        NtpClock clock = NtpClock.UTC;
+        log.info("local ts {}", clock.millis());
+        NtpClock.sync();
+        log.info("ntp ts {}", clock.millis());
+    }
+
     @SneakyThrows
     @Test
     public void cache() {

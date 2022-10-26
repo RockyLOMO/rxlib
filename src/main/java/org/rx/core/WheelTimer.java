@@ -22,6 +22,23 @@ import static org.rx.core.App.proxy;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
+    //schedule 抛出异常会终止
+//    public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
+//        final String poolName;
+//
+//        public ScheduledThreadPool() {
+//            super(RxConfig.INSTANCE.threadPool.scheduleInitSize, ThreadPool.newThreadFactory("schedule"));
+//            this.poolName = "schedule";
+//
+//            ThreadPool.SIZER.register(this, ThreadPool.DEFAULT_CPU_WATER_MARK);
+//        }
+//
+//        @Override
+//        public String toString() {
+//            return poolName;
+//        }
+//    }
+
     class Task<T> implements TimerTask, TimeoutFuture<T> {
         final Func<T> fn;
         final FlagsEnum<TimeoutFlag> flags;

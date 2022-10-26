@@ -24,6 +24,10 @@ public final class RxConfig {
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
 
+        String NTP_ENABLE = "app.ntp.enable";
+        String NTP_SYNC_PERIOD = "app.ntp.syncPeriod";
+        String NTP_SERVERS = "app.ntp.servers";
+
         String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
         String CACHE_SLIDING_SECONDS = "app.cache.slidingSeconds";
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
@@ -43,7 +47,6 @@ public final class RxConfig {
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
         String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
         String LOG_STRATEGY = "app.logStrategy";
-        String NTP_SERVERS = "app.ntpServers";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
@@ -60,6 +63,13 @@ public final class RxConfig {
         int scheduleInitSize;
         String traceName;
         int replicas;
+    }
+
+    @Data
+    public static class NtpConfig {
+        boolean enable;
+        long syncPeriod;
+        final Set<String> servers = ConcurrentHashMap.newKeySet();
     }
 
     @Data
@@ -99,6 +109,7 @@ public final class RxConfig {
     }
 
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
+    NtpConfig ntp = new NtpConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
@@ -108,7 +119,6 @@ public final class RxConfig {
     long traceSlowElapsedMicros;
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
-    final Set<String> ntpServers = ConcurrentHashMap.newKeySet();
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     String aesKey;
     String omega;
@@ -136,6 +146,14 @@ public final class RxConfig {
         threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
+
+        ntp.enable = SystemPropertyUtil.getBoolean(ConfigNames.NTP_ENABLE, false);
+        ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
+        ntp.servers.clear();
+        String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
+        if (v != null) {
+            ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
 
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
         if (mc != null) {
@@ -166,15 +184,9 @@ public final class RxConfig {
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
         traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);
-        String v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
+        v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
-        }
-
-        ntpServers.clear();
-        v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
-        if (v != null) {
-            ntpServers.addAll(Linq.from(Strings.split(v, ",")).toSet());
         }
 
         jsonSkipTypes.clear();

@@ -62,6 +62,9 @@ public final class App extends SystemUtils {
 
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
+        if (conf.ntp.enable) {
+            NtpClock.startSyncTask();
+        }
     }
 
     //region basic
@@ -153,12 +156,12 @@ public final class App extends SystemUtils {
         });
     }
 
-    public static void clearLogCtx() {
+    public static <T> T logCtx(String name) {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
-            return;
+            return null;
         }
-        mdc.clear();
+        return (T) mdc.get(name);
     }
 
     public static void logCtxIfAbsent(String name, Object value) {
@@ -185,12 +188,12 @@ public final class App extends SystemUtils {
         mdc.put(name, toJsonString(value));
     }
 
-    public static <T> T logCtx(String name) {
+    public static void clearLogCtx() {
         MDCAdapter mdc = MDC.getMDCAdapter();
         if (mdc == null) {
-            return null;
+            return;
         }
-        return (T) mdc.get(name);
+        mdc.clear();
     }
 
     public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
