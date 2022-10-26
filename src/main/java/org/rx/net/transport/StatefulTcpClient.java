@@ -52,7 +52,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                 return;
             }
             if (tryAs(pack, PingPacket.class, p -> {
-                log.info("clientHeartbeat pong {} {}", channel.remoteAddress(), App.formatElapsed((System.nanoTime() - p.getTimestamp()) / 1000L));
+                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), System.currentTimeMillis() - p.getTimestamp());
                 raiseEventAsync(onPong, new NEventArgs<>(p));
             })) {
                 return;

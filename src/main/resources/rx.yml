@@ -21,6 +21,7 @@ app:
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse
+    - org.springframework.core.io.InputStreamSource
     - org.springframework.ui.Model
     - org.springframework.validation.BindingResult
     - org.rx.io.IOStream

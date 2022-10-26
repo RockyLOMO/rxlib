@@ -250,6 +250,28 @@ public class CoreTester extends AbstractTester {
 
     @SneakyThrows
     @Test
+    public void serialAsync() {
+        RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
+        ThreadPool.traceIdChangedHandler = t -> MDC.put("rx-traceId", t);
+        ThreadPool.startTrace(null);
+
+        ThreadPool pool = Tasks.pool();
+        String tid1 = "sat1", tid2 = "sat2";
+        Future<Integer> f = null;
+        for (int i = 0; i < 10; i++) {
+            Object tid = i % 2 == 0 ? tid1 : tid2;
+            int finalI = i;
+            f = pool.runSerialAsync(() -> {
+                log.info("serial {} - {}", tid, finalI);
+                return finalI + 100;
+            }, tid);
+        }
+        log.info("last result {}", f.get());
+        System.out.println("ok");
+    }
+
+    @SneakyThrows
+    @Test
     public void timer() {
         WheelTimer timer = Tasks.timer();
         //TimeoutFlag.SINGLE       根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。

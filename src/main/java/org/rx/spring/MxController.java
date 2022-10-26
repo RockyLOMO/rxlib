@@ -21,6 +21,7 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RequiredArgsConstructor
@@ -34,7 +35,7 @@ public class MxController {
                                            Boolean methodOccurMost, String methodNamePrefix,
                                            String metricsName,
                                            Integer take) {
-        Map<String, Object> result = new HashMap<>(3);
+        Map<String, Object> result = new LinkedHashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);

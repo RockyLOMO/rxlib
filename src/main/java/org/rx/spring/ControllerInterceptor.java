@@ -42,7 +42,7 @@ public class ControllerInterceptor extends BaseInterceptor {
 
     @Override
     protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
-        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
+        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = httpEnv();
         if (httpEnv == null) {
             return super.startTrace(joinPoint, parentTraceId);
         }
@@ -58,7 +58,7 @@ public class ControllerInterceptor extends BaseInterceptor {
 
     @Override
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
-        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = quietly(Servlets::currentRequest);
+        Tuple<HttpServletRequest, HttpServletResponse> httpEnv = httpEnv();
         if (httpEnv == null) {
             return super.doAround(joinPoint);
         }
@@ -74,6 +74,15 @@ public class ControllerInterceptor extends BaseInterceptor {
         }
         App.logCtx("url", httpEnv.left.getRequestURL().toString());
         return super.doAround(joinPoint);
+    }
+
+    Tuple<HttpServletRequest, HttpServletResponse> httpEnv() {
+        try {
+            return Servlets.currentRequest();
+        } catch (IllegalStateException e) {
+            //ignore
+        }
+        return null;
     }
 
     @SneakyThrows
