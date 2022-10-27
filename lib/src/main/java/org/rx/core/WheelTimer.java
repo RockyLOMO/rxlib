@@ -20,7 +20,7 @@ import java.util.function.LongUnaryOperator;
 import static org.rx.bean.$.$;
 import static org.rx.core.App.proxy;
 
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
     //schedule 抛出异常会终止
 //    public final class ScheduledThreadPool extends ScheduledThreadPoolExecutor {
@@ -75,7 +75,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 ThreadPool.startTrace(traceId);
             }
             try {
-                future = Tasks.run(() -> {
+                future = executor.submit(() -> {
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
                         return fn.invoke();
@@ -216,8 +216,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     static final long TICK_DURATION = 100;
+    static final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
+    final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
-    final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
     final EmptyTimeout nonTask = new EmptyTimeout();
 
     public TimeoutFuture<?> setTimeout(Action fn, LongUnaryOperator nextDelay) {
@@ -348,7 +349,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public void execute(Runnable command) {
-        Tasks.run(command::run);
+        executor.execute(command);
     }
 
     @Override

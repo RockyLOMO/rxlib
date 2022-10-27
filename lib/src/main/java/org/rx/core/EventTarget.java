@@ -30,7 +30,7 @@ public interface EventTarget<TSender extends EventTarget<TSender>> extends Event
 
     @NonNull
     default ThreadPool asyncScheduler() {
-        return Tasks.pool();
+        return Tasks.nextPool();
     }
 
     default <TArgs extends EventArgs> void attachEvent(String eventName, TripleAction<TSender, TArgs> event) {

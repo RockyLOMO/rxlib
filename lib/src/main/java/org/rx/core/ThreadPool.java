@@ -174,7 +174,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    static class TaskContext {
+    static class LockContext {
         ReentrantLock lock;
         AtomicInteger lockRefCnt;
     }
@@ -620,7 +620,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
 
-            if (size > MIN_CORE_SIZE && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
+            if (size > RxConfig.INSTANCE.threadPool.minCoreSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
                 if (++decrementCounter >= SAMPLING_TIMES) {
                     log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrSize(pool));
@@ -660,8 +660,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
-    static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
     static final DynamicSizer SIZER = new DynamicSizer();
+    static final Map<Object, LockContext> taskLockMap = new ConcurrentHashMap<>(8);
+    static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
     static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
 
@@ -714,16 +715,18 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static int incrSize(ThreadPoolExecutor pool) {
-        int poolSize = pool.getCorePoolSize() + RxConfig.INSTANCE.threadPool.resizeQuantity;
-        if (poolSize > MAX_CORE_SIZE) {
-            return MAX_CORE_SIZE;
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+        int poolSize = pool.getCorePoolSize() + conf.resizeQuantity;
+        if (poolSize > conf.maxCoreSize) {
+            return conf.maxCoreSize;
         }
         pool.setCorePoolSize(poolSize);
         return poolSize;
     }
 
     static int decrSize(ThreadPoolExecutor pool) {
-        int poolSize = Math.max(MIN_CORE_SIZE, pool.getCorePoolSize() - RxConfig.INSTANCE.threadPool.resizeQuantity);
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+        int poolSize = Math.max(conf.minCoreSize, pool.getCorePoolSize() - conf.resizeQuantity);
         pool.setCorePoolSize(poolSize);
         return poolSize;
     }
@@ -742,8 +745,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Getter
     final String poolName;
     final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
-    final Map<Object, TaskContext> taskCtxMap = new ConcurrentHashMap<>(8);
-    final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>(8);
 
     @Override
     public void setMaximumPoolSize(int maximumPoolSize) {
@@ -975,14 +976,14 @@ public class ThreadPool extends ThreadPoolExecutor {
         taskMap.put(r, task);
         FlagsEnum<RunFlag> flags = task.flags;
         if (flags.has(RunFlag.SINGLE)) {
-            TaskContext ctx = getContextForLock(task.id);
+            LockContext ctx = getContextForLock(task.id);
             if (!ctx.lock.tryLock()) {
                 throw new InterruptedException(String.format("SingleScope %s locked by other thread", task.id));
             }
             ctx.lockRefCnt.incrementAndGet();
             log.debug("CTX tryLock {} -> {}", task.id, flags.name());
         } else if (flags.has(RunFlag.SYNCHRONIZED)) {
-            TaskContext ctx = getContextForLock(task.id);
+            LockContext ctx = getContextForLock(task.id);
             ctx.lockRefCnt.incrementAndGet();
             ctx.lock.lock();
             log.debug("CTX lock {} -> {}", task.id, flags.name());
@@ -1009,11 +1010,11 @@ public class ThreadPool extends ThreadPoolExecutor {
         FlagsEnum<RunFlag> flags = task.flags;
         Object id = task.id;
         if (id != null) {
-            TaskContext ctx = taskCtxMap.get(id);
+            LockContext ctx = taskLockMap.get(id);
             if (ctx != null) {
                 boolean doRemove = false;
                 if (ctx.lockRefCnt.decrementAndGet() <= 0) {
-                    taskCtxMap.remove(id);
+                    taskLockMap.remove(id);
                     doRemove = true;
                 }
                 log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
@@ -1042,13 +1043,13 @@ public class ThreadPool extends ThreadPoolExecutor {
         slowThreadLocalMap.set(threadLocalMap);
     }
 
-    private TaskContext getContextForLock(Object id) {
+    private LockContext getContextForLock(Object id) {
         if (id == null) {
             throw new InvalidException("SINGLE or SYNCHRONIZED flag require a taskId");
         }
 
-        return taskCtxMap.computeIfAbsent(id, k -> {
-            TaskContext ctx = new TaskContext();
+        return taskLockMap.computeIfAbsent(id, k -> {
+            LockContext ctx = new LockContext();
             ctx.lock = new ReentrantLock();
             ctx.lockRefCnt = new AtomicInteger();
             return ctx;

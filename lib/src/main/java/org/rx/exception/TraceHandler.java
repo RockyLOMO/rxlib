@@ -154,7 +154,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
         String stackTrace = ExceptionUtils.getStackTrace(e);
         long pk = CodecUtil.hash64(stackTrace);
-        Tasks.pool().runSerial(() -> {
+        Tasks.nextPool().runSerial(() -> {
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.begin();
             try {
@@ -217,7 +217,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
         String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters == null ? 0 : parameters.length);
         long pk = CodecUtil.hash64(fullName);
-        Tasks.pool().runSerial(() -> {
+        Tasks.nextPool().runSerial(() -> {
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.begin();
             try {

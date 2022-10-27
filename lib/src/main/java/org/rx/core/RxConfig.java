@@ -22,6 +22,8 @@ public final class RxConfig {
         String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
         String THREAD_POOL_LOW_CPU_WATER_MARK = "app.threadPool.lowCpuWaterMark";
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
+        String THREAD_POOL_MIN_CORE_SIZE = "app.threadPool.minCoreSize";
+        String THREAD_POOL_MAX_CORE_SIZE = "app.threadPool.maxCoreSize";
         String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
         String THREAD_POOL_SCHEDULE_INIT_SIZE = "app.threadPool.scheduleInitSize";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
@@ -62,6 +64,9 @@ public final class RxConfig {
         int queueCapacity;
         int lowCpuWaterMark;
         int highCpuWaterMark;
+
+        int minCoreSize;
+        int maxCoreSize;
         int resizeQuantity;
         int scheduleInitSize;
         String traceName;
@@ -145,6 +150,8 @@ public final class RxConfig {
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, 0);
         threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, 40);
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
+        threadPool.minCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_CORE_SIZE, 2);
+        threadPool.maxCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_CORE_SIZE, 1000);
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
         threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);

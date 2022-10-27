@@ -28,7 +28,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     static Caffeine<Object, Object> rootBuilder() {
-        return Caffeine.newBuilder().executor(Tasks.pool()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
+        return Caffeine.newBuilder().executor(Tasks.executor()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;

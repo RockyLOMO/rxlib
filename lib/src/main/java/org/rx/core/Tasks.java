@@ -16,42 +16,24 @@ import java.util.concurrent.*;
 
 //Java 11 and ForkJoinPool.commonPool() class loading issue
 public final class Tasks {
-    private static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
+    static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
     //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
-    private static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
-    private static final WheelTimer wheelTimer;
-    private static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
+    static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
+    static final ExecutorService executor;
+    static final WheelTimer timer;
+    static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
 
     static {
         for (int i = 0; i < POOL_COUNT; i++) {
             replicas.add(new ThreadPool(String.valueOf(i)));
         }
-        wheelTimer = new WheelTimer();
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            Action fn;
-            while ((fn = shutdownActions.poll()) != null) {
-                try {
-                    fn.invoke();
-                } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log(e);
-                }
-            }
-        }));
-    }
-
-    public static ThreadPool pool() {
-        return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
-    }
-
-    public static ExecutorService poolProxy() {
-        return new AbstractExecutorService() {
+        executor = new AbstractExecutorService() {
             @Getter
             boolean shutdown;
 
             @Override
             public void execute(Runnable command) {
-                pool().execute(command);
+                nextPool().execute(command);
             }
 
             @Override
@@ -75,10 +57,30 @@ public final class Tasks {
                 return shutdown;
             }
         };
+        timer = new WheelTimer(executor);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Action fn;
+            while ((fn = shutdownActions.poll()) != null) {
+                try {
+                    fn.invoke();
+                } catch (Throwable e) {
+                    TraceHandler.INSTANCE.log(e);
+                }
+            }
+        }));
+    }
+
+    public static ThreadPool nextPool() {
+        return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
+    }
+
+    public static ExecutorService executor() {
+        return executor;
     }
 
     public static WheelTimer timer() {
-        return wheelTimer;
+        return timer;
     }
 
     public static void addShutdownHook(Action fn) {
@@ -152,43 +154,43 @@ public final class Tasks {
     }
 
     public static Future<Void> run(Action task) {
-        return pool().run(task);
+        return nextPool().run(task);
     }
 
     public static Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().run(task, taskId, flags);
+        return nextPool().run(task, taskId, flags);
     }
 
     public static <T> Future<T> run(Func<T> task) {
-        return pool().run(task);
+        return nextPool().run(task);
     }
 
     public static <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().run(task, taskId, flags);
+        return nextPool().run(task, taskId, flags);
     }
 
     public static CompletableFuture<Void> runAsync(Action task) {
-        return pool().runAsync(task);
+        return nextPool().runAsync(task);
     }
 
     public static CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().runAsync(task, taskId, flags);
+        return nextPool().runAsync(task, taskId, flags);
     }
 
     public static <T> CompletableFuture<T> runAsync(Func<T> task) {
-        return pool().runAsync(task);
+        return nextPool().runAsync(task);
     }
 
     public static <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return pool().runAsync(task, taskId, flags);
+        return nextPool().runAsync(task, taskId, flags);
     }
 
     public static TimeoutFuture<?> setTimeout(Action task, long delay) {
-        return wheelTimer.setTimeout(task, delay);
+        return timer.setTimeout(task, delay);
     }
 
     public static TimeoutFuture<?> setTimeout(Action task, long delay, Object taskId, FlagsEnum<TimeoutFlag> flags) {
-        return wheelTimer.setTimeout(task, delay, taskId, flags);
+        return timer.setTimeout(task, delay, taskId, flags);
     }
 
     public static List<? extends ScheduledFuture<?>> scheduleDaily(Action task, String... timeArray) {
@@ -215,6 +217,6 @@ public final class Tasks {
     }
 
     public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
-        return wheelTimer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD.flags());
+        return timer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD.flags());
     }
 }

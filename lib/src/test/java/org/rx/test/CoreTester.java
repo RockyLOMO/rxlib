@@ -46,7 +46,7 @@ public class CoreTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void threadPool() {
-        ThreadPool pool = Tasks.pool();
+        ThreadPool pool = Tasks.nextPool();
         //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
         //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
         //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
@@ -255,7 +255,7 @@ public class CoreTester extends AbstractTester {
         ThreadPool.traceIdChangedHandler = t -> MDC.put("rx-traceId", t);
         ThreadPool.startTrace(null);
 
-        ThreadPool pool = Tasks.pool();
+        ThreadPool pool = Tasks.nextPool();
         String tid1 = "sat1", tid2 = "sat2";
         Future<Integer> f = null;
         for (int i = 0; i < 10; i++) {
