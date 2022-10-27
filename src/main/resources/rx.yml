@@ -9,6 +9,7 @@ app:
     scheduleInitSize: 1
     replicas: 2
   ntp:
+    enable: false
     syncPeriod: 128000
     servers:
       - ntp.aliyun.com
