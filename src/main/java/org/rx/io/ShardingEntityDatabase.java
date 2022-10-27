@@ -29,8 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.asyncContinue;
-import static org.rx.core.Extends.asyncEach;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
@@ -301,6 +300,6 @@ public class ShardingEntityDatabase implements EntityDatabase {
             return;
         }
 
-        asyncEach(nodes, tuple -> fn.invoke(tuple.right));
+        eachQuietly(nodes, tuple -> fn.invoke(tuple.right));
     }
 }

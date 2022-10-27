@@ -23,7 +23,7 @@ public class NtpClock extends Clock implements Serializable {
     static long offset;
 
     public static void startSyncTask() {
-        Tasks.setTimeout(NtpClock::sync, RxConfig.INSTANCE.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags());
+        Tasks.setTimeout(NtpClock::sync, RxConfig.INSTANCE.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
     }
 
     @SneakyThrows

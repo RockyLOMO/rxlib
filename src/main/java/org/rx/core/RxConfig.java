@@ -7,8 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static org.rx.core.Extends.newConcurrentList;
 
 @Slf4j
 @Data
@@ -69,7 +72,7 @@ public final class RxConfig {
     public static class NtpConfig {
         boolean enable;
         long syncPeriod;
-        final Set<String> servers = ConcurrentHashMap.newKeySet();
+        final List<String> servers = newConcurrentList(true);
     }
 
     @Data

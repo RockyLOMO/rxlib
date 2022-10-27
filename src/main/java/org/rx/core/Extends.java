@@ -108,13 +108,16 @@ public interface Extends extends Serializable {
             return;
         }
 
-        asyncEach(iterable, t -> {
+        for (T t : iterable) {
             try {
                 fn.invoke(t);
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log("eachQuietly", e);
             }
-        });
+            if (!ThreadPool.asyncContinueFlag(true)) {
+                break;
+            }
+        }
     }
 
     static boolean quietly(@NonNull Action action) {
@@ -173,20 +176,6 @@ public interface Extends extends Serializable {
             action.invoke(t);
         }
         return true;
-    }
-
-    @SneakyThrows
-    static <T> void asyncEach(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
-            return;
-        }
-
-        for (T t : iterable) {
-            fn.invoke(t);
-            if (!ThreadPool.asyncContinueFlag(true)) {
-                break;
-            }
-        }
     }
 
     //CircuitBreakingException
