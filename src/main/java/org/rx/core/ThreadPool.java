@@ -20,7 +20,6 @@ import org.rx.util.function.Func;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
@@ -664,6 +663,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final int MIN_CORE_SIZE = 2, MAX_CORE_SIZE = 1000;
     static final DynamicSizer SIZER = new DynamicSizer();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
+    static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
 
     @SneakyThrows
     public static String startTrace(String traceId) {
@@ -695,6 +695,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (fn != null) {
             fn.invoke(null);
         }
+    }
+
+    public static <T> T completionReturnedValue() {
+        return (T) COMPLETION_RETURNED_VALUE.getIfExists();
     }
 
     public static int computeThreads(double cpuUtilization, long waitTime, long cpuTime) {
@@ -881,26 +885,47 @@ public class ThreadPool extends ThreadPoolExecutor {
         return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
     }
 
-    public <T> Future<T> runSerialAsync(Func<T> task, Object taskId) {
+    public <T> Future<T> runSerial(Func<T> task, Object taskId) {
+        return runSerial(task, taskId, null);
+    }
+
+    public <T> Future<T> runSerial(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return runSerialAsync(task, taskId, flags, true);
+    }
+
+    public <T> CompletableFuture<T> runSerialAsync(Func<T> task, Object taskId) {
         return runSerialAsync(task, taskId, null);
     }
 
-    public <T> Future<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags) {
-        AtomicBoolean init = new AtomicBoolean();
-        CompletableFuture<T> f = (CompletableFuture<T>) taskSerialMap.computeIfAbsent(taskId, k -> {
-            init.set(true);
+    public <T> CompletableFuture<T> runSerialAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return runSerialAsync(task, taskId, flags, false);
+    }
+
+    <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
+        Function<Object, CompletableFuture<T>> mfn = k -> {
             Task<T> t = new Task<>(task, flags, taskId);
             return wrap(CompletableFuture.supplyAsync(t, this), t.traceId, true)
                     .whenCompleteAsync((r, e) -> taskSerialMap.remove(taskId));
-        });
-        if (!init.get()) {
+        };
+        CompletableFuture<T> v, newValue = null;
+        CompletableFuture<T> f = ((v = (CompletableFuture<T>) taskSerialMap.get(taskId)) == null &&
+                (newValue = mfn.apply(taskId)) != null &&
+                (v = (CompletableFuture<T>) taskSerialMap.putIfAbsent(taskId, newValue)) == null) ? newValue : v;
+
+        if (newValue == null) {
             f = f.thenApplyAsync(t -> {
+                COMPLETION_RETURNED_VALUE.set(t);
                 try {
                     return task.invoke();
                 } catch (Throwable e) {
                     throw InvalidException.sneaky(e);
+                } finally {
+                    COMPLETION_RETURNED_VALUE.remove();
                 }
             }, this);
+            if (!reuse) {
+                taskSerialMap.put(taskId, f);
+            }
         }
         return f;
     }

@@ -21,7 +21,6 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
         String THREAD_POOL_SCHEDULE_INIT_SIZE = "app.threadPool.scheduleInitSize";
-        String THREAD_POOL_ENABLE_INHERIT_FAST_THREAD_LOCALS = "app.threadPool.enableInheritFastThreadLocals";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
 
@@ -44,6 +43,7 @@ public final class RxConfig {
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
         String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
         String LOG_STRATEGY = "app.logStrategy";
+        String NTP_SERVERS = "app.ntpServers";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
@@ -108,6 +108,7 @@ public final class RxConfig {
     long traceSlowElapsedMicros;
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
+    final Set<String> ntpServers = ConcurrentHashMap.newKeySet();
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     String aesKey;
     String omega;
@@ -169,6 +170,13 @@ public final class RxConfig {
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
+
+        ntpServers.clear();
+        v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
+        if (v != null) {
+            ntpServers.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
+
         jsonSkipTypes.clear();
         v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {

@@ -24,6 +24,7 @@ import org.rx.net.http.*;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
+import org.rx.net.ntp.*;
 import org.rx.net.rpc.*;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
@@ -41,7 +42,10 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,6 +62,7 @@ public class SocksTester extends AbstractTester {
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
+    //region ns
     final NameserverConfig conf1 = new NameserverConfig() {{
         setDnsPort(1853);
         setRegisterPort(1854);
@@ -68,10 +73,10 @@ public class SocksTester extends AbstractTester {
         setRegisterPort(1954);
     }};
     final NameserverImpl ns2 = new NameserverImpl(conf2);
-    String appUsercenter = "usercenter";
-    String appOrder = "order";
-    String node1 = String.format("127.0.0.1:%s", conf1.getRegisterPort());
-    String node2 = String.format("127.0.0.1:%s", conf2.getRegisterPort());
+    final String appUsercenter = "usercenter";
+    final String appOrder = "order";
+    final String node1 = String.format("127.0.0.1:%s", conf1.getRegisterPort());
+    final String node2 = String.format("127.0.0.1:%s", conf2.getRegisterPort());
 
     @Test
     public void singleNode() {
@@ -148,8 +153,9 @@ public class SocksTester extends AbstractTester {
         sleep(5000);
         System.out.println("-等待异步同步-");
     }
+    //endregion
 
-    @SneakyThrows
+    //region rpc
     @Test
     public void rpcStatefulApi() {
         UserManagerImpl svcImpl = new UserManagerImpl();
@@ -341,13 +347,13 @@ public class SocksTester extends AbstractTester {
 
     @SneakyThrows
     @Test
-    public synchronized void udpRpc() {
+    public void udpRpc() {
         UdpClient c1 = new UdpClient(endpoint_3307.getPort());
-        c1.onReceive.combine((s, e) -> System.out.println("c1: " + toJsonString(e)));
+        c1.onReceive.combine((s, e) -> log.info("client1 recv {}", toJsonString(e)));
         UdpClient c2 = new UdpClient(endpoint_3308.getPort());
         AtomicInteger count = new AtomicInteger();
         c2.onReceive.combine((s, e) -> {
-            System.out.println("c2:" + toJsonString(e));
+            log.info("client2 recv {}", toJsonString(e));
             if (count.incrementAndGet() < 2) {
                 throw new InvalidException("error");
             }
@@ -359,11 +365,13 @@ public class SocksTester extends AbstractTester {
             Tasks.run(() -> c2.sendAsync(endpoint_3307, "我是2 + " + finalI));
         }
 
-        c1.sendAsync(endpoint_3308, "wlz", 15000, true);
+        c1.sendAsync(endpoint_3308, str_name_wyf, 15000, true);
         System.out.println("done");
-        wait();
+        _wait();
     }
+    //endregion
 
+    //region ss
     int connectTimeoutMillis = 30000;
 
     @SneakyThrows
@@ -523,45 +531,11 @@ public class SocksTester extends AbstractTester {
 //
 //        System.in.read();
 //    }
-
-    @Test
-    @SneakyThrows
-    public void isBypass() {
-        SocketConfig conf = new SocketConfig();
-        assert conf.isBypass("127.0.0.1");
-        assert conf.isBypass("192.168.31.1");
-        assert !conf.isBypass("192.169.31.1");
-        assert conf.isBypass("localhost");
-        assert !conf.isBypass("google.cn");
-
-        String h = "google.com";
-        h = "facebook.com";
-        System.out.println(IPSearcher.DEFAULT.search(h));
-        System.out.println(IPSearcher.DEFAULT.search(h, true));
-
-//        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
-//        BiAction<String> fn = p -> {
-//            IPAddress last = null;
-//            for (BiFunc<String, IPAddress> api : apis) {
-//                IPAddress cur = api.invoke(p);
-//                System.out.println(cur);
-//                if (last == null) {
-//                    last = cur;
-//                    continue;
-//                }
-//                assert last.getIp().equals(cur.getIp())
-////                        && last.getCountryCode().equals(cur.getCountryCode())
-//                        ;
-//                last = cur;
-//            }
-//        };
-//        fn.invoke(Sockets.loopbackAddress().getHostAddress());
-//        fn.invoke("x.f-li.cn");
-    }
+    //endregion
 
     @SneakyThrows
     @Test
-    public synchronized void dns() {
+    public void dns() {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
 
@@ -608,8 +582,6 @@ public class SocksTester extends AbstractTester {
         }, 6000);
 
         InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
-//        IPAddress current = IPSearcher.DEFAULT.current();
-//        System.out.println(current);
         List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
@@ -625,52 +597,162 @@ public class SocksTester extends AbstractTester {
 
         assert client.resolve("www.baidu.com").equals(aopIp);
 
-        wait();
+        _wait();
     }
 
+    @SneakyThrows
     @Test
-    public void crypt() {
-        String content = "This is content";
-        byte[] key = "顺风使舵".getBytes(StandardCharsets.UTF_8);
-        byte[] encoded = AESUtil.generateKey(key).getEncoded();
-        assert Arrays.equals(encoded, AESUtil.generateKey(key).getEncoded());
-
-        ByteBuf src = Bytes.directBuffer();
-        try {
-            src.writeCharSequence(content, StandardCharsets.UTF_8);
-            ByteBuf target = AESUtil.encrypt(src, key);
-
-            ByteBuf recover = AESUtil.decrypt(target, key);
-            String txt = (String) recover.readCharSequence(recover.readableBytes(), StandardCharsets.UTF_8);
-            System.out.println(txt);
-            assert content.equals(txt);
-        } finally {
-            src.release();
+    public void ntp() {
+        String[] servers = {"ntp.aliyun.com", "ntp.tencent.com", "cn.pool.ntp.org"};
+        NTPUDPClient client = new NTPUDPClient();
+        client.setDefaultTimeout(10000);
+        client.open();
+        for (final String server : servers) {
+            System.out.println();
+            final InetAddress hostAddr = InetAddress.getByName(server);
+            System.out.println("> " + hostAddr.getHostName() + "/" + hostAddr.getHostAddress());
+            final TimeInfo info = client.getTime(hostAddr);
+            processResponse(info);
         }
+        client.close();
+    }
 
-        String encrypt = AESUtil.encryptToBase64(content);
-//        String decrypt = AESUtil.decryptFromBase64(encrypt, String.format("℞%s", DateTime.utcNow().addDays(-1).toDateString()));
-        String decrypt = AESUtil.decryptFromBase64(encrypt);
-        System.out.println(decrypt);
-        assert content.equals(decrypt);
+    /**
+     * Process <code>TimeInfo</code> object and print its details.
+     *
+     * @param info <code>TimeInfo</code> object.
+     */
+    public static void processResponse(final TimeInfo info) {
+        final NumberFormat numberFormat = new java.text.DecimalFormat("0.00");
+        final NtpV3Packet message = info.getMessage();
+        final int stratum = message.getStratum();
+        final String refType;
+        if (stratum <= 0) {
+            refType = "(Unspecified or Unavailable)";
+        } else if (stratum == 1) {
+            refType = "(Primary Reference; e.g., GPS)"; // GPS, radio clock, etc.
+        } else {
+            refType = "(Secondary Reference; e.g. via NTP or SNTP)";
+        }
+        // stratum should be 0..15...
+        System.out.println(" Stratum: " + stratum + " " + refType);
+        final int version = message.getVersion();
+        final int li = message.getLeapIndicator();
+        System.out.println(" leap=" + li + ", version="
+                + version + ", precision=" + message.getPrecision());
+
+        System.out.println(" mode: " + message.getModeName() + " (" + message.getMode() + ")");
+        final int poll = message.getPoll();
+        // poll value typically btwn MINPOLL (4) and MAXPOLL (14)
+        System.out.println(" poll: " + (poll <= 0 ? 1 : (int) Math.pow(2, poll))
+                + " seconds" + " (2 ** " + poll + ")");
+        final double disp = message.getRootDispersionInMillisDouble();
+        System.out.println(" rootdelay=" + numberFormat.format(message.getRootDelayInMillisDouble())
+                + ", rootdispersion(ms): " + numberFormat.format(disp));
+
+        final int refId = message.getReferenceId();
+        String refAddr = NtpUtils.getHostAddress(refId);
+        String refName = null;
+        if (refId != 0) {
+            if (refAddr.equals("127.127.1.0")) {
+                refName = "LOCAL"; // This is the ref address for the Local Clock
+            } else if (stratum >= 2) {
+                // If reference id has 127.127 prefix then it uses its own reference clock
+                // defined in the form 127.127.clock-type.unit-num (e.g. 127.127.8.0 mode 5
+                // for GENERIC DCF77 AM; see refclock.htm from the NTP software distribution.
+                if (!refAddr.startsWith("127.127")) {
+                    try {
+                        final InetAddress addr = InetAddress.getByName(refAddr);
+                        final String name = addr.getHostName();
+                        if (name != null && !name.equals(refAddr)) {
+                            refName = name;
+                        }
+                    } catch (final UnknownHostException e) {
+                        // some stratum-2 servers sync to ref clock device but fudge stratum level higher... (e.g. 2)
+                        // ref not valid host maybe it's a reference clock name?
+                        // otherwise just show the ref IP address.
+                        refName = NtpUtils.getReferenceClock(message);
+                    }
+                }
+            } else if (version >= 3 && (stratum == 0 || stratum == 1)) {
+                refName = NtpUtils.getReferenceClock(message);
+                // refname usually have at least 3 characters (e.g. GPS, WWV, LCL, etc.)
+            }
+            // otherwise give up on naming the beast...
+        }
+        if (refName != null && refName.length() > 1) {
+            refAddr += " (" + refName + ")";
+        }
+        System.out.println(" Reference Identifier:\t" + refAddr);
+
+        final TimeStamp refNtpTime = message.getReferenceTimeStamp();
+        System.out.println(" Reference Timestamp:\t" + refNtpTime + "  " + refNtpTime.toDateString());
+
+        // Originate Time is time request sent by client (t1)
+        final TimeStamp origNtpTime = message.getOriginateTimeStamp();
+        System.out.println(" Originate Timestamp:\t" + origNtpTime + "  " + origNtpTime.toDateString());
+
+        final long destTimeMillis = info.getReturnTime();
+        // Receive Time is time request received by server (t2)
+        final TimeStamp rcvNtpTime = message.getReceiveTimeStamp();
+        System.out.println(" Receive Timestamp:\t" + rcvNtpTime + "  " + rcvNtpTime.toDateString());
+
+        // Transmit time is time reply sent by server (t3)
+        final TimeStamp xmitNtpTime = message.getTransmitTimeStamp();
+        System.out.println(" Transmit Timestamp:\t" + xmitNtpTime + "  " + xmitNtpTime.toDateString());
+
+        // Destination time is time reply received by client (t4)
+        final TimeStamp destNtpTime = TimeStamp.getNtpTime(destTimeMillis);
+        System.out.println(" Destination Timestamp:\t" + destNtpTime + "  " + destNtpTime.toDateString());
+
+        info.computeDetails(); // compute offset/delay if not already done
+        final Long offsetMillis = info.getOffset();
+        final Long delayMillis = info.getDelay();
+        final String delay = delayMillis == null ? "N/A" : delayMillis.toString();
+        final String offset = offsetMillis == null ? "N/A" : offsetMillis.toString();
+
+        System.out.println(" Roundtrip delay(ms)=" + delay
+                + ", clock offset(ms)=" + offset); // offset in ms
     }
 
     @Test
-    public void bytes() {
-        int a = 1;
-        long b = Integer.MAX_VALUE + 1L;
-        byte[] bytes = Bytes.getBytes(a);
-        System.out.println(Arrays.toString(bytes));
-        assert Bytes.getInt(bytes, 0) == a;
-        bytes = Bytes.getBytes(b);
-        System.out.println(Arrays.toString(bytes));
-        assert Bytes.getLong(bytes, 0) == b;
+    public void ipUtil() {
+        String expr = Sockets.DEFAULT_NAT_IPS.get(3);
+        assert Pattern.matches(expr, "192.168.31.7");
+
+        String h = "google.com";
+        System.out.println(IPSearcher.DEFAULT.search(h));
+        System.out.println(IPSearcher.DEFAULT.search(h, true));
+//        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
+//        BiAction<String> fn = p -> {
+//            IPAddress last = null;
+//            for (BiFunc<String, IPAddress> api : apis) {
+//                IPAddress cur = api.invoke(p);
+//                System.out.println(cur);
+//                if (last == null) {
+//                    last = cur;
+//                    continue;
+//                }
+//                assert last.getIp().equals(cur.getIp())
+////                        && last.getCountryCode().equals(cur.getCountryCode())
+//                        ;
+//                last = cur;
+//            }
+//        };
+//        fn.invoke(Sockets.loopbackAddress().getHostAddress());
+//        fn.invoke("x.f-li.cn");
+
+        SocketConfig conf = new SocketConfig();
+        assert conf.isBypass("127.0.0.1");
+        assert conf.isBypass("192.168.31.1");
+        assert !conf.isBypass("192.169.31.1");
+        assert conf.isBypass("localhost");
+        assert !conf.isBypass("google.cn");
     }
 
     @SneakyThrows
     @Test
     public void httpServer() {
-        ResetEventWait wait = new ResetEventWait();
         Map<String, Object> qs = new HashMap<>();
         qs.put("a", "1");
         qs.put("b", "乐之");
@@ -777,7 +859,35 @@ public class SocksTester extends AbstractTester {
     }
 
     @Test
-    public void authenticEndpoint() {
+    public void crypt() {
+        String content = str_content;
+        byte[] key = str_name_wyf.getBytes(StandardCharsets.UTF_8);
+        byte[] encoded = AESUtil.generateKey(key).getEncoded();
+        assert Arrays.equals(encoded, AESUtil.generateKey(key).getEncoded());
+
+        ByteBuf src = Bytes.directBuffer();
+        try {
+            src.writeCharSequence(content, StandardCharsets.UTF_8);
+            ByteBuf target = AESUtil.encrypt(src, key);
+
+            ByteBuf recover = AESUtil.decrypt(target, key);
+            String txt = (String) recover.readCharSequence(recover.readableBytes(), StandardCharsets.UTF_8);
+            System.out.println(txt);
+            assert content.equals(txt);
+        } finally {
+            src.release();
+        }
+
+        String encrypt = AESUtil.encryptToBase64(content);
+//        String decrypt = AESUtil.decryptFromBase64(encrypt, String.format("℞%s", DateTime.utcNow().addDays(-1).toDateString()));
+        String decrypt = AESUtil.decryptFromBase64(encrypt);
+        System.out.println(decrypt);
+        assert content.equals(decrypt);
+    }
+
+    @Test
+    public void netUtil() {
+        //authenticEndpoint
         String aep = "yf:123456@f-li.cn:1080?w=9";
         AuthenticEndpoint endpoint = AuthenticEndpoint.valueOf(aep);
         assert Sockets.toString(endpoint.getEndpoint()).equals("f-li.cn:1080");
@@ -792,6 +902,17 @@ public class SocksTester extends AbstractTester {
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
+
+
+        //bytes
+        int a = 1;
+        long b = Integer.MAX_VALUE + 1L;
+        byte[] bytes = Bytes.getBytes(a);
+        System.out.println(Arrays.toString(bytes));
+        assert Bytes.getInt(bytes, 0) == a;
+        bytes = Bytes.getBytes(b);
+        System.out.println(Arrays.toString(bytes));
+        assert Bytes.getLong(bytes, 0) == b;
     }
 
     @Test
@@ -799,11 +920,5 @@ public class SocksTester extends AbstractTester {
         for (SocketInfo sock : Sockets.socketInfos(SocketProtocol.TCP)) {
             System.out.println(sock);
         }
-    }
-
-    @Test
-    public void netIp() {
-        String s = Sockets.DEFAULT_NAT_IPS.get(3);
-        System.out.println(Pattern.matches(s, "192.168.31.7"));
     }
 }

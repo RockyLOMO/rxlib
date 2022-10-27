@@ -261,12 +261,32 @@ public class CoreTester extends AbstractTester {
         for (int i = 0; i < 10; i++) {
             Object tid = i % 2 == 0 ? tid1 : tid2;
             int finalI = i;
-            f = pool.runSerialAsync(() -> {
+            f = pool.runSerial(() -> {
                 log.info("serial {} - {}", tid, finalI);
                 return finalI + 100;
             }, tid);
         }
         log.info("last result {}", f.get());
+        System.out.println("ok");
+
+        CompletableFuture<Integer> fa = null;
+        for (int i = 0; i < 10; i++) {
+            Object tid = i % 2 == 0 ? tid1 : tid2;
+            int finalI = i;
+            fa = pool.runSerialAsync(() -> {
+                log.info("serial {} - {} CTX:{}", tid, finalI, ThreadPool.completionReturnedValue());
+                return finalI + 100;
+            }, tid);
+            if (i == 5) {
+                CompletableFuture<String> tf = fa.thenApplyAsync(rv -> {
+                    log.info("linkTf returned {}", rv);
+                    return "okr";
+                });
+                log.info("linkTf then get {}", tf.get());
+            }
+        }
+        log.info("last result {}", fa.get());
+        sleep(2000);
         System.out.println("ok");
     }
 
@@ -439,57 +459,6 @@ public class CoreTester extends AbstractTester {
         }, 4000);
     }
 
-    //region codec
-    @Data
-    public static class CollisionEntity implements Serializable {
-        @DbColumn(primaryKey = true)
-        long id;
-    }
-
-    @Test
-    public void codec() {
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        db.createMapping(CollisionEntity.class);
-        db.dropMapping(CollisionEntity.class);
-        db.createMapping(CollisionEntity.class);
-        int c = 200000000;
-        AtomicInteger collision = new AtomicInteger();
-        invoke("codec", i -> {
-//            long id = App.hash64(h -> h.putBytes(MD5Util.md5("codec" + i)));
-            long id = CrcModel.CRC64_ECMA_182.getCRC((UUID.randomUUID().toString() + i).getBytes(StandardCharsets.UTF_8)).getCrc();
-            CollisionEntity po = db.findById(CollisionEntity.class, id);
-            if (po != null) {
-                log.warn("collision: {}", collision.incrementAndGet());
-                return;
-            }
-            po = new CollisionEntity();
-            po.setId(id);
-            db.save(po, true);
-        }, c);
-        assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
-    }
-
-    @Test
-    public void rasTest() {
-        UUID id = UUID.randomUUID();
-        String[] kp = RSAUtil.generateKeyPair();
-        System.out.println("id=" + id + ", kp=" + toJsonString(kp));
-
-        String publicKey = kp[0];
-        String privateKey = kp[1];
-
-        String signMsg = RSAUtil.sign(str_name_wyf, privateKey);
-        System.out.println("sign: " + signMsg);
-        boolean verifySignResult = RSAUtil.verify(str_name_wyf, signMsg, publicKey);
-        System.out.println("verify: " + verifySignResult);
-        assert verifySignResult;
-
-        signMsg = RSAUtil.encrypt(str_name_wyf, publicKey);
-        System.out.println("encrypt: " + signMsg);
-        assert str_name_wyf.equals(RSAUtil.decrypt(signMsg, privateKey));
-    }
-    //endregion
-
     //region Linq & NEvent
     @Test
     public void parallelLinq() {
@@ -629,6 +598,57 @@ public class CoreTester extends AbstractTester {
 
         mgr.onCreate.replace(a, c);
         mgr.create(p); //触发事件（a, c执行）
+    }
+    //endregion
+
+    //region codec
+    @Data
+    public static class CollisionEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        long id;
+    }
+
+    @Test
+    public void codec() {
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.createMapping(CollisionEntity.class);
+        db.dropMapping(CollisionEntity.class);
+        db.createMapping(CollisionEntity.class);
+        int c = 200000000;
+        AtomicInteger collision = new AtomicInteger();
+        invoke("codec", i -> {
+//            long id = App.hash64(h -> h.putBytes(MD5Util.md5("codec" + i)));
+            long id = CrcModel.CRC64_ECMA_182.getCRC((UUID.randomUUID().toString() + i).getBytes(StandardCharsets.UTF_8)).getCrc();
+            CollisionEntity po = db.findById(CollisionEntity.class, id);
+            if (po != null) {
+                log.warn("collision: {}", collision.incrementAndGet());
+                return;
+            }
+            po = new CollisionEntity();
+            po.setId(id);
+            db.save(po, true);
+        }, c);
+        assert db.count(new EntityQueryLambda<>(CollisionEntity.class)) == c;
+    }
+
+    @Test
+    public void rasTest() {
+        UUID id = UUID.randomUUID();
+        String[] kp = RSAUtil.generateKeyPair();
+        System.out.println("id=" + id + ", kp=" + toJsonString(kp));
+
+        String publicKey = kp[0];
+        String privateKey = kp[1];
+
+        String signMsg = RSAUtil.sign(str_name_wyf, privateKey);
+        System.out.println("sign: " + signMsg);
+        boolean verifySignResult = RSAUtil.verify(str_name_wyf, signMsg, publicKey);
+        System.out.println("verify: " + verifySignResult);
+        assert verifySignResult;
+
+        signMsg = RSAUtil.encrypt(str_name_wyf, publicKey);
+        System.out.println("encrypt: " + signMsg);
+        assert str_name_wyf.equals(RSAUtil.decrypt(signMsg, privateKey));
     }
     //endregion
 
@@ -811,9 +831,6 @@ public class CoreTester extends AbstractTester {
 
     @Test
     public void yamlConf() {
-//        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
-//        List<Object> list = IterableUtils.toList(all);
-
         YamlConfiguration conf = YamlConfiguration.RX_CONF;
         conf.enableWatch();
 
@@ -824,12 +841,14 @@ public class CoreTester extends AbstractTester {
         System.out.println(codeFormat);
         assert eq(codeFormat, "Test IAException, value={0}");
 
+//        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
+//        List<Object> list = IterableUtils.toList(all);
         RxConfig rxConf = RxConfig.INSTANCE;
-        assert rxConf.getId().equals("Rx");
-        assert rxConf.getThreadPool().getReplicas() == 4;
-        assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
-        assert rxConf.getLogTypeWhitelist().size() == 2;
-        assert rxConf.getJsonSkipTypes().size() == 1;
+//        assert rxConf.getId().equals("Rx");
+//        assert rxConf.getThreadPool().getReplicas() == 4;
+//        assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
+//        assert rxConf.getLogTypeWhitelist().size() == 2;
+//        assert rxConf.getJsonSkipTypes().size() == 1;
 
         sleep(60000);
     }

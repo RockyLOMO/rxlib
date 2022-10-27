@@ -71,6 +71,7 @@ public class AbstractTester {
     final InetSocketAddress endpoint_3308 = Sockets.parseEndpoint("127.0.0.1:3308");
     final long oneSecond = 1000;
     final String str_name_wyf = "王湵范 wyf520";
+    final String str_content = "youfan1024码农";
     final ResetEventWait wait = new ResetEventWait();
 
     @SneakyThrows
