@@ -1,4 +1,4 @@
-package org.rx.agent;
+package org.rx;
 
 import java.lang.instrument.Instrumentation;
 

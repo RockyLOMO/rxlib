@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
-premain-class: org.rx.agent.Agent
+premain-class: org.rx.Agent
 Can-Retransform-Classes: true
 Can-Redefine-Classes: true
 Can-Set-Native-Method-Prefix: true

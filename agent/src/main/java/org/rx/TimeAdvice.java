@@ -1,4 +1,4 @@
-package org.rx.agent;
+package org.rx;
 
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.agent.builder.AgentBuilder;
@@ -9,18 +9,28 @@ import net.bytebuddy.matcher.ElementMatchers;
 
 import java.lang.instrument.Instrumentation;
 import java.time.Clock;
+import java.util.Properties;
 
 public class TimeAdvice {
     @Advice.OnMethodExit
     static void exit(@Advice.Return(readOnly = false) long x) throws Throwable {
-        final String klsName = "org.rx.AgentHolder",
-                clockName = "a";
-        Class<?> cls = Thread.currentThread().getContextClassLoader().loadClass(klsName);
-        Clock clock = (Clock) cls.getDeclaredField(clockName).get(null);
-        x = clock.millis();
+        Properties props = System.getProperties();
+        Clock clock = (Clock) props.get(1);
+        if (clock != null) {
+            x = clock.millis();
+            return;
+        }
+        long[] arr = (long[]) props.get(0);
+        x = Math.floorDiv(System.nanoTime() - arr[0], 1000000L) + arr[1];
+//        x = (System.nanoTime() - arr[0]) / 1000000L + arr[1];
     }
 
     public static void transform(Instrumentation inst) {
+        Properties props = System.getProperties();
+        long[] arr = new long[2];
+        arr[1] = System.currentTimeMillis();
+        arr[0] = System.nanoTime();
+        props.put(0, arr);
         new AgentBuilder.Default()
                 .enableNativeMethodPrefix("wmsnative")
                 .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
