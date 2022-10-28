@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.github.rockylomo</groupId>
-    <artifactId>rxagent</artifactId>
+    <artifactId>rxdaemon</artifactId>
     <version>1.0</version>
 
     <properties>
@@ -26,29 +26,10 @@
             <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>net.bytebuddy</groupId>
-            <artifactId>byte-buddy</artifactId>
-            <version>1.12.18</version>
-        </dependency>
-        <dependency>
-            <groupId>com.github.rockylomo</groupId>
-            <artifactId>rxlib</artifactId>
-            <version>2.18.4</version>
-        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <manifestFile>src/main/resources/META-INF/MANIFEST.MF</manifestFile>
-                    </archive>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

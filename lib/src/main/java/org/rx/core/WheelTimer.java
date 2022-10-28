@@ -7,6 +7,7 @@ import io.netty.util.TimerTask;
 import lombok.*;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -70,28 +71,27 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @SneakyThrows
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
-            boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
-            if (traceFlag) {
-                ThreadPool.startTrace(traceId);
-            }
-            try {
-                future = executor.submit(() -> {
-                    boolean doContinue = flags.has(TimeoutFlag.PERIOD);
-                    try {
-                        return fn.invoke();
-                    } finally {
-                        if (ThreadPool.asyncContinueFlag(doContinue)) {
-                            newTimeout(this, delay, timeout.timer());
-                        } else if (id != null) {
-                            hold.remove(id);
-                        }
-                    }
-                });
-            } finally {
+            future = executor.submit(() -> {
+                boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
                 if (traceFlag) {
-                    ThreadPool.endTrace();
+                    ThreadPool.startTrace(traceId);
                 }
-            }
+                boolean doContinue = flags.has(TimeoutFlag.PERIOD);
+                try {
+                    return fn.invoke();
+                } catch (Throwable e) {
+                    throw InvalidException.sneaky(e);
+                } finally {
+                    if (ThreadPool.asyncContinueFlag(doContinue)) {
+                        newTimeout(this, delay, timeout.timer());
+                    } else if (id != null) {
+                        hold.remove(id);
+                    }
+                    if (traceFlag) {
+                        ThreadPool.endTrace();
+                    }
+                }
+            });
             notifyAll();
         }
 

@@ -3,6 +3,7 @@ package org.rx.test;
 import com.google.common.base.Stopwatch;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.App;
 import org.rx.core.ResetEventWait;
 import org.rx.core.Tasks;
 import org.rx.io.Files;
@@ -29,14 +30,14 @@ public class AbstractTester {
 
     @SneakyThrows
     public static void invoke(String name, BiAction<Integer> action, int count) {
-        Stopwatch stopwatch = Stopwatch.createStarted();
+        long start = System.nanoTime();
         try {
             for (int i = 0; i < count; i++) {
                 action.invoke(i);
             }
         } finally {
-            double elapsed = stopwatch.elapsed(TimeUnit.MILLISECONDS);
-            log.info("Invoke {} times={} elapsed={}ms avg={}ms", name, count, elapsed, elapsed / count);
+            long elapsed = (System.nanoTime() - start) / 1000L;
+            log.info("Invoke {} times={} elapsed={} avg={}", name, count, App.formatElapsed(elapsed), App.formatElapsed(elapsed / count));
         }
     }
 

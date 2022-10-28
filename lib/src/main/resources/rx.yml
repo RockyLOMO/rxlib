@@ -5,6 +5,8 @@ app:
     queueCapacity: 0
     lowCpuWaterMark: 40
     highCpuWaterMark: 70
+    minCoreSize: 2
+    maxCoreSize: 1000
     resizeQuantity: 2
     scheduleInitSize: 1
     replicas: 2
