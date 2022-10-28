@@ -15,7 +15,13 @@ import java.util.concurrent.TimeUnit;
 @Threads(Threads.MAX)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
+@State(Scope.Benchmark)
 public class RxBenchmark {
+    @Setup
+    public void setup() {
+        System.out.println("init");
+    }
+
     @Benchmark
     @Test
     public void a() {

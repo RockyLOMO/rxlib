@@ -8,19 +8,13 @@ import net.bytebuddy.implementation.StubMethod;
 import net.bytebuddy.matcher.ElementMatchers;
 
 import java.lang.instrument.Instrumentation;
-import java.time.Clock;
 import java.util.Properties;
 
 public class TimeAdvice {
     @Advice.OnMethodExit
     static void exit(@Advice.Return(readOnly = false) long x) throws Throwable {
         Properties props = System.getProperties();
-        Clock clock = (Clock) props.get(1);
-        if (clock != null) {
-            x = clock.millis();
-            return;
-        }
-        long[] arr = (long[]) props.get(0);
+        long[] arr = (long[]) props.get(-1);
         x = Math.floorDiv(System.nanoTime() - arr[0], 1000000L) + arr[1];
 //        x = (System.nanoTime() - arr[0]) / 1000000L + arr[1];
     }
@@ -30,7 +24,7 @@ public class TimeAdvice {
         long[] arr = new long[2];
         arr[1] = System.currentTimeMillis();
         arr[0] = System.nanoTime();
-        props.put(0, arr);
+        props.put(-1, arr);
         new AgentBuilder.Default()
                 .enableNativeMethodPrefix("wmsnative")
                 .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
