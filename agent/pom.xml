@@ -31,11 +31,11 @@
             <artifactId>byte-buddy</artifactId>
             <version>1.12.18</version>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>com.github.rockylomo</groupId>-->
-<!--            <artifactId>rxlib</artifactId>-->
-<!--            <version>2.18.4</version>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>com.github.rockylomo</groupId>
+            <artifactId>rxlib</artifactId>
+            <version>2.18.4</version>
+        </dependency>
     </dependencies>
 
     <build>

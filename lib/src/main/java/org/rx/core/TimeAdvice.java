@@ -1,15 +1,14 @@
-package org.rx;
+package org.rx.core;
 
 import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.StubMethod;
 import net.bytebuddy.matcher.ElementMatchers;
-import org.rx.core.Reflects;
 import org.rx.io.Files;
 
-import java.lang.instrument.Instrumentation;
 import java.util.Properties;
 
 public class TimeAdvice {
@@ -34,19 +33,9 @@ public class TimeAdvice {
             }
         }
         r = Math.floorDiv(System.nanoTime() - arr[0], 1000000L) + arr[1];
-
-//        x = (System.nanoTime() - arr[0]) / 1000000L + arr[1];
-
-//        long y = 1000000L;
-//        long x = System.nanoTime() - arr[0];
-//        if (x <= y) {
-//            r = arr[2];
-//            return;
-//        }
-//        arr[2] = r = Math.floorDiv(x, y) + arr[1];
     }
 
-    public static void transform(Instrumentation inst) {
+    public static void transform() {
         String djar = "rxdaemon-1.0.jar";
         Files.saveFile(djar, Reflects.getResource(djar));
         Properties props = System.getProperties();
@@ -63,6 +52,6 @@ public class TimeAdvice {
                 .ignore(ElementMatchers.none())
                 .type(ElementMatchers.named("java.lang.System"))
                 .transform((builder, typeDescription, classLoader, javaModule, protectionDomain) -> builder.method(ElementMatchers.named("currentTimeMillis")).intercept(Advice.to(TimeAdvice.class).wrap(StubMethod.INSTANCE)))
-                .installOn(inst);
+                .installOn(ByteBuddyAgent.install());
     }
 }
