@@ -32,7 +32,13 @@ public class TimeAdvice {
                 }
             }
         }
-        r = Math.floorDiv(System.nanoTime() - arr[0], 1000000L) + arr[1];
+        long x = System.nanoTime() - arr[0];
+        long y = 1000000L;
+        if (x <= y) {
+            r = arr[1];
+            return;
+        }
+        r = x / y + arr[1];
     }
 
     public static void transform() {

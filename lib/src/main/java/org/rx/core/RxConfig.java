@@ -29,7 +29,7 @@ public final class RxConfig {
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
 
-        String NTP_ENABLE = "app.ntp.enable";
+        String NTP_ENABLE_FLAGS = "app.ntp.enableFlags";
         String NTP_SYNC_PERIOD = "app.ntp.syncPeriod";
         String NTP_SERVERS = "app.ntp.servers";
 
@@ -75,7 +75,8 @@ public final class RxConfig {
 
     @Data
     public static class NtpConfig {
-        boolean enable;
+        //1 syncTask, 2 injectJdkTime
+        int enableFlags;
         long syncPeriod;
         final List<String> servers = newConcurrentList(true);
     }
@@ -157,7 +158,7 @@ public final class RxConfig {
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
 
-        ntp.enable = SystemPropertyUtil.getBoolean(ConfigNames.NTP_ENABLE, false);
+        ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
         ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
         ntp.servers.clear();
         String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);

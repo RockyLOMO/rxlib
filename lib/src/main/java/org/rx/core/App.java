@@ -62,8 +62,11 @@ public final class App extends SystemUtils {
 
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
-        if (conf.ntp.enable) {
-            NtpClock.startSyncTask();
+        if ((conf.ntp.enableFlags & 2) == 2) {
+            TimeAdvice.transform();
+        }
+        if ((conf.ntp.enableFlags & 1) == 1) {
+            NtpClock.scheduleTask();
         }
     }
 
