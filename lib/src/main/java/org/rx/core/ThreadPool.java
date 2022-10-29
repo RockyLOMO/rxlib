@@ -988,7 +988,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             ctx.lock.lock();
             log.debug("CTX lock {} -> {}", task.id, flags.name());
         }
-        if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
+        if (flags.has(RunFlag.PRIORITY)
+//                && !getQueue().isEmpty()
+        ) {
             incrSize(this);
         }
         //TransmittableThreadLocal
