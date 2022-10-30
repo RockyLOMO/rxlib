@@ -246,6 +246,19 @@ public class CoreTester extends AbstractTester {
             log.info("Inherit ok 2");
         }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
         sleep(2000);
+
+        System.out.println("--ExecutorService--");
+        ThreadPool.startTrace(null);
+        ExecutorService es = pool;
+        es.submit(() -> {
+            log.info("submit..");
+            return 1024;
+        });
+        es.execute(() -> {
+            log.info("exec..");
+        });
+        sleep(1000);
+        ThreadPool.endTrace();
     }
 
     @SneakyThrows

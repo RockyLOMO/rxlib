@@ -125,6 +125,23 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
+        static <T> Task<T> adapt(Callable<T> fn) {
+            Task<T> t = as(fn);
+            return t != null ? t : new Task<>(fn::call, null, null);
+        }
+
+        static <T> Task<T> adapt(Runnable fn) {
+            Task<T> t = as(fn);
+            return t != null ? t : new Task<>(() -> {
+                fn.run();
+                return null;
+            }, null, null);
+        }
+
+        static <T> Task<T> as(Object fn) {
+            return fn instanceof Task ? (Task<T>) fn : null;
+        }
+
         final Func<T> fn;
         final FlagsEnum<RunFlag> flags;
         final Object id;
@@ -174,23 +191,23 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    static class LockContext {
-        ReentrantLock lock;
-        AtomicInteger lockRefCnt;
-    }
-
     static class FutureTaskAdapter<T> extends FutureTask<T> {
         final Task<T> task;
 
         public FutureTaskAdapter(Callable<T> callable) {
             super(callable);
-            task = as(callable, Task.class);
+            task = Task.as(callable);
         }
 
         public FutureTaskAdapter(Runnable runnable, T result) {
             super(runnable, result);
-            task = (Task<T>) runnable;
+            task = Task.as(runnable);
         }
+    }
+
+    static class LockContext {
+        ReentrantLock lock;
+        AtomicInteger lockRefCnt;
     }
 
     @RequiredArgsConstructor
@@ -213,15 +230,15 @@ public class ThreadPool extends ThreadPoolExecutor {
             return executor != null ? executor : pool;
         }
 
-        @Override
-        public boolean equals(Object o) {
-            return delegate.equals(o);
-        }
-
-        @Override
-        public int hashCode() {
-            return delegate.hashCode();
-        }
+//        @Override
+//        public boolean equals(Object o) {
+//            return delegate.equals(o);
+//        }
+//
+//        @Override
+//        public int hashCode() {
+//            return delegate.hashCode();
+//        }
 
         <X, R> Function<X, R> wrap(Function<X, R> fn) {
             return t -> {
@@ -745,6 +762,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Getter
     final String poolName;
     final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
+    final Executor asyncExecutor = super::execute;
 
     @Override
     public void setMaximumPoolSize(int maximumPoolSize) {
@@ -812,12 +830,68 @@ public class ThreadPool extends ThreadPoolExecutor {
     //endregion
 
     //region v1
+    @Override
+    public void execute(Runnable command) {
+        super.execute(Task.adapt(command));
+    }
+
+    @Override
+    public Future<?> submit(Runnable task) {
+        RunnableFuture<Void> ft = newTaskFor(task, null);
+        super.execute(ft);
+        return ft;
+    }
+
+    @Override
+    public <T> Future<T> submit(Runnable task, T result) {
+        RunnableFuture<T> ft = newTaskFor(task, result);
+        super.execute(ft);
+        return ft;
+    }
+
+    @Override
+    public <T> Future<T> submit(Callable<T> task) {
+        RunnableFuture<T> ft = newTaskFor(task);
+        super.execute(ft);
+        return ft;
+    }
+
+    @Override
+    protected final <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
+        return new FutureTaskAdapter<>(Task.adapt(runnable), value);
+    }
+
+    @Override
+    protected final <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
+        return new FutureTaskAdapter<>(Task.adapt(callable));
+    }
+
+    @Override
+    public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
+        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p)).toList());
+    }
+
+    @Override
+    public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p)).toList(), timeout, unit);
+    }
+
+    @Override
+    public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
+        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p)).toList());
+    }
+
+    @Override
+    public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException {
+        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p)).toList(), timeout, unit);
+    }
+
     public Future<Void> run(Action task) {
         return run(task, null, null);
     }
 
     public Future<Void> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return (Future<Void>) super.submit((Runnable) new Task<>(task.toFunc(), flags, taskId));
+        return submit((Callable<Void>) new Task<Void>(task.toFunc(), flags, taskId));
     }
 
     public <T> Future<T> run(Func<T> task) {
@@ -825,41 +899,19 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return super.submit((Callable<T>) new Task<>(task, flags, taskId));
+        return submit((Callable<T>) new Task<>(task, flags, taskId));
     }
 
     @SneakyThrows
     public <T> T runAny(Collection<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) () -> {
-            try {
-                return p.invoke();
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }).toList();
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAny(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAny(callables);
     }
 
     @SneakyThrows
     public <T> List<Future<T>> runAll(Collection<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) () -> {
-            try {
-                return p.invoke();
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }).toList();
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAll(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAll(callables);
-    }
-
-    @Override
-    protected final <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
-        return new FutureTaskAdapter<>(runnable, value);
-    }
-
-    @Override
-    protected final <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
-        return new FutureTaskAdapter<>(callable);
     }
 
     public <T> CompletionService<T> newCompletionService() {
@@ -874,7 +926,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<Void> t = new Task<>(task.toFunc(), flags, taskId);
-        return wrap(CompletableFuture.runAsync(t, this), t.traceId);
+        return wrap(CompletableFuture.runAsync(t, asyncExecutor), t.traceId);
     }
 
     public <T> CompletableFuture<T> runAsync(Func<T> task) {
@@ -883,7 +935,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<T> t = new Task<>(task, flags, taskId);
-        return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
+        return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), t.traceId);
     }
 
     public <T> Future<T> runSerial(Func<T> task, Object taskId) {
@@ -905,7 +957,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
         Function<Object, CompletableFuture<T>> mfn = k -> {
             Task<T> t = new Task<>(task, flags, taskId);
-            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId, true)
+            return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), t.traceId, true)
                     .whenCompleteAsync((r, e) -> taskSerialMap.remove(taskId));
         };
         CompletableFuture<T> v, newValue = null;
@@ -934,7 +986,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public <T> MultiTaskFuture<T, T> runAnyAsync(Collection<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
-            return CompletableFuture.supplyAsync(t, this);
+            return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
         return new MultiTaskFuture<>(wrap((CompletableFuture<T>) CompletableFuture.anyOf(futures), CTX_TRACE_ID.get()), futures);
     }
@@ -944,7 +996,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             Task<T> t = new Task<>(task, null, null);
             //allOfFuture.join()会hang住
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
-            return CompletableFuture.supplyAsync(t, this);
+            return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
         return new MultiTaskFuture<>(wrap(CompletableFuture.allOf(futures), CTX_TRACE_ID.get()), futures);
     }
@@ -963,11 +1015,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        Task<?> task = null;
+        Task<?> task;
         if (r instanceof FutureTaskAdapter) {
             task = ((FutureTaskAdapter<?>) r).task;
         } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            task = as(Reflects.readField(r, "fn"), Task.class);
+            task = Task.as(Reflects.readField(r, "fn"));
+        } else {
+            task = Task.as(r);
         }
         if (task == null) {
             return;
@@ -1009,23 +1063,23 @@ public class ThreadPool extends ThreadPoolExecutor {
             //Default Behavior with Callable
             //The uncaught exception - if one occurs - is considered as a part of this Future.
             //Thus the JDK doesn't try to notify the handler.
-            if (t == null && r instanceof FutureTask) {
-                try {
-                    FutureTask<?> f = (FutureTask<?>) r;
-                    if (f.isDone()) {
-                        f.get();
-                    }
-                } catch (CancellationException ce) {
-                    t = ce;
-                } catch (ExecutionException ee) {
-                    t = ee.getCause();
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
-                if (t != null) {
-                    TraceHandler.INSTANCE.log(t);
-                }
-            }
+//            if (t == null && r instanceof FutureTask) {
+//                try {
+//                    FutureTask<?> f = (FutureTask<?>) r;
+//                    if (f.isDone()) {
+//                        f.get();
+//                    }
+//                } catch (CancellationException ce) {
+//                    t = ce;
+//                } catch (ExecutionException ee) {
+//                    t = ee.getCause();
+//                } catch (InterruptedException ie) {
+//                    Thread.currentThread().interrupt();
+//                }
+//                if (t != null) {
+//                    TraceHandler.INSTANCE.log(t);
+//                }
+//            }
             return;
         }
 
@@ -1084,7 +1138,6 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     public String toString() {
-        return poolName;
-//        return super.toString();
+        return String.format("%s%s@%s", POOL_NAME_PREFIX, poolName, Integer.toHexString(hashCode()));
     }
 }
