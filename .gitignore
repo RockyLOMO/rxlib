@@ -10,3 +10,4 @@ config.json
 .DS_Store
 data
 rx.mv.db
+*.log
