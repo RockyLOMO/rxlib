@@ -71,27 +71,30 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @SneakyThrows
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
-            future = executor.submit(() -> {
-                boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
+            boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
+            if (traceFlag) {
+                ThreadPool.startTrace(traceId);
+            }
+            try {
+                future = executor.submit(() -> {
+                    boolean doContinue = flags.has(TimeoutFlag.PERIOD);
+                    try {
+                        return fn.invoke();
+                    } catch (Throwable e) {
+                        throw InvalidException.sneaky(e);
+                    } finally {
+                        if (ThreadPool.asyncContinueFlag(doContinue)) {
+                            newTimeout(this, delay, timeout.timer());
+                        } else if (id != null) {
+                            hold.remove(id);
+                        }
+                    }
+                });
+            } finally {
                 if (traceFlag) {
-                    ThreadPool.startTrace(traceId);
+                    ThreadPool.endTrace();
                 }
-                boolean doContinue = flags.has(TimeoutFlag.PERIOD);
-                try {
-                    return fn.invoke();
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
-                } finally {
-                    if (ThreadPool.asyncContinueFlag(doContinue)) {
-                        newTimeout(this, delay, timeout.timer());
-                    } else if (id != null) {
-                        hold.remove(id);
-                    }
-                    if (traceFlag) {
-                        ThreadPool.endTrace();
-                    }
-                }
-            });
+            }
             notifyAll();
         }
 
