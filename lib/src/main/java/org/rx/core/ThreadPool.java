@@ -213,21 +213,21 @@ public class ThreadPool extends ThreadPoolExecutor {
     @RequiredArgsConstructor
     static class CompletableFutureWrapper<T> extends CompletableFuture<T> {
         final Executor pool;
-        final String traceId;
         final boolean reuseOnUni;
         CompletableFuture<T> delegate;
 
         <R> CompletableFutureWrapper<R> uniStage(CompletableFuture<R> delegate) {
             CompletableFutureWrapper<R> wrapper = reuseOnUni
                     ? (CompletableFutureWrapper<R>) this
-                    : new CompletableFutureWrapper<>(pool, traceId, false);
+                    : new CompletableFutureWrapper<>(pool, false);
             wrapper.delegate = delegate;
             return wrapper;
         }
 
         Executor uniPool(Executor executor) {
 //            return ForkJoinPool.commonPool();
-            return executor != null ? executor : pool;
+//            return executor != null ? executor : pool;
+            return pool;
         }
 
         <X, R> Function<X, R> wrap(Function<X, R> fn) {
@@ -757,6 +757,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Getter
     final String poolName;
     final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
+    //runAsync() wrap task to AsynchronousCompletionTask, and this::execute adapt function will not work
     final Executor asyncExecutor = super::execute;
 
     @Override
@@ -921,7 +922,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<Void> t = new Task<>(task.toFunc(), flags, taskId);
-        return wrap(CompletableFuture.runAsync(t, asyncExecutor), t.traceId);
+        return wrap(CompletableFuture.runAsync(t, asyncExecutor), false);
     }
 
     public <T> CompletableFuture<T> runAsync(Func<T> task) {
@@ -930,7 +931,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<T> t = new Task<>(task, flags, taskId);
-        return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), t.traceId);
+        return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), false);
     }
 
     public <T> Future<T> runSerial(Func<T> task, Object taskId) {
@@ -952,7 +953,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
         Function<Object, CompletableFuture<T>> mfn = k -> {
             Task<T> t = new Task<>(task, flags, taskId);
-            return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), t.traceId, true)
+            return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), true)
                     .whenCompleteAsync((r, e) -> taskSerialMap.remove(taskId));
         };
         CompletableFuture<T> v, newValue = null;
@@ -983,7 +984,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             Task<T> t = new Task<>(task, null, null);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
-        return new MultiTaskFuture<>(wrap((CompletableFuture<T>) CompletableFuture.anyOf(futures), CTX_TRACE_ID.get()), futures);
+        return new MultiTaskFuture<>(wrap((CompletableFuture<T>) CompletableFuture.anyOf(futures), false), futures);
     }
 
     public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
@@ -993,15 +994,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
-        return new MultiTaskFuture<>(wrap(CompletableFuture.allOf(futures), CTX_TRACE_ID.get()), futures);
+        return new MultiTaskFuture<>(wrap(CompletableFuture.allOf(futures), false), futures);
     }
 
-    private <T> CompletableFutureWrapper<T> wrap(CompletableFuture<T> delegate, String traceId) {
-        return wrap(delegate, traceId, false);
-    }
-
-    private <T> CompletableFutureWrapper<T> wrap(CompletableFuture<T> delegate, String traceId, boolean reuseOnUni) {
-        CompletableFutureWrapper<T> wrapper = new CompletableFutureWrapper<>(this, traceId, reuseOnUni);
+    private <T> CompletableFuture<T> wrap(CompletableFuture<T> delegate, boolean reuseOnUni) {
+        //pool will use this::execute to wrap thenXXAynsc() task
+        CompletableFutureWrapper<T> wrapper = new CompletableFutureWrapper<>(this, reuseOnUni);
         wrapper.delegate = delegate;
         return wrapper;
     }
