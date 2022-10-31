@@ -230,69 +230,64 @@ public class ThreadPool extends ThreadPoolExecutor {
             return executor != null ? executor : pool;
         }
 
-//        @Override
-//        public boolean equals(Object o) {
-//            return delegate.equals(o);
-//        }
-//
-//        @Override
-//        public int hashCode() {
-//            return delegate.hashCode();
-//        }
-
         <X, R> Function<X, R> wrap(Function<X, R> fn) {
-            return t -> {
-                ThreadPool.startTrace(traceId);
-                try {
-                    return fn.apply(t);
-                } finally {
-                    ThreadPool.endTrace();
-                }
-            };
+            return fn;
+//            return t -> {
+//                ThreadPool.startTrace(traceId);
+//                try {
+//                    return fn.apply(t);
+//                } finally {
+//                    ThreadPool.endTrace();
+//                }
+//            };
         }
 
         <X> Consumer<X> wrap(Consumer<X> fn) {
-            return t -> {
-                ThreadPool.startTrace(traceId);
-                try {
-                    fn.accept(t);
-                } finally {
-                    ThreadPool.endTrace();
-                }
-            };
+            return fn;
+//            return t -> {
+//                ThreadPool.startTrace(traceId);
+//                try {
+//                    fn.accept(t);
+//                } finally {
+//                    ThreadPool.endTrace();
+//                }
+//            };
         }
 
         Runnable wrap(Runnable fn) {
-            return () -> {
-                ThreadPool.startTrace(traceId);
-                try {
-                    fn.run();
-                } finally {
-                    ThreadPool.endTrace();
-                }
-            };
+            return fn;
+//            return () -> {
+//                ThreadPool.startTrace(traceId);
+//                try {
+//                    fn.run();
+//                } finally {
+//                    ThreadPool.endTrace();
+//                }
+//            };
         }
 
         <X, Y, R> BiFunction<X, Y, R> wrap(BiFunction<X, Y, R> fn) {
-            return (t, u) -> {
-                ThreadPool.startTrace(traceId);
-                try {
-                    return fn.apply(t, u);
-                } finally {
-                    ThreadPool.endTrace();
-                }
-            };
+            return fn;
+//            return (t, u) -> {
+//                ThreadPool.startTrace(traceId);
+//                try {
+//                    return fn.apply(t, u);
+//                } finally {
+//                    ThreadPool.endTrace();
+//                }
+//            };
         }
 
         <X, Y> BiConsumer<X, Y> wrap(BiConsumer<X, Y> fn) {
-            return (t, u) -> {
-                ThreadPool.startTrace(traceId);
-                try {
-                    fn.accept(t, u);
-                } finally {
-                    ThreadPool.endTrace();
-                }
-            };
+            return fn;
+//            return (t, u) -> {
+//                ThreadPool.startTrace(traceId);
+//                try {
+//                    fn.accept(t, u);
+//                } finally {
+//                    ThreadPool.endTrace();
+//                }
+//            };
         }
 
         @Override

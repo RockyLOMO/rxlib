@@ -444,6 +444,35 @@ public class CoreTester extends AbstractTester {
         }
     }
 
+    @Test
+    public void objectPool() {
+        AtomicInteger c = new AtomicInteger();
+        ObjectPool<Long> pool = new ObjectPool<>(1, 5, () -> {
+//            sleep(10);
+            return (long) c.incrementAndGet();
+        }, x -> true, x -> {
+        });
+
+        List<Tuple<Long, String>> msg = new Vector<>();
+        for (int i = 0; i < 10; i++) {
+            Tasks.run(() -> {
+                msg.add(Tuple.of(System.nanoTime(), String.format("%s preBorrow %s - ?", Thread.currentThread().getId(), pool.size())));
+                Long t = pool.borrow();
+                msg.add(Tuple.of(System.nanoTime(), String.format("%s postBorrow %s - %s", Thread.currentThread().getId(), pool.size(), t)));
+                log.info("{}: borrow {} - {}", System.nanoTime(), pool.size(), t);
+
+                msg.add(Tuple.of(System.nanoTime(), String.format("%s preRecycle %s - %s", Thread.currentThread().getId(), pool.size(), t)));
+                pool.recycle(t);
+                msg.add(Tuple.of(System.nanoTime(), String.format("%s postRecycle %s - %s", Thread.currentThread().getId(), pool.size(), t)));
+                log.info("{}: recycle {} - {}", System.nanoTime(), pool.size(), t);
+            });
+        }
+        sleep(2000);
+        for (Tuple<Long, String> tuple : Linq.from(msg).orderBy(p -> p.left)) {
+            System.out.println(tuple.right);
+        }
+    }
+
     @SneakyThrows
     @Test
     public void cache() {

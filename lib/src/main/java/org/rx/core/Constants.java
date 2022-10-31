@@ -13,6 +13,7 @@ public interface Constants {
     int DEFAULT_INTERVAL = 500;
     int IO_EOF = -1;
     int TIMEOUT_INFINITE = -1;
+    long NANO_TO_MILLIS = 1000000L;
 
     double PERCENT = 100.0D;
     int KB = 1024, MB = KB * 1024, GB = MB * 1024;

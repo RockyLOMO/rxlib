@@ -414,13 +414,12 @@ public final class Remoting {
                     pack.returnValue = RemotingContext.invoke(() -> args.proceed(() -> {
                         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
                         if (tn != null) {
-                            logCtxIfAbsent(tn, ThreadPool.startTrace(pack.traceId));
+                            ThreadPool.startTrace(pack.traceId);
                         }
                         try {
                             return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
                         } finally {
                             ThreadPool.endTrace();
-                            clearLogCtx();
                         }
                     }), s, e.getClient());
                 } catch (Throwable ex) {

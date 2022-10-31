@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Supplier;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public interface Extends extends Serializable {
@@ -194,10 +193,11 @@ public interface Extends extends Serializable {
         return value != null ? value : defaultVal;
     }
 
-    static <T> T ifNull(T value, Supplier<T> supplier) {
+    @SneakyThrows
+    static <T> T ifNull(T value, Func<T> supplier) {
         if (value == null) {
             if (supplier != null) {
-                value = supplier.get();
+                value = supplier.invoke();
             }
         }
         return value;
