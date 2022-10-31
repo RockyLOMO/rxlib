@@ -108,29 +108,15 @@ public class ObjectPool<T> extends Disposable {
 
     @SneakyThrows
     T doCreate() {
-        T obj = createHandler.invoke();
-//        log.debug("doCreate {}", obj);
-//        synchronized (stack) {
-//            if (
-////                    size() > maxSize ||
-//                    !stack.offer(obj)) {
-//                throw new InvalidException("create object fail");
-//            }
-//            size.incrementAndGet();
-//
-//            ObjectConf c = conf.get(obj);
-//            if (c != null) {
-//                throw new InvalidException("create object fail, object '{}' has already in this pool", obj);
-//            }
-//            c = new ObjectConf();
-//            c.idleTime = Constants.TIMEOUT_INFINITE;
-//            conf.put(obj, c);
-//        }
+        if (size() > maxSize) {
+            return null;
+        }
 
-        if (
-//                    size() > maxSize ||
-                !stack.offer(obj)) {
-            throw new InvalidException("create object fail");
+        T obj = createHandler.invoke();
+
+        if (!stack.offer(obj)) {
+//            throw new InvalidException("create object fail");
+            return null;
         }
         ObjectConf c = new ObjectConf();
         c.setBorrowed(true);
@@ -158,22 +144,9 @@ public class ObjectPool<T> extends Disposable {
     }
 
     T doPoll() {
-//        synchronized (stack) {
-//            T obj = stack.poll();
-//            if (obj == null) {
-//                return null;
-//            }
-//
-//            ObjectConf c = conf.get(obj);
-//            if (c.isBorrowed()) {
-//                throw new InvalidException("poll object fail, object '{}' has already borrowed", obj);
-//            }
-//            c.idleTime = Constants.TIMEOUT_INFINITE;
-//            return obj;
-//        }
         T obj;
         ObjectConf c;
-        while ((obj = stack.poll()) != null && !(c = conf.get(obj)).isBorrowed()) {
+        while ((obj = stack.poll()) != null && (c = conf.get(obj)) != null && !c.isBorrowed()) {
             c.setBorrowed(true);
             return obj;
         }
@@ -183,7 +156,7 @@ public class ObjectPool<T> extends Disposable {
     public T borrow() throws TimeoutException {
         long start = System.nanoTime();
         T obj;
-        while (!validateHandler.test(obj = ifNull(doPoll(), this::doCreate))) {
+        while ((obj = ifNull(doPoll(), this::doCreate)) == null || !validateHandler.test(obj)) {
             if (borrowTimeout > Constants.TIMEOUT_INFINITE
                     && (System.nanoTime() - start) / Constants.NANO_TO_MILLIS > borrowTimeout) {
                 throw new TimeoutException("borrow timeout");
@@ -208,7 +181,7 @@ public class ObjectPool<T> extends Disposable {
         }
         c.setBorrowed(false);
         if (
-//                    size() > maxSize ||
+//                size() > maxSize ||  //不需要
                 !stack.offer(obj)) {
             doRetire(obj);
             return;

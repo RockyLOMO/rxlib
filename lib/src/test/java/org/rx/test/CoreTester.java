@@ -449,6 +449,7 @@ public class CoreTester extends AbstractTester {
         AtomicInteger c = new AtomicInteger();
         ObjectPool<Long> pool = new ObjectPool<>(1, 5, () -> {
 //            sleep(10);
+            System.out.println(1);
             return (long) c.incrementAndGet();
         }, x -> true, x -> {
         });
