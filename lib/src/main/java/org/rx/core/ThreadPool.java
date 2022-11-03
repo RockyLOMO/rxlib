@@ -38,14 +38,19 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @RequiredArgsConstructor
-    public static class ThreadQueue<T> extends LinkedTransferQueue<T> {
+    public static class ThreadQueue extends LinkedTransferQueue<Runnable> {
         private static final long serialVersionUID = 4283369202482437480L;
+        private ThreadPool pool;
         final int queueCapacity;
-        //todo cache len
         final AtomicInteger counter = new AtomicInteger();
 
         public boolean isFullLoad() {
             return counter.get() >= queueCapacity;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return counter.get() == 0;
         }
 
         @Override
@@ -55,13 +60,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @SneakyThrows
         @Override
-        public boolean offer(T t) {
+        public boolean offer(Runnable r) {
             if (isFullLoad()) {
                 boolean logged = false;
                 while (isFullLoad()) {
                     if (!logged) {
-                        log.warn("Block caller thread[{}] until queue[{}/{}] polled then offer {}", Thread.currentThread().getName(),
-                                counter.get(), queueCapacity, t);
+                        log.warn("Block caller thread until queue[{}/{}] polled then offer {}", counter.get(), queueCapacity, r);
                         logged = true;
                     }
                     synchronized (this) {
@@ -71,16 +75,21 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.debug("Wait poll ok");
             }
             counter.incrementAndGet();
-            return super.offer(t);
+            Task<?> task = pool.setTask(r);
+            if (task != null && task.flags.has(RunFlag.TRANSFER)) {
+                super.transfer(r);
+                return true;
+            }
+            return super.offer(r);
         }
 
         @Override
-        public T poll(long timeout, TimeUnit unit) throws InterruptedException {
+        public Runnable poll(long timeout, TimeUnit unit) throws InterruptedException {
             boolean ok = true;
             try {
-                T t = super.poll(timeout, unit);
-                ok = t != null;
-                return t;
+                Runnable r = super.poll(timeout, unit);
+                ok = r != null;
+                return r;
             } catch (InterruptedException e) {
                 ok = false;
                 throw e;
@@ -93,7 +102,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         @Override
-        public T take() throws InterruptedException {
+        public Runnable take() throws InterruptedException {
             try {
                 return super.take();
             } finally {
@@ -787,7 +796,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(checkSize(initSize), Integer.MAX_VALUE,
-                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue<>(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
@@ -795,6 +804,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     executor.getQueue().offer(r);
                 });
         super.allowCoreThreadTimeOut(true);
+        ((ThreadQueue) super.getQueue()).pool = this;
         this.poolName = poolName;
 
         setDynamicSize(cpuWaterMark);
@@ -1008,19 +1018,11 @@ public class ThreadPool extends ThreadPoolExecutor {
     @SneakyThrows
     @Override
     protected void beforeExecute(Thread t, Runnable r) {
-        Task<?> task;
-        if (r instanceof FutureTaskAdapter) {
-            task = ((FutureTaskAdapter<?>) r).task;
-        } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            task = Task.as(Reflects.readField(r, "fn"));
-        } else {
-            task = Task.as(r);
-        }
+        Task<?> task = setTask(r);
         if (task == null) {
             return;
         }
 
-        taskMap.put(r, task);
         FlagsEnum<RunFlag> flags = task.flags;
         if (flags.has(RunFlag.SINGLE)) {
             LockContext ctx = getContextForLock(task.id);
@@ -1035,9 +1037,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             ctx.lock.lock();
             log.debug("CTX lock {} -> {}", task.id, flags.name());
         }
-        if (flags.has(RunFlag.PRIORITY)
-//                && !getQueue().isEmpty()
-        ) {
+        if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
             incrSize(this);
         }
         //TransmittableThreadLocal
@@ -1125,8 +1125,25 @@ public class ThreadPool extends ThreadPoolExecutor {
         });
     }
 
-    private Task<?> getTask(Runnable command, boolean remove) {
-        return remove ? taskMap.remove(command) : taskMap.get(command);
+    private Task<?> setTask(Runnable r) {
+        Task<?> task = taskMap.get(r);
+        if (task == null) {
+            if (r instanceof FutureTaskAdapter) {
+                task = ((FutureTaskAdapter<?>) r).task;
+            } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
+                task = Task.as(Reflects.readField(r, "fn"));
+            } else {
+                task = Task.as(r);
+            }
+            if (task != null) {
+                taskMap.put(r, task);
+            }
+        }
+        return task;
+    }
+
+    private Task<?> getTask(Runnable r, boolean remove) {
+        return remove ? taskMap.remove(r) : taskMap.get(r);
     }
 
     @Override
