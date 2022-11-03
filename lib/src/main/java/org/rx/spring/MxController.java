@@ -129,7 +129,7 @@ public class MxController {
         File root = new File("/");
         j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
         j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
-        j.put("ntpOffset", Reflects.readField(NtpClock.class, null, "offset"));
+        j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
 //        j.put("conf", conf);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))

@@ -1104,7 +1104,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             return;
         }
 
-        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readField(InternalThreadLocalMap.class, null, "slowThreadLocalMap");
+        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readStaticField(InternalThreadLocalMap.class, "slowThreadLocalMap");
         if (threadLocalMap == null) {
             slowThreadLocalMap.remove();
             return;

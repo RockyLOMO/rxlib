@@ -20,7 +20,6 @@ import static org.rx.core.Extends.*;
 public class NtpClock extends Clock implements Serializable {
     private static final long serialVersionUID = -242102888494125L;
     public static final NtpClock UTC = new NtpClock(ZoneOffset.UTC);
-    static final Integer shareKey = 0;
     static long offset;
     static boolean injected;
 
@@ -31,14 +30,14 @@ public class NtpClock extends Clock implements Serializable {
     @SneakyThrows
     public static void sync() {
         NTPUDPClient client = new NTPUDPClient();
-        client.setDefaultTimeout(1024);
+        client.setDefaultTimeout(2048);
         client.open();
         eachQuietly(RxConfig.INSTANCE.ntp.servers, p -> {
             final TimeInfo info = client.getTime(InetAddress.getByName(p));
             info.computeDetails();
             offset = ifNull(info.getOffset(), 0L);
             log.debug("ntp sync with {} -> {}", p, offset);
-            long[] tsAgent = (long[]) System.getProperties().get(shareKey);
+            long[] tsAgent = (long[]) System.getProperties().get(TimeAdvice.SHARE_KEY);
             if (injected = tsAgent != null) {
                 tsAgent[1] += offset;
                 log.debug("ntp inject offset {}", offset);
