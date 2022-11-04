@@ -139,7 +139,7 @@ public class MxController {
     }
 
     boolean check(HttpServletRequest request) {
-        return eq(request.getHeader(RxConfig.ConfigNames.MXPWD), RxConfig.INSTANCE.getMxpwd());
+        return eq(request.getHeader(RxConfig.ConfigNames.MXPWD.replace(".", "-")), RxConfig.INSTANCE.getMxpwd());
     }
 
     @SneakyThrows

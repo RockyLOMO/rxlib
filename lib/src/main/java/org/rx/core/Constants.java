@@ -1,6 +1,11 @@
 package org.rx.core;
 
 public interface Constants {
+    enum MetricName {
+        THREAD_QUEUE_SIZE_ERROR,
+        OBJECT_POOL_LEAK;
+    }
+
     String RX_CONFIG_FILE = "rx.yml";
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
 
@@ -20,7 +25,6 @@ public interface Constants {
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
 
-    String THREAD_POOL_QUEUE = "threadPoolQueue";
     String DEFAULT_TRACE_NAME = "rx-traceId";
 
     String NON_UNCHECKED = "unchecked";

@@ -96,10 +96,12 @@ public class Reflects extends ClassUtils {
     }
 
     //region class
-    public static void dumpStack(StringBuilder msg) {
-        for (StackTraceElement stack : stackTrace(12)) {
-            msg.appendLine("%s.%s(%s:%s)", stack.getClassName(), stack.getMethodName(), stack.getFileName(), stack.getLineNumber());
+    public static String getStackTrace(Thread t) {
+        StringBuilder buf = new StringBuilder();
+        for (StackTraceElement traceElement : t.getStackTrace()) {
+            buf.append("\tat ").appendLine(traceElement);
         }
+        return buf.toString();
     }
 
     public static Linq<StackTraceElement> stackTrace(int takeCount) {
