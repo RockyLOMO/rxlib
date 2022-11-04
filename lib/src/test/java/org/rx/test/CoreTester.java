@@ -77,8 +77,20 @@ public class CoreTester extends AbstractTester {
                 log.info("exec SYNCHRONIZED end {}", x);
             }, c, RunFlag.SYNCHRONIZED.flags());
         }
-        sleep(8000);
+        sleep(6000);
         assert c.get() == 6;
+
+        for (int i = 0; i < 5; i++) {
+            int x = i;
+            Future<Void> f1 = pool.run(() -> {
+                log.info("exec TRANSFER begin {}", x);
+                c.incrementAndGet();
+                sleep(oneSecond);
+                log.info("exec TRANSFER end {}", x);
+            }, c, RunFlag.TRANSFER.flags());
+        }
+        sleep(6000);
+        assert c.get() == 11;
 
 
         c.set(0);

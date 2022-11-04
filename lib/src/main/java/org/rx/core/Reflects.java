@@ -203,30 +203,64 @@ public class Reflects extends ClassUtils {
             return (T) ConstructorUtils.invokeConstructor(type, args);
         } catch (Exception e) {
             log.warn("Not match any accessible constructors. {}", e.getMessage());
-            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
-                Class<?>[] paramTypes = constructor.getParameterTypes();
-                if (paramTypes.length != args.length) {
-                    continue;
-                }
-                boolean ok = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!TypeUtils.isInstance(args[i], paramTypes[i])) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) {
-                    continue;
-                }
-                setAccess(constructor);
-                return (T) constructor.newInstance(args);
+            Constructor<?> ctor = findMatchingExecutable(type, null, args);
+            if (ctor != null) {
+                setAccess(ctor);
+                return (T) ctor.newInstance(args);
             }
         }
         throw new ApplicationException(values(type.getName()));
     }
 
+    public static <T extends Executable> T findMatchingExecutable(Class<?> type, String name, Object[] args) {
+        Executable executable = null;
+        if (name != null) {
+            Linq<Method> methods = getMethodMap(type).get(name);
+            if (methods != null) {
+                for (Executable p : methods) {
+                    if (match(p, args)) {
+                        executable = p;
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (Constructor<?> p : type.getDeclaredConstructors()) {
+                if (match(p, args)) {
+                    executable = p;
+                    break;
+                }
+            }
+        }
+        return (T) executable;
+    }
+
+    static boolean match(Executable p, Object[] args) {
+        if (p.getParameterCount() != args.length) {
+            return false;
+        }
+        Class<?>[] parameterTypes = p.getParameterTypes();
+        for (int i = 0; i < parameterTypes.length; i++) {
+            Class<?> parameterType = parameterTypes[i];
+            Object arg = args[i];
+            if (arg == null) {
+                if (parameterType.isPrimitive()) {
+                    return false;
+                }
+                continue;
+            }
+            if (!primitiveToWrapper(parameterType).isInstance(arg)) {
+                return false;
+            }
+//            if (!TypeUtils.isInstance(arg, parameterType)) {
+//                return false;
+//            }
+        }
+        return true;
+    }
+
     @SneakyThrows
-    public static <T> T invokeDefaultMethod(@NonNull Method method, Object instance, Object... args) {
+    public static <T> T invokeDefaultMethod(Method method, Object instance, Object... args) {
         require(method, method.isDefault());
 
         Class<?> declaringClass = method.getDeclaringClass();
@@ -271,37 +305,7 @@ public class Reflects extends ClassUtils {
     public static <T, TT> T invokeMethod(Class<? extends TT> type, TT instance, String name, Object... args) {
         boolean isStatic = type != null;
         Class<?> searchType = isStatic ? type : instance.getClass();
-        Method method = null;
-        Linq<Method> methods = getMethodMap(searchType).get(name);
-        if (methods != null) {
-            for (Method p : methods) {
-                if (p.getParameterCount() != args.length) {
-                    continue;
-                }
-
-                boolean find = true;
-                Class<?>[] parameterTypes = p.getParameterTypes();
-                for (int i = 0; i < parameterTypes.length; i++) {
-                    Class<?> parameterType = parameterTypes[i];
-                    Object arg = args[i];
-                    if (arg == null) {
-                        if (parameterType.isPrimitive()) {
-                            find = false;
-                            break;
-                        }
-                        continue;
-                    }
-                    if (!primitiveToWrapper(parameterType).isInstance(arg)) {
-                        find = false;
-                        break;
-                    }
-                }
-                if (find) {
-                    method = p;
-                    break;
-                }
-            }
-        }
+        Method method = findMatchingExecutable(searchType, name, args);
         if (method != null) {
             return (T) method.invoke(instance, args);
         }
@@ -392,6 +396,10 @@ public class Reflects extends ClassUtils {
         }
     }
 
+    public static <T, TT> T readStaticField(Class<? extends TT> type, String name) {
+        return readField(type, null, name);
+    }
+
     public static <T, TT> T readField(TT instance, String name) {
         return readField(instance.getClass(), instance, name);
     }
@@ -403,6 +411,10 @@ public class Reflects extends ClassUtils {
             throw new NoSuchFieldException(name);
         }
         return (T) field.get(instance);
+    }
+
+    public static <T, TT> void writeStaticField(Class<? extends TT> type, String name, T value) {
+        writeField(type, null, name, value);
     }
 
     public static <T, TT> void writeField(TT instance, String name, T value) {

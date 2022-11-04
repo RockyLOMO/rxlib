@@ -55,6 +55,7 @@ public final class RxConfig {
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
+        String MXPWD = "app.mxpwd";
     }
 
     @Data
@@ -131,6 +132,7 @@ public final class RxConfig {
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     String aesKey;
     String omega;
+    String mxpwd;
 
     public int getIntId() {
         Integer v = Integer.getInteger(id);
@@ -208,5 +210,6 @@ public final class RxConfig {
         }
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, "℞FREEDOM");
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA);
+        mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD);
     }
 }

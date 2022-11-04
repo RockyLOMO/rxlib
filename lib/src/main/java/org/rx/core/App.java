@@ -316,7 +316,7 @@ public final class App extends SystemUtils {
     //endregion
 
     //region json
-    //final 字段不会覆盖
+    //final 字段不会覆盖, TypeReference
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {

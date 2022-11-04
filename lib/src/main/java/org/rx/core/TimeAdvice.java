@@ -12,13 +12,18 @@ import org.rx.io.Files;
 import java.util.Properties;
 
 public class TimeAdvice {
+//    static final int SHARE_KEY = 0;
+    static final String SHARE_KEY = "";
+
     @Advice.OnMethodExit
     static void exit(@Advice.Return(readOnly = false) long r) throws Throwable {
+//        final int k = 0;
+        final String k = "";
         Properties props = System.getProperties();
-        long[] arr = (long[]) props.get(0);
+        long[] arr = (long[]) props.get(k);
         if (arr == null) {
             synchronized (props) {
-                arr = (long[]) props.get(0);
+                arr = (long[]) props.get(k);
                 if (arr == null) {
                     arr = new long[2];
                     Process proc = Runtime.getRuntime().exec("java -cp rxdaemon-1.0.jar org.rx.daemon.Application");
@@ -28,7 +33,7 @@ public class TimeAdvice {
                     System.out.println("[Agent] new timestamp: " + pair[0]);
                     arr[1] = Long.parseLong(pair[0]);
                     arr[0] = Long.parseLong(pair[1]);
-                    props.put(0, arr);
+                    props.put(k, arr);
                 }
             }
         }
@@ -48,7 +53,7 @@ public class TimeAdvice {
         long[] arr = new long[2];
         arr[1] = System.currentTimeMillis();
         arr[0] = System.nanoTime();
-        props.put(0, arr);
+        props.put(SHARE_KEY, arr);
         new AgentBuilder.Default()
                 .enableNativeMethodPrefix("wmsnative")
                 .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
