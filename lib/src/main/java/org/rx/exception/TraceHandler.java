@@ -58,7 +58,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     @Data
     public static class MetricsEntity implements Serializable {
         private static final long serialVersionUID = 2049476730423563051L;
-        @DbColumn(primaryKey = true)
+        @DbColumn(primaryKey = true, autoIncrement = true)
+        long id;
         String name;
         String message;
         Date createTime;
@@ -268,6 +269,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveMetrics(String name, String message) {
+        log.info("saveMetrics {} {}", name, message);
         MetricsEntity entity = new MetricsEntity();
         entity.setName(name);
         entity.setMessage(message);

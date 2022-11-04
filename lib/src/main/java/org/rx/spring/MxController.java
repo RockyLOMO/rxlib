@@ -139,8 +139,7 @@ public class MxController {
     }
 
     boolean check(HttpServletRequest request) {
-        System.out.println("x1"+request.getHeader(RxConfig.ConfigNames.MXPWD)+";"+ RxConfig.INSTANCE.getMxpwd()+";"+request.getHeader("MXPWD"));
-        return eq(request.getHeader("MXPWD"), RxConfig.INSTANCE.getMxpwd());
+        return eq(request.getHeader(RxConfig.ConfigNames.MXPWD.replace(".", "-")), RxConfig.INSTANCE.getMxpwd());
     }
 
     @SneakyThrows

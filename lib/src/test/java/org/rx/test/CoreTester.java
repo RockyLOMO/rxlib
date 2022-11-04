@@ -460,7 +460,6 @@ public class CoreTester extends AbstractTester {
     public void objectPool() {
         AtomicInteger c = new AtomicInteger();
         ObjectPool<Long> pool = new ObjectPool<>(1, 5, () -> {
-//            sleep(10);
             System.out.println(1);
             return (long) c.incrementAndGet();
         }, x -> true, x -> {
@@ -484,6 +483,12 @@ public class CoreTester extends AbstractTester {
         for (Tuple<Long, String> tuple : Linq.from(msg).orderBy(p -> p.left)) {
             System.out.println(tuple.right);
         }
+
+        pool.setIdleTimeout(1);
+        pool.setValidationTimeout(1);
+        pool.setLeakDetectionThreshold(1);
+        pool.setRetireLeak(true);
+        sleep(15000);
     }
 
     @SneakyThrows

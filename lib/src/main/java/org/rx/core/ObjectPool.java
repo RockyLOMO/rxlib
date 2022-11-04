@@ -3,6 +3,7 @@ package org.rx.core;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 
@@ -20,19 +21,29 @@ import static org.rx.core.Extends.*;
 public class ObjectPool<T> extends Disposable {
     static class ObjectConf {
         //        final long lifetime = System.nanoTime();
-        long idleTime;
+        boolean borrowed;
+        long stateTime;
+        Thread t;
 
         public synchronized boolean isBorrowed() {
-            return idleTime == Constants.TIMEOUT_INFINITE;
+            return borrowed;
         }
 
         public synchronized void setBorrowed(boolean borrowed) {
-            idleTime = borrowed ? Constants.TIMEOUT_INFINITE : System.nanoTime();
+            if (this.borrowed = borrowed) {
+                t = Thread.currentThread();
+            }
+            stateTime = System.nanoTime();
         }
 
         public synchronized boolean isIdleTimeout(long idleTimeout) {
-            return idleTime != Constants.TIMEOUT_INFINITE
-                    && (System.nanoTime() - idleTime) / Constants.NANO_TO_MILLIS > idleTimeout;
+            return idleTimeout != 0 && !borrowed
+                    && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > idleTimeout;
+        }
+
+        public synchronized boolean isLeaked(long threshold) {
+            return threshold != 0 && borrowed
+                    && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > threshold;
         }
     }
 
@@ -47,16 +58,37 @@ public class ObjectPool<T> extends Disposable {
     @Getter
     final int maxSize;
     @Getter
-    @Setter
-    long borrowTimeout = Constants.TIMEOUT_INFINITE;
+    long borrowTimeout = 30000;
+    @Getter
+    long idleTimeout = 600000;
+    @Getter
+    long validationTimeout = 5000;
+    //    long keepaliveTime;
+//    long maxLifetime = 1800000;
+    @Getter
+    long leakDetectionThreshold;
     @Getter
     @Setter
-    long idleTimeout = 600000;
-//    long keepaliveTime;
-//    long maxLifetime = 1800000;
+    boolean retireLeak;
 
     public int size() {
         return size.get();
+    }
+
+    public void setBorrowTimeout(long borrowTimeout) {
+        this.borrowTimeout = Math.max(250, borrowTimeout);
+    }
+
+    public void setIdleTimeout(long idleTimeout) {
+        this.idleTimeout = idleTimeout == 0 ? 0 : Math.max(10000, idleTimeout);
+    }
+
+    public void setValidationTimeout(long validationTimeout) {
+        this.validationTimeout = Math.max(250, validationTimeout);
+    }
+
+    public void setLeakDetectionThreshold(long leakDetectionThreshold) {
+        this.leakDetectionThreshold = Math.max(2000, leakDetectionThreshold);
     }
 
     public ObjectPool(int minSize, Func<T> createHandler, Predicate<T> validateHandler) {
@@ -82,12 +114,7 @@ public class ObjectPool<T> extends Disposable {
         for (int i = 0; i < minSize; i++) {
             doCreate();
         }
-        Tasks.schedulePeriod(() -> eachQuietly(conf.entrySet(), p -> {
-            ObjectConf c = p.getValue();
-            if (!validateHandler.test(p.getKey()) || c.isIdleTimeout(idleTimeout)) {
-                doRetire(p.getKey());
-            }
-        }), 30000);
+        Tasks.timer.setTimeout(this::validNow, d -> validationTimeout, this, TimeoutFlag.PERIOD.flags());
     }
 
     @Override
@@ -95,6 +122,25 @@ public class ObjectPool<T> extends Disposable {
         for (T obj : stack) {
             doRetire(obj);
         }
+    }
+
+    void validNow() {
+        eachQuietly(Linq.from(conf.entrySet()).orderBy(p -> p.getValue().stateTime), p -> {
+            T obj = p.getKey();
+            ObjectConf c = p.getValue();
+            if (!validateHandler.test(obj)
+                    || (size() > minSize && c.isIdleTimeout(idleTimeout))) {
+                doRetire(obj);
+                return;
+            }
+            if (c.isLeaked(leakDetectionThreshold)) {
+                TraceHandler.INSTANCE.saveMetrics(Constants.MetricName.OBJECT_POOL_LEAK.name(),
+                        String.format("Object '%s' leaked.\n%s", obj, Reflects.getStackTrace(c.t)));
+                if (retireLeak) {
+                    doRetire(obj);
+                }
+            }
+        });
     }
 
     @SneakyThrows
@@ -126,11 +172,13 @@ public class ObjectPool<T> extends Disposable {
         boolean ok;
 
         ok = stack.remove(obj);
-        conf.remove(obj);
+        ObjectConf c = conf.remove(obj);
         size.decrementAndGet();
 
         log.debug("doRetire {} -> {}", obj, ok);
-        tryClose(obj);
+        if (!c.isBorrowed()) {
+            tryClose(obj);
+        }
         return ok;
     }
 
