@@ -147,11 +147,13 @@ public class ObjectPool<T> extends Disposable {
     public T borrow() throws TimeoutException {
         long start = System.nanoTime();
         T obj;
+
         while ((obj = ifNull(doPoll(), this::doCreate)) == null || !validateHandler.test(obj)) {
-            if (borrowTimeout > Constants.TIMEOUT_INFINITE
-                    && (System.nanoTime() - start) / Constants.NANO_TO_MILLIS > borrowTimeout) {
+            long bt = (System.nanoTime() - start) / Constants.NANO_TO_MILLIS;
+            if (borrowTimeout > Constants.TIMEOUT_INFINITE && bt > borrowTimeout) {
                 throw new TimeoutException("borrow timeout");
             }
+            sleep(bt);
         }
         return obj;
     }
