@@ -14,8 +14,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
-import static org.rx.core.Extends.ifNull;
-import static org.rx.core.Extends.tryClose;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ObjectPool<T> extends Disposable {
@@ -83,20 +82,12 @@ public class ObjectPool<T> extends Disposable {
         for (int i = 0; i < minSize; i++) {
             doCreate();
         }
-        Tasks.schedulePeriod(() -> {
-            if (size() <= maxSize) {
-                return;
+        Tasks.schedulePeriod(() -> eachQuietly(conf.entrySet(), p -> {
+            ObjectConf c = p.getValue();
+            if (!validateHandler.test(p.getKey()) || c.isIdleTimeout(idleTimeout)) {
+                doRetire(p.getKey());
             }
-            for (Map.Entry<T, ObjectConf> entry : conf.entrySet()) {
-                ObjectConf c = entry.getValue();
-                if (c.isIdleTimeout(idleTimeout)) {
-                    doRetire(entry.getKey());
-                    if (size() <= maxSize) {
-                        return;
-                    }
-                }
-            }
-        }, 30000);
+        }), 30000);
     }
 
     @Override
