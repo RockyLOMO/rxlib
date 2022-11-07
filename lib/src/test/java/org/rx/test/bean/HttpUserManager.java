@@ -9,7 +9,7 @@ import java.util.Map;
 public interface HttpUserManager {
     HttpUserManager INSTANCE = new HttpUserManager() {
         @Override
-        public int computeInt(int x, int y) {
+        public int computeLevel(int x, int y) {
             return x + y;
         }
 
@@ -19,7 +19,7 @@ public interface HttpUserManager {
         }
     };
 
-    int computeInt(int x, int y);
+    int computeLevel(int x, int y);
 
     @RequestMapping(value = "on", method = RequestMethod.GET)
     Map<String, Object> queryIp();

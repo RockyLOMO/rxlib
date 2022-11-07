@@ -4,8 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.exception.InvalidException;
 
-import java.util.function.BiConsumer;
-
 import static org.rx.core.App.toJsonString;
 
 @Slf4j

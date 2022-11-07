@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
+import org.rx.bean.ULID;
 import org.rx.core.Arrays;
 import org.rx.core.Linq;
 import org.rx.io.*;
@@ -55,8 +56,8 @@ public class IOTester extends AbstractTester {
             personBean.setName("老王" + i);
             if (i % 2 == 0) {
                 personBean.setGender(PersonGender.GIRL);
-                personBean.setFlags(PersonBean.Flags);
-                personBean.setArray(PersonBean.Array);
+                personBean.setFlags(PersonBean.PROP_Flags);
+                personBean.setExtra(PersonBean.PROP_EXTRA);
             } else {
                 personBean.setGender(PersonGender.BOY);
             }
@@ -80,8 +81,8 @@ public class IOTester extends AbstractTester {
                 personBean.setName("老王" + i);
                 if (i % 2 == 0) {
                     personBean.setGender(PersonGender.GIRL);
-                    personBean.setFlags(PersonBean.Flags);
-                    personBean.setArray(PersonBean.Array);
+                    personBean.setFlags(PersonBean.PROP_Flags);
+                    personBean.setExtra(PersonBean.PROP_EXTRA);
                 } else {
                     personBean.setGender(PersonGender.BOY);
                 }
@@ -181,7 +182,7 @@ public class IOTester extends AbstractTester {
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         assert list.isEmpty();
-        UUID pk = entity.getId();
+        ULID pk = entity.getId();
         assert db.existsById(PersonBean.class, pk);
         PersonBean byId = db.findById(PersonBean.class, pk);
         System.out.println(byId);
@@ -199,7 +200,7 @@ public class IOTester extends AbstractTester {
                         .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
-                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
+                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getCash)).orderBy(PersonBean::getAge)
                 .limit(100);
         System.out.println(q);
         List<Object> params = new ArrayList<>();
@@ -500,7 +501,7 @@ public class IOTester extends AbstractTester {
         PersonBean bean = new PersonBean();
         bean.setName("hello");
         bean.setAge(12);
-        bean.setMoneyCent(250L);
+        bean.setCashCent(250L);
         stream.setPosition(0);
         stream.writeObject(bean);
 

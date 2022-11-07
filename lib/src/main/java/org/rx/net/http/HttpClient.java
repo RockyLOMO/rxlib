@@ -5,6 +5,7 @@ import com.alibaba.fastjson.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
 import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +21,6 @@ import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.rx.util.function.BiAction;
-import org.springframework.http.HttpMethod;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -417,25 +417,20 @@ public class HttpClient {
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();
-            switch (method) {
-                case POST:
-                    request.post(requestBody);
-                    break;
-                case HEAD:
-                    request.head();
-                    break;
-                case PUT:
-                    request.put(requestBody);
-                    break;
-                case PATCH:
-                    request.patch(requestBody);
-                    break;
-                case DELETE:
-                    request.delete(requestBody);
-                    break;
-                default:
-                    request.get();
-                    break;
+            if (HttpMethod.GET.equals(method)) {
+                request.get();
+            } else if (HttpMethod.POST.equals(method)) {
+                request.post(requestBody);
+            } else if (HttpMethod.HEAD.equals(method)) {
+                request.head();
+            } else if (HttpMethod.PUT.equals(method)) {
+                request.put(requestBody);
+            } else if (HttpMethod.PATCH.equals(method)) {
+                request.patch(requestBody);
+            } else if (HttpMethod.DELETE.equals(method)) {
+                request.delete(requestBody);
+            } else {
+                throw new UnsupportedOperationException();
             }
             if (responseContent != null) {
                 responseContent.response.close();

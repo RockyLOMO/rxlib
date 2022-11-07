@@ -3,7 +3,6 @@ package org.rx.test;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
@@ -125,7 +124,7 @@ public class UtilTester extends AbstractTester {
         System.out.println(toJsonString(target));
         assert source.getIndex2() == target.getIndex();
         assert source.getIndex2() == target.getLuckyNum();
-        assert source.getMoney().eq(target.getMoney().doubleValue());
+        assert source.getCash().eq(target.getCash().doubleValue());
 
         target = new GirlBean();
         PersonMapper.INSTANCE.toTargetWith(source, target);
@@ -141,7 +140,7 @@ public class UtilTester extends AbstractTester {
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.BOY);
-        f.setMoneyCent(200L);
+        f.setCashCent(200L);
         GirlBean t = new GirlBean();
         t.setKids(10L);
 

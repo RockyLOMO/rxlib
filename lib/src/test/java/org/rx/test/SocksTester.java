@@ -42,7 +42,6 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -337,7 +336,7 @@ public class SocksTester extends AbstractTester {
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
-                facade.computeInt(1, finalI);
+                facade.computeLevel(1, finalI);
                 sleep(1000);
                 latch.countDown();
             });

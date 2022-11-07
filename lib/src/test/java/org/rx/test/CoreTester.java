@@ -9,6 +9,7 @@ import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.CrcModel;
 import org.rx.codec.RSAUtil;
@@ -491,6 +492,26 @@ public class CoreTester extends AbstractTester {
         sleep(15000);
     }
 
+    @Test
+    public void eventBus() {
+        EventBus bus = EventBus.DEFAULT;
+        bus.onDeadEvent.combine((s, e) -> log.error("DeadEvent {}", e.getValue()));
+        bus.register(this);
+        bus.register(this);
+        for (int i = 0; i < 5; i++) {
+            bus.post(PersonBean.YouFan);
+        }
+        bus.unregister(this);
+        for (int i = 0; i < 5; i++) {
+            bus.post(PersonBean.YouFan);
+        }
+    }
+
+    @Subscribe
+    void OnUserCreate(PersonBean personBean) {
+        log.info("OnUserCreate: {}", personBean);
+    }
+
     @SneakyThrows
     @Test
     public void cache() {
@@ -568,16 +589,16 @@ public class CoreTester extends AbstractTester {
             personSet.add(p);
         }
 
-        showResult("leftJoin", Linq.from(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)).leftJoin(
-                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)), (p, x) -> p.name.equals(x.name), Tuple::of
+        showResult("leftJoin", Linq.from(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA)).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA)), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", Linq.from(personSet).groupBy(p -> p.index2, (p, x) -> {
