@@ -22,7 +22,7 @@ import javax.validation.constraints.NotNull;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class UtilTester extends AbstractTester {

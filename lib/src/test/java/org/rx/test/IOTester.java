@@ -26,7 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.sleep;
 
 @Slf4j

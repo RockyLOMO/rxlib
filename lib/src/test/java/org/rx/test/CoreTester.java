@@ -38,7 +38,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.*;
 
 @Slf4j
@@ -830,10 +830,10 @@ public class CoreTester extends AbstractTester {
         PersonBean leZhi = PersonBean.LeZhi;
 
         IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(proxy) == leZhi;
+        assert targetObject(proxy) == leZhi;
 
         IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(iproxy) == leZhi;
+        assert targetObject(iproxy) == leZhi;
     }
 
     @SneakyThrows

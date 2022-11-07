@@ -5,7 +5,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
-import org.rx.core.App;
+import org.rx.core.Sys;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
@@ -187,7 +187,7 @@ class ComboIPSearcher implements IPSearcher {
         if (Strings.isEmpty(text)) {
             throw new InvalidException("Empty response from {}", url);
         }
-        JSONObject json = App.toJsonObject(text);
+        JSONObject json = Sys.toJsonObject(text);
         if (!check.test(json)) {
             throw new InvalidException("Request:\t{}\n" + "Response:\t{}", url, text);
         }

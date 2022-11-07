@@ -13,7 +13,6 @@ import java.nio.file.*;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.quietly;
 
 @Slf4j

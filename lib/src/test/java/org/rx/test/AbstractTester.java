@@ -2,7 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
+import org.rx.core.Sys;
 import org.rx.core.ResetEventWait;
 import org.rx.core.Tasks;
 import org.rx.io.Files;
@@ -35,7 +35,7 @@ public class AbstractTester {
             }
         } finally {
             long elapsed = (System.nanoTime() - start) / 1000L;
-            log.info("Invoke {} times={} elapsed={} avg={}", name, count, App.formatElapsed(elapsed), App.formatElapsed(elapsed / count));
+            log.info("Invoke {} times={} elapsed={} avg={}", name, count, Sys.formatElapsed(elapsed), Sys.formatElapsed(elapsed / count));
         }
     }
 
@@ -61,7 +61,7 @@ public class AbstractTester {
             latch.await();
         } finally {
             long elapsed = (System.nanoTime() - start) / 1000L;
-            log.info("Invoke {} times={} elapsed={}", name, count, App.formatElapsed(elapsed));
+            log.info("Invoke {} times={} elapsed={}", name, count, Sys.formatElapsed(elapsed));
         }
     }
 

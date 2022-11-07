@@ -5,7 +5,6 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.Extends;
 import org.rx.core.Strings;
 
 import java.io.ObjectInputStream;
@@ -14,7 +13,7 @@ import java.io.Serializable;
 import java.io.StreamCorruptedException;
 import java.lang.reflect.Type;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 

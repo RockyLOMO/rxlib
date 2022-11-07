@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.proxy;
+import static org.rx.core.Sys.proxy;
 
 @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {

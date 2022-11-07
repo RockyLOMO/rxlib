@@ -41,7 +41,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public class HttpClient {

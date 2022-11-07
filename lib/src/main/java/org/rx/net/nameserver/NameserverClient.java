@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.*;
 
 @Slf4j

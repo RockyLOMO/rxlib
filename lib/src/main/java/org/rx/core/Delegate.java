@@ -16,7 +16,7 @@ import static org.rx.core.Extends.tryClose;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
     static {
-        Container.register(EventBus.class, new EventBus());
+        Container.register(EventBus.class, EventBus.DEFAULT);
     }
 
     public static void register(Object eventListener) {

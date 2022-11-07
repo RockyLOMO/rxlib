@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.*;
 import static org.rx.core.Tasks.awaitQuietly;
 
@@ -42,7 +42,7 @@ import static org.rx.core.Tasks.awaitQuietly;
 public final class Main implements SocksSupport {
     @SneakyThrows
     public static void main(String[] args) {
-        Map<String, String> options = App.mainOptions(args);
+        Map<String, String> options = Sys.mainOptions(args);
         Integer port = Reflects.tryConvert(options.get("port"), Integer.class);
         if (port == null) {
             log.info("Invalid port arg");

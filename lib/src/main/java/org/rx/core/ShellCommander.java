@@ -183,7 +183,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
 
     public synchronized ShellCommander setReadFullyThenExit() {
         if (!Files.isPath(shell)) {
-            if (App.IS_OS_WINDOWS && !Strings.startsWithIgnoreCase(shell, WIN_CMD)) {
+            if (Sys.IS_OS_WINDOWS && !Strings.startsWithIgnoreCase(shell, WIN_CMD)) {
                 shell = WIN_CMD + shell;
             } else {
                 shell = LINUX_BASH + shell;

@@ -7,6 +7,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
+import com.sun.management.HotSpotDiagnosticMXBean;
+import com.sun.management.OperatingSystemMXBean;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,7 @@ import org.slf4j.spi.MDCAdapter;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.io.*;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -37,8 +40,10 @@ import static org.rx.core.Extends.as;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
-public final class App extends SystemUtils {
-    static final String DPR = "_DPR";
+public final class Sys extends SystemUtils {
+    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
+    static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
         if (v != null) {
@@ -127,8 +132,8 @@ public final class App extends SystemUtils {
         return new File(path);
     }
 
-    public static <T> T rawObject(Object proxyObject) {
-        return Extends.<String, T>weakMap(proxyObject).get(DPR);
+    public static <T> T targetObject(Object proxyObject) {
+        return Extends.<String, T>weakMap(proxyObject).get(DPT);
     }
 
     public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
@@ -147,7 +152,7 @@ public final class App extends SystemUtils {
             proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
         }
         if (rawObject != null) {
-            Extends.weakMap(proxyObj).put(DPR, rawObject);
+            Extends.weakMap(proxyObj).put(DPT, rawObject);
         }
         return proxyObj;
     }
@@ -278,10 +283,12 @@ public final class App extends SystemUtils {
     }
 
     public static String formatElapsed(long microSeconds) {
-        long d = 1000;
+        long d = 1000L;
         return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
     }
+    //endregion
 
+    //region common
     public static String fastCacheKey(String method, Object... args) {
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();
@@ -313,7 +320,6 @@ public final class App extends SystemUtils {
         }
         return buf.toString();
     }
-    //endregion
 
     //region json
     //final 字段不会覆盖, TypeReference
@@ -387,5 +393,6 @@ public final class App extends SystemUtils {
             return json.toString();
         }
     }
+    //endregion
     //endregion
 }

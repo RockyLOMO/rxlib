@@ -37,7 +37,7 @@ import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 import static org.rx.core.Extends.eq;
 
 @Slf4j
@@ -201,7 +201,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         String p = filePath;
         if (p.startsWith("~/")) {
-            p = App.USER_HOME + p.substring(1);
+            p = Sys.USER_HOME + p.substring(1);
         }
         Files.deleteBefore(Files.getFullPath(p), DateTime.now(timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }

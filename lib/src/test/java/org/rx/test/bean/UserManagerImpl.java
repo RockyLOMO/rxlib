@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.exception.InvalidException;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class UserManagerImpl implements UserManager {

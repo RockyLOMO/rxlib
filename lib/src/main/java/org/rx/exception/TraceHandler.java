@@ -20,7 +20,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 import static org.rx.core.Extends.as;
 
 @Slf4j

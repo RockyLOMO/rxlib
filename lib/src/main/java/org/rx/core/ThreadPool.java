@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
@@ -17,7 +16,6 @@ import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 
-import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -566,7 +564,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     static class DynamicSizer implements TimerTask {
         static final long SAMPLING_PERIOD = 3000L;
         static final int SAMPLING_TIMES = 2;
-        final OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
@@ -577,7 +574,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public void run(Timeout timeout) throws Exception {
             try {
-                Decimal cpuLoad = Decimal.valueOf(os.getSystemCpuLoad() * 100);
+                Decimal cpuLoad = Decimal.valueOf(Sys.osMx.getSystemCpuLoad() * 100);
                 for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : hold.entrySet()) {
                     ThreadPoolExecutor pool = entry.getKey();
                     if (pool instanceof ScheduledExecutorService) {

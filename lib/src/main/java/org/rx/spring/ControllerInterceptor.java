@@ -72,7 +72,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        App.logCtx("url", httpEnv.left.getRequestURL().toString());
+        Sys.logCtx("url", httpEnv.left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 

@@ -40,7 +40,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.quietly;
 

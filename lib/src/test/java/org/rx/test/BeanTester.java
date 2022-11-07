@@ -14,7 +14,7 @@ import org.rx.test.bean.PersonGender;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sleep;
 

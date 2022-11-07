@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.util.Snowflake;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,7 +17,7 @@ import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.ifNull;
 
 @Slf4j
@@ -79,7 +78,7 @@ public final class RestClient {
                 args.setError(e);
                 throw e;
             } finally {
-                App.log(args, msg -> {
+                Sys.log(args, msg -> {
                     if (doPost) {
                         msg.appendLine("POST:\t%s", reqUrl);
                     } else {

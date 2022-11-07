@@ -1,7 +1,6 @@
 package org.rx.spring;
 
 import com.alibaba.fastjson.TypeReference;
-import com.sun.management.HotSpotDiagnosticMXBean;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -24,7 +23,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.rx.core.App.fromJson;
+import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Extends.eq;
 
 @RequiredArgsConstructor
@@ -51,9 +50,9 @@ public class MxController {
 
         result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take))
                 .select(p -> {
-                    Map<String, Object> t = App.toJsonObject(p);
+                    Map<String, Object> t = Sys.toJsonObject(p);
                     t.remove("elapsedMicros");
-                    t.put("elapsed", App.formatElapsed(p.getElapsedMicros()));
+                    t.put("elapsed", Sys.formatElapsed(p.getElapsedMicros()));
                     return t;
                 }));
 
@@ -75,8 +74,7 @@ public class MxController {
                 case 2:
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");
-                    HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
-                    bean.setVMOption(k, v);
+                    Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
                 case 3:
                     String host = request.getParameter("host");
@@ -115,15 +113,14 @@ public class MxController {
 
     Map<String, Object> svrState(HttpServletRequest request) {
         Map<String, Object> j = new LinkedHashMap<>();
-        j.put("jarFile", App.getJarFile(this));
+        j.put("jarFile", Sys.getJarFile(this));
         j.put("inputArguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
-        HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
         try {
-            bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
+            Sys.diagnosticMx.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
         } catch (Exception e) {
             j.put("UnlockCommercialFeatures", e.toString());
         }
-        j.put("vmOptions", bean.getDiagnosticOptions());
+        j.put("vmOptions", Sys.diagnosticMx.getDiagnosticOptions());
         j.put("systemProperties", System.getProperties());
         j.put("cpuThreads", Constants.CPU_THREADS);
         File root = new File("/");
@@ -145,7 +142,7 @@ public class MxController {
     @SneakyThrows
     @PostConstruct
     public void init() {
-        Class.forName(App.class.getName());
+        Class.forName(Sys.class.getName());
         Tasks.setTimeout(() -> {
             String omega = RxConfig.INSTANCE.getOmega();
             if (omega != null) {

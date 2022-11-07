@@ -10,7 +10,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Set;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 @ChannelHandler.Sharable

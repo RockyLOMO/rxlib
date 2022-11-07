@@ -48,7 +48,7 @@ public class Socks5Upstream extends Upstream {
             //先变更
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> awaitQuietly(() -> {
-                App.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
+                Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
             }, SocksSupport.ASYNC_TIMEOUT));

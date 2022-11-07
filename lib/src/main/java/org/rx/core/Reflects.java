@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
