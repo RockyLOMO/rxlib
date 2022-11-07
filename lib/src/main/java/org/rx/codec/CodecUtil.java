@@ -1,17 +1,13 @@
 package org.rx.codec;
 
-import com.google.common.hash.Hasher;
-import com.google.common.hash.Hashing;
 import io.netty.buffer.ByteBufUtil;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.bouncycastle.util.encoders.HexTranslator;
-import org.rx.bean.ULID;
 import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
-import org.rx.util.function.BiAction;
 
 import java.io.File;
 import java.io.Serializable;
@@ -44,20 +40,21 @@ public class CodecUtil {
         return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
 
-    @SneakyThrows
-    public static long murmurHash3_64(BiAction<Hasher> fn) {
-        Hasher hasher = Hashing.murmur3_128().newHasher();
-        fn.invoke(hasher);
-        return hasher.hash().asLong();
-    }
-
-    //When using 128-bits, the x86 and x64 versions do not produce the same values
-    @SneakyThrows
-    public static ULID murmurHash3_128(BiAction<Hasher> fn) {
-        Hasher hasher = Hashing.murmur3_128().newHasher();
-        fn.invoke(hasher);
-        return ULID.valueOf(hasher.hash().asBytes());
-    }
+    //guava hash
+//    @SneakyThrows
+//    public static long murmurHash3_64(BiAction<Hasher> fn) {
+//        Hasher hasher = Hashing.murmur3_128().newHasher();
+//        fn.invoke(hasher);
+//        return hasher.hash().asLong();
+//    }
+//
+//    //When using 128-bits, the x86 and x64 versions do not produce the same values
+//    @SneakyThrows
+//    public static ULID murmurHash3_128(BiAction<Hasher> fn) {
+//        Hasher hasher = Hashing.murmur3_128().newHasher();
+//        fn.invoke(hasher);
+//        return ULID.valueOf(hasher.hash().asBytes());
+//    }
 
     public static BigInteger hashUnsigned64(Object... args) {
         return hashUnsigned64(Serializer.DEFAULT.serializeToBytes(args));

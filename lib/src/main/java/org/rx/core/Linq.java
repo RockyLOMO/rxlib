@@ -1,7 +1,5 @@
 package org.rx.core;
 
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Streams;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -492,12 +490,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return firstOrDefault((T) null);
     }
 
+    //orElseGet use Extends.ifNull instead
     public T firstOrDefault(T defaultValue) {
         return stream().findFirst().orElse(defaultValue);
-    }
-
-    public T firstOrDefault(Supplier<T> defaultValue) {
-        return stream().findFirst().orElseGet(defaultValue);
     }
 
     public T firstOrDefault(PredicateFunc<T> predicate) {
@@ -505,27 +500,36 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public T last() {
-        return Streams.findLast(stream()).get();
+        T value = lastOrDefault();
+        if (value == null) {
+            throw new NoSuchElementException("No value present");
+        }
+        return value;
     }
 
     public T last(PredicateFunc<T> predicate) {
-        return Streams.findLast(stream().filter(predicate.toPredicate())).get();
+        return where(predicate).last();
     }
 
     public T lastOrDefault() {
-        return lastOrDefault((T) null);
+        T value = null;
+        if (data instanceof List) {
+            List<T> list = (List<T>) data;
+            value = !list.isEmpty() ? list.get(list.size() - 1) : null;
+        } else {
+            for (T datum : data) {
+                value = datum;
+            }
+        }
+        return value;
     }
 
     public T lastOrDefault(T defaultValue) {
-        return Streams.findLast(stream()).orElse(defaultValue);
-    }
-
-    public T lastOrDefault(Supplier<T> defaultValue) {
-        return Streams.findLast(stream()).orElseGet(defaultValue);
+        return ifNull(lastOrDefault(), defaultValue);
     }
 
     public T lastOrDefault(PredicateFunc<T> predicate) {
-        return Streams.findLast(stream().filter(predicate.toPredicate())).orElse(null);
+        return where(predicate).lastOrDefault();
     }
 
     public T single() {
@@ -639,13 +643,25 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public List<T> toList() {
         List<T> result = newList();
-        Iterables.addAll(result, data);
+        if (data instanceof Collection) {
+            result.addAll((Collection<T>) data);
+        } else {
+            for (T item : data) {
+                result.add(item);
+            }
+        }
         return result;
     }
 
     public Set<T> toSet() {
         Set<T> result = newSet();
-        Iterables.addAll(result, data);
+        if (data instanceof Collection) {
+            result.addAll((Collection<T>) data);
+        } else {
+            for (T item : data) {
+                result.add(item);
+            }
+        }
         return result;
     }
 

@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import com.google.common.net.HttpHeaders;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -13,6 +12,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.ServletRequestUtils;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -47,7 +47,7 @@ public class Servlets extends ServletRequestUtils {
     public static String requestIp() {
         HttpServletRequest request = currentRequest().left;
 
-        String ip = request.getHeader(HttpHeaders.X_FORWARDED_FOR);
+        String ip = request.getHeader("X-Forwarded-For");
         if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("Proxy-Client-IP");
         }

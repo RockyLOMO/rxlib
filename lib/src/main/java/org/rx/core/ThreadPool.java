@@ -1,10 +1,10 @@
 package org.rx.core;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
@@ -731,9 +731,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static ThreadFactory newThreadFactory(String name) {
-        //setUncaughtExceptionHandler跟全局ExceptionHandler.INSTANCE重复
-        return new ThreadFactoryBuilder().setThreadFactory(FastThreadLocalThread::new)
-                .setDaemon(true).setNameFormat(String.format("%s%s-%%d", POOL_NAME_PREFIX, name)).build();
+        //可用全局setUncaughtExceptionHandler
+        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
+//                , Thread.NORM_PRIORITY + 1
+        );
     }
 
     static int incrSize(ThreadPoolExecutor pool) {

@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import com.google.common.base.CaseFormat;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +22,7 @@ import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.rx.util.thrid.CaseFormat;
 
 import java.io.InputStream;
 import java.io.Reader;

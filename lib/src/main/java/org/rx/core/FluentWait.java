@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.google.common.base.Throwables;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
@@ -178,7 +177,12 @@ public class FluentWait {
                 }
             }
         }
-        Throwables.throwIfUnchecked(e);
+        if (e instanceof RuntimeException) {
+            throw (RuntimeException) e;
+        }
+        if (e instanceof Error) {
+            throw (Error) e;
+        }
         throw new RuntimeException(e);
     }
 }

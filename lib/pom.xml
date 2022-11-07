@@ -58,7 +58,7 @@
         <commons-io.version>2.11.0</commons-io.version>
         <zip4j.version>2.10.0</zip4j.version>
         <h2.version>2.1.214</h2.version>
-        <guava.version>30.1.1-jre</guava.version>
+<!--        <guava.version>31.1-jre</guava.version>-->
         <netty.version>4.1.82.Final</netty.version>
         <bcprov.version>1.70</bcprov.version>
         <okhttp.version>4.10.0</okhttp.version>
@@ -114,11 +114,11 @@
             <artifactId>fastjson</artifactId>
             <version>${fastjson.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>${guava.version}</version>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>com.google.guava</groupId>-->
+<!--            <artifactId>guava</artifactId>-->
+<!--            <version>${guava.version}</version>-->
+<!--        </dependency>-->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>

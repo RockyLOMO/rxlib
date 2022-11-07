@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import com.google.common.base.CaseFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
@@ -9,6 +8,7 @@ import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.util.function.BiFunc;
+import org.rx.util.thrid.CaseFormat;
 
 import java.io.Serializable;
 import java.util.ArrayList;

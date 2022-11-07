@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.google.common.eventbus.EventBus;
 import lombok.*;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
