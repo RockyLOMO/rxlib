@@ -9,7 +9,6 @@ import lombok.Generated;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-import javax.annotation.Nonnull;
 import java.util.Objects;
 
 /**
@@ -19,27 +18,33 @@ import java.util.Objects;
 @EqualsAndHashCode
 public class CrcDescription {
 
-    @Getter protected final int     width;
-    @Getter protected final long    poly;
-    @Getter protected final long    init;
-    @Getter protected final boolean refin;
-    @Getter protected final boolean refot;
-    @Getter protected final long    xorot;
+    @Getter
+    protected final int width;
+    @Getter
+    protected final long poly;
+    @Getter
+    protected final long init;
+    @Getter
+    protected final boolean refin;
+    @Getter
+    protected final boolean refot;
+    @Getter
+    protected final long xorot;
 
     @SuppressWarnings("CopyConstructorMissesField")
-    public CrcDescription(@Nonnull final CrcDescription model) {
+    public CrcDescription(final CrcDescription model) {
         this(Objects.requireNonNull(model, "CRC_model_d::new - model is null").getWidth(),
-             model.getPoly(), model.getInit(), model.isRefin(), model.isRefot(), model.getXorot());
+                model.getPoly(), model.getInit(), model.isRefin(), model.isRefot(), model.getXorot());
     }
 
     @Generated
     @Override
     public String toString() {
-        return "CRC-" + getWidth()+"/P"+Long.toHexString(poly).toUpperCase()
-             + "_I" +(init == 0 ? "0" : Long.toHexString(init).toUpperCase())
-             + (refin ? "_RI" : "")
-             + (refot ? "_RO" : "")
-             + (xorot == 0 ? "" : "_X"+Long.toHexString(xorot).toUpperCase());
+        return "CRC-" + getWidth() + "/P" + Long.toHexString(poly).toUpperCase()
+                + "_I" + (init == 0 ? "0" : Long.toHexString(init).toUpperCase())
+                + (refin ? "_RI" : "")
+                + (refot ? "_RO" : "")
+                + (xorot == 0 ? "" : "_X" + Long.toHexString(xorot).toUpperCase());
     }
 
     public CRC getCRC() {

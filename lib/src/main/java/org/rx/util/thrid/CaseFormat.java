@@ -17,7 +17,6 @@ package org.rx.util.thrid;
 import static java.util.Objects.requireNonNull;
 
 import java.io.Serializable;
-import javax.annotation.CheckForNull;
 
 /**
  * Utility class for converting between various ASCII case formats. Behavior is undefined for
@@ -189,7 +188,7 @@ public enum CaseFormat {
         }
 
         @Override
-        public boolean equals(@CheckForNull Object object) {
+        public boolean equals(Object object) {
             if (object instanceof StringConverter) {
                 StringConverter that = (StringConverter) object;
                 return sourceFormat.equals(that.sourceFormat) && targetFormat.equals(that.targetFormat);

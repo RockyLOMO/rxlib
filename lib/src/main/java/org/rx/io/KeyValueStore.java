@@ -1,7 +1,6 @@
 package org.rx.io;
 
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.collect.AbstractSequentialIterator;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
@@ -14,6 +13,7 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
+import org.rx.util.thrid.AbstractSequentialIterator;
 
 import java.io.*;
 import java.util.*;

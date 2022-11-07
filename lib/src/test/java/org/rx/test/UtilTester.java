@@ -3,6 +3,7 @@ package org.rx.test;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.bean.DateTime;
@@ -13,6 +14,7 @@ import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.*;
+import org.rx.util.thrid.CaseFormat;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
@@ -192,12 +194,18 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void version() {
-//        System.out.println(FilenameUtils.getFullPath("b.txt"));
-//        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
-//        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
-
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;
+    }
+
+    @Test
+    public void third() {
+        System.out.println(FilenameUtils.getFullPath("a.txt"));
+        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
+        assert "ROW_ID".equals(CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "rowId"));
+        assert "ROW_ID".equals(CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "RowId"));
     }
 }

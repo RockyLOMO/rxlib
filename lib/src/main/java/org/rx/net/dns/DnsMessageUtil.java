@@ -3,7 +3,6 @@ package org.rx.net.dns;
 import io.netty.handler.codec.dns.*;
 import io.netty.util.ReferenceCounted;
 
-import javax.annotation.Nonnull;
 import java.net.InetSocketAddress;
 
 public class DnsMessageUtil {
@@ -44,22 +43,15 @@ public class DnsMessageUtil {
 //        return newQuery;
 //    }
 
-    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsQuery dnsQuery, @Nonnull DnsResponseCode rCode) {
+    public static DefaultDnsResponse newErrorResponse(DefaultDnsQuery dnsQuery, DnsResponseCode rCode) {
         if (dnsQuery instanceof DatagramDnsQuery) {
             return newErrorResponse(((DatagramDnsQuery) dnsQuery).recipient(), ((DatagramDnsQuery) dnsQuery).sender(), dnsQuery, rCode);
         }
         return newErrorResponse(null, null, dnsQuery, rCode);
     }
 
-//    public static DefaultDnsResponse newErrorResponse(@Nonnull DefaultDnsResponse dnsResponse, @Nonnull DnsResponseCode rCode) {
-//        if (dnsResponse instanceof DatagramDnsResponse) {
-//            return newErrorResponse(((DatagramDnsResponse) dnsResponse).sender(), ((DatagramDnsResponse) dnsResponse).recipient(), dnsResponse, rCode);
-//        }
-//        return newErrorResponse(null, null, dnsResponse, rCode);
-//    }
-
     private static DefaultDnsResponse newErrorResponse(InetSocketAddress sender, InetSocketAddress recipient,
-                                                       @Nonnull DnsMessage dnsMessage, @Nonnull DnsResponseCode rCode) {
+                                                       DnsMessage dnsMessage, DnsResponseCode rCode) {
         DefaultDnsResponse response;
         if (sender != null && recipient != null) {
             response = new DatagramDnsResponse(sender, recipient, dnsMessage.id(), dnsMessage.opCode(), rCode);

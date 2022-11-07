@@ -14,8 +14,6 @@
 
 package org.rx.util.thrid;
 
-import javax.annotation.CheckForNull;
-
 /**
  * Legacy version of {@link java.util.function.Predicate java.util.function.Predicate}. Determines a
  * true or false value for a given input.
@@ -59,7 +57,7 @@ public interface Predicate<T extends Object> extends java.util.function.Predicat
      * predicates are known <i>not</i> to be interchangeable.
      */
     @Override
-    boolean equals(@CheckForNull Object object);
+    boolean equals(Object object);
 
     @Override
     default boolean test(T input) {
