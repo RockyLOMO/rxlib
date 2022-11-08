@@ -18,8 +18,7 @@ import org.rx.util.function.PredicateFunc;
 
 import java.net.InetAddress;
 
-import static org.rx.core.Extends.eq;
-import static org.rx.core.Extends.sneakyInvoke;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 class ComboIPSearcher implements IPSearcher {
@@ -81,7 +80,7 @@ class ComboIPSearcher implements IPSearcher {
 //                () -> ipData(host), () -> ipWho(host));
         RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
-        return sneakyInvoke(() -> fns.next().invoke(finalHost), 3);
+        return quietly(() -> fns.next().invoke(finalHost), 3);
     }
 
     //6k/d

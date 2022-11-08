@@ -172,7 +172,7 @@ public final class NameserverClient extends Disposable {
     }
 
     public CompletableFuture<?> deregisterAsync() {
-        return Tasks.runAsync(() -> each(hold, p -> sneakyInvoke(() -> p.ns.deregister(), DEFAULT_RETRY)));
+        return Tasks.runAsync(() -> each(hold, p -> quietly(() -> p.ns.deregister(), DEFAULT_RETRY)));
     }
 
     public List<InetAddress> discover(@NonNull String appName) {

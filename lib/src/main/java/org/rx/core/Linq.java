@@ -206,12 +206,12 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public <TR> Linq<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
-        return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p)))));
+        return me(stream().flatMap(p -> newStream(selector.apply(p))));
     }
 
     public <TR> Linq<TR> selectMany(BiFuncWithIndex<T, Iterable<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().flatMap(p -> newStream(sneakyInvoke(() -> selector.invoke(p, counter.getAndIncrement())))));
+        return me(stream().flatMap(p -> newStream(quietly(() -> selector.invoke(p, counter.getAndIncrement())))));
     }
 
     public Linq<T> where(PredicateFunc<T> predicate) {
@@ -238,7 +238,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public <TI, TR> Linq<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return join(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
+        return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     public <TI, TR> Linq<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
@@ -255,7 +255,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public <TI, TR> Linq<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
-        return leftJoin(stream().flatMap(p -> newStream(sneakyInvoke(() -> innerSelector.invoke(p)))).collect(Collectors.toList()), keySelector, resultSelector);
+        return leftJoin(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
     public boolean all(PredicateFunc<T> predicate) {
@@ -556,7 +556,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
                 flags |= EachFunc.ACCEPT;
                 return flags;
             }
-            if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
+            if (!quietly(() -> predicate.invoke(p, i))) {
                 doAccept.set(true);
                 flags |= EachFunc.ACCEPT;
             }
@@ -575,7 +575,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     public Linq<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
         return me((p, i) -> {
             int flags = EachFunc.NONE;
-            if (!sneakyInvoke(() -> predicate.invoke(p, i))) {
+            if (!quietly(() -> predicate.invoke(p, i))) {
                 flags |= EachFunc.BREAK;
                 return flags;
             }

@@ -57,7 +57,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> sIps = server.shadowCache.get(k);
             if (sIps == null) {
                 //未命中也缓存
-                server.shadowCache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections::emptyList),
+                server.shadowCache.put(k, sIps = quietly(() -> shadowServers.next().getSupport().resolveHost(domain), 2, Collections::emptyList),
                         CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));//缓存必须有值
             }
             if (CollectionUtils.isEmpty(sIps)) {

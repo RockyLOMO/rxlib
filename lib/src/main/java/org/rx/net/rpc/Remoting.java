@@ -156,17 +156,19 @@ public final class Remoting {
                         };
                         sync.v.onReconnected.combine((s, e) -> {
                             initFn.invoke((T) p.getProxyObject(), (StatefulTcpClient) s);
-                            s.asyncScheduler().runAsync(() -> each(getClientBeans((StatefulTcpClient) s).values(), val -> {
-                                if (val.syncRoot.getHoldCount() == 0) {
-                                    return;
+                            s.asyncScheduler().runAsync(() -> {
+                                for (ClientBean val : getClientBeans((StatefulTcpClient) s).values()) {
+                                    if (val.syncRoot.getHoldCount() == 0) {
+                                        return;
+                                    }
+                                    log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
+                                    try {
+                                        s.send(val.pack);
+                                    } catch (ClientDisconnectedException ex) {
+                                        log.warn("clientSide resent pack[{}] fail", val.pack.id);
+                                    }
                                 }
-                                log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
-                                try {
-                                    s.send(val.pack);
-                                } catch (ClientDisconnectedException ex) {
-                                    log.warn("clientSide resent pack[{}] fail", val.pack.id);
-                                }
-                            }));
+                            });
                         });
                         initFn.invoke((T) p.getProxyObject(), sync.v);
                         //onHandshake returnObject的情况
