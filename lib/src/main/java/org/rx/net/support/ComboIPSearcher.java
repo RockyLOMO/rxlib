@@ -14,9 +14,9 @@ import org.rx.io.KeyValueStoreConfig;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.PredicateFunc;
 
 import java.net.InetAddress;
-import java.util.function.Predicate;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sneakyInvoke;
@@ -180,7 +180,7 @@ class ComboIPSearcher implements IPSearcher {
                 json.getString("org"), null);
     }
 
-    private JSONObject getJson(String url, Predicate<JSONObject> check) {
+    private JSONObject getJson(String url, PredicateFunc<JSONObject> check) {
         HttpClient client = new HttpClient(TIMEOUT_SECONDS);
         client.setEnableLog(true);
         String text = client.get(url).toString();

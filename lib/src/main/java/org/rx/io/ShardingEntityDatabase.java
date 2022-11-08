@@ -132,7 +132,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.deleteById(entityType, id)) {
                     rf.set(true);
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.get();
@@ -160,7 +160,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             if (p.exists(query)) {
                 rf.set(true);
-                asyncContinue(false);
+                circuitContinue(false);
             }
         });
         return rf.get();
@@ -173,7 +173,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.existsById(entityType, id)) {
                     rf.set(true);
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.get();
@@ -188,7 +188,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 rf.v = p.findById(entityType, id);
                 if (rf.v != null) {
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.v;
@@ -202,7 +202,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             rf.v = p.findOne(query);
             if (rf.v != null) {
-                asyncContinue(false);
+                circuitContinue(false);
             }
         });
         return rf.v;
@@ -290,13 +290,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
     @SneakyThrows
     void invokeAll(BiAction<EntityDatabase> fn) {
         if (enableAsync) {
-            Linq.from(nodes, true).forEach(tuple -> {
-                try {
-                    fn.invoke(tuple.right);
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
-                }
-            });
+            Linq.from(nodes, true).forEach(tuple -> fn.accept(tuple.right));
             return;
         }
 

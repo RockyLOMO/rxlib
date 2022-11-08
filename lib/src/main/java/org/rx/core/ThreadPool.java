@@ -913,9 +913,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             f = f.thenApplyAsync(t -> {
                 COMPLETION_RETURNED_VALUE.set(t);
                 try {
-                    return task.invoke();
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
+                    return task.get();
                 } finally {
                     COMPLETION_RETURNED_VALUE.remove();
                 }

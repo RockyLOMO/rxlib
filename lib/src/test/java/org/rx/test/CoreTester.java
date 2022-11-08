@@ -28,7 +28,6 @@ import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
 
 import javax.servlet.http.HttpServletResponse;
-import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -360,13 +359,13 @@ public class CoreTester extends AbstractTester {
             log.info("exec PERIOD");
             int i = c.incrementAndGet();
             if (i > 10) {
-                asyncContinue(false);
+                circuitContinue(false);
                 return null;
             }
             if (i == 4) {
                 throw new InvalidException("Will exec next");
             }
-            asyncContinue(true);
+            circuitContinue(true);
             return i;
         }, oneSecond, c, TimeoutFlag.PERIOD.flags());
         sleep(8000);
@@ -378,7 +377,7 @@ public class CoreTester extends AbstractTester {
         timer.setTimeout(() -> {
             log.info("exec nextDelayFn");
             c.incrementAndGet();
-            asyncContinue(true);
+            circuitContinue(true);
         }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
         sleep(5000);
         log.info("exec nextDelayFn ok");

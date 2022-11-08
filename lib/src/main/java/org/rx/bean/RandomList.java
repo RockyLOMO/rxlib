@@ -151,16 +151,12 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         if (changed) {
             if (sortFunc != null) {
                 elements.sort((o1, o2) -> {
-                    try {
-                        Comparable c1 = sortFunc.invoke(o1.element);
-                        Comparable c2 = sortFunc.invoke(o2.element);
-                        if (c1 == null || c2 == null) {
-                            return c1 == null ? (c2 == null ? 0 : 1) : -1;
-                        }
-                        return c1.compareTo(c2);
-                    } catch (Throwable e) {
-                        throw InvalidException.sneaky(e);
+                    Comparable c1 = sortFunc.apply(o1.element);
+                    Comparable c2 = sortFunc.apply(o2.element);
+                    if (c1 == null || c2 == null) {
+                        return c1 == null ? (c2 == null ? 0 : 1) : -1;
                     }
+                    return c1.compareTo(c2);
                 });
             }
             temp = null;

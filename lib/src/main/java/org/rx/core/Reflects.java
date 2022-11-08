@@ -14,6 +14,7 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -28,7 +29,6 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BiFunction;
 
 import static org.rx.core.Sys.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
@@ -51,7 +51,7 @@ public class Reflects extends ClassUtils {
     static class ConvertBean<TS, TT> {
         final Class<TS> baseFromType;
         final Class<TT> toType;
-        final BiFunction<TS, Class<TT>, TT> converter;
+        final TripleFunc<TS, Class<TT>, TT> converter;
     }
 
     static class SecurityManagerEx extends SecurityManager {
@@ -468,7 +468,7 @@ public class Reflects extends ClassUtils {
         }
     }
 
-    public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
+    public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull TripleFunc<TS, Class<TT>, TT> converter) {
         convertBeans.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 

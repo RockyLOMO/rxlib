@@ -8,10 +8,10 @@ import org.rx.core.Disposable;
 import org.rx.core.EventArgs;
 import org.rx.core.EventTarget;
 import org.rx.core.Tasks;
+import org.rx.util.function.PredicateFunc;
 
 import java.nio.file.*;
 import java.util.concurrent.Future;
-import java.util.function.Predicate;
 
 import static org.rx.core.Extends.quietly;
 
@@ -42,7 +42,7 @@ public class FileWatcher extends Disposable implements EventTarget<FileWatcher> 
     private final WatchService service;
     private final Future<?> future;
     @Setter
-    private Predicate<Path> filter;
+    private PredicateFunc<Path> filter;
 
     @Override
     public FlagsEnum<EventFlags> eventFlags() {
@@ -54,7 +54,7 @@ public class FileWatcher extends Disposable implements EventTarget<FileWatcher> 
     }
 
     @SneakyThrows
-    public FileWatcher(String directoryPath, Predicate<Path> filter) {
+    public FileWatcher(String directoryPath, PredicateFunc<Path> filter) {
         this.directoryPath = directoryPath;
         this.filter = filter;
 
@@ -78,7 +78,7 @@ public class FileWatcher extends Disposable implements EventTarget<FileWatcher> 
     @SneakyThrows
     @Override
     protected void freeObjects() {
-        future.cancel(false);
+        future.cancel(true);
         service.close();
     }
 

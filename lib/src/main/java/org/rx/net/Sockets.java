@@ -36,7 +36,6 @@ import org.rx.util.function.BiFunc;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import static org.rx.bean.$.$;
@@ -543,7 +542,7 @@ public final class Sockets {
     //#endregion
 
     //region httpProxy
-    public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {
+    public static <T> T httpProxyInvoke(String proxyAddr, BiFunc<String, T> func) {
         setHttpProxy(proxyAddr);
         try {
             return func.apply(proxyAddr);

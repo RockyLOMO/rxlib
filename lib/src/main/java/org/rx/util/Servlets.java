@@ -76,7 +76,7 @@ public class Servlets extends ServletRequestUtils {
     public static String requestIp(boolean throwOnEmpty) {
         try {
             return requestIp();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
             } else {

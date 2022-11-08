@@ -42,7 +42,7 @@ public class NtpClock extends Clock implements Serializable {
                 tsAgent[1] += offset;
                 log.debug("ntp inject offset {}", offset);
             }
-            asyncContinue(false);
+            circuitContinue(false);
         });
         client.close();
     }

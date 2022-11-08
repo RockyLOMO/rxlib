@@ -139,7 +139,7 @@ public class UdpClient implements EventTarget<UdpClient> {
             queue.put(message.id, ctx);
             ctx.future = Tasks.setTimeout(() -> {
                 channel.writeAndFlush(serialize(remoteAddress, message));
-                asyncContinue(++ctx.resend <= maxResend);
+                circuitContinue(++ctx.resend <= maxResend);
             }, waitAckTimeoutMillis / maxResend);
         }
         ChannelFuture future = channel.writeAndFlush(serialize(remoteAddress, message));

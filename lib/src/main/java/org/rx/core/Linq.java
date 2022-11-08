@@ -215,13 +215,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> where(PredicateFunc<T> predicate) {
-        return me(stream().filter(p -> {
-            try {
-                return predicate.invoke(p);
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }));
+        return me(stream().filter(predicate));
     }
 
     public Linq<T> where(PredicateFuncWithIndex<T> predicate) {
@@ -316,16 +310,12 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     @SuppressWarnings(NON_RAW_TYPES)
     public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector) {
         return (p1, p2) -> {
-            try {
-                Comparable c1 = as(keySelector.invoke(p1), Comparable.class);
-                Comparable c2 = as(keySelector.invoke(p2), Comparable.class);
-                if (c1 == null || c2 == null) {
-                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
-                }
-                return c1.compareTo(c2);
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
+            Comparable c1 = as(keySelector.apply(p1), Comparable.class);
+            Comparable c2 = as(keySelector.apply(p2), Comparable.class);
+            if (c1 == null || c2 == null) {
+                return c1 == null ? (c2 == null ? 0 : 1) : -1;
             }
+            return c1.compareTo(c2);
         };
     }
 
@@ -340,24 +330,20 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     @SuppressWarnings(NON_RAW_TYPES)
     public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector) {
         return (p1, p2) -> {
-            try {
-                List<Object> k1s = keySelector.invoke(p1), k2s = keySelector.invoke(p2);
-                for (int i = 0; i < k1s.size(); i++) {
-                    Comparable c1 = as(k1s.get(i), Comparable.class);
-                    Comparable c2 = as(k2s.get(i), Comparable.class);
-                    if (c1 == null || c2 == null) {
-                        return c1 == null ? (c2 == null ? 0 : 1) : -1;
-                    }
-                    int r = c1.compareTo(c2);
-                    if (r == 0) {
-                        continue;
-                    }
-                    return r;
+            List<Object> k1s = keySelector.apply(p1), k2s = keySelector.apply(p2);
+            for (int i = 0; i < k1s.size(); i++) {
+                Comparable c1 = as(k1s.get(i), Comparable.class);
+                Comparable c2 = as(k2s.get(i), Comparable.class);
+                if (c1 == null || c2 == null) {
+                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
                 }
-                return 0;
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
+                int r = c1.compareTo(c2);
+                if (r == 0) {
+                    continue;
+                }
+                return r;
             }
+            return 0;
         };
     }
 
@@ -417,13 +403,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public int count(PredicateFunc<T> predicate) {
-        return (int) stream().filter(p -> {
-            try {
-                return predicate.invoke(p);
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }).count();
+        return (int) stream().filter(predicate).count();
     }
 
     public T max() {
@@ -458,13 +438,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public Decimal sumDecimal(BiFunc<T, Decimal> selector) {
         $<Decimal> sumValue = $(Decimal.ZERO);
-        stream().forEach(p -> {
-            try {
-                sumValue.v = sumValue.v.add(selector.invoke(p));
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        });
+        stream().forEach(p -> sumValue.v = sumValue.v.add(selector.apply(p)));
         return sumValue.v;
     }
 
@@ -673,13 +647,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     @SneakyThrows
     public <TK, TR> Map<TK, TR> toMap(BiFunc<T, TK> keySelector, BiFunc<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();
-        stream().forEach(item -> {
-            try {
-                result.put(keySelector.invoke(item), resultSelector.invoke(item));
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        });
+        stream().forEach(item -> result.put(keySelector.apply(item), resultSelector.apply(item)));
         return result;
     }
 }
