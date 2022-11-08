@@ -562,12 +562,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        static final long SAMPLING_PERIOD = 3000L;
-        static final int SAMPLING_TIMES = 2;
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
         DynamicSizer() {
-            timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+            timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -583,7 +581,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     thread(cpuLoad, pool, entry.getValue());
                 }
             } finally {
-                timer.newTimeout(this, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+                timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
             }
         }
 
@@ -600,7 +598,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             if (cpuLoad.gt(waterMark.getHigh())) {
-                if (++decrementCounter >= SAMPLING_TIMES) {
+                if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
                     log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
                             pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
@@ -611,7 +609,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
-                if (++incrementCounter >= SAMPLING_TIMES) {
+                if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
                     log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
                             pool.getPoolSize(), pool.getQueue().size(),
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
@@ -638,8 +636,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                     pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
 
-            if (size > RxConfig.INSTANCE.threadPool.minCoreSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
-                if (++decrementCounter >= SAMPLING_TIMES) {
+            RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+            if (size > conf.minDynamicSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
+                if (++decrementCounter >= conf.samplingTimes) {
                     log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrSize(pool));
                     decrementCounter = 0;
@@ -649,7 +648,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             if (active >= size && cpuLoad.lt(waterMark.getLow())) {
-                if (++incrementCounter >= SAMPLING_TIMES) {
+                if (++incrementCounter >= conf.samplingTimes) {
                     log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
                             cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                     incrementCounter = 0;
@@ -737,8 +736,8 @@ public class ThreadPool extends ThreadPoolExecutor {
     static int incrSize(ThreadPoolExecutor pool) {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
         int poolSize = pool.getCorePoolSize() + conf.resizeQuantity;
-        if (poolSize > conf.maxCoreSize) {
-            return conf.maxCoreSize;
+        if (poolSize > conf.maxDynamicSize) {
+            return conf.maxDynamicSize;
         }
         pool.setCorePoolSize(poolSize);
         return poolSize;
@@ -746,7 +745,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     static int decrSize(ThreadPoolExecutor pool) {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-        int poolSize = Math.max(conf.minCoreSize, pool.getCorePoolSize() - conf.resizeQuantity);
+        int poolSize = Math.max(conf.minDynamicSize, pool.getCorePoolSize() - conf.resizeQuantity);
         pool.setCorePoolSize(poolSize);
         return poolSize;
     }

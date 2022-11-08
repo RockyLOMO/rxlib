@@ -383,9 +383,9 @@ public final class Sys extends SystemUtils {
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(e);
             } finally {
-                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplePeriod(), TimeUnit.MILLISECONDS);
+                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
             }
-        }, RxConfig.INSTANCE.getMxSamplePeriod(), TimeUnit.MILLISECONDS);
+        }, RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
     }
 
     public static Info mxInfo() {

@@ -23,12 +23,14 @@ public final class RxConfig {
         String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
         String THREAD_POOL_LOW_CPU_WATER_MARK = "app.threadPool.lowCpuWaterMark";
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
-        String THREAD_POOL_MIN_CORE_SIZE = "app.threadPool.minCoreSize";
-        String THREAD_POOL_MAX_CORE_SIZE = "app.threadPool.maxCoreSize";
-        String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
-        String THREAD_POOL_SCHEDULE_INIT_SIZE = "app.threadPool.scheduleInitSize";
-        String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
+        String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
+        String THREAD_POOL_CPU_LOAD_WARNING_THRESHOLD = "app.threadPool.cpuLoadWarningThreshold";
+        String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
+        String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
+        String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";
+        String THREAD_POOL_MAX_DYNAMIC_SIZE = "app.threadPool.maxDynamicSize";
+        String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
 
         String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
         String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
@@ -49,7 +51,7 @@ public final class RxConfig {
         String NTP_SERVERS = "app.net.ntp.servers";
 
         String APP_ID = "app.id";
-        String MX_SAMPLE_PERIOD = "app.mxSamplePeriod";
+        String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
         String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
@@ -62,20 +64,20 @@ public final class RxConfig {
 
     @Data
     public static class ThreadPoolConfig {
-        int cpuLoadWarningThreshold;
-
         int initSize;
         int keepAliveSeconds;
         int queueCapacity;
         int lowCpuWaterMark;
         int highCpuWaterMark;
-
-        int minCoreSize;
-        int maxCoreSize;
-        int resizeQuantity;
-        int scheduleInitSize;
-        String traceName;
         int replicas;
+        String traceName;
+
+        int cpuLoadWarningThreshold;
+        long samplingPeriod;
+        int samplingTimes;
+        int minDynamicSize;
+        int maxDynamicSize;
+        int resizeQuantity;
     }
 
     @Data
@@ -90,7 +92,6 @@ public final class RxConfig {
     @Data
     public static class DiskConfig {
         int diskUsageWarningThreshold;
-        int monitorPeriod;
         int entityDatabaseRollPeriod;
     }
 
@@ -131,7 +132,7 @@ public final class RxConfig {
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
     String id;
-    long mxSamplePeriod;
+    long mxSamplingPeriod;
     int traceKeepDays;
     int traceErrorMessageSize;
     long traceSlowElapsedMicros;
@@ -156,18 +157,19 @@ public final class RxConfig {
 
     @SneakyThrows
     public void refreshFromSystemProperty() {
-        threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, 80);
         threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, 0);
         threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, 600);
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, 0);
         threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, 40);
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
-        threadPool.minCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_CORE_SIZE, 2);
-        threadPool.maxCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_CORE_SIZE, 1000);
-        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
-        threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
-        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
+        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
+        threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, 80);
+        threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, 3000);
+        threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, 2);
+        threadPool.minDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_DYNAMIC_SIZE, 2);
+        threadPool.maxDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_DYNAMIC_SIZE, 1000);
+        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
 
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, 95);
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
@@ -203,7 +205,7 @@ public final class RxConfig {
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
-        mxSamplePeriod = SystemPropertyUtil.getInt(ConfigNames.MX_SAMPLE_PERIOD, 60000);
+        mxSamplingPeriod = SystemPropertyUtil.getInt(ConfigNames.MX_SAMPLING_PERIOD, 60000);
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
         traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);

@@ -24,7 +24,7 @@ public class NtpClock extends Clock implements Serializable {
     static boolean injected;
 
     public static void scheduleTask() {
-        Tasks.setTimeout(NtpClock::sync, RxConfig.INSTANCE.net.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
+        Tasks.timer.setTimeout(NtpClock::sync, d -> RxConfig.INSTANCE.net.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
     }
 
     @SneakyThrows

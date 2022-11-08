@@ -171,13 +171,14 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                     entity.setMessages(new ConcurrentLinkedQueue<>());
                     entity.setStackTrace(stackTrace);
                 }
+                RxConfig conf = RxConfig.INSTANCE;
                 Queue<String> queue = entity.getMessages();
-                if (queue.size() > RxConfig.INSTANCE.getTraceErrorMessageSize()) {
+                if (queue.size() > conf.getTraceErrorMessageSize()) {
                     queue.poll();
                 }
                 queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
                 entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setAppName(conf.getId());
                 entity.setThreadName(t.getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
@@ -212,7 +213,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
-        if (getKeepDays() <= 0 || elapsedMicros < RxConfig.INSTANCE.getTraceSlowElapsedMicros()) {
+        RxConfig conf = RxConfig.INSTANCE;
+        if (getKeepDays() <= 0 || elapsedMicros < conf.getTraceSlowElapsedMicros()) {
             return;
         }
 
@@ -234,7 +236,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 }
                 entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
                 entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setAppName(conf.getId());
                 entity.setThreadName(Thread.currentThread().getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
