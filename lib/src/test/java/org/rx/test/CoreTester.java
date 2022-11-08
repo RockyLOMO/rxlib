@@ -405,13 +405,18 @@ public class CoreTester extends AbstractTester {
         assert Sys.formatNanosElapsed(985).equals("985ns");
         assert Sys.formatNanosElapsed(211985).equals("211µs");
         assert Sys.formatNanosElapsed(2211985).equals("2ms");
-        assert Sys.formatNanosElapsed(2211985, 1).equals("2ms");
-        assert Sys.formatNanosElapsed(2048211985).equals("2ms");
-        log.info("{}", toJsonString(Sys.mxInfo()));
-        log.info("dlt: {}", Sys.findDeadlockedThreads());
-        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
+        assert Sys.formatNanosElapsed(2211985, 1).equals("2s");
+        assert Sys.formatNanosElapsed(2048211985).equals("2s");
+
+        Sys.mxScheduleTask(p -> {
+            log.info("Disk={} <- {}", p.getDisks().where(DiskInfo::isBootstrapDisk).first().getUsedPercent(),
+                    toJsonString(p));
+        });
 
         System.out.println("main thread done");
+        sleep(12000);
+        log.info("dlt: {}", Sys.findDeadlockedThreads());
+        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
     }
     //endregion
 

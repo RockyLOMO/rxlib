@@ -77,16 +77,20 @@ public class MxController {
                     Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
                 case 3:
-                    String host = request.getParameter("host");
-                    return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
+                    Sys.threadMx.setThreadContentionMonitoringEnabled(false);
+                    Sys.threadMx.setThreadCpuTimeEnabled(false);
+                    return "ok";
                 case 4:
                     String a1 = request.getParameter("cmd"),
                             a2 = request.getParameter("workspace");
                     StringBuilder echo = new StringBuilder();
-                    ShellCommander cmd = new ShellCommander(a1, a2);
+                    ShellCommander cmd = new ShellCommander(a1, a2).setReadFullyThenExit();
                     cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
                     cmd.start().waitFor(60);
                     return echo.toString();
+                case 5:
+                    String host = request.getParameter("host");
+                    return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
             }
             return svrState(request);
         } catch (Throwable e) {
@@ -121,11 +125,15 @@ public class MxController {
             j.put("UnlockCommercialFeatures", e.toString());
         }
         j.put("vmOptions", Sys.diagnosticMx.getDiagnosticOptions());
-        j.put("systemProperties", System.getProperties());
-        j.put("cpuThreads", Constants.CPU_THREADS);
-        File root = new File("/");
-        j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
-        j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
+        j.put("sysProperties", System.getProperties());
+        j.put("sysEnv", System.getenv());
+        j.put("sysInfo", Sys.mxInfo());
+        j.put("deadlockedThreads", Sys.findDeadlockedThreads());
+        Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
+        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos).toJoinString("\n", Sys.ThreadInfo::toString));
+//        File root = new File("/");
+//        j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
+//        j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
 //        j.put("conf", conf);

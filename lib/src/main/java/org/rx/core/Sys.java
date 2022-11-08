@@ -110,21 +110,23 @@ public final class Sys extends SystemUtils {
     @RequiredArgsConstructor
     public static class ThreadInfo {
         private final java.lang.management.ThreadInfo thread;
-        private final long userTime;
-        private final long cpuTime;
+        private final long userNanos;
+        private final long cpuNanos;
 
         @Override
         public String toString() {
             StringBuilder buf = new StringBuilder(thread.toString());
             int i = buf.indexOf("\n");
-            buf.insert(i, String.format(" UserTime=%s CpuTime=%s", formatNanosElapsed(userTime), formatNanosElapsed(cpuTime)));
+            buf.insert(i, String.format(" BlockedTime=%s WaitedTime=%s UserTime=%s CpuTime=%s",
+                    formatNanosElapsed(thread.getBlockedTime(), 2), formatNanosElapsed(thread.getWaitedTime(), 2),
+                    formatNanosElapsed(userNanos), formatNanosElapsed(cpuNanos)));
             return buf.toString();
         }
     }
 
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
+    public static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-    static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
@@ -399,6 +401,9 @@ public final class Sys extends SystemUtils {
     }
 
     public static Linq<ThreadInfo> getAllThreads() {
+        if (!threadMx.isThreadContentionMonitoringEnabled()) {
+            threadMx.setThreadContentionMonitoringEnabled(true);
+        }
         if (!threadMx.isThreadCpuTimeEnabled()) {
             threadMx.setThreadCpuTimeEnabled(true);
         }
