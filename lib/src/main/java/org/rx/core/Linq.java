@@ -196,13 +196,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public <TR> Linq<TR> select(BiFuncWithIndex<T, TR> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().map(p -> {
-            try {
-                return selector.invoke(p, counter.getAndIncrement());
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }));
+        return me(stream().map(p -> selector.apply(p, counter.getAndIncrement())));
     }
 
     public <TR> Linq<TR> selectMany(BiFunc<T, Iterable<TR>> selector) {
@@ -211,7 +205,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public <TR> Linq<TR> selectMany(BiFuncWithIndex<T, Iterable<TR>> selector) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().flatMap(p -> newStream(quietly(() -> selector.invoke(p, counter.getAndIncrement())))));
+        return me(stream().flatMap(p -> newStream(selector.apply(p, counter.getAndIncrement()))));
     }
 
     public Linq<T> where(PredicateFunc<T> predicate) {
@@ -220,13 +214,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public Linq<T> where(PredicateFuncWithIndex<T> predicate) {
         AtomicInteger counter = new AtomicInteger();
-        return me(stream().filter(p -> {
-            try {
-                return predicate.invoke(p, counter.getAndIncrement());
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        }));
+        return me(stream().filter(p -> predicate.test(p, counter.getAndIncrement())));
     }
 
     public <TI, TR> Linq<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
@@ -556,7 +544,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
                 flags |= EachFunc.ACCEPT;
                 return flags;
             }
-            if (!quietly(() -> predicate.invoke(p, i))) {
+            if (!predicate.test(p, i)) {
                 doAccept.set(true);
                 flags |= EachFunc.ACCEPT;
             }
@@ -575,7 +563,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     public Linq<T> takeWhile(PredicateFuncWithIndex<T> predicate) {
         return me((p, i) -> {
             int flags = EachFunc.NONE;
-            if (!quietly(() -> predicate.invoke(p, i))) {
+            if (!predicate.test(p, i)) {
                 flags |= EachFunc.BREAK;
                 return flags;
             }

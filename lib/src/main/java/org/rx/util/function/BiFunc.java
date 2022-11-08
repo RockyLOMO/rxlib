@@ -6,12 +6,12 @@ import java.io.Serializable;
 import java.util.function.Function;
 
 @FunctionalInterface
-public interface BiFunc<TP, TR> extends Function<TP, TR>, Serializable {
-    TR invoke(TP param) throws Throwable;
+public interface BiFunc<T, R> extends Function<T, R>, Serializable {
+    R invoke(T t) throws Throwable;
 
     @SneakyThrows
     @Override
-    default TR apply(TP tp) {
-        return invoke(tp);
+    default R apply(T t) {
+        return invoke(t);
     }
 }
