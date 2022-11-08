@@ -28,6 +28,7 @@ import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -400,46 +401,17 @@ public class CoreTester extends AbstractTester {
 
     @SneakyThrows
     @Test
-    public synchronized void MXBean() {
-        int productCount = 10;
-        ExecutorService fix = Executors.newFixedThreadPool(productCount);
-        ThreadPool pool = new ThreadPool(1, 4, "rx");
+    public void mx() {
+        assert Sys.formatNanosElapsed(985).equals("985ns");
+        assert Sys.formatNanosElapsed(211985).equals("211µs");
+        assert Sys.formatNanosElapsed(2211985).equals("2ms");
+        assert Sys.formatNanosElapsed(2211985, 1).equals("2ms");
+        assert Sys.formatNanosElapsed(2048211985).equals("2ms");
+        log.info("{}", toJsonString(Sys.mxInfo()));
+        log.info("dlt: {}", Sys.findDeadlockedThreads());
+        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
 
-        for (int i = 0; i < productCount; i++) {
-            int finalI = i;
-            fix.execute(() -> {
-//                while (true) {
-                pool.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
-                        sleep(5000);
-                    }
-
-                    @Override
-                    public String toString() {
-                        return "-[" + finalI;
-                    }
-                });
-//                }
-            });
-        }
-
-//        for (int i = 0; i < 10; i++) {
-//            Tasks.schedule(() -> {
-//                sleep(2000);
-//            }, 1000);
-//        }
-//
-//        Tasks.schedule(() -> {
-//            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
-//            for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
-//                log.info("{}", thread.toString());
-//            }
-//        }, 2000);
-//        System.out.println("main thread done");
-
-        wait();
+        System.out.println("main thread done");
     }
     //endregion
 

@@ -34,8 +34,8 @@ public class AbstractTester {
                 action.invoke(i);
             }
         } finally {
-            long elapsed = (System.nanoTime() - start) / 1000L;
-            log.info("Invoke {} times={} elapsed={} avg={}", name, count, Sys.formatElapsed(elapsed), Sys.formatElapsed(elapsed / count));
+            long elapsed = System.nanoTime() - start;
+            log.info("Invoke {} times={} elapsed={} avg={}", name, count, Sys.formatNanosElapsed(elapsed), Sys.formatNanosElapsed(elapsed / count));
         }
     }
 
@@ -60,8 +60,8 @@ public class AbstractTester {
             }
             latch.await();
         } finally {
-            long elapsed = (System.nanoTime() - start) / 1000L;
-            log.info("Invoke {} times={} elapsed={}", name, count, Sys.formatElapsed(elapsed));
+            long elapsed = System.nanoTime() - start;
+            log.info("Invoke {} times={} elapsed={}", name, count, Sys.formatNanosElapsed(elapsed));
         }
     }
 

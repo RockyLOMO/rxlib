@@ -52,7 +52,7 @@ public class MxController {
                 .select(p -> {
                     Map<String, Object> t = Sys.toJsonObject(p);
                     t.remove("elapsedMicros");
-                    t.put("elapsed", Sys.formatElapsed(p.getElapsedMicros()));
+                    t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
                     return t;
                 }));
 

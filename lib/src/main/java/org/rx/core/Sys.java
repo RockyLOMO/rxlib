@@ -83,7 +83,7 @@ public final class Sys extends SystemUtils {
         }
 
         public DiskInfo getSummedDisk() {
-            return disks.groupBy(p -> true, (p, x) -> new DiskInfo("/", (long) x.sum(y -> y.freeSpace), (long) x.sum(y -> y.totalSpace))).first();
+            return disks.groupBy(p -> true, (p, x) -> new DiskInfo("SummedDisk", "/", (long) x.sum(y -> y.freeSpace), (long) x.sum(y -> y.totalSpace), false)).first();
         }
     }
 
@@ -92,8 +92,10 @@ public final class Sys extends SystemUtils {
     public static class DiskInfo implements Serializable {
         private static final long serialVersionUID = -9137708658583628112L;
         private final String name;
+        private final String path;
         private final long freeSpace;
         private final long totalSpace;
+        private final boolean bootstrapDisk;
 
         public int getUsedPercent() {
             return Numbers.toPercent((double) (totalSpace - freeSpace) / totalSpace);
@@ -115,7 +117,7 @@ public final class Sys extends SystemUtils {
         public String toString() {
             StringBuilder buf = new StringBuilder(thread.toString());
             int i = buf.indexOf("\n");
-            buf.insert(i, String.format(" UserTime=%s CpuTime=%s", userTime, cpuTime));
+            buf.insert(i, String.format(" UserTime=%s CpuTime=%s", formatNanosElapsed(userTime), formatNanosElapsed(cpuTime)));
             return buf.toString();
         }
     }
@@ -363,11 +365,6 @@ public final class Sys extends SystemUtils {
             }
         }
     }
-
-    public static String formatElapsed(long microSeconds) {
-        long d = 1000L;
-        return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
-    }
     //endregion
 
     //region mx
@@ -377,7 +374,7 @@ public final class Sys extends SystemUtils {
         }
         samplingTimeout = ThreadPool.timer.newTimeout(t -> {
             try {
-                mxHandler.invoke(getInfo());
+                mxHandler.invoke(mxInfo());
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(e);
             } finally {
@@ -386,14 +383,18 @@ public final class Sys extends SystemUtils {
         }, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
     }
 
-    public static Info getInfo() {
+    public static Info mxInfo() {
+        File bd = new File("/");
         return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
                 osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
-                Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getFreeSpace(), p.getTotalSpace())));
+                Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
     }
 
     public static List<ThreadInfo> findDeadlockedThreads() {
         long[] deadlockedTids = Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads());
+        if (Arrays.isEmpty(deadlockedTids)) {
+            return Collections.emptyList();
+        }
         return Linq.from(threadMx.getThreadInfo(deadlockedTids)).select((p, i) -> new ThreadInfo(p, -1, -1)).toList();
     }
 
@@ -414,6 +415,22 @@ public final class Sys extends SystemUtils {
         int ix = p.indexOf(".") + 1;
         String percent = p.substring(0, ix) + p.charAt(ix);
         return percent + "%";
+    }
+
+    public static String formatNanosElapsed(long nanoseconds) {
+        return formatNanosElapsed(nanoseconds, 0);
+    }
+
+    public static String formatNanosElapsed(long nanoseconds, int i) {
+        long d = 1000L, v = nanoseconds;
+        String[] seconds = {"ns", "µs", "ms", "s"};
+        while (v >= d) {
+            v /= d;
+            if (++i >= 3) {
+                break;
+            }
+        }
+        return v + seconds[i];
     }
     //endregion
 

@@ -9,8 +9,7 @@ import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
 import org.rx.core.Linq;
 import org.rx.net.http.cookie.VolatileCookieStorage;
-import org.rx.net.http.cookie.CookiePersistor;
-import org.rx.net.http.cookie.MemoryCookiePersistor;
+import org.rx.net.http.cookie.PersistentCookieStorage;
 
 public final class CookieContainer implements CookieJar {
     static boolean isCookieExpired(Cookie cookie) {
@@ -18,27 +17,21 @@ public final class CookieContainer implements CookieJar {
     }
 
     final VolatileCookieStorage volatileStorage;
-    final CookiePersistor persistor;
+    final PersistentCookieStorage persistentStorage;
 
     public CookieContainer() {
-        this(new VolatileCookieStorage(), new MemoryCookiePersistor());
+        this(new VolatileCookieStorage(), new PersistentCookieStorage());
     }
 
-    public CookieContainer(VolatileCookieStorage cache, CookiePersistor persistor) {
+    public CookieContainer(VolatileCookieStorage cache, PersistentCookieStorage persistentStorage) {
         this.volatileStorage = cache;
-        this.persistor = persistor;
+        this.persistentStorage = persistentStorage;
 
-        this.volatileStorage.addAll(persistor.loadAll());
+        this.volatileStorage.addAll(persistentStorage.loadAll());
     }
 
     @Override
-    public synchronized void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
-        volatileStorage.addAll(cookies);
-        persistor.saveAll(Linq.from(cookies).where(Cookie::persistent).toList());
-    }
-
-    @Override
-    public synchronized List<Cookie> loadForRequest(HttpUrl url) {
+    public List<Cookie> loadForRequest(HttpUrl url) {
         List<Cookie> cookiesToRemove = new ArrayList<>();
         List<Cookie> validCookies = new ArrayList<>();
 
@@ -52,17 +45,23 @@ public final class CookieContainer implements CookieJar {
             }
         }
 
-        persistor.removeAll(cookiesToRemove);
+        persistentStorage.removeAll(cookiesToRemove);
         return validCookies;
+    }
+
+    @Override
+    public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
+        volatileStorage.addAll(cookies);
+        persistentStorage.saveAll(Linq.from(cookies).where(Cookie::persistent).toList());
     }
 
     public synchronized void clearSession() {
         volatileStorage.clear();
-        volatileStorage.addAll(persistor.loadAll());
+        volatileStorage.addAll(persistentStorage.loadAll());
     }
 
     public synchronized void clear() {
         volatileStorage.clear();
-        persistor.clear();
+        persistentStorage.clear();
     }
 }
