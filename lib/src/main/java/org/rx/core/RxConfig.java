@@ -17,6 +17,7 @@ import static org.rx.core.Extends.newConcurrentList;
 @Data
 public final class RxConfig {
     public interface ConfigNames {
+        String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
         String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
         String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
@@ -29,14 +30,12 @@ public final class RxConfig {
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
 
-        String NTP_ENABLE_FLAGS = "app.ntp.enableFlags";
-        String NTP_SYNC_PERIOD = "app.ntp.syncPeriod";
-        String NTP_SERVERS = "app.ntp.servers";
-
+        String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
         String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
         String CACHE_SLIDING_SECONDS = "app.cache.slidingSeconds";
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
+        String DISK_USAGE_WARNING = "app.disk.diskUsageWarningThreshold";
         String DISK_MONITOR_PERIOD = "app.disk.monitorPeriod";
         String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
 
@@ -46,6 +45,9 @@ public final class RxConfig {
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
+        String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
+        String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
+        String NTP_SERVERS = "app.net.ntp.servers";
 
         String APP_ID = "app.id";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
@@ -60,6 +62,8 @@ public final class RxConfig {
 
     @Data
     public static class ThreadPoolConfig {
+        int cpuLoadWarningThreshold;
+
         int initSize;
         int keepAliveSeconds;
         int queueCapacity;
@@ -75,15 +79,9 @@ public final class RxConfig {
     }
 
     @Data
-    public static class NtpConfig {
-        //1 syncTask, 2 injectJdkTime
-        int enableFlags;
-        long syncPeriod;
-        final List<String> servers = newConcurrentList(true);
-    }
-
-    @Data
     public static class CacheConfig {
+        int physicalMemoryUsageWarningThreshold;
+
         Class mainInstance;
         int slidingSeconds;
         int maxItemSize;
@@ -91,6 +89,7 @@ public final class RxConfig {
 
     @Data
     public static class DiskConfig {
+        int diskUsageWarningThreshold;
         int monitorPeriod;
         int entityDatabaseRollPeriod;
     }
@@ -103,6 +102,15 @@ public final class RxConfig {
         int poolMaxSize;
         int poolKeepAliveSeconds;
         String userAgent;
+        NtpConfig ntp = new NtpConfig();
+    }
+
+    @Data
+    public static class NtpConfig {
+        //1 syncTask, 2 injectJdkTime
+        int enableFlags;
+        long syncPeriod;
+        final List<String> servers = newConcurrentList(true);
     }
 
     public static final RxConfig INSTANCE;
@@ -119,7 +127,6 @@ public final class RxConfig {
     }
 
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
-    NtpConfig ntp = new NtpConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
@@ -148,6 +155,7 @@ public final class RxConfig {
 
     @SneakyThrows
     public void refreshFromSystemProperty() {
+        threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, 0);
         threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, 0);
         threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, 600);
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, 0);
@@ -160,14 +168,7 @@ public final class RxConfig {
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
 
-        ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
-        ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
-        ntp.servers.clear();
-        String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
-        if (v != null) {
-            ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
-        }
-
+        cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, 0);
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
         if (mc != null) {
             cache.mainInstance = Class.forName(mc);
@@ -177,6 +178,7 @@ public final class RxConfig {
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, 60);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 5000);
 
+        disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, 0);
         disk.monitorPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_MONITOR_PERIOD, 60000);
         disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, 10000);
 
@@ -189,6 +191,13 @@ public final class RxConfig {
         }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, 120);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
+        net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
+        net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
+        net.ntp.servers.clear();
+        String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
+        if (v != null) {
+            net.ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID);
         if (id == null) {

@@ -35,12 +35,12 @@ public final class NameserverClient extends Disposable {
     static final int DEFAULT_RETRY_PERIOD = 1000;
     static final int DEFAULT_RETRY = 2;
     static final int DEFAULT_HEALTH_PERIOD = 120 * 1000;
-    static final List<RandomList<NsInfo>> GROUP = new CopyOnWriteArrayList<>();
+    static final List<RandomList<NsInfo>> group = new CopyOnWriteArrayList<>();
     static final ResetEventWait syncRoot = new ResetEventWait();
 
     static void reInject() {
         Tasks.setTimeout(() -> {
-            Linq<NsInfo> q = Linq.from(GROUP).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
+            Linq<NsInfo> q = Linq.from(group).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
                 return;
@@ -69,12 +69,12 @@ public final class NameserverClient extends Disposable {
 
     public NameserverClient(String appName) {
         this.appName = appName;
-        GROUP.add(hold);
+        group.add(hold);
     }
 
     @Override
     protected void freeObjects() {
-        GROUP.remove(hold);
+        group.remove(hold);
         for (NsInfo tuple : hold) {
             tryClose(tuple.ns);
         }

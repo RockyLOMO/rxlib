@@ -43,7 +43,7 @@ public final class UdpManager {
             log.info("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
         }
     };
-    static final Map<InetSocketAddress, Channel> HOLD = new ConcurrentHashMap<>();
+    static final Map<InetSocketAddress, Channel> hold = new ConcurrentHashMap<>();
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {
         SocksContext sc = SocksContext.ctx(outbound);
@@ -56,13 +56,13 @@ public final class UdpManager {
     }
 
     public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
-        return HOLD.computeIfAbsent(incomingEp, loadFn.toFunction());
+        return hold.computeIfAbsent(incomingEp, loadFn.toFunction());
     }
 
     public static void closeChannel(InetSocketAddress incomingEp) {
-        Channel channel = HOLD.remove(incomingEp);
+        Channel channel = hold.remove(incomingEp);
         if (channel == null) {
-            log.error("CloseChannel fail {} <> {}", incomingEp, HOLD.keySet());
+            log.error("CloseChannel fail {} <> {}", incomingEp, hold.keySet());
             return;
         }
         tryClose(SocksContext.ctx(channel).upstream);

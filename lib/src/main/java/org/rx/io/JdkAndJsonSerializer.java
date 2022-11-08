@@ -1,10 +1,10 @@
 package org.rx.io;
 
 import com.alibaba.fastjson.JSON;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.rx.core.JsonTypeInvoker;
 import org.rx.core.Strings;
 
 import java.io.ObjectInputStream;
@@ -18,7 +18,7 @@ import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 
 //https://github.com/RuedigerMoeller/fast-serialization
-public class JdkAndJsonSerializer implements Serializer {
+public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
     @RequiredArgsConstructor
     static class JsonWrapper implements Compressible {
         private static final long serialVersionUID = 8279878386622487781L;
@@ -31,8 +31,6 @@ public class JdkAndJsonSerializer implements Serializer {
             return Strings.length(json) >= MIN_LENGTH;
         }
     }
-
-    public static final FastThreadLocal<Type> jsonType = new FastThreadLocal<>();
 
     @SneakyThrows
     @Override
@@ -80,7 +78,7 @@ public class JdkAndJsonSerializer implements Serializer {
 
             JsonWrapper wrapper;
             if ((wrapper = as(obj0, JsonWrapper.class)) != null) {
-                Type type = ifNull(jsonType.getIfExists(), wrapper.type);
+                Type type = ifNull(JSON_TYPE.getIfExists(), wrapper.type);
                 return fromJson(wrapper.json, type);
             }
             return (T) obj0;

@@ -9,7 +9,11 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alibaba.fastjson.serializer.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
+import com.sun.management.ThreadMXBean;
+import io.netty.util.Timeout;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -33,16 +37,92 @@ import java.lang.reflect.Type;
 import java.net.URI;
 import java.util.*;
 
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.rx.core.Constants.PERCENT;
 import static org.rx.core.Extends.as;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class Sys extends SystemUtils {
-    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    @Getter
+    @RequiredArgsConstructor
+    public static class Info implements Serializable {
+        private static final long serialVersionUID = -1263477025428108392L;
+        private final int cpuThreads;
+        private final double cpuLoad;
+        private final int liveThreadCount;
+        private final long freePhysicalMemory;
+        private final long totalPhysicalMemory;
+        private final Linq<DiskInfo> disks;
+
+        public int getCpuLoadPercent() {
+            return Numbers.toPercent(cpuLoad);
+        }
+
+        public long getUsedPhysicalMemory() {
+            return totalPhysicalMemory - freePhysicalMemory;
+        }
+
+        public int getUsedPhysicalMemoryPercent() {
+            return Numbers.toPercent((double) getUsedPhysicalMemory() / totalPhysicalMemory);
+        }
+
+        public boolean hasCpuLoadWarning() {
+            return getCpuLoadPercent() > RxConfig.INSTANCE.threadPool.cpuLoadWarningThreshold;
+        }
+
+        public boolean hasPhysicalMemoryUsageWarning() {
+            return getUsedPhysicalMemoryPercent() > RxConfig.INSTANCE.cache.physicalMemoryUsageWarningThreshold;
+        }
+
+        public boolean hasDiskUsageWarning() {
+            return disks.any(DiskInfo::hasDiskUsageWarning);
+        }
+
+        public DiskInfo getSummedDisk() {
+            return disks.groupBy(p -> true, (p, x) -> new DiskInfo("/", (long) x.sum(y -> y.freeSpace), (long) x.sum(y -> y.totalSpace))).first();
+        }
+    }
+
+    @Getter
+    @RequiredArgsConstructor
+    public static class DiskInfo implements Serializable {
+        private static final long serialVersionUID = -9137708658583628112L;
+        private final String name;
+        private final long freeSpace;
+        private final long totalSpace;
+
+        public int getUsedPercent() {
+            return Numbers.toPercent((double) (totalSpace - freeSpace) / totalSpace);
+        }
+
+        public boolean hasDiskUsageWarning() {
+            return getUsedPercent() > RxConfig.INSTANCE.disk.diskUsageWarningThreshold;
+        }
+    }
+
+    @Getter
+    @RequiredArgsConstructor
+    public static class ThreadInfo {
+        private final java.lang.management.ThreadInfo thread;
+        private final long userTime;
+        private final long cpuTime;
+
+        @Override
+        public String toString() {
+            StringBuilder buf = new StringBuilder(thread.toString());
+            int i = buf.indexOf("\n");
+            buf.insert(i, String.format(" UserTime=%s CpuTime=%s", userTime, cpuTime));
+            return buf.toString();
+        }
+    }
+
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
+    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
@@ -60,6 +140,8 @@ public final class Sys extends SystemUtils {
         return v;
     };
     static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
+    static final long SAMPLING_PERIOD = 5000L;
+    static Timeout samplingTimeout;
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
@@ -67,10 +149,10 @@ public final class Sys extends SystemUtils {
 
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
-        if ((conf.ntp.enableFlags & 1) == 1) {
+        if ((conf.net.ntp.enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
-        if ((conf.ntp.enableFlags & 2) == 2) {
+        if ((conf.net.ntp.enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
                 TimeAdvice.transform();
@@ -285,6 +367,53 @@ public final class Sys extends SystemUtils {
     public static String formatElapsed(long microSeconds) {
         long d = 1000L;
         return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
+    }
+    //endregion
+
+    //region mx
+    public synchronized static void mxScheduleTask(BiAction<Info> mxHandler) {
+        if (samplingTimeout != null) {
+            samplingTimeout.cancel();
+        }
+        samplingTimeout = ThreadPool.timer.newTimeout(t -> {
+            try {
+                mxHandler.invoke(getInfo());
+            } catch (Throwable e) {
+                TraceHandler.INSTANCE.log(e);
+            } finally {
+                t.timer().newTimeout(t.task(), SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+            }
+        }, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+    }
+
+    public static Info getInfo() {
+        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
+                osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
+                Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getFreeSpace(), p.getTotalSpace())));
+    }
+
+    public static List<ThreadInfo> findDeadlockedThreads() {
+        long[] deadlockedTids = Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads());
+        return Linq.from(threadMx.getThreadInfo(deadlockedTids)).select((p, i) -> new ThreadInfo(p, -1, -1)).toList();
+    }
+
+    public static Linq<ThreadInfo> getAllThreads() {
+        if (!threadMx.isThreadCpuTimeEnabled()) {
+            threadMx.setThreadCpuTimeEnabled(true);
+        }
+        boolean includeLock = false;
+        Linq<java.lang.management.ThreadInfo> allThreads = Linq.from(threadMx.dumpAllThreads(includeLock, includeLock));
+        long[] tids = Arrays.toPrimitive(allThreads.select(java.lang.management.ThreadInfo::getThreadId).toArray());
+        long[] threadUserTime = threadMx.getThreadUserTime(tids);
+        long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
+        return allThreads.select((p, i) -> new ThreadInfo(p, threadUserTime[i], threadCpuTime[i]));
+    }
+
+    public static String formatCpuLoad(double val) {
+        String p = String.valueOf(val * PERCENT);
+        int ix = p.indexOf(".") + 1;
+        String percent = p.substring(0, ix) + p.charAt(ix);
+        return percent + "%";
     }
     //endregion
 

@@ -449,7 +449,7 @@ public class CoreTester extends AbstractTester {
         log.info("local ts {}", clock.millis());
 //        NtpClock.sync();
 //        log.info("ntp ts {}", clock.millis());
-        RxConfig.INSTANCE.getNtp().setSyncPeriod(2000);
+        RxConfig.INSTANCE.getNet().getNtp().setSyncPeriod(2000);
         NtpClock.scheduleTask();
         for (int i = 0; i < 10; i++) {
             sleep(2500);

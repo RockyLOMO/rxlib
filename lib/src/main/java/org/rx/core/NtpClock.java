@@ -24,7 +24,7 @@ public class NtpClock extends Clock implements Serializable {
     static boolean injected;
 
     public static void scheduleTask() {
-        Tasks.setTimeout(NtpClock::sync, RxConfig.INSTANCE.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
+        Tasks.setTimeout(NtpClock::sync, RxConfig.INSTANCE.net.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
     }
 
     @SneakyThrows
@@ -32,7 +32,7 @@ public class NtpClock extends Clock implements Serializable {
         NTPUDPClient client = new NTPUDPClient();
         client.setDefaultTimeout(2048);
         client.open();
-        eachQuietly(RxConfig.INSTANCE.ntp.servers, p -> {
+        eachQuietly(RxConfig.INSTANCE.net.ntp.servers, p -> {
             final TimeInfo info = client.getTime(InetAddress.getByName(p));
             info.computeDetails();
             offset = ifNull(info.getOffset(), 0L);

@@ -564,7 +564,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     static class DynamicSizer implements TimerTask {
         static final long SAMPLING_PERIOD = 3000L;
         static final int SAMPLING_TIMES = 2;
-        final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("DynamicSizer"), 800L, TimeUnit.MILLISECONDS, 8);
         final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
 
         DynamicSizer() {
@@ -676,14 +675,15 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static volatile Func<String> traceIdGenerator;
     public static volatile BiAction<String> traceIdChangedHandler;
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
+    static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
+    static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
-    static final DynamicSizer SIZER = new DynamicSizer();
+    static final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
+    static final DynamicSizer sizer = new DynamicSizer();
     static final Map<Object, LockContext> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
-    static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
-    static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
 
     @SneakyThrows
     public static String startTrace(String traceId) {
@@ -830,7 +830,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (cpuWaterMark.getHigh() > 100) {
             cpuWaterMark.setHigh(100);
         }
-        SIZER.register(this, cpuWaterMark);
+        sizer.register(this, cpuWaterMark);
     }
     //endregion
 

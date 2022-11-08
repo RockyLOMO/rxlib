@@ -28,14 +28,14 @@ import java.util.Date;
 import static org.rx.core.Extends.quietly;
 
 public class Servlets extends ServletRequestUtils {
-    static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new FastThreadLocal<>();
+    static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> CTX = new FastThreadLocal<>();
 
     public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
-        holder.set(Tuple.of(request, response));
+        CTX.set(Tuple.of(request, response));
     }
 
     public static Tuple<HttpServletRequest, HttpServletResponse> currentRequest() {
-        Tuple<HttpServletRequest, HttpServletResponse> tuple = holder.getIfExists();
+        Tuple<HttpServletRequest, HttpServletResponse> tuple = CTX.getIfExists();
         if (tuple == null) {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
             //response 注入有问题
