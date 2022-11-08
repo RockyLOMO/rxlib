@@ -26,7 +26,7 @@ public final class RemotingContext {
     static <T> T invoke(Func<T> fn, TcpServer rs, TcpClient rc) {
         CTX.set(new RemotingContext(rs, rc));
         try {
-            return fn.invoke();
+            return fn.apply();
         } finally {
             CTX.remove();
         }

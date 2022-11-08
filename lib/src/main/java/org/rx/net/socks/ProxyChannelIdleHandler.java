@@ -21,7 +21,7 @@ public class ProxyChannelIdleHandler extends IdleStateHandler {
         Sockets.closeOnFlushed(ctx.channel());
         SocksContext sc = SocksContext.ctx(ctx.channel());
         if (sc.onClose != null) {
-            sc.onClose.invoke();
+            sc.onClose.apply();
         }
         super.channelIdle(ctx, evt);
     }

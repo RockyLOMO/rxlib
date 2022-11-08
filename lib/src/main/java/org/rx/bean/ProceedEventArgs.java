@@ -30,7 +30,7 @@ public class ProceedEventArgs extends EventArgs {
     public <T> T proceed(@NonNull Func<T> proceed) throws Throwable {
         long start = System.nanoTime();
         try {
-            T retVal = proceed.invoke();
+            T retVal = proceed.apply();
             returnValue = retVal;
             return retVal;
         } finally {

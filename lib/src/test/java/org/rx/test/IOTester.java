@@ -11,6 +11,8 @@ import org.rx.bean.DateTime;
 import org.rx.bean.ULID;
 import org.rx.core.Arrays;
 import org.rx.core.Linq;
+import org.rx.core.Tasks;
+import org.rx.core.TimeoutFlag;
 import org.rx.io.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
@@ -128,17 +130,11 @@ public class IOTester extends AbstractTester {
             db.save(new PersonBean());
         }
         db.compact();
-//        db.clearTimeRollingFiles();
-//        Tasks.setTimeout(() -> {
-//            db.save(new PersonBean());
-//            return true;
-//        }, 2000);
-//        db.dropMapping(PersonBean.class);
-
-        DiskMonitor.INSTANCE.register(1, () -> System.out.println(1));
-        DiskMonitor.INSTANCE.register(1, () -> System.out.println(11));
-        DiskMonitor.INSTANCE.register(20, () -> System.out.println(20));
-        DiskMonitor.INSTANCE.register(99, () -> System.out.println(99));
+        db.clearTimeRollingFiles();
+        Tasks.setTimeout(() -> {
+            db.save(new PersonBean());
+        }, 2000, null, TimeoutFlag.PERIOD.flags());
+        db.dropMapping(PersonBean.class);
 
         wait();
     }

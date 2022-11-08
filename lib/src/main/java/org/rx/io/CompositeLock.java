@@ -48,7 +48,7 @@ public final class CompositeLock {
                 fLock = owner.getRandomAccessFile().getChannel().lock(block.position, block.size, shared);
             }
 
-            return fn.invoke();
+            return fn.apply();
         } finally {
             if (fLock != null) {
                 fLock.release();

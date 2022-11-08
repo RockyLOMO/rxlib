@@ -85,7 +85,7 @@ public class Validator {
             return null;
         }
         Object retVal;
-        for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member, retVal = proceed.invoke())) {
+        for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member, retVal = proceed.apply())) {
             doThrow(violation);
         }
         return retVal;

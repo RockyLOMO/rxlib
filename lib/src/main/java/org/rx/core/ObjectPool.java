@@ -149,7 +149,7 @@ public class ObjectPool<T> extends Disposable {
             return null;
         }
 
-        T obj = createHandler.invoke();
+        T obj = createHandler.apply();
 
         if (!stack.offer(obj)) {
 //            throw new InvalidException("create object fail");

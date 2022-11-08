@@ -175,7 +175,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public T call() {
             try {
-                return fn.invoke();
+                return fn.apply();
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
@@ -238,69 +238,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             return pool;
         }
 
-        <X, R> Function<X, R> wrap(Function<X, R> fn) {
-            return fn;
-//            return t -> {
-//                ThreadPool.startTrace(traceId);
-//                try {
-//                    return fn.apply(t);
-//                } finally {
-//                    ThreadPool.endTrace();
-//                }
-//            };
-        }
-
-        <X> Consumer<X> wrap(Consumer<X> fn) {
-            return fn;
-//            return t -> {
-//                ThreadPool.startTrace(traceId);
-//                try {
-//                    fn.accept(t);
-//                } finally {
-//                    ThreadPool.endTrace();
-//                }
-//            };
-        }
-
-        Runnable wrap(Runnable fn) {
-            return fn;
-//            return () -> {
-//                ThreadPool.startTrace(traceId);
-//                try {
-//                    fn.run();
-//                } finally {
-//                    ThreadPool.endTrace();
-//                }
-//            };
-        }
-
-        <X, Y, R> BiFunction<X, Y, R> wrap(BiFunction<X, Y, R> fn) {
-            return fn;
-//            return (t, u) -> {
-//                ThreadPool.startTrace(traceId);
-//                try {
-//                    return fn.apply(t, u);
-//                } finally {
-//                    ThreadPool.endTrace();
-//                }
-//            };
-        }
-
-        <X, Y> BiConsumer<X, Y> wrap(BiConsumer<X, Y> fn) {
-            return fn;
-//            return (t, u) -> {
-//                ThreadPool.startTrace(traceId);
-//                try {
-//                    fn.accept(t, u);
-//                } finally {
-//                    ThreadPool.endTrace();
-//                }
-//            };
-        }
-
         @Override
         public <U> CompletableFuture<U> thenApply(Function<? super T, ? extends U> fn) {
-            return uniStage(delegate.thenApply(wrap(fn)));
+            return uniStage(delegate.thenApply(fn));
         }
 
         @Override
@@ -310,12 +250,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U> CompletableFuture<U> thenApplyAsync(Function<? super T, ? extends U> fn, Executor executor) {
-            return uniStage(delegate.thenApplyAsync(wrap(fn), uniPool(executor)));
+            return uniStage(delegate.thenApplyAsync(fn, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<Void> thenAccept(Consumer<? super T> action) {
-            return uniStage(delegate.thenAccept(wrap(action)));
+            return uniStage(delegate.thenAccept(action));
         }
 
         @Override
@@ -325,12 +265,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action, Executor executor) {
-            return uniStage(delegate.thenAcceptAsync(wrap(action), uniPool(executor)));
+            return uniStage(delegate.thenAcceptAsync(action, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<Void> thenRun(Runnable action) {
-            return uniStage(delegate.thenRun(wrap(action)));
+            return uniStage(delegate.thenRun(action));
         }
 
         @Override
@@ -340,12 +280,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<Void> thenRunAsync(Runnable action, Executor executor) {
-            return uniStage(delegate.thenRunAsync(wrap(action), uniPool(executor)));
+            return uniStage(delegate.thenRunAsync(action, uniPool(executor)));
         }
 
         @Override
         public <U, V> CompletableFuture<V> thenCombine(CompletionStage<? extends U> other, BiFunction<? super T, ? super U, ? extends V> fn) {
-            return uniStage(delegate.thenCombine(other, wrap(fn)));
+            return uniStage(delegate.thenCombine(other, fn));
         }
 
         @Override
@@ -355,12 +295,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U, V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T, ? super U, ? extends V> fn, Executor executor) {
-            return uniStage(delegate.thenCombineAsync(other, wrap(fn), uniPool(executor)));
+            return uniStage(delegate.thenCombineAsync(other, fn, uniPool(executor)));
         }
 
         @Override
         public <U> CompletableFuture<Void> thenAcceptBoth(CompletionStage<? extends U> other, BiConsumer<? super T, ? super U> action) {
-            return uniStage(delegate.thenAcceptBoth(other, wrap(action)));
+            return uniStage(delegate.thenAcceptBoth(other, action));
         }
 
         @Override
@@ -370,12 +310,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T, ? super U> action, Executor executor) {
-            return uniStage(delegate.thenAcceptBothAsync(other, wrap(action), uniPool(executor)));
+            return uniStage(delegate.thenAcceptBothAsync(other, action, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<Void> runAfterBoth(CompletionStage<?> other, Runnable action) {
-            return uniStage(delegate.runAfterBoth(other, wrap(action)));
+            return uniStage(delegate.runAfterBoth(other, action));
         }
 
         @Override
@@ -385,12 +325,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<Void> runAfterBothAsync(CompletionStage<?> other, Runnable action, Executor executor) {
-            return uniStage(delegate.runAfterBothAsync(other, wrap(action), uniPool(executor)));
+            return uniStage(delegate.runAfterBothAsync(other, action, uniPool(executor)));
         }
 
         @Override
         public <U> CompletableFuture<U> applyToEither(CompletionStage<? extends T> other, Function<? super T, U> fn) {
-            return uniStage(delegate.applyToEither(other, wrap(fn)));
+            return uniStage(delegate.applyToEither(other, fn));
         }
 
         @Override
@@ -400,12 +340,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T, U> fn, Executor executor) {
-            return uniStage(delegate.applyToEitherAsync(other, wrap(fn), uniPool(executor)));
+            return uniStage(delegate.applyToEitherAsync(other, fn, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<Void> acceptEither(CompletionStage<? extends T> other, Consumer<? super T> action) {
-            return uniStage(delegate.acceptEither(other, wrap(action)));
+            return uniStage(delegate.acceptEither(other, action));
         }
 
         @Override
@@ -415,12 +355,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<Void> acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action, Executor executor) {
-            return uniStage(delegate.acceptEitherAsync(other, wrap(action), uniPool(executor)));
+            return uniStage(delegate.acceptEitherAsync(other, action, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<Void> runAfterEither(CompletionStage<?> other, Runnable action) {
-            return uniStage(delegate.runAfterEither(other, wrap(action)));
+            return uniStage(delegate.runAfterEither(other, action));
         }
 
         @Override
@@ -430,12 +370,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<Void> runAfterEitherAsync(CompletionStage<?> other, Runnable action, Executor executor) {
-            return uniStage(delegate.runAfterEitherAsync(other, wrap(action), uniPool(executor)));
+            return uniStage(delegate.runAfterEitherAsync(other, action, uniPool(executor)));
         }
 
         @Override
         public <U> CompletableFuture<U> thenCompose(Function<? super T, ? extends CompletionStage<U>> fn) {
-            return uniStage(delegate.thenCompose(wrap(fn)));
+            return uniStage(delegate.thenCompose(fn));
         }
 
         @Override
@@ -445,12 +385,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U> CompletableFuture<U> thenComposeAsync(Function<? super T, ? extends CompletionStage<U>> fn, Executor executor) {
-            return uniStage(delegate.thenComposeAsync(wrap(fn), uniPool(executor)));
+            return uniStage(delegate.thenComposeAsync(fn, uniPool(executor)));
         }
 
         @Override
         public CompletableFuture<T> whenComplete(BiConsumer<? super T, ? super Throwable> action) {
-            return uniStage(delegate.whenComplete(wrap(action)));
+            return uniStage(delegate.whenComplete(action));
         }
 
         @Override
@@ -460,12 +400,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T, ? super Throwable> action, Executor executor) {
-            return uniStage(delegate.whenCompleteAsync(wrap(action), uniPool(executor)));
+            return uniStage(delegate.whenCompleteAsync(action, uniPool(executor)));
         }
 
         @Override
         public <U> CompletableFuture<U> handle(BiFunction<? super T, Throwable, ? extends U> fn) {
-            return uniStage(delegate.handle(wrap(fn)));
+            return uniStage(delegate.handle(fn));
         }
 
         @Override
@@ -475,7 +415,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public <U> CompletableFuture<U> handleAsync(BiFunction<? super T, Throwable, ? extends U> fn, Executor executor) {
-            return uniStage(delegate.handleAsync(wrap(fn), uniPool(executor)));
+            return uniStage(delegate.handleAsync(fn, uniPool(executor)));
         }
 
         @Override
@@ -485,7 +425,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public CompletableFuture<T> exceptionally(Function<Throwable, ? extends T> fn) {
-            return uniStage(delegate.exceptionally(wrap(fn)));
+            return uniStage(delegate.exceptionally(fn));
         }
 
         //region ignore
@@ -689,7 +629,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
             tid = traceId != null ? traceId :
-                    traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
+                    traceIdGenerator != null ? traceIdGenerator.apply() : ULID.randomULID().toBase64String();
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
@@ -973,7 +913,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             f = f.thenApplyAsync(t -> {
                 COMPLETION_RETURNED_VALUE.set(t);
                 try {
-                    return task.invoke();
+                    return task.apply();
                 } catch (Throwable e) {
                     throw InvalidException.sneaky(e);
                 } finally {

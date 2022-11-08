@@ -2,7 +2,6 @@ package org.rx.io;
 
 import lombok.SneakyThrows;
 import org.rx.bean.DataTable;
-import org.rx.core.Extends;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -50,7 +49,7 @@ public interface EntityDatabase extends AutoCloseable {
         boolean doCommit = false;
         begin(transactionIsolation);
         try {
-            fn.invoke();
+            fn.apply();
             doCommit = true;
         } finally {
             if (doCommit) {
@@ -66,7 +65,7 @@ public interface EntityDatabase extends AutoCloseable {
         boolean doCommit = false;
         begin(transactionIsolation);
         try {
-            T r = fn.invoke();
+            T r = fn.apply();
             doCommit = true;
             return r;
         } finally {

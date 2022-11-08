@@ -61,7 +61,7 @@ public interface Extends extends Serializable {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
-                action.invoke();
+                action.apply();
                 return true;
             } catch (Throwable e) {
                 if (last != null) {
@@ -84,7 +84,7 @@ public interface Extends extends Serializable {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
-                return action.invoke();
+                return action.apply();
             } catch (Throwable e) {
                 if (last != null) {
                     TraceHandler.INSTANCE.log("sneakyInvoke retry={}/{}", i, retryCount, e);
@@ -121,7 +121,7 @@ public interface Extends extends Serializable {
 
     static boolean quietly(@NonNull Action action) {
         try {
-            action.invoke();
+            action.apply();
             return true;
         } catch (Throwable e) {
             TraceHandler.INSTANCE.log("quietly", e);
@@ -135,13 +135,13 @@ public interface Extends extends Serializable {
 
     static <T> T quietly(@NonNull Func<T> action, Func<T> defaultValue) {
         try {
-            return action.invoke();
+            return action.apply();
         } catch (Throwable e) {
             TraceHandler.INSTANCE.log("quietly", e);
         }
         if (defaultValue != null) {
             try {
-                return defaultValue.invoke();
+                return defaultValue.apply();
             } catch (Throwable e) {
                 ExceptionUtils.rethrow(e);
             }
@@ -197,7 +197,7 @@ public interface Extends extends Serializable {
     static <T> T ifNull(T value, Func<T> supplier) {
         if (value == null) {
             if (supplier != null) {
-                value = supplier.invoke();
+                value = supplier.apply();
             }
         }
         return value;

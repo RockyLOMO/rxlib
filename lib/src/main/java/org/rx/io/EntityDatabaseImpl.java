@@ -171,7 +171,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         this.maxConnections = maxConnections;
 
         if (timeRollingPattern != null) {
-            Tasks.setTimeout(() -> {
+            Tasks.timer().setTimeout(() -> {
                 if (connPool == null || Strings.hashEquals(curFilePath, getFilePath())) {
                     return;
                 }
@@ -183,7 +183,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
 
                 connPool = null;
-            }, RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD.flags());
+            }, d -> RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD.flags());
         }
     }
 
