@@ -56,7 +56,7 @@ public final class UdpManager {
     }
 
     public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
-        return hold.computeIfAbsent(incomingEp, loadFn.toFunction());
+        return hold.computeIfAbsent(incomingEp, loadFn);
     }
 
     public static void closeChannel(InetSocketAddress incomingEp) {
