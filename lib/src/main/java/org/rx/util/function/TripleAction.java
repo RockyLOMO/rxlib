@@ -1,14 +1,16 @@
 package org.rx.util.function;
 
+import lombok.SneakyThrows;
+
 import java.util.function.BiConsumer;
 
-import static org.rx.core.Extends.sneakyInvoke;
-
 @FunctionalInterface
-public interface TripleAction<T1, T2> {
+public interface TripleAction<T1, T2> extends BiConsumer<T1, T2> {
     void invoke(T1 t1, T2 t2) throws Throwable;
 
-    default BiConsumer<T1, T2> toConsumer() {
-        return (p1, p2) -> sneakyInvoke(() -> invoke(p1, p2));
+    @SneakyThrows
+    @Override
+    default void accept(T1 t1, T2 t2) {
+        invoke(t1, t2);
     }
 }

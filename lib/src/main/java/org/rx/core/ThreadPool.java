@@ -175,7 +175,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public T call() {
             try {
-                return fn.apply();
+                return fn.invoke();
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
@@ -629,7 +629,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
             tid = traceId != null ? traceId :
-                    traceIdGenerator != null ? traceIdGenerator.apply() : ULID.randomULID().toBase64String();
+                    traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
@@ -913,7 +913,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             f = f.thenApplyAsync(t -> {
                 COMPLETION_RETURNED_VALUE.set(t);
                 try {
-                    return task.apply();
+                    return task.invoke();
                 } catch (Throwable e) {
                     throw InvalidException.sneaky(e);
                 } finally {

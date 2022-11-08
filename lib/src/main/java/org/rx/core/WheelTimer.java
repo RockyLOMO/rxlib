@@ -79,7 +79,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 future = executor.submit(() -> {
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
-                        return fn.apply();
+                        return fn.invoke();
                     } catch (Throwable e) {
                         throw InvalidException.sneaky(e);
                     } finally {

@@ -19,7 +19,7 @@ public final class Lazy<T> {
         if (value == null) {
             synchronized (this) {
                 if (value == null) {
-                    value = func.apply();
+                    value = func.invoke();
                     func = null;
                 }
             }

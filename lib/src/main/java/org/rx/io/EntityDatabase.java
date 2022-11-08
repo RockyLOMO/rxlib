@@ -49,7 +49,7 @@ public interface EntityDatabase extends AutoCloseable {
         boolean doCommit = false;
         begin(transactionIsolation);
         try {
-            fn.apply();
+            fn.invoke();
             doCommit = true;
         } finally {
             if (doCommit) {
@@ -65,7 +65,7 @@ public interface EntityDatabase extends AutoCloseable {
         boolean doCommit = false;
         begin(transactionIsolation);
         try {
-            T r = fn.apply();
+            T r = fn.invoke();
             doCommit = true;
             return r;
         } finally {

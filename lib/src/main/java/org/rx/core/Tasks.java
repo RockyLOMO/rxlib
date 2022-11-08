@@ -63,7 +63,7 @@ public final class Tasks {
             Action fn;
             while ((fn = shutdownActions.poll()) != null) {
                 try {
-                    fn.apply();
+                    fn.invoke();
                 } catch (Throwable e) {
                     TraceHandler.INSTANCE.log(e);
                 }
@@ -93,7 +93,7 @@ public final class Tasks {
         Throwable last = null;
         for (Func<T> func : funcs) {
             try {
-                return func.apply();
+                return func.invoke();
             } catch (Throwable e) {
                 last = e;
             }
@@ -111,14 +111,14 @@ public final class Tasks {
         Throwable last = null;
         for (int i = 0; i < mid; i++) {
             try {
-                return funcs[i].apply();
+                return funcs[i].invoke();
             } catch (Throwable e) {
                 last = e;
             }
         }
         for (int i = mid; i < funcs.length; i++) {
             try {
-                return funcs[i].apply();
+                return funcs[i].invoke();
             } catch (Throwable e) {
                 last = e;
             }

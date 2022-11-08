@@ -58,12 +58,12 @@ public final class RestClient {
                         args.getParameters()[0] = p.arguments[0];
                         responseText = args.proceed(() -> client.postJson(reqUrl, args.getParameters()[0]).toString());
                     } else {
-                        Map<String, Object> data = getFormData.apply();
+                        Map<String, Object> data = getFormData.invoke();
                         args.getParameters()[0] = data;
                         responseText = args.proceed(() -> client.post(reqUrl, data).toString());
                     }
                 } else {
-                    Map<String, Object> data = getFormData.apply();
+                    Map<String, Object> data = getFormData.invoke();
                     args.getParameters()[0] = data;
                     responseText = args.proceed(() -> client.get(HttpClient.buildUrl(reqUrl, data)).toString());
                 }

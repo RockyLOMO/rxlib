@@ -14,7 +14,7 @@ public interface JsonTypeInvoker {
     default void invoke(Action action, Type type) {
         JSON_TYPE.set(type);
         try {
-            action.apply();
+            action.invoke();
         } finally {
             JSON_TYPE.remove();
         }
@@ -24,7 +24,7 @@ public interface JsonTypeInvoker {
     default <T> T invoke(Func<T> action, Type type) {
         JSON_TYPE.set(type);
         try {
-            return action.apply();
+            return action.invoke();
         } finally {
             JSON_TYPE.remove();
         }

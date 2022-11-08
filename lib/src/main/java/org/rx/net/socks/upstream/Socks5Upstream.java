@@ -30,7 +30,7 @@ public class Socks5Upstream extends Upstream {
     @SneakyThrows
     @Override
     public void initChannel(Channel channel) {
-        UpstreamSupport next = router.apply();
+        UpstreamSupport next = router.invoke();
         if (next == null) {
             throw new InvalidException("ProxyHandlers is empty");
         }

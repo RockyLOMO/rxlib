@@ -149,7 +149,7 @@ public final class NameserverClient extends Disposable {
                         });
                         rc.onReconnected.combine((s, e) -> {
                             tuple.dnsPort = null;
-                            handshake.apply();
+                            handshake.invoke();
                         });
                         ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
                             log.info("sync server endpoints: {}", toJsonString(e.getValue()));
@@ -167,7 +167,7 @@ public final class NameserverClient extends Disposable {
                     });
                     tuple.ns = Remoting.createFacade(Nameserver.class, config);
                     tuple.healthTask = Tasks.schedulePeriod(handshake, DEFAULT_HEALTH_PERIOD);
-                    handshake.apply();
+                    handshake.invoke();
                 }
             }
         });

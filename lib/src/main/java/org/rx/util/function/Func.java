@@ -7,17 +7,17 @@ import java.util.function.Supplier;
 
 @FunctionalInterface
 public interface Func<T> extends Callable<T>, Supplier<T> {
-    T apply() throws Throwable;
+    T invoke() throws Throwable;
 
     @SneakyThrows
     @Override
     default T call() throws Exception {
-        return apply();
+        return invoke();
     }
 
     @SneakyThrows
     @Override
     default T get() {
-        return apply();
+        return invoke();
     }
 }

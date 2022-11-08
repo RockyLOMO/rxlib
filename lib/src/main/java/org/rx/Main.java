@@ -204,7 +204,7 @@ public final class Main implements SocksSupport {
                 InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.searchCurrent().getIp());
                 eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
             };
-            fn.apply();
+            fn.invoke();
             Tasks.schedulePeriod(fn, conf.autoWhiteListSeconds * 1000L);
 
             InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);

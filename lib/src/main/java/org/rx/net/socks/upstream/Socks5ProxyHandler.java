@@ -174,7 +174,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
         }
 
         if (handshakeCallback != null) {
-            handshakeCallback.apply();
+            handshakeCallback.invoke();
         }
         return true;
     }

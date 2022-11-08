@@ -4,11 +4,11 @@ import lombok.SneakyThrows;
 
 @FunctionalInterface
 public interface Action extends Runnable {
-    void apply() throws Throwable;
+    void invoke() throws Throwable;
 
     default <T> Func<T> toFunc() {
         return () -> {
-            apply();
+            invoke();
             return null;
         };
     }
@@ -16,6 +16,6 @@ public interface Action extends Runnable {
     @SneakyThrows
     @Override
     default void run() {
-        apply();
+        invoke();
     }
 }

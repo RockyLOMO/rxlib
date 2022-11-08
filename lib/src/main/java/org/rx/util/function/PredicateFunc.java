@@ -1,21 +1,16 @@
 package org.rx.util.function;
 
-import org.rx.exception.InvalidException;
+import lombok.SneakyThrows;
 
 import java.util.function.Predicate;
 
 @FunctionalInterface
-public interface PredicateFunc<T> {
+public interface PredicateFunc<T> extends Predicate<T> {
     boolean invoke(T t) throws Throwable;
 
-    //sneakyInvoke has box/unbox issue
-    default Predicate<T> toPredicate() {
-        return p -> {
-            try {
-                return invoke(p);
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        };
+    @SneakyThrows
+    @Override
+    default boolean test(T t) {
+        return invoke(t);
     }
 }
