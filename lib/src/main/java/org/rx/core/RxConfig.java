@@ -36,7 +36,6 @@ public final class RxConfig {
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
         String DISK_USAGE_WARNING = "app.disk.diskUsageWarningThreshold";
-        String DISK_MONITOR_PERIOD = "app.disk.monitorPeriod";
         String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
 
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
@@ -50,6 +49,7 @@ public final class RxConfig {
         String NTP_SERVERS = "app.net.ntp.servers";
 
         String APP_ID = "app.id";
+        String MX_SAMPLE_PERIOD = "app.mxSamplePeriod";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
         String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
@@ -131,6 +131,7 @@ public final class RxConfig {
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
     String id;
+    long mxSamplePeriod;
     int traceKeepDays;
     int traceErrorMessageSize;
     long traceSlowElapsedMicros;
@@ -179,7 +180,6 @@ public final class RxConfig {
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 5000);
 
         disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, 90);
-        disk.monitorPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_MONITOR_PERIOD, 60000);
         disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, 10000);
 
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, 0);
@@ -203,6 +203,7 @@ public final class RxConfig {
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
+        mxSamplePeriod = SystemPropertyUtil.getInt(ConfigNames.MX_SAMPLE_PERIOD, 60000);
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
         traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);

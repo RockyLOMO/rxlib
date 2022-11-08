@@ -148,7 +148,6 @@ public final class Sys extends SystemUtils {
         return v;
     };
     static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
-    static final long SAMPLING_PERIOD = 5000L;
     static Timeout samplingTimeout;
 
     static {
@@ -384,9 +383,9 @@ public final class Sys extends SystemUtils {
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(e);
             } finally {
-                t.timer().newTimeout(t.task(), SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplePeriod(), TimeUnit.MILLISECONDS);
             }
-        }, SAMPLING_PERIOD, TimeUnit.MILLISECONDS);
+        }, RxConfig.INSTANCE.getMxSamplePeriod(), TimeUnit.MILLISECONDS);
     }
 
     public static Info mxInfo() {
