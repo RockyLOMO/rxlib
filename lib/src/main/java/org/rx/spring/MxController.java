@@ -1,5 +1,7 @@
 package org.rx.spring;
 
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -25,6 +27,7 @@ import java.util.Map;
 
 import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.toJsonObject;
 
 @RequiredArgsConstructor
 @RestController
@@ -77,8 +80,9 @@ public class MxController {
                     Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
                 case 3:
-                    Sys.threadMx.setThreadContentionMonitoringEnabled(false);
-                    Sys.threadMx.setThreadCpuTimeEnabled(false);
+                    boolean enable = Boolean.parseBoolean(request.getParameter("v"));
+                    Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
+                    Sys.threadMx.setThreadCpuTimeEnabled(enable);
                     return "ok";
                 case 4:
                     String a1 = request.getParameter("cmd"),
@@ -127,16 +131,39 @@ public class MxController {
         j.put("vmOptions", Sys.diagnosticMx.getDiagnosticOptions());
         j.put("sysProperties", System.getProperties());
         j.put("sysEnv", System.getenv());
-        j.put("sysInfo", Sys.mxInfo());
+        Sys.Info info = Sys.mxInfo();
+        JSONObject infoJson = toJsonObject(info);
+        infoJson.put("usedPhysicalMemory", Bytes.readableByteSize(info.getUsedPhysicalMemory()));
+        infoJson.put("freePhysicalMemory", Bytes.readableByteSize(info.getFreePhysicalMemory()));
+        infoJson.put("totalPhysicalMemory", Bytes.readableByteSize(info.getTotalPhysicalMemory()));
+        JSONObject summedDisk = infoJson.getJSONObject("summedDisk");
+        summedDisk.put("usedSpace", Bytes.readableByteSize(info.getSummedDisk().getUsedSpace()));
+        summedDisk.put("freeSpace", Bytes.readableByteSize(info.getSummedDisk().getFreeSpace()));
+        summedDisk.put("totalSpace", Bytes.readableByteSize(info.getSummedDisk().getTotalSpace()));
+        JSONArray disks = infoJson.getJSONArray("disks");
+        int i = 0;
+        for (Sys.DiskInfo disk : info.getDisks()) {
+            JSONObject diskJson = disks.getJSONObject(i);
+            diskJson.put("usedSpace", Bytes.readableByteSize(disk.getUsedSpace()));
+            diskJson.put("freeSpace", Bytes.readableByteSize(disk.getFreeSpace()));
+            diskJson.put("totalSpace", Bytes.readableByteSize(disk.getTotalSpace()));
+            i++;
+        }
+        j.put("sysInfo", infoJson);
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
-        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos).toJoinString("\n", Sys.ThreadInfo::toString));
-//        File root = new File("/");
-//        j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
-//        j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
+        int take = 20;
+        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
+                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+        j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
+                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+        j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime())
+                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+        j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime())
+                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
-//        j.put("conf", conf);
+        j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.putAll(queryTraces(null, null, null, null, null, 10, request));

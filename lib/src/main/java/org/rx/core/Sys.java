@@ -97,8 +97,12 @@ public final class Sys extends SystemUtils {
         private final long totalSpace;
         private final boolean bootstrapDisk;
 
+        public long getUsedSpace() {
+            return totalSpace - freeSpace;
+        }
+
         public int getUsedPercent() {
-            return Numbers.toPercent((double) (totalSpace - freeSpace) / totalSpace);
+            return Numbers.toPercent((double) getUsedSpace() / totalSpace);
         }
 
         public boolean hasDiskUsageWarning() {
