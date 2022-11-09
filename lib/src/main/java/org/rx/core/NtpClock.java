@@ -30,9 +30,10 @@ public class NtpClock extends Clock implements Serializable {
     @SneakyThrows
     public static void sync() {
         NTPUDPClient client = new NTPUDPClient();
-        client.setDefaultTimeout(2048);
+        RxConfig.NtpConfig conf = RxConfig.INSTANCE.net.ntp;
+        client.setDefaultTimeout((int) conf.timeoutMillis);
         client.open();
-        eachQuietly(RxConfig.INSTANCE.net.ntp.servers, p -> {
+        eachQuietly(conf.servers, p -> {
             final TimeInfo info = client.getTime(InetAddress.getByName(p));
             info.computeDetails();
             offset = ifNull(info.getOffset(), 0L);

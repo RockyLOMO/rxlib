@@ -58,7 +58,7 @@ import static org.rx.core.Extends.quietly;
  */
 @Slf4j
 public class SftpClient extends Disposable implements CrudFile<SftpFile> {
-    private static final List<String> skipDirectories = Arrays.toList(".", "..");
+    static final List<String> skipDirectories = Arrays.toList(".", "..");
 
     private final JSch jsch = new JSch();
     private final Session session;

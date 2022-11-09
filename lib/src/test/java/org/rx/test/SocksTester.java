@@ -716,7 +716,7 @@ public class SocksTester extends AbstractTester {
 
     @Test
     public void ipUtil() {
-        String expr = Sockets.DEFAULT_NAT_IPS.get(3);
+        String expr = RxConfig.INSTANCE.getNet().getLanIps().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
         String h = "google.com";

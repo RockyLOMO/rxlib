@@ -29,7 +29,7 @@ public class BeanMapper {
     }
 
     public static final BeanMapper DEFAULT = new BeanMapper();
-    private static final Mapping[] empty = new Mapping[0];
+    static final Mapping[] empty = new Mapping[0];
 
     public static Map<String, Object> convertFromObjectString(String str, boolean root) {
         String startFlag = root ? "(" : "{", endFlag = root ? ")" : "}";

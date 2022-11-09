@@ -154,13 +154,13 @@ public class MxController {
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
         int take = 20;
         j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
-                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+                .take(take).select(Sys.ThreadInfo::toString));
         j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
-                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+                .take(take).select(Sys.ThreadInfo::toString));
         j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime())
-                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+                .take(take).select(Sys.ThreadInfo::toString));
         j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime())
-                .take(take).toJoinString("\n", Sys.ThreadInfo::toString));
+                .take(take).select(Sys.ThreadInfo::toString));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
         j.put("rxConfig", RxConfig.INSTANCE);

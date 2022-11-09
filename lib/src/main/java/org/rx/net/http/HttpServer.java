@@ -209,7 +209,7 @@ public class HttpServer extends Disposable {
         void handle(ServerRequest request, ServerResponse response) throws Throwable;
     }
 
-    private static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
+    static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
 
     public static String normalize(String uri) {
         // "/" => "/"

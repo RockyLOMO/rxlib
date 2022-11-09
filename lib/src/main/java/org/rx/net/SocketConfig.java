@@ -34,7 +34,7 @@ public class SocketConfig implements Extends {
     }
 
     private Set<String> bypassList() {
-        return new CopyOnWriteArraySet<>(Sockets.DEFAULT_NAT_IPS);
+        return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getLanIps());
     }
 
     public boolean isBypass(String host) {

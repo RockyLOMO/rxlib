@@ -22,8 +22,7 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 class ComboIPSearcher implements IPSearcher {
-    final static int TIMEOUT_SECONDS = 10000;
-    final static String LOOPBACK_ADDR = Sockets.loopbackAddress().getHostAddress();
+    static final int TIMEOUT_SECONDS = 10000;
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
             dApis = new RandomList<>();
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
@@ -50,13 +49,13 @@ class ComboIPSearcher implements IPSearcher {
 
     @Override
     public IPAddress searchCurrent() {
-        return search(LOOPBACK_ADDR);
+        return search(Sockets.loopbackHostAddress());
     }
 
     @SneakyThrows
     @Override
     public IPAddress search(@NonNull String host, boolean resolveHostRemotely) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             return rndRetry(host, resolveHostRemotely);
         }
 
@@ -85,7 +84,7 @@ class ComboIPSearcher implements IPSearcher {
 
     //6k/d
     IPAddress ip_Api(String host) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             host = Strings.EMPTY;
         }
         String url = String.format("http://ip-api.com/json/%s", host);
@@ -98,7 +97,7 @@ class ComboIPSearcher implements IPSearcher {
 
     //1k/m
     IPAddress ipApi(String host) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             host = "check";
         }
         String url = String.format("http://api.ipapi.com/%s?access_key=8da5fe816dba52150d4c40ba72705954", host);
@@ -111,7 +110,7 @@ class ComboIPSearcher implements IPSearcher {
     //1k/d
     @SneakyThrows
     IPAddress ipGeo(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -126,7 +125,7 @@ class ComboIPSearcher implements IPSearcher {
     //1.5k/d
     @SneakyThrows
     IPAddress ipData(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -146,7 +145,7 @@ class ComboIPSearcher implements IPSearcher {
     //10k/m
     @SneakyThrows
     IPAddress ipWho(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -167,7 +166,7 @@ class ComboIPSearcher implements IPSearcher {
     //50k/m
     @SneakyThrows
     IPAddress ipInfo(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();

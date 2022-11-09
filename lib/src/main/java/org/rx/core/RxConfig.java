@@ -46,8 +46,10 @@ public final class RxConfig {
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
+        String NET_LAN_IPS = "app.net.lanIps";
         String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
+        String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
         String NTP_SERVERS = "app.net.ntp.servers";
 
         String APP_ID = "app.id";
@@ -103,6 +105,7 @@ public final class RxConfig {
         int poolMaxSize;
         int poolKeepAliveSeconds;
         String userAgent;
+        final List<String> lanIps = newConcurrentList(true);
         NtpConfig ntp = new NtpConfig();
     }
 
@@ -111,6 +114,7 @@ public final class RxConfig {
         //1 syncTask, 2 injectJdkTime
         int enableFlags;
         long syncPeriod;
+        long timeoutMillis;
         final List<String> servers = newConcurrentList(true);
     }
 
@@ -193,10 +197,17 @@ public final class RxConfig {
         }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, 120);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
+        net.lanIps.clear();
+        String v = SystemPropertyUtil.get(ConfigNames.NET_LAN_IPS);
+        if (v != null) {
+            net.lanIps.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
+
         net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
         net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
+        net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, 2048);
         net.ntp.servers.clear();
-        String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
+        v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
         if (v != null) {
             net.ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
         }

@@ -19,8 +19,8 @@ import java.security.SecureRandom;
 //对称加密
 @Slf4j
 public class AESUtil {
-    private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
-    private static final int KEY_SIZE = 128; //256
+    static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
+    static final int KEY_SIZE = 128; //256
     private static String lastDate;
     private static byte[] dateKey;
 

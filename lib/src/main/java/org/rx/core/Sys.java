@@ -148,6 +148,7 @@ public final class Sys extends SystemUtils {
         return v;
     };
     static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
+    static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
 
     static {
@@ -431,7 +432,6 @@ public final class Sys extends SystemUtils {
 
     public static String formatNanosElapsed(long nanoseconds, int i) {
         long d = 1000L, v = nanoseconds;
-        String[] seconds = {"ns", "µs", "ms", "s"};
         while (v >= d) {
             v /= d;
             if (++i >= 3) {

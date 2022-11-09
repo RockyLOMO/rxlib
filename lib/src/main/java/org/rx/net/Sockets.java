@@ -28,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.core.*;
-import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
@@ -46,11 +45,11 @@ import static org.rx.core.Extends.quietly;
 @Slf4j
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
-    public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
+    static String loopbackAddr;
     static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
 
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
@@ -362,6 +361,13 @@ public final class Sockets {
     }
 
     //region Address
+    public static String loopbackHostAddress() {
+        if (loopbackAddr == null) {
+            loopbackAddr = loopbackAddress().getHostAddress();
+        }
+        return loopbackAddr;
+    }
+
     public static InetAddress loopbackAddress() {
         return InetAddress.getLoopbackAddress();
     }
@@ -372,13 +378,12 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static boolean isNatIp(InetAddress ip) {
-        if (eq(loopbackAddress(), ip)) {
+    public static boolean isLanIp(InetAddress ip) {
+        String hostAddress = ip.getHostAddress();
+        if (Strings.hashEquals(loopbackHostAddress(), hostAddress)) {
             return true;
         }
-
-        String hostAddress = ip.getHostAddress();
-        for (String regex : DEFAULT_NAT_IPS) {
+        for (String regex : RxConfig.INSTANCE.getNet().getLanIps()) {
             if (Pattern.matches(regex, hostAddress)) {
                 return true;
             }
