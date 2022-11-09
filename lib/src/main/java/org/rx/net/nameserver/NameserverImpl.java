@@ -153,7 +153,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
-        //同app同ip多实例，比如k8s滚动更新
+        //Multiple instances of same app and same ip, such as k8s rolling updates.
         int c = Linq.from(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);

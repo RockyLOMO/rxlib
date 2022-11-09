@@ -262,12 +262,12 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public int read(ByteBuf dst) {
+        //available() may be not right
         int total = 0, read;
         while ((read = read(dst, Constants.HEAP_BUF_SIZE)) > 0) {
             total += read;
         }
         return total;
-//        return read(dst, (int)available());
     }
 
     @SneakyThrows

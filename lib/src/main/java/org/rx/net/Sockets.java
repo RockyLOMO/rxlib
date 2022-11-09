@@ -90,7 +90,7 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
-                //处理不了会交给源对象处理
+                //If all interceptors can't handle it, the source object will process it.
                 try {
                     List<InetAddress> addresses = nsInterceptor.invoke(host);
                     if (!CollectionUtils.isEmpty(addresses)) {
@@ -119,7 +119,7 @@ public final class Sockets {
         return reactors.computeIfAbsent(reactorName, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
     }
 
-    // not executor
+    //not executor
     private static EventLoopGroup newEventLoop(int threadAmount) {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
@@ -144,7 +144,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
-        int bossThreadAmount = 1; //等于bind的次数，默认1
+        int bossThreadAmount = 1; //Equal to the number of bind(), default 1
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
@@ -164,7 +164,7 @@ public final class Sockets {
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .childHandler(WaterMarkHandler.DEFAULT);
         if (config.isEnableLog()) {
-            //netty日志
+            //netty log
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {

@@ -17,7 +17,7 @@ class LocalCrudFile implements CrudFile<File> {
     @SneakyThrows
     @Override
     public String createDirectory(String path) {
-        //Do not use FileUtils.createParentDirectories() || File.getParentFile();
+        //Don't use FileUtils.createParentDirectories() || File.getParentFile();
         String dirPath = getDirectoryPath(path);
         Files.createDirectories(Paths.get(dirPath));
         return dirPath;

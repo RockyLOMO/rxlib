@@ -575,7 +575,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 : entityType.getSimpleName();
     }
 
-    //count 需alias
+    //count - Columns require alias
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
@@ -786,8 +786,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 while (rs.next()) {
                     T t = entityType.newInstance();
                     for (int i = 1; i <= metaData.getColumnCount(); i++) {
-                        //metaData.getColumnName是大写
-//                        Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
+                        //metaData.getColumnName is capitalized
                         Tuple<Field, DbColumn> bi = meta.upperColumns.get(metaData.getColumnName(i)).right;
                         if (bi == null) {
                             throw new InvalidException("Mapping {} not found", metaData.getColumnName(i));
