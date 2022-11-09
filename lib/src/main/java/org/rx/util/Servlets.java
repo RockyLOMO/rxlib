@@ -122,7 +122,7 @@ public class Servlets extends ServletRequestUtils {
     }
 
     public static void setCookie(String name, String value) {
-        setCookie(name, value);
+        setCookie(name, value, null);
     }
 
     public static void setCookie(@NonNull String name, String value, Date expire) {

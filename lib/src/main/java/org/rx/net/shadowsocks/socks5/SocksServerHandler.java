@@ -49,12 +49,8 @@ public final class SocksServerHandler extends SimpleChannelInboundHandler<SocksM
 
                         InetSocketAddress bindAddr = (InetSocketAddress) ctx.channel().localAddress();
                         InetAddress bindId = bindAddr.getAddress();
-                        Socks5AddressType bindAddrType = Socks5AddressType.IPv4;
-                        if (bindId instanceof Inet4Address) {
-                            bindAddrType = Socks5AddressType.IPv4;
-                        } else if (bindId instanceof Inet6Address) {
-                            bindAddrType = Socks5AddressType.IPv6;
-                        }
+                        Socks5AddressType bindAddrType = bindId instanceof Inet6Address
+                                ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
 
                         ctx.channel().writeAndFlush(new DefaultSocks5CommandResponse(
                                 Socks5CommandStatus.SUCCESS,
