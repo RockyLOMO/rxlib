@@ -1,12 +1,17 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
-import org.rx.net.socks.*;
+import org.rx.net.socks.ProxyChannelIdleHandler;
+import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 

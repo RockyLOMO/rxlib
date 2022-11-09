@@ -5,8 +5,8 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
-import org.rx.core.Sys;
 import org.rx.core.Strings;
+import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.KeyValueStore;
@@ -18,7 +18,8 @@ import org.rx.util.function.PredicateFunc;
 
 import java.net.InetAddress;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 class ComboIPSearcher implements IPSearcher {

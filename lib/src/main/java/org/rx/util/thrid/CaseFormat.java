@@ -14,9 +14,9 @@
 
 package org.rx.util.thrid;
 
-import static java.util.Objects.requireNonNull;
-
 import java.io.Serializable;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * Utility class for converting between various ASCII case formats. Behavior is undefined for

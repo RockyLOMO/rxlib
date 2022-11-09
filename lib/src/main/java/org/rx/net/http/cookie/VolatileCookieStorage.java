@@ -1,12 +1,12 @@
 package org.rx.net.http.cookie;
 
+import okhttp3.Cookie;
+import org.rx.core.Linq;
+
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import okhttp3.Cookie;
-import org.rx.core.Linq;
 
 public class VolatileCookieStorage implements Iterable<Cookie> {
     final Set<IdentifiableCookie> store = ConcurrentHashMap.newKeySet();

@@ -1,7 +1,10 @@
 package org.rx.bean;
 
 import com.alibaba.fastjson.annotation.JSONField;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.rx.core.Constants;
 
 import java.util.HashMap;

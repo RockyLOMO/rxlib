@@ -28,7 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.circuitContinue;
+import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {

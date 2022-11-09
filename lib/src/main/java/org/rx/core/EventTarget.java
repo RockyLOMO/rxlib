@@ -9,7 +9,7 @@ import org.rx.bean.NEnum;
 import org.rx.util.function.TripleAction;
 
 import java.util.EventListener;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 

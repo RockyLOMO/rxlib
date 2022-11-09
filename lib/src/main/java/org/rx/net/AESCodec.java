@@ -6,8 +6,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.RequiredArgsConstructor;
-import org.rx.core.Constants;
 import org.rx.codec.AESUtil;
+import org.rx.core.Constants;
 
 import java.util.List;
 

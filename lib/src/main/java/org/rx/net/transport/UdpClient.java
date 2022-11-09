@@ -27,7 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.circuitContinue;
+import static org.rx.core.Extends.tryAs;
 
 @Slf4j
 public class UdpClient implements EventTarget<UdpClient> {

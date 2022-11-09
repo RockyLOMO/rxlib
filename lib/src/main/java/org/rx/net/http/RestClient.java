@@ -15,8 +15,8 @@ import java.lang.reflect.Parameter;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public final class RestClient {

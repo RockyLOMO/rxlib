@@ -10,16 +10,18 @@ import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
-import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.core.*;
+import org.rx.core.Linq;
+import org.rx.core.Reflects;
+import org.rx.core.RxConfig;
+import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
-import org.rx.util.Lazy;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 
 import javax.net.ssl.SSLContext;
@@ -31,8 +33,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
-import java.lang.StringBuilder;
-import java.net.*;
+import java.net.Proxy;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -41,7 +44,8 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Sys.*;
+import static org.rx.core.Sys.logHttp;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class HttpClient {

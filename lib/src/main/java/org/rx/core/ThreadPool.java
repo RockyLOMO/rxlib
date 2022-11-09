@@ -7,11 +7,14 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
-import lombok.*;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
-import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
@@ -23,7 +26,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.require;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j

@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.NonNull;
 import org.apache.commons.collections4.EnumerationUtils;
 import org.apache.commons.lang3.ArrayUtils;
@@ -9,8 +10,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
-
-import io.netty.util.internal.ThreadLocalRandom;
 
 /**
  * System.arraycopy();

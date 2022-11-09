@@ -13,9 +13,9 @@ import java.io.Serializable;
 import java.io.StreamCorruptedException;
 import java.lang.reflect.Type;
 
-import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Sys.fromJson;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {

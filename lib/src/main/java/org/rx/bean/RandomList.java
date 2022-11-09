@@ -1,19 +1,17 @@
 package org.rx.bean;
 
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
+import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import io.netty.util.internal.ThreadLocalRandom;
-import org.rx.util.function.BiFunc;
-
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Predicate;

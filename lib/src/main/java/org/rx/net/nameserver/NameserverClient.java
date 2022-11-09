@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 
-import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class NameserverClient extends Disposable {

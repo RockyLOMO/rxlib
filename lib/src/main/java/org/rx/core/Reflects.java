@@ -1,6 +1,8 @@
 package org.rx.core;
 
-import lombok.*;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.ConstructorUtils;
@@ -30,10 +32,10 @@ import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static org.rx.core.Sys.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.fastCacheKey;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j

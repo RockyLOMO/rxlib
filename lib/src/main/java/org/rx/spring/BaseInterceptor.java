@@ -13,8 +13,8 @@ import org.rx.exception.TraceHandler;
 
 import java.util.List;
 
-import static org.rx.core.Sys.*;
 import static org.rx.core.Extends.as;
+import static org.rx.core.Sys.*;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;

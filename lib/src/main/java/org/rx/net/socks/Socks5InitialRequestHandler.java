@@ -2,7 +2,10 @@ package org.rx.net.socks;
 
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.SocksVersion;
-import io.netty.handler.codec.socksx.v5.*;
+import io.netty.handler.codec.socksx.v5.DefaultSocks5InitialRequest;
+import io.netty.handler.codec.socksx.v5.DefaultSocks5InitialResponse;
+import io.netty.handler.codec.socksx.v5.Socks5AuthMethod;
+import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 

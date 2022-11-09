@@ -3,7 +3,8 @@ package org.rx.net.http;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import lombok.Getter;
 import lombok.Setter;
-import okhttp3.*;
+import okhttp3.Authenticator;
+import okhttp3.Credentials;
 
 import java.net.Proxy;
 import java.net.SocketAddress;

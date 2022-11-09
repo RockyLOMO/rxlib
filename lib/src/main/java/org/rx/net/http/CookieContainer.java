@@ -1,15 +1,15 @@
 package org.rx.net.http;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
 import org.rx.core.Linq;
-import org.rx.net.http.cookie.VolatileCookieStorage;
 import org.rx.net.http.cookie.PersistentCookieStorage;
+import org.rx.net.http.cookie.VolatileCookieStorage;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 public final class CookieContainer implements CookieJar {
     static boolean isCookieExpired(Cookie cookie) {

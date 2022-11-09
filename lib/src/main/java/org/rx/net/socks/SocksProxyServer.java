@@ -14,9 +14,9 @@ import org.rx.core.EventTarget;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
