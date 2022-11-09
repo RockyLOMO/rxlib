@@ -80,7 +80,6 @@ public class Reflects extends ClassUtils {
 
     static {
         try {
-
             lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
             setAccess(lookupConstructor);
         } catch (NoSuchMethodException e) {

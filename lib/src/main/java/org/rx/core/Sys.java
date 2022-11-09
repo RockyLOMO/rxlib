@@ -1,12 +1,8 @@
 package org.rx.core;
 
 import ch.qos.logback.classic.util.LogbackMDCAdapter;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.parser.Feature;
-import com.alibaba.fastjson.serializer.SerializerFeature;
-import com.alibaba.fastjson.serializer.ValueFilter;
+import com.alibaba.fastjson2.*;
+import com.alibaba.fastjson2.filter.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
 import com.sun.management.ThreadMXBean;
@@ -43,6 +39,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
+import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
+import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
 import static org.rx.core.Extends.as;
 
@@ -135,7 +134,9 @@ public final class Sys extends SystemUtils {
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
-    static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
+    static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
+    static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
+    static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
             if (Linq.canBeCollection(v.getClass())) {
@@ -149,7 +150,6 @@ public final class Sys extends SystemUtils {
         }
         return v;
     };
-    static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
 
@@ -482,7 +482,7 @@ public final class Sys extends SystemUtils {
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {
-            return JSON.parseObject(js, type, PARSE_FLAGS);
+            return JSON.parseObject(js, type, JSON_READ_FLAGS);
         } catch (Exception e) {
             throw new InvalidException("Invalid json {}", js, e);
         }
@@ -530,8 +530,7 @@ public final class Sys extends SystemUtils {
         }
 
         try {
-//            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
-            return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
             if (Linq.canBeCollection(src.getClass())) {
