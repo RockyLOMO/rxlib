@@ -6,6 +6,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.Tuple;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -58,7 +59,8 @@ public class EventBus implements EventTarget<EventBus> {
 
         Linq<Tuple<Object, Method>> eventSubscribers = Linq.from(eventTypes).selectMany(p -> subscribers.getOrDefault(p, Collections.emptySet()));
         if (!eventSubscribers.any()) {
-            log.warn("The event '{}' had no subscribers", event);
+            TraceHandler.INSTANCE.saveMetric(Constants.MetricName.DEAD_EVENT.name(),
+                    String.format("The event '%s' had no subscribers", event));
             raiseEvent(onDeadEvent, new NEventArgs<>(event));
             return;
         }

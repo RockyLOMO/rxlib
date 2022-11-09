@@ -137,7 +137,7 @@ public class ObjectPool<T> extends Disposable {
                 return;
             }
             if (c.isLeaked(leakDetectionThreshold)) {
-                TraceHandler.INSTANCE.saveMetrics(Constants.MetricName.OBJECT_POOL_LEAK.name(),
+                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
                         String.format("Object '%s' leaked.\n%s", obj, Reflects.getStackTrace(c.t)));
                 if (retireLeak) {
                     doRetire(obj);
