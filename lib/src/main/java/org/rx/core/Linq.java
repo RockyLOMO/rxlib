@@ -13,10 +13,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
 import org.rx.exception.ApplicationException;
-import org.rx.util.function.BiFunc;
-import org.rx.util.function.BiFuncWithIndex;
-import org.rx.util.function.PredicateFunc;
-import org.rx.util.function.PredicateFuncWithIndex;
+import org.rx.util.function.*;
 
 import java.io.Serializable;
 import java.lang.reflect.Array;
@@ -459,9 +456,12 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return firstOrDefault((T) null);
     }
 
-    //orElseGet use Extends.ifNull instead
     public T firstOrDefault(T defaultValue) {
         return stream().findFirst().orElse(defaultValue);
+    }
+
+    public T firstOrDefault(Func<T> defaultValue) {
+        return stream().findFirst().orElseGet(defaultValue);
     }
 
     public T firstOrDefault(PredicateFunc<T> predicate) {

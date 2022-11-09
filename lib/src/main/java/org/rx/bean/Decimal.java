@@ -29,8 +29,7 @@ public class Decimal extends Number implements Comparable<Decimal> {
             if (jsonReader.nextIfNull()) {
                 return null;
             }
-            BigDecimal val = jsonReader.readBigDecimal();
-            return Decimal.valueOf(val);
+            return Decimal.valueOf(jsonReader.readBigDecimal());
         }
     }
 
