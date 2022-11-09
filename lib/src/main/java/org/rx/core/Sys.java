@@ -23,7 +23,6 @@ import org.rx.codec.CodecUtil;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.util.function.*;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;

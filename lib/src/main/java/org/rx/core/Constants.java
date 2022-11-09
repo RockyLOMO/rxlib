@@ -3,7 +3,7 @@ package org.rx.core;
 public interface Constants {
     enum MetricName {
         THREAD_QUEUE_SIZE_ERROR,
-        OBJECT_POOL_LEAK;
+        OBJECT_POOL_LEAK
     }
 
     String RX_CONFIG_FILE = "rx.yml";

@@ -35,7 +35,7 @@ package org.rx.util.thrid;
  * @since 2.0
  */
 @FunctionalInterface
-public interface Predicate<T extends Object> extends java.util.function.Predicate<T> {
+public interface Predicate<T> extends java.util.function.Predicate<T> {
     /**
      * Returns the result of applying this predicate to {@code input} (Java 8 users, see notes in the
      * class documentation above). This method is <i>generally expected</i>, but not absolutely

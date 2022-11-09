@@ -7,11 +7,6 @@ import java.util.Map;
 import java.util.Set;
 
 public interface AbstractMap<K, V> extends Map<K, V> {
-//    @Override
-//    public int size() {
-//        return 0;
-//    }
-
     @Override
     default boolean isEmpty() {
         return size() == 0;

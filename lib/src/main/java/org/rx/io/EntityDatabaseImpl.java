@@ -14,7 +14,6 @@ import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.bean.*;
 import org.rx.core.Arrays;
-import org.rx.core.Constants;
 import org.rx.annotation.DbColumn;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
@@ -910,16 +909,20 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-            if (!isInTx) {
-                conn.close();
-            }
-            if (elapsed > slowSqlElapsed) {
-                log.warn("slowSql: {} -> {}ms", sql, elapsed);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-                }
+            postInvoke(sql, params, conn, isInTx, startTime);
+        }
+    }
+
+    private void postInvoke(String sql, List<Object> params, Connection conn, boolean isInTx, long startTime) throws SQLException {
+        long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+        if (!isInTx) {
+            conn.close();
+        }
+        if (elapsed > slowSqlElapsed) {
+            log.warn("slowSql: {} -> {}ms", sql, elapsed);
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("executeQuery {}\n{}", sql, toJsonString(params));
             }
         }
     }
@@ -940,17 +943,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-            if (!isInTx) {
-                conn.close();
-            }
-            if (elapsed > slowSqlElapsed) {
-                log.warn("slowSql: {} -> {}ms", sql, elapsed);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-                }
-            }
+            postInvoke(sql, params, conn, isInTx, startTime);
         }
     }
     //endregion

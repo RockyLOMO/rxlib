@@ -7,7 +7,6 @@ import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
-import io.netty.handler.timeout.IdleStateHandler;
 import lombok.*;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;

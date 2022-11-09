@@ -7,7 +7,6 @@ import io.netty.util.TimerTask;
 import lombok.*;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
-import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 

@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;

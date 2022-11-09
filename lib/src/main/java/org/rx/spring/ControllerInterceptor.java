@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
-import static org.rx.core.Extends.quietly;
 
 //@Aspect
 @Component

@@ -12,7 +12,6 @@ import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.netty.util.internal.ThreadLocalRandom;
-import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
 
 import java.util.concurrent.locks.ReadWriteLock;

@@ -7,7 +7,7 @@ import java.util.Set;
 
 public class BeanMapException extends InvalidException {
     @Getter
-    private Set<String> missedProperties;
+    final Set<String> missedProperties;
 
     public BeanMapException(String message, Set<String> missedProperties) {
         super(message);

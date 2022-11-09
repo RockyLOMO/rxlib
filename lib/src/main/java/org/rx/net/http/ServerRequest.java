@@ -2,7 +2,6 @@ package org.rx.net.http;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.multipart.FileUpload;
@@ -12,7 +11,6 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import org.rx.bean.MultiValueMap;
-import org.rx.core.Extends;
 import org.rx.core.Strings;
 
 import java.net.InetSocketAddress;

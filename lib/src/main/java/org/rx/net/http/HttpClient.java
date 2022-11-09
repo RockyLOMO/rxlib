@@ -229,11 +229,6 @@ public class HttpClient {
         }
     };
 
-//    static {
-//        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2Hello");
-//        System.setProperty("jsse.enableSNIExtension", "false");
-//    }
-
     //region StaticMembers
     public static String encodeCookie(List<Cookie> cookies) {
         if (cookies == null) {

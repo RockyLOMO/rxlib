@@ -29,7 +29,7 @@ import java.util.function.Function;
  * <p>The reverse operation <b>may</b> be a strict <i>inverse</i> (meaning that {@code
  * converter.reverse().convert(converter.convert(a)).equals(a)} is always true). However, it is very
  * common (perhaps <i>more</i> common) for round-trip conversion to be <i>lossy</i>. Consider an
- * example round-trip using {@link com.google.common.primitives.Doubles#stringConverter}:
+ * example round-trip using :
  *
  * <ol>
  *   <li>{@code stringConverter().convert("1.00")} returns the {@code Double} value {@code 1.0}

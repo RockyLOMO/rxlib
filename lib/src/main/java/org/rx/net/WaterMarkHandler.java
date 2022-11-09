@@ -1,7 +1,6 @@
 package org.rx.net;
 
 import io.netty.channel.*;
-import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

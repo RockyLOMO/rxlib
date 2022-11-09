@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
-import org.rx.core.YamlConfiguration;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;

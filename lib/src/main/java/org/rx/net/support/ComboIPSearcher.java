@@ -75,8 +75,6 @@ class ComboIPSearcher implements IPSearcher {
         if (!resolveHostRemotely) {
             host = InetAddress.getByName(host).getHostAddress();
         }
-//        return Tasks.randomRetry(() -> ip_Api(host), () -> ipGeo(host),
-//                () -> ipData(host), () -> ipWho(host));
         RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
         return quietly(() -> fns.next().invoke(finalHost), 3);
